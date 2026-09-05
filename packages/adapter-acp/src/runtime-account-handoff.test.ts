@@ -202,11 +202,9 @@ describe("agent runtime account handoff", () => {
         profileKind: "managed"
       })
     )
-    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
     releaseSink?.()
     await draining
     await loading
-    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
 
     expect(createCount).toBe(2)
     expect(loadCount).toBe(1)

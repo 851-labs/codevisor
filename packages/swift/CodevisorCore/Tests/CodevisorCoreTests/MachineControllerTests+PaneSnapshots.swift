@@ -121,7 +121,8 @@ extension MachineControllerTests {
     fake.setPanes([chatPane])
     fake.emit(kind: "workspace.pane.deleted", subjectId: remoteTabId.uuidString)
     try await waitForSync {
-      repository.workspace(id: workspaceId)?.tabId(containingPane: remoteTabId) == nil
+      _ = workspaceSync.revision
+      return repository.workspace(id: workspaceId)?.tabId(containingPane: remoteTabId) == nil
     }
   }
 

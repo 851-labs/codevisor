@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -117,7 +118,10 @@ extension MachineControllerTests {
     var stateChanges: [String] = []
     var updates: [[String]] = []
     controller.onPluginStateChanged = { stateChanges.append($0) }
-    controller.onPluginUpdated = { updates.append([$0, $1]) }
+    let pluginUpdated = TestSignal()
+    controller.onPluginUpdated = {
+      updates.append([$0, $1]); pluginUpdated.signal()
+    }
 
     controller.startEventSync(for: "local")
     // Runtime transitions invalidate the machine's plugin list…
@@ -125,7 +129,8 @@ extension MachineControllerTests {
     // …while only plugin.updated (code/install changed) triggers pane
     // reloads, carrying the plugin id so unrelated panes stay put.
     fake.emit(kind: "plugin.updated", subjectId: "owner.example")
-    try await waitForSync { updates == [["local", "owner.example"]] }
+    await pluginUpdated.wait()
+    #expect(updates == [["local", "owner.example"]])
     #expect(stateChanges == ["local"])
 
     controller.stopEventSync()
@@ -217,7 +222,8 @@ extension MachineControllerTests {
     controller.startEventSync(for: "local")
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
     try await waitForSync {
-      workspaceRepository.workspace(id: workspaceId)?.isServerSynced == true
+      _ = workspaceSync.revision
+      return workspaceRepository.workspace(id: workspaceId)?.isServerSynced == true
     }
     #expect(workspaceRepository.workspace(id: workspaceId)?.name == "Shared workspace")
     #expect(
@@ -296,7 +302,8 @@ extension MachineControllerTests {
       payload: sessionPayload(archivedSibling)
     )
     try await waitForSync {
-      workspaceRepository.workspace(id: workspaceId)?.isArchived == true
+      _ = workspaceSync.revision
+      return workspaceRepository.workspace(id: workspaceId)?.isArchived == true
         && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
     }
     #expect(
@@ -326,7 +333,8 @@ extension MachineControllerTests {
       payload: sessionPayload(unarchivedSibling)
     )
     try await waitForSync {
-      workspaceRepository.workspace(id: workspaceId)?.isArchived == false
+      _ = workspaceSync.revision
+      return workspaceRepository.workspace(id: workspaceId)?.isArchived == false
         && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
     }
     #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
@@ -337,7 +345,10 @@ extension MachineControllerTests {
     ])
     fake.setWorkspaces([])
     fake.emit(kind: "workspace.deleted", subjectId: workspaceId.uuidString)
-    try await waitForSync { workspaceRepository.workspace(id: workspaceId) == nil }
+    try await waitForSync {
+      _ = workspaceSync.revision
+      return workspaceRepository.workspace(id: workspaceId) == nil
+    }
     #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .dismiss)
 
     controller.stopEventSync()

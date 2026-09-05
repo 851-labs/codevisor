@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 import CodevisorClient
@@ -43,7 +44,9 @@ struct CloudHubFlowControlTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     let recorder = Recorder()
 

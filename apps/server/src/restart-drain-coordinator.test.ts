@@ -1,16 +1,14 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { makeMemoryRestartSnapshotStore, makeRestartCoordinator } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
-import { idleRestartCoordinator, makeServices, run, waitFor } from "./test-support.js"
+import { idleRestartCoordinator, makeServices, run } from "./test-support.js"
 
 /// The coordinator's edge paths, driven directly: interruption when a
 /// harness will not cancel, snapshot selection, abandonment mid-drain, and
 /// the grace period after a drain nobody restarted.
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const makeHarness = async () => {
   const { agents, services } = await makeServices("server-a")
@@ -80,6 +78,8 @@ const makeHarness = async () => {
 }
 
 describe("restart coordinator", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] }))
+  afterEach(() => vi.useRealTimers())
   it("snapshots live, held, and loaded sessions — never archived ones", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
@@ -128,8 +128,10 @@ describe("restart coordinator", () => {
     })
 
     const started = coordinator.begin({ timeoutMs: 20 })
-    await sleep(5)
+    await vi.advanceTimersByTimeAsync(19)
+    expect(cancelled).toEqual([])
     expect(coordinator.state()).toMatchObject({ state: "draining", remaining: 3 })
+    await vi.advanceTimersByTimeAsync(16_000)
     const drained = await started
     expect(drained.state).toBe("drained")
     expect(cancelled.toSorted()).toEqual(["agent-live", sessions.fresh.id].toSorted())
@@ -156,7 +158,9 @@ describe("restart coordinator", () => {
           return { runtimeState: "reusable" as const }
         })
     })
-    const drained = await coordinator.begin({ interrupt: true, timeoutMs: 60_000 })
+    const draining = coordinator.begin({ interrupt: true, timeoutMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(250)
+    const drained = await draining
     expect(drained.state).toBe("drained")
     coordinator.close()
   })
@@ -172,9 +176,11 @@ describe("restart coordinator", () => {
       cancel: () => Effect.succeed({ runtimeState: "reusable" as const })
     })
     const started = coordinator.begin({ timeoutMs: 10 })
-    await waitFor(() => harness.logs.some((line) => line.includes("interrupting 1 live turn")))
+    await vi.advanceTimersByTimeAsync(250)
+    expect(harness.logs.some((line) => line.includes("interrupting 1 live turn"))).toBe(true)
     const cancelled = await coordinator.cancel()
     expect(cancelled.state).toBe("idle")
+    await vi.advanceTimersByTimeAsync(250)
     expect((await started).state).toBe("idle")
     expect(harness.snapshot.read()).toBeUndefined()
     // The held session was released and re-drained.
@@ -186,21 +192,20 @@ describe("restart coordinator", () => {
 
   it("a cancel during finalization does not mark the server drained", async () => {
     const harness = await makeHarness()
-    let releaseClose: (() => void) | undefined
+    const closing = Promise.withResolvers<void>()
+    const releaseClose = Promise.withResolvers<void>()
     const coordinator = harness.make({
       loadedAgentSessionIds: () => ["agent-live"],
       closeAgentSession: () =>
-        Effect.promise(
-          () =>
-            new Promise<void>((resolve) => {
-              releaseClose = resolve
-            })
-        )
+        Effect.promise(() => {
+          closing.resolve()
+          return releaseClose.promise
+        })
     })
     const started = coordinator.begin()
-    await waitFor(() => releaseClose !== undefined)
+    await closing.promise
     await coordinator.cancel()
-    releaseClose?.()
+    releaseClose.resolve()
     expect((await started).state).toBe("idle")
     expect(coordinator.isGated()).toBe(false)
     coordinator.close()
@@ -235,7 +240,8 @@ describe("restart coordinator", () => {
     const coordinator = harness.make({}, { drainedGraceMs: 20 })
     expect((await coordinator.begin()).state).toBe("drained")
     expect(coordinator.isGated()).toBe(true)
-    await waitFor(() => coordinator.state().state === "idle")
+    await vi.advanceTimersByTimeAsync(20)
+    expect(coordinator.state().state).toBe("idle")
     expect(harness.logs.some((line) => line.includes("never restarted"))).toBe(true)
     // Cancelling again is a no-op; cancelling a drained server clears the timer.
     expect((await coordinator.cancel()).state).toBe("idle")

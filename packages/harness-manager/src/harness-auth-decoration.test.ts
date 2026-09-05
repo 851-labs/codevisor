@@ -140,12 +140,15 @@ describe("harness authentication decoration", () => {
       })
     )
 
+    const probeStarted = Promise.withResolvers<void>()
+    const accountUpdated = Promise.withResolvers<void>()
     let finishProbe: (() => void) | undefined
     const probeFinished = new Promise<void>((resolve) => {
       finishProbe = resolve
     })
     const probeHarnessAuth = vi.fn(() =>
       Effect.promise(async () => {
+        probeStarted.resolve()
         await probeFinished
         return {
           state: "authenticated" as const,
@@ -172,24 +175,23 @@ describe("harness authentication decoration", () => {
       readiness: { state: "ready", path: "/usr/local/bin/gemini" }
     }
 
-    const decorated = await Promise.race([
-      manager.decorateHarnesses([harness]),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("catalog decoration waited for auth")), 250)
-      )
-    ])
+    const unsubscribe = manager.subscribe((event) => {
+      if (event.kind === "harness.account.updated") accountUpdated.resolve()
+    })
+    const decorated = await manager.decorateHarnesses([harness])
     expect(decorated[0]).toMatchObject({
       enabled: false,
       desiredEnabled: true,
       auth: { state: "checking" }
     })
-    await vi.waitFor(() => expect(probeHarnessAuth).toHaveBeenCalledOnce())
+    await probeStarted.promise
+    expect(probeHarnessAuth).toHaveBeenCalledOnce()
 
     finishProbe?.()
-    await vi.waitFor(async () => {
-      expect(await run(db.getHarnessAccount("gemini-account"))).toMatchObject({
-        authState: "authenticated"
-      })
+    await accountUpdated.promise
+    unsubscribe()
+    expect(await run(db.getHarnessAccount("gemini-account"))).toMatchObject({
+      authState: "authenticated"
     })
   })
 })

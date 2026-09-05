@@ -10,8 +10,7 @@ import {
   rateLimitEvent,
   resultMessage,
   resultWith,
-  run,
-  settle
+  run
 } from "./test-support.js"
 
 describe("Claude account usage", () => {
@@ -61,11 +60,10 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage("sdk-session-1", "claude-sonnet-4-6"))
     const created = await createPromise
     const prompt = run(created.handle.prompt("hello"))
-    await settle()
+    await fake.nextPrompt()
 
     fake.push({
       message: {
@@ -95,7 +93,7 @@ describe("ClaudeProvider", () => {
     } as never)
 
     await prompt
-    await settle()
+    await fake.drain()
 
     const update = events.find(
       (event) =>
@@ -118,12 +116,11 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
 
     const limitMessage = "You've hit your limit · resets 8pm"
     fake.push(assistantErrorMessage("rate_limit"))
@@ -163,12 +160,11 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       rateLimitEvent({
         rateLimitType: "five_hour",
@@ -202,15 +198,14 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(assistantErrorMessage("rate_limit"))
     fake.push(resultMessage("error_during_execution"))
-    await settle()
+    await fake.drain()
 
     expect(events.at(-1)).toMatchObject({
       kind: "session.updated",
@@ -223,7 +218,7 @@ describe("ClaudeProvider", () => {
       }
     })
     await vi.advanceTimersByTimeAsync(1000)
-    await settle()
+    await fake.drain()
     expect(
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     ).toHaveLength(1)

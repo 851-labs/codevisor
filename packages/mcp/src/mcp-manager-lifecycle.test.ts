@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeMcpManager } from "./mcp-manager.js"
 import {
   cleanupMcpManagerTests,
@@ -67,12 +68,29 @@ describe("MCP manager lifecycle", () => {
       transport: "http",
       url: upstream.url
     })
-    // On, then off before the background handshake can finish.
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const closed = Promise.withResolvers<void>()
+    const connect = Client.prototype.connect
+    const close = Client.prototype.close
+    vi.spyOn(Client.prototype, "connect").mockImplementation(async function (
+      this: Client,
+      ...args
+    ) {
+      entered.resolve()
+      await release.promise
+      return connect.apply(this, args)
+    })
+    vi.spyOn(Client.prototype, "close").mockImplementation(async function (this: Client) {
+      await close.call(this)
+      closed.resolve()
+    })
     await manager.update(created.id, { enabled: true })
+    await entered.promise
     const disabled = await manager.update(created.id, { enabled: false })
     expect(disabled).toMatchObject({ enabled: false })
-    // Let the abandoned handshake run its course.
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    release.resolve()
+    await closed.promise
     expect((await manager.list()).find((server) => server.id === created.id)).toMatchObject({
       enabled: false,
       connectionState: "disconnected",

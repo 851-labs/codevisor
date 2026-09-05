@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -10,7 +12,8 @@ import CodevisorProtocol
 /// does not (or nobody answers within the suspension deadline).
 @Suite("CloudHubConnection resume")
 struct CloudHubResumeTests {
-  private final class Recorder: @unchecked Sendable {
+  @Observable
+  final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
     private var receivedMessages: [Data] = []
     private var closeReasons: [CloudChannelCloseReason?] = []
@@ -26,7 +29,8 @@ struct CloudHubResumeTests {
 
   private func makeResumableHub(
     _ scripted: ScriptedCloudHub,
-    suspension: Duration = .seconds(5)
+    suspension: Duration = .seconds(70),
+    clock: TestClock
   ) -> CloudHubConnection {
     scripted.issueResumeTokens = true
     return CloudHubConnection(
@@ -36,7 +40,9 @@ struct CloudHubResumeTests {
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scripted.makeSocket() },
       readyTimeout: .seconds(2),
-      resumeSuspensionTimeout: suspension
+      resumeSuspensionTimeout: suspension,
+      sleep: clock.sleep,
+      reconnectDelay: { _ in .seconds(1) }
     )
   }
 
@@ -48,7 +54,8 @@ struct CloudHubResumeTests {
       guard let scripted, let appKey = scripted.appPublicKey else { return }
       _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
     }
-    let hub = makeResumableHub(scripted)
+    let clock = TestClock()
+    let hub = makeResumableHub(scripted, clock: clock)
     let recorder = Recorder()
 
     let channel = try await hub.openChannel(
@@ -65,14 +72,17 @@ struct CloudHubResumeTests {
     // The socket dies mid-session. Channels suspend instead of failing.
     let firstSocket = scripted.currentSocket
     firstSocket.disconnect()
-    #expect(await waitUntil { await !hub.isWelcomed })
+    await clock.waitForSleep(.seconds(1))
+    #expect(await !hub.isWelcomed)
     // A suspended send fails fast WITHOUT burning a seq.
     await #expect(throws: CloudHubConnectionError.disconnected) {
       try await channel.sendJSON(["lost": true])
     }
 
     // The run loop reconnects, presents the token, and the hub resumes.
-    #expect(await waitUntil(timeout: .seconds(10)) { await hub.isWelcomed })
+    await clock.waitForSleep(.seconds(1))
+    clock.advance(by: .seconds(1))
+    try await hub.waitUntilReady()
     #expect(recorder.closes.isEmpty)
 
     // The channel keeps flowing with a gapless seq counter.
@@ -94,7 +104,8 @@ struct CloudHubResumeTests {
       guard let scripted, let appKey = scripted.appPublicKey else { return }
       _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
     }
-    let hub = makeResumableHub(scripted)
+    let clock = TestClock()
+    let hub = makeResumableHub(scripted, clock: clock)
     let recorder = Recorder()
 
     _ = try await hub.openChannel(
@@ -109,7 +120,9 @@ struct CloudHubResumeTests {
     scripted.currentSocket.disconnect()
 
     // The reconnect gets a fresh identity → held channels die at welcome.
-    #expect(await waitUntil(timeout: .seconds(10)) { await hub.isWelcomed })
+    await clock.waitForSleep(.seconds(1))
+    clock.advance(by: .seconds(1))
+    try await hub.waitUntilReady()
     #expect(await waitUntil { recorder.closes == [nil] })
     await hub.shutdown()
   }
@@ -122,6 +135,7 @@ struct CloudHubResumeTests {
     // The first connect reaches the scripted hub; every reconnect after
     // that lands a black-hole socket that never answers the hello.
     let connects = Counter()
+    let clock = TestClock()
     let hub = CloudHubConnection(
       serverURL: URL(string: "https://cloud.example.com")!,
       credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
@@ -131,7 +145,9 @@ struct CloudHubResumeTests {
         connects.next() == 1 ? scripted.makeSocket() : FakeWebSocketConnection()
       },
       readyTimeout: .seconds(2),
-      resumeSuspensionTimeout: .milliseconds(200)
+      resumeSuspensionTimeout: .seconds(70),
+      sleep: clock.sleep,
+      reconnectDelay: { _ in .seconds(1) }
     )
     let recorder = Recorder()
 
@@ -145,12 +161,18 @@ struct CloudHubResumeTests {
     )
     scripted.currentSocket.disconnect()
 
+    await clock.waitForSleep(.seconds(70))
+    #expect(recorder.closes.isEmpty)
+    clock.advance(by: .seconds(70))
+
     // Nobody welcomes within the deadline → held channels finally fail.
-    #expect(await waitUntil(timeout: .seconds(5)) { recorder.closes == [nil] })
+    #expect(await waitUntil { recorder.closes == [nil] })
     await hub.shutdown()
   }
 
-  private final class Counter: @unchecked Sendable {
+  @Observable
+
+  final class Counter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
 

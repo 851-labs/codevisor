@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 @testable import StreamMarkdown
 
 @MainActor
@@ -268,27 +269,32 @@ struct StreamingTextAnimationTests {
 
   @Test("Activity observer follows scheduling and reset")
   func activityObserver() async {
-    let timeline = StreamingTextAnimationTimeline()
+    let clock = TestClock()
+    let timeline = StreamingTextAnimationTimeline(now: { 10 }, sleep: clock.sleep)
     var reports: [Bool] = []
-    timeline.observeActivity { reports.append($0) }
-    await Task.yield()
+    let reported = TestSignal()
+    timeline.observeActivity {
+      reports.append($0); reported.signal()
+    }
+    await reported.wait(for: 1)
     #expect(reports == [false])
 
     _ = timeline.scheduleSegments(
       characterCounts: [4],
-      at: ProcessInfo.processInfo.systemUptime
+      at: 10
     )
-    await Task.yield()
+    await reported.wait(for: 2)
     #expect(reports.last == true)
 
     timeline.reset()
-    await Task.yield()
+    await reported.wait(for: 3)
     #expect(reports.last == false)
   }
 
   @Test("Response completion waits for pending structural entrances")
   func responseCompletionBarrier() async throws {
-    let coordinator = StreamingContentAnimationCoordinator()
+    let clock = TestClock()
+    let coordinator = StreamingContentAnimationCoordinator(sleep: clock.sleep)
     coordinator.setPendingEntrance(true, sourceID: "answer.0")
     var finished = false
     let waiter = Task { @MainActor in
@@ -296,10 +302,11 @@ struct StreamingTextAnimationTests {
       finished = true
     }
 
-    for _ in 0..<5 { await Task.yield() }
+    await clock.waitForSleep(.milliseconds(1))
     #expect(!finished)
 
     coordinator.setPendingEntrance(false, sourceID: "answer.0")
+    clock.advance(by: .milliseconds(1))
     try await waiter.value
     #expect(finished)
   }

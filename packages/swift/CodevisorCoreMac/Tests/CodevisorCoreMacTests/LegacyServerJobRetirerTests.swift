@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 @testable import CodevisorCoreMac
 
 @Suite("LegacyServerJobRetirer")
@@ -40,15 +41,18 @@ struct LegacyServerJobRetirerTests {
 
   @Test("Times out a cleanup command instead of pinning startup")
   func timesOutHangingCleanup() async {
+    let clock = TestClock()
     let retirer = LegacyServerJobRetirer(
-      runner: HangingLaunchctlRunner(),
+      runner: HangingLaunchctlRunner(clock: clock),
       userID: 501,
-      commandTimeout: .milliseconds(25)
+      sleep: clock.sleep
     )
 
-    await #expect(throws: CommandRunnerError.self) {
-      try await retirer.retire()
-    }
+    let retire = Task { try await retirer.retire() }
+    await clock.waitForSleep(.seconds(5))
+    await clock.waitForSleep(.seconds(60))
+    clock.advance(by: .seconds(5))
+    await #expect(throws: CommandRunnerError.self) { try await retire.value }
   }
 }
 
@@ -92,12 +96,14 @@ private actor RecordingLaunchctlRunner: CommandRunner {
 }
 
 private actor HangingLaunchctlRunner: CommandRunner {
+  let clock: TestClock
+  init(clock: TestClock) { self.clock = clock }
   func run(
     executableURL: URL,
     arguments: [String],
     environment: [String: String]?
   ) async throws -> CommandResult {
-    try await Task.sleep(for: .seconds(5))
+    try await clock.sleep(for: .seconds(60))
     return CommandResult(standardOutput: "", standardError: "", exitCode: 0)
   }
 }
@@ -106,16 +112,22 @@ private actor HangingLaunchctlRunner: CommandRunner {
 struct ProcessCommandRunnerTests {
   @Test("Terminates a child process when its deadline expires")
   func terminatesTimedOutProcess() async {
-    let runner = ProcessCommandRunner()
-
-    await #expect(throws: CommandRunnerError.self) {
+    let started = TestSignal()
+    let clock = TestClock()
+    let runner = ProcessCommandRunner(onStart: started.signal)
+    let command = Task {
       try await runner.run(
-        executableURL: URL(fileURLWithPath: "/bin/sleep"),
-        arguments: ["5"],
+        executableURL: URL(fileURLWithPath: "/usr/bin/tail"),
+        arguments: ["-f", "/dev/null"],
         environment: nil,
-        timeout: .milliseconds(25)
+        timeout: .seconds(5),
+        sleep: clock.sleep
       )
     }
+    await started.wait()
+    await clock.waitForSleep(.seconds(5))
+    clock.advance(by: .seconds(5))
+    await #expect(throws: CommandRunnerError.self) { try await command.value }
   }
 }
 

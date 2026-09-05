@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -98,15 +99,19 @@ extension ProjectListModelTests {
     let (model, projectStore, _) = makeModel()
     let latch = Latch()
     let remoteServer = FakeServerClient(projects: [serverProject(from: remoteProject)])
-    await remoteServer.setListDelay { await latch.wait() }
+    let listStarted = TestSignal()
+    await remoteServer.setListDelay {
+      listStarted.signal(); await latch.wait()
+    }
 
     // Start a refresh against the remote machine, then switch back to
     // local while its list call is still in flight (a slow network hop).
-    model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer)
-    try await Task.sleep(nanoseconds: 20_000_000)
+    model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer, refresh: false)
+    let refresh = Task { await model.refreshFromServer() }
+    await listStarted.wait()
     model.selectServer(serverId: "local", serverClient: FakeServerClient())
     await latch.open()
-    try await Task.sleep(nanoseconds: 50_000_000)
+    await refresh.value
 
     // The stale remote response must never be filed under "local" — that
     // would put another machine's projects in the local sidebar forever.

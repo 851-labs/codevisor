@@ -1,3 +1,5 @@
+import CodevisorTestSupport
+import Observation
 import Foundation
 import Testing
 import ACPKit
@@ -10,6 +12,7 @@ import CodevisorClient
 /// welcome (no machine list — the wire shape DirectChannelHost sends), pongs
 /// pings, and runs relay envelopes through a `ScriptedRelayMachine`'s
 /// responder crypto.
+@Observable
 final class ScriptedDirectMachine: @unchecked Sendable {
   let machine: ScriptedRelayMachine
   let socket = FakeWebSocketConnection()
@@ -100,6 +103,7 @@ func makeDirectConnection(
   readyTimeout: Duration = .seconds(2),
   heartbeatInterval: Duration = .seconds(60),
   heartbeatTimeout: Duration = .seconds(5),
+  clock: TestClock = TestClock(),
   onDown: (@Sendable () -> Void)? = nil
 ) -> CloudDirectConnection {
   CloudDirectConnection(
@@ -111,7 +115,9 @@ func makeDirectConnection(
     readyTimeout: readyTimeout,
     heartbeatInterval: heartbeatInterval,
     heartbeatTimeout: heartbeatTimeout,
-    onDown: onDown
+    onDown: onDown,
+    sleep: clock.sleep,
+    now: { clock.now }
   )
 }
 
@@ -157,11 +163,13 @@ struct CloudDirectConnectionTests {
   func helloTimeout() async throws {
     let scripted = ScriptedDirectMachine()
     scripted.acceptsHello = false
-    let connection = makeDirectConnection(to: scripted, readyTimeout: .milliseconds(150))
-
-    await #expect(throws: CloudHubConnectionError.timedOut) {
-      try await connection.waitUntilReady()
-    }
+    let clock = TestClock()
+    let connection = makeDirectConnection(to: scripted, readyTimeout: .seconds(5), clock: clock)
+    let ready = Task { try await connection.waitUntilReady() }
+    await clock.waitForSleep(.seconds(5))
+    clock.advance(by: .seconds(5))
+    await #expect(throws: CloudHubConnectionError.timedOut) { try await ready.value }
+    await connection.shutdown()
   }
 
   @Test("Socket death fails channels, fires onDown once, and stays dead")
@@ -193,16 +201,21 @@ struct CloudDirectConnectionTests {
   @Test("Keepalive pongs record the direct-pipe RTT")
   func keepaliveMeasuresRtt() async throws {
     let scripted = ScriptedDirectMachine()
+    let clock = TestClock()
     let connection = makeDirectConnection(
       to: scripted,
-      heartbeatInterval: .milliseconds(20),
-      heartbeatTimeout: .seconds(2)
+      heartbeatInterval: .seconds(10),
+      heartbeatTimeout: .seconds(5),
+      clock: clock
     )
     try await connection.waitUntilReady()
     #expect(await connection.lastRttMillis == nil)
-    #expect(await waitUntil { await connection.lastRttMillis != nil })
+    await clock.waitForSleep(.seconds(10))
+    clock.advance(by: .seconds(10))
+    #expect(await waitUntil { scripted.pings == 1 })
+    await scripted.socket.receiving.wait(for: 3)
     let rtt = try #require(await connection.lastRttMillis)
-    #expect(rtt >= 0)
+    #expect(rtt == 0)
     await connection.shutdown()
   }
 
@@ -211,13 +224,20 @@ struct CloudDirectConnectionTests {
     let scripted = ScriptedDirectMachine()
     scripted.respondsToPing = false
     let downs = Recorder()
+    let clock = TestClock()
     let connection = makeDirectConnection(
       to: scripted,
-      heartbeatInterval: .milliseconds(50),
-      heartbeatTimeout: .milliseconds(80)
+      heartbeatInterval: .seconds(10),
+      heartbeatTimeout: .seconds(5),
+      clock: clock
     ) { downs.record(Data()) }
 
     try await connection.waitUntilReady()
+    await clock.waitForSleep(.seconds(10))
+    clock.advance(by: .seconds(10))
+    await clock.waitForSleep(.seconds(5))
+    #expect(downs.messages.isEmpty)
+    clock.advance(by: .seconds(5))
     #expect(await waitUntil { downs.messages.count == 1 })
     #expect(scripted.pings >= 1)
   }
@@ -238,7 +258,7 @@ struct CloudDirectConnectionTests {
     await connection.shutdown()
 
     #expect(await waitUntil { recorder.closes.count == 1 })
-    try? await Task.sleep(for: .milliseconds(50))
+    await scripted.socket.cancelled.wait()
     #expect(downs.messages.isEmpty)
   }
 }

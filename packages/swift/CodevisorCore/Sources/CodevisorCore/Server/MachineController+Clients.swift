@@ -80,7 +80,8 @@ extension MachineController {
   /// down).
   public func effectiveHTTPBaseURL(
     forMachineId machineId: String,
-    timeout: Duration = .seconds(10)
+    timeout: Duration = .seconds(10),
+    scheduler: ServerUpdateScheduler = .continuous
   ) async -> URL? {
     guard let cloud = relayMachine(forMachineId: machineId) else {
       // A cloud identity, or a configured machine already marked as
@@ -96,11 +97,11 @@ extension MachineController {
     guard let cloudProvider else { return nil }
     // The first call kicks the bridge off; poll for the published port —
     // it appears via an observable the synchronous accessor can't await.
-    let deadline = ContinuousClock.now + timeout
+    let deadline = scheduler.now() + timeout
     while true {
       if let url = cloudProvider.loopbackBaseURL(for: cloud) { return url }
-      guard ContinuousClock.now < deadline, !Task.isCancelled else { return nil }
-      try? await Task.sleep(for: .milliseconds(100))
+      guard scheduler.now() < deadline, !Task.isCancelled else { return nil }
+      try? await scheduler.sleep(.milliseconds(100))
     }
   }
 

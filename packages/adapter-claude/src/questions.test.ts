@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
-import { definition, FakeQuery, initMessage, makeProvider, run, settle } from "./test-support.js"
+import { definition, FakeQuery, initMessage, makeProvider, run } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -15,13 +15,12 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const toolInput = { command: "rm -rf build" }
     const decision = fake.options!.canUseTool!("Bash", toolInput as never, {} as never)
-    await settle()
+    await fake.drain()
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({ sessionUpdate: "question" })
     expect(asked.questions).toEqual([
@@ -43,7 +42,7 @@ describe("ClaudeProvider", () => {
 
     // Deny (and dismissal) reject the tool.
     const denied = fake.options!.canUseTool!("Edit", { file_path: "/tmp/a" } as never, {} as never)
-    await settle()
+    await fake.drain()
     const deniedAsk = events.at(-1)?.payload as Record<string, unknown>
     await run(
       created.handle.answerQuestion!(deniedAsk.questionId as string, {
@@ -65,13 +64,12 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const toolInput = { plan: "# The Plan\n\n1. Do it" }
     const decision = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
-    await settle()
+    await fake.drain()
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked).toMatchObject({ sessionUpdate: "question" })
     // No "message" line — the plan itself rides a separate plan_document.
@@ -98,7 +96,7 @@ describe("ClaudeProvider", () => {
 
     // Keeping planning denies the tool with a message that nudges more planning.
     const kept = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
-    await settle()
+    await fake.drain()
     const keptAsk = events.at(-1)?.payload as Record<string, unknown>
     await run(
       created.handle.answerQuestion!(keptAsk.questionId as string, {
@@ -120,7 +118,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -143,7 +140,7 @@ describe("ClaudeProvider", () => {
       ]
     }
     const decision = fake.options!.canUseTool!("AskUserQuestion", toolInput as never, {} as never)
-    await settle()
+    await fake.drain()
     const asked = events.at(-1)?.payload as Record<string, unknown>
     expect(asked.sessionUpdate).toBe("question")
     const questionId = asked.questionId as string
@@ -196,7 +193,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -208,7 +204,7 @@ describe("ClaudeProvider", () => {
       )
 
     const first = ask("First?")
-    await settle()
+    await fake.drain()
     const firstId = (events.at(-1)?.payload as Record<string, unknown>).questionId as string
     await run(created.handle.answerQuestion!(firstId, { outcome: "cancelled" }))
     await expect(first).resolves.toEqual({
@@ -225,7 +221,7 @@ describe("ClaudeProvider", () => {
     ).resolves.toMatchObject({ behavior: "allow" })
 
     const second = ask("Second?")
-    await settle()
+    await fake.drain()
     await run(created.handle.cancel)
     await expect(second).resolves.toMatchObject({ behavior: "deny" })
     expect(events.at(-1)?.payload).toMatchObject({

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -69,7 +70,8 @@ extension MachineControllerTests {
       workspaces: [workspaceRecord],
       panes: [placeholderRecord]
     )
-    fake.configurePanePromotionDelay(nanoseconds: 250_000_000)
+    fake.panePromotionGate = TestSignal()
+    defer { fake.panePromotionGate?.signal() }
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -123,11 +125,13 @@ extension MachineControllerTests {
       workspaceId: workspaceId,
       client: fake
     )
+    await fake.panePromotionStarted.wait()
     // This response is deliberately captured while the server still has
     // revision 1 / New Tab. It must not overwrite the local renderer.
     await workspaceSync.refreshFromServer(serverId: "local", client: fake)
     #expect(repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId)
 
+    fake.panePromotionGate?.signal()
     try await waitForSync {
       fake.workspacePanes?.first?.paneType == "chat"
         && repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId
@@ -176,7 +180,8 @@ extension MachineControllerTests {
       projects: [], sessions: [], workspaces: [workspaceRecord],
       panes: [firstRecord, secondRecord]
     )
-    fake.configurePaneCloseDelay(nanoseconds: 250_000_000)
+    fake.paneCloseGate = TestSignal()
+    defer { fake.paneCloseGate?.signal() }
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -217,15 +222,17 @@ extension MachineControllerTests {
     local.selectedCenterTabId = local.centerTabs[0].id
     repository.save(local)
     sync.deletePane(id: secondId, workspaceId: workspaceId, client: fake)
+    await fake.paneCloseStarted.wait()
     await sync.refreshFromServer(serverId: "local", client: fake)
     #expect(repository.workspace(id: workspaceId)?.tabId(containingPane: secondId) == nil)
+    fake.paneCloseGate?.signal()
     try await waitForSync {
       fake.workspacePanes?.contains(where: { UUID(uuidString: $0.id) == secondId }) == false
     }
 
     // Closing the remaining renderer is an in-place optimistic reset and
     // the server confirms that exact same identity.
-    fake.configurePaneCloseDelay(nanoseconds: 0)
+    fake.paneCloseGate = nil
     var final = try #require(repository.workspace(id: workspaceId))
     let groupId = try #require(final.centerTabs[0].root.allGroups.first?.id)
     var replacement: PaneDescriptorState?
@@ -268,7 +275,8 @@ extension MachineControllerTests {
     let fake = SyncFakeServerClient(
       projects: [], sessions: [], workspaces: [workspaceRecord], panes: []
     )
-    fake.configurePaneUpsertDelay(nanoseconds: 200_000_000)
+    fake.paneUpsertGate = TestSignal()
+    defer { fake.paneUpsertGate?.signal() }
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -304,8 +312,9 @@ extension MachineControllerTests {
       client: fake
     )
 
-    try await Task.sleep(nanoseconds: 30_000_000)
+    await fake.paneUpsertStarted.wait()
     #expect(fake.paneMutationLog == ["upsert"])
+    fake.paneUpsertGate?.signal()
     try await waitForSync {
       fake.paneMutationLog == ["upsert", "close"]
         && fake.workspacePanes?.first?.id.caseInsensitiveCompare(paneId.uuidString)
@@ -314,11 +323,7 @@ extension MachineControllerTests {
   }
 
   func waitForSync(_ predicate: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if predicate() { return }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    Issue.record("Timed out waiting for sync condition")
+    await awaitObserved(predicate)
   }
 
   // The prepareSelectedMachine + LocalCodevisorServer integration tests

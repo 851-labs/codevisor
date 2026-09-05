@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import Observation
+import CodevisorTestSupport
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
 
@@ -20,6 +22,7 @@ struct MachineControllerLocalServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in Process() }
     )
     let (controller, _, _) = makeController(client: client, localServer: localServer)
@@ -41,6 +44,7 @@ struct MachineControllerLocalServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         client.acceptBoot(request.bootId)
         return Process()
@@ -49,7 +53,6 @@ struct MachineControllerLocalServerTests {
     let (controller, _, _) = makeController(client: client, localServer: localServer)
 
     await controller.prepareMachine("local")
-    try await Task.sleep(nanoseconds: 30_000_000)
     controller.stopEventSync()
 
     #expect(localServer.state == .started)
@@ -63,6 +66,7 @@ struct MachineControllerLocalServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in Process() }
     )
     let (controller, _, _) = makeController(client: client, localServer: localServer)
@@ -100,11 +104,7 @@ struct MachineControllerLocalServerTests {
   }
 
   private func waitForSync(_ predicate: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if predicate() { return }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    Issue.record("Timed out waiting for sync condition")
+    await awaitObserved(predicate)
   }
 }
 
@@ -112,6 +112,7 @@ struct MachineControllerLocalServerTests {
 /// server, or unhealthy on the first probe to force a fresh launch.
 /// (Local copy of the fake in CodevisorCoreTests' MachineControllerTests —
 /// it is private to that file.)
+@Observable
 private final class RescanCountingClient: CodevisorServerClienting, @unchecked Sendable {
   private let lock = NSLock()
   private var _rescans = 0

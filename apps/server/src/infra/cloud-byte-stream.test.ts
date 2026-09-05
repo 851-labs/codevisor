@@ -163,43 +163,41 @@ describe("cloud byte stream loopback connector", () => {
   })
 
   it("forwards exact bytes, obeys outbound credit, and propagates FIN", async () => {
-    const target = await listen()
+    const socket = new FakeLoopbackSocket()
     const channel = new FakeChannel()
-    byteStreamChannelHandler(target.url, () => undefined)(channel)
-    const socket = await target.socket
-    cleanup.push(async () => {
-      socket.destroy()
-    })
-
-    await vi.waitFor(() => expect(channel.grants).toEqual([BYTE_STREAM_INITIAL_CREDIT_BYTES]))
+    byteStreamChannelHandler(
+      "http://127.0.0.1:4321",
+      () => undefined,
+      () => socket as unknown as Socket
+    )(channel)
+    socket.emit("connect")
+    expect(channel.grants).toEqual([BYTE_STREAM_INITIAL_CREDIT_BYTES])
     expect(channel.deferred).toBe(true)
 
-    const received: Buffer[] = []
-    socket.on("data", (data) => received.push(Buffer.from(data)))
     const request = new Uint8Array([0, 1, 2, 253, 254, 255])
     const requestCost = byteStreamSealedBytes(request.byteLength)
     channel.onBytes?.(request, requestCost)
-    await vi.waitFor(() => expect(Buffer.concat(received)).toEqual(Buffer.from(request)))
-    await vi.waitFor(() => expect(channel.grants).toContain(requestCost))
+    expect(socket.writes).toEqual([request])
+    expect(channel.grants).toContain(requestCost)
 
     const response = Buffer.from(
       "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nlive\r\n"
     )
-    socket.write(response)
-    await new Promise((resolve) => setImmediate(resolve))
+    socket.emit("data", response)
     expect(channel.sent).toEqual([])
 
     channel.onCredit?.(byteStreamSealedBytes(response.byteLength))
-    await vi.waitFor(() => expect(channel.sent).toEqual([new Uint8Array(response)]))
+    expect(channel.sent).toEqual([new Uint8Array(response)])
 
-    socket.end()
-    await new Promise((resolve) => setImmediate(resolve))
+    socket.emit("end")
     expect(channel.sent).toHaveLength(1)
     channel.onCredit?.(byteStreamSealedBytes(0))
-    await vi.waitFor(() => expect(channel.sent.at(-1)).toEqual(new Uint8Array()))
+    expect(channel.sent.at(-1)).toEqual(new Uint8Array())
 
     channel.onBytes?.(new Uint8Array(), byteStreamSealedBytes(0))
-    await vi.waitFor(() => expect(channel.closes).toContain("done"))
+    expect(socket.ended).toBe(true)
+    socket.emit("close", false)
+    expect(channel.closes).toContain("done")
   })
 
   it("destroys the local socket when the relay peer disappears", async () => {

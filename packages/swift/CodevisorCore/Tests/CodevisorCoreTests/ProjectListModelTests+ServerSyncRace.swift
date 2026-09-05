@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -91,9 +92,8 @@ extension ProjectListModelTests {
     await sessionSnapshotCaptured.wait()
 
     await sessionUpsertRelease.open()
-    try await waitUntilAsync {
-      await fakeServer.hasUpsertedSession(id: session.id)
-    }
+    await fakeServer.sessionUpserted.wait()
+    #expect(await fakeServer.hasUpsertedSession(id: session.id))
     await projectListRelease.open()
     _ = await staleRefresh.value
     #expect(model.sessions.contains { $0.id == session.id })
@@ -104,6 +104,7 @@ extension ProjectListModelTests {
 }
 
 private actor ServerSyncRaceClient: CodevisorServerClienting {
+  nonisolated let sessionUpserted = TestSignal()
   private var projects: [ServerProject]
   private var sessions: [ServerSession] = []
   private var upsertedSessionIDs: Set<String> = []
@@ -187,6 +188,7 @@ private actor ServerSyncRaceClient: CodevisorServerClienting {
     if let sessionUpsertDelay { await sessionUpsertDelay() }
     let remote = serverSession(from: session)
     upsertedSessionIDs.insert(remote.id)
+    sessionUpserted.signal()
     sessions.removeAll { $0.id == remote.id }
     sessions.append(remote)
     return remote

@@ -1,5 +1,5 @@
 import { parseExpression } from "@babel/parser"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
 import {
   BROWSER_CURSOR_PALETTE_COUNT,
@@ -33,6 +33,7 @@ const fakeRuntime = (
 }
 
 describe("browser cursor presentation", () => {
+  afterEach(() => vi.useRealTimers())
   it("ships the page overlay as a self-contained function expression", () => {
     expect(() => parseExpression(pointerOverlaySource)).not.toThrow()
     expect(pointerOverlaySource).not.toContain("import(")
@@ -105,9 +106,14 @@ describe("browser cursor presentation", () => {
       result: { value: { duration: 120, visible: true } }
     }))
     const cursor = makeBrowserCursor(runtime, page, { session: "s", color: 1, side: 1 }, true)
-    const started = Date.now()
-    await cursor.move(40, 50)
-    expect(Date.now() - started).toBeGreaterThanOrEqual(100)
+    vi.useFakeTimers()
+    const completed = vi.fn()
+    const movement = cursor.move(40, 50).then(completed)
+    await vi.advanceTimersByTimeAsync(119)
+    expect(completed).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await movement
+    expect(completed).toHaveBeenCalledOnce()
     expect(calls).toHaveLength(1)
     expect(calls[0]!.method).toBe("Runtime.evaluate")
     expect(calls[0]!.expression).toContain('"kind":"move"')

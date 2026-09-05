@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import ACPKit
 import Foundation
 
@@ -5,6 +7,7 @@ import Foundation
 
 /// A fake server whose event stream and list endpoints are test-driven.
 /// Shared by the MachineController suites (sync, panes, self-updates).
+@Observable
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   var _infoCloudDeviceId: String?
   /// Tests that need capability responses (or to delay them) install one.
@@ -24,9 +27,12 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   private var nextEventId = 1
   private var _listSessionCallCount = 0
   private var _workspaceSnapshotCallCount = 0
-  private var _paneUpsertDelayNanoseconds: UInt64 = 0
-  private var _panePromotionDelayNanoseconds: UInt64 = 0
-  private var _paneCloseDelayNanoseconds: UInt64 = 0
+  var paneUpsertGate: TestSignal?
+  let paneUpsertStarted = TestSignal()
+  var panePromotionGate: TestSignal?
+  let panePromotionStarted = TestSignal()
+  var paneCloseGate: TestSignal?
+  let paneCloseStarted = TestSignal()
   private var _paneMutationLog: [String] = []
 
   init(
@@ -60,18 +66,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
 
   func setPanes(_ panes: [ServerWorkspacePane]) {
     lock.withLock { _panes = panes }
-  }
-
-  func configurePanePromotionDelay(nanoseconds: UInt64) {
-    lock.withLock { _panePromotionDelayNanoseconds = nanoseconds }
-  }
-
-  func configurePaneUpsertDelay(nanoseconds: UInt64) {
-    lock.withLock { _paneUpsertDelayNanoseconds = nanoseconds }
-  }
-
-  func configurePaneCloseDelay(nanoseconds: UInt64) {
-    lock.withLock { _paneCloseDelayNanoseconds = nanoseconds }
   }
 
   var listSessionCallCount: Int { lock.withLock { _listSessionCallCount } }
@@ -143,11 +137,12 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
   func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { lock.withLock { _panes } }
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
-    let delay = lock.withLock {
+    let gate = lock.withLock {
       _paneMutationLog.append("upsert")
-      return _paneUpsertDelayNanoseconds
+      return paneUpsertGate
     }
-    if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+    paneUpsertStarted.signal()
+    await gate?.wait()
     return lock.withLock { () -> ServerWorkspacePane? in
       guard _panes != nil else { return nil }
       _panes?.removeAll { $0.id.caseInsensitiveCompare(pane.id) == .orderedSame }
@@ -160,8 +155,9 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     _ pane: ServerWorkspacePane,
     session: ChatSession
   ) async throws -> ServerWorkspacePanePromotion? {
-    let delay = lock.withLock { _panePromotionDelayNanoseconds }
-    if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+    let gate = lock.withLock { panePromotionGate }
+    panePromotionStarted.signal()
+    await gate?.wait()
     return lock.withLock {
       guard
         let paneIndex = _panes?.firstIndex(where: {
@@ -191,11 +187,12 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
 
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
-    let delay = lock.withLock {
+    let gate = lock.withLock {
       _paneMutationLog.append("close")
-      return _paneCloseDelayNanoseconds
+      return paneCloseGate
     }
-    if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+    paneCloseStarted.signal()
+    await gate?.wait()
     return lock.withLock { () -> ServerWorkspacePane? in
       guard let panes = _panes else { return nil }
       let workspacePaneIndices = panes.indices.filter {

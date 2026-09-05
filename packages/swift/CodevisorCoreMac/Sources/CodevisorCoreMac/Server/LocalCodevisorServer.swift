@@ -89,6 +89,8 @@ public final class LocalCodevisorServer: LocalServerControlling {
   /// `APP_UPDATE_HANDOFF_EXIT_CODE` in apps/server/src/main.ts.
   public static let updateHandoffExitStatus: Int32 = 85
 
+  @ObservationIgnored var startupScheduler: LocalServerScheduler = .continuous
+
   public init(
     client: any CodevisorServerClienting,
     allowsDevelopmentLaunch: Bool = false,
@@ -296,7 +298,7 @@ public final class LocalCodevisorServer: LocalServerControlling {
         "ensureRunning: launched app-owned server pid \(launched.processIdentifier) boot \(bootId) (\(clock.lap()) ms)"
       )
       step("wait for app-owned server")
-      return await waitUntilHealthy(process: launched, expectedBootId: bootId)
+      return await waitUntilHealthy(process: launched, expectedBootId: bootId, scheduler: startupScheduler)
     } catch {
       activeBootId = nil
       return fail("Codevisor server could not be launched: \(error)")

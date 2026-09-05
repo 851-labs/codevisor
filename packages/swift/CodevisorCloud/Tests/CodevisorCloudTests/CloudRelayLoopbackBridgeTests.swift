@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import CodevisorClient
 import Foundation
 import Network
@@ -53,12 +55,6 @@ private final class RawTCPClient: @unchecked Sendable {
   }
 
   func readExactly(_ count: Int) async throws -> Data {
-    let timeout = Task { [connection] in
-      try? await Task.sleep(for: .seconds(3))
-      guard !Task.isCancelled else { return }
-      connection.cancel()
-    }
-    defer { timeout.cancel() }
     while buffer.count < count {
       guard let chunk = try await receiveChunk() else { throw URLError(.badServerResponse) }
       buffer.append(chunk)
@@ -69,12 +65,6 @@ private final class RawTCPClient: @unchecked Sendable {
   }
 
   func waitForEOF() async throws {
-    let timeout = Task { [connection] in
-      try? await Task.sleep(for: .seconds(3))
-      guard !Task.isCancelled else { return }
-      connection.cancel()
-    }
-    defer { timeout.cancel() }
     while let chunk = try await receiveChunk() {
       buffer.append(chunk)
     }
@@ -116,7 +106,8 @@ private final class RawTCPClient: @unchecked Sendable {
 
 @Suite("CloudRelayLoopbackBridge")
 struct CloudRelayLoopbackBridgeTests {
-  private final class ScriptedByteMachine: @unchecked Sendable {
+  @Observable
+  final class ScriptedByteMachine: @unchecked Sendable {
     private struct OpenPayload: Decodable {
       struct Params: Decodable {
         var service: String
@@ -233,7 +224,9 @@ struct CloudRelayLoopbackBridgeTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scriptedMachine.hub.socket },
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     return (
       CloudRelayLoopbackBridge(
@@ -330,7 +323,7 @@ struct CloudRelayLoopbackBridgeTests {
     try await client.connect()
     let request = Data("GET /finite HTTP/1.1\r\nHost: remote\r\n\r\n".utf8)
     try await client.send(request, isComplete: true)
-    try await Task.sleep(for: .milliseconds(100))
+    #expect(await waitUntil { machine.channelCount == 1 && !machine.credits.isEmpty })
     #expect(machine.receivedBytes.isEmpty)
 
     try machine.grant(

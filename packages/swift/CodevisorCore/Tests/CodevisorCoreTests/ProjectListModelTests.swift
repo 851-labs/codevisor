@@ -162,8 +162,7 @@ struct ProjectListModelTests {
     )
     // The client knows of nothing unseen, so this read sends nothing at
     // all — it cannot consume the newer tip it has not rendered yet.
-    model.markSessionRead(session.id, serverId: session.serverId)
-    try await Task.sleep(for: .milliseconds(20))
+    #expect(model.markSessionRead(session.id, serverId: session.serverId) == nil)
     #expect(await fakeServer.snapshot().readRequests.isEmpty)
 
     await model.refreshFromServer()
@@ -247,8 +246,7 @@ struct ProjectListModelTests {
     // normal authoritative copy replaces the optimistic one without a
     // duplicate.
     await projectUpload.open()
-    try await waitUntilAsync {
-      let snapshot = await fakeServer.snapshot()
+    await fakeServer.waitForSnapshot { snapshot in
       return snapshot.upsertedProjectIDs.contains(project.id.uuidString)
     }
     await model.refreshFromServer()
@@ -286,8 +284,7 @@ struct ProjectListModelTests {
     #expect(model.sessions.first { $0.id == session.id }?.isArchived == true)
 
     await archiveUpload.open()
-    try await waitUntilAsync {
-      let snapshot = await fakeServer.snapshot()
+    await fakeServer.waitForSnapshot { snapshot in
       return snapshot.upsertedSessionIDs.contains(session.id.uuidString)
     }
     await model.refreshFromServer()
@@ -330,8 +327,7 @@ struct ProjectListModelTests {
     // Once the DELETE lands, the next snapshot confirms the deletion and
     // the tombstone retires with it.
     await deleteUpload.open()
-    try await waitUntilAsync {
-      let snapshot = await fakeServer.snapshot()
+    await fakeServer.waitForSnapshot { snapshot in
       return snapshot.deletedProjectIDs.contains(project.id.uuidString)
     }
     await model.refreshFromServer()
@@ -357,13 +353,11 @@ struct ProjectListModelTests {
     let model = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: projectStore),
       sessionRepository: DefaultSessionRepository(store: sessionStore),
-      serverClient: server,
       legacyMigrationStore: migrationStore
     )
 
-    try await waitUntil {
-      migrationStore.loadData(forKey: "server-authority-v1-local") != nil
-    }
+    model.selectServer(serverId: "local", serverClient: server, refresh: false)
+    await model.refreshFromServer()
     var snapshot = await server.snapshot()
     #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
     #expect(snapshot.upsertedSessionIDs == [session.id.uuidString])

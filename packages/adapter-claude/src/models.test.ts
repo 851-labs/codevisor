@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import {
   definition,
@@ -6,9 +6,14 @@ import {
   initMessage,
   makeProvider,
   run,
-  settle,
   systemMessage
 } from "./test-support.js"
+
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -25,7 +30,7 @@ describe("ClaudeProvider", () => {
 
     const created = await run(provider.createSession(definition, "/tmp", emit))
     fake.push(initMessage("sdk-session-1", "claude-fable-5\u001b[1m"))
-    await settle()
+    await fake.drain()
     await run(created.handle.setConfigOption("speed", "fast"))
 
     const updated = events.at(-1)?.payload as {
@@ -47,7 +52,7 @@ describe("ClaudeProvider", () => {
 
     const created = await run(provider.createSession(definition, "/tmp", emit))
     fake.push(initMessage("sdk-session-1", "claude-not-in-picker"))
-    await settle()
+    await fake.drain()
     await run(created.handle.setConfigOption("speed", "fast"))
 
     const updated = events.at(-1)?.payload as {
@@ -61,23 +66,17 @@ describe("ClaudeProvider", () => {
 
   it("waits out a slow model list when the caller grants a budget", async () => {
     const fake = new FakeQuery()
-    // Slower than instant, well within the granted inspection budget — the
-    // race must use the caller's timeout, not the 3s interactive default.
-    vi.spyOn(fake, "supportedModels").mockImplementation(
-      () =>
-        new Promise((resolve) =>
-          setTimeout(
-            () => resolve([{ description: "", displayName: "Sonnet", value: "sonnet" }]),
-            10
-          )
-        )
-    )
+    const models = Promise.withResolvers<SupportedModels>()
+    vi.spyOn(fake, "supportedModels").mockReturnValue(models.promise)
     const provider = makeProvider(fake)
-    const created = await run(
+    const pending = run(
       provider.createSession(definition, "/tmp", async () => {}, undefined, undefined, {
         modelListTimeoutMs: 5000
       })
     )
+    await vi.advanceTimersByTimeAsync(4000)
+    models.resolve([{ description: "", displayName: "Sonnet", value: "sonnet" }])
+    const created = await pending
     const model = created.metadata.configOptions.find((option) => option.id === "model")
     expect(model?.options).toEqual([{ name: "Sonnet", value: "sonnet" }])
   })
@@ -102,7 +101,7 @@ describe("ClaudeProvider", () => {
         value: "sonnet"
       }
     ])
-    await settle()
+    await fake.drain()
 
     expect(configUpdates(events)).toEqual([
       {
@@ -131,13 +130,13 @@ describe("ClaudeProvider", () => {
     const events: Array<RuntimeEvent> = []
     await createWithLostModelListRace(fake, events)
     fake.push(initMessage("sdk-session-1", "claude-opus-4-8"))
-    await settle()
+    await fake.drain()
 
     deliverModels([
       { description: "", displayName: "Fable", value: "claude-fable-5" },
       { description: "", displayName: "Opus (1M context)", value: "opus[1m]" }
     ])
-    await settle()
+    await fake.drain()
 
     expect(configUpdates(events)).toEqual([
       expect.objectContaining({
@@ -156,7 +155,7 @@ describe("ClaudeProvider", () => {
     await run(created.handle.close)
 
     deliverModels([{ description: "", displayName: "Sonnet", value: "sonnet" }])
-    await settle()
+    await fake.drain()
 
     expect(configUpdates(events)).toEqual([])
   })
@@ -182,7 +181,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -193,7 +191,7 @@ describe("ClaudeProvider", () => {
         original_model: "claude-fable-5"
       })
     )
-    await settle()
+    await fake.drain()
 
     const updates = events
       .filter((event) => event.kind === "session.updated")
@@ -228,7 +226,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -238,7 +235,7 @@ describe("ClaudeProvider", () => {
         original_model: "claude-fable-5"
       })
     )
-    await settle()
+    await fake.drain()
 
     expect(events.map((event) => event.payload)).toContainEqual({
       modelFallback: {
@@ -258,7 +255,6 @@ describe("ClaudeProvider", () => {
     }
 
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -293,7 +289,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push({ ...(initMessage() as object), fast_mode_state: "on" } as never)
     const created = await createPromise
 
@@ -323,21 +318,16 @@ const stallModelList = (fake: FakeQuery): ((models: SupportedModels) => void) =>
   return (models) => deliver?.(models)
 }
 
-/// Creates a session whose model-list race is guaranteed lost (1ms budget),
-/// recording every runtime event into `events`.
-const createWithLostModelListRace = (fake: FakeQuery, events: Array<RuntimeEvent>) =>
-  run(
-    makeProvider(fake).createSession(
-      definition,
-      "/tmp",
-      async (event) => {
-        events.push(event)
-      },
-      undefined,
-      undefined,
-      { modelListTimeoutMs: 1 }
-    )
+/// Pause the model response and advance the full startup budget explicitly.
+const createWithLostModelListRace = async (fake: FakeQuery, events: Array<RuntimeEvent>) => {
+  const pending = run(
+    makeProvider(fake).createSession(definition, "/tmp", async (event) => {
+      events.push(event)
+    })
   )
+  await vi.advanceTimersByTimeAsync(3000)
+  return pending
+}
 
 const configUpdates = (events: ReadonlyArray<RuntimeEvent>): Array<Record<string, unknown>> =>
   events

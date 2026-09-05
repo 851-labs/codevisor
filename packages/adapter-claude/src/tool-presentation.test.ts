@@ -8,7 +8,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -25,12 +24,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       streamEvent({
         content_block: { id: "task-1", name: "Task", type: "tool_use" },
@@ -65,12 +63,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("look it up"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       streamEvent({
         content_block: { id: "ws-1", name: "WebSearch", type: "tool_use" },
@@ -137,12 +134,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("look it up"))
-    await settle()
+    await fake.nextPrompt()
     // The WebSearch tool_result is a plain string with an embedded Links array
     // (verbatim shape from the Claude CLI).
     const resultText =

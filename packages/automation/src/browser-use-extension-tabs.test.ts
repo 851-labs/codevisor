@@ -1,15 +1,17 @@
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { once } from "node:events"
 import { rmSync, mkdtempSync, readFileSync } from "node:fs"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import WebSocket, { WebSocketServer } from "ws"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
@@ -17,6 +19,7 @@ describe("Browser Use extension tab lifecycle", () => {
   it("prepares an unpacked extension for the active development server", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-relay-config-"))
     directories.push(directory)
+    observeCdp()
     const provider = makeBrowserUseProvider(directory)
     try {
       provider.configureExtensionRelay("http://127.0.0.1:60704")
@@ -33,6 +36,7 @@ describe("Browser Use extension tab lifecycle", () => {
   it("waits for a newly created extension tab to become discoverable", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-new-tab-"))
     directories.push(directory)
+    observeCdp()
     const provider = makeBrowserUseProvider(directory)
     const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await once(relay, "listening")
@@ -84,7 +88,7 @@ describe("Browser Use extension tab lifecycle", () => {
           result = { text: "extension clipboard" }
         }
         if (request.method === "Codevisor.armDownload") {
-          setTimeout(() => {
+          {
             client.send(
               JSON.stringify({
                 method: "Browser.downloadWillBegin",
@@ -108,7 +112,7 @@ describe("Browser Use extension tab lifecycle", () => {
                 }
               })
             )
-          }, 0)
+          }
         }
       }
       client.send(JSON.stringify({ id: request.id, result }))
@@ -171,6 +175,7 @@ describe("Browser Use extension tab lifecycle", () => {
   it("reattaches an extension tab after detach events and stale-session races", async () => {
     const directory = mkdtempSync(join(tmpdir(), "codevisor-browser-session-recovery-"))
     directories.push(directory)
+    const cdp = observeCdp()
     const provider = makeBrowserUseProvider(directory)
     const relay = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await once(relay, "listening")
@@ -251,6 +256,7 @@ describe("Browser Use extension tab lifecycle", () => {
       expect((await evaluate()).isError).not.toBe(true)
       expect(attachCount).toBe(1)
 
+      const detached = cdp.event("Target.detachedFromTarget")
       await new Promise<void>((resolve, reject) => {
         client.send(
           JSON.stringify({
@@ -260,7 +266,7 @@ describe("Browser Use extension tab lifecycle", () => {
           (cause) => (cause == null ? resolve() : reject(cause))
         )
       })
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await detached
 
       const detachEvents = await provider.invoke(context, "cdp.readEvents", {
         afterSequence: 0,

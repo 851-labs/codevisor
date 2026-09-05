@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -432,16 +433,16 @@ struct DefaultModelSelectionTests {
 actor FetchGate {
   private var continuation: CheckedContinuation<Void, Never>?
   private var released = false
-  private(set) var hasWaiter = false
+  private let started = TestSignal()
 
   func wait() async {
-    hasWaiter = true
+    started.signal()
     if released { return }
     await withCheckedContinuation { self.continuation = $0 }
   }
 
   func awaitWaiter() async {
-    while !hasWaiter { await Task.yield() }
+    await started.wait()
   }
 
   func release() {

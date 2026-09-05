@@ -1,12 +1,14 @@
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { rmSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
@@ -83,6 +85,7 @@ describe("Browser Use pointer and tab lifecycle", () => {
     directories.push(directory)
     const previousHeadless = process.env.CODEVISOR_BROWSER_HEADLESS
     process.env.CODEVISOR_BROWSER_HEADLESS = "1"
+    const cdp = observeCdp()
     const provider = makeBrowserUseProvider(directory)
     try {
       if (provider.status().backend === "missing") return
@@ -102,6 +105,10 @@ describe("Browser Use pointer and tab lifecycle", () => {
       expect(keptId).toBeDefined()
       expect(scratchId).toBeDefined()
 
+      const targetClosed = cdp.event(
+        "Target.targetDestroyed",
+        (params) => params.targetId === scratchId
+      )
       const finalized = await provider.invoke(context, "finalizeTabs", {
         native: true,
         keepIds: [keptId]
@@ -113,18 +120,12 @@ describe("Browser Use pointer and tab lifecycle", () => {
         released: []
       })
 
-      // Chrome publishes a closed target's removal shortly after Target.closeTarget resolves.
-      const deadline = Date.now() + 5_000
-      let remaining: string[] = []
-      do {
-        remaining = (
-          JSON.parse(text(await provider.invoke(context, "tabs", { action: "list" }))) as {
-            tabs: Array<{ id: string }>
-          }
-        ).tabs.map((tab) => tab.id)
-        if (!remaining.includes(scratchId!)) break
-        await new Promise((resolve) => setTimeout(resolve, 50))
-      } while (Date.now() < deadline)
+      await targetClosed
+      const remaining = (
+        JSON.parse(text(await provider.invoke(context, "tabs", { action: "list" }))) as {
+          tabs: Array<{ id: string }>
+        }
+      ).tabs.map((tab) => tab.id)
       expect(remaining).toContain(keptId)
       expect(remaining).not.toContain(scratchId)
     } finally {

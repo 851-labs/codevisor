@@ -27,6 +27,8 @@ public actor CloudDirectConnection {
   private let deviceOS: String
   private let appVersion: String?
   private let webSocketTransport: any ServerWebSocketTransport
+  private let sleep: @Sendable (Duration) async throws -> Void
+  private let now: @Sendable () -> ContinuousClock.Instant
   private let readyTimeout: Duration
   private let heartbeatInterval: Duration
   private let heartbeatTimeout: Duration
@@ -96,8 +98,12 @@ public actor CloudDirectConnection {
     readyTimeout: Duration = .seconds(5),
     heartbeatInterval: Duration = .seconds(10),
     heartbeatTimeout: Duration = .seconds(5),
-    onDown: (@Sendable () -> Void)? = nil
+    onDown: (@Sendable () -> Void)? = nil,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
   ) {
+    self.sleep = sleep
+    self.now = now
     self.directURL = directURL
     self.machineDeviceId = machineDeviceId
     self.machinePublicKey = machinePublicKey
@@ -140,8 +146,9 @@ public actor CloudDirectConnection {
     let id = waiterSeq
     waiterSeq += 1
     let timeout = readyTimeout
+    let sleep = sleep
     let timeoutTask = Task { [weak self] in
-      try? await Task.sleep(for: timeout)
+      try? await sleep(timeout)
       await self?.expireWaiter(id: id)
     }
     defer { timeoutTask.cancel() }
@@ -273,7 +280,7 @@ public actor CloudDirectConnection {
         }
       case "pong":
         if let pingSentAt {
-          lastRttMillis = Int(pingSentAt.duration(to: .now) / .milliseconds(1))
+          lastRttMillis = Int(pingSentAt.duration(to: now()) / .milliseconds(1))
           self.pingSentAt = nil
         }
         pongDeadlineTask?.cancel()
@@ -293,7 +300,7 @@ public actor CloudDirectConnection {
     heartbeatTask?.cancel()
     heartbeatTask = Task { [weak self, heartbeatInterval] in
       while !Task.isCancelled {
-        try? await Task.sleep(for: heartbeatInterval)
+        try? await self?.sleep(heartbeatInterval)
         guard !Task.isCancelled, let self else { return }
         await self.sendKeepalivePing()
       }
@@ -309,11 +316,11 @@ public actor CloudDirectConnection {
       var t = "ping"
     }
     pongDeadlineTask = Task { [weak self, heartbeatTimeout] in
-      try? await Task.sleep(for: heartbeatTimeout)
+      try? await self?.sleep(heartbeatTimeout)
       guard !Task.isCancelled else { return }
       await self?.expireHeartbeat()
     }
-    pingSentAt = .now
+    pingSentAt = now()
     do {
       try enqueueSend(.string(String(decoding: try encoder.encode(Ping()), as: UTF8.self)))
     } catch {

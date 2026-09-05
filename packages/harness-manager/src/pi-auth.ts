@@ -30,6 +30,7 @@ interface InternalFlow {
 }
 
 export interface PiAuthManagerConfig {
+  readonly onFlowChanged?: (flow: PiAuthProviderFlow) => void
   readonly resolveEnv: () => Promise<NodeJS.ProcessEnv>
   readonly providers?: ReadonlyArray<Provider>
 }
@@ -106,6 +107,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     flow.revision += 1
     for (const wake of flow.waiters) wake()
     flow.waiters.clear()
+    config.onFlowChanged?.(publicFlow(flow))
   }
 
   const waitForUpdate = async (

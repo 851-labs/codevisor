@@ -54,11 +54,12 @@ extension CloudHubConnection {
       var t = "ping"
     }
     awaitingPongOnSocketID = expectedSocketID
-    pingSentAt = .now
+    pingSentAt = now()
     heartbeatTimeoutTask?.cancel()
     let timeout = heartbeatTimeout
+    let sleep = sleep
     heartbeatTimeoutTask = Task { [weak self] in
-      try? await Task.sleep(for: timeout)
+      try? await sleep(timeout)
       guard !Task.isCancelled else { return }
       await self?.expireHeartbeat(on: expectedSocketID)
     }
@@ -72,7 +73,7 @@ extension CloudHubConnection {
   func receivePong() {
     guard awaitingPongOnSocketID == socketID else { return }
     if let pingSentAt {
-      lastRttMillis = Int(pingSentAt.duration(to: .now) / .milliseconds(1))
+      lastRttMillis = Int(pingSentAt.duration(to: now()) / .milliseconds(1))
       self.pingSentAt = nil
       Log.cloud.debug("Relay RTT \(self.lastRttMillis ?? -1, privacy: .public)ms")
     }

@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+import Observation
+import CodevisorTestSupport
 @testable import CodevisorUI
 
 @Suite("Markdown document loading", .timeLimit(.minutes(1)))
@@ -18,6 +20,7 @@ struct MarkdownDocumentModelTests {
     #expect(document.isLoading)
     #expect(!document.showsLoadingProgress)
 
+    let progress = document.progressTask
     reads.succeed(Data("# Audit".utf8))
     await load.value
     #expect(document.content?.text == "# Audit")
@@ -26,7 +29,7 @@ struct MarkdownDocumentModelTests {
 
     // Even a timer that ignores cancellation cannot show progress afterward.
     delay.succeed(())
-    await Task.yield()
+    await progress?.value
     #expect(!document.showsLoadingProgress)
   }
 
@@ -131,16 +134,13 @@ struct MarkdownDocumentModelTests {
   }
 
   private func waitUntil(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(2)
-    while !condition() {
-      try #require(ContinuousClock.now < deadline, "Timed out waiting for loading state")
-      try await Task.sleep(for: .milliseconds(1))
-    }
+    await awaitObserved(condition)
   }
 }
 
 /// Intentionally ignores cancellation, as a remote response can arrive after navigation.
 @MainActor
+@Observable
 private final class ControlledResponse<Value: Sendable> {
   private(set) var count = 0
   private var pending: [Int: CheckedContinuation<Value, any Error>] = [:]

@@ -7,7 +7,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -26,12 +25,11 @@ describe("ClaudeProvider", () => {
     }
 
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("edit the file"))
-    await settle()
+    await fake.nextPrompt()
     expect(fake.userMessages).toHaveLength(1)
 
     fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
@@ -54,7 +52,7 @@ describe("ClaudeProvider", () => {
         type: "content_block_delta"
       })
     )
-    await settle()
+    await fake.drain()
     vi.setSystemTime(1_000_300)
     fake.push(
       streamEvent({
@@ -63,9 +61,9 @@ describe("ClaudeProvider", () => {
         type: "content_block_delta"
       })
     )
-    await settle()
+    await fake.drain()
     fake.push(streamEvent({ index: 1, type: "content_block_stop" }))
-    await settle()
+    await fake.drain()
     fake.push({
       message: {
         content: [
@@ -147,12 +145,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(streamEvent({ message: { id: "msg-sub-1" }, type: "message_start" }, "parent-task-1"))
     fake.push(
       streamEvent(
@@ -233,12 +230,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
-    await settle()
+    await fake.nextPrompt()
     fake.push({
       message: {
         content: [
@@ -288,12 +284,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("spawn an agent"))
-    await settle()
+    await fake.nextPrompt()
     // Older CLIs stream subagent deltas: message_start registers the id...
     fake.push(streamEvent({ message: { id: "msg-sub-1" }, type: "message_start" }, "parent-1"))
     fake.push(
@@ -337,12 +332,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("check the tests"))
-    await settle()
+    await fake.nextPrompt()
     // Preamble text streams, then a tool_use begins in the same message —
     // the Anthropic stream's earliest proof the text was not the final answer.
     fake.push(streamEvent({ message: { id: "msg-pre" }, type: "message_start" }))

@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { runInNewContext } from "node:vm"
 import { describe, expect, it, vi } from "vitest"
 
-type Listener = (...arguments_: ReadonlyArray<unknown>) => void
+type Listener = (...arguments_: ReadonlyArray<unknown>) => unknown
 
 const event = () => {
   const listeners = new Set<Listener>()
@@ -43,7 +43,7 @@ class FakeWebSocket {
 
   open() {
     this.readyState = FakeWebSocket.OPEN
-    this.emit("open")
+    return this.emit("open")
   }
 
   error() {
@@ -56,17 +56,13 @@ class FakeWebSocket {
     this.emit("close")
   }
 
-  private emit(type: string) {
+  private async emit(type: string) {
     const property = this[`on${type}` as "onmessage" | "onclose" | "onerror"]
-    property?.()
-    for (const listener of this.listeners.get(type) ?? []) listener()
+    await Promise.all([
+      property?.(),
+      ...[...(this.listeners.get(type) ?? [])].map((listener) => listener())
+    ])
   }
-}
-
-const flushPromises = async () => {
-  await Promise.resolve()
-  await Promise.resolve()
-  await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
 describe("browser extension background connection", () => {
@@ -80,9 +76,12 @@ describe("browser extension background connection", () => {
     const tabRemoved = event()
     const downloadCreated = event()
     const downloadChanged = event()
+    const retryScheduled = Promise.withResolvers<void>()
     const alarms = {
       clear: vi.fn(async () => true),
-      create: vi.fn(async () => undefined),
+      create: vi.fn(async () => {
+        retryScheduled.resolve()
+      }),
       onAlarm: alarm
     }
     const scheduledTimers = new Map<number, Listener>()
@@ -150,7 +149,7 @@ describe("browser extension background connection", () => {
     expect(FakeWebSocket.instances).toHaveLength(1)
     const first = FakeWebSocket.instances[0]!
     first.error()
-    await flushPromises()
+    await retryScheduled.promise
 
     expect(alarms.create).toHaveBeenCalledOnce()
     expect(FakeWebSocket.instances).toHaveLength(1)
@@ -161,8 +160,7 @@ describe("browser extension background connection", () => {
     expect(FakeWebSocket.instances).toHaveLength(2)
 
     const second = FakeWebSocket.instances[1]!
-    second.open()
-    await flushPromises()
+    await second.open()
 
     const connected = vi.fn()
     runtimeMessage.emit({ type: "status" }, {}, connected)

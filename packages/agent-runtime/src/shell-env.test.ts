@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import * as childProcess from "node:child_process"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   fallbackPathDirectories,
   nvmBinDirectories,
@@ -7,6 +8,11 @@ import {
 } from "./shell-env.js"
 
 const envOutput = (path: string): string => `HOME=/Users/tester\nPATH=${path}\nLANG=en_US.UTF-8\n`
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>()
+  return { ...actual, execFile: vi.fn(actual.execFile) }
+})
 
 describe("resolveShellEnv", () => {
   it("merges probed PATH first, then base PATH, then fallbacks, deduped", async () => {
@@ -215,6 +221,7 @@ describe("resolveShellEnv", () => {
 })
 
 describe("runShellCommand", () => {
+  afterEach(() => vi.restoreAllMocks())
   it("resolves stdout from a real process", async () => {
     // /bin/sh -c is not a login shell — no user rc files run in tests.
     await expect(runShellCommand("/bin/sh", ["-c", "printf 'PATH=/x\\n'"], 5000)).resolves.toBe(
@@ -229,7 +236,19 @@ describe("runShellCommand", () => {
   })
 
   it("rejects when the command exceeds the timeout", async () => {
-    await expect(runShellCommand("/bin/sh", ["-c", "sleep 5"], 50)).rejects.toThrow()
+    const error = Object.assign(new Error("command timed out"), { killed: true })
+    const exec = vi.spyOn(childProcess, "execFile").mockImplementation((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error, stdout: string, stderr: string) => void
+      callback(error, "", "")
+      return {} as childProcess.ChildProcess
+    })
+    await expect(runShellCommand("/bin/sh", ["-c", "command"], 5000)).rejects.toBe(error)
+    expect(exec).toHaveBeenCalledWith(
+      "/bin/sh",
+      ["-c", "command"],
+      expect.objectContaining({ timeout: 5000 }),
+      expect.any(Function)
+    )
   })
 })
 

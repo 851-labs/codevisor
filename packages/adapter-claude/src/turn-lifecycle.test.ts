@@ -7,7 +7,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -34,14 +33,13 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const prompt = run(created.handle.prompt("hello"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(resultMessage())
     await prompt
-    await settle()
+    await fake.drain()
 
     expect(events.map((event) => event.payload)).toContainEqual({
       sessionUpdate: "session_info_update",
@@ -57,7 +55,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -70,7 +67,7 @@ describe("ClaudeProvider", () => {
       })
     )
     fake.push(resultMessage())
-    await settle()
+    await fake.drain()
 
     // The session-start background-task snapshot precedes turn output.
     const payloads = events
@@ -97,7 +94,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -106,9 +102,9 @@ describe("ClaudeProvider", () => {
       promptResolved = true
       return result
     })
-    await settle()
+    await fake.drain()
     fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
-    await settle()
+    await fake.drain()
     expect(promptResolved).toBe(false)
     expect(
       events.filter((event) => (event.payload as Record<string, unknown>).turnState === "ended")
@@ -131,7 +127,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -145,7 +140,7 @@ describe("ClaudeProvider", () => {
         type: "content_block_delta"
       })
     )
-    await settle()
+    await fake.drain()
 
     // A user prompt lands mid-turn. It must neither bind to the live agent
     // turn (whose result would resolve it prematurely) nor be pushed into it.
@@ -154,13 +149,13 @@ describe("ClaudeProvider", () => {
       promptResolved = true
       return result
     })
-    await settle()
+    await fake.drain()
     expect(fake.userMessages).toHaveLength(0)
 
     // The agent turn's own result closes only the agent turn, then the
     // deferred prompt dispatches as its own user-initiated turn.
     fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
-    await settle()
+    await fake.drain()
     expect(promptResolved).toBe(false)
     const turnEvents = events
       .map((event) => event.payload as Record<string, unknown>)

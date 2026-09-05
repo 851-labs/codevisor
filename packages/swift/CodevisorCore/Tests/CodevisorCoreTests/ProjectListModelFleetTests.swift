@@ -110,14 +110,13 @@ struct ProjectListModelFleetTests {
 
     model.archiveSession(session)
 
-    try await waitUntilAsync {
-      await remoteClient.snapshot().upsertedSessionIDs.contains(
+    await remoteClient.waitForSnapshot { snapshot in
+      snapshot.upsertedSessionIDs.contains(
         session.id.uuidString
       )
     }
     model.removeProject(remoteProject)
-    try await waitUntilAsync {
-      let snapshot = await remoteClient.snapshot()
+    await remoteClient.waitForSnapshot { snapshot in
       return snapshot.deletedProjectIDs.contains(remoteProject.id.uuidString)
         && snapshot.deletedSessionIDs.contains(session.id.uuidString)
     }

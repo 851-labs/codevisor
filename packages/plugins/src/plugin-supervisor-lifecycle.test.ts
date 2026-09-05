@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest"
 import { makePluginSupervisor } from "./plugin-supervisor.js"
-import { fakeSpawn, makeDataDir, plugin } from "./test-support.js"
+import { advancingClock, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
 
 /// Crash backoff and the circuit breaker, unit tested with an injectable
 /// clock. Process lifetime is owned by the manager's always-running loop.
 
 describe("crash backoff and circuit breaker", () => {
   it("refuses restarts inside the crash-backoff window, then relaunches", async () => {
-    let skew = 0
+    let now = 0
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
-      now: () => Date.now() + skew,
+      now: () => now,
       spawnShell: spawn.spawnShell
     })
     const target = plugin()
@@ -19,7 +19,7 @@ describe("crash backoff and circuit breaker", () => {
     spawn.simulateExit("exited with code 1")
     expect(supervisor.state("owner.example")).toBe("stopped")
     await expect(supervisor.ensureRunning(target)).rejects.toThrow(/recently crashed; retry in/)
-    skew += 1_000
+    now += 1_000
     await supervisor.ensureRunning(target)
     expect(supervisor.state("owner.example")).toBe("running")
     expect(spawn.spawnCount()).toBe(2)
@@ -154,6 +154,7 @@ describe("state change notifications", () => {
       maxConsecutiveFailures: 1,
       onStateChange: (_pluginId, state) => transitions.push(state),
       readyTimeoutMs: 300,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await expect(supervisor.ensureRunning(plugin())).rejects.toThrow(/did not start listening/)

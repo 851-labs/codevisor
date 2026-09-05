@@ -152,21 +152,23 @@ export const workingUpstream = async () => {
   return { calls, requests, url: `${await listen(server)}/mcp` }
 }
 
-/// Connections settle in the background after create/update: polls the
-/// record until it reports `expected` (or the timeout lapses) and returns
-/// the last observed state.
+/// Subscribe before reading so completion cannot land between the read and wait.
 export const connectionStateSettles = async (
   manager: McpManager,
   id: string,
-  expected: string,
-  timeoutMs = 10_000
+  expected: string
 ): Promise<string> => {
-  const deadline = Date.now() + timeoutMs
-  let state = ""
-  while (Date.now() < deadline) {
-    state = (await manager.list()).find((server) => server.id === id)?.connectionState ?? ""
-    if (state === expected) return state
-    await new Promise((resolve) => setTimeout(resolve, 25))
+  while (true) {
+    const changed = Promise.withResolvers<void>()
+    const unsubscribe = manager.subscribeServersChanged((changedId) => {
+      if (changedId === id) changed.resolve()
+    })
+    try {
+      const state = (await manager.list()).find((server) => server.id === id)?.connectionState ?? ""
+      if (state === expected) return state
+      await changed.promise
+    } finally {
+      unsubscribe()
+    }
   }
-  return state
 }

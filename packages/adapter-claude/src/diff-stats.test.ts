@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { extractAllStringFields, extractStringField } from "./claude.js"
-import { definition, FakeQuery, initMessage, makeProvider, run, settle } from "./test-support.js"
+import { definition, FakeQuery, initMessage, makeProvider, run } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
   afterEach(() => {
@@ -16,7 +16,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     void created
@@ -41,7 +40,7 @@ describe("ClaudeProvider", () => {
       "tool-hook-1",
       { signal: new AbortController().signal }
     )
-    await settle()
+    await fake.drain()
 
     const payload = events.at(-1)?.payload as Record<string, unknown>
     expect(payload).toMatchObject({
@@ -62,7 +61,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -85,7 +83,7 @@ describe("ClaudeProvider", () => {
       "tool-hook-2",
       { signal: new AbortController().signal }
     )
-    await settle()
+    await fake.drain()
 
     const payload = events.at(-1)?.payload as Record<string, unknown>
     expect(payload).toMatchObject({

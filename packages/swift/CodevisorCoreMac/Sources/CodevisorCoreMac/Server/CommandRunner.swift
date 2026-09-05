@@ -45,7 +45,8 @@ public extension CommandRunner {
     executableURL: URL,
     arguments: [String],
     environment: [String: String]?,
-    timeout: Duration
+    timeout: Duration,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) async throws -> CommandResult {
     try await withThrowingTaskGroup(of: CommandResult.self) { group in
       group.addTask {
@@ -56,7 +57,7 @@ public extension CommandRunner {
         )
       }
       group.addTask {
-        try await Task.sleep(for: timeout)
+        try await sleep(timeout)
         try Task.checkCancellation()
         throw CommandRunnerError.timedOut(executableURL.path)
       }
@@ -71,7 +72,9 @@ public extension CommandRunner {
 
 /// A `CommandRunner` backed by `Foundation.Process`.
 public struct ProcessCommandRunner: CommandRunner {
-  public init() {}
+  private let onStart: @Sendable () -> Void
+
+  public init(onStart: @escaping @Sendable () -> Void = {}) { self.onStart = onStart }
 
   public func run(
     executableURL: URL,
@@ -98,6 +101,7 @@ public struct ProcessCommandRunner: CommandRunner {
         throw error
       }
       cancellation.markStarted()
+      onStart()
 
       // The child inherited duplicates of these descriptors. Closing
       // the parent's writers guarantees readToEnd observes EOF even

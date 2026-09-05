@@ -3,7 +3,7 @@ import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-ru
 import { Effect } from "effect"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import type { FetchLike } from "@codevisor/updater"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   cleanupLifecycleTests,
   run,
@@ -15,10 +15,11 @@ import {
   fakeTerminal,
   fakeSpawner,
   installableDefinition,
-  flush
+  waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
 
 afterEach(cleanupLifecycleTests)
+afterEach(() => vi.useRealTimers())
 
 describe("harness lifecycle install/update execution", () => {
   it("resolves install methods with availability and preference", async () => {
@@ -91,8 +92,9 @@ describe("harness lifecycle install/update execution", () => {
     await expect(lifecycle.beginInstall("fake-cli")).rejects.toThrow(/already running/)
 
     processes[0]?.emitOutput("downloading…\n")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await flush()
+    await settled
     expect(outputs.join("")).toContain("downloading…")
     expect(refreshes.length).toBeGreaterThan(0)
     expect(events.at(-1)?.payload.lifecycle?.phase).toBe("idle")
@@ -118,8 +120,9 @@ describe("harness lifecycle install/update execution", () => {
 
     await lifecycle.beginInstall("fake-cli", "npm")
     processes[0]?.emitOutput("npm ERR! registry unreachable\n")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(1)
-    await flush()
+    await settled
 
     const decorated = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli")
@@ -162,11 +165,13 @@ describe("harness lifecycle install/update execution", () => {
     expect(outcome).toMatchObject({ queued: false, terminalId: "terminal-1" })
     expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/fake-cli update")
     expect(spawns[0]?.env.FAKE_UPDATE_OPTIN).toBe("1")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await flush()
+    await settled
   })
 
   it("does not clear updating when a zero-exit updater has not installed the target", async () => {
+    vi.useFakeTimers()
     const db = await makeDb()
     const bin = makeBinDir(["npm"])
     const agents = {
@@ -194,23 +199,22 @@ describe("harness lifecycle install/update execution", () => {
     await lifecycle.checkForUpdates(true)
     const started = await lifecycle.beginUpdate("fake-cli")
     expect(started.lifecycle?.phase).toBe("updating")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
 
     const whileVerifying = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
     ])
     expect(whileVerifying[0]?.lifecycle?.phase).toBe("updating")
-    await expect
-      .poll(async () => {
-        const decorated = await lifecycle.decorateHarnesses([
-          harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
-        ])
-        return decorated[0]?.lifecycle
-      })
-      .toMatchObject({
-        error: expect.stringContaining("still 1.0.0; expected 2.0.0"),
-        phase: "failed"
-      })
+    await vi.advanceTimersByTimeAsync(20)
+    await settled
+    const decorated = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(decorated[0]?.lifecycle).toMatchObject({
+      error: expect.stringContaining("still 1.0.0; expected 2.0.0"),
+      phase: "failed"
+    })
   })
 
   it("updates via reinstall for origins whose self-update is unsafe", async () => {
@@ -299,10 +303,10 @@ describe("harness lifecycle install/update execution", () => {
 
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("brew upgrade --cask claude-code@latest")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await expect
-      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
-      .toBe(false)
+    await settled
+    expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 
   it("checks and updates npm-owned Claude through npm", async () => {
@@ -353,10 +357,10 @@ describe("harness lifecycle install/update execution", () => {
 
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("npm install -g @anthropic-ai/claude-code@latest")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await expect
-      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
-      .toBe(false)
+    await settled
+    expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 
   it("updates native Claude through Claude's self-updater", async () => {
@@ -394,9 +398,9 @@ describe("harness lifecycle install/update execution", () => {
 
     await lifecycle.beginUpdate("claude-code")
     expect(spawns[0]?.command).toBe("/Users/dev/.local/bin/claude update")
+    const settled = waitForLifecycleSettle(lifecycle)
     processes[0]?.emitExit(0)
-    await expect
-      .poll(async () => (await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable)
-      .toBe(false)
+    await settled
+    expect((await run(db.listHarnessUpdateStates))[0]?.info.updateAvailable).toBe(false)
   })
 })

@@ -268,12 +268,14 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
   let machineId: String?
   let decoder = JSONDecoder()
   let encoder = JSONEncoder()
+  let eventSleep: @Sendable (Duration) async throws -> Void
 
   public init(
     config: CodevisorServerConfig = .localDefault,
     urlSession: URLSession = .shared,
     requestGate: ServerRequestGate? = nil,
-    machineId: String? = nil
+    machineId: String? = nil,
+    eventSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.config = config
     self.requestTransport =
@@ -284,6 +286,7 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
       ?? URLSessionWebSocketTransport(session: urlSession)
     self.requestGate = requestGate
     self.machineId = machineId
+    self.eventSleep = eventSleep
   }
 
   func harnessAccountsPath(_ harnessId: String) -> String {

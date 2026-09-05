@@ -7,7 +7,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -24,11 +23,10 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const promptPromise = run(created.handle.prompt("plan the feature"))
-    await settle()
+    await fake.nextPrompt()
 
     // TodoWrite streams like any tool, but must not open a tool call.
     fake.push(streamEvent({ message: { id: "msg-plan" }, type: "message_start" }))
@@ -39,7 +37,7 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    await settle()
+    await fake.drain()
     fake.push({
       message: {
         content: [
@@ -82,7 +80,7 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    await settle()
+    await fake.drain()
     fake.push({
       message: {
         content: [
@@ -134,13 +132,12 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
 
     const promptPromise = run(created.handle.prompt("make a checklist"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(streamEvent({ message: { id: "msg-tasks" }, type: "message_start" }))
     fake.push(
       streamEvent({
@@ -239,7 +236,7 @@ describe("ClaudeProvider", () => {
       session_id: "sdk-session-1",
       type: "user"
     } as never)
-    await settle()
+    await fake.drain()
 
     const taskCompletedHook = fake.options?.hooks?.TaskCompleted?.[0]?.hooks[0]
     expect(taskCompletedHook).toBeDefined()
@@ -289,7 +286,7 @@ describe("ClaudeProvider", () => {
       })
     )
     const promptPromise = run(created.handle.prompt("make a task"))
-    await settle()
+    await fake.nextPrompt()
 
     fake.push(
       streamEvent({

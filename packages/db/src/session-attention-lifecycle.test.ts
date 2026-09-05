@@ -1,9 +1,14 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+  })
+  afterEach(() => vi.useRealTimers())
   it("re-arms and disarms the settle deadline as holds come and go", async () => {
     const db = await run(
       makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 60_000 })
@@ -83,7 +88,7 @@ describe("@codevisor/db", () => {
     // Hold release arms the (zero) grace; the projection itself converges on
     // the next inbound event even if the server-side timer never fires.
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    await new Promise((resolve) => setTimeout(resolve, 2))
+    vi.setSystemTime(Date.now() + 2)
     await run(db.appendEvent("session.output", session.id, { role: "assistant", text: "done" }))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
@@ -120,7 +125,7 @@ describe("@codevisor/db", () => {
       sidebarStateChangedAt: initial.createdAt
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 2))
+    vi.setSystemTime(Date.now() + 2)
     await run(
       db.appendEvent("session.updated", session.id, {
         initiatedBy: "user",
@@ -166,7 +171,7 @@ describe("@codevisor/db", () => {
     expect(waitingOnBackground.sidebarState).toBe("inProgress")
     expect(waitingOnBackground.sidebarStateChangedAt).toBe(started.sidebarStateChangedAt)
 
-    await new Promise((resolve) => setTimeout(resolve, 2))
+    vi.setSystemTime(Date.now() + 2)
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
     await run(db.settleSessionAttention(session.id))
     const unread = await run(db.getSessionSummary(session.id))
@@ -183,7 +188,7 @@ describe("@codevisor/db", () => {
       unread.sidebarStateChangedAt
     )
 
-    await new Promise((resolve) => setTimeout(resolve, 2))
+    vi.setSystemTime(Date.now() + 2)
     await run(db.markSessionRead(session.id, unread.latestAttentionSequence ?? 0))
     const idle = await run(db.getSessionSummary(session.id))
     expect(idle.sidebarState).toBe("idle")

@@ -1,6 +1,6 @@
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
-import { connect } from "node:net"
+import { hasExistingListener } from "./infra/listener-probe.js"
 import type { AddressInfo, Socket } from "node:net"
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
@@ -284,24 +284,6 @@ export const makeCodevisorServerApp = (
   }
   return app
 }
-
-/// True when something already accepts connections on the address this server
-/// is about to claim. Bind errors alone cannot detect this: the kernel happily
-/// grants 127.0.0.1:PORT while another process holds *:PORT, and the more
-/// specific bind then silently captures all loopback traffic.
-const hasExistingListener = (host: string, port: number): Promise<boolean> =>
-  new Promise((resolve) => {
-    const probeHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host
-    const socket = connect({ host: probeHost, port })
-    const done = (listening: boolean): void => {
-      socket.destroy()
-      resolve(listening)
-    }
-    socket.once("connect", () => done(true))
-    socket.once("error", () => done(false))
-    /* v8 ignore next -- an OS-level connect timeout is nondeterministic; connect/error cover the observable outcomes. */
-    socket.setTimeout(1_000, () => done(false))
-  })
 
 export const startCodevisorServer = (
   services: CodevisorServerServices,

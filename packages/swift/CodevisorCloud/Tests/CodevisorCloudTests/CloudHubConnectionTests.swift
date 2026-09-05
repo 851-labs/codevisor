@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -35,7 +37,9 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
@@ -73,12 +77,14 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: transport,
-      readyTimeout: .seconds(3)
+      readyTimeout: .seconds(3),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
     first.socket.disconnect()
-    #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count == 2 })
+    #expect(await waitUntil { transport.requests.count == 2 })
     try await hub.waitUntilReady()
 
     let counts = store.readCounts
@@ -94,7 +100,8 @@ struct CloudHubConnectionTests {
     var offlinePresence = machine.presence
     offlinePresence.online = false
     let scripted = ScriptedCloudHub(machines: [offlinePresence])
-    let (hub, _) = makeHub(scripted)
+    let parked = TestSignal()
+    let (hub, _) = makeHub(scripted, onMachineWait: parked.signal)
 
     try await hub.waitUntilReady()
     let openTask = Task {
@@ -108,7 +115,7 @@ struct CloudHubConnectionTests {
       )
     }
 
-    try await Task.sleep(for: .milliseconds(25))
+    await parked.wait()
     #expect(scripted.relayEnvelopes.isEmpty)
 
     var onlinePresence = offlinePresence
@@ -260,6 +267,7 @@ struct CloudHubConnectionTests {
     let sockets = SocketQueue([first.socket, second.socket])
     let transport = FakeWebSocketTransport { _ in sockets.next() }
     let store = InMemoryCloudCredentialStore(token: "session-token")
+    let clock = TestClock()
     let hub = CloudHubConnection(
       serverURL: URL(string: "https://cloud.example.com")!,
       credentialStore: store,
@@ -267,12 +275,19 @@ struct CloudHubConnectionTests {
       deviceOS: "macOS",
       webSocketTransport: transport,
       readyTimeout: .seconds(2),
-      heartbeatInterval: .milliseconds(20),
-      heartbeatTimeout: .milliseconds(20)
+      heartbeatInterval: .seconds(30),
+      heartbeatTimeout: .seconds(10),
+      sleep: clock.sleep,
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
-    #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+    await clock.waitForSleep(.seconds(10))
+    #expect(transport.requests.count == 1)
+    clock.advance(by: .seconds(10))
+    #expect(await waitUntil { transport.requests.count == 2 })
     try await hub.waitUntilReady()
     await hub.shutdown()
   }
@@ -280,6 +295,7 @@ struct CloudHubConnectionTests {
   @Test("Keepalive pongs record the relay RTT")
   func keepaliveMeasuresRtt() async throws {
     let scripted = ScriptedCloudHub()
+    let clock = TestClock()
     let hub = CloudHubConnection(
       serverURL: URL(string: "https://cloud.example.com")!,
       credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
@@ -287,15 +303,21 @@ struct CloudHubConnectionTests {
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
       readyTimeout: .seconds(2),
-      heartbeatInterval: .milliseconds(20),
-      heartbeatTimeout: .seconds(2)
+      heartbeatInterval: .seconds(30),
+      heartbeatTimeout: .seconds(2),
+      sleep: clock.sleep,
+      now: { clock.now },
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
     #expect(await hub.lastRttMillis == nil)
-    #expect(await waitUntil { await hub.lastRttMillis != nil })
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+    #expect(await waitUntil { scripted.socket.sentTexts.contains(#"{"t":"ping"}"#) })
+    await scripted.socket.receiving.wait(for: 3)
     let rtt = try #require(await hub.lastRttMillis)
-    #expect(rtt >= 0)
+    #expect(rtt == 0)
     await hub.shutdown()
   }
 
@@ -313,7 +335,9 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: transport,
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
@@ -326,7 +350,7 @@ struct CloudHubConnectionTests {
       onMessage: { _ in },
       onClosed: { _ in }
     )
-    #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+    #expect(await waitUntil { transport.requests.count >= 2 })
     try await hub.waitUntilReady()
     await hub.shutdown()
   }
@@ -344,12 +368,14 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: transport,
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
 
     try await hub.waitUntilReady()
     await hub.reconnect()
-    #expect(await waitUntil(timeout: .seconds(3)) { transport.requests.count >= 2 })
+    #expect(await waitUntil { transport.requests.count >= 2 })
     try await hub.waitUntilReady()
     await hub.shutdown()
   }
@@ -362,19 +388,10 @@ struct CloudHubConnectionTests {
     try await hub.waitUntilReady()
     scripted.socket.disconnect()
 
-    // Once the fatal close is observed, openChannel fails fast instead of
-    // retrying forever.
-    #expect(
-      await waitUntil {
-        do {
-          try await hub.waitUntilReady()
-          return false
-        } catch let error as CloudHubConnectionError {
-          return error == .rejected(closeCode: 4200)
-        } catch {
-          return false
-        }
-      })
+    await scripted.socket.cancelled.wait()
+    await #expect(throws: CloudHubConnectionError.rejected(closeCode: 4200)) {
+      try await hub.waitUntilReady()
+    }
     await hub.shutdown()
   }
 
@@ -388,7 +405,9 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     await #expect(throws: CloudHubConnectionError.notSignedIn) {
       try await hub.waitUntilReady()
@@ -407,7 +426,9 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: transport,
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     try await hub.waitUntilReady()
     #expect(transport.requests.first?.absoluteString == "wss://cloud.example.com/connect?token=session-token")
@@ -430,7 +451,9 @@ struct CloudHubConnectionTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: transport,
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     try await hub.waitUntilReady()
     #expect(
@@ -442,6 +465,7 @@ struct CloudHubConnectionTests {
 }
 
 /// Thread-safe capture of every machine list the changed handler delivers.
+@Observable
 private final class MachineListRecorder: @unchecked Sendable {
   private let lock = NSLock()
   private var recorded: [[CloudMachine]] = []

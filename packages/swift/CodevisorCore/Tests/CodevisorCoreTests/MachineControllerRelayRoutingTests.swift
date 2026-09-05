@@ -70,14 +70,14 @@ struct MachineControllerRelayRoutingTests {
     // The configured fallback must wait for the same raw TCP bridge used
     // by a cloud-only machine instead of leaking back to its dead direct
     // origin while the listener starts.
-    Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(50))
+    let clock = AdvancingServerUpdateScheduler()
+    clock.onSleep = {
       provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(
         string: "http://127.0.0.1:50506"
       )!
     }
 
-    let url = await controller.effectiveHTTPBaseURL(forMachineId: remote.id)
+    let url = await controller.effectiveHTTPBaseURL(forMachineId: remote.id, scheduler: clock.scheduler)
 
     #expect(url == URL(string: "http://127.0.0.1:50506"))
     #expect(url != remote.baseURL)

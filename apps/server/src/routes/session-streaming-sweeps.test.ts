@@ -274,6 +274,16 @@ describe("streaming turn sweeps and prompt gating", () => {
       { text: "queued behind agent turn" }
     ])
 
+    const userTurnEnded = Promise.withResolvers<void>()
+    const stopWatching = fanout.subscribe((event) => {
+      const payload = event.payload as { turnState?: string; turnId?: string }
+      if (
+        event.subjectId === session.id &&
+        payload?.turnState === "ended" &&
+        payload.turnId !== "agent-turn-1"
+      )
+        userTurnEnded.resolve()
+    })
     // The turn's terminal event releases the hold and dispatches the prompt.
     await appendAndPublish(services.db, fanout, "session.updated", session.id, {
       initiatedBy: "agent",
@@ -287,6 +297,8 @@ describe("streaming turn sweeps and prompt gating", () => {
     )
     expect(agents.prompts[0]).toEqual(["agent-turn-hold", "queued behind agent turn"])
     await waitFor(async () => (await run(services.db.listPromptQueue(session.id))).length === 0)
+    await userTurnEnded.promise
+    stopWatching()
     expect(routeState.activeTurnSessions.has(session.id)).toBe(false)
     expect(routeState.turnHeldSessions.has(session.id)).toBe(false)
 

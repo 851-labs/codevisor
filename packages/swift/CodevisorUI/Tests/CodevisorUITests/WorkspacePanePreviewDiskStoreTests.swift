@@ -59,10 +59,12 @@ struct WorkspacePanePreviewDiskStoreTests {
     )
 
     try await store.save(Data(repeating: 1, count: 8), for: first)
-    try await Task.sleep(for: .milliseconds(10))
     try await store.save(Data(repeating: 2, count: 8), for: second)
+    let secondURL = directory.appendingPathComponent(
+      "v1-\(workspace.uuidString.lowercased())-\(second.paneId.uuidString.lowercased()).preview")
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: secondURL.path)
     _ = await store.data(for: first)
-    try await Task.sleep(for: .milliseconds(10))
     try await store.save(Data(repeating: 3, count: 8), for: third)
 
     #expect(await store.data(for: first) != nil)

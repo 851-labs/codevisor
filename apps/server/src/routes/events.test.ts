@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { attachEventSocket } from "./events.js"
 import { CodevisorServer, makeEventFanout } from "../server.js"
 import {
@@ -18,6 +18,10 @@ import {
 } from "../test-support.js"
 
 describe("event routes", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
   it("exposes a durable cursor for gapless shell snapshots", async () => {
     const { server, services } = await start()
     expect(await jsonRequest(server, "/v1/events/cursor")).toMatchObject({
@@ -161,14 +165,27 @@ describe("event routes", () => {
 
     expect(await readWebSocketEvents(server, 2, 0)).toEqual([replayEvent, liveEvent])
     expect(await readWebSocketEvents(server, 1, 1)).toEqual([liveEvent])
+    const subscribe = fanout.subscribe.bind(fanout)
+    const subscription = vi.spyOn(fanout, "subscribe")
+    const nextSubscription = () => {
+      const ready = Promise.withResolvers<void>()
+      subscription.mockImplementationOnce((listener) => {
+        const unsubscribe = subscribe(listener)
+        ready.resolve()
+        return unsubscribe
+      })
+      return ready.promise
+    }
+    let subscribed = nextSubscription()
     const liveOnly = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await subscribed
     const afterSnapshot = { ...liveEvent, id: 3, payload: { id: "after-snapshot" } }
     await run(fanout.publish(afterSnapshot))
     expect(await liveOnly).toEqual([afterSnapshot])
 
+    subscribed = nextSubscription()
     const globalFiltered = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await subscribed
     await run(
       fanout.publish({
         ...afterSnapshot,
@@ -181,13 +198,14 @@ describe("event routes", () => {
     await run(fanout.publish(globalAfterFilter))
     expect(await globalFiltered).toEqual([globalAfterFilter])
 
+    subscribed = nextSubscription()
     const scopedFiltered = readWebSocketEvents(
       server,
       1,
       Number.MAX_SAFE_INTEGER,
       "/v1/sessions/target-session/events/socket"
     )
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await subscribed
     await run(
       fanout.publish({
         ...afterSnapshot,
@@ -205,8 +223,9 @@ describe("event routes", () => {
     await run(fanout.publish(scopedAfterFilter))
     expect(await scopedFiltered).toEqual([{ ...scopedAfterFilter, id: 2 }])
 
+    subscribed = nextSubscription()
     const sseFiltered = readSseEvents(server, 1, Number.MAX_SAFE_INTEGER)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await subscribed
     await run(
       fanout.publish({
         ...afterSnapshot,
@@ -239,6 +258,7 @@ describe("event routes", () => {
     const parse = (raw: string): { kind: string; id: number } =>
       JSON.parse(raw) as { kind: string; id: number }
 
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
     // Session sockets carry keepalives, stamped with the socket's own cursor
     // so no client cursor logic can ever be moved by one.
     const scoped = makeFakeSocket()
@@ -248,10 +268,9 @@ describe("event routes", () => {
       Number.MAX_SAFE_INTEGER,
       scoped as never,
       "server-a",
-      "session-keepalive",
-      5
+      "session-keepalive"
     )
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    await vi.advanceTimersByTimeAsync(25_000)
     const keepalives = scoped.sent.map(parse).filter((event) => event.kind === "keepalive")
     expect(keepalives.length).toBeGreaterThan(0)
     expect(keepalives[0]).toMatchObject({ id: 0, kind: "keepalive" })
@@ -273,7 +292,7 @@ describe("event routes", () => {
         subjectRevision: 7
       })
     )
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    await vi.advanceTimersByTimeAsync(25_000)
     expect(
       scoped.sent
         .map(parse)
@@ -284,7 +303,7 @@ describe("event routes", () => {
     // Close stops the timer.
     scoped.close()
     const sentAtClose = scoped.sent.length
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    await vi.advanceTimersByTimeAsync(25_000)
     expect(scoped.sent.length).toBe(sentAtClose)
 
     // The global socket stays keepalive-free: old live-only subscribers adopt
@@ -297,10 +316,9 @@ describe("event routes", () => {
       Number.MAX_SAFE_INTEGER,
       global as never,
       "server-a",
-      undefined,
-      5
+      undefined
     )
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    await vi.advanceTimersByTimeAsync(25_000)
     expect(global.sent).toEqual([])
     global.close()
   })

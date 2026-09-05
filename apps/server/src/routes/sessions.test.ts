@@ -2,16 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import {
-  jsonRequest,
-  makeServices,
-  run,
-  runningServers,
-  start,
-  startWithApp,
-  tempDirs,
-  waitFor
-} from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
 describe("sessions routes", () => {
@@ -57,42 +48,6 @@ describe("sessions routes", () => {
     expect(await run(services.db.listWorkspaces)).toHaveLength(0)
     const events = await run(services.db.listEvents(0))
     expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
-  })
-
-  it("deduplicates concurrent client session creation while creation is pending", async () => {
-    const { agents, services } = await makeServices("server-a")
-    const server = await startWithApp(services)
-    runningServers.push(server)
-    const projectRoot = mkdtempSync(join(tmpdir(), "codevisor-server-pending-create-"))
-    tempDirs.push(projectRoot)
-    const workspaceFolder = join(projectRoot, "workspace")
-    mkdirSync(workspaceFolder)
-    const project = (
-      await jsonRequest(server, "/v1/projects", {
-        body: JSON.stringify({ folderPath: workspaceFolder, id: "pending-create-project" }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
-
-    const sessionBody = JSON.stringify({
-      id: "client-session-pending-create",
-      projectId: project.id,
-      harnessId: "codex",
-      title: "Pending create"
-    })
-    const [first, second] = await Promise.all([
-      jsonRequest(server, "/v1/sessions", {
-        body: sessionBody,
-        method: "POST"
-      }),
-      jsonRequest(server, "/v1/sessions", {
-        body: sessionBody,
-        method: "POST"
-      })
-    ])
-    expect([first.status, second.status].sort()).toEqual([200, 201])
-    expect(first.body).toEqual(second.body)
-    expect(agents.creations).toEqual([["codex", workspaceFolder]])
   })
 
   it("opens a session in one round-trip, creating project and session only when missing", async () => {

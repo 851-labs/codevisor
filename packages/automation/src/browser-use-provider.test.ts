@@ -1,14 +1,16 @@
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { createServer } from "node:http"
 import { rmSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { pointerOverlayExpression } from "./browser-cursor.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
@@ -23,6 +25,7 @@ describe("Browser Use direct CDP engine", () => {
       directories.push(directory)
       const previousHeadless = process.env.CODEVISOR_BROWSER_HEADLESS
       process.env.CODEVISOR_BROWSER_HEADLESS = "1"
+      const cdp = observeCdp()
       const provider = makeBrowserUseProvider(directory)
       const server = createServer((request, response) => {
         if (request.url === "/fixture.txt") {
@@ -230,11 +233,12 @@ describe("Browser Use direct CDP engine", () => {
 
         const uploadPath = join(directory, "fixture.txt")
         writeFileSync(uploadPath, "browser upload fixture")
+        const chooserReady = cdp.registered("Page.fileChooserOpened")
         const chooserPromise = provider.invoke(context, "playwright.waitForEvent", {
           event: "filechooser",
           timeoutMs: 5_000
         })
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await chooserReady
         const fileClick = await provider.invoke(context, "playwright.click", {
           locator: { css: "#upload" }
         })
@@ -264,11 +268,14 @@ describe("Browser Use direct CDP engine", () => {
         if (regexCount.content[0]?.type !== "text") throw new Error("Missing regex count")
         expect(JSON.parse(regexCount.content[0].text)).toEqual({ count: 1 })
 
+        const consoleMessage = cdp.event("Runtime.consoleAPICalled", (params) =>
+          JSON.stringify(params).includes("codevisor-log-fixture")
+        )
         await provider.invoke(context, "cdp.send", {
           method: "Runtime.evaluate",
           params: { expression: "console.warn('codevisor-log-fixture')" }
         })
-        await new Promise((resolve) => setTimeout(resolve, 25))
+        await consoleMessage
         const logs = await provider.invoke(context, "dev.logs", {
           filter: "codevisor-log-fixture",
           levels: ["warn"]
@@ -300,11 +307,12 @@ describe("Browser Use direct CDP engine", () => {
         const accepted = await provider.invoke(context, "dialog", { accept: true })
         expect(accepted.isError).not.toBe(true)
 
+        const downloadReady = cdp.registered("Browser.downloadWillBegin")
         const downloadPromise = provider.invoke(context, "playwright.waitForEvent", {
           event: "download",
           timeoutMs: 5_000
         })
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await downloadReady
         const downloadClick = await provider.invoke(context, "playwright.click", {
           locator: { css: "#download-link" }
         })

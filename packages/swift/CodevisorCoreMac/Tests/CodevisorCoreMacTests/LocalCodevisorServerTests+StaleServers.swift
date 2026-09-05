@@ -18,6 +18,7 @@ extension LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         launches.append(request)
         client.acceptBoot(request.bootId)
@@ -48,6 +49,7 @@ extension LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         launches.append(request)
         client.acceptBoot(request.bootId)
@@ -77,6 +79,7 @@ extension LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         launches.append(request)
         client.acceptBoot(request.bootId)
@@ -103,6 +106,7 @@ extension LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         launches.append(request)
         return Process()

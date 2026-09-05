@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { nextRunningState } from "./test-support.js"
+import { ClientRequest } from "node:http"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 import { makePluginsManager } from "./plugins-manager.js"
 import {
@@ -9,6 +11,8 @@ import {
   makeOuterServer,
   writePlugin
 } from "./test-support.js"
+
+afterEach(() => vi.restoreAllMocks())
 
 describe("plugin listing", () => {
   it("lists installed plugins with runtime state and pane metadata", async () => {
@@ -227,11 +231,13 @@ describe("pane proxy", () => {
     expect((await fetch(`${outer.origin}${issued.path}`)).status).toBe(200)
     // The process died behind the supervisor's back: the runtime still says
     // running, but the port is dead.
+    const restarted = nextRunningState(manager)
     fake.stop()
     const token = new URL(`http://x${issued.path}`).searchParams.get("codevisorPaneToken")
     const paneUrl = `${outer.origin}/v1/plugins/owner.example/app/panes/main/?codevisorPaneToken=${token}`
     expect((await fetch(paneUrl)).status).toBe(502)
-    await expect.poll(() => fake.spawnCount()).toBe(2)
+    await restarted
+    expect(fake.spawnCount()).toBe(2)
     // Recovery happens without pane traffic; the next request uses the
     // replacement process instead of forwarding into the dead port again.
     expect((await fetch(paneUrl)).status).toBe(200)
@@ -243,10 +249,21 @@ describe("pane proxy", () => {
     const outer = await makeOuterServer(manager)
     const issued = await manager.issuePaneToken("owner.example", "pane-1", { paneType: "main" })
     const token = new URL(`http://x${issued.path}`).searchParams.get("codevisorPaneToken")
-    const response = await fetch(
+    const armed = Promise.withResolvers<() => void>()
+    vi.spyOn(ClientRequest.prototype, "setTimeout").mockImplementation(function (
+      this: ClientRequest,
+      _milliseconds,
+      callback
+    ) {
+      armed.resolve(() => callback?.())
+      return this
+    })
+    const response = fetch(
       `${outer.origin}/v1/plugins/owner.example/app/panes/main/never?codevisorPaneToken=${token}`
     )
-    expect(response.status).toBe(504)
+    const fireTimeout = await armed.promise
+    fireTimeout()
+    expect((await response).status).toBe(504)
   })
 })
 

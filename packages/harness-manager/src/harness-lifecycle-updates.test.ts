@@ -1,3 +1,4 @@
+import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
@@ -49,12 +50,14 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     })
     lifecycle.subscribe((event) => events.push(event as never))
 
+    const settled = waitForLifecycleSettle(lifecycle)
     await expect(lifecycle.beginUpdate("fake-cli")).resolves.toMatchObject({
       lifecycle: { phase: "updating" },
       queued: false
     })
     expect(events.at(-1)?.payload.lifecycle?.phase).toBe("updating")
-    await expect.poll(() => events.at(-1)?.payload.lifecycle?.phase).toBe("idle")
+    await settled
+    expect(events.at(-1)?.payload.lifecycle?.phase).toBe("idle")
     expect(swaps).toEqual([{ bundlePath: "/Applications/ChatGPT.app" }])
   })
 
@@ -85,15 +88,9 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       terminal
     })
 
+    const settled = waitForLifecycleSettle(lifecycle)
     await lifecycle.beginUpdate("fake-cli")
-    await expect
-      .poll(async () => {
-        const decorated = await lifecycle.decorateHarnesses([
-          harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
-        ])
-        return decorated[0]?.lifecycle?.phase
-      })
-      .toBe("failed")
+    await settled
     const decorated = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Applications/ChatGPT.app/Contents/Resources/codex")
     ])
@@ -111,7 +108,7 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       refreshEnvironment: Effect.void
     } as unknown as AgentRuntimeService
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const released: Array<string> = []
     const lifecycle = makeHarnessLifecycleManager({
       agents,
@@ -123,7 +120,11 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       spawnShell,
       terminal
     })
-    lifecycle.onGateReleased((harnessId) => released.push(harnessId))
+    const gateReleased = Promise.withResolvers<void>()
+    lifecycle.onGateReleased((harnessId) => {
+      released.push(harnessId)
+      gateReleased.resolve()
+    })
 
     // Two turns in flight → arm instead of running.
     lifecycle.notifyTurnStarted("fake-cli")
@@ -144,7 +145,8 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
 
     // Last turn ends → the armed update executes and gates dispatch.
     lifecycle.notifyTurnEnded("fake-cli")
-    await expect.poll(() => spawns.length).toBe(1)
+    await spawned
+    expect(spawns.length).toBe(1)
     expect(lifecycle.isGated("fake-cli")).toBe(true)
     await expect(run(db.listHarnessPendingUpdates)).resolves.toMatchObject([
       { harnessId: "fake-cli", state: "running" }
@@ -152,7 +154,8 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
 
     // Completion releases the gate and clears the durable row.
     processes[0]?.emitExit(0)
-    await expect.poll(() => released).toEqual(["fake-cli"])
+    await gateReleased.promise
+    expect(released).toEqual(["fake-cli"])
     expect(lifecycle.isGated("fake-cli")).toBe(false)
     await expect(run(db.listHarnessPendingUpdates)).resolves.toEqual([])
   })
@@ -168,7 +171,7 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       refreshEnvironment: Effect.void
     } as unknown as AgentRuntimeService
     const { terminal } = fakeTerminal()
-    const { processes, spawnShell, spawns } = fakeSpawner()
+    const { processes, spawnShell, spawns, spawned } = fakeSpawner()
     const released: Array<string> = []
     const lifecycle = makeHarnessLifecycleManager({
       agents,
@@ -179,7 +182,11 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
       spawnShell,
       terminal
     })
-    lifecycle.onGateReleased((harnessId) => released.push(harnessId))
+    const gateReleased = Promise.withResolvers<void>()
+    lifecycle.onGateReleased((harnessId) => {
+      released.push(harnessId)
+      gateReleased.resolve()
+    })
 
     // Cancel disarms without running anything.
     lifecycle.notifyTurnStarted("fake-cli")
@@ -191,10 +198,12 @@ describe("harness lifecycle app-bundle swaps and the when-idle gate", () => {
     // Update Now skips the idle wait; a failing update still releases.
     await lifecycle.beginUpdate("fake-cli")
     await lifecycle.forcePendingUpdate("fake-cli")
-    await expect.poll(() => spawns.length).toBe(1)
+    await spawned
+    expect(spawns.length).toBe(1)
     expect(lifecycle.isGated("fake-cli")).toBe(true)
     processes[0]?.emitExit(1)
-    await expect.poll(() => released).toEqual(["fake-cli"])
+    await gateReleased.promise
+    expect(released).toEqual(["fake-cli"])
     expect(lifecycle.isGated("fake-cli")).toBe(false)
   })
 

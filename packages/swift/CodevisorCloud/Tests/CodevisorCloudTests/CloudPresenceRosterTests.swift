@@ -22,11 +22,8 @@ struct CloudPresenceRosterTests {
     client.machinesResult = .success([m1, m2])
     controller.reconcilePresence(with: [m1, m2])
 
-    #expect(
-      await waitUntil {
-        await MainActor.run { controller.machines.contains { $0.deviceId == "m2" } }
-      }
-    )
+    await controller.presenceRefreshTask?.value
+    #expect(controller.machines.contains { $0.deviceId == "m2" })
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
 
@@ -38,18 +35,15 @@ struct CloudPresenceRosterTests {
 
     // Identical transport view: no fetch.
     controller.reconcilePresence(with: [online])
-    try? await Task.sleep(for: .milliseconds(400))
+    #expect(controller.presenceRefreshTask == nil)
     #expect(client.machineTokens.count == restCallsBefore)
 
     // The machine drops: the flip disagrees with the roster and refreshes.
     let offline = testMachine("m1", online: false)
     client.machinesResult = .success([offline])
     controller.reconcilePresence(with: [offline])
-    #expect(
-      await waitUntil {
-        await MainActor.run { controller.machines.first?.online == false }
-      }
-    )
+    await controller.presenceRefreshTask?.value
+    #expect(controller.machines.first?.online == false)
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
 
@@ -65,11 +59,8 @@ struct CloudPresenceRosterTests {
     controller.reconcilePresence(with: [m1, m2])
     controller.reconcilePresence(with: [m1, m2, m3])
 
-    #expect(
-      await waitUntil {
-        await MainActor.run { controller.machines.count == 3 }
-      }
-    )
+    await controller.presenceRefreshTask?.value
+    #expect(controller.machines.count == 3)
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
 
@@ -79,7 +70,7 @@ struct CloudPresenceRosterTests {
     let restCallsBefore = client.machineTokens.count
 
     controller.reconcilePresence(with: [testMachine("m1")])
-    try? await Task.sleep(for: .milliseconds(400))
+    #expect(controller.presenceRefreshTask == nil)
     #expect(client.machineTokens.count == restCallsBefore)
     #expect(controller.machines.isEmpty)
   }

@@ -5,7 +5,7 @@ import { connect } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 import {
   jsonRequest,
   makeServices,
@@ -20,7 +20,7 @@ import {
 } from "../test-support.js"
 
 const rawUpgradeStatus = (url: string, path: string): Promise<string> =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const target = new URL(url)
     const socket = connect({ host: target.hostname, port: Number(target.port) })
     let received = ""
@@ -33,7 +33,10 @@ const rawUpgradeStatus = (url: string, path: string): Promise<string> =>
       received += chunk.toString("utf8")
     })
     socket.on("close", () => resolve(received))
-    socket.setTimeout(2_000, () => socket.destroy())
+    socket.on("error", reject)
+    onTestFinished(() => {
+      socket.destroy()
+    })
   })
 
 /// Seeds a project and a workspace so tests can attach pane records to it.

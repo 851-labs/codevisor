@@ -134,10 +134,13 @@ describe("@codevisor/agent-runtime", () => {
       locateExecutable: (name) => `/bin/${name}`
     })
     const seen: Array<string> = []
+    const release = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<void>()
     const sessionId = await run(
       runtime.createAgentSession("gemini", "/tmp/project", async (event) => {
         // A slow async sink must not reorder events.
-        await new Promise((resolve) => setTimeout(resolve, 1))
+        entered.resolve()
+        await release.promise
         seen.push((event.payload as { text?: string }).text ?? "lifecycle")
       })
     )
@@ -147,7 +150,11 @@ describe("@codevisor/agent-runtime", () => {
     }
     void connection.emit(conversationEvent(sessionId, "assistant", "one"))
     void connection.emit(conversationEvent(sessionId, "assistant", "two"))
-    await connection.emit(conversationEvent(sessionId, "assistant", "three"))
+    const delivered = connection.emit(conversationEvent(sessionId, "assistant", "three"))
+    await entered.promise
+    expect(seen).toEqual([])
+    release.resolve()
+    await delivered
 
     expect(seen).toEqual(["one", "two", "three"])
   })

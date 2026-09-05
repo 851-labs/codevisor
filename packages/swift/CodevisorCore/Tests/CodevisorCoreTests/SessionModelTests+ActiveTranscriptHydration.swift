@@ -82,6 +82,7 @@ extension SessionModelTests {
       client.transcriptDetailRequestCount == 1
         && client.sessionEventSinceValues == [2]
     }
+    await client.eventReads.wait()
     client.emit(
       ServerEventEnvelope(
         id: 3,
@@ -96,7 +97,7 @@ extension SessionModelTests {
           "title": .string("Inspect live state"),
         ])
       ))
-    await Task.yield()
+    await client.eventReads.wait(for: 2)
 
     guard case let .assistant(compactMessage) = model.activeItem else {
       Issue.record("expected compact active assistant")

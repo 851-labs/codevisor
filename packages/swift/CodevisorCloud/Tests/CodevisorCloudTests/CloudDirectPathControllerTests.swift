@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -90,7 +91,7 @@ private func makePathController(
 
 @MainActor
 private func settle(_ controller: CloudDirectPathController) async {
-  _ = await waitUntil { await MainActor.run { controller.probeTasks.isEmpty } }
+  for task in controller.probeTasks.values { await task.value }
 }
 
 @Suite("CloudDirectPathController")
@@ -139,7 +140,7 @@ struct CloudDirectPathControllerTests {
 
     // The pipe dying is fresh information: the throttle resets.
     script.takeDown("m1")
-    #expect(await waitUntil { await MainActor.run { controller.machineIds.isEmpty } })
+    #expect(await waitUntil { controller.machineIds.isEmpty })
     controller.reconcile(machines: machines, relayTransport: relay)
     await settle(controller)
     #expect(script.probes == ["m1", "m1"])
@@ -164,7 +165,9 @@ struct CloudDirectPathControllerTests {
       deviceName: "Test App",
       deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in scriptedHub.socket },
-      readyTimeout: .seconds(2)
+      readyTimeout: .seconds(2),
+      sleep: TestClock().sleep,
+      reconnectDelay: { _ in .zero }
     )
     let relayEndpoint = CloudRelayEndpoint(
       hub: hub,
@@ -196,7 +199,7 @@ struct CloudDirectPathControllerTests {
 
     // WiFi gone: the pipe dies, and the very next open rides the relay.
     direct.socket.disconnect()
-    #expect(await waitUntil { await MainActor.run { controller.machineIds.isEmpty } })
+    #expect(await waitUntil { controller.machineIds.isEmpty })
     let overRelay = try await transport.openChannel(
       channelType: "http", params: nil, compressed: false,
       onMessage: { _ in }, onClosed: { _ in })

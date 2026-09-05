@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 
 @testable import CodevisorCore
@@ -84,8 +86,12 @@ struct MachineNavigationSyncTests {
       payload: navigationSessionPayload(replayed)
     )
 
-    let joinedRefresh = Task { await controller.refreshNavigationState(for: "local") }
-    try await Task.sleep(for: .milliseconds(20))
+    let joining = TestSignal()
+    let joinedRefresh = Task { @MainActor in
+      joining.signal()
+      await controller.refreshNavigationState(for: "local")
+    }
+    await joining.wait()
     #expect(fake.listSessionCallCount == callCountBeforeRefresh + 1)
 
     await snapshotGate.open()
@@ -232,6 +238,7 @@ private func navigationSessionPayload(_ session: ServerSession) -> JSONValue {
   return .object(payload)
 }
 
+@Observable
 private final class NavigationSyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   private struct ListSessionsFailure: Error {}
 

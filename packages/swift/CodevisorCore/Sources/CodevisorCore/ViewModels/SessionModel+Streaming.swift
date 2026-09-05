@@ -188,7 +188,7 @@ extension SessionModel {
       }
       for _ in 0..<50 {
         guard !pendingEvents.isEmpty else { return }
-        try? await Task.sleep(for: .milliseconds(1))
+        try? await presentationBoundarySleep(.milliseconds(1))
       }
     }
     flushPendingEvents()

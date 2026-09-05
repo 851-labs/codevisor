@@ -1,6 +1,24 @@
 import { WebSocket } from "ws"
-import { describe, expect, it } from "vitest"
-import { jsonRequest, start, waitFor } from "../test-support.js"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
+import { jsonRequest, start } from "../test-support.js"
+
+const recordMessages = (socket: WebSocket) => {
+  const messages: unknown[] = []
+  const waiters = new Map<number, () => void>()
+  socket.on("message", (data) => {
+    messages.push(JSON.parse(data.toString()))
+    waiters.get(messages.length)?.()
+    waiters.delete(messages.length)
+  })
+  onTestFinished(() => socket.terminate())
+  return {
+    messages,
+    received: (count: number) =>
+      messages.length >= count
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => waiters.set(count, resolve))
+  }
+}
 
 describe("terminal routes", () => {
   it("kills a session's terminal over the delete route", async () => {
@@ -44,48 +62,42 @@ describe("terminal routes", () => {
     const webSocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=0`
     )
-    const messages: Array<unknown> = []
+    const { messages, received } = recordMessages(webSocket)
 
     await new Promise<void>((resolve, reject) => {
       webSocket.once("open", resolve)
       webSocket.once("error", reject)
     })
-    webSocket.on("message", (data) => messages.push(JSON.parse(data.toString()) as unknown))
-    await new Promise((resolve) => setTimeout(resolve, 20))
     webSocket.send("{")
-    await waitFor(() => messages.length === 1)
+    await received(1)
+    const written = Promise.withResolvers<void>()
+    const resized = Promise.withResolvers<void>()
+    const process = spawner.processes[0]!
+    const write = process.write.bind(process)
+    const resize = process.resize.bind(process)
+    vi.spyOn(process, "write").mockImplementation((data) => {
+      write(data)
+      written.resolve()
+    })
+    vi.spyOn(process, "resize").mockImplementation((cols, rows) => {
+      resize(cols, rows)
+      resized.resolve()
+    })
     webSocket.send(
       JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 1, data: "pwd\n" })
     )
     webSocket.send(
       JSON.stringify({ type: "resize", clientId: "client-a", clientSeq: 2, cols: 120, rows: 30 })
     )
-    await waitFor(
-      () => spawner.processes[0]?.writes.length === 1 && spawner.processes[0]?.resizes.length === 1,
-      () =>
-        JSON.stringify({
-          processCount: spawner.processes.length,
-          resizes: spawner.processes[0]?.resizes ?? [],
-          writes: spawner.processes[0]?.writes ?? []
-        })
-    )
+    await Promise.all([written.promise, resized.promise])
     spawner.handlers[0]?.onOutput("terminal-output")
     spawner.handlers[0]?.onExit(0)
 
-    await waitFor(
-      () => messages.length === 3,
-      () =>
-        JSON.stringify({
-          messages,
-          processCount: spawner.processes.length,
-          readyState: webSocket.readyState,
-          writes: spawner.processes[0]?.writes ?? []
-        })
-    )
+    await received(3)
     webSocket.send(
       JSON.stringify({ type: "input", clientId: "client-a", clientSeq: 3, data: "after-exit" })
     )
-    await waitFor(() => messages.length === 4)
+    await received(4)
     webSocket.close()
 
     expect(spawner.processes[0]?.writes).toEqual(["pwd\n"])
@@ -100,15 +112,13 @@ describe("terminal routes", () => {
     const replaySocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=not-a-number`
     )
-    const replayMessages: Array<unknown> = []
-    replaySocket.on("message", (data) =>
-      replayMessages.push(JSON.parse(data.toString()) as unknown)
-    )
+    const { messages: replayMessages, received: replayMessagesReceived } =
+      recordMessages(replaySocket)
     await new Promise<void>((resolve, reject) => {
       replaySocket.once("open", resolve)
       replaySocket.once("error", reject)
     })
-    await waitFor(() => replayMessages.length === 2)
+    await replayMessagesReceived(2)
     expect(replayMessages).toEqual([
       { type: "output", seq: 1, data: "terminal-output" },
       { type: "exit", seq: 2, exitCode: 0 }
@@ -118,30 +128,26 @@ describe("terminal routes", () => {
     const cursorReplaySocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}${terminal.websocketPath}?lastOutputSeq=1`
     )
-    const cursorReplayMessages: Array<unknown> = []
-    cursorReplaySocket.on("message", (data) =>
-      cursorReplayMessages.push(JSON.parse(data.toString()) as unknown)
-    )
+    const { messages: cursorReplayMessages, received: cursorReplayMessagesReceived } =
+      recordMessages(cursorReplaySocket)
     await new Promise<void>((resolve, reject) => {
       cursorReplaySocket.once("open", resolve)
       cursorReplaySocket.once("error", reject)
     })
-    await waitFor(() => cursorReplayMessages.length === 1)
+    await cursorReplayMessagesReceived(1)
     expect(cursorReplayMessages).toEqual([{ type: "exit", seq: 2, exitCode: 0 }])
     cursorReplaySocket.close()
 
     const missingSocket = new WebSocket(
       `${server.url.replace("http:", "ws:")}/v1/terminals/missing/socket`
     )
-    const missingMessages: Array<unknown> = []
-    missingSocket.on("message", (data) =>
-      missingMessages.push(JSON.parse(data.toString()) as unknown)
-    )
+    const { messages: missingMessages, received: missingMessagesReceived } =
+      recordMessages(missingSocket)
     await new Promise<void>((resolve, reject) => {
       missingSocket.once("open", resolve)
       missingSocket.once("error", reject)
     })
-    await waitFor(() => missingMessages.length === 1)
+    await missingMessagesReceived(1)
     expect(missingMessages[0]).toMatchObject({ type: "error" })
     missingSocket.close()
 

@@ -23,6 +23,7 @@ import {
   devLogin,
   authed,
   expireResumeGrace,
+  disconnect,
   sendRelay,
   connectSocket,
   connectMachine,
@@ -40,7 +41,7 @@ describe("hub presence", () => {
 
     // Disconnect → the offline broadcast is DEFERRED by the resume grace
     // window; it fires only when nobody resumes before expiry.
-    machine.socket.close(1000, "bye")
+    await disconnect(token, machine.socket, "bye")
     await expireResumeGrace(token)
     const presence = (await app.reader.next()) as Extract<HubToApp, { t: "presence" }>
     expect(presence.t).toBe("presence")
@@ -378,7 +379,7 @@ describe("hub relay", () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "flaky-vps")
     const app = await connectApp(token)
-    machine.socket.close(1000, "gone")
+    await disconnect(token, machine.socket, "gone")
     // Nothing is announced until the resume grace expires unresumed.
     await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
@@ -440,7 +441,7 @@ describe("hub relay", () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "peer-vps")
     const app = await connectApp(token)
-    app.socket.close(1000, "app quit")
+    await disconnect(token, app.socket, "app quit")
     // Deferred: the peer-gone arrives only after the grace expires unresumed.
     await expireResumeGrace(token)
     const gone = (await machine.reader.next()) as Extract<HubToMachine, { t: "peer-gone" }>

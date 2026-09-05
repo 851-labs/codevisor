@@ -173,6 +173,16 @@ public final class AppUpdateLeaseHandoff {
     self.process = process
   }
 
+  public func waitForExit() async {
+    let process = process
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global().async {
+        process.waitUntilExit()
+        continuation.resume()
+      }
+    }
+  }
+
   public var isRunning: Bool {
     process.isRunning
   }

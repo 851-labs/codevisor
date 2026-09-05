@@ -32,9 +32,6 @@ export const makeDir = (prefix: string): string => {
 
 export const makeDataDir = (): string => makeDir("codevisor-plugin-data-")
 
-export const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
-
 /// An InstalledPlugin handed straight to the supervisor without a manifest
 /// file on disk.
 export const plugin = (overrides: Partial<PluginManifestV1> = {}): InstalledPlugin => ({
@@ -336,3 +333,25 @@ export const makeManager = (
   cleanups.push(() => manager.close())
   return { fake, manager, root }
 }
+
+/// Advances readiness/backoff time only after each completed probe.
+export const advancingClock = () => {
+  let now = 0
+  return {
+    now: () => now,
+    sleep: async (milliseconds: number) => {
+      now += milliseconds
+    }
+  }
+}
+
+export const nextRunningState = (manager: PluginsManager): Promise<void> =>
+  new Promise((resolve) => {
+    const unsubscribe = manager.subscribe((event) => {
+      if (event.payload.state === "running") {
+        unsubscribe()
+        resolve()
+      }
+    })
+    cleanups.push(unsubscribe)
+  })

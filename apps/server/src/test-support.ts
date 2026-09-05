@@ -1,3 +1,5 @@
+import { fixtureChanged, observeDatabase } from "./changes-test-support.js"
+export { waitFor, observableFixture } from "./changes-test-support.js"
 import { makeAttachmentStore, makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type {
@@ -13,7 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { WebSocket } from "ws"
-import { afterEach } from "vitest"
+import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
 import {
   defaultServerConfig,
   EventFanout,
@@ -86,17 +88,33 @@ export const makeSpawner = (): TerminalSpawner & {
 export const tempDirs: Array<string> = []
 export const runningServers: Array<RunningCodevisorServer> = []
 export const databases: Array<CodevisorDatabaseService> = []
+const mcpManagers: Array<ReturnType<typeof makeMcpManager>> = []
+const realFetch = globalThis.fetch
+
+// These integrations own loopback servers. Synced example MCP definitions must
+// not perform DNS, fetch real services, or depend on the developer's network.
+beforeEach(() => {
+  vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
+      return Promise.reject(new TypeError("External upstream unavailable in this fixture"))
+    }
+    return realFetch(input, init)
+  })
+})
 
 afterEach(async () => {
   for (const server of runningServers.splice(0)) {
     await run(server.close)
   }
+  for (const mcp of mcpManagers.splice(0)) await mcp.close()
   for (const database of databases.splice(0)) {
     await run(database.close)
   }
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true })
   }
+  vi.unstubAllGlobals()
 })
 
 export const makeServices = async (serverId = "test") => {
@@ -104,9 +122,13 @@ export const makeServices = async (serverId = "test") => {
   tempDirs.push(dir)
   const db = await run(makeDatabase({ filename: join(dir, "codevisor.sqlite"), serverId }))
   databases.push(db)
+  observeDatabase(db)
   const spawner = makeSpawner()
   const agents = makeAgents()
   const mcp = makeMcpManager({ db, dataDir: dir, serverId })
+  mcpManagers.push(mcp)
+  onTestFinished(mcp.subscribeServersChanged(fixtureChanged))
+  onTestFinished(mcp.subscribeCredentialsRotated(fixtureChanged))
   return {
     agents,
     services: {
@@ -278,14 +300,10 @@ export const readWebSocketEvents = async (
       ? `${server.url.replace("http:", "ws:")}${path}`
       : `${server.url.replace("http:", "ws:")}${path}?since=${since}`
   const webSocket = new WebSocket(eventsUrl)
+  onTestFinished(() => webSocket.terminate())
   const events: Array<unknown> = []
   let isDone = false
   const received = new Promise<ReadonlyArray<unknown>>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      isDone = true
-      webSocket.close()
-      reject(new Error(`Timed out waiting for ${expectedCount} websocket events`))
-    }, 1_000)
     webSocket.on("message", (data) => {
       if (isDone) {
         return
@@ -293,7 +311,6 @@ export const readWebSocketEvents = async (
       events.push(JSON.parse(data.toString()) as unknown)
       if (events.length >= expectedCount) {
         isDone = true
-        clearTimeout(timeout)
         webSocket.close()
         resolve(events.slice(0, expectedCount))
       }
@@ -305,17 +322,4 @@ export const readWebSocketEvents = async (
     webSocket.once("error", reject)
   })
   return await received
-}
-
-export const waitFor = async (
-  predicate: () => boolean | Promise<boolean>,
-  describeState: () => string = () => ""
-): Promise<void> => {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (await predicate()) {
-      return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  throw new Error(`Timed out waiting for condition ${describeState()}`)
 }

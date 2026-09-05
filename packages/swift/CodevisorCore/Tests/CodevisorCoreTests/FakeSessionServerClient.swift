@@ -1,3 +1,5 @@
+import CodevisorTestSupport
+import Observation
 import Foundation
 import Testing
 import ACPKit
@@ -19,9 +21,7 @@ final class TimeBox: @unchecked Sendable {
   }
 }
 
-// This protocol fake intentionally centralizes the complete server surface so
-// individual SessionModel tests can script only the behavior they care about.
-// swiftlint:disable:next type_body_length
+@Observable
 final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let sessionId: UUID
   private let projectId = UUID()
@@ -93,6 +93,8 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
+  let eventReads = TestSignal()
+
   private func subscribeEvents(
     since: Int
   ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
@@ -111,7 +113,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
       }
       _eventContinuations.append(continuation)
     }
-    return stream
+    return TrackedStream(stream, reads: eventReads).stream
   }
 
   var promptedTexts: [String] {
@@ -377,6 +379,9 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     if shouldFail { throw URLError(.networkConnectionLost) }
   }
 
+}
+
+extension FakeSessionServerClient {
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func deleteSession(id: UUID) async throws {}

@@ -56,13 +56,16 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
 
   private let endpoint: any CloudChannelTransport
   private let timeout: Duration
+  private let sleep: @Sendable (Duration) async throws -> Void
 
   public init(
     endpoint: any CloudChannelTransport,
-    timeout: Duration = CloudRelayRequestTransport.defaultTimeout
+    timeout: Duration = CloudRelayRequestTransport.defaultTimeout,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.endpoint = endpoint
     self.timeout = timeout
+    self.sleep = sleep
   }
 
   private struct ClientFrame: Encodable {
@@ -133,7 +136,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         try await operation()
       }
       group.addTask {
-        try await Task.sleep(for: timeout)
+        try await sleep(timeout)
         throw CloudRelayTransportError.timedOut
       }
       guard let result = try await group.next() else {

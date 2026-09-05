@@ -1,12 +1,13 @@
+import { testTempDir } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync } from "node:fs"
+import { mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { listProjectGitBranches, worktreeStartPoint } from "./project-branches.js"
 
 const makeRepo = (): { readonly root: string; readonly repo: string } => {
-  const root = mkdtempSync(join(tmpdir(), "codevisor-project-branches-"))
+  const root = testTempDir(join(tmpdir(), "codevisor-project-branches-"))
   const repo = join(root, "repo")
   mkdirSync(repo)
   execFileSync("git", ["init"], { cwd: repo })
@@ -20,7 +21,7 @@ const makeRepo = (): { readonly root: string; readonly repo: string } => {
 
 describe("project worktree branches", () => {
   it("lists remote branches and resolves an explicitly configured worktree base", async () => {
-    const root = mkdtempSync(join(tmpdir(), "codevisor-git-branches-"))
+    const root = testTempDir(join(tmpdir(), "codevisor-git-branches-"))
     const origin = join(root, "origin")
     mkdirSync(origin)
     execFileSync("git", ["init", "-b", "main"], { cwd: origin })
@@ -73,7 +74,7 @@ describe("project worktree branches", () => {
   })
 
   it("uses cached origin/main when refreshing it fails", async () => {
-    const root = mkdtempSync(join(tmpdir(), "codevisor-git-offline-"))
+    const root = testTempDir(join(tmpdir(), "codevisor-git-offline-"))
     const origin = join(root, "origin")
     mkdirSync(origin)
     execFileSync("git", ["init", "-b", "main"], { cwd: origin })

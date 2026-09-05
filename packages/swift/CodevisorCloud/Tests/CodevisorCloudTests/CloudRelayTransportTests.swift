@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -105,13 +106,16 @@ struct CloudRelayTransportTests {
     // respond stays nil: the machine accepts the open but never replies.
     let (endpoint, hub) = makeRelayEndpoint(
       scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
-    let transport = CloudRelayRequestTransport(endpoint: endpoint, timeout: .milliseconds(250))
+    let clock = TestClock()
+    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
 
-    await #expect(throws: CloudRelayTransportError.timedOut) {
-      _ = try await transport.data(
-        for: URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/info")!)
-      )
+    let request = Task {
+      try await transport.data(for: URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/info")!))
     }
+    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+    await #expect(throws: CloudRelayTransportError.timedOut) { try await request.value }
     await hub.shutdown()
   }
 

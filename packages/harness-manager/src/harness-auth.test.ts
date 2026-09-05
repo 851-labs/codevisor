@@ -240,8 +240,11 @@ describe("harness authentication refresh", () => {
     const probeGate = new Promise<void>((resolve) => {
       releaseProbe = resolve
     })
+    const probeStarted = Promise.withResolvers<void>()
+    const allJoined = Promise.withResolvers<void>()
     const probeHarnessAuth = vi.fn(() =>
       Effect.promise(async () => {
+        probeStarted.resolve()
         await probeGate
         throw new Error("ACP initialize timed out after 10000ms")
       })
@@ -255,14 +258,15 @@ describe("harness authentication refresh", () => {
     })
     const events: string[] = []
     manager.subscribe((event) => events.push(event.kind))
-    const listAccounts = vi.spyOn(db, "listHarnessAccounts")
+    const originalList = db.listHarnessAccounts
+    const listAccounts = vi.spyOn(db, "listHarnessAccounts").mockImplementation((...args) => {
+      if (listAccounts.mock.calls.length === waiterCount) allJoined.resolve()
+      return originalList(...args)
+    })
 
     const waiterCount = 64
     const refreshes = Array.from({ length: waiterCount }, () => manager.refresh("opencode"))
-    await vi.waitFor(() =>
-      expect(listAccounts.mock.calls.length).toBeGreaterThanOrEqual(waiterCount)
-    )
-    await vi.waitFor(() => expect(probeHarnessAuth).toHaveBeenCalledTimes(1))
+    await Promise.all([allJoined.promise, probeStarted.promise])
     releaseProbe()
     await Promise.all(refreshes)
 

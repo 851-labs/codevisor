@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -126,11 +127,7 @@ struct MachineConnectionTests {
   }
 
   private func waitForSync(_ predicate: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if predicate() { return }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    Issue.record("Timed out waiting for sync condition")
+    await awaitObserved(predicate)
   }
 
   @Test("A background machine's live events apply while another machine is selected")

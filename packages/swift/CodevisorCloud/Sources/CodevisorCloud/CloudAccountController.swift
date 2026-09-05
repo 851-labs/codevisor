@@ -113,6 +113,7 @@ public final class CloudAccountController {
   /// A debounced roster refresh triggered by a hub presence push whose view
   /// disagrees with `machines`. Coalesces bursts (a welcome delivers the
   /// whole fleet) into one REST fetch.
+  @ObservationIgnored private let presenceSleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored var presenceRefreshTask: Task<Void, Never>?
 
   public init(
@@ -122,8 +123,10 @@ public final class CloudAccountController {
     hubConnectionFactory: @escaping HubConnectionFactory = { serverURL, store in
       CloudHubConnection(serverURL: serverURL, credentialStore: store)
     },
-    directPaths: CloudDirectPathController? = nil
+    directPaths: CloudDirectPathController? = nil,
+    presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
+    self.presenceSleep = presenceSleep
     self.clientFactory = clientFactory
     self.credentialStore = credentialStore
     self.environmentCloud = environmentCloud
@@ -505,8 +508,9 @@ public final class CloudAccountController {
       return
     }
     guard presenceRefreshTask == nil else { return }
+    let sleep = presenceSleep
     presenceRefreshTask = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(300))
+      try? await sleep(.milliseconds(300))
       guard let self, !Task.isCancelled else { return }
       self.presenceRefreshTask = nil
       await self.refreshMachines()

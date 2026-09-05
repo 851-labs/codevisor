@@ -7,7 +7,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -24,13 +23,12 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     expect(created.metadata.supportsGoals).toBe(true)
 
     const goal = await run(created.handle.setGoal!({ objective: "ship the feature" }))
-    await settle()
+    await fake.drain()
     expect(goal.objective).toBe("ship the feature")
     expect(goal.status).toBe("active")
     const commandTexts = fake.userMessages.map((message) => {
@@ -42,13 +40,13 @@ describe("ClaudeProvider", () => {
 
     // Pause/resume map to subcommands and update the synthetic snapshot.
     const paused = await run(created.handle.setGoal!({ status: "paused" }))
-    await settle()
+    await fake.drain()
     expect(paused.status).toBe("paused")
     await run(created.handle.setGoal!({ status: "active" }))
-    await settle()
+    await fake.drain()
 
     await run(created.handle.clearGoal!)
-    await settle()
+    await fake.drain()
     const finalTexts = fake.userMessages.map((message) => {
       const content = (message as { message: { content: unknown } }).message.content
       return Array.isArray(content) ? (content[0] as { text?: string }).text : content
@@ -75,7 +73,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -84,7 +81,7 @@ describe("ClaudeProvider", () => {
     await run(created.handle.setGoal!({ objective: "count to ten" }))
     fake.push(streamEvent({ message: { id: "msg-goal" }, type: "message_start" }))
     fake.push(resultMessage())
-    await settle()
+    await fake.drain()
     const completed = events.findLast((event) => {
       const payload = event.payload as Record<string, unknown>
       return payload.goal !== undefined
@@ -99,10 +96,10 @@ describe("ClaudeProvider", () => {
     // A new goal interrupted mid-run pauses instead (resumable).
     await run(created.handle.setGoal!({ objective: "count to twenty" }))
     const cancellation = run(created.handle.cancel)
-    await settle()
+    await fake.drain()
     fake.push(resultMessage())
     await cancellation
-    await settle()
+    await fake.drain()
     const paused = events.findLast((event) => {
       const payload = event.payload as Record<string, unknown>
       return payload.goal !== undefined
@@ -119,13 +116,12 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     await run(created.handle.setGoal!({ objective: "ship everything" }))
     fake.push({ ...resultMessage(), origin: { kind: "task-notification" } } as never)
-    await settle()
+    await fake.drain()
     const afterTask = events.findLast((event) => {
       const payload = event.payload as Record<string, unknown>
       return payload.goal !== undefined
@@ -133,7 +129,7 @@ describe("ClaudeProvider", () => {
     expect(afterTask.goal.status).toBe("active")
 
     fake.push(resultMessage())
-    await settle()
+    await fake.drain()
     const afterGoal = events.findLast((event) => {
       const payload = event.payload as Record<string, unknown>
       return payload.goal !== undefined

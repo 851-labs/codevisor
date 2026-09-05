@@ -10,7 +10,6 @@ import {
   resultMessage,
   resultWith,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -27,12 +26,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("write a very long file"))
-    await settle()
+    await fake.nextPrompt()
     expect(fake.userMessages).toHaveLength(1) // just the user's prompt so far
 
     // The model streams some text, then the response is cut off by the
@@ -45,9 +43,9 @@ describe("ClaudeProvider", () => {
         type: "content_block_delta"
       })
     )
-    await settle()
+    await fake.drain()
     fake.push(resultWith({ stop_reason: "max_tokens" }))
-    await settle()
+    await fake.drain()
 
     const endedEvents = () =>
       events.filter(
@@ -79,18 +77,17 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("keep truncating"))
-    await settle()
+    await fake.nextPrompt()
 
     // MAX_AUTO_CONTINUATIONS (12) continuations are issued, then the 13th
     // truncation ends the turn instead of looping forever.
     for (let index = 0; index < 13; index += 1) {
       fake.push(resultWith({ stop_reason: "max_tokens" }))
-      await settle()
+      await fake.drain()
     }
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
@@ -110,19 +107,18 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     expect(fake.userMessages).toHaveLength(1) // just the user's prompt
 
     // The API is overloaded: the SDK reports it on the assistant message, then
     // gives up and ends the turn with error_during_execution.
     fake.push(assistantErrorMessage("overloaded"))
     fake.push(resultMessage("error_during_execution"))
-    await settle()
+    await fake.drain()
 
     const continuations = () =>
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
@@ -151,13 +147,13 @@ describe("ClaudeProvider", () => {
 
     // Once the backoff elapses the turn resumes automatically.
     await vi.advanceTimersByTimeAsync(1000)
-    await settle()
+    await fake.drain()
     expect(continuations()).toHaveLength(1)
     expect(endedEvents()).toHaveLength(0)
 
     // The retry succeeds; the turn ends cleanly with no error surfaced.
     fake.push(resultMessage("success"))
-    await settle()
+    await fake.drain()
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
     expect(endedEvents()).toHaveLength(1)
@@ -173,12 +169,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
 
     const errorText = "API Error: 529 Overloaded. This is a server-side issue; please retry."
     const continuations = () =>
@@ -201,7 +196,7 @@ describe("ClaudeProvider", () => {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       fake.push(assistantApiErrorMessage(errorText))
       fake.push(resultMessage("success"))
-      await settle()
+      await fake.drain()
       expect(retryingEvents()).toHaveLength(attempt)
       expect(retryingEvents().at(-1)).toMatchObject({
         payload: {
@@ -215,14 +210,14 @@ describe("ClaudeProvider", () => {
       expect(endedEvents()).toHaveLength(0)
       expect(events.some((event) => event.kind === "session.error")).toBe(false)
       await vi.advanceTimersByTimeAsync(8000)
-      await settle()
+      await fake.drain()
       expect(continuations()).toHaveLength(attempt)
     }
 
     // Retries exhausted → end, surfacing the real error text in stopDetail.
     fake.push(assistantApiErrorMessage(errorText))
     fake.push(resultMessage("success"))
-    await settle()
+    await fake.drain()
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
     const endedPayload = events
@@ -241,12 +236,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
 
     fake.push(assistantErrorMessage("authentication_failed"))
     fake.push(resultMessage("error_during_execution"))
@@ -274,16 +268,15 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     void run(created.handle.prompt("do work"))
-    await settle()
+    await fake.drain()
 
     fake.push(assistantErrorMessage("overloaded"))
     fake.push(resultMessage("error_during_execution"))
-    await settle()
+    await fake.drain()
     const continuations = () =>
       fake.userMessages.filter((message) => message.message.content === "Please continue.")
     expect(continuations()).toHaveLength(0) // scheduled, not yet fired
@@ -292,7 +285,7 @@ describe("ClaudeProvider", () => {
     // be resumed by a lingering timer.
     await run(created.handle.close)
     await vi.advanceTimersByTimeAsync(8000)
-    await settle()
+    await fake.drain()
     expect(continuations()).toHaveLength(0)
   })
 })

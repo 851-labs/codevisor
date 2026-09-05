@@ -24,6 +24,10 @@ public actor CloudHubConnection {
   let deviceName: String
   let deviceOS: String
   let appVersion: String?
+  let sleep: @Sendable (Duration) async throws -> Void
+  let now: @Sendable () -> ContinuousClock.Instant
+  private let reconnectDelay: @Sendable (Int) -> Duration
+  private let onMachineWait: @Sendable () -> Void
   private let readyTimeout: Duration
   private let heartbeatInterval: Duration
   let heartbeatTimeout: Duration
@@ -129,8 +133,18 @@ public actor CloudHubConnection {
     readyTimeout: Duration = .seconds(15),
     heartbeatInterval: Duration = .seconds(30),
     heartbeatTimeout: Duration = .seconds(10),
-    resumeSuspensionTimeout: Duration = .seconds(70)
+    resumeSuspensionTimeout: Duration = .seconds(70),
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+    reconnectDelay: @escaping @Sendable (Int) -> Duration = { failures in
+      .milliseconds(min(5_000, 250 * (1 << min(failures, 5))) + Int.random(in: 0...250))
+    },
+    onMachineWait: @escaping @Sendable () -> Void = {}
   ) {
+    self.sleep = sleep
+    self.now = now
+    self.reconnectDelay = reconnectDelay
+    self.onMachineWait = onMachineWait
     self.serverURL = serverURL
     self.credentialStore = credentialStore
     self.deviceName = deviceName
@@ -216,8 +230,9 @@ public actor CloudHubConnection {
     let id = waiterSeq
     waiterSeq += 1
     let timeout = readyTimeout
+    let sleep = sleep
     let timeoutTask = Task { [weak self] in
-      try? await Task.sleep(for: timeout)
+      try? await sleep(timeout)
       await self?.expireWaiter(id: id)
     }
     defer { timeoutTask.cancel() }
@@ -262,7 +277,7 @@ public actor CloudHubConnection {
         let keepalive = Task { [weak self] in
           while !Task.isCancelled {
             guard let self else { return }
-            try? await Task.sleep(for: self.heartbeatInterval)
+            try? await self.sleep(self.heartbeatInterval)
             guard !Task.isCancelled else { return }
             await self.sendKeepalivePing(on: socketID)
           }
@@ -304,16 +319,16 @@ public actor CloudHubConnection {
       guard fatalFailure == nil, !Task.isCancelled else { break }
       failures += 1
       // Same curve as the other sockets: 250ms · 2^n capped at 5s + jitter.
-      let base = min(5_000, 250 * (1 << min(failures, 5)))
-      try? await Task.sleep(for: .milliseconds(base + Int.random(in: 0...250)))
+      try? await sleep(reconnectDelay(failures))
     }
   }
 
   private func armSuspensionDeadline() {
     suspensionTask?.cancel()
     let timeout = resumeSuspensionTimeout
+    let sleep = sleep
     suspensionTask = Task { [weak self] in
-      try? await Task.sleep(for: timeout)
+      try? await sleep(timeout)
       guard !Task.isCancelled else { return }
       await self?.expireSuspension()
     }
@@ -408,6 +423,7 @@ public actor CloudHubConnection {
           return
         }
         machineOnlineWaiters[id] = (machineId, continuation)
+        onMachineWait()
       }
     } onCancel: {
       Task { await self.cancelMachineWaiter(id) }

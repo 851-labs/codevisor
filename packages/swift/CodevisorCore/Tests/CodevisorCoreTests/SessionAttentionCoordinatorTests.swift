@@ -181,8 +181,7 @@ struct SessionAttentionCoordinatorTests {
       owner: ObjectIdentifier(delivery),
       session: SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
     )
-    try await waitUntilAsync {
-      await fakeServer.snapshot().readRequests.count == 1
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
     }
     let requests = await fakeServer.snapshot().readRequests
     #expect(requests.map(\.throughSequence) == [2])
@@ -209,8 +208,7 @@ struct SessionAttentionCoordinatorTests {
     // revision when the transition fires (snapshot-merge path).
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 1, lastSeenSequence: 0)
     await model.refreshFromServer()
-    try await waitUntilAsync {
-      await fakeServer.snapshot().readRequests.count == 1
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
     }
     let requests = await fakeServer.snapshot().readRequests
     #expect(requests.map(\.throughSequence) == [1])
@@ -264,8 +262,7 @@ struct SessionAttentionCoordinatorTests {
     let focus = SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
 
-    model.markSessionUnread(session.id, serverId: session.serverId)
-    try await Task.sleep(for: .milliseconds(20))
+    await model.markSessionUnread(session.id, serverId: session.serverId)?.value
     // The hold keeps focus from immediately reading the manual flag back.
     #expect(model.sessions.first(where: { $0.id == session.id })?.unreadCount == 1)
     #expect(await fakeServer.snapshot().readRequests.isEmpty)
@@ -273,8 +270,7 @@ struct SessionAttentionCoordinatorTests {
     // Leaving and returning re-reads it.
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: nil)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
-    try await waitUntilAsync {
-      await fakeServer.snapshot().readRequests.count == 1
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
     }
   }
 }

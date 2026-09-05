@@ -1,3 +1,4 @@
+import { observableFixture } from "./changes-test-support.js"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -18,7 +19,7 @@ import {
 /// and the next boot brings them back and dispatches the held prompts.
 
 const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
-  const state = { applyCalls: 0 }
+  const state = observableFixture({ applyCalls: 0 })
   const updater: CodevisorServerUpdater = {
     apply: async () => {
       state.applyCalls += 1
@@ -102,7 +103,9 @@ describe("restart drain", () => {
     // A prompt sent meanwhile is accepted and held, with the transcript
     // marker clients render as "waiting for update".
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await waitFor(async () =>
+      (await gateEvents(services, sessionId)).some((event) => event.state === "waiting")
+    )
     expect(agents.prompts).toHaveLength(1)
     expect(await gateEvents(services, sessionId)).toEqual([
       { harnessId: "codevisor-server", harnessName: "Codevisor", state: "waiting" }
@@ -246,7 +249,9 @@ describe("restart drain", () => {
 
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "POST" })).status).toBe(202)
     expect((await prompt(server, sessionId, "held prompt")).status).toBe(202)
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitFor(async () =>
+      (await gateEvents(services, sessionId)).some((event) => event.state === "waiting")
+    )
     expect(agents.prompts).toHaveLength(1)
 
     // Abandon the update: the gate reopens and the held session is told so.
@@ -294,7 +299,10 @@ describe("restart drain", () => {
     // Unsupported methods on the drain route fall through to 404.
     expect((await jsonRequest(server, "/v1/restart/drain", { method: "PUT" })).status).toBe(404)
     await run(services.agents.cancel("agent-codex-repo"))
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await waitFor(async () => {
+      const drain = await jsonRequest(server, "/v1/restart/drain")
+      return (drain.body as { remaining: number }).remaining === 0
+    })
     expect(state.applyCalls).toBe(0)
     expect((await jsonRequest(server, "/v1/restart/drain")).body).toMatchObject({ state: "idle" })
   })

@@ -8,7 +8,6 @@ import {
   initMessage,
   makeProvider,
   run,
-  settle,
   streamEvent
 } from "./test-support.js"
 
@@ -45,7 +44,6 @@ describe("ClaudeProvider", () => {
     }
 
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -99,12 +97,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     // Open a tool call so we can prove it gets settled on the safety-net path.
     fake.push(
       streamEvent({
@@ -113,7 +110,7 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    await settle()
+    await fake.drain()
 
     // The SDK stream ends mid-turn with no `result` (query closed/crashed).
     fake.finish()
@@ -146,13 +143,12 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     await run(created.handle.close)
     fake.fail(new Error("Operation aborted"))
-    await settle()
+    await fake.drain()
 
     expect(events.every((event) => event.kind !== "session.error")).toBe(true)
   })
@@ -163,7 +159,6 @@ describe("ClaudeProvider", () => {
     const loadPromise = run(
       provider.loadSession(definition, "previous-session", "/tmp", async () => undefined)
     )
-    await settle()
     fake.push(initMessage("sdk-session-resumed"))
     const loaded = await loadPromise
     expect(loaded.sessionId).toBe("previous-session")

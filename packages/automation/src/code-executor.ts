@@ -51,6 +51,8 @@ export interface CodeToolInvoker {
 export interface CodeExecutorOptions {
   /** Maximum time spent actively executing code inside QuickJS. Host tool waits are excluded. */
   readonly activeTimeoutMs?: number
+  /** Monotonic clock used to account for active execution. */
+  readonly now?: () => number
   readonly memoryLimitBytes?: number
   readonly maxStackSizeBytes?: number
 }
@@ -81,24 +83,25 @@ class ActiveExecutionBudget {
   private remainingMs: number
   private activeSince: number | undefined
 
-  constructor(readonly limitMs: number) {
+  constructor(
+    readonly limitMs: number,
+    private readonly now: () => number
+  ) {
     this.remainingMs = limitMs
   }
 
   exhausted(): boolean {
     if (this.remainingMs <= 0) return true
-    return (
-      this.activeSince !== undefined && performance.now() - this.activeSince >= this.remainingMs
-    )
+    return this.activeSince !== undefined && this.now() - this.activeSince >= this.remainingMs
   }
 
   run<A>(operation: () => A): A {
     if (this.exhausted()) throw new Error(timeoutMessage(this.limitMs))
-    this.activeSince = performance.now()
+    this.activeSince = this.now()
     try {
       return operation()
     } finally {
-      this.remainingMs = Math.max(0, this.remainingMs - (performance.now() - this.activeSince))
+      this.remainingMs = Math.max(0, this.remainingMs - (this.now() - this.activeSince))
       this.activeSince = undefined
     }
   }
@@ -292,7 +295,10 @@ const evaluate = async (
     100,
     executorOptions.activeTimeoutMs ?? DEFAULT_ACTIVE_TIMEOUT_MS
   )
-  const budget = new ActiveExecutionBudget(activeTimeoutMs)
+  const budget = new ActiveExecutionBudget(
+    activeTimeoutMs,
+    executorOptions.now ?? (() => performance.now())
+  )
   const signal = executeOptions.signal
   const logs: Array<string> = []
   const pendingDeferreds = new Set<QuickJSDeferredPromise>()

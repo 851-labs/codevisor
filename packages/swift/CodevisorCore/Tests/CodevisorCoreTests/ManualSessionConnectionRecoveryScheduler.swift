@@ -1,7 +1,9 @@
+import Observation
 import Foundation
 @testable import CodevisorCore
 
 @MainActor
+@Observable
 final class ManualSessionConnectionRecoveryScheduler {
   private struct PendingSleep {
     let deadline: ContinuousClock.Instant
@@ -15,7 +17,7 @@ final class ManualSessionConnectionRecoveryScheduler {
 
   var pendingCount: Int { pending.count }
 
-  lazy var scheduler = SessionConnectionRecoveryScheduler(
+  @ObservationIgnored lazy var scheduler = SessionConnectionRecoveryScheduler(
     now: { [weak self] in self?.current ?? ContinuousClock.now },
     sleep: { [weak self] interval in
       guard let self else { throw CancellationError() }

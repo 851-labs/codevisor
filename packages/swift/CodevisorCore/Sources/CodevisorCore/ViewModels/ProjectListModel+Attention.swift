@@ -4,16 +4,17 @@ extension ProjectListModel {
   /// Shares read state through the server. The network request always carries
   /// the exact revision this client saw, so a delayed request cannot consume
   /// attention created after it was sent.
+  @discardableResult
   public func markSessionRead(
     _ sessionId: UUID,
     serverId: String,
     throughSequence: Int? = nil
-  ) {
+  ) -> Task<Void, Never>? {
     guard
       let index = sessions.firstIndex(where: {
         $0.serverId == serverId && $0.id == sessionId
       })
-    else { return }
+    else { return nil }
     let before = sessions[index]
     let rendered = min(
       max(0, throughSequence ?? before.latestAttentionSequence),
@@ -24,7 +25,7 @@ extension ProjectListModel {
     guard
       before.unreadCount > 0 || before.hasUnreadError
         || rendered > before.lastSeenAttentionSequence
-    else { return }
+    else { return nil }
     sessions[index].lastSeenAttentionSequence = max(
       sessions[index].lastSeenAttentionSequence,
       rendered
@@ -43,8 +44,8 @@ extension ProjectListModel {
     }
     persistSessions()
     emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkRead)
-    guard let serverClient = clientForServer(serverId) else { return }
-    Task {
+    guard let serverClient = clientForServer(serverId) else { return nil }
+    return Task {
       do {
         if let remote = try await serverClient.markSessionRead(
           id: sessionId,
@@ -61,12 +62,13 @@ extension ProjectListModel {
     }
   }
 
-  public func markSessionUnread(_ sessionId: UUID, serverId: String) {
+  @discardableResult
+  public func markSessionUnread(_ sessionId: UUID, serverId: String) -> Task<Void, Never>? {
     guard
       let index = sessions.firstIndex(where: {
         $0.serverId == serverId && $0.id == sessionId
       })
-    else { return }
+    else { return nil }
     let before = sessions[index]
     sessions[index].unreadCount = max(1, sessions[index].unreadCount)
     if sessions[index].sidebarState == .idle {
@@ -74,8 +76,8 @@ extension ProjectListModel {
     }
     persistSessions()
     emitAttentionTransition(old: before, new: sessions[index], origin: .localMarkUnread)
-    guard let serverClient = clientForServer(serverId) else { return }
-    Task {
+    guard let serverClient = clientForServer(serverId) else { return nil }
+    return Task {
       do {
         if let remote = try await serverClient.markSessionUnread(id: sessionId) {
           applyAttention(remote, serverId: serverId)

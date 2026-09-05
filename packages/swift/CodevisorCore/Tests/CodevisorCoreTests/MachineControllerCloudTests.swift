@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Testing
+import CodevisorTestSupport
 @testable import CodevisorCore
 
 @MainActor
@@ -257,7 +258,8 @@ extension MachineControllerCloudTests {
         "createdAt":"2026-06-30T00:00:01.000Z",
         "updatedAt":"2026-06-30T00:00:02.000Z","usage":null}]
       """
-    provider.requestTransport.delaysByPath["/v1/sessions"] = 250_000_000
+    let sessionsGate = TestSignal()
+    provider.requestTransport.gatesByPath["/v1/sessions"] = sessionsGate
     var connectedMachineIds: [String] = []
     controller.onMachineConnected = { connectedMachineIds.append($0) }
 
@@ -265,13 +267,11 @@ extension MachineControllerCloudTests {
     // fetch. The configured local probe then discovers both ids are the
     // same device and prunes the twin while that fetch is suspended.
     let connect = Task { await controller.connectMachine(twinId) }
-    for _ in 0..<100 {
-      if provider.requestTransport.requestCount(for: "/v1/sessions") > 0 { break }
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    await awaitObserved { provider.requestTransport.requestCount(for: "/v1/sessions") == 1 }
     #expect(provider.requestTransport.requestCount(for: "/v1/sessions") == 1)
 
     await controller.refreshStatus(for: "local")
+    sessionsGate.signal()
     await connect.value
 
     #expect(!projectList.projects.contains { $0.serverId == twinId })
@@ -599,11 +599,11 @@ extension MachineControllerCloudTests {
 
     // The bridge publishes its port a beat after the first touch, like
     // CloudAccountController does once the listener is up.
-    Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(50))
+    let clock = AdvancingServerUpdateScheduler()
+    clock.onSleep = {
       provider.loopbackURLsByDeviceId[cloud.deviceId] = URL(string: "http://127.0.0.1:50505")!
     }
-    let url = await controller.effectiveHTTPBaseURL(forMachineId: "cloud:dev-1")
+    let url = await controller.effectiveHTTPBaseURL(forMachineId: "cloud:dev-1", scheduler: clock.scheduler)
     #expect(url == URL(string: "http://127.0.0.1:50505"))
   }
 
@@ -612,10 +612,11 @@ extension MachineControllerCloudTests {
     let (controller, _, provider) = makeController()
     provider.cloudMachines = [makeCloudMachine()]
 
+    let clock = AdvancingServerUpdateScheduler()
     let url = await controller.effectiveHTTPBaseURL(
-      forMachineId: "cloud:dev-1",
-      timeout: .milliseconds(150)
+      forMachineId: "cloud:dev-1", scheduler: clock.scheduler
     )
+    #expect(clock.elapsed == .seconds(10))
     #expect(url == nil)
   }
 }

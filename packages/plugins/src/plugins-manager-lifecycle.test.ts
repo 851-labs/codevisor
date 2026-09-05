@@ -1,3 +1,5 @@
+import { nextRunningState } from "./test-support.js"
+import { advancingClock } from "./test-support.js"
 import { renameSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -87,6 +89,7 @@ describe("enabled state and recovery", () => {
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 100,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await manager.setEnabled("owner.example", false)
@@ -156,8 +159,10 @@ describe("always-running lifecycle", () => {
     await Promise.all([manager.startAll(), manager.startAll()])
     expect((await manager.get("owner.example")).state).toBe("running")
     expect(fake.spawnCount()).toBe(1)
+    const restarted = nextRunningState(manager)
     fake.simulateExit("exited with code 1")
-    await expect.poll(() => fake.spawnCount()).toBe(2)
+    await restarted
+    expect(fake.spawnCount()).toBe(2)
     expect((await manager.get("owner.example")).state).toBe("running")
     manager.close()
     await manager.startAll()
@@ -168,6 +173,7 @@ describe("always-running lifecycle", () => {
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 200,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await manager.startAll()

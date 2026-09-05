@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
@@ -15,6 +16,7 @@ struct LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         launches.append(request)
         return Process()
@@ -97,6 +99,7 @@ struct LocalCodevisorServerTests {
       scoped.bootId = launchedBootId
       try? JSONEncoder().encode(scoped).write(to: statusURL, options: .atomic)
     }
+    let clock = AdvancingLocalServerScheduler()
     var launchedProcess: Process?
     let server = LocalCodevisorServer(
       client: client,
@@ -112,26 +115,25 @@ struct LocalCodevisorServerTests {
         scoped.bootId = request.bootId
         try JSONEncoder().encode(scoped).write(to: statusURL, options: .atomic)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        // Far longer than the test can run: a stalled CI runner once
-        // took over a second to reach the healthy poll iteration, at
-        // which point a short-lived fake process had already exited
-        // and tripped the "server exited before ready" branch.
-        process.arguments = ["600"]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
+        // The fixture stays alive until explicit cleanup.
+        process.arguments = ["-f", "/dev/null"]
         try process.run()
         launchedProcess = process
         return process
       }
     )
-    defer { launchedProcess?.terminate() }
+    server.startupScheduler = clock.scheduler
+    defer { launchedProcess?.terminate(); launchedProcess?.waitUntilExit() }
 
-    let result = Task { await server.ensureRunning() }
-    for _ in 0..<200 where server.dataUpgradeProgress == nil {
-      try await Task.sleep(for: .milliseconds(10))
+    var observedProgress = false
+    clock.onSleep = {
+      #expect(server.dataUpgradeProgress?.state == running.state)
+      #expect(server.dataUpgradeProgress?.bootId == launchedBootId)
+      observedProgress = true
     }
-    #expect(server.dataUpgradeProgress?.state == running.state)
-    #expect(server.dataUpgradeProgress?.bootId == launchedBootId)
-    #expect(await result.value == .started)
+    #expect(await server.ensureRunning() == .started)
+    #expect(observedProgress)
     #expect(server.dataUpgradeProgress == nil)
   }
 
@@ -153,6 +155,7 @@ struct LocalCodevisorServerTests {
       .failure(TestError()),
       .success(.ready),
     ])
+    let clock = AdvancingLocalServerScheduler()
     var launchedProcess: Process?
     let server = LocalCodevisorServer(
       client: client,
@@ -163,19 +166,19 @@ struct LocalCodevisorServerTests {
       launcher: { request in
         client.acceptBoot(request.bootId)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
-        process.arguments = ["600"]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
+        process.arguments = ["-f", "/dev/null"]
         try process.run()
         launchedProcess = process
         return process
       }
     )
-    defer { launchedProcess?.terminate() }
+    server.startupScheduler = clock.scheduler
+    defer { launchedProcess?.terminate(); launchedProcess?.waitUntilExit() }
 
-    let result = Task { await server.ensureRunning() }
-    try await Task.sleep(for: .milliseconds(100))
+    clock.onSleep = { #expect(server.dataUpgradeProgress == nil) }
+    #expect(await server.ensureRunning() == .started)
     #expect(server.dataUpgradeProgress == nil)
-    #expect(await result.value == .started)
   }
 
   @Test("Rejects health from a different server boot")
@@ -190,6 +193,7 @@ struct LocalCodevisorServerTests {
       client: client,
       allowsDevelopmentLaunch: true,
       entrypoint: URL(fileURLWithPath: "/tmp/main.js"),
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in Process() }
     )
 
@@ -206,6 +210,8 @@ struct LocalCodevisorServerTests {
   func concurrentEnsureRunningLaunchesOnce() async {
     let client = FakeLocalServerClient(healthResults: [.failure(TestError()), .success(.ready)])
     var launches = 0
+    let entered = TestSignal()
+    let release = TestSignal()
     let server = LocalCodevisorServer(
       client: client,
       allowsDevelopmentLaunch: true,
@@ -214,7 +220,8 @@ struct LocalCodevisorServerTests {
         // Suspend mid-launch so the second caller arrives while the
         // first is still in flight — the historical double-launch
         // window (onboarding and the root view racing on first run).
-        try? await Task.sleep(for: .milliseconds(50))
+        entered.signal()
+        await release.wait()
         return [:]
       },
       launcher: { request in
@@ -224,9 +231,16 @@ struct LocalCodevisorServerTests {
       }
     )
 
-    async let first = server.ensureRunning()
-    async let second = server.ensureRunning()
-    let states = await [first, second]
+    let first = Task { await server.ensureRunning() }
+    await entered.wait()
+    let joining = TestSignal()
+    let second = Task { @MainActor in
+      joining.signal()
+      return await server.ensureRunning()
+    }
+    await joining.wait()
+    release.signal()
+    let states = await [first.value, second.value]
 
     #expect(states == [.started, .started])
     #expect(launches == 1)

@@ -1,3 +1,5 @@
+import CodevisorTestSupport
+import Observation
 import Foundation
 import CodevisorClient
 import CodevisorProtocol
@@ -8,6 +10,7 @@ import CodevisorProtocol
 /// A fake hub (and optionally a scripted responder machine behind it) living
 /// on the other end of a FakeWebSocketConnection: answers `hello` with
 /// `welcome` and hands relay envelopes to `onRelay`.
+@Observable
 final class ScriptedCloudHub: @unchecked Sendable {
   struct RelayEnvelope {
     var machineId: String
@@ -212,12 +215,15 @@ final class ScriptedCloudHub: @unchecked Sendable {
 /// The responder half of relay channels for tests: performs the machine-side
 /// key agreement, tracks per-channel seqs both ways, and lets a script send
 /// sealed frames back.
+@Observable
 final class ScriptedRelayMachine: @unchecked Sendable {
   let deviceId: String
   let secretKey: Data
   let publicKey: String
   private let lock = NSLock()
   private var channels: [String: Channel] = [:]
+
+  @Observable
 
   final class Channel {
     let cipher: CloudChannelCipher
@@ -367,18 +373,9 @@ final class ScriptedRelayMachine: @unchecked Sendable {
   }
 }
 
-// MARK: - Polling helper
-
-/// Waits until `condition` is true (checking every few milliseconds) or the
-/// timeout elapses — for asserting on work that crosses actor boundaries.
-func waitUntil(
-  timeout: Duration = .seconds(5),
-  _ condition: @Sendable () async -> Bool
-) async -> Bool {
-  let deadline = ContinuousClock.now + timeout
-  while ContinuousClock.now < deadline {
-    if await condition() { return true }
-    try? await Task.sleep(for: .milliseconds(5))
-  }
-  return await condition()
+/// Waits for fixture state changes; the test runner owns the hang watchdog.
+@MainActor
+func waitUntil(_ condition: () -> Bool) async -> Bool {
+  await awaitObserved(condition)
+  return condition()
 }

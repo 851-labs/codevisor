@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -13,7 +14,8 @@ struct MachinePreparationRetryTests {
   func failedPreparationRetriesAutomatically() async throws {
     let fake = PreparationFakeServerClient()
     fake.setInfoFails(true)
-    let controller = makeController(fake: fake)
+    let clock = TestClock()
+    let controller = makeController(fake: fake, clock: clock)
     let remote = try controller.addRemote(host: "10.0.0.9", select: false)
 
     await controller.prepareMachine(remote.id)
@@ -29,6 +31,8 @@ struct MachinePreparationRetryTests {
     // The machine comes back; the scheduled retry recovers on its own —
     // no foreground event, no user retry.
     fake.setInfoFails(false)
+    await clock.waitForSleep(.seconds(2))
+    clock.advance(by: .seconds(2))
     try await waitUntil {
       controller.availabilityByMachineId[remote.id] == .ready
     }
@@ -43,7 +47,8 @@ struct MachinePreparationRetryTests {
   func explicitRetryClearsLatch() async throws {
     let fake = PreparationFakeServerClient()
     fake.setInfoFails(true)
-    let controller = makeController(fake: fake)
+    let clock = TestClock()
+    let controller = makeController(fake: fake, clock: clock)
     let remote = try controller.addRemote(host: "10.0.0.9", select: false)
 
     await controller.prepareMachine(remote.id)
@@ -61,7 +66,7 @@ struct MachinePreparationRetryTests {
     }
   }
 
-  private func makeController(fake: PreparationFakeServerClient) -> MachineController {
+  private func makeController(fake: PreparationFakeServerClient, clock: TestClock) -> MachineController {
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -70,7 +75,7 @@ struct MachinePreparationRetryTests {
       store: InMemoryStore(),
       projectList: projectList,
       clientFactory: { _ in fake },
-      preparationRetryBaseDelay: .milliseconds(10)
+      preparationSleep: clock.sleep
     )
   }
 }

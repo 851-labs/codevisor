@@ -11,6 +11,17 @@ final class StreamingTextAnimationTimeline {
     var lastArrivalTime: TimeInterval?
   }
 
+  private let readTime: @Sendable () -> TimeInterval
+  private let sleep: @Sendable (Duration) async throws -> Void
+
+  init(
+    now: @escaping @Sendable () -> TimeInterval = { CACurrentMediaTime() },
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+  ) {
+    self.readTime = now
+    self.sleep = sleep
+  }
+
   private var scheduledFades: [StreamingTextFadeMetadata] = []
   private var latestAnimationEndTime: TimeInterval?
   private var smoothedArrivalGap: TimeInterval?
@@ -223,17 +234,17 @@ final class StreamingTextAnimationTimeline {
     while true {
       try Task.checkCancellation()
       if isSuspended {
-        try await Task.sleep(for: .milliseconds(16))
+        try await sleep(.milliseconds(16))
         continue
       }
-      let now = CACurrentMediaTime()
+      let now = readTime()
       guard let latestAnimationEndTime, latestAnimationEndTime > now else { return }
-      try await Task.sleep(for: .seconds(latestAnimationEndTime - now))
+      try await sleep(.seconds(latestAnimationEndTime - now))
     }
   }
 
   func reset() {
-    let now = presentationTime(at: CACurrentMediaTime())
+    let now = presentationTime(at: readTime())
     for fade in scheduledFades {
       fade.startTime = now - StreamingTextAnimationSpec.fadeDuration
     }
@@ -261,7 +272,7 @@ final class StreamingTextAnimationTimeline {
       return
     }
 
-    let now = presentationTime(at: CACurrentMediaTime())
+    let now = presentationTime(at: readTime())
     guard !isSuspended else {
       reportedActive = false
       deliverActivity(false)
@@ -356,10 +367,11 @@ final class StreamingTextAnimationTimeline {
   private func scheduleActivityEnd(at endTime: TimeInterval, now: TimeInterval) {
     activityEndTask?.cancel()
     let delay = max(0, endTime - now)
+    let sleep = sleep
     activityEndTask = Task { @MainActor [weak self] in
-      try? await Task.sleep(for: .seconds(delay))
+      try? await sleep(.seconds(delay))
       guard !Task.isCancelled, let self else { return }
-      let currentTime = CACurrentMediaTime()
+      let currentTime = self.readTime()
       if self.isAnimationActive(at: currentTime), let latestAnimationEndTime = self.latestAnimationEndTime {
         self.scheduleActivityEnd(at: latestAnimationEndTime, now: currentTime)
       } else {

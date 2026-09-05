@@ -1,9 +1,11 @@
 import { writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { PluginsError } from "./plugins-error.js"
 import { exampleManifest, makeDir, makeManager, toolManifest, writePlugin } from "./test-support.js"
+
+afterEach(() => vi.restoreAllMocks())
 
 /// Agent-tool surface of the manager: flattened tool listings, the invocation
 /// path (running-process reuse, signed context, typed failures), and the installed-set
@@ -118,12 +120,22 @@ describe("plugin tool invocation", () => {
   })
 
   it("times out hung tools without kicking the runtime", async () => {
+    const deadline = new AbortController()
+    const armed = Promise.withResolvers<void>()
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      armed.resolve()
+      return deadline.signal
+    })
     const { manager } = makeManager({ toolTimeoutMs: 100 }, toolManifest)
-    await invalid(
+    const timedOut = invalid(
       manager.invokeTool("owner.notes", "notes_slow", {}),
       "unavailable",
       /did not respond within 100ms/
     )
+    await armed.promise
+    deadline.abort(new DOMException("deadline reached", "TimeoutError"))
+    await timedOut
+    timeout.mockRestore()
     // The process is alive but was hung — the same instance keeps serving.
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({
       ok: true

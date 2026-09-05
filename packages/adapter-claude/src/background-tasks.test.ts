@@ -9,7 +9,6 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   systemMessage
 } from "./test-support.js"
 
@@ -27,7 +26,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -42,7 +40,7 @@ describe("ClaudeProvider", () => {
         status: null
       })
     )
-    await settle()
+    await fake.drain()
 
     const compactions = events
       .map((event) => event.payload as Record<string, unknown>)
@@ -75,13 +73,12 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     await createPromise
 
     fake.push(systemMessage("session_state_changed", { state: "running" }))
     fake.push(systemMessage("session_state_changed", { state: "idle" }))
-    await settle()
+    await fake.drain()
 
     const states = events
       .map((event) => event.payload as Record<string, unknown>)
@@ -98,12 +95,11 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       systemMessage("api_retry", {
         attempt: 1,
@@ -113,7 +109,7 @@ describe("ClaudeProvider", () => {
         retry_delay_ms: 500
       })
     )
-    await settle()
+    await fake.drain()
 
     expect(events.at(-1)).toMatchObject({
       kind: "session.updated",
@@ -142,7 +138,7 @@ describe("ClaudeProvider", () => {
         retry_delay_ms: 1000
       })
     )
-    await settle()
+    await fake.drain()
     expect(events.at(-1)).toMatchObject({
       kind: "session.updated",
       payload: {
@@ -166,7 +162,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -187,7 +182,7 @@ describe("ClaudeProvider", () => {
         tool_use_id: "toolu-bash-1"
       })
     )
-    await settle()
+    await fake.drain()
 
     const payloads = events.map((event) => event.payload as Record<string, unknown>)
     expect(payloads).toContainEqual(
@@ -214,7 +209,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -228,7 +222,7 @@ describe("ClaudeProvider", () => {
     expect(snapshots()).toContainEqual([])
 
     const promptPromise = run(created.handle.prompt("run tests in the background"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       systemMessage("task_started", {
         description: "Run npm test",
@@ -239,7 +233,7 @@ describe("ClaudeProvider", () => {
     )
     fake.push(resultMessage())
     await promptPromise
-    await settle()
+    await fake.drain()
 
     // The task survives turn end — that is what the waiting indicator keys on.
     const afterTurn = snapshots().at(-1)
@@ -261,7 +255,7 @@ describe("ClaudeProvider", () => {
         task_id: "bg-1"
       })
     )
-    await settle()
+    await fake.drain()
     expect(snapshots().at(-1)).toEqual([])
   })
 
@@ -284,7 +278,6 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const sessionKey = created.metadata.sessionId
@@ -350,7 +343,7 @@ describe("ClaudeProvider", () => {
         tool_use_id: "tool-bash-9"
       })
     )
-    await settle()
+    await fake.drain()
     const snapshots = events
       .filter((event) => event.kind === "session.updated")
       .map((event) => event.payload as Record<string, unknown>)
@@ -374,7 +367,7 @@ describe("ClaudeProvider", () => {
         tasks: [{ description: "npm run dev", task_id: "bg-9", task_type: "shell" }]
       })
     )
-    await settle()
+    await fake.drain()
     expect(snapshots.at(-1)?.[0]).toMatchObject({
       id: "bg-9",
       terminalKey: `${sessionKey}:bg:tool-bash-9`,
@@ -392,7 +385,7 @@ describe("ClaudeProvider", () => {
         tool_use_id: "tool-bash-9"
       })
     )
-    await settle()
+    await fake.drain()
     const latest = events
       .filter((event) => event.kind === "session.updated")
       .map((event) => event.payload as Record<string, unknown>)
@@ -418,7 +411,6 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     await createPromise
 
@@ -437,7 +429,7 @@ describe("ClaudeProvider", () => {
       })
     )
     fake.push(systemMessage("task_updated", { patch: { status: "paused" }, task_id: "sub-1" }))
-    await settle()
+    await fake.drain()
 
     const snapshots = () =>
       events
@@ -458,7 +450,7 @@ describe("ClaudeProvider", () => {
     )
 
     fake.push(systemMessage("task_updated", { patch: { status: "killed" }, task_id: "sub-1" }))
-    await settle()
+    await fake.drain()
     expect(snapshots().at(-1)).toEqual([])
   })
 })

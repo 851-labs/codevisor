@@ -19,6 +19,7 @@ export default defineConfig({
         // scaffolding, not product code: its defensive timeout/failure paths
         // only execute when a test fails.
         "src/test-support.ts",
+        "src/changes-test-support.ts",
         "src/test-support-agents.ts",
         "src/test-support-stubs.ts",
         "src/cli/support-test-support.ts",

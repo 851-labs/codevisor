@@ -1,3 +1,4 @@
+import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
 import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
@@ -87,8 +88,10 @@ describe("harness lifecycle bundled desktop apps", () => {
       updateAvailable: true
     })
 
+    const settled = waitForLifecycleSettle(lifecycle)
     await lifecycle.beginBundledAppUpdate("fake-cli")
-    await expect.poll(() => swaps).toEqual([bundle])
+    await settled
+    expect(swaps).toEqual([bundle])
   })
 
   it("reports no bundled app when the bundle is absent or off darwin", async () => {

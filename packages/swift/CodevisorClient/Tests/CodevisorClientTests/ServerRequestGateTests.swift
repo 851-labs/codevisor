@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import CodevisorProtocol
 
 @testable import CodevisorClient
@@ -8,7 +9,8 @@ import CodevisorProtocol
 struct ServerRequestGateTests {
   @Test("Requests wait until the machine is ready")
   func waitsForReady() async throws {
-    let gate = ServerRequestGate()
+    let waiting = TestSignal()
+    let gate = ServerRequestGate(onWait: { waiting.signal() })
     let completion = CompletionFlag()
     gate.beginWaiting(for: "local")
 
@@ -16,7 +18,7 @@ struct ServerRequestGateTests {
       try await gate.waitUntilReady(for: "local")
       await completion.finish()
     }
-    try await Task.sleep(for: .milliseconds(20))
+    await waiting.wait()
     #expect(await completion.value == false)
 
     gate.markReady(for: "local")
@@ -26,13 +28,14 @@ struct ServerRequestGateTests {
 
   @Test("A failed startup releases requests with the startup error")
   func failureReleasesWaiters() async {
-    let gate = ServerRequestGate()
+    let waiting = TestSignal()
+    let gate = ServerRequestGate(onWait: { waiting.signal() })
     gate.beginWaiting(for: "remote")
 
     let request = Task {
       try await gate.waitUntilReady(for: "remote")
     }
-    await Task.yield()
+    await waiting.wait()
     gate.markFailed(for: "remote", message: "Server did not start")
 
     await #expect(throws: ServerRequestGateError.self) {
@@ -48,12 +51,13 @@ struct ServerRequestGateTests {
 
   @Test("A readiness wait times out instead of hanging forever")
   func timeoutReleasesWaiter() async {
-    let gate = ServerRequestGate()
+    let clock = TestClock()
+    let gate = ServerRequestGate(sleep: { try await clock.sleep(for: $0) })
     gate.beginWaiting(for: "stuck")
-
-    await #expect(throws: ServerRequestGateError.self) {
-      try await gate.waitUntilReady(for: "stuck", timeout: .milliseconds(20))
-    }
+    let request = Task { try await gate.waitUntilReady(for: "stuck", timeout: .seconds(30)) }
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+    await #expect(throws: ServerRequestGateError.self) { try await request.value }
   }
 }
 

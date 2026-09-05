@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 @testable import CodevisorCloud
@@ -8,7 +9,8 @@ struct CloudHubPresenceRecoveryTests {
   func authoritativeRosterResumesParkedChannelOpen() async throws {
     let machine = ScriptedRelayMachine()
     let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
+    let parked = TestSignal()
+    let (hub, _) = makeHub(scripted, onMachineWait: parked.signal)
 
     try await hub.waitUntilReady()
     scripted.errorToApp(
@@ -16,7 +18,8 @@ struct CloudHubPresenceRecoveryTests {
       message: "resume grace expired",
       machineId: machine.deviceId
     )
-    #expect(await waitUntil { await hub.machines.first?.online == false })
+    await scripted.socket.drain()
+    #expect(await hub.machines.first?.online == false)
 
     let open = Task {
       try await hub.openChannel(
@@ -28,7 +31,7 @@ struct CloudHubPresenceRecoveryTests {
         onClosed: { _ in }
       )
     }
-    try await Task.sleep(for: .milliseconds(50))
+    await parked.wait()
     #expect(scripted.relayEnvelopes.isEmpty)
 
     await hub.reconcileAuthoritativeMachines([machine.presence])

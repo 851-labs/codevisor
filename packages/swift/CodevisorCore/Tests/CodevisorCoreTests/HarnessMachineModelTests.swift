@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -55,7 +56,7 @@ struct HarnessMachineModelTests {
     )
 
     let refresh = Task { await model.refresh() }
-    while !(await gate.hasWaiter) { await Task.yield() }
+    await gate.started.wait()
     await model.scan()
     await gate.resume(with: [stale])
     _ = await refresh.value
@@ -172,10 +173,12 @@ private final class FailureSwitch {
 private actor CatalogGate {
   private var continuation: CheckedContinuation<[ServerHarness], Never>?
 
-  var hasWaiter: Bool { continuation != nil }
+  nonisolated let started = TestSignal()
 
   func wait() async -> [ServerHarness] {
-    await withCheckedContinuation { continuation = $0 }
+    await withCheckedContinuation {
+      continuation = $0; started.signal()
+    }
   }
 
   func resume(with harnesses: [ServerHarness]) {

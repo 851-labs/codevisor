@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -42,11 +43,7 @@ struct ConfigSyncTests {
   }
 
   private func waitForSync(_ predicate: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if predicate() { return }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    Issue.record("Timed out waiting for sync condition")
+    await awaitObserved(predicate)
   }
 
   @Test("Writes stamp strictly increasing clocks and persist locally")
@@ -296,13 +293,17 @@ struct ConfigSyncTests {
     await controller.refreshStatus(for: "m1")
     let sync = ConfigSync(machines: controller, store: InMemoryStore())
     var changed: [String] = []
-    sync.onHarnessCatalogChanged = { changed.append($0) }
+    let catalogChanged = TestSignal()
+    sync.onHarnessCatalogChanged = {
+      changed.append($0); catalogChanged.signal()
+    }
     sync.set(
       namespace: "harnesses",
       key: "opencode",
       value: .object(["enabled": .bool(true), "installed": .bool(true)])
     )
-    try await waitForSync { changed.contains("m1") }
+    await catalogChanged.wait()
+    #expect(changed.contains("m1"))
   }
 
   @Test("Tombstones remove values and win over older writes")

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -171,26 +172,32 @@ struct ConfigOptionCacheTests {
     let counter = CapabilityRefreshCounter()
     let response = [capability(model: "fresh")]
 
-    async let first = cache.revalidateCapabilities(
-      forServer: "local",
-      cwd: "/project",
-      fetch: {
-        await counter.increment()
-        try await Task.sleep(for: .milliseconds(30))
-        return response
-      }
-    )
-    async let second = cache.revalidateCapabilities(
-      forServer: "local",
-      cwd: "/project",
-      fetch: {
-        await counter.increment()
-        try await Task.sleep(for: .milliseconds(30))
-        return response
-      }
-    )
-
-    _ = try await (first, second)
+    let entered = TestSignal()
+    let release = TestSignal()
+    let first = Task {
+      try await cache.revalidateCapabilities(
+        forServer: "local", cwd: "/project",
+        fetch: {
+          await counter.increment()
+          entered.signal()
+          await release.wait()
+          return response
+        })
+    }
+    await entered.wait()
+    let joining = TestSignal()
+    let second = Task { @MainActor in
+      joining.signal()
+      return try await cache.revalidateCapabilities(
+        forServer: "local", cwd: "/project",
+        fetch: {
+          await counter.increment()
+          return response
+        })
+    }
+    await joining.wait()
+    release.signal()
+    _ = try await (first.value, second.value)
     #expect(await counter.value == 1)
     #expect(!cache.needsCapabilityRevalidation(forServer: "local", cwd: "/project"))
   }

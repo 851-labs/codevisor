@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -17,14 +18,17 @@ struct CloudRelayFlowControlTests {
     }
     let (endpoint, hub) = makeRelayEndpoint(
       scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
-    let transport = CloudRelayRequestTransport(endpoint: endpoint, timeout: .milliseconds(300))
+    let clock = TestClock()
+    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
     var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/upload")!)
     request.httpMethod = "POST"
     request.httpBody = Data("held until granted".utf8)
 
-    await #expect(throws: CloudRelayTransportError.timedOut) {
-      _ = try await transport.data(for: request)
-    }
+    let pending = Task { try await transport.data(for: request) }
+    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+    await #expect(throws: CloudRelayTransportError.timedOut) { try await pending.value }
     // Not even the first chunk frame made it out.
     #expect(scriptedMachine.completedRequests.isEmpty)
     await hub.shutdown()
@@ -122,7 +126,7 @@ struct CloudRelayFlowControlTests {
     #expect(relayMessageText(try await connection.receive()) == "one")
     #expect(await waitUntil { credits() == 2 })
     // The second message is delivered but unconsumed — no grant for it.
-    try? await Task.sleep(for: .milliseconds(50))
+    await scriptedMachine.scripted.socket.drain()
     #expect(credits() == 2)
     #expect(relayMessageText(try await connection.receive()) == "two")
     #expect(await waitUntil { credits() == 3 })

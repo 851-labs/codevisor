@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -372,10 +373,7 @@ struct UpdateCenterTests {
     // the row disappear without a full sweep.
     fake.configureHarnesses([makeHarness(updateAvailable: false)])
     center.noteHarnessLifecycleChanged(onServer: remote.id)
-    for _ in 0..<200 {
-      if center.availableCount == 0 { break }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
+    await awaitObserved { center.availableCount == 0 }
     #expect(center.availableCount == 0)
     controller.stopEventSync()
   }

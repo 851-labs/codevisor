@@ -7,6 +7,9 @@ import Foundation
 /// waiter when the channel dies.
 final class CloudChannelCreditGate: @unchecked Sendable {
   private let lock = NSLock()
+  private let onWait: @Sendable () -> Void
+
+  init(onWait: @escaping @Sendable () -> Void = {}) { self.onWait = onWait }
   private var available = 0
   private var failure: (any Error)?
   private var waiter: (required: Int, continuation: CheckedContinuation<Void, any Error>)?
@@ -58,7 +61,7 @@ final class CloudChannelCreditGate: @unchecked Sendable {
           waiter = (bytes, continuation)
           return nil
         }
-        action?()
+        if let action { action() } else { onWait() }
       }
     } onCancel: {
       // Only the waiter's own task cancels it (single-sender), so

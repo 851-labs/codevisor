@@ -132,7 +132,7 @@ extension CodevisorServerClient {
             while !Task.isCancelled {
               let message =
                 expectsKeepalives
-                ? try await Self.withReceiveDeadline { try await socket.receive() }
+                ? try await withReceiveDeadline { try await socket.receive() }
                 : try await socket.receive()
               guard let data = Self.data(from: message) else { continue }
               if let handledKinds {
@@ -181,7 +181,7 @@ extension CodevisorServerClient {
             Log.server.error(
               "Event socket connection failed (consecutive failures: \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
             )
-            try? await Task.sleep(for: Self.eventReconnectDelay(failures: failures))
+            try? await eventSleep(Self.eventReconnectDelay(failures: failures))
           }
         }
         continuation.finish()
@@ -198,8 +198,7 @@ extension CodevisorServerClient {
   /// How long a keepalive-bearing socket may stay silent before the path is
   /// declared dead and the stream reconnects from its cursor. A few
   /// multiples of the server cadence, so ordinary jitter never trips it.
-  /// Mutable only so tests can compress the wait; production never writes.
-  nonisolated(unsafe) static var eventReceiveDeadline: Duration = .seconds(90)
+  static let eventReceiveDeadline: Duration = .seconds(90)
 
   struct EventStreamStalledError: Error {}
 
@@ -207,13 +206,13 @@ extension CodevisorServerClient {
   /// error unwinds through the reconnect path exactly like a socket failure:
   /// the connection's `defer` cancels the socket (tearing down a relayed
   /// channel with it) and the stream re-dials from its cursor.
-  private static func withReceiveDeadline<T: Sendable>(
+  private func withReceiveDeadline<T: Sendable>(
     _ operation: @escaping @Sendable () async throws -> T
   ) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
       group.addTask { try await operation() }
       group.addTask {
-        try await Task.sleep(for: eventReceiveDeadline)
+        try await self.eventSleep(Self.eventReceiveDeadline)
         throw EventStreamStalledError()
       }
       defer { group.cancelAll() }

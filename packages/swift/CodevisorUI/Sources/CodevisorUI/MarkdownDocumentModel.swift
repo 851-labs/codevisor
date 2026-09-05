@@ -21,7 +21,7 @@ public final class MarkdownDocumentModel {
   @ObservationIgnored private let fetch: @Sendable () async throws -> Data
   @ObservationIgnored private let waitForProgress: @Sendable () async throws -> Void
   @ObservationIgnored private var loadTask: Task<Void, Never>?
-  @ObservationIgnored private var progressTask: Task<Void, Never>?
+  @ObservationIgnored var progressTask: Task<Void, Never>?
   @ObservationIgnored private var generation = 0
 
   public convenience init(path: String, sessionId: UUID, client: any CodevisorServerClienting) {

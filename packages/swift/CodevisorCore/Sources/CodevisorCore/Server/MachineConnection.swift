@@ -155,8 +155,9 @@ extension MachineController {
     connection.preparationRetryTask?.cancel()
     connection.preparationFailures += 1
     let delay = preparationRetryBaseDelay * min(60, 1 << min(connection.preparationFailures, 6))
+    let sleep = preparationSleep
     connection.preparationRetryTask = Task { [weak self] in
-      try? await Task.sleep(for: delay)
+      try? await sleep(delay)
       guard let self, !Task.isCancelled else { return }
       connection.preparationRetryTask = nil
       // Only retry a machine that still exists and is still failed;

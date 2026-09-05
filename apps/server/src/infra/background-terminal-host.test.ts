@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { EventEmitter, once } from "node:events"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { connect, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -22,19 +23,29 @@ interface RegisteredTerminal {
 }
 
 const makeRegistry = (): {
+  readonly changes: EventEmitter
   readonly registry: BackgroundTerminalHostRegistry
   readonly registered: Array<RegisteredTerminal>
 } => {
   const registered: Array<RegisteredTerminal> = []
+  const changes = new EventEmitter()
   return {
+    changes,
     registered,
     registry: {
       register: (key, controls) => {
         const entry: RegisteredTerminal = { controls, exits: [], key, outputs: [] }
         registered.push(entry)
+        changes.emit("change")
         return {
-          exit: (exitCode) => entry.exits.push(exitCode),
-          output: (data) => entry.outputs.push(data),
+          exit: (exitCode) => {
+            entry.exits.push(exitCode)
+            changes.emit("change")
+          },
+          output: (data) => {
+            entry.outputs.push(data)
+            changes.emit("change")
+          },
           remove: () => undefined
         }
       }
@@ -53,23 +64,35 @@ const send = (socket: Socket, frame: Record<string, unknown>): void => {
   socket.write(`${JSON.stringify(frame)}\n`)
 }
 
-const until = async (predicate: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 200 && !predicate(); attempt += 1) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 5))
-  }
-  expect(predicate()).toBe(true)
-}
+const until = (changes: EventEmitter, predicate: () => boolean): Promise<void> =>
+  new Promise((resolve) => {
+    const check = () => {
+      if (!predicate()) return
+      changes.off("change", check)
+      resolve()
+    }
+    changes.on("change", check)
+    check()
+  })
 
 describe("background terminal host", () => {
   let host: BackgroundTerminalHost | undefined
+  const directories: string[] = []
+  const makeSocketPath = () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-test-"))
+    directories.push(directory)
+    return join(directory, "bg.sock")
+  }
   afterEach(() => {
     host?.close()
     host = undefined
+    for (const directory of directories.splice(0))
+      rmSync(directory, { recursive: true, force: true })
   })
 
   it("bridges wrapper frames to the registry and forwards input/kill back", async () => {
-    const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
+    const { changes, registered, registry } = makeRegistry()
+    const socketPath = makeSocketPath()
     // A stale socket file from a previous process gets replaced.
     writeFileSync(socketPath, "")
     host = await startBackgroundTerminalHost({ registry, socketPath })
@@ -83,6 +106,7 @@ describe("background terminal host", () => {
         received.push(JSON.parse(line) as Record<string, unknown>)
       }
       buffered = buffered.split("\n").slice(-1)[0] ?? ""
+      changes.emit("change")
     })
 
     // Frames before (and without) a hello are ignored.
@@ -97,7 +121,7 @@ describe("background terminal host", () => {
     // Output frames without data are skipped.
     send(wrapper, { type: "output" })
 
-    await until(() => (registered[0]?.outputs.length ?? 0) > 0)
+    await until(changes, () => (registered[0]?.outputs.length ?? 0) > 0)
     expect(registered).toHaveLength(1)
     expect(registered[0]?.key).toBe("session:bg:tool-1")
     expect(registered[0]?.outputs).toEqual(["ready\n"])
@@ -105,41 +129,42 @@ describe("background terminal host", () => {
     // Terminal input and kill flow back down to the wrapper.
     registered[0]?.controls.write?.("q")
     registered[0]?.controls.kill?.()
-    await until(() => received.length >= 2)
+    await until(changes, () => received.length >= 2)
     expect(received).toEqual([{ type: "input", data: "q" }, { type: "kill" }])
 
     // A clean exit frame carries the code through.
     send(wrapper, { type: "exit", exitCode: 3 })
-    await until(() => (registered[0]?.exits.length ?? 0) > 0)
+    await until(changes, () => (registered[0]?.exits.length ?? 0) > 0)
     expect(registered[0]?.exits).toEqual([3])
     // The socket closing afterwards does not double-exit.
+    const closed = once(wrapper, "close")
     wrapper.end()
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 30))
+    await closed
     expect(registered[0]?.exits).toEqual([3])
   })
 
   it("ends the stream when a wrapper dies without an exit frame", async () => {
-    const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
+    const { changes, registered, registry } = makeRegistry()
+    const socketPath = makeSocketPath()
     host = await startBackgroundTerminalHost({ registry, socketPath })
 
     const wrapper = await connectWrapper(socketPath)
     send(wrapper, { type: "hello", key: "session:bg:tool-2", command: "sleep 99" })
     // An exit frame without a code maps to an undefined exit.
-    await until(() => registered.length === 1)
+    await until(changes, () => registered.length === 1)
     wrapper.destroy()
-    await until(() => (registered[0]?.exits.length ?? 0) > 0)
+    await until(changes, () => (registered[0]?.exits.length ?? 0) > 0)
     expect(registered[0]?.exits).toEqual([undefined])
   })
 
   it("propagates codeless exit frames and rejects on listen failures", async () => {
-    const { registered, registry } = makeRegistry()
-    const socketPath = join(mkdtempSync(join(tmpdir(), "codevisor-test-")), "bg.sock")
+    const { changes, registered, registry } = makeRegistry()
+    const socketPath = makeSocketPath()
     host = await startBackgroundTerminalHost({ registry, socketPath })
     const wrapper = await connectWrapper(socketPath)
     send(wrapper, { type: "hello", key: "session:bg:tool-3" })
     send(wrapper, { type: "exit" })
-    await until(() => (registered[0]?.exits.length ?? 0) > 0)
+    await until(changes, () => (registered[0]?.exits.length ?? 0) > 0)
     expect(registered[0]?.exits).toEqual([undefined])
     wrapper.end()
 

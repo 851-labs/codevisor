@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -22,20 +23,7 @@ actor Latch {
 
 @MainActor
 func waitUntil(_ predicate: () -> Bool) async throws {
-  for _ in 0..<50 {
-    if predicate() { return }
-    try await Task.sleep(nanoseconds: 10_000_000)
-  }
-  Issue.record("Timed out waiting for condition")
-}
-
-@MainActor
-func waitUntilAsync(_ predicate: () async -> Bool) async throws {
-  for _ in 0..<50 {
-    if await predicate() { return }
-    try await Task.sleep(nanoseconds: 10_000_000)
-  }
-  Issue.record("Timed out waiting for condition")
+  await awaitObserved(predicate)
 }
 
 struct FakeServerSnapshot: Sendable {
@@ -52,6 +40,16 @@ struct FakeReadRequest: Equatable, Sendable {
 }
 
 actor FakeServerClient: CodevisorServerClienting {
+  private let changed = TestSignal()
+
+  func waitForSnapshot(_ predicate: @Sendable (FakeServerSnapshot) -> Bool) async {
+    while true {
+      let revision = changed.value
+      if predicate(snapshot()) { return }
+      await changed.wait(for: revision + 1)
+    }
+  }
+
   private var projects: [ServerProject]
   private var sessions: [ServerSession]
   private var upsertedProjectIDs: [String] = []
@@ -117,6 +115,7 @@ actor FakeServerClient: CodevisorServerClienting {
     if let projectUpsertDelay { await projectUpsertDelay() }
     let serverProject = serverProject(from: project)
     upsertedProjectIDs.append(serverProject.id)
+    changed.signal()
     projects.removeAll { $0.id == serverProject.id }
     projects.append(serverProject)
     return serverProject
@@ -129,6 +128,7 @@ actor FakeServerClient: CodevisorServerClienting {
   func deleteProject(id: UUID) async throws {
     if let deleteDelay { await deleteDelay() }
     deletedProjectIDs.append(id.uuidString)
+    changed.signal()
     projects.removeAll { $0.id == id.uuidString }
   }
 
@@ -142,6 +142,7 @@ actor FakeServerClient: CodevisorServerClienting {
     if let sessionUpsertDelay { await sessionUpsertDelay() }
     let serverSession = serverSession(from: session)
     upsertedSessionIDs.append(serverSession.id)
+    changed.signal()
     sessions.removeAll { $0.id == serverSession.id }
     sessions.append(serverSession)
     return serverSession
@@ -170,6 +171,7 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession? {
     readRequests.append(FakeReadRequest(sessionId: id, throughSequence: throughSequence))
+    changed.signal()
     guard let index = sessions.firstIndex(where: { $0.id == id.uuidString }) else {
       return nil
     }
@@ -191,6 +193,7 @@ actor FakeServerClient: CodevisorServerClienting {
   func deleteSession(id: UUID) async throws {
     if let deleteDelay { await deleteDelay() }
     deletedSessionIDs.append(id.uuidString)
+    changed.signal()
     sessions.removeAll { $0.id == id.uuidString }
   }
 

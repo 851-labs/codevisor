@@ -26,13 +26,16 @@ public struct LegacyServerJobRetirer: Sendable {
 
   private let runner: any CommandRunner
   private let userID: UInt32
+  private let sleep: @Sendable (Duration) async throws -> Void
   private let commandTimeout: Duration
 
   public init(
     runner: any CommandRunner = ProcessCommandRunner(),
     userID: UInt32 = getuid(),
-    commandTimeout: Duration = .seconds(5)
+    commandTimeout: Duration = .seconds(5),
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
+    self.sleep = sleep
     self.runner = runner
     self.userID = userID
     self.commandTimeout = commandTimeout
@@ -49,7 +52,8 @@ public struct LegacyServerJobRetirer: Sendable {
         executableURL: URL(fileURLWithPath: "/bin/launchctl"),
         arguments: ["bootout", target],
         environment: nil,
-        timeout: commandTimeout
+        timeout: commandTimeout,
+        sleep: sleep
       )
       guard result.exitCode == 0 || Self.meansServiceWasMissing(result) else {
         let message = [result.standardError, result.standardOutput]

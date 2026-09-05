@@ -55,7 +55,7 @@ struct SessionModelTests {
       await model.send(UserMessage(id: messageId, text: "show this now"))
     }
     await settleUntil {
-      locallyAppendedID == messageId && client.promptedMessageIds.count == 1
+      client.promptedMessageIds.count == 1
     }
 
     #expect(userMessages(model).map(\.id) == [messageId])

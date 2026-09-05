@@ -25,7 +25,6 @@
         ShimmeringText.compactingContext
           .frame(width: 180, height: 24, alignment: .leading)
       )
-      await Task.yield()
       hostingView.layoutSubtreeIfNeeded()
 
       #expect(containsShimmerAnimation(in: hostingView))

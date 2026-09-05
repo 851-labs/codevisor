@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import {
   definition,
@@ -7,12 +7,12 @@ import {
   makeProvider,
   resultMessage,
   run,
-  settle,
   streamEvent,
   systemMessage
 } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
+  beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -25,12 +25,11 @@ describe("ClaudeProvider", () => {
       events.push(event)
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       streamEvent({
         content_block: { id: "tool-9", name: "Bash", type: "tool_use" },
@@ -38,9 +37,9 @@ describe("ClaudeProvider", () => {
         type: "content_block_start"
       })
     )
-    await settle()
+    await fake.drain()
     const cancellation = run(created.handle.cancel)
-    await settle()
+    await fake.waitFor(() => fake.interrupts.length === 1)
     fake.push(resultMessage("error_during_execution"))
     await expect(cancellation).resolves.toEqual({ runtimeState: "reusable" })
     expect(fake.interrupts).toHaveLength(1)
@@ -63,6 +62,7 @@ describe("ClaudeProvider", () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake, undefined, undefined, { cancelGraceMs: 5 })
     const events: Array<RuntimeEvent> = []
+    const terminalEntered = Promise.withResolvers<void>()
     let releaseTerminal: (() => void) | undefined
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
@@ -70,15 +70,15 @@ describe("ClaudeProvider", () => {
       if (payload.turnState === "ended") {
         await new Promise<void>((resolvePromise) => {
           releaseTerminal = resolvePromise
+          terminalEntered.resolve()
         })
       }
     }
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const promptPromise = run(created.handle.prompt("do work"))
-    await settle()
+    await fake.nextPrompt()
     fake.push(
       streamEvent({
         content_block: { id: "tool-stuck", name: "Bash", type: "tool_use" },
@@ -94,16 +94,15 @@ describe("ClaudeProvider", () => {
         tool_use_id: "tool-stuck"
       })
     )
-    await settle()
+    await fake.drain()
 
     let cancelSettled = false
     const cancellation = run(created.handle.cancel).then((result) => {
       cancelSettled = true
       return result
     })
-    await vi.waitFor(() => {
-      expect(releaseTerminal).toBeTypeOf("function")
-    })
+    await vi.advanceTimersByTimeAsync(5)
+    await terminalEntered.promise
     expect(cancelSettled).toBe(false)
     releaseTerminal?.()
 
@@ -146,14 +145,15 @@ describe("ClaudeProvider", () => {
           events.push(event)
         })
       )
-      await settle()
+      await fake.drain()
       fake.push(initMessage())
       const created = await createPromise
       const promptPromise = run(created.handle.prompt("stay stuck"))
-      await settle()
+      await fake.drain()
 
       const first = run(created.handle.cancel)
       const duplicate = run(created.handle.cancel)
+      await vi.advanceTimersByTimeAsync(5)
       await expect(Promise.all([first, duplicate])).resolves.toEqual([
         { runtimeState: "retire" },
         { runtimeState: "retire" }
@@ -178,11 +178,10 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const promptPromise = run(created.handle.prompt("stop while closing"))
-    await settle()
+    await fake.nextPrompt()
 
     const cancellation = run(created.handle.cancel)
     fake.finish()
@@ -206,18 +205,19 @@ describe("ClaudeProvider", () => {
         events.push(event)
       })
     )
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
     const promptPromise = run(created.handle.prompt("get stuck"))
-    await settle()
-    await expect(run(created.handle.cancel)).resolves.toEqual({ runtimeState: "retire" })
+    await fake.nextPrompt()
+    const cancellation = run(created.handle.cancel)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(cancellation).resolves.toEqual({ runtimeState: "retire" })
     await promptPromise
     const countBeforeLateResult = events.length
 
     fake.push(resultMessage())
     fake.push(streamEvent({ message: { id: "phantom" }, type: "message_start" }))
-    await settle()
+    await fake.drain()
 
     expect(events).toHaveLength(countBeforeLateResult)
     expect(

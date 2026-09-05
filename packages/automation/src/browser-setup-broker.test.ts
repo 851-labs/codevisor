@@ -5,8 +5,6 @@ import { describe, expect, it, vi } from "vitest"
 import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
 import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
 
-const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
-
 const fixture = (
   options: {
     chrome?: boolean
@@ -49,11 +47,25 @@ const fixture = (
     openExtensionWebStore: openWebStore
   } as unknown as BrowserUseProvider
   const events: RuntimeEvent[] = []
+  let questionCount = 0
+  let consumedQuestions = 0
+  const waiters = new Map<number, () => void>()
   const broker = makeBrowserSetupBroker(db, provider)
   broker.setSink("session", async (event) => {
     events.push(event)
+    if ((event.payload as { sessionUpdate?: string }).sessionUpdate === "question") {
+      questionCount += 1
+      waiters.get(questionCount)?.()
+      waiters.delete(questionCount)
+    }
   })
   return {
+    nextQuestion: () => {
+      consumedQuestions += 1
+      return questionCount >= consumedQuestions
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => waiters.set(consumedQuestions, resolve))
+    },
     broker,
     events,
     showFolder,
@@ -97,7 +109,7 @@ describe("browser setup broker", () => {
   it("asks once, remembers the choice, and lets explicit managed selection bypass UI", async () => {
     const selected = fixture({ chrome: false })
     const resolving = selected.broker.resolveBackend("session")
-    await tick()
+    await selected.nextQuestion()
     expect(
       (
         selected.events.at(-1)!.payload as {
@@ -126,9 +138,9 @@ describe("browser setup broker", () => {
   it("resumes when Chrome is connected from another client", async () => {
     const current = fixture()
     const resolving = current.broker.resolveBackend("session")
-    await tick()
+    await current.nextQuestion()
     await answer(current.broker, current.events, "Use Google Chrome")
-    await tick()
+    await current.nextQuestion()
 
     const setup = current.events.at(-1)!.payload as {
       questions: Array<{ backOptionLabel?: string; presentation?: string }>
@@ -165,7 +177,7 @@ describe("browser setup broker", () => {
   it("asks again when a saved Chrome preference is no longer available", async () => {
     const current = fixture({ chrome: false, preference: "chrome" })
     const resolving = current.broker.resolveBackend("session")
-    await tick()
+    await current.nextQuestion()
     const options = (
       current.events.at(-1)!.payload as {
         questions: Array<{ options: Array<{ label: string }> }>
@@ -179,9 +191,9 @@ describe("browser setup broker", () => {
   it("uses Back as navigation without rejecting the held call", async () => {
     const current = fixture()
     const resolving = current.broker.resolveBackend("session")
-    await tick()
+    await current.nextQuestion()
     await answer(current.broker, current.events, "Use Google Chrome")
-    await tick()
+    await current.nextQuestion()
     const setup = current.events.at(-1)!.payload as {
       message?: string
       questions: Array<{
@@ -199,7 +211,7 @@ describe("browser setup broker", () => {
       options: [{ label: "Open Extensions" }]
     })
     await answer(current.broker, current.events, "Back")
-    await tick()
+    await current.nextQuestion()
     const question = (current.events.at(-1)!.payload as { questions: Array<{ question: string }> })
       .questions[0]?.question
     expect(question).toBe("Which browser should I use?")
@@ -210,11 +222,11 @@ describe("browser setup broker", () => {
   it("opens Chrome Extensions and auto-resumes when the extension connects", async () => {
     const current = fixture()
     const resolving = current.broker.resolveBackend("session")
-    await tick()
+    await current.nextQuestion()
     await answer(current.broker, current.events, "Use Google Chrome")
-    await tick()
+    await current.nextQuestion()
     await answer(current.broker, current.events, "Open Extensions")
-    await tick()
+    await current.nextQuestion()
     expect(current.openExtensions).toHaveBeenCalledOnce()
     expect(current.showFolder).not.toHaveBeenCalled()
     const waiting = current.events.at(-1)!.payload as {
@@ -249,7 +261,7 @@ describe("browser setup broker", () => {
   it("uses the packaged extension guide in production", async () => {
     const current = fixture({ setupMode: "webStore" })
     const resolving = current.broker.resolveBackend("session", "extension")
-    await tick()
+    await current.nextQuestion()
     const setup = current.events.at(-1)!.payload as {
       questions: Array<{ options: Array<{ label: string }> }>
     }
@@ -261,7 +273,7 @@ describe("browser setup broker", () => {
     ])
 
     await answer(current.broker, current.events, "Open Extensions")
-    await tick()
+    await current.nextQuestion()
     expect(current.openExtensions).toHaveBeenCalledOnce()
     expect(current.openWebStore).not.toHaveBeenCalled()
     expect(current.showFolder).not.toHaveBeenCalled()
@@ -275,7 +287,7 @@ describe("browser setup broker", () => {
 
     current.disconnect()
     const reconnecting = current.broker.resolveBackend("session")
-    await tick()
+    await current.nextQuestion()
     const setup = current.events.at(-1)!.payload as {
       questions: Array<{ presentation?: string; question: string }>
     }
@@ -285,7 +297,7 @@ describe("browser setup broker", () => {
     })
 
     await answer(current.broker, current.events, "Open Extensions")
-    await tick()
+    await current.nextQuestion()
     expect(current.openExtensions).toHaveBeenCalledOnce()
     current.connect()
     await expect(reconnecting).resolves.toBe("extension")
@@ -294,13 +306,13 @@ describe("browser setup broker", () => {
   it("turns invalid answers and Escape into deterministic tool rejection", async () => {
     const other = fixture()
     const otherCall = other.broker.resolveBackend("session")
-    await tick()
+    await other.nextQuestion()
     await answer(other.broker, other.events, undefined, "Do not use a browser")
     await expect(otherCall).rejects.toThrow("Do not use a browser")
 
     const dismissed = fixture()
     const dismissedCall = dismissed.broker.resolveBackend("session")
-    await tick()
+    await dismissed.nextQuestion()
     await dismissed.broker.answerQuestion("session", latestQuestionId(dismissed.events), {
       outcome: "cancelled"
     })

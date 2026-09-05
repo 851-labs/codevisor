@@ -28,17 +28,17 @@ extension ProjectListModelTests {
       model.sessions.first(where: { $0.id == session.id })?.unreadCount == 1
     }
 
-    model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
-    try await waitUntilAsync {
-      await fakeServer.snapshot().readRequests.count == 1
+    let read = model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
     }
     #expect(model.sessions.first(where: { $0.id == session.id })?.unreadCount == 0)
 
+    await read?.value
+
     // Focus-read fires continuously while a chat stays focused; repeated
     // triggers with nothing unseen must not spam the server.
-    model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
-    model.markSessionRead(session.id, serverId: session.serverId)
-    try await Task.sleep(for: .milliseconds(20))
+    #expect(model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1) == nil)
+    #expect(model.markSessionRead(session.id, serverId: session.serverId) == nil)
     let readRequests = await fakeServer.snapshot().readRequests
     #expect(readRequests.map(\.throughSequence) == [1])
   }
@@ -74,7 +74,7 @@ extension ProjectListModelTests {
       throughSequence: 1
     )
 
-    try await waitUntilAsync { await fakeServer.snapshot().readRequests.count == 1 }
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1 }
     try await waitUntil {
       model.sessions.first(where: { $0.id == session.id })?.unreadCount == 0
     }
@@ -116,7 +116,7 @@ extension ProjectListModelTests {
       throughSequence: 1
     )
 
-    try await waitUntilAsync { await fakeServer.snapshot().readRequests.count == 1 }
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1 }
     try await waitUntil {
       model.sessions.first(where: { $0.id == session.id })?.latestAttentionSequence == 2
     }
@@ -150,14 +150,14 @@ extension ProjectListModelTests {
       model.sessions.first(where: { $0.id == session.id })?.latestAttentionSequence == 1
     }
 
-    model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
-    try await waitUntilAsync { await fakeServer.snapshot().readRequests.count == 1 }
+    let read = model.markSessionRead(session.id, serverId: session.serverId, throughSequence: 1)
+    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1 }
     await fakeServer.setSessionAttention(
       id: session.id, latestSequence: 2, lastSeenSequence: 1
     )
     await model.refreshFromServer()
     await responseGate.open()
-    try await Task.sleep(for: .milliseconds(20))
+    await read?.value
 
     let current = model.sessions.first(where: { $0.id == session.id })
     #expect(current?.latestAttentionSequence == 2)

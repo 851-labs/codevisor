@@ -1,16 +1,18 @@
 import Foundation
 import Observation
 import Testing
+import CodevisorTestSupport
 @testable import CodevisorCore
 
 /// Shared cloud-machine fixtures for the MachineController suites.
 /// A canned-response request transport standing in for the cloud relay:
 /// records every request and serves JSON by path.
+@Observable
 final class FakeRelayRequestTransport: ServerRequestTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var requestedPaths: [String] = []
   var responsesByPath: [String: String] = [:]
-  var delaysByPath: [String: UInt64] = [:]
+  var gatesByPath: [String: TestSignal] = [:]
 
   var paths: [String] {
     lock.withLock { requestedPaths }
@@ -23,9 +25,7 @@ final class FakeRelayRequestTransport: ServerRequestTransport, @unchecked Sendab
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let path = request.url?.path ?? ""
     lock.withLock { requestedPaths.append(path) }
-    if let delay = delaysByPath[path], delay > 0 {
-      try await Task.sleep(nanoseconds: delay)
-    }
+    if let gate = gatesByPath[path] { await gate.wait() }
     guard let body = responsesByPath[path] else {
       throw URLError(.fileDoesNotExist)
     }

@@ -16,7 +16,10 @@ public final class StreamingContentAnimationCoordinator {
   let timeline = StreamingTextAnimationTimeline()
   private var pendingEntranceSourceIDs: Set<String> = []
 
-  public init() {
+  private let sleep: @Sendable (Duration) async throws -> Void
+
+  public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+    self.sleep = sleep
     timeline.observeActivity { [weak self] active in
       self?.hasActiveEntranceAnimation = active
     }
@@ -37,7 +40,7 @@ public final class StreamingContentAnimationCoordinator {
       try Task.checkCancellation()
       await Task.yield()
       guard pendingEntranceSourceIDs.isEmpty else {
-        try await Task.sleep(for: .milliseconds(1))
+        try await sleep(.milliseconds(1))
         continue
       }
 

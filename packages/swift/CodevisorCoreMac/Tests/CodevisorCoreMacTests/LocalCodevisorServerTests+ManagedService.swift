@@ -25,6 +25,7 @@ extension LocalCodevisorServerTests {
     let server = LocalCodevisorServer(
       client: client,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in
         directLaunches += 1
         return Process()
@@ -60,6 +61,7 @@ extension LocalCodevisorServerTests {
     let server = LocalCodevisorServer(
       client: client,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { request in
         directLaunches += 1
         client.acceptBoot(request.bootId)
@@ -128,6 +130,7 @@ extension LocalCodevisorServerTests {
     let server = LocalCodevisorServer(
       client: client,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in Process() },
       healthPollInterval: .milliseconds(1),
       healthPollAttempts: 400,
@@ -197,6 +200,7 @@ extension LocalCodevisorServerTests {
     let server = LocalCodevisorServer(
       client: client,
       entrypoint: entrypoint,
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in
         directLaunches += 1
         return Process()
@@ -226,6 +230,7 @@ extension LocalCodevisorServerTests {
     let server = LocalCodevisorServer(
       client: client,
       entrypoint: try makeRuntimeEntrypoint(version: "0.2.0"),
+      serverEnvironmentProvider: { [:] },
       launcher: { _ in
         launched = true; return Process()
       }

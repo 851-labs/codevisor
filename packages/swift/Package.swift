@@ -31,6 +31,7 @@ let package = Package(
     .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
   ],
   targets: [
+    .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: [.swiftLanguageMode(.v6)]),
     // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
     // palette derivation — Foundation-only, no SwiftUI)
     .target(
@@ -79,7 +80,7 @@ let package = Package(
     ),
     .testTarget(
       name: "StreamMarkdownTests",
-      dependencies: ["StreamMarkdown"],
+      dependencies: ["CodevisorTestSupport", "StreamMarkdown"],
       path: "StreamMarkdown/Tests/StreamMarkdownTests",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -155,6 +156,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorClientTests",
       dependencies: [
+        "CodevisorTestSupport",
         "CodevisorClient",
         "CodevisorCloud",
         "ACPKit",
@@ -182,6 +184,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorCloudTests",
       dependencies: [
+        "CodevisorTestSupport",
         "CodevisorCloud",
         "CodevisorClient",
         "ACPKit",
@@ -213,6 +216,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorCoreTests",
       dependencies: [
+        "CodevisorTestSupport",
         "CodevisorCore",
         "ACPKit",
         .product(name: "Sentry", package: "sentry-cocoa"),
@@ -249,6 +253,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorUITests",
       dependencies: [
+        "CodevisorTestSupport",
         "CodevisorUI",
         "CodevisorClient",
         "ACPKit",
@@ -277,6 +282,7 @@ let package = Package(
     .testTarget(
       name: "CodevisorCoreMacTests",
       dependencies: [
+        "CodevisorTestSupport",
         "CodevisorCoreMac",
         "CodevisorCore",
         "ACPKit",

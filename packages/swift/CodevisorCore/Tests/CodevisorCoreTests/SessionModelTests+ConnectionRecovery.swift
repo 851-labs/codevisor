@@ -53,7 +53,7 @@ extension SessionModelTests {
     await settleUntil { scheduler.pendingCount == 1 }
     #expect(scheduler.requestedIntervals == [.milliseconds(10)])
     scheduler.advance()
-    await settleUntil { model.connectionRecoveryTask == nil }
+    await model.connectionRecoveryTask?.value
     #expect(client.transcriptPageRequests.count == 2)
     #expect(model.errorMessage == nil)
     #expect(model.connectionRecoveryMessage == nil)

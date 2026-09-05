@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import Foundation
 import CodevisorClient
 @testable import CodevisorCloud
@@ -7,6 +9,7 @@ import CodevisorClient
 
 /// Scripts the machine end of "http" channels: decrypts the open, gathers
 /// body chunks until `end`, then answers head → chunks → end → close.
+@Observable
 final class ScriptedHttpMachine: @unchecked Sendable {
   struct ReceivedRequest {
     var method: String
@@ -163,6 +166,7 @@ final class ScriptedHttpMachine: @unchecked Sendable {
 
 /// Scripts the machine end of "ws" channels: remembers accepted opens and
 /// lets the test push sealed frames toward the app.
+@Observable
 final class ScriptedWsMachine: @unchecked Sendable {
   let machine = ScriptedRelayMachine()
   let scripted: ScriptedCloudHub
@@ -209,7 +213,9 @@ func makeRelayEndpoint(
     deviceName: "Test App",
     deviceOS: "macOS",
     webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-    readyTimeout: .seconds(2)
+    readyTimeout: .seconds(2),
+    sleep: TestClock().sleep,
+    reconnectDelay: { _ in .zero }
   )
   let endpoint = CloudRelayEndpoint(
     hub: hub,

@@ -1,3 +1,4 @@
+import { advancingClock } from "./test-support.js"
 import { existsSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
@@ -119,6 +120,7 @@ describe("manager install pipeline", () => {
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 200,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     const linked = await manager.link({ path: fixture })
@@ -135,6 +137,7 @@ describe("manager install pipeline", () => {
       },
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 200,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await expect(manager.importRemote({ source: fixture })).rejects.toThrow(

@@ -111,7 +111,12 @@ describe("runBackgroundSyncReconcile", () => {
 
   it("fires end to end from a config mutation over HTTP", async () => {
     const { services } = await makeServices("server-bg-http")
-    const server = await startWithApp(services)
+    const fanout = await run(makeEventFanout)
+    const reconciled = Promise.withResolvers<void>()
+    const unsubscribe = fanout.subscribe((event) => {
+      if (event.kind === "sync.changed" && event.subjectId === "mcps") reconciled.resolve()
+    })
+    const server = await startWithApp(services, fanout)
 
     // A rejected mutation must not reconcile.
     const rejected = await jsonRequest(server, "/v1/mcps", {
@@ -134,11 +139,8 @@ describe("runBackgroundSyncReconcile", () => {
 
     // The response-finish hook runs in the background; the replica entry
     // appears without any client calling a reconcile route.
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const entries = await run(services.db.getSyncEntries("mcps"))
-      if (entries.length > 0) break
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    }
+    await reconciled.promise
+    unsubscribe()
     const entries = await run(services.db.getSyncEntries("mcps"))
     expect(entries.map((entry) => entry.key)).toEqual(["Imported"])
   })
@@ -190,8 +192,13 @@ describe("auth-derived sync refresh", () => {
     const firstRefreshGate = new Promise<void>((resolve) => {
       releaseFirstRefresh = resolve
     })
+    const firstStarted = Promise.withResolvers<void>()
+    const trailingStarted = Promise.withResolvers<void>()
     const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => {
-      if (decorateHarnessesFromStoredState.mock.calls.length === 1) await firstRefreshGate
+      if (decorateHarnessesFromStoredState.mock.calls.length === 1) {
+        firstStarted.resolve()
+        await firstRefreshGate
+      } else trailingStarted.resolve()
       return harnesses
     })
     const withAuth = {
@@ -204,11 +211,13 @@ describe("auth-derived sync refresh", () => {
     const scheduler = makeAuthSyncRefreshScheduler(withAuth, config, fanout)
 
     for (let index = 0; index < 64; index += 1) scheduler.request()
-    await vi.waitFor(() => expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(1))
+    await firstStarted.promise
+    expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(1)
 
     for (let index = 0; index < 64; index += 1) scheduler.request()
     releaseFirstRefresh()
-    await vi.waitFor(() => expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2))
+    await trailingStarted.promise
+    expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
 
     scheduler.close()
     scheduler.request()

@@ -138,6 +138,7 @@ public final class MachineController {
   let updateScheduler: ServerUpdateScheduler
   /// Backoff base for automatic retries of a failed remote preparation
   /// (base · 2^n, capped). Injectable so tests run fast.
+  let preparationSleep: @Sendable (Duration) async throws -> Void
   let preparationRetryBaseDelay: Duration
   @ObservationIgnored private var credentialReadFailures: Set<String> = []
   /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
@@ -186,6 +187,7 @@ public final class MachineController {
     updatePollInterval: Duration = .seconds(2),
     updatePollAttempts: Int = 90,
     updateScheduler: ServerUpdateScheduler = .continuous,
+    preparationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     preparationRetryBaseDelay: Duration = .seconds(1)
   ) {
     let requestGate = ServerRequestGate()
@@ -207,6 +209,7 @@ public final class MachineController {
     self.updatePollInterval = updatePollInterval
     self.updatePollAttempts = updatePollAttempts
     self.updateScheduler = updateScheduler
+    self.preparationSleep = preparationSleep
     self.preparationRetryBaseDelay = preparationRetryBaseDelay
     if let data = store.loadData(forKey: "machines") {
       do {

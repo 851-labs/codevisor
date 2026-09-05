@@ -1,10 +1,11 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { AgentRuntimeError, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { testAcpConnection, type AcpHarnessLaunchRequest } from "./index.js"
 import { FakeConnection, makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
+  afterEach(() => vi.useRealTimers())
   it("probes and delegates harness authentication", async () => {
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
@@ -51,6 +52,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("times out a hung ACP auth probe and closes its connection", async () => {
+    vi.useFakeTimers()
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
       acpAuthProbeTimeoutMs: 10,
@@ -60,7 +62,7 @@ describe("@codevisor/agent-runtime", () => {
       locateExecutable: (name) => `/bin/${name}`
     })
 
-    await expect(
+    const timedOut = expect(
       run(
         runtime.probeHarnessAuth("gemini", {
           env: { HANG_AUTH: "1" },
@@ -72,6 +74,8 @@ describe("@codevisor/agent-runtime", () => {
       message: "ACP authentication probe timed out after 10ms",
       operation: "probeAuth"
     })
+    await vi.advanceTimersByTimeAsync(10)
+    await timedOut
     expect(connector.connections[0]?.closeCount).toBe(1)
   })
 

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createServer } from "node:http"
+import { Server } from "node:http"
 import { WebSocket } from "ws"
 import { describe, expect, it, vi } from "vitest"
 import {
@@ -16,8 +16,7 @@ import {
   run,
   runningServers,
   start,
-  startWithApp,
-  waitFor
+  startWithApp
 } from "./test-support.js"
 
 // The tailnet route shells out to the machine's Tailscale CLI; mock the
@@ -66,11 +65,20 @@ describe("@codevisor/server", () => {
 
   it("gates HTTP and websocket clients until startup recovery finishes", async () => {
     const { services } = await makeServices("server-a")
-    const reservation = createServer()
-    await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve))
-    const address = reservation.address()
-    const port = typeof address === "object" && address !== null ? address.port : 0
-    await new Promise<void>((resolve) => reservation.close(() => resolve()))
+    const listening = Promise.withResolvers<number>()
+    const emit = Server.prototype.emit
+    const observed = vi.spyOn(Server.prototype, "emit").mockImplementation(function (
+      this: Server,
+      event,
+      ...args
+    ) {
+      const result = emit.call(this, event, ...args)
+      if (event === "listening") {
+        const address = this.address()
+        if (address !== null && typeof address === "object") listening.resolve(address.port)
+      }
+      return result
+    })
 
     let releaseRecovery: (() => void) | undefined
     const recoveryGate = new Promise<void>((resolve) => {
@@ -87,23 +95,13 @@ describe("@codevisor/server", () => {
       }
     }
     const starting = run(
-      startCodevisorServer(gatedServices, defaultServerConfig({ id: "server-a", port }))
+      startCodevisorServer(gatedServices, defaultServerConfig({ id: "server-a", port: 0 }))
     )
 
-    let recoveryResponse: Response | undefined
-    await waitFor(
-      async () => {
-        try {
-          const response = await fetch(`http://127.0.0.1:${port}/v1/health`)
-          if (response.status !== 503) return false
-          recoveryResponse = response
-          return true
-        } catch {
-          return false
-        }
-      },
-      () => "for the recovery-gated listener"
-    )
+    const port = await listening.promise
+    observed.mockRestore()
+    const recoveryResponse = await fetch(`http://127.0.0.1:${port}/v1/health`)
+    expect(recoveryResponse.status).toBe(503)
     expect(await recoveryResponse?.json()).toEqual({
       error: "Server recovery is still in progress"
     })

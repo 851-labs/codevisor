@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 @testable import CodevisorCore
 
@@ -92,6 +93,8 @@ struct SessionModelStreamPacingTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionID),
       sessionId: sessionID.uuidString
     )
+    let clock = TestClock()
+    model.presentationBoundarySleep = clock.sleep
     let generation = model.pendingEvents.beginConsumer()
     #expect(model.pendingEvents.append(chunk("frame me"), generation: generation))
     var frameRequests = 0
@@ -104,11 +107,12 @@ struct SessionModelStreamPacingTests {
     let drain = Task { @MainActor in
       await model.flushPendingEventsAtPresentationBoundary()
     }
-    await Task.yield()
+    await clock.waitForSleep(.milliseconds(1))
 
     #expect(frameRequests > 0)
     #expect(!model.pendingEvents.isEmpty)
     model.flushPendingEvents()
+    clock.advance(by: .milliseconds(1))
     await drain.value
     #expect(model.pendingEvents.isEmpty)
     model.shutdown()

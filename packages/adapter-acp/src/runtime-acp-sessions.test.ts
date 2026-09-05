@@ -1,9 +1,10 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeAgentRuntime, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {
+  afterEach(() => vi.useRealTimers())
   it("creates and loads agent sessions through the connector", async () => {
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
@@ -31,7 +32,6 @@ describe("@codevisor/agent-runtime", () => {
     const reloadedElsewhere = await run(
       runtime.loadAgentSession("gemini", "agent-existing", "/tmp/other", sink)
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(created).toBe("agent-gemini-1")
     expect(inspected).toEqual({ configOptions: [], sessionId: "agent-gemini-1" })
@@ -76,6 +76,7 @@ describe("@codevisor/agent-runtime", () => {
   })
 
   it("times out hung harness inspection and closes its connection", async () => {
+    vi.useFakeTimers()
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
       connector,
@@ -85,12 +86,14 @@ describe("@codevisor/agent-runtime", () => {
       locateExecutable: (name) => `/bin/${name}`
     })
 
-    await expect(
+    const timedOut = expect(
       run(runtime.inspectHarness("gemini", "/tmp/hang-inspection"))
     ).rejects.toMatchObject({
       message: "Harness inspection timed out after 10ms",
       operation: "inspectHarness"
     })
+    await vi.advanceTimersByTimeAsync(10)
+    await timedOut
     expect(connector.connections[0]?.closeCount).toBe(1)
   })
 
@@ -318,7 +321,7 @@ describe("@codevisor/agent-runtime", () => {
     let emit: RuntimeEmit | undefined
     let closeCount = 0
     let loadCount = 0
-    let terminalEntered = false
+    const terminalEntered = Promise.withResolvers<void>()
     let releaseTerminal: (() => void) | undefined
     let cancelSettled = false
     const terminalGate = new Promise<void>((resolvePromise) => {
@@ -375,7 +378,7 @@ describe("@codevisor/agent-runtime", () => {
       runtime.createAgentSession("claude-code", "/tmp/project", async (event) => {
         const payload = event.payload as Record<string, unknown>
         if (payload.turnState === "ended") {
-          terminalEntered = true
+          terminalEntered.resolve()
           await terminalGate
         }
       })
@@ -384,12 +387,10 @@ describe("@codevisor/agent-runtime", () => {
     const cancellation = run(runtime.cancel(sessionId)).then(() => {
       cancelSettled = true
     })
-    while (!terminalEntered)
-      await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
+    await terminalEntered.promise
     const replacement = run(
       runtime.loadAgentSession("claude-code", sessionId, "/tmp/project", () => Promise.resolve())
     )
-    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise))
     expect(cancelSettled).toBe(false)
     expect(loadCount).toBe(0)
 

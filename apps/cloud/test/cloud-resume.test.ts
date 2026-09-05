@@ -12,6 +12,7 @@ import {
   devLogin,
   authed,
   expireResumeGrace,
+  disconnect,
   sendRelay,
   connectMachine,
   connectApp
@@ -24,7 +25,7 @@ describe("session resume", () => {
     const app = await connectApp(token)
     expect(typeof app.welcome.resume).toBe("string")
 
-    app.socket.close(1000, "subway tunnel")
+    await disconnect(token, app.socket, "subway tunnel")
     // Machines are never told; frames they send meanwhile are buffered.
     sendRelay(
       machine.socket,
@@ -65,7 +66,7 @@ describe("session resume", () => {
     const machine = await connectMachine(token, "resume-machine")
     const app = await connectApp(token)
 
-    machine.socket.close(1000, "worker deploy")
+    await disconnect(token, machine.socket, "worker deploy")
     // The machine still lists as online, and app frames buffer silently.
     const listed = await SELF.fetch(`${BASE}/api/machines`, { headers: authed(token) })
     const machines = ((await listed.json()) as { machines: CloudMachinePresence[] }).machines
@@ -97,7 +98,7 @@ describe("session resume", () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "fresh-vps")
     const app = await connectApp(token)
-    machine.socket.close(1000, "restart")
+    await disconnect(token, machine.socket, "restart")
 
     const reborn = await connectMachine(token, "fresh-vps", machine.deviceId, {
       apiKey: machine.apiKey,
@@ -115,7 +116,7 @@ describe("session resume", () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "expiry-vps")
     const app = await connectApp(token)
-    machine.socket.close(1000, "gone for good")
+    await disconnect(token, machine.socket, "gone for good")
     await expireResumeGrace(token)
     expect((await app.reader.next()).t).toBe("presence")
     expect((await app.reader.next()).t).toBe("error")
@@ -132,7 +133,7 @@ describe("session resume", () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "overflow-vps")
     const app = await connectApp(token)
-    machine.socket.close(1000, "away")
+    await disconnect(token, machine.socket, "away")
 
     // Fill past the 256 KiB cap: five 64 KiB payloads.
     const chunk = new Uint8Array(64 * 1024).fill(7)
@@ -178,8 +179,8 @@ describe("resilience matrix", () => {
     expect([...(await app.reader.nextEnvelope()).payload]).toEqual([0])
 
     // The deploy: every edge socket closes at once.
-    machine.socket.close(1000, "deploy")
-    app.socket.close(1000, "deploy")
+    await disconnect(token, machine.socket, "deploy")
+    await disconnect(token, app.socket, "deploy")
 
     // The machine reconnects first and keeps streaming; the app is still
     // away, so the frame lands in its resume buffer.

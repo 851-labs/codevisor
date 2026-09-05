@@ -363,12 +363,13 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     // first turn, but session creation must not hang on it.
     try {
       const modelList = q.supportedModels()
+      let timeout: ReturnType<typeof setTimeout> | undefined
       const models = await Promise.race([
         modelList,
-        new Promise<undefined>((resolvePromise) =>
-          setTimeout(() => resolvePromise(undefined), sessionOptions?.modelListTimeoutMs ?? 3000)
-        )
-      ])
+        new Promise<undefined>((resolve) => {
+          timeout = setTimeout(() => resolve(undefined), sessionOptions?.modelListTimeoutMs ?? 3000)
+        })
+      ]).finally(() => clearTimeout(timeout))
       if (models !== undefined) {
         adoptModelList(created, models)
         currentClaudeModelFor(created)

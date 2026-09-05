@@ -19,18 +19,12 @@ extension ProjectListModelTests {
     model.deleteSession(session)
     model.removeProject(project)
 
-    for _ in 0..<50 {
-      let snapshot = await fakeServer.snapshot()
-      if snapshot.upsertedProjectIDs.contains(project.id.uuidString),
-        snapshot.upsertedSessionIDs.contains(session.id.uuidString),
-        snapshot.deletedSessionIDs.contains(session.id.uuidString),
-        snapshot.deletedProjectIDs.contains(project.id.uuidString)
-      {
-        return
-      }
-      try await Task.sleep(nanoseconds: 10_000_000)
+    await fakeServer.waitForSnapshot { snapshot in
+      snapshot.upsertedProjectIDs.contains(project.id.uuidString)
+        && snapshot.upsertedSessionIDs.contains(session.id.uuidString)
+        && snapshot.deletedSessionIDs.contains(session.id.uuidString)
+        && snapshot.deletedProjectIDs.contains(project.id.uuidString)
     }
-    Issue.record("Timed out waiting for server mirror calls")
   }
 
   @Test("Draft sessions can be held locally until first send")
@@ -44,7 +38,7 @@ extension ProjectListModelTests {
 
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/draft"))
     _ = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
-    try await Task.sleep(nanoseconds: 20_000_000)
+    await fakeServer.waitForSnapshot { $0.upsertedProjectIDs.contains(project.id.uuidString) }
 
     let snapshot = await fakeServer.snapshot()
     #expect(snapshot.upsertedSessionIDs.isEmpty)

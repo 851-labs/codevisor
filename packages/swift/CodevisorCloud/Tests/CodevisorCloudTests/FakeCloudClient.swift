@@ -197,7 +197,8 @@ func testMachine(
 func makeController(
   client: FakeCloudClient = FakeCloudClient(),
   store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
-  environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil
+  environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil,
+  presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
 ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
   let controller = CloudAccountController(
     clientFactory: { _ in client },
@@ -208,7 +209,8 @@ func makeController(
     directPaths: CloudDirectPathController(
       credentialStore: store,
       prober: { _, _, _ in nil }
-    )
+    ),
+    presenceSleep: presenceSleep
   )
   return (controller, client, store)
 }

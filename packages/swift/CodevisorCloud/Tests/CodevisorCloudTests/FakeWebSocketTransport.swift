@@ -1,3 +1,5 @@
+import CodevisorTestSupport
+import Observation
 import Foundation
 import CodevisorClient
 import CodevisorProtocol
@@ -8,12 +10,16 @@ import CodevisorProtocol
 /// A scripted WebSocket connection: the test (or a scripted machine) feeds
 /// inbound messages through `push`/`finish`, and every outbound send is both
 /// recorded and forwarded to `onSend`.
+@Observable
 final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Sendable {
   private let lock = NSLock()
   private let inbound: AsyncThrowingStream<ServerWebSocketMessage, any Error>
   private let inboundContinuation: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Continuation
-  private var iterator: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Iterator
+  @ObservationIgnored private var iterator: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Iterator
   private var sentMessages: [ServerWebSocketMessage] = []
+  private var pushedCount = 0
+  let receiving = TestSignal()
+  let cancelled = TestSignal()
   var onSend: (@Sendable (ServerWebSocketMessage) -> Void)?
   var closeCodeOnDisconnect: URLSessionWebSocketTask.CloseCode = .invalid
   var failsSends = false
@@ -35,11 +41,12 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
   }
 
   func push(_ message: ServerWebSocketMessage) {
+    lock.withLock { pushedCount += 1 }
     inboundContinuation.yield(message)
   }
 
   func pushJSON(_ json: String) {
-    inboundContinuation.yield(.string(json))
+    push(.string(json))
   }
 
   /// Ends the connection: the client's pending/next receive throws.
@@ -54,14 +61,20 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
   }
 
   func receive() async throws -> ServerWebSocketMessage {
+    receiving.signal()
     guard let message = try await iterator.next() else {
       throw URLError(.networkConnectionLost)
     }
     return message
   }
 
+  func drain() async {
+    await receiving.wait(for: lock.withLock { pushedCount + 1 })
+  }
+
   func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
     inboundContinuation.finish(throwing: URLError(.cancelled))
+    cancelled.signal()
   }
 
   var closeCode: URLSessionWebSocketTask.CloseCode {
@@ -70,6 +83,7 @@ final class FakeWebSocketConnection: ServerWebSocketConnecting, @unchecked Senda
 }
 
 /// Hands out connections built by `makeConnection` — one per connect call.
+@Observable
 final class FakeWebSocketTransport: ServerWebSocketTransport, @unchecked Sendable {
   private let lock = NSLock()
   private let makeConnection: @Sendable (URLRequest) -> any ServerWebSocketConnecting

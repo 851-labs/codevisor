@@ -1,3 +1,4 @@
+import { observableFixture } from "./changes-test-support.js"
 import { harnessCatalog } from "@codevisor/agent-runtime"
 import type {
   AgentRuntimeService,
@@ -50,21 +51,24 @@ export const makeAgents = (): AgentRuntimeService & {
   readonly environmentRefreshes: Array<number>
   readonly sinks: Map<string, RuntimeEventSink>
   readonly emit: (sessionId: string, event: RuntimeEvent) => Promise<void>
+  readonly releasePrompt: () => void
 } => {
-  const loads: Array<readonly [string, string, string]> = []
-  const prompts: Array<readonly [string, string | PromptInput]> = []
-  const cancellations: Array<string> = []
-  const closes: Array<string> = []
-  const modes: Array<readonly [string, string]> = []
-  const configs: Array<readonly [string, string, string]> = []
-  const configFailures: Array<readonly [string, string, string]> = []
-  const goals: Array<readonly [string, SetGoalUpdate]> = []
-  const goalClears: Array<string> = []
-  const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = []
-  const inspections: Array<readonly [string, string]> = []
-  const inspectionConfigs: Array<Readonly<Record<string, string>> | undefined> = []
-  const creations: Array<readonly [string, string]> = []
-  const environmentRefreshes: Array<number> = []
+  const loads: Array<readonly [string, string, string]> = observableFixture([])
+  const prompts: Array<readonly [string, string | PromptInput]> = observableFixture([])
+  const cancellations: Array<string> = observableFixture([])
+  const closes: Array<string> = observableFixture([])
+  const modes: Array<readonly [string, string]> = observableFixture([])
+  const configs: Array<readonly [string, string, string]> = observableFixture([])
+  const configFailures: Array<readonly [string, string, string]> = observableFixture([])
+  const goals: Array<readonly [string, SetGoalUpdate]> = observableFixture([])
+  const goalClears: Array<string> = observableFixture([])
+  const questionAnswers: Array<readonly [string, string, QuestionAnswer]> = observableFixture([])
+  const inspections: Array<readonly [string, string]> = observableFixture([])
+  const inspectionConfigs: Array<Readonly<Record<string, string>> | undefined> = observableFixture(
+    []
+  )
+  const creations: Array<readonly [string, string]> = observableFixture([])
+  const environmentRefreshes: Array<number> = observableFixture([])
   const sinks = new Map<string, RuntimeEventSink>()
   const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
   const dependencyConfigSessions = new Set<string>()
@@ -132,8 +136,10 @@ export const makeAgents = (): AgentRuntimeService & {
   /// Turns that run until `cancel` ("prompt until cancelled"): lets tests
   /// exercise interrupt paths deterministically instead of racing a timer.
   const cancellable = new Map<string, () => void>()
+  const promptGate = Promise.withResolvers<void>()
   return {
     loads,
+    releasePrompt: () => promptGate.resolve(),
     prompts,
     cancellations,
     closes,
@@ -169,18 +175,12 @@ export const makeAgents = (): AgentRuntimeService & {
         windows: []
       }),
     createAgentSession: (harnessId, cwd, sink) =>
-      Effect.promise(
-        () =>
-          new Promise<string>((resolve) => {
-            creations.push([harnessId, cwd])
-            const delayMs = cwd.includes("pending-create") ? 100 : 5
-            setTimeout(() => {
-              const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
-              sinks.set(sessionId, sink)
-              resolve(sessionId)
-            }, delayMs)
-          })
-      ),
+      Effect.sync(() => {
+        creations.push([harnessId, cwd])
+        const sessionId = `agent-${harnessId}-${cwd.split("/").at(-1) ?? "root"}`
+        sinks.set(sessionId, sink)
+        return sessionId
+      }),
     inspectHarness: (harnessId, cwd, _account, configSelections) =>
       Effect.sync(() => {
         inspections.push([harnessId, cwd])
@@ -262,7 +262,7 @@ export const makeAgents = (): AgentRuntimeService & {
         const text = typeof input === "string" ? input : input.text
         prompts.push([sessionId, input])
         if (text === "slow prompt") {
-          await new Promise((resolve) => setTimeout(resolve, 250))
+          await promptGate.promise
         }
         if (text === "prompt until cancelled") {
           const turnId = `turn-${prompts.length}`

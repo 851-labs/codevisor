@@ -70,6 +70,7 @@ export interface PluginSupervisorConfig {
   /// How long a plugin gets from spawn to accepting connections.
   readonly readyTimeoutMs?: number
   readonly now?: () => number
+  readonly sleep?: (ms: number) => Promise<void>
   /// Crash/restart circuit breaker: after this many consecutive failures
   /// without a successful request or stable runtime in between, the plugin
   /// is refused until an explicit stop/restart. Default 5.
@@ -285,6 +286,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
   const log = config.log ?? (() => undefined)
   const readyTimeoutMs = config.readyTimeoutMs ?? 15_000
   const now = config.now ?? Date.now
+  const sleep = config.sleep ?? delay
   const spawnShell = config.spawnShell ?? defaultSpawnShell
   const spawnArgv = config.spawnArgv ?? defaultSpawnArgv
   const maxConsecutiveFailures = config.maxConsecutiveFailures ?? 5
@@ -390,7 +392,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
         log(`Plugin ${plugin.id} listening on 127.0.0.1:${port}`)
         return port
       }
-      await delay(150)
+      await sleep(150)
     }
     child.kill()
     throw new PluginsError(

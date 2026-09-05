@@ -1,5 +1,6 @@
+import { makeGitRepo, testTempDir } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -21,18 +22,7 @@ import {
 } from "./git.js"
 import { worktreeStartPoint } from "./project-branches.js"
 
-const makeRepo = (): { readonly root: string; readonly repo: string } => {
-  const root = mkdtempSync(join(tmpdir(), "codevisor-git-"))
-  const repo = join(root, "repo")
-  mkdirSync(repo)
-  execFileSync("git", ["init"], { cwd: repo })
-  execFileSync(
-    "git",
-    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
-    { cwd: repo }
-  )
-  return { repo, root }
-}
+const makeRepo = () => makeGitRepo()
 
 describe("git helper", () => {
   it("wraps spawn failures without stderr as GitError", async () => {
@@ -190,7 +180,7 @@ describe("git helper", () => {
       ["stderr", "echo raw failure >&2"],
       ["silent", ""]
     ] as const) {
-      const fakeBin = mkdtempSync(join(tmpdir(), `codevisor-fake-git-${name}-`))
+      const fakeBin = testTempDir(join(tmpdir(), `codevisor-fake-git-${name}-`))
       const fakeGit = join(fakeBin, "git")
       writeFileSync(
         fakeGit,
@@ -218,7 +208,7 @@ describe("git helper", () => {
   })
 
   it("falls back to HEAD when conventional base refs have no merge base", async () => {
-    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-no-base-"))
+    const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-no-base-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(
       fakeGit,
@@ -248,7 +238,7 @@ describe("git helper", () => {
     // Clone an origin, then advance both the remote and local branches without
     // fetching. The worktree should start from the new remote tip, not stale
     // origin/main or the drifted local main.
-    const root = mkdtempSync(join(tmpdir(), "codevisor-git-remote-"))
+    const root = testTempDir(join(tmpdir(), "codevisor-git-remote-"))
     const origin = join(root, "origin")
     mkdirSync(origin)
     execFileSync("git", ["init", "-b", "main"], { cwd: origin })
@@ -308,7 +298,7 @@ describe("git helper", () => {
   it("emits distinct sanitized frames for progress-style repainting output", async () => {
     // A fake `git` behaving like a TUI hook: colored panels, carriage-return
     // repaints of the same frame, and erase sequences on otherwise-empty lines.
-    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-"))
+    const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(
       fakeGit,
@@ -340,7 +330,7 @@ describe("git helper", () => {
   it("falls back to the exit code for silent failures and flushes partial output lines", async () => {
     // A fake `git` that emits an unterminated stdout line and exits non-zero
     // without writing to stderr.
-    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-"))
+    const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-"))
     const fakeGit = join(fakeBin, "git")
     writeFileSync(fakeGit, "#!/bin/sh\nprintf 'partial-stdout-line'\nexit 2\n")
     chmodSync(fakeGit, 0o755)
@@ -392,7 +382,7 @@ describe("classifyCloneFailure", () => {
 describe("cloneRepository", () => {
   it("clones a local origin and streams distinct progress lines", async () => {
     const { repo } = makeRepo()
-    const destination = join(mkdtempSync(join(tmpdir(), "codevisor-clone-")), "checkout")
+    const destination = join(testTempDir(join(tmpdir(), "codevisor-clone-")), "checkout")
     const lines: Array<string> = []
     await cloneRepository(`file://${repo}`, destination, (_stream, line) => {
       lines.push(line)
@@ -402,7 +392,7 @@ describe("cloneRepository", () => {
   })
 
   it("fails with a classified CloneError and never hangs on prompts", async () => {
-    const destination = join(mkdtempSync(join(tmpdir(), "codevisor-clone-fail-")), "checkout")
+    const destination = join(testTempDir(join(tmpdir(), "codevisor-clone-fail-")), "checkout")
     const failure = await cloneRepository("file:///nonexistent-origin.git", destination).then(
       () => undefined,
       (cause: unknown) => cause
@@ -412,7 +402,7 @@ describe("cloneRepository", () => {
   })
 
   it("streams stdout lines and honors a caller-provided GIT_SSH_COMMAND", async () => {
-    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-stdout-"))
+    const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-stdout-"))
     writeFileSync(
       join(fakeBin, "git"),
       '#!/bin/sh\necho "stdout line"\necho "ssh=$GIT_SSH_COMMAND"\nexit 0\n'
@@ -441,7 +431,7 @@ describe("cloneRepository", () => {
 
   it("reports the exit code when git dies silently and spawn errors when git is missing", async () => {
     // Fake git that exits without writing anything.
-    const fakeBin = mkdtempSync(join(tmpdir(), "codevisor-fake-git-clone-"))
+    const fakeBin = testTempDir(join(tmpdir(), "codevisor-fake-git-clone-"))
     writeFileSync(join(fakeBin, "git"), "#!/bin/sh\nexit 3\n")
     chmodSync(join(fakeBin, "git"), 0o755)
     const previousPath = process.env["PATH"]
@@ -455,7 +445,7 @@ describe("cloneRepository", () => {
       expect((silent as CloneError).message).toContain("exited with code 3")
 
       // Empty PATH: the spawn itself fails.
-      process.env["PATH"] = mkdtempSync(join(tmpdir(), "codevisor-empty-path-"))
+      process.env["PATH"] = testTempDir(join(tmpdir(), "codevisor-empty-path-"))
       const spawnFailure = await cloneRepository("https://example.com/x.git", "/tmp/unused").then(
         () => undefined,
         (cause: unknown) => cause

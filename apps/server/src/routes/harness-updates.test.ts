@@ -1,3 +1,4 @@
+import { observableFixture } from "../changes-test-support.js"
 import type { Harness } from "@codevisor/api"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -212,7 +213,7 @@ describe("harness update checks", () => {
   it("holds prompts while the harness update gate is closed and dispatches on release", async () => {
     const { agents, services } = await makeServices("server-a")
     const gated = new Set<string>()
-    const turns: Array<string> = []
+    const turns: Array<string> = observableFixture([])
     let releaseListener: ((harnessId: string) => void) | undefined
     const lifecycle = {
       beginBundledAppUpdate: async () => {},
@@ -267,7 +268,11 @@ describe("harness update checks", () => {
       method: "POST"
     })
     expect(second.status).toBe(202)
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await waitFor(async () =>
+      (await run(services.db.listSubjectEvents(session.id))).some(
+        (event) => event.kind === "session.updateGate.updated"
+      )
+    )
     expect(agents.prompts).toHaveLength(0)
     // The transcript-facing hold marker was persisted for replay.
     const heldEvents = await run(services.db.listSubjectEvents(session.id))
@@ -289,7 +294,7 @@ describe("harness update checks", () => {
 
     // A release for a different harness leaves this session held.
     releaseListener?.("gemini")
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Releasing another harness is a synchronous no-op for this gate.
     expect(agents.prompts).toHaveLength(0)
 
     // Gate releases → the held prompts dispatch and turn accounting ran.

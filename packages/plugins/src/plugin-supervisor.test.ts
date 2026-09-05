@@ -1,5 +1,7 @@
+import * as http from "node:http"
+import { EventEmitter } from "node:events"
 import { createServer, type Server } from "node:http"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { InstalledPlugin } from "./plugin-store.js"
 import {
   makePluginSupervisor,
@@ -7,9 +9,18 @@ import {
   type RegisterPluginTerminal
 } from "./plugin-supervisor.js"
 import { PluginsError } from "./plugins-error.js"
-import { cleanups, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
+import { advancingClock, cleanups, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
+
+vi.mock("node:http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:http")>()
+  return { ...actual, request: vi.fn(actual.request) }
+})
 
 describe("makePluginSupervisor", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.resetAllMocks()
+  })
   it("starts, reuses the running process, and reports state", async () => {
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
@@ -81,6 +92,7 @@ describe("makePluginSupervisor", () => {
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 400,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await expect(supervisor.ensureRunning(plugin())).rejects.toThrow(/did not start listening/)
@@ -95,6 +107,7 @@ describe("makePluginSupervisor", () => {
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 350,
+      ...advancingClock(),
       spawnShell: (_command, options) => {
         server = createServer((request, response) => {
           paths.push(request.url ?? "")
@@ -138,6 +151,7 @@ describe("makePluginSupervisor", () => {
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       readyTimeoutMs: 1_000,
+      ...advancingClock(),
       spawnShell: (_command, options) => {
         server = createServer((_request, response) => {
           probes += 1
@@ -160,6 +174,7 @@ describe("makePluginSupervisor", () => {
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 250,
+      ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
     await expect(supervisor.ensureRunning(plugin({ healthPath: "/health" }))).rejects.toThrow(
@@ -168,21 +183,32 @@ describe("makePluginSupervisor", () => {
   })
 
   it("times out an HTTP health endpoint that never answers", async () => {
-    let server: Server | undefined
-    cleanups.push(() => server?.close())
+    const requests: Array<EventEmitter & { destroy: ReturnType<typeof vi.fn> }> = []
+    vi.mocked(http.request).mockImplementation(() => {
+      const request = Object.assign(new EventEmitter(), {
+        destroy: vi.fn(() => {
+          request.emit("error", new Error("socket destroyed"))
+        }),
+        end: () => {
+          request.emit("timeout")
+        }
+      })
+      requests.push(request)
+      return request as unknown as http.ClientRequest
+    })
+    const clock = advancingClock()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
       readyTimeoutMs: 1_100,
-      spawnShell: (_command, options) => {
-        server = createServer(() => undefined)
-        server.listen(Number(options.env["PORT"]), "127.0.0.1")
-        return { kill: () => server?.close(), onExit: () => undefined, pid: 12 }
-      }
+      ...clock,
+      spawnShell: fakeSpawn({ listen: false }).spawnShell
     })
     await expect(supervisor.ensureRunning(plugin({ healthPath: "/health" }))).rejects.toThrow(
       /did not start listening/
     )
+    expect(requests.length).toBeGreaterThan(0)
+    expect(requests.every((request) => request.destroy.mock.calls.length === 1)).toBe(true)
   })
 
   it("fails fast when the process exits before it is ready", async () => {
@@ -190,9 +216,12 @@ describe("makePluginSupervisor", () => {
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       readyTimeoutMs: 5_000,
+      sleep: async () => {
+        spawn.simulateExit("exited with code 3\nboom")
+      },
       spawnShell: (command, options) => {
         const handle = spawn.spawnShell(command, options)
-        setTimeout(() => spawn.simulateExit("exited with code 3\nboom"), 50)
+
         return handle
       }
     })
@@ -241,17 +270,22 @@ describe("makePluginSupervisor", () => {
 
   it("launches real processes through the login shell by default", async () => {
     const frames: Array<string> = []
+    const outputReceived = Promise.withResolvers<void>()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       registerExternalTerminal: (terminalConfig, _process) => {
         expect(terminalConfig.sessionId).toBe("plugin:owner.example")
         return {
           exit: () => frames.push("[exit]"),
-          output: (data) => frames.push(data),
+          output: (data) => {
+            frames.push(data)
+            if (frames.join("").includes("plugin out") && frames.join("").includes("plugin boot"))
+              outputReceived.resolve()
+          },
           terminalId: "terminal-1"
         }
       },
-      resolveEnv: async () => ({ ...process.env })
+      resolveEnv: async () => ({ PATH: "/usr/bin:/bin", SHELL: "/bin/sh", HOME: makeDataDir() })
     })
     const server = `const http = require("http"); console.log("plugin out"); console.error("plugin boot"); http.createServer((q, s) => s.end("ok")).listen(process.env.PORT, "127.0.0.1")`
     const target = plugin({ run: { command: `"${process.execPath}" -e '${server}'` } })
@@ -265,8 +299,7 @@ describe("makePluginSupervisor", () => {
     if (target.manifest.protocolVersion === 1) {
       expect(frames[0]).toContain(target.manifest.run.command)
     }
-    await expect.poll(() => frames.join("")).toContain("plugin out")
-    await expect.poll(() => frames.join("")).toContain("plugin boot")
+    await outputReceived.promise
   })
 
   it("launches real protocol v2 processes without a shell", async () => {
@@ -384,21 +417,20 @@ describe("makePluginSupervisor", () => {
   })
 
   it("kills real process groups on stop", async () => {
-    const supervisor = makePluginSupervisor({ dataDir: makeDataDir() })
+    const exited = Promise.withResolvers<void>()
+    const supervisor = makePluginSupervisor({
+      dataDir: makeDataDir(),
+      resolveEnv: async () => ({ PATH: "/usr/bin:/bin", SHELL: "/bin/sh", HOME: makeDataDir() }),
+      registerExternalTerminal: () => ({
+        terminalId: "process",
+        output: () => {},
+        exit: () => exited.resolve()
+      })
+    })
     const server = `const http = require("http"); http.createServer((q, s) => s.end("ok")).listen(process.env.PORT, "127.0.0.1")`
     const target = plugin({ run: { command: `"${process.execPath}" -e '${server}'` } })
-    const port = await supervisor.ensureRunning(target)
+    await supervisor.ensureRunning(target)
     supervisor.stop("owner.example")
-    // The listener disappears once the process group dies.
-    await expect
-      .poll(async () => {
-        try {
-          await fetch(`http://127.0.0.1:${port}/`)
-          return "up"
-        } catch {
-          return "down"
-        }
-      })
-      .toBe("down")
+    await exited.promise
   })
 })

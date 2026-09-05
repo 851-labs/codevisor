@@ -1,3 +1,4 @@
+import { observableFixture } from "./changes-test-support.js"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -25,14 +26,14 @@ describe("@codevisor/server self-updates", () => {
     expect((await jsonRequest(plain, "/v1/update/apply", { method: "POST" })).status).toBe(409)
 
     // Servers with an updater report fresh update state and apply on request.
-    const updaterState = {
+    const updaterState = observableFixture({
       available: true,
       applyCalls: 0,
       applyFails: false,
       forcedChecks: 0,
       appliedChannels: [] as Array<string>,
       checkedChannels: [] as Array<string>
-    }
+    })
     const updatable = await run(
       startCodevisorServer(
         services,
@@ -207,8 +208,7 @@ describe("@codevisor/server self-updates", () => {
       })
     ).body as { readonly id: string }
 
-    // "slow prompt" keeps the session in activePromptSessions for ~250ms; a
-    // caller that opts out of the drain is refused for that whole window.
+    // The prompt remains active until explicitly released.
     await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
       body: JSON.stringify({ text: "slow prompt" }),
       method: "POST"
@@ -222,6 +222,7 @@ describe("@codevisor/server self-updates", () => {
     expect(busy.body).toMatchObject({ accepted: false, reason: "busy" })
 
     // Once the turn finishes the update goes through again.
+    agents.releasePrompt()
     await waitFor(async () => {
       const applied = await jsonRequest(server, "/v1/update/apply", { method: "POST" })
       return applied.status === 202

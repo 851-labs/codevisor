@@ -185,30 +185,31 @@ describe.sequential("Codevisor code executor", () => {
   })
 
   it("does not charge time waiting for a host tool against the active execution budget", async () => {
-    // The host wait (1750ms) far exceeds the active budget (1000ms), so this
-    // passes only if the budget clock stops while execution is suspended on
-    // the host tool. The generous absolute numbers are deliberate: the budget
-    // measures wall-clock time across synchronous sandbox slices, and loaded
-    // CI runners can preempt the process mid-slice for ~100ms — a tight
-    // budget then exhausts legitimately and fails this test spuriously.
-    const startedAt = performance.now()
-    const result = await makeCodeExecutor({ activeTimeoutMs: 1000 }).execute(
+    let now = 0
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const execution = makeCodeExecutor({ activeTimeoutMs: 1000, now: () => now }).execute(
       `async () => (await tools.browser.choose({})).answer`,
       {
         invoke: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 1750))
+          entered.resolve()
+          await release.promise
           return { answer: "chrome" }
         }
       }
     )
+    await entered.promise
+    now += 60_000
+    release.resolve()
+    const result = await execution
 
-    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(1500)
     expect(result).toMatchObject({ result: "chrome" })
     expect(result.error).toBeUndefined()
   })
 
   it("still interrupts code that exhausts its active execution budget", async () => {
-    const result = await makeCodeExecutor({ activeTimeoutMs: 100 }).execute(
+    let now = 0
+    const result = await makeCodeExecutor({ activeTimeoutMs: 100, now: () => now++ }).execute(
       `async () => { while (true) {} }`,
       unavailableTool
     )
@@ -240,12 +241,19 @@ describe.sequential("Codevisor code executor", () => {
 
   it("cancels a suspended execution without waiting for its host tool", async () => {
     const controller = new AbortController()
+    const entered = Promise.withResolvers<void>()
     const execution = makeCodeExecutor().execute(
       `async () => tools.browser.choose({})`,
-      { invoke: () => new Promise(() => undefined) },
+      {
+        invoke: () => {
+          entered.resolve()
+          return new Promise(() => undefined)
+        }
+      },
       { signal: controller.signal }
     )
-    setTimeout(() => controller.abort(), 20)
+    await entered.promise
+    controller.abort()
 
     await expect(execution).resolves.toMatchObject({
       error: "QuickJS execution was cancelled"

@@ -5,8 +5,7 @@ import {
   initMessage,
   makeProvider,
   resultMessage,
-  run,
-  settle
+  run
 } from "./test-support.js"
 
 describe("ClaudeProvider", () => {
@@ -18,7 +17,6 @@ describe("ClaudeProvider", () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -57,7 +55,7 @@ describe("ClaudeProvider", () => {
         ]
       })
     )
-    await settle()
+    await fake.nextPrompt()
     expect(fake.userMessages[0]?.message.content).toEqual([
       {
         text: [
@@ -94,7 +92,6 @@ describe("ClaudeProvider", () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
-    await settle()
     fake.push(initMessage())
     const created = await createPromise
 
@@ -112,7 +109,7 @@ describe("ClaudeProvider", () => {
         ]
       })
     )
-    await settle()
+    await fake.nextPrompt()
     expect(fake.userMessages[0]?.message.content).toEqual([
       {
         text: "[Attached file: /tmp/att/a.jpg (a.jpg, image/jpeg)]",

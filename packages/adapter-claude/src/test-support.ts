@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events"
 import type {
   Options as ClaudeOptions,
   SDKMessage,
@@ -26,6 +27,38 @@ export const environment: ProviderEnvironment = {
 /// A controllable SDK Query: tests push scripted SDKMessages and observe the
 /// streaming-input prompt the provider writes into.
 export class FakeQuery {
+  private readonly changes = new EventEmitter()
+  private pushed = 0
+  private reads = 0
+  private inputCount = 0
+
+  changed(): void {
+    this.changes.emit("change")
+  }
+
+  async waitFor(predicate: () => boolean): Promise<void> {
+    while (true) {
+      const next = Promise.withResolvers<void>()
+      const listener = () => next.resolve()
+      this.changes.once("change", listener)
+      try {
+        if (predicate()) return
+        await next.promise
+      } finally {
+        this.changes.off("change", listener)
+      }
+    }
+  }
+
+  async drain(): Promise<void> {
+    await this.waitFor(() => this.reads > this.pushed)
+  }
+
+  async nextPrompt(): Promise<void> {
+    this.inputCount += 1
+    await this.waitFor(() => this.userMessages.length >= this.inputCount)
+  }
+
   private buffer: Array<SDKMessage> = []
   private failure: unknown
   private waiting:
@@ -45,6 +78,7 @@ export class FakeQuery {
   interruptImplementation: (() => Promise<void>) | undefined
 
   push(message: SDKMessage): void {
+    this.pushed += 1
     const waiting = this.waiting
     if (waiting !== undefined) {
       this.waiting = undefined
@@ -73,6 +107,7 @@ export class FakeQuery {
 
   async interrupt(): Promise<void> {
     this.interrupts.push(Date.now())
+    this.changed()
     await this.interruptImplementation?.()
   }
 
@@ -114,6 +149,8 @@ export class FakeQuery {
   [Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
     return {
       next: (): Promise<IteratorResult<SDKMessage>> => {
+        this.reads += 1
+        this.changed()
         if (this.failure !== undefined) {
           const failure = this.failure
           this.failure = undefined
@@ -236,12 +273,6 @@ export const systemMessage = (subtype: string, fields: Record<string, unknown>):
     ...fields
   }) as never
 
-export const settle = async (): Promise<void> => {
-  for (let index = 0; index < 20; index += 1) {
-    await Promise.resolve()
-  }
-}
-
 export const makeProvider = (
   fake: FakeQuery,
   checkVersion = async () => "2.1.0",
@@ -258,6 +289,7 @@ export const makeProvider = (
       void (async () => {
         for await (const message of input.prompt) {
           fake.userMessages.push(message)
+          fake.changed()
         }
       })()
       return fake as never

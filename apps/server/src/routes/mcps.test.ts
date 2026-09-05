@@ -8,7 +8,7 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
-import { jsonRequest, start, tempDirs, waitFor } from "../test-support.js"
+import { jsonRequest, start, tempDirs } from "../test-support.js"
 
 describe("mcp routes", () => {
   it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
@@ -106,9 +106,11 @@ describe("mcp routes", () => {
     expect(listed.tools.find((tool) => tool.name === "execute")?.description).toContain(
       "Primary Codevisor tool interface"
     )
+    const toolsChanged = Promise.withResolvers<void>()
     let toolListChanges = 0
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
       toolListChanges += 1
+      toolsChanged.resolve()
     })
     await services.mcp.create({
       authType: "none",
@@ -116,7 +118,8 @@ describe("mcp routes", () => {
       name: "Linear",
       transport: "stdio"
     })
-    await waitFor(() => toolListChanges > 0)
+    await toolsChanged.promise
+    expect(toolListChanges).toBeGreaterThan(0)
     expect(
       (await client.listTools()).tools.find((tool) => tool.name === "execute")?.description
     ).toContain("Linear")

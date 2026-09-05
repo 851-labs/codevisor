@@ -1,3 +1,4 @@
+import { once } from "node:events"
 import { PassThrough } from "node:stream"
 import { describe, expect, it } from "vitest"
 import { makeNdjsonTransport } from "@codevisor/agent-runtime"
@@ -9,8 +10,6 @@ import { wireCodexClient } from "./client.js"
 /// codex process. Before the lifecycle-gated transport, one late reply to a
 /// dead stdin was an unhandled stream 'error' — fatal to the WHOLE server
 /// process, not just the session. These tests drive exactly those races.
-
-const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
 interface FakeChild {
   readonly endpoint: StdioEndpoint
@@ -67,7 +66,6 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     const client = makeClient(child)
     const reply = client.request<{ ok: boolean }>("thread/list", { cursor: null })
-    await flush()
     expect(child.frames()).toEqual([{ id: 1, method: "thread/list", params: { cursor: null } }])
     child.stdout.write(`${JSON.stringify({ id: 1, result: { ok: true } })}\n`)
     await expect(reply).resolves.toEqual({ ok: true })
@@ -77,7 +75,6 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     const client = makeClient(child)
     const reply = client.request("thread/list")
-    await flush()
     child.stdout.write(`${JSON.stringify({ error: { message: "nope" }, id: 1 })}\n`)
     await expect(reply).rejects.toThrow("nope")
   })
@@ -89,9 +86,7 @@ describe("codex client over the ndjson transport", () => {
     client.onNotification((method, params) => seen.push({ method, params }))
     const frame = `${JSON.stringify({ method: "item/started", params: { itemId: "i1" } })}\n`
     child.stdout.write(frame.slice(0, 10))
-    await flush()
     child.stdout.write(frame.slice(10))
-    await flush()
     expect(seen).toEqual([{ method: "item/started", params: { itemId: "i1" } }])
   })
 
@@ -99,11 +94,11 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     const client = makeClient(child)
     client.onRequest((method) => Promise.resolve({ answered: method }))
+    const response = once(child.stdin, "data")
     child.stdout.write(
       `${JSON.stringify({ id: 9, method: "item/tool/requestUserInput", params: {} })}\n`
     )
-    await flush()
-    await flush()
+    await response
     expect(child.frames()).toEqual([{ id: 9, result: { answered: "item/tool/requestUserInput" } }])
   })
 
@@ -111,7 +106,6 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     makeClient(child)
     child.stdout.write(`${JSON.stringify({ id: 3, method: "whatever" })}\n`)
-    await flush()
     expect(child.frames()).toEqual([
       { error: { code: -32601, message: "No handler for whatever" }, id: 3 }
     ])
@@ -120,48 +114,34 @@ describe("codex client over the ndjson transport", () => {
   it("drops a reply that settles after the process died (the crash regression)", async () => {
     const child = makeFakeChild()
     const client = makeClient(child)
-    let answer: ((value: unknown) => void) | undefined
-    client.onRequest(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve
-        })
-    )
+    const answer = Promise.withResolvers<unknown>()
+    client.onRequest(() => answer.promise)
     child.stdout.write(
       `${JSON.stringify({ id: 5, method: "item/tool/requestUserInput", params: {} })}\n`
     )
-    await flush()
     child.exit()
     // The human's answer arrives after codex is gone: it must be discarded,
     // not written into the dead pipe (which was an unhandled stream error
     // fatal to the entire server).
-    answer?.({ answers: {} })
-    await flush()
-    await flush()
+    answer.resolve({ answers: {} })
+    await answer.promise
     expect(child.frames()).toEqual([])
   })
 
   it("drops a reply that settles after deliberate close, with stdin already ended", async () => {
     const child = makeFakeChild()
     const client = makeClient(child)
-    let answer: ((value: unknown) => void) | undefined
-    client.onRequest(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve
-        })
-    )
+    const answer = Promise.withResolvers<unknown>()
+    client.onRequest(() => answer.promise)
     child.stdout.write(
       `${JSON.stringify({ id: 6, method: "item/commandExecution/requestApproval", params: {} })}\n`
     )
-    await flush()
     client.close()
     expect(child.killed()).toBe(true)
     // stdin.end() has run — an unguarded write here is exactly the historic
     // write-after-end crash.
-    answer?.({ decision: "accept" })
-    await flush()
-    await flush()
+    answer.resolve({ decision: "accept" })
+    await answer.promise
     expect(child.frames()).toEqual([])
   })
 
@@ -178,10 +158,8 @@ describe("codex client over the ndjson transport", () => {
     child.stdout.write(
       `${JSON.stringify({ id: 7, method: "item/tool/requestUserInput", params: {} })}\n`
     )
-    await flush()
     expect(signals[0]?.aborted).toBe(false)
     child.stderr.write("codex blew up")
-    await flush()
     child.exit()
     expect(signals[0]?.aborted).toBe(true)
     expect(closeErrors.map((error) => error.message)).toEqual(["codex blew up"])
@@ -200,7 +178,6 @@ describe("codex client over the ndjson transport", () => {
     child.stdout.write(
       `${JSON.stringify({ id: 8, method: "item/tool/requestUserInput", params: {} })}\n`
     )
-    await flush()
     client.close()
     expect(signals[0]?.aborted).toBe(true)
     // Routine teardown must not masquerade as a crash.
@@ -211,9 +188,7 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     const client = makeClient(child)
     const reply = client.request("turn/start")
-    await flush()
     child.stderr.write("panic: everything is on fire")
-    await flush()
     child.exit()
     await expect(reply).rejects.toThrow("panic: everything is on fire")
   })
@@ -222,7 +197,6 @@ describe("codex client over the ndjson transport", () => {
     const child = makeFakeChild()
     const client = makeClient(child)
     const reply = client.request("turn/start")
-    await flush()
     child.exit()
     await expect(reply).rejects.toThrow("codex app-server exited")
   })
@@ -232,8 +206,9 @@ describe("codex client over the ndjson transport", () => {
     const client = makeClient(child)
     const closeErrors: Array<Error> = []
     client.onClose((error) => closeErrors.push(error))
+    const closed = new Promise<void>((resolve) => client.onClose(() => resolve()))
     child.stdin.destroy(new Error("EPIPE"))
-    await flush()
+    await closed
     expect(closeErrors.map((error) => error.message)).toEqual(["EPIPE"])
     // Later traffic is dropped, not thrown.
     client.notify("noop")
@@ -248,7 +223,6 @@ describe("codex client over the ndjson transport", () => {
     const closeErrors: Array<Error> = []
     client.onClose((error) => closeErrors.push(error))
     const reply = client.request("turn/start")
-    await flush()
     client.close()
     await expect(reply).rejects.toThrow("codex client closed")
     // The kill-induced exit after close is expected teardown, not a crash.

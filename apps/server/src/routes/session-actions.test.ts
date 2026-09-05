@@ -122,6 +122,7 @@ describe("session action routes", () => {
       ).status
     ).toBe(204)
     const promptCountBeforeQueueDrain = agents.prompts.length
+    agents.releasePrompt()
     await waitFor(() => agents.prompts.length === promptCountBeforeQueueDrain + 1)
     expect(agents.prompts).toContainEqual([session.agentSessionId, "queued edited"])
     expect(agents.prompts).not.toContainEqual([session.agentSessionId, "queued remove"])

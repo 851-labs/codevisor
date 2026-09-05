@@ -1,8 +1,9 @@
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { createServer } from "node:http"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import {
   cleanupMcpManagerTests,
   run,
@@ -263,15 +264,18 @@ describe("MCP manager gateway", () => {
 
         // An install changes the set: the subscription refreshes the
         // advertised inventory on every live connection.
+        const inventoryChanged = Promise.withResolvers<void>()
+        client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+          inventoryChanged.resolve()
+        })
         installedTools = [
           ...installedTools,
           { pluginId: "owner.notes", name: "notes_list", description: "List notes" }
         ]
         for (const listener of listeners) listener()
-        await vi.waitFor(async () => {
-          const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "execute")
-          expect(refreshed?.description).toContain("plugin.owner.notes.notes_list — List notes")
-        })
+        await inventoryChanged.promise
+        const refreshed = (await client.listTools()).tools.find((tool) => tool.name === "execute")
+        expect(refreshed?.description).toContain("plugin.owner.notes.notes_list — List notes")
       } finally {
         await client.close()
       }

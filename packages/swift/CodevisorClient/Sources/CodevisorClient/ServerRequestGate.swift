@@ -44,7 +44,16 @@ public final class ServerRequestGate: @unchecked Sendable {
   private var states: [String: State] = [:]
   private var waiters: [String: [UUID: CheckedContinuation<Void, any Error>]] = [:]
 
-  public init() {}
+  private let sleep: @Sendable (Duration) async throws -> Void
+  private let onWait: @Sendable () -> Void
+
+  public init(
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    onWait: @escaping @Sendable () -> Void = {}
+  ) {
+    self.sleep = sleep
+    self.onWait = onWait
+  }
 
   public func beginWaiting(for machineId: String) {
     lock.withLock {
@@ -95,6 +104,8 @@ public final class ServerRequestGate: @unchecked Sendable {
         }
         if let resolution {
           continuation.resume(with: resolution)
+        } else {
+          onWait()
         }
       }
     } onCancel: {
@@ -111,7 +122,7 @@ public final class ServerRequestGate: @unchecked Sendable {
         try await self.waitUntilReady(for: machineId)
       }
       group.addTask {
-        try await Task.sleep(for: timeout)
+        try await self.sleep(timeout)
         throw ServerRequestGateError(
           message: "Timed out waiting for the server to become ready."
         )

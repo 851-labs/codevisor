@@ -353,6 +353,10 @@ public final class SessionModel {
   @ObservationIgnored var visibleViewCount = 0
   var isViewVisible: Bool { visibleViewCount > 0 }
 
+  @ObservationIgnored var presentationBoundarySleep: @Sendable (Duration) async throws -> Void = {
+    try await Task.sleep(for: $0)
+  }
+
   public init(
     serverTransport: ServerSessionTransport,
     sessionId: String,

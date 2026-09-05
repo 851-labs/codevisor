@@ -104,6 +104,7 @@ export const fakeTerminal = () => {
 
 /// Manually-settled fake process so tests control exit timing.
 export const fakeSpawner = () => {
+  const spawned = Promise.withResolvers<void>()
   const spawns: Array<{ command: string; env: NodeJS.ProcessEnv }> = []
   const processes: Array<{
     emitOutput: (data: string) => void
@@ -128,11 +129,14 @@ export const fakeSpawner = () => {
       kill: () => {
         record.killed = true
       },
-      onExit: (listener) => exitListeners.push(listener),
+      onExit: (listener) => {
+        exitListeners.push(listener)
+        spawned.resolve()
+      },
       onOutput: (listener) => outputListeners.push(listener)
     }
   }
-  return { processes, spawnShell, spawns }
+  return { processes, spawnShell, spawns, spawned: spawned.promise }
 }
 
 export const installableDefinition: HarnessDefinition = {
@@ -157,7 +161,17 @@ export const installableDefinition: HarnessDefinition = {
   }
 }
 
-export const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+export const waitForLifecycleSettle = (
+  lifecycle: import("./harness-lifecycle-types.js").HarnessLifecycleManager
+) =>
+  new Promise<void>((resolve) => {
+    const unsubscribe = lifecycle.subscribe((event) => {
+      const phase = (event.payload as { lifecycle?: { phase?: string } }).lifecycle?.phase
+      if (phase !== "idle" && phase !== "failed") return
+      unsubscribe()
+      resolve()
+    })
+  })
 
 export const appBundleDefinition: HarnessDefinition = {
   ...installableDefinition,

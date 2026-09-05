@@ -10,14 +10,22 @@ import {
   type HubToMachine,
   type WireRelayEnvelope
 } from "@codevisor/api"
-import { expect } from "vitest"
+import { afterEach, beforeEach, expect, vi } from "vitest"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
-import { env, runDurableObjectAlarm, SELF } from "cloudflare:test"
+import { env, runInDurableObject, SELF } from "cloudflare:test"
+import type { UserHub } from "../src/user-hub.js"
 
 /// Shared scaffolding for the hub integration tests: dev login, sockets,
 /// frame readers, and machine/app connection setup.
 
 export const BASE = "http://localhost:8787"
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  // Keep real workerd alarms dormant; expiry is invoked explicitly below.
+  vi.setSystemTime(new Date("2100-01-01T00:00:00Z"))
+})
+afterEach(() => vi.useRealTimers())
 
 // -- Small helpers -----------------------------------------------------------
 
@@ -33,16 +41,56 @@ export const authed = (token: string): Record<string, string> => ({
   authorization: `Bearer ${token}`
 })
 
-/// Waits past the (test-shortened) resume grace window and runs the hub's
-/// expiry alarm so deferred death notices fire deterministically.
-export const expireResumeGrace = async (token: string): Promise<void> => {
+const hubStub = async (token: string): Promise<DurableObjectStub<UserHub>> => {
   const session = await SELF.fetch(`${BASE}/api/auth/get-session`, { headers: authed(token) })
   const body = (await session.json()) as { user?: { id?: string } } | null
   const userId = body?.user?.id
   if (userId === undefined) throw new Error("no session user for hub stub")
-  await new Promise((resolve) => setTimeout(resolve, 350))
   const namespace = env.USER_HUB as unknown as DurableObjectNamespace
-  await runDurableObjectAlarm(namespace.get(namespace.idFromName(userId)))
+  return namespace.get(namespace.idFromName(userId)) as DurableObjectStub<UserHub>
+}
+
+/// A client close is asynchronous: acknowledge the server handler before resuming or expiring.
+export const disconnect = async (
+  token: string,
+  socket: WebSocket,
+  reason: string
+): Promise<void> => {
+  const stub = await hubStub(token)
+  let acknowledgeClose!: () => void
+  const closed = new Promise<void>((resolve) => {
+    acknowledgeClose = resolve
+  })
+  let restore = () => {}
+  await runInDurableObject(stub, (hub) => {
+    const close = hub.webSocketClose.bind(hub)
+    const observed = vi.spyOn(hub, "webSocketClose").mockImplementation(async (socket) => {
+      await close(socket)
+      acknowledgeClose()
+    })
+    restore = () => observed.mockRestore()
+  })
+  try {
+    socket.close(1000, reason)
+    await runInDurableObject(stub, async () => {
+      await closed
+    })
+  } finally {
+    await runInDurableObject(stub, () => {
+      restore()
+    })
+  }
+}
+
+/// Advances the frozen clock past resume grace and explicitly runs expiry.
+export const expireResumeGrace = async (token: string): Promise<void> => {
+  const stub = await hubStub(token)
+  await runInDurableObject(stub, async (hub, state) => {
+    const deadline = await state.storage.getAlarm()
+    expect(deadline).not.toBeNull()
+    vi.setSystemTime(deadline! + 1)
+    await hub.alarm()
+  })
 }
 
 /// Buffered async queue: items arrive before or after we await them.
@@ -59,9 +107,8 @@ export class Queue<Item> {
   async next(): Promise<Item> {
     const item = this.#items.shift()
     if (item !== undefined) return item
-    return new Promise<Item>((resolve, reject) => {
+    return new Promise<Item>((resolve) => {
       this.#waiters.push(resolve)
-      setTimeout(() => reject(new Error("timed out waiting for frame")), 5000)
     })
   }
 }

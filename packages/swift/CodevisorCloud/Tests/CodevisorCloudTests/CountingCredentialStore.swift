@@ -1,3 +1,5 @@
+import Observation
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
@@ -7,6 +9,8 @@ import CodevisorProtocol
 
 // Shared helpers for the CloudHubConnection suites (extracted so the test
 // files stay under the structural lint limits).
+
+@Observable
 
 final class Recorder: @unchecked Sendable {
   private let lock = NSLock()
@@ -29,6 +33,8 @@ final class Recorder: @unchecked Sendable {
     lock.withLock { closeReasons.append(reason) }
   }
 }
+
+@Observable
 
 final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   private let base: InMemoryCloudCredentialStore
@@ -74,6 +80,8 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   }
 }
 
+@Observable
+
 final class SocketQueue: @unchecked Sendable {
   private let lock = NSLock()
   private var sockets: [any ServerWebSocketConnecting]
@@ -93,7 +101,8 @@ final class SocketQueue: @unchecked Sendable {
 func makeHub(
   _ scripted: ScriptedCloudHub,
   heartbeatInterval: Duration = .seconds(30),
-  heartbeatTimeout: Duration = .seconds(10)
+  heartbeatTimeout: Duration = .seconds(10),
+  onMachineWait: @escaping @Sendable () -> Void = {}
 ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
   let store = InMemoryCloudCredentialStore(token: "session-token")
   let hub = CloudHubConnection(
@@ -104,7 +113,10 @@ func makeHub(
     webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
     readyTimeout: .seconds(2),
     heartbeatInterval: heartbeatInterval,
-    heartbeatTimeout: heartbeatTimeout
+    heartbeatTimeout: heartbeatTimeout,
+    sleep: TestClock().sleep,
+    reconnectDelay: { _ in .zero },
+    onMachineWait: onMachineWait
   )
   return (hub, store)
 }

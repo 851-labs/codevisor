@@ -7,14 +7,6 @@ import { makePiAuthManager } from "./pi-auth.js"
 
 const directories: string[] = []
 
-const waitFor = async (predicate: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 500; attempt += 1) {
-    if (predicate()) return
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  throw new Error("Timed out waiting for Pi authentication")
-}
-
 afterEach(() => {
   for (const directory of directories.splice(0)) {
     rmSync(directory, { force: true, recursive: true })
@@ -25,7 +17,13 @@ describe("Pi provider authentication", () => {
   it("manages Pi's auth.json through a native prompt flow", async () => {
     const home = mkdtempSync(join(tmpdir(), "codevisor-pi-providers-"))
     directories.push(home)
-    const manager = makePiAuthManager({ resolveEnv: () => Promise.resolve({ HOME: home }) })
+    const completedFlow = Promise.withResolvers<void>()
+    const manager = makePiAuthManager({
+      resolveEnv: () => Promise.resolve({ HOME: home }),
+      onFlowChanged: (flow) => {
+        if (flow.state === "complete") completedFlow.resolve()
+      }
+    })
 
     const providers = await manager.providers()
     expect(providers).toContainEqual(
@@ -40,7 +38,7 @@ describe("Pi provider authentication", () => {
     })
 
     await manager.answer(started.id, "sk-test-native-pi")
-    await waitFor(() => manager.flow(started.id).state === "complete")
+    await completedFlow.promise
     const completed = manager.flow(started.id)
     expect(completed.state).toBe("complete")
 
@@ -98,7 +96,11 @@ describe("Pi provider authentication", () => {
       },
       getModels: () => []
     } as unknown as Provider
+    const completedFlow = Promise.withResolvers<void>()
     const manager = makePiAuthManager({
+      onFlowChanged: (flow) => {
+        if (flow.state === "complete") completedFlow.resolve()
+      },
       providers: [provider],
       resolveEnv: () => Promise.resolve({ HOME: home })
     })
@@ -111,7 +113,7 @@ describe("Pi provider authentication", () => {
     })
 
     completeCallback?.()
-    await waitFor(() => manager.flow(started.id).state === "complete")
+    await completedFlow.promise
     expect(JSON.parse(readFileSync(join(home, ".pi", "agent", "auth.json"), "utf8"))).toEqual({
       "callback-provider": expect.objectContaining({ type: "oauth", access: "access-token" })
     })

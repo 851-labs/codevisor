@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -10,11 +11,7 @@ import Testing
 @Suite("FleetRoster")
 struct FleetRosterTests {
   private func waitFor(_ predicate: () -> Bool) async throws {
-    for _ in 0..<200 {
-      if predicate() { return }
-      try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    Issue.record("Timed out waiting for condition")
+    await awaitObserved(predicate)
   }
 
   private func makeWorld() -> (
@@ -67,7 +64,10 @@ struct FleetRosterTests {
       token: "hm_secret"
     )
 
-    try await waitFor { sync.value(namespace: "machines", key: "srv-linux") != nil }
+    try await waitFor {
+      _ = sync.revisionsByNamespace
+      return sync.value(namespace: "machines", key: "srv-linux") != nil
+    }
     guard case .object(let value)? = sync.value(namespace: "machines", key: "srv-linux") else {
       Issue.record("Missing roster entry")
       return
@@ -125,7 +125,10 @@ struct FleetRosterTests {
       host: "linux.test",
       token: "hm_secret"
     )
-    try await waitFor { sync.value(namespace: "machines", key: "srv-linux") != nil }
+    try await waitFor {
+      _ = sync.revisionsByNamespace
+      return sync.value(namespace: "machines", key: "srv-linux") != nil
+    }
 
     try controller.removeMachine(machine.id)
 

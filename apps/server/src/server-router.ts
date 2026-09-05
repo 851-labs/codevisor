@@ -1,3 +1,4 @@
+import { applyAfterDrain } from "./apply-after-drain.js"
 import { makeOpenApiDocument, RestartDrainRequest } from "@codevisor/api"
 import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from "@codevisor/api"
 import type { IncomingMessage, ServerResponse } from "node:http"
@@ -245,20 +246,13 @@ export const handleRequest = async (
         draining: busy
       })
       const updater = config.updater
-      void (async () => {
-        const drained = await routeState.restart.begin({
-          interrupt: url.searchParams.get("interrupt") === "1"
-        })
-        if (drained.state !== "drained") return
-        publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info))
-        try {
-          await updater.apply({ channel })
-        } catch {
-          // The install never happened: reopen the gate so held prompts
-          // dispatch instead of waiting for a restart that isn't coming.
-          await routeState.restart.cancel()
-        }
-      })()
+      void applyAfterDrain(
+        routeState.restart,
+        { interrupt: url.searchParams.get("interrupt") === "1" },
+        () =>
+          publishUpdateChanged(services, fanout, routeState, withRestartDrain(routeState, info)),
+        () => updater.apply({ channel })
+      )
       return
     }
 

@@ -55,13 +55,14 @@ struct AppInstanceLeaseTests {
     let handoff = try owner?.beginUpdateHandoff(
       targetBundleVersion: "101",
       applicationBundleURL: bundleURL,
-      timeout: 5
+      timeout: 3600
     )
     owner = nil
 
     #expect(try AppInstanceLease.acquire(at: lockURL) == nil)
     try writeBundleVersion("101", to: bundleURL)
-    let successor = try await acquireEventually(at: lockURL)
+    await handoff?.waitForExit()
+    let successor = try AppInstanceLease.acquire(at: lockURL)
     #expect(successor != nil)
     #expect(handoff?.isRunning == false)
   }
@@ -79,13 +80,14 @@ struct AppInstanceLeaseTests {
     let pendingHandoff = try owner?.beginUpdateHandoff(
       targetBundleVersion: "101",
       applicationBundleURL: bundleURL,
-      timeout: 5
+      timeout: 3600
     )
     let handoff = try #require(pendingHandoff)
     owner = nil
     handoff.cancel()
 
-    let successor = try await acquireEventually(at: lockURL)
+    await handoff.waitForExit()
+    let successor = try AppInstanceLease.acquire(at: lockURL)
     #expect(successor != nil)
   }
 
@@ -105,13 +107,4 @@ struct AppInstanceLeaseTests {
     try data.write(to: contents.appendingPathComponent("Info.plist"), options: .atomic)
   }
 
-  private func acquireEventually(at lockURL: URL) async throws -> AppInstanceLease? {
-    for _ in 0..<100 {
-      if let lease = try AppInstanceLease.acquire(at: lockURL) {
-        return lease
-      }
-      try await Task.sleep(for: .milliseconds(50))
-    }
-    return nil
-  }
 }

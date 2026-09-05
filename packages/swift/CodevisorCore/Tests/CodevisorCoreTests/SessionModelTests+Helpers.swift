@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import ACPKit
 
 @testable import CodevisorCore
@@ -17,21 +18,8 @@ extension SessionModelTests {
     await body(model)
   }
 
-  func settleUntil(
-    timeout: Duration = .seconds(5),
-    _ predicate: () -> Bool
-  ) async {
-    let deadline = ContinuousClock.now + timeout
-    while ContinuousClock.now < deadline {
-      if predicate() { return }
-      // A real delay gives the main-actor event consumer a fair chance
-      // to run even when the full Swift suite starts hundreds of tests
-      // concurrently. Counting bare yields made the effective timeout
-      // depend on runner load and could expire before one actor turn.
-      try? await Task.sleep(for: .milliseconds(1))
-    }
-    guard !predicate() else { return }
-    Issue.record("Timed out waiting for SessionModel to settle")
+  func settleUntil(_ predicate: () -> Bool) async {
+    await awaitObserved(predicate)
   }
 
   func userMessages(_ model: SessionModel) -> [UserMessage] {

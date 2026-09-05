@@ -1,6 +1,6 @@
+import { makeGitRepo } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
@@ -28,16 +28,7 @@ const git = (repo: string, ...args: ReadonlyArray<string>): string =>
     encoding: "utf8"
   }).trim()
 
-const makeRepo = (): { readonly root: string; readonly repo: string } => {
-  const root = mkdtempSync(join(tmpdir(), "codevisor-archive-"))
-  const repo = join(root, "repo")
-  mkdirSync(repo)
-  git(repo, "init", "-b", "main")
-  writeFileSync(join(repo, "tracked.txt"), "original\n")
-  git(repo, "add", "-A")
-  git(repo, "commit", "-m", "init")
-  return { repo, root }
-}
+const makeRepo = () => makeGitRepo(true)
 
 /// Builds a worktree carrying every kind of uncommitted state that a naive
 /// "delete the files" archive would destroy.

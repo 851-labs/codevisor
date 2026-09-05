@@ -4,9 +4,9 @@ import Database from "better-sqlite3"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
-import { run, tempDirs, waitFor } from "../test-support.js"
+import { run, tempDirs } from "../test-support.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
 const makeAttentionDb = async (graceMs: number) => {
@@ -24,6 +24,11 @@ const makeAttentionDb = async (graceMs: number) => {
 }
 
 describe("@codevisor/server attention settle", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+  })
+  afterEach(() => vi.useRealTimers())
   it("settles a released subagent hold after the grace and publishes one flip", async () => {
     const { db } = await makeAttentionDb(40)
     const fanout = await run(makeEventFanout)
@@ -56,10 +61,7 @@ describe("@codevisor/server attention settle", () => {
 
     await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
     // The hold released; the scheduler owns the grace deadline from here.
-    await waitFor(async () => {
-      const summary = await run(db.getSessionSummary(session.id))
-      return summary.sidebarState === "unread"
-    })
+    await vi.advanceTimersByTimeAsync(40)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1
@@ -107,7 +109,7 @@ describe("@codevisor/server attention settle", () => {
       turnId: "turn-2",
       turnState: "started"
     })
-    await new Promise((resolve) => setTimeout(resolve, 160))
+    await vi.advanceTimersByTimeAsync(160)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 0,
       unreadCount: 0,
@@ -171,10 +173,7 @@ describe("@codevisor/server attention settle", () => {
     // Startup reconciliation then publishes the empty snapshot; the live loop
     // arms the grace deadline and settles it.
     await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-    await waitFor(async () => {
-      const summary = await run(db.getSessionSummary(session.id))
-      return summary.sidebarState === "unread"
-    })
+    await vi.advanceTimersByTimeAsync(30)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1
@@ -267,10 +266,7 @@ describe("@codevisor/server attention settle", () => {
     // returned deadline schedules the flip.
     const scheduler = makeAttentionSettleScheduler(db, fanout)
     await scheduler.recover()
-    await waitFor(async () => {
-      const summary = await run(db.getSessionSummary(session.id))
-      return summary.sidebarState === "unread"
-    })
+    await vi.advanceTimersByTimeAsync(30)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1
