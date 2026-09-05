@@ -262,10 +262,12 @@
       for line in textLineFragments {
         let lineRange = validRange(line.characterRange, in: attributedText)
         guard lineRange.length > 0 else { continue }
+        // Join matching backgrounds across link and foreground-color runs,
+        // including the unlinked padding on either side of inline code.
         attributedText.enumerateAttribute(
           .streamMarkdownRoundedBackground,
           in: lineRange,
-          options: [.longestEffectiveRangeNotRequired]
+          options: []
         ) { value, attributeRange, _ in
           guard let background = value as? TextKitRoundedBackground else { return }
           let range = NSIntersectionRange(lineRange, attributeRange)
