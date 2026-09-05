@@ -65,6 +65,9 @@ test target over another bespoke implementation.
   event, or an explicit test-controlled gate.
 - Register listeners before triggering an event. Buffer events that may arrive
   before the consumer starts waiting.
+- For fixtures written by another executor, recheck the predicate after
+  installing its observer to close the read/subscription gap. Protect the
+  fixture's state with an actor or lock.
 - Test races by holding operation A, starting B, and explicitly releasing A.
   Exercise the relevant completion orders without relying on scheduler luck.
 - For a negative assertion, first prove the relevant work has finished or is
