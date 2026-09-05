@@ -3,6 +3,17 @@ import { objectSchema, targetProperties, tool } from "./browser-use-tool-schema.
 
 /// Backend selection, tab lifecycle, navigation, capture, and native element/coordinate interactions.
 export const browserUseNativeTools: ReadonlyArray<Tool> = [
+  tool(
+    "js",
+    "Run a persistent browser JavaScript cell. The browser binding, tab handles, locators and top-level variables survive calls. Use browser.write(value) to emit results; browser.documentation() describes the API.",
+    objectSchema({ code: { type: "string" } }, ["code"])
+  ),
+  tool("reset", "Reset browser JavaScript bindings without closing tabs."),
+  tool(
+    "nameSession",
+    "Name this browser session; agent-created Chrome tabs are grouped under this name.",
+    objectSchema({ name: { type: "string" } }, ["name"])
+  ),
   tool("backends", "List Codevisor Browser Use backends and current availability."),
   tool(
     "connection_status",
@@ -34,7 +45,12 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool(
     "claimTab",
     "Native-style alias that claims one tab returned by openTabs for this session.",
-    objectSchema({ id: { type: "string" }, index: { type: "number", minimum: 0 } })
+    objectSchema({
+      id: { type: "string" },
+      index: { type: "number", minimum: 0 },
+      title: { type: "string" },
+      url: { type: "string" }
+    })
   ),
   tool(
     "finalizeTabs",

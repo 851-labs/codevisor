@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { AutomationProviderContext } from "./automation-provider.js"
 import {
+  attachTarget,
   booleanArgument,
   currentPage,
   discardTargetState,
@@ -55,6 +56,8 @@ export const runtimeKey = (context: AutomationProviderContext, backend: BrowserB
 export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
   const { selectedTargets, sessionBackends, sessionDispositions, sessionTargets } = state
   const cursors = makeBrowserCursorRegistry()
+  const names = new Map<string, string>()
+  const groups = new Map<string, number>()
   // Per-session pointer and held-modifier state, so mouse_down/mouse_move/mouse_up and
   // key_down/key_up compose the way Playwright's Mouse and Keyboard do.
   const pointers = new Map<string, PointerState>()
@@ -73,6 +76,39 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
   ): Promise<CallToolResult> => {
     const backend = sessionBackends.get(context.sessionId) ?? "managed"
     const sessionKey = `${runtimeKey(context, backend)}:${context.sessionId}`
+    const groupCreated = async () => {
+      const name = names.get(sessionKey)
+      if (!name || backend !== "extension") return
+      const ids = [...(sessionTargets.get(sessionKey) ?? [])]
+        .filter(([, origin]) => origin === "created")
+        .map(([id]) => id)
+      if (!ids.length) return
+      const listed = await active.connection.send<{ groups: { id: number }[] }>(
+        "Codevisor.tabGroups.list",
+        {}
+      )
+      const existing = groups.get(sessionKey)
+      if (existing !== undefined && listed.groups.some((group) => group.id === existing)) {
+        await active.connection.send("Codevisor.tabGroups.add", { groupId: existing, tabIds: ids })
+        await active.connection.send("Codevisor.tabGroups.update", {
+          groupId: existing,
+          title: name
+        })
+      } else {
+        const result = await active.connection.send<{ group: { id: number } }>(
+          "Codevisor.tabGroups.create",
+          { tabIds: ids, title: name, color: "blue" }
+        )
+        groups.set(sessionKey, result.group.id)
+      }
+    }
+    if (toolName === "nameSession") {
+      const name = stringArgument(args, "name").trim()
+      if (!name || name.length > 100) throw new Error("Session name must contain 1–100 characters")
+      names.set(sessionKey, name)
+      await groupCreated()
+      return jsonResult({ name })
+    }
     if (toolName === "finalizeTabs") {
       if (args.native === true) {
         if (
@@ -96,7 +132,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         for (const [targetId, origin] of controlled) {
           const tabSessionId = active.sessions.get(targetId)
           if (origin === "created" && !keepIds.has(targetId)) {
-            await active.connection.send("Target.closeTarget", { targetId }).catch(() => undefined)
+            await active.connection.send("Target.closeTarget", { targetId })
             closed.push(targetId)
           } else {
             if (tabSessionId !== undefined) {
@@ -161,6 +197,7 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
         controlled.set(created.targetId, "created")
         sessionTargets.set(sessionKey, controlled)
         targets = await waitForCreatedTarget(active, created.targetId, url)
+        await groupCreated()
       } else {
         targets = await pageTargets(active)
         if (action === "select") {
@@ -175,6 +212,13 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
               id === undefined ? `No browser tab at index ${index}` : `No browser tab with id ${id}`
             )
           }
+          if (
+            (typeof args.title === "string" && args.title !== target.title) ||
+            (typeof args.url === "string" && args.url !== target.url)
+          )
+            throw new Error(
+              "The observed user tab changed. List user tabs again before claiming it."
+            )
           selectedTargets.set(sessionKey, target.targetId)
           const controlled = sessionTargets.get(sessionKey) ?? new Map()
           if (!controlled.has(target.targetId)) controlled.set(target.targetId, "claimed")
@@ -329,14 +373,37 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
       })
     }
 
-    const page = await currentPage(active, selectedTargets, sessionKey)
+    let page
+    if (typeof args.tabId === "string") {
+      if (!sessionTargets.get(sessionKey)?.has(args.tabId))
+        throw new Error("This session does not own that tab. Claim an observed user tab first.")
+      const target = (await pageTargets(active)).find((tab) => tab.targetId === args.tabId)
+      if (!target) throw new Error("The requested browser tab was closed; it will not be replaced.")
+      page = {
+        target,
+        sessionId: await attachTarget(active, target.targetId),
+        snapshotKey: `${sessionKey}:${target.targetId}`
+      }
+    } else {
+      // Legacy flat navigation may create its own tab, but never adopts a user's arbitrary tab.
+      if (!selectedTargets.has(sessionKey) && toolName === "navigate") {
+        const created = await active.connection.send<{ targetId: string }>("Target.createTarget", {
+          url: "about:blank"
+        })
+        selectedTargets.set(sessionKey, created.targetId)
+        const owned = sessionTargets.get(sessionKey) ?? new Map()
+        owned.set(created.targetId, "created")
+        sessionTargets.set(sessionKey, owned)
+      }
+      page = await currentPage(active, selectedTargets, sessionKey)
+    }
     const invocation: BrowserToolInvocation = {
       active,
       args,
       backend,
       cursor: cursors.cursorFor(active, page, sessionKey),
       page,
-      pointer: pointerFor(sessionKey),
+      pointer: pointerFor(`${sessionKey}:${page.target.targetId}`),
       toolName
     }
     for (const invoke of toolHandlers) {

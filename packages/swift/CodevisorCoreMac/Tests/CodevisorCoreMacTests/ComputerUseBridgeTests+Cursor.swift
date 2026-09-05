@@ -149,13 +149,13 @@ extension ComputerUseBridgeTests {
       ))
   }
 
-  @Test("Promotes background events to foreground for a window on another Space")
+  @Test("Keeps background delivery explicit across Spaces")
   func crossSpaceDeliveryMode() {
     #expect(
       computerUseResolvedDeliveryMode(
         requested: "background",
         targetIsOnVisibleSpace: false
-      ) == "foreground")
+      ) == "background")
     #expect(
       computerUseResolvedDeliveryMode(
         requested: "background",

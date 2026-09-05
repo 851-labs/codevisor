@@ -4,6 +4,36 @@ import { objectSchema, locatorProperty, locatorSchema, tool } from "./browser-us
 /// Playwright-style locator operations.
 export const browserUsePlaywrightTools: ReadonlyArray<Tool> = [
   tool(
+    "content.export",
+    "Export the selected page as Markdown (visible text), HTML, or PDF. Returns a local file and a durable attachment when used through Codevisor.",
+    objectSchema({ format: { type: "string", enum: ["markdown", "html", "pdf"] } })
+  ),
+  tool(
+    "playwright.evaluateAll",
+    "Evaluate a read-only function against all matching elements.",
+    locatorSchema({ function: { type: "string" }, arg: {} }, ["function"])
+  ),
+  tool(
+    "playwright.pressSequentially",
+    "Focus the matching element and send individual trusted key events without clearing its text.",
+    locatorSchema({ value: { type: "string" } }, ["value"])
+  ),
+  tool("playwright.armNavigation", "Capture the main-frame navigation baseline before an action."),
+  tool(
+    "playwright.waitForNavigation",
+    "Wait for a navigation after the captured baseline, including same-document navigation.",
+    objectSchema(
+      {
+        afterSequence: { type: "number" },
+        frameId: { type: "string" },
+        url: { type: "string" },
+        timeoutMs: { type: "number" },
+        waitUntil: { type: "string", enum: ["commit", "domcontentloaded", "load", "networkidle"] }
+      },
+      ["afterSequence", "frameId"]
+    )
+  ),
+  tool(
     "playwright.count",
     "Count elements matching one Playwright-style locator.",
     locatorSchema()

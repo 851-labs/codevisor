@@ -17,14 +17,18 @@ public final class ComputerUseBridge: @unchecked Sendable {
   struct ElementRecord {
     let element: AXUIElement
     let frame: CGRect?
+    var identity: String = ""
   }
 
   struct SnapshotRecord {
     let elements: [String: ElementRecord]
+    let pid: pid_t
     let windowID: CGWindowID?
     let windowFrame: CGRect?
     let screenshotPixelSize: CGSize?
     let createdAt: UInt64
+    let text: String
+    let view: String
   }
 
   private let listenerQueue = DispatchQueue(
@@ -37,18 +41,22 @@ public final class ComputerUseBridge: @unchecked Sendable {
     attributes: .concurrent
   )
   private let supportDirectory: URL
+  let recordings: ComputerUseRecordings
   let lock = NSLock()
   private var listener: Int32 = -1
   private var configuration: Configuration?
   var snapshots: [String: [String: SnapshotRecord]] = [:]
   var latestSnapshotIDs: [String: String] = [:]
   var windowIDBySession: [String: CGWindowID] = [:]
+  var nextElementIndices: [String: Int] = [:]
   /// Windows whose element frames are published upside down, established
   /// once per window because the answer cannot change while it lives.
   var flippedContentWindows: [CGWindowID: Bool] = [:]
 
   public init(supportDirectory: URL = CodevisorAppVariant.serverDataDirectoryURL()) {
     self.supportDirectory = supportDirectory
+    recordings = ComputerUseRecordings(
+      directory: supportDirectory.appendingPathComponent("computer-use-recordings", isDirectory: true))
   }
 
   deinit {
@@ -111,6 +119,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     snapshots.removeAll()
     latestSnapshotIDs.removeAll()
     windowIDBySession.removeAll()
+    nextElementIndices.removeAll()
     lock.unlock()
     if descriptor >= 0 {
       shutdown(descriptor, SHUT_RDWR)
@@ -118,6 +127,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     }
     if let socketPath { unlink(socketPath) }
     ComputerUsePresentation.endAll()
+    recordings.end()
   }
 
   private func bindSocket(_ descriptor: Int32, path: String) throws {
@@ -171,6 +181,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     defer {
       for sessionID in activeSessionIDs {
         ComputerUsePresentation.end(sessionID: sessionID)
+        recordings.end(sessionID: sessionID)
       }
     }
     var pending = Data()

@@ -59,6 +59,7 @@ export interface ResolvedElement {
 }
 
 export interface PageHandle {
+  readonly snapshotKey?: string
   readonly target: TargetInfo
   readonly sessionId: string
 }
@@ -134,7 +135,8 @@ export const invalidateTargetSession = (
     if (staleTargetId === targetId) runtime.staleSessions.delete(staleSessionId)
   }
   runtime.staleSessions.set(sessionId, targetId)
-  runtime.snapshots.delete(targetId)
+  for (const key of runtime.snapshots.keys())
+    if (key === targetId || key.endsWith(`:${targetId}`)) runtime.snapshots.delete(key)
   discardSessionArtifacts(runtime, sessionId)
   return targetId
 }
@@ -142,7 +144,8 @@ export const invalidateTargetSession = (
 export const discardTargetState = (runtime: BrowserRuntime, targetId: string): void => {
   const sessionId = runtime.sessions.get(targetId)
   runtime.sessions.delete(targetId)
-  runtime.snapshots.delete(targetId)
+  for (const key of runtime.snapshots.keys())
+    if (key === targetId || key.endsWith(`:${targetId}`)) runtime.snapshots.delete(key)
   if (sessionId !== undefined) discardSessionArtifacts(runtime, sessionId)
   for (const [staleSessionId, staleTargetId] of runtime.staleSessions) {
     if (staleTargetId !== targetId) continue
@@ -182,7 +185,11 @@ export const waitForCreatedTarget = async (
   })
 }
 
-export const attachTarget = async (runtime: BrowserRuntime, targetId: string): Promise<string> => {
+export const attachTarget = async (
+  runtime: BrowserRuntime,
+  targetId: string,
+  parentSessionId?: string
+): Promise<string> => {
   const existing = runtime.sessions.get(targetId)
   if (existing !== undefined) return existing
   const attached = await runtime.connection.sendOnce<{ sessionId: string }>(
@@ -190,10 +197,12 @@ export const attachTarget = async (runtime: BrowserRuntime, targetId: string): P
     {
       targetId,
       flatten: true
-    }
+    },
+    parentSessionId
   )
   await Promise.all([
     runtime.connection.sendOnce("Page.enable", {}, attached.sessionId),
+    runtime.connection.sendOnce("Network.enable", {}, attached.sessionId),
     runtime.connection.sendOnce("Runtime.enable", {}, attached.sessionId),
     runtime.connection.sendOnce("DOM.enable", {}, attached.sessionId),
     runtime.connection.sendOnce("Accessibility.enable", {}, attached.sessionId),
@@ -208,19 +217,18 @@ export const currentPage = async (
   selectedTargets: Map<string, string>,
   sessionKey: string
 ): Promise<PageHandle> => {
-  let targets = await pageTargets(runtime)
-  if (targets.length === 0) {
-    const created = await runtime.connection.send<{ targetId: string }>("Target.createTarget", {
-      url: "about:blank"
-    })
-    selectedTargets.set(sessionKey, created.targetId)
-    targets = await pageTargets(runtime)
-  }
+  const targets = await pageTargets(runtime)
   const selected = selectedTargets.get(sessionKey)
-  const target = targets.find((candidate) => candidate.targetId === selected) ?? targets[0]
-  if (target === undefined) throw new Error("The browser has no page target")
-  selectedTargets.set(sessionKey, target.targetId)
-  return { target, sessionId: await attachTarget(runtime, target.targetId) }
+  if (selected === undefined)
+    throw new Error("No selected tab. Create a tab or claim an observed user tab first.")
+  const target = targets.find((candidate) => candidate.targetId === selected)
+  if (target === undefined)
+    throw new Error("The selected browser tab was closed. Select an observed tab explicitly.")
+  return {
+    target,
+    sessionId: await attachTarget(runtime, target.targetId),
+    snapshotKey: `${sessionKey}:${target.targetId}`
+  }
 }
 
 export const evaluate = async <T>(

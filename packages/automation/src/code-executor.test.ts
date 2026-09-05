@@ -171,11 +171,10 @@ describe.sequential("Codevisor code executor", () => {
 
     expect(result).toMatchObject({ result: { id: "tab-1", title: "Example" } })
     expect(calls).toEqual([
+      { path: "browser.nameSession", args: { name: "compatibility test" } },
       { path: "browser.tabs", args: { action: "new" } },
-      { path: "browser.tabs", args: { action: "select", id: "tab-1" } },
-      { path: "browser.navigate", args: { url: "https://example.com/" } },
-      { path: "browser.tabs", args: { action: "select", id: "tab-1" } },
-      { path: "browser.tab_info", args: {} },
+      { path: "browser.navigate", args: { tabId: "tab-1", url: "https://example.com/" } },
+      { path: "browser.tab_info", args: { tabId: "tab-1" } },
       { path: "browser.markTab", args: { id: "tab-1", status: "deliverable" } },
       {
         path: "browser.finalizeTabs",

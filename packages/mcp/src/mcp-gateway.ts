@@ -28,6 +28,7 @@ import {
   sandboxSuccessfulToolResult
 } from "./mcp-sandbox-results.js"
 import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
+import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 
 /// One live MCP connection to a gateway. Harnesses may connect more than
 /// once per Codevisor session: codex 0.145+ tears down and re-initializes
@@ -173,7 +174,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     provider: AutomationToolProvider,
     context: { readonly sessionId: string; readonly projectId?: string | undefined },
     toolName: string,
-    args: Readonly<Record<string, unknown>>
+    args: Readonly<Record<string, unknown>>,
+    collector?: SandboxArtifactCollector
   ): Promise<CallToolResult> => {
     if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
       throw new Error(`Unknown automation provider: ${provider.id}`)
@@ -195,9 +197,25 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       provider.id === "computer"
         ? {
             ...context,
-            agentLabel: (await run(config.db.getSessionSummary(context.sessionId))).title
+            agentLabel: (await run(config.db.getSessionSummary(context.sessionId))).title,
+            publishRecording
           }
-        : context
+        : provider.id === "browser"
+          ? {
+              ...context,
+              invokeBrowser: async (name: string, nested: Record<string, unknown>) =>
+                sandboxSuccessfulToolResult(
+                  await invokeAutomationProvider(provider, context, name, nested, collector),
+                  collector ?? {
+                    content: [],
+                    maxItems: 20,
+                    maxBytes: 20_000_000,
+                    persistence: artifactPersistence
+                  },
+                  "browser." + name
+                )
+            }
+          : context
     let safeArgs = args
     if (
       provider.id === "browser" &&
@@ -237,6 +255,9 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
   /// Emitted tool artifacts (screenshots and the like) become immutable server
   /// files so the agent can embed them in its reply and the user can open them.
   const attachmentStore = makeAttachmentStore(config.dataDir)
+  const publishRecording = makeRecordingPublisher(config.dataDir, (metadata) =>
+    run(config.db.createDiskFile(metadata))
+  )
   const artifactPersistence: SandboxArtifactPersistence = {
     persist: async ({ data, mimeType, toolPath }) => {
       const stored = await attachmentStore.put(data)
@@ -366,7 +387,8 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                       provider,
                       { sessionId, ...(projectId === undefined ? {} : { projectId }) },
                       toolName,
-                      toolArgs
+                      toolArgs,
+                      artifacts
                     ),
                     artifacts,
                     path

@@ -239,7 +239,7 @@ export const invokeInteractionTools = async (
       if (!Array.isArray(args.paths) || !args.paths.every((value) => typeof value === "string")) {
         throw new Error("paths must be an array of workspace file paths")
       }
-      const snapshot = active.snapshots.get(page.target.targetId)
+      const snapshot = active.snapshots.get(page.snapshotKey ?? page.target.targetId)
       const backendNodeId = snapshot?.targets.get(normalizeRef(args.target))
       if (backendNodeId === undefined)
         throw new Error("Unknown or stale file input target; re-snapshot")

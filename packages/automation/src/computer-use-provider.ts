@@ -9,6 +9,9 @@ import { textToolResult } from "./automation-provider.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 
 import { computerUseTools } from "./computer-use-tools.js"
+import { makeComputerUseRepls } from "./computer-use-repl.js"
+import { waitForComputerState } from "./computer-use-wait.js"
+import { makeRecordingArtifacts } from "./computer-use-recording-artifacts.js"
 
 export { computerUseTools } from "./computer-use-tools.js"
 interface PendingRequest {
@@ -196,27 +199,6 @@ const connectLinuxHelper = async (): Promise<HelperClient> => {
   )
 }
 
-/// The action verdict plus just enough context to notice that the app moved
-/// underneath the caller (a new window, a dialog) without resending the whole
-/// snapshot the next get_app_state will provide anyway.
-const actionOutcome = (result: CallToolResult): CallToolResult => {
-  const text = result.content?.find((entry) => entry.type === "text")?.text
-  if (typeof text !== "string") return { content: [] }
-  try {
-    const state = JSON.parse(text) as Record<string, unknown>
-    const outcome: Record<string, unknown> = { ...(state.action as object | undefined) }
-    for (const key of ["windowId", "focusedWindowId", "modalSheetPresent", "next"] as const) {
-      if (state[key] !== undefined) outcome[key] = state[key]
-    }
-    const windows = state.windows
-    if (Array.isArray(windows) && windows.length > 1) outcome.windowCount = windows.length
-    if (Object.keys(outcome).length === 0) return { content: [] }
-    return { content: [{ type: "text", text: JSON.stringify(outcome) }] }
-  } catch {
-    return { content: [] }
-  }
-}
-
 export const makeComputerUseProvider = (
   dataDir: string
 ): AutomationToolProvider & {
@@ -229,6 +211,8 @@ export const makeComputerUseProvider = (
   // Linux helper is a spawned subprocess, so it stays shared there.
   const perSessionConnections = process.platform === "darwin"
   const helpers = new Map<string, Promise<HelperClient>>()
+  const repls = makeComputerUseRepls()
+  const recordingArtifacts = makeRecordingArtifacts()
   const helperKey = (sessionId: string): string => (perSessionConnections ? sessionId : "shared")
   const cachedLinuxStatus = process.platform === "linux" ? linuxHelperStatus() : undefined
   const platformStatus = (): { readonly available: boolean; readonly detail?: string } => {
@@ -273,7 +257,7 @@ export const makeComputerUseProvider = (
     await active?.close().catch(() => undefined)
   }
 
-  return {
+  const provider: ReturnType<typeof makeComputerUseProvider> = {
     id: "computer",
     tools: computerUseTools,
     ensureSetup: async () => {
@@ -292,6 +276,35 @@ export const makeComputerUseProvider = (
         return textToolResult(`Unknown Computer Use tool: ${toolName}`, true)
       }
       try {
+        if (toolName === "js") {
+          if (typeof args.code !== "string") return textToolResult("code is required", true)
+          return await repls.execute(context.sessionId, args.code, (name, input) =>
+            provider.invoke(context, name, input)
+          )
+        }
+        if (toolName === "reset") {
+          await repls.reset(context.sessionId)
+          return textToolResult(JSON.stringify({ reset: true }))
+        }
+        if (toolName === "wait_for") {
+          return await waitForComputerState(args, (input) =>
+            provider.invoke(context, "get_app_state", input)
+          )
+        }
+        if (
+          process.platform !== "darwin" &&
+          [
+            "list_recording_targets",
+            "start_recording",
+            "stop_recording",
+            "recording_status"
+          ].includes(toolName)
+        ) {
+          return textToolResult(
+            "Screen recording is currently available in the native macOS Codevisor app.",
+            true
+          )
+        }
         const result = await (
           await connect(context.sessionId)
         ).request({
@@ -301,24 +314,23 @@ export const makeComputerUseProvider = (
           tool: toolName,
           arguments: args
         })
-        // Native Computer Use action methods resolve void, and the full
-        // post-action snapshot (tree + screenshot) is observed through
-        // get_app_state. Returning nothing at all, though, hid whether the
-        // event was delivered and whether the app changed — an ignored click
-        // was indistinguishable from a real one. Keep the payload out, keep
-        // the verdict in.
-        if (toolName === "list_apps" || toolName === "get_app_state") return result
-        return actionOutcome(result)
+        return toolName === "stop_recording" || toolName === "recording_status"
+          ? await recordingArtifacts.enrich(result, context)
+          : result
       } catch (cause) {
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },
     closeSession: async (sessionId) => {
+      await repls.reset(sessionId)
       const active = await helpers.get(helperKey(sessionId))?.catch(() => undefined)
       await active?.request({ type: "closeSession", sessionId }).catch(() => undefined)
       if (perSessionConnections) await release(sessionId)
+      recordingArtifacts.closeSession(sessionId)
     },
     close: async () => {
+      await repls.close()
+      recordingArtifacts.clear()
       const pending = [...helpers.values()]
       helpers.clear()
       await Promise.all(
@@ -329,4 +341,5 @@ export const makeComputerUseProvider = (
       )
     }
   }
+  return provider
 }

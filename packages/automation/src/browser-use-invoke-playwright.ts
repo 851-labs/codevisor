@@ -1,3 +1,5 @@
+import { routeBrowserFrame } from "./browser-frame.js"
+import { browserNavigationBaseline, waitForBrowserState } from "./browser-load-state.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
@@ -5,15 +7,12 @@ import { delay, evaluatedValue } from "./browser-cdp.js"
 import {
   actionResult,
   booleanArgument,
-  evaluate,
   evaluateReadOnly,
   jsonResult,
   numberArgument,
-  pageInformation,
   stringArgument,
   verifiedActionResult,
-  waitForCdpEvent,
-  waitForReady
+  waitForCdpEvent
 } from "./browser-cdp-engine.js"
 import {
   dispatchClick,
@@ -27,6 +26,7 @@ import {
 import {
   callLocatorFunction,
   evaluateLocatorReadOnly,
+  evaluateAllLocators,
   locatorBackendNodeIds,
   locatorIsVisible,
   releaseElement,
@@ -41,7 +41,13 @@ export const invokePlaywrightTools = async (
   invocation: BrowserToolInvocation,
   state: BrowserToolSessionState
 ): Promise<CallToolResult | undefined> => {
-  const { active, args, backend, cursor, page, toolName } = invocation
+  const { active, backend, cursor, toolName } = invocation
+  let { args, page } = invocation
+  if (args.locator !== undefined) {
+    const routed = await routeBrowserFrame(active, page, args.locator)
+    page = routed.page
+    args = { ...args, locator: routed.locator }
+  }
   const { downloadsDir } = state
   switch (toolName) {
     case "playwright.domSnapshot":
@@ -82,6 +88,45 @@ export const invokePlaywrightTools = async (
         }
       }
       return jsonResult({ values })
+    }
+    case "playwright.evaluateAll":
+      return jsonResult({
+        value: await evaluateAllLocators(
+          active,
+          page,
+          args.locator,
+          stringArgument(args, "function"),
+          args.arg
+        )
+      })
+    case "playwright.pressSequentially": {
+      const element = await resolveLocatorElement(
+        active,
+        page,
+        args.locator,
+        true,
+        Number(args.timeoutMs ?? 30000)
+      )
+      try {
+        await active.connection.send(
+          "Runtime.callFunctionOn",
+          {
+            objectId: element.objectId,
+            functionDeclaration: "function(){this.focus()}",
+            returnByValue: true
+          },
+          page.sessionId
+        )
+        for (const character of stringArgument(args, "value"))
+          await pressKey(
+            active,
+            page,
+            character === " " ? "Space" : character === "\n" ? "Enter" : character
+          )
+      } finally {
+        await releaseElement(active, page, element)
+      }
+      return actionResult(active, page, "playwright.pressSequentially")
     }
     case "playwright.evaluate": {
       const source = stringArgument(args, "function")
@@ -400,53 +445,30 @@ export const invokePlaywrightTools = async (
     case "playwright.waitForTimeout":
       await delay(Math.max(0, Math.min(30_000, numberArgument(args, "timeoutMs"))))
       return jsonResult({ waited: true })
-    case "playwright.waitForURL": {
-      const expected = stringArgument(args, "url")
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
-      const waitUntil = typeof args.waitUntil === "string" ? args.waitUntil : "commit"
-      const deadline = Date.now() + timeoutMs
-      while (true) {
-        const info = await pageInformation(active, page)
-        if (info.url === expected) {
-          if (waitUntil === "domcontentloaded") await waitForReady(active, page)
-          if (waitUntil === "load" || waitUntil === "networkidle") {
-            while ((await evaluate<string>(active, page, "document.readyState")) !== "complete") {
-              if (Date.now() >= deadline) {
-                throw new Error(`Timed out waiting for URL ${expected}`)
-              }
-              await delay(100)
-            }
-            if (waitUntil === "networkidle") await delay(500)
-          }
-          return jsonResult({ url: info.url, matched: true })
-        }
-        if (Date.now() >= deadline) throw new Error(`Timed out waiting for URL ${expected}`)
-        await delay(100)
-      }
-    }
-    case "playwright.waitForLoadState": {
-      const state = typeof args.state === "string" ? args.state : "load"
-      if (!["domcontentloaded", "load", "networkidle"].includes(state)) {
-        throw new Error("state must be domcontentloaded, load, or networkidle")
-      }
-      const timeoutMs = Math.max(0, Math.min(30_000, Number(args.timeoutMs ?? 30_000)))
-      const deadline = Date.now() + timeoutMs
-      while (true) {
-        const readyState = await evaluate<string>(active, page, "document.readyState")
-        const ready =
-          state === "domcontentloaded"
-            ? readyState === "interactive" || readyState === "complete"
-            : readyState === "complete"
-        if (ready) {
-          if (state === "networkidle") await delay(500)
-          return jsonResult({ state, matched: true })
-        }
-        if (Date.now() >= deadline) {
-          throw new Error(`Timed out waiting for load state ${state}`)
-        }
-        await delay(100)
-      }
-    }
+    case "playwright.armNavigation":
+      return jsonResult(await browserNavigationBaseline(active, page))
+    case "playwright.waitForNavigation":
+      await waitForBrowserState(active, page, {
+        state: String(args.waitUntil ?? "load"),
+        timeoutMs: Number(args.timeoutMs ?? 30000),
+        afterSequence: Number(args.afterSequence),
+        frameId: String(args.frameId),
+        ...(typeof args.url === "string" ? { url: args.url } : {})
+      })
+      return jsonResult({ navigated: true })
+    case "playwright.waitForURL":
+      await waitForBrowserState(active, page, {
+        url: stringArgument(args, "url"),
+        state: String(args.waitUntil ?? "commit"),
+        timeoutMs: Number(args.timeoutMs ?? 30000)
+      })
+      return jsonResult({ matched: true })
+    case "playwright.waitForLoadState":
+      await waitForBrowserState(active, page, {
+        state: String(args.state ?? "load"),
+        timeoutMs: Number(args.timeoutMs ?? 30000)
+      })
+      return jsonResult({ matched: true })
     default:
       return undefined
   }

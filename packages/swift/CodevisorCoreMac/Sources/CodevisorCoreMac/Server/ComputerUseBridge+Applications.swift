@@ -19,7 +19,7 @@ func computerUseApplicationIsProtected(_ identity: ComputerUseApplicationIdentit
   return protected.contains(where: normalized.contains)
 }
 
-/// Native Computer Use accepts a display name, bundle identifier, or full app
+/// App lookup accepts a display name, bundle identifier, or full app
 /// path. Keep that matching logic independent from NSWorkspace so installed
 /// and running app resolution cannot drift apart.
 func computerUseApplicationMatchScore(
@@ -179,7 +179,7 @@ extension ComputerUseBridge {
     }
   }
 
-  func resolveApp(_ query: String) throws -> NSRunningApplication {
+  func resolveApp(_ query: String, launchIfNeeded: Bool = true) throws -> NSRunningApplication {
     let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { throw BridgeError("app is required") }
     if let pid = pid_t(normalized),
@@ -202,6 +202,7 @@ extension ComputerUseBridge {
       return try requireUnprotected(app)
     }
 
+    guard launchIfNeeded else { throw BridgeError("The app is not running. Use get_app_state to open it.") }
     var candidates = installedApplications()
     let expandedPath = (normalized as NSString).expandingTildeInPath
     if FileManager.default.fileExists(atPath: expandedPath),

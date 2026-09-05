@@ -1,3 +1,6 @@
+import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
+import { observeBrowserLoadEvent } from "./browser-load-state.js"
+import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, mkdirSync } from "node:fs"
@@ -5,7 +8,7 @@ import { join } from "node:path"
 import type { ChildProcess } from "node:child_process"
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
-import { CdpConnection, delay } from "./browser-cdp.js"
+import { CdpConnection } from "./browser-cdp.js"
 import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
 import {
   downloadedChromiumPath,
@@ -69,6 +72,8 @@ export interface BrowserUseProvider extends AutomationToolProvider {
 }
 
 export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
+  const repls = makeBrowserRepls()
+  const contexts = new Map<string, AutomationProviderContext>()
   const browsersDir = join(dataDir, "browser", "browsers")
   const profilesDir = join(dataDir, "browser", "profiles")
   const downloadsDir = join(dataDir, "browser", "downloads")
@@ -189,6 +194,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
     installSessionRecovery(active, backend === "extension")
     active.eventDisposers.push(
       connection.on("*", (params, event) => {
+        observeBrowserLoadEvent(active, event.method, params, event.sessionId)
         const sequence = ++active.eventSequence
         active.eventLog.push({
           method: event.method,
@@ -282,20 +288,6 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
           : "Chrome is not connected. Codevisor handles browser selection and extension setup in the composer."
     })
 
-  const serialized = async <T>(active: BrowserRuntime, operation: () => Promise<T>): Promise<T> => {
-    let release = (): void => undefined
-    const previous = active.queue
-    active.queue = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    await previous
-    try {
-      return await operation()
-    } finally {
-      release()
-    }
-  }
-
   const invokeTool = makeBrowserToolInvoker({
     assetInventories,
     assetsDir,
@@ -306,29 +298,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
     sessionTargets
   })
 
-  const closeRuntime = async (active: BrowserRuntime): Promise<void> => {
-    await active.queue.catch(() => undefined)
-    for (const dispose of active.eventDisposers.splice(0)) dispose()
-    if (active.owned) {
-      await active.connection.send("Browser.close").catch(() => undefined)
-      if (active.processHandle !== undefined && active.processHandle.exitCode === null) {
-        await Promise.race([
-          new Promise<void>((resolve) => active.processHandle!.once("exit", () => resolve())),
-          delay(500)
-        ])
-      }
-      if (active.processHandle !== undefined && active.processHandle.exitCode === null) {
-        active.processHandle.kill("SIGTERM")
-        await Promise.race([
-          new Promise<void>((resolve) => active.processHandle!.once("exit", () => resolve())),
-          delay(1_500)
-        ])
-      }
-    }
-    await active.connection.close().catch(() => undefined)
-  }
-
-  return {
+  const provider: BrowserUseProvider = {
     id: "browser",
     tools: browserUseTools,
     ensureSetup,
@@ -357,6 +327,16 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       prepareBrowserExtension(dataDir, serverBaseUrl)
     },
     invoke: async (context, toolName, args) => {
+      contexts.set(context.sessionId, context)
+      if (toolName === "reset") {
+        await repls.reset(context.sessionId)
+        return jsonResult({ reset: true })
+      }
+      if (toolName === "js")
+        return repls.execute(context.sessionId, String(args.code ?? ""), async (name, nested) => {
+          if (context.invokeBrowser) return context.invokeBrowser(name, nested)
+          return browserResultValue(await provider.invoke(context, name, nested))
+        })
       if (toolName === "backends") {
         const extension = browserExtensionInstallation()
         return jsonResult({
@@ -421,7 +401,9 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         effectiveTool = "tabs"
         effectiveArgs = {
           action: "select",
-          ...(typeof args.id === "string" ? { id: args.id } : { index: args.index })
+          ...(typeof args.id === "string" ? { id: args.id } : { index: args.index }),
+          title: args.title,
+          url: args.url
         }
       }
       if (
@@ -435,14 +417,29 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         if (effectiveTool === "playwright.waitForEvent") {
           return await invokeTool(context, active, effectiveTool, effectiveArgs)
         }
-        return await serialized(active, () =>
+        return await serializedBrowserOperation(active, () =>
           invokeTool(context, active, effectiveTool, effectiveArgs)
         )
       } catch (cause) {
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },
+    finishTurn: async (sessionId) => {
+      const context = contexts.get(sessionId)
+      const backend = sessionBackends.get(sessionId)
+      if (!context || !backend) return
+      const key = runtimeKey(context, backend)
+      if (!sessionTargets.has(`${key}:${sessionId}`)) return
+      const active = await runtimes.get(key)
+      if (active)
+        await serializedBrowserOperation(active, () =>
+          invokeTool(context, active, "finalizeTabs", { native: true })
+        )
+    },
     closeSession: async (sessionId) => {
+      await provider.finishTurn?.(sessionId)
+      contexts.delete(sessionId)
+      await repls.reset(sessionId)
       sessionBackends.delete(sessionId)
       const suffix = `:${sessionId}`
       const keys = new Set(
@@ -472,6 +469,8 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       }
     },
     close: async () => {
+      await repls.close()
+      contexts.clear()
       const active = [...runtimes.values()]
       runtimes.clear()
       stopRelayLifecycle()
@@ -479,9 +478,10 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       await Promise.all(
         active.map(async (pending) => {
           const resolved = await pending.catch(() => undefined)
-          if (resolved !== undefined) await closeRuntime(resolved)
+          if (resolved !== undefined) await closeBrowserRuntime(resolved)
         })
       )
     }
   }
+  return provider
 }

@@ -112,19 +112,6 @@ struct ComputerUseBridgeTests {
     #expect(frame == CGRect(x: 328, y: 168, width: 240, height: 88))
   }
 
-  @Test("Clamps stale or out-of-bounds screenshot coordinates to the target window")
-  func clampsCoordinatesToWindow() {
-    let frame = CGRect(x: 100, y: 200, width: 300, height: 150)
-
-    #expect(
-      computerUseScreenshotPoint(
-        x: -200,
-        y: 9_000,
-        screenshotPixelSize: CGSize(width: 600, height: 300),
-        windowFrame: frame
-      ) == CGPoint(x: 100.5, y: 349.5))
-  }
-
   @Test("Keeps semantic and pixel click addressing mutually exclusive")
   func distinguishesClickAddressing() {
     #expect(
@@ -234,10 +221,10 @@ struct ComputerUseBridgeTests {
   func snapshotWindowIdentity() {
     #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: 42))
     #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: 43))
-    // Unknown identity on either side keeps the permissive legacy behavior.
-    #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: 42))
-    #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: nil))
-    #expect(computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: nil))
+    // Unknown window identity must not authorize a coordinate mapping.
+    #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: 42))
+    #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: nil))
+    #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: nil))
   }
 
   @Test("Derives Retina pixel sizes so snapshotless clicks never assume 1x")

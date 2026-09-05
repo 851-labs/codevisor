@@ -3,6 +3,41 @@ import ApplicationServices
 import CodevisorCore
 import Foundation
 
+struct ComputerUseNoWindow: Error, CustomStringConvertible {
+  var description: String { "The app has no accessible window" }
+}
+
+struct ComputerUseWindowReadError: Error, CustomStringConvertible {
+  let code: AXError
+  var description: String {
+    let detail =
+      code == .cannotComplete
+      ? "The app did not respond. Observe again when it is ready."
+      : "Check Accessibility access and observe again."
+    return "Could not read the app's windows (AXError \(code.rawValue)). \(detail)"
+  }
+}
+
+func computerUseReadReadyWindow<T>(
+  timeout: TimeInterval,
+  retryDelay: TimeInterval = 0.1,
+  read: () throws -> T
+) throws -> T {
+  let deadline = ProcessInfo.processInfo.systemUptime + timeout
+  while true {
+    do {
+      return try read()
+    } catch {
+      let isStarting =
+        error is ComputerUseNoWindow
+        || (error as? ComputerUseWindowReadError)?.code == .cannotComplete
+      let remaining = deadline - ProcessInfo.processInfo.systemUptime
+      guard isStarting, remaining > 0 else { throw error }
+      Thread.sleep(forTimeInterval: min(retryDelay, remaining))
+    }
+  }
+}
+
 // Stable AX-window to WindowServer identity. This SPI has remained available
 // since macOS 10.9 and lets us avoid guessing by frame, which is especially
 // important when the window lives on another Space. The same bridge is used by
@@ -36,6 +71,7 @@ func computerUseWindowIsOnVisibleSpace(
 
 extension ComputerUseBridge {
   private func mainWindow(_ application: AXUIElement) throws -> AXUIElement {
+    AXUIElementSetMessagingTimeout(application, 1)
     let candidates =
       [
         elementAttribute(application, kAXFocusedWindowAttribute),
@@ -46,7 +82,13 @@ extension ComputerUseBridge {
     }) {
       return window
     }
-    throw BridgeError("The app has no accessible window")
+    var value: CFTypeRef?
+    AXUIElementSetMessagingTimeout(application, 1)
+    let error = AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value)
+    guard [.success, .noValue, .attributeUnsupported].contains(error) else {
+      throw ComputerUseWindowReadError(code: error)
+    }
+    throw ComputerUseNoWindow()
   }
 
   /// Keep a session attached to one composited window even if another Space
@@ -59,6 +101,8 @@ extension ComputerUseBridge {
     application: AXUIElement,
     requestedWindowID: CGWindowID
   ) throws {
+    var pid: pid_t = 0
+    AXUIElementGetPid(application, &pid)
     guard
       elementsAttribute(application, kAXWindowsAttribute).contains(where: {
         computerUseWindowID(for: $0) == requestedWindowID
@@ -68,33 +112,26 @@ extension ComputerUseBridge {
         "That window does not belong to this app. Use a windowId from the app state's windows list."
       )
     }
-    lock.withLock { windowIDBySession[sessionID] = requestedWindowID }
+    lock.withLock { windowIDBySession[computerUseAppScope(sessionID, pid)] = requestedWindowID }
   }
 
   func sessionWindow(
     sessionID: String,
     application: AXUIElement,
-    pid: pid_t
+    pid: pid_t,
+    waitForLaunch: Bool = false
   ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
-    var lastError: Error?
     // A successful LaunchServices completion only means the process is
-    // running. Native Computer Use waits for the first accessible window
-    // before returning state, so allow normal app startup to settle here.
+    // running. Allow normal app startup to expose its first window.
     // Windows on another Space are still published, so this never needs to
     // activate the app to find them.
-    for attempt in 0..<80 {
-      do {
-        return try availableSessionWindow(
-          sessionID: sessionID,
-          application: application,
-          pid: pid
-        )
-      } catch {
-        lastError = error
-        if attempt < 79 { Thread.sleep(forTimeInterval: 0.1) }
-      }
+    return try computerUseReadReadyWindow(timeout: waitForLaunch ? 5 : 0) {
+      try availableSessionWindow(
+        sessionID: sessionID,
+        application: application,
+        pid: pid
+      )
     }
-    throw lastError ?? BridgeError("The app has no accessible window")
   }
 
   private func availableSessionWindow(
@@ -102,7 +139,8 @@ extension ComputerUseBridge {
     application: AXUIElement,
     pid: pid_t
   ) throws -> (element: AXUIElement, windowID: CGWindowID?) {
-    let pinnedID = lock.withLock { windowIDBySession[sessionID] }
+    let scope = computerUseAppScope(sessionID, pid)
+    let pinnedID = lock.withLock { windowIDBySession[scope] }
     if let pinnedID {
       // AXWindows comes back empty while the app's windows are on
       // another Space, which would silently drop the pin and re-resolve
@@ -125,9 +163,9 @@ extension ComputerUseBridge {
       ?? frame(of: window).flatMap { matchingWindowID(pid: pid, frame: $0) }
     lock.withLock {
       if let windowID {
-        windowIDBySession[sessionID] = windowID
+        windowIDBySession[scope] = windowID
       } else {
-        windowIDBySession.removeValue(forKey: sessionID)
+        windowIDBySession.removeValue(forKey: scope)
       }
     }
     return (window, windowID)

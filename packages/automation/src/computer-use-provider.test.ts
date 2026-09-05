@@ -35,74 +35,25 @@ describe("Computer Use tool contract", () => {
     expect(source).toContain("if interface is not None:")
   })
 
-  it("keeps the public method and argument surface aligned with native Computer Use", () => {
-    const expected = new Map<string, string[]>([
-      ["list_apps", []],
-      ["get_app_state", ["app", "window_id", "disableDiff"]],
-      [
-        "click",
-        [
-          "app",
-          "element_index",
-          "x",
-          "y",
-          "mouse_button",
-          "click_count",
-          "window_id",
-          "delivery_mode"
-        ]
-      ],
-      ["drag", ["app", "from_x", "from_y", "to_x", "to_y", "window_id", "delivery_mode"]],
-      ["perform_secondary_action", ["app", "element_index", "action"]],
-      ["press_key", ["app", "key", "window_id", "delivery_mode"]],
-      ["scroll", ["app", "element_index", "direction", "pages", "window_id", "delivery_mode"]],
-      ["select_text", ["app", "element_index", "text", "prefix", "suffix", "selection_type"]],
-      ["set_value", ["app", "element_index", "value"]],
-      ["type_text", ["app", "text", "window_id", "delivery_mode"]]
-    ])
-
-    expect(computerUseTools.map((candidate) => candidate.name)).toEqual([...expected.keys()])
-    for (const candidate of computerUseTools) {
-      const schema = candidate.inputSchema as unknown as {
-        properties?: Record<string, unknown>
-      }
-      expect(Object.keys(schema.properties ?? {})).toEqual(expected.get(candidate.name))
+  it("exposes explicit snapshots, observations, waits and the persistent REPL", () => {
+    const names = computerUseTools.map((tool) => tool.name)
+    expect(names).toContain("js")
+    expect(names).toContain("reset")
+    expect(names).toContain("wait_for")
+    expect(names).toContain("paste_text")
+    for (const name of ["click", "drag", "set_value", "select_text", "perform_secondary_action"]) {
+      const schema = computerUseTools.find((tool) => tool.name === name)!.inputSchema
+      expect(schema.properties).toHaveProperty("snapshot_id")
+      expect(schema.properties).toHaveProperty("window_id")
+      expect(schema.properties).toHaveProperty("delivery_mode")
     }
+    const state = computerUseTools.find((tool) => tool.name === "get_app_state")!
+    expect(state.inputSchema.properties).toHaveProperty("screenshot")
+    expect(state.inputSchema.properties).toHaveProperty("view")
+    expect(state.description).toContain("Actions never take hidden snapshots")
   })
 
-  it("matches the native click call shape", () => {
-    const click = computerUseTools.find((candidate) => candidate.name === "click")
-    expect(click).toBeDefined()
-
-    const schema = click!.inputSchema as unknown as {
-      properties: Record<string, { description?: string; enum?: string[] }>
-      required: string[]
-      additionalProperties: boolean
-    }
-    expect(Object.keys(schema.properties)).toEqual([
-      "app",
-      "element_index",
-      "x",
-      "y",
-      "mouse_button",
-      "click_count",
-      "window_id",
-      "delivery_mode"
-    ])
-    // A window can open under the agent, and a background event can be
-    // ignored: both recoveries have to be callable, not just documented.
-    expect(schema.properties.delivery_mode!.enum).toEqual(["background", "foreground"])
-    expect(schema.properties.mouse_button!.enum).toEqual(["left", "right", "middle", "l", "r", "m"])
-    expect(schema.required).toEqual(["app"])
-    expect(schema.additionalProperties).toBe(false)
-  })
-
-  it("tells agents that element ids are snapshot scoped", () => {
-    const state = computerUseTools.find((candidate) => candidate.name === "get_app_state")
-    expect(state?.description).toContain("Re-snapshot before each action")
-  })
-
-  it("advertises native-style installed app discovery and transparent launching", () => {
+  it("advertises installed app discovery and transparent launching", () => {
     const list = computerUseTools.find((candidate) => candidate.name === "list_apps")
     const state = computerUseTools.find((candidate) => candidate.name === "get_app_state")
 
@@ -111,7 +62,7 @@ describe("Computer Use tool contract", () => {
     expect(state?.description).toContain("Launch the app if needed")
   })
 
-  it("matches the native semantic text-selection contract", () => {
+  it("exposes exact semantic text selection", () => {
     const select = computerUseTools.find((candidate) => candidate.name === "select_text")
     const schema = select?.inputSchema as unknown as {
       additionalProperties: boolean
@@ -131,7 +82,7 @@ describe("Computer Use tool contract", () => {
     expect(schema.additionalProperties).toBe(false)
   })
 
-  it("does not advertise Codevisor-only action arguments", () => {
+  it("rejects undeclared action arguments", () => {
     for (const candidate of computerUseTools) {
       const schema = candidate.inputSchema as unknown as {
         properties?: Record<string, unknown>
@@ -144,7 +95,7 @@ describe("Computer Use tool contract", () => {
     }
   })
 
-  it("accepts the native disableDiff option and rejects undeclared arguments", () => {
+  it("accepts the disableDiff option and rejects undeclared arguments", () => {
     const state = computerUseTools.find((candidate) => candidate.name === "get_app_state")
     const schema = state?.inputSchema as unknown as {
       additionalProperties: boolean

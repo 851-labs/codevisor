@@ -1,3 +1,4 @@
+import { exportBrowserContent } from "./browser-content.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -23,6 +24,8 @@ export const invokePageTools = async (
   const { active, args, backend, page, toolName } = invocation
   const { assetInventories, assetsDir } = state
   switch (toolName) {
+    case "content.export":
+      return exportBrowserContent(active, page, state.assetsDir, String(args.format ?? "markdown"))
     case "clipboard.readText": {
       if (backend === "extension") {
         const value = await active.connection.send<{ text?: string }>(

@@ -7,9 +7,6 @@ func computerUseResolvedDeliveryMode(
   targetIsOnVisibleSpace: Bool?
 ) -> String? {
   guard requested == "background" || requested == "foreground" else { return nil }
-  if requested == "background", targetIsOnVisibleSpace == false {
-    return "foreground"
-  }
   return requested
 }
 
@@ -25,17 +22,24 @@ extension ComputerUseBridge {
     let value: Value
   }
 
+  private final class AXMutationResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var error: AXError = .cannotComplete
+    func store(_ error: AXError) { lock.withLock { self.error = error } }
+    func load() -> AXError { lock.withLock { error } }
+  }
+
   /// Dispatched, never `sync`: a self-targeted action can open a menu or
   /// sheet, and AppKit runs those in a nested tracking loop that would not
   /// return until the user dismissed it — blocking this worker (and the
-  /// whole helper socket) for the duration. The effect is reported through
-  /// the post-action snapshot instead of an AXError.
+  /// whole helper socket) for the duration. A timeout reports uncertainty.
   func axPerformAction(
     _ element: AXUIElement,
     _ action: CFString,
     pid: pid_t
   ) -> AXError {
     guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
+      AXUIElementSetMessagingTimeout(element, 1)
       return AXUIElementPerformAction(element, action)
     }
     let payload = UncheckedAXPayload(value: (element, action))
@@ -43,12 +47,12 @@ extension ComputerUseBridge {
     // actually run the action before the caller snapshots. The timeout is
     // a safety valve for actions that open a nested tracking loop.
     let applied = DispatchSemaphore(value: 0)
+    let result = AXMutationResult()
     DispatchQueue.main.async {
-      _ = AXUIElementPerformAction(payload.value.0, payload.value.1)
+      result.store(AXUIElementPerformAction(payload.value.0, payload.value.1))
       applied.signal()
     }
-    _ = applied.wait(timeout: .now() + 2)
-    return .success
+    return applied.wait(timeout: .now() + 2) == .success ? result.load() : .cannotComplete
   }
 
   func axSetAttribute(
@@ -58,56 +62,17 @@ extension ComputerUseBridge {
     pid: pid_t
   ) -> AXError {
     guard pid == ProcessInfo.processInfo.processIdentifier, !Thread.isMainThread else {
+      AXUIElementSetMessagingTimeout(element, 1)
       return AXUIElementSetAttributeValue(element, attribute, value)
     }
     let payload = UncheckedAXPayload(value: (element, attribute, value))
     let applied = DispatchSemaphore(value: 0)
+    let result = AXMutationResult()
     DispatchQueue.main.async {
-      _ = AXUIElementSetAttributeValue(payload.value.0, payload.value.1, payload.value.2)
+      result.store(AXUIElementSetAttributeValue(payload.value.0, payload.value.1, payload.value.2))
       applied.signal()
     }
-    _ = applied.wait(timeout: .now() + 2)
-    return .success
-  }
-
-  func performAccessibilityClick(
-    target: ElementRecord,
-    button: String,
-    clickCount: Int,
-    pid: pid_t
-  ) throws -> String? {
-    let desired: [String]
-    switch button.lowercased() {
-    case "right": desired = [kAXShowMenuAction as String]
-    case "middle":
-      throw BridgeError(
-        "A semantic middle-click has no accessibility equivalent; use screenshot x/y"
-      )
-    default:
-      desired = [
-        kAXPressAction as String,
-        kAXConfirmAction as String,
-        "AXOpen",
-      ]
-    }
-    let advertised = actionNames(of: target.element)
-    guard
-      let action = desired.first(where: { desiredAction in
-        advertised.contains(where: {
-          $0.caseInsensitiveCompare(desiredAction) == .orderedSame
-        })
-      })
-    else {
-      return nil
-    }
-    for attempt in 0..<max(clickCount, 1) {
-      guard axPerformAction(target.element, action as CFString, pid: pid) == .success else {
-        throw BridgeError("The selected element rejected \(action)")
-      }
-      if attempt < clickCount - 1 { Thread.sleep(forTimeInterval: 0.05) }
-    }
-    Thread.sleep(forTimeInterval: 0.08)
-    return action
+    return applied.wait(timeout: .now() + 2) == .success ? result.load() : .cannotComplete
   }
 
   /// Pop-up buttons do not always publish AXValue — a freshly built sheet
@@ -192,9 +157,8 @@ extension ComputerUseBridge {
     else {
       throw BridgeError("deliveryMode must be background or foreground")
     }
-    // PID-targeted events cannot be trusted to reach a window on an
-    // inactive Space. Promote pointer/keyboard delivery to foreground in
-    // that case; semantic Accessibility actions remain background-only.
+    // Background is an explicit focus choice, including on other Spaces.
+    // Synthetic input validates visibility separately; AX actions need no activation.
     return resolved
   }
 
@@ -227,11 +191,12 @@ extension ComputerUseBridge {
       "kind": kind,
       "path": path,
       "delivered": true,
+      "status": "delivered",
       "verified": verified,
       "effect": verified ? "confirmed" : "unverifiable",
       "next": verified
         ? "The requested state was confirmed in the target accessibility object."
-        : "Confirm the effect in the returned app state before continuing.",
+        : "Call get_app_state to verify the effect before choosing another element.",
     ]
     if let deliveryMode { result["deliveryMode"] = deliveryMode }
     for (key, value) in detail { result[key] = value }
@@ -320,8 +285,8 @@ extension ComputerUseBridge {
   }
 
   /// Notes and other rich editors expose their semantic formatting through
-  /// AXAttributedStringForRange. Render the same lightweight markdown cues
-  /// as native Computer Use so a model can distinguish title/heading/body
+  /// AXAttributedStringForRange. Render lightweight markdown cues
+  /// so a model can distinguish title/heading/body
   /// text without guessing from screenshot pixels.
   func formattedTextValue(element: AXUIElement, plainText: String) -> String? {
     let utf16Length = (plainText as NSString).length

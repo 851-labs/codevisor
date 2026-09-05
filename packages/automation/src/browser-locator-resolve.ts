@@ -127,8 +127,8 @@ const filterBackendNodeIdsByRoots = async (
   roots: ReadonlyArray<number>
 ): Promise<number[]> => {
   if (ids.length === 0 || roots.length === 0) return []
-  const rootObjects = await Promise.all(
-    roots.map((backendNodeId) =>
+  const resolved = await Promise.all(
+    [...roots, ...ids].map((backendNodeId) =>
       runtime.connection.send<{ object: { objectId?: string } }>(
         "DOM.resolveNode",
         { backendNodeId },
@@ -136,49 +136,35 @@ const filterBackendNodeIdsByRoots = async (
       )
     )
   )
-  const rootObjectIds = rootObjects.flatMap((root) =>
-    root.object.objectId === undefined ? [] : [root.object.objectId]
-  )
+  const rootObjects = resolved
+    .slice(0, roots.length)
+    .flatMap((result) => (result.object.objectId === undefined ? [] : [result.object.objectId]))
+  const candidates = resolved
+    .slice(roots.length)
+    .flatMap((result) => (result.object.objectId === undefined ? [] : [result.object.objectId]))
   try {
-    const matches: number[] = []
-    for (const backendNodeId of ids) {
-      const candidate = await runtime.connection.send<{ object: { objectId?: string } }>(
-        "DOM.resolveNode",
-        { backendNodeId },
-        page.sessionId
-      )
-      const candidateObjectId = candidate.object.objectId
-      if (candidateObjectId === undefined) continue
-      try {
-        for (const rootObjectId of rootObjectIds) {
-          const contained = evaluatedValue<boolean>(
-            await runtime.connection.send(
-              "Runtime.callFunctionOn",
-              {
-                objectId: rootObjectId,
-                functionDeclaration:
-                  "function(candidate){return candidate!==this&&(this.nodeType===9?this.documentElement?.contains(candidate)===true:this.contains(candidate));}",
-                arguments: [{ objectId: candidateObjectId }],
-                returnByValue: true
-              },
-              page.sessionId
-            )
-          )
-          if (contained) {
-            matches.push(backendNodeId)
-            break
-          }
-        }
-      } finally {
-        await runtime.connection
-          .send("Runtime.releaseObject", { objectId: candidateObjectId }, page.sessionId)
-          .catch(() => undefined)
-      }
-    }
-    return matches
+    if (rootObjects.length === 0 || candidates.length === 0) return []
+    const result = await runtime.connection.send<{ result: { objectId?: string } }>(
+      "Runtime.callFunctionOn",
+      {
+        objectId: rootObjects[0],
+        // The AX response is breadth-first, not document order. Resolve containment and
+        // ordering together in the page so first()/nth() match the visible DOM order.
+        functionDeclaration:
+          "function(rootCount,...nodes){const roots=nodes.slice(0,rootCount);const contains=(root,node)=>{for(let current=node;current;current=current.getRootNode()?.host){if(current!==root&&root.contains(current))return true;}return false;};return nodes.slice(rootCount).filter(node=>roots.some(root=>contains(root,node))).sort((a,b)=>{const order=a.compareDocumentPosition(b);return order&1?0:order&2?1:order&4?-1:0;});}",
+        arguments: [
+          { value: rootObjects.length },
+          ...[...rootObjects, ...candidates].map((objectId) => ({ objectId }))
+        ],
+        returnByValue: false
+      },
+      page.sessionId
+    )
+    if (result.result.objectId === undefined) throw new Error("Could not order locator matches")
+    return await backendNodeIdsFromArrayObject(runtime, page, result.result.objectId)
   } finally {
     await Promise.all(
-      rootObjectIds.map((objectId) =>
+      [...rootObjects, ...candidates].map((objectId) =>
         runtime.connection
           .send("Runtime.releaseObject", { objectId }, page.sessionId)
           .catch(() => undefined)
@@ -274,13 +260,14 @@ export const locatorBackendNodeIds = async (
   }
   let ids: number[]
   if (locator.ref !== undefined) {
-    const snapshot = runtime.snapshots.get(page.target.targetId)
+    const snapshot = runtime.snapshots.get(page.snapshotKey ?? page.target.targetId)
     if (snapshot === undefined) {
       throw new Error("No current Browser Use snapshot; call playwright.domSnapshot first")
     }
     const ref = normalizeRef(locator.ref)
     const id = snapshot.targets.get(ref)
-    ids = id === undefined ? [] : await filterBackendNodeIdsByRoots(runtime, page, [id], roots)
+    if (id === undefined) throw new Error(`Unknown or stale target ${ref}; take a fresh snapshot`)
+    ids = await filterBackendNodeIdsByRoots(runtime, page, [id], roots)
   } else if (locator.css !== undefined) {
     ids = await queryCssWithinRoots(runtime, page, roots, locator.css)
   } else if (locator.role !== undefined) {

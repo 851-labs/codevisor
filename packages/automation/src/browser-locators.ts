@@ -115,7 +115,7 @@ export const resolveElement = async (
   target: unknown,
   requireActionable = true
 ): Promise<ResolvedElement> => {
-  const snapshot = runtime.snapshots.get(page.target.targetId)
+  const snapshot = runtime.snapshots.get(page.snapshotKey ?? page.target.targetId)
   if (snapshot === undefined)
     throw new Error("No current Browser Use snapshot; call snapshot first")
   const ref = normalizeRef(target)
@@ -257,4 +257,55 @@ export const locatorIsVisible = async (
     locator,
     "function(){const r=this.getBoundingClientRect(),s=getComputedStyle(this);return this.isConnected&&r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';}"
   )
+}
+
+export const evaluateAllLocators = async <T>(
+  runtime: BrowserRuntime,
+  page: PageHandle,
+  locator: unknown,
+  source: string,
+  arg: unknown
+): Promise<T> => {
+  assertReadOnlyFunction(source)
+  const ids = await locatorBackendNodeIds(runtime, page, locator)
+  const objectIds: string[] = []
+  try {
+    for (const backendNodeId of ids) {
+      const resolved = await runtime.connection.send<{ object: { objectId?: string } }>(
+        "DOM.resolveNode",
+        { backendNodeId },
+        page.sessionId
+      )
+      if (!resolved.object.objectId)
+        throw new Error("A matching element detached during evaluateAll")
+      objectIds.push(resolved.object.objectId)
+    }
+    const root = await runtime.connection.send<{ result: { objectId: string } }>(
+      "Runtime.evaluate",
+      { expression: "document", returnByValue: false },
+      page.sessionId
+    )
+    objectIds.push(root.result.objectId)
+    return evaluatedValue<T>(
+      await runtime.connection.send(
+        "Runtime.callFunctionOn",
+        {
+          objectId: root.result.objectId,
+          functionDeclaration: `function(arg, ...elements){return (${source})(elements, arg)}`,
+          arguments: [{ value: arg }, ...objectIds.slice(0, -1).map((objectId) => ({ objectId }))],
+          returnByValue: true,
+          awaitPromise: true
+        },
+        page.sessionId
+      )
+    )
+  } finally {
+    await Promise.all(
+      objectIds.map((objectId) =>
+        runtime.connection
+          .send("Runtime.releaseObject", { objectId }, page.sessionId)
+          .catch(() => undefined)
+      )
+    )
+  }
 }

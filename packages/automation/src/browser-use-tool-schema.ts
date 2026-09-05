@@ -79,4 +79,15 @@ export const tool = (
   name: string,
   description: string,
   inputSchema: Readonly<Record<string, unknown>> = objectSchema()
-): Tool => ({ name, description, inputSchema: inputSchema as Tool["inputSchema"] })
+): Tool => ({
+  name,
+  description,
+  inputSchema: {
+    ...inputSchema,
+    type: "object",
+    properties: {
+      ...(inputSchema.properties as object),
+      tabId: { type: "string", description: "Explicit tab ID; never falls back to another tab." }
+    }
+  } as Tool["inputSchema"]
+})

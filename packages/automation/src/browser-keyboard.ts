@@ -15,10 +15,13 @@ export const browserKeyDescription = (
   modifiers: number
   text?: string
 } => {
-  const parts = value
-    .split("+")
-    .map((part) => part.trim())
-    .filter(Boolean)
+  const parts =
+    [...value].length === 1
+      ? [value === " " ? "Space" : value]
+      : value
+          .split("+")
+          .map((part) => part.trim())
+          .filter(Boolean)
   if (parts.length === 0) throw new Error("key is required")
   let modifiers = 0
   for (const modifier of parts.slice(0, -1)) {
@@ -87,8 +90,16 @@ export const browserKeyDescription = (
     )
   }
   const match = named[raw.toLowerCase()]
-  if (match !== undefined)
-    return { key: match[0], code: match[1], windowsVirtualKeyCode: match[2], modifiers }
+  if (match !== undefined) {
+    const text = match[0] === "Enter" ? "\r" : match[0] === " " ? " " : undefined
+    return {
+      key: match[0],
+      code: match[1],
+      windowsVirtualKeyCode: match[2],
+      modifiers,
+      ...(text !== undefined && (modifiers & (2 | 4)) === 0 ? { text } : {})
+    }
+  }
   if ([...raw].length !== 1) throw new Error(`Unsupported key: ${raw}`)
   const upper = raw.toUpperCase()
   const letter = /^[A-Z]$/.test(upper)
@@ -127,7 +138,7 @@ export const heldKeyDescription = (
     ...base,
     key: shifted,
     modifiers,
-    ...(typed ? { text: shifted } : {})
+    ...(typed ? { text: shifted === key.key ? key.text : shifted } : {})
   }
 }
 

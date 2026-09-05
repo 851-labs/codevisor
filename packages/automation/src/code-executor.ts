@@ -23,7 +23,7 @@
  * SOFTWARE.
  */
 
-import { getQuickJS } from "quickjs-emscripten"
+import { getQuickJS, newQuickJSWASMModule } from "quickjs-emscripten"
 import type {
   QuickJSContext,
   QuickJSDeferredPromise,
@@ -289,7 +289,9 @@ const evaluate = async (
   executorOptions: CodeExecutorOptions,
   code: string,
   toolInvoker: CodeToolInvoker,
-  executeOptions: ExecuteCodeOptions
+  executeOptions: ExecuteCodeOptions,
+  sourceBuilder: (code: string) => string = buildExecutionSource,
+  session?: { runtime: QuickJSRuntime; context: QuickJSContext }
 ): Promise<CodeExecutionResult> => {
   const activeTimeoutMs = Math.max(
     100,
@@ -303,12 +305,12 @@ const evaluate = async (
   const logs: Array<string> = []
   const pendingDeferreds = new Set<QuickJSDeferredPromise>()
   const QuickJS = await getQuickJS()
-  const runtime = QuickJS.newRuntime()
+  const runtime = session?.runtime ?? QuickJS.newRuntime()
   try {
     runtime.setMemoryLimit(executorOptions.memoryLimitBytes ?? DEFAULT_MEMORY_LIMIT_BYTES)
     runtime.setMaxStackSize(executorOptions.maxStackSizeBytes ?? DEFAULT_MAX_STACK_SIZE_BYTES)
     runtime.setInterruptHandler(() => budget.exhausted() || signal?.aborted === true)
-    const context = runtime.newContext()
+    const context = session?.context ?? runtime.newContext()
     try {
       signal?.throwIfAborted()
       const logBridge = createLogBridge(context, logs)
@@ -318,9 +320,7 @@ const evaluate = async (
       context.setProp(context.global, "__codevisor_invokeTool", toolBridge)
       toolBridge.dispose()
 
-      const evaluated = budget.run(() =>
-        context.evalCode(buildExecutionSource(code), EXECUTION_FILENAME)
-      )
+      const evaluated = budget.run(() => context.evalCode(sourceBuilder(code), EXECUTION_FILENAME))
       if (evaluated.error !== undefined) {
         const error = context.dump(evaluated.error)
         evaluated.error.dispose()
@@ -369,12 +369,12 @@ const evaluate = async (
         if (deferred.alive) deferred.dispose()
       }
       pendingDeferreds.clear()
-      context.dispose()
+      if (session === undefined) context.dispose()
     }
   } catch (cause) {
     return { result: null, error: normalizeExecutionError(cause, budget, signal), logs }
   } finally {
-    runtime.dispose()
+    if (session === undefined) runtime.dispose()
   }
 }
 
@@ -382,3 +382,57 @@ export const makeCodeExecutor = (options: CodeExecutorOptions = {}): CodeExecuto
   execute: (code, toolInvoker, executeOptions = {}) =>
     evaluate(options, code, toolInvoker, executeOptions)
 })
+
+/** One isolated QuickJS realm per desktop session; cells are strictly ordered. */
+export const makePersistentCodeExecutor = (
+  sourceBuilder: (code: string) => string,
+  options: CodeExecutorOptions = {}
+): CodeExecutor & { close: () => Promise<void> } => {
+  let session: { runtime: QuickJSRuntime; context: QuickJSContext } | undefined
+  let tail: Promise<unknown> = Promise.resolve()
+  let closed = false
+  const dispose = () => {
+    session?.context.dispose()
+    session?.runtime.dispose()
+    session = undefined
+  }
+  return {
+    execute: (code, invoker, executeOptions = {}) => {
+      const cell = tail.then(async () => {
+        if (closed) return { result: null, error: "Computer Use REPL is closed" }
+        if (session === undefined) {
+          // The bundled Bellard engine leaks its context when large JSON tool
+          // results are parsed after await. NG passes the screenshot stress test.
+          const engine = await newQuickJSWASMModule(
+            import("@jitl/quickjs-ng-wasmfile-release-sync")
+          )
+          const runtime = engine.newRuntime()
+          session = { runtime, context: runtime.newContext() }
+        }
+        const result = await evaluate(
+          options,
+          code,
+          invoker,
+          executeOptions,
+          sourceBuilder,
+          session
+        )
+        if (
+          executeOptions.signal?.aborted ||
+          /QuickJS active execution timed out|out of memory/i.test(result.error ?? "")
+        ) {
+          dispose()
+          return { ...result, error: `${result.error}. Computer Use bindings were reset.` }
+        }
+        return result
+      })
+      tail = cell.catch(() => undefined)
+      return cell
+    },
+    close: async () => {
+      closed = true
+      await tail
+      dispose()
+    }
+  }
+}

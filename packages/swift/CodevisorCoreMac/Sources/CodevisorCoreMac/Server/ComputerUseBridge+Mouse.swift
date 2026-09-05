@@ -193,10 +193,11 @@ private final class SkyLightEventBridge: @unchecked Sendable {
   }
 
   func post(_ event: CGEvent, to pid: pid_t) {
-    // The SkyLight post reaches Chromium's WindowServer path. The public
-    // post remains necessary for AppKit/Catalyst targets that ignore it.
-    postToPid?(pid, event)
-    event.postToPid(pid)
+    if let postToPid {
+      postToPid(pid, event)
+    } else {
+      event.postToPid(pid)
+    }
   }
 }
 
@@ -208,8 +209,27 @@ extension ComputerUseBridge {
     pid: pid_t,
     windowID: CGWindowID?,
     windowFrame: CGRect?,
-    chromium: Bool
+    chromium: Bool,
+    global: Bool = false
   ) throws -> String {
+    if global {
+      let down: CGEventType =
+        button == "right" ? .rightMouseDown : button == "middle" ? .otherMouseDown : .leftMouseDown
+      let up: CGEventType = button == "right" ? .rightMouseUp : button == "middle" ? .otherMouseUp : .leftMouseUp
+      let mouseButton: CGMouseButton = button == "right" ? .right : button == "middle" ? .center : .left
+      guard let source = CGEventSource(stateID: .hidSystemState) else {
+        throw BridgeError("Unable to create mouse event source")
+      }
+      for index in 1...count {
+        try postMouseEvent(
+          type: .mouseMoved, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: 0)
+        try postMouseEvent(
+          type: down, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index)
+        try postMouseEvent(
+          type: up, source: source, point: point, button: mouseButton, pid: pid, global: true, clickState: index)
+      }
+      return "cgevent_global"
+    }
     if chromium, button.caseInsensitiveCompare("left") == .orderedSame {
       guard let windowID, let windowFrame else {
         throw BridgeError(
@@ -262,13 +282,13 @@ extension ComputerUseBridge {
           groupID: groupID,
           phase: Int64(phase)
         )
-        SkyLightEventBridge.shared.post(event, to: pid)
+        // AppKit uses public PID delivery. The private WindowServer path
+        // is reserved for Chromium, and never duplicated with a second post.
+        event.postToPid(pid)
         Thread.sleep(forTimeInterval: 0.03)
       }
     }
-    return SkyLightEventBridge.shared.supportsTargetedPost
-      ? "skylight_pid"
-      : "cgevent_pid"
+    return "cgevent_pid"
   }
 
   private func configureTargetedMouseEvent(
@@ -373,14 +393,17 @@ extension ComputerUseBridge {
     windowID: CGWindowID?,
     operation: () throws -> T
   ) throws -> T {
-    let previous = NSWorkspace.shared.frontmostApplication
-    let shouldRestore = previous?.processIdentifier != app.processIdentifier
-    defer {
-      if shouldRestore, let previous, !previous.isTerminated {
-        Thread.sleep(forTimeInterval: 0.12)
-        _ = previous.activate(options: [.activateAllWindows])
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
+      let application = AXUIElementCreateApplication(app.processIdentifier)
+      let focused = elementAttribute(application, kAXFocusedWindowAttribute)
+      if windowID == nil || focused.flatMap(computerUseWindowID) == windowID
+        || openMenu(application: application, window: window) != nil
+      {
+        return try operation()
       }
     }
+    // Foreground is a persistent focus choice. Restoring another app here
+    // closes tracking menus between their opening and selection actions.
     _ = app.activate(options: [.activateAllWindows])
     _ = axPerformAction(window, kAXRaiseAction as CFString, pid: app.processIdentifier)
     for _ in 0..<8 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
@@ -417,27 +440,28 @@ extension ComputerUseBridge {
     return try operation()
   }
 
-  func drag(from: CGPoint, to: CGPoint, pid: pid_t, global: Bool = false) throws {
-    guard let source = CGEventSource(stateID: .combinedSessionState) else {
-      throw BridgeError("Unable to create targeted drag event source")
+  func drag(
+    from: CGPoint, to: CGPoint, pid: pid_t, global: Bool = false, windowID: CGWindowID? = nil,
+    windowFrame: CGRect? = nil
+  ) throws {
+    guard let source = CGEventSource(stateID: .hidSystemState) else {
+      throw BridgeError("Unable to create drag event source")
     }
-    try postMouseEvent(type: .mouseMoved, source: source, point: from, button: .left, pid: pid, global: global)
-    try postMouseEvent(type: .leftMouseDown, source: source, point: from, button: .left, pid: pid, global: global)
-    for step in 1...10 {
-      let progress = CGFloat(step) / 10
+    let groupID = Int64(DispatchTime.now().uptimeNanoseconds & UInt64(Int64.max))
+    func send(_ type: CGEventType, _ point: CGPoint) throws {
       try postMouseEvent(
-        type: .leftMouseDragged,
-        source: source,
-        point: CGPoint(
-          x: from.x + (to.x - from.x) * progress,
-          y: from.y + (to.y - from.y) * progress
-        ),
-        button: .left,
-        pid: pid,
-        global: global
-      )
+        type: type, source: source, point: point, button: .left, pid: pid, global: global,
+        windowID: windowID, windowFrame: windowFrame, groupID: groupID)
     }
-    try postMouseEvent(type: .leftMouseUp, source: source, point: to, button: .left, pid: pid, global: global)
+    try send(.mouseMoved, from)
+    try send(.leftMouseDown, from)
+    // Always release the button, including if event construction fails mid-drag.
+    defer { try? send(.leftMouseUp, to) }
+    for step in 1...15 {
+      let progress = CGFloat(step) / 15
+      try send(
+        .leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * progress, y: from.y + (to.y - from.y) * progress))
+    }
   }
 
   private func postMouseEvent(
@@ -446,7 +470,11 @@ extension ComputerUseBridge {
     point: CGPoint,
     button: CGMouseButton,
     pid: pid_t,
-    global: Bool
+    global: Bool,
+    clickState: Int = 1,
+    windowID: CGWindowID? = nil,
+    windowFrame: CGRect? = nil,
+    groupID: Int64 = 0
   ) throws {
     guard
       let event = CGEvent(
@@ -456,8 +484,16 @@ extension ComputerUseBridge {
         mouseButton: button
       )
     else { throw BridgeError("Unable to create mouse event") }
-    event.setIntegerValueField(.mouseEventClickState, value: 1)
-    if global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
+    event.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
+    event.flags = []
+    if global {
+      event.post(tap: .cghidEventTap)
+    } else {
+      configureTargetedMouseEvent(
+        event, point: point, button: button, clickState: clickState,
+        windowID: windowID, windowFrame: windowFrame, pid: pid, groupID: groupID)
+      event.postToPid(pid)
+    }
     Thread.sleep(forTimeInterval: 0.02)
   }
 
@@ -468,6 +504,7 @@ extension ComputerUseBridge {
     pid: pid_t,
     global: Bool = false
   ) throws {
+    let direction = ["u": "up", "d": "down", "l": "left", "r": "right"][direction] ?? direction
     let magnitude = Int32(min(Double(Int32.max), max(1, (12 * pages).rounded())))
     let vertical: Int32 = direction == "up" ? magnitude : direction == "down" ? -magnitude : 0
     let horizontal: Int32 = direction == "left" ? magnitude : direction == "right" ? -magnitude : 0

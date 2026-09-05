@@ -25,6 +25,8 @@
 
 import { parse } from "@babel/parser"
 import { transform } from "sucrase"
+import { browserDocumentation } from "./browser-documentation.js"
+import { computerUseCellBody } from "./computer-use-repl-source.js"
 
 /// Turning the model's code into an executable source: fenced-block
 /// extraction, callable recovery (parsed, then regex fallback), TypeScript
@@ -158,13 +160,16 @@ const stripTypeScript = (code: string): string =>
     keepUnusedImports: true
   }).code
 
-export const buildExecutionSource = (code: string): string => {
-  const body = stripTypeScript(recoverExecutionBody(code))
+export const buildExecutionSource = (code: string, persistent = false): string => {
+  const body = persistent ? computerUseCellBody(code) : stripTypeScript(recoverExecutionBody(code))
   return [
+    ...(persistent ? ["(async () => {"] : []),
     '"use strict";',
-    "const __invokeTool = __codevisor_invokeTool;",
+    persistent
+      ? "const __invokeTool = (...args) => globalThis.__codevisor_invokeTool(...args);"
+      : "const __invokeTool = __codevisor_invokeTool;",
     "const __log = __codevisor_log;",
-    "try { delete globalThis.__codevisor_invokeTool; } catch {}",
+    ...(persistent ? [] : ["try { delete globalThis.__codevisor_invokeTool; } catch {}"]),
     "try { delete globalThis.__codevisor_log; } catch {}",
     "const __format = (value) => {",
     "  if (typeof value === 'string') return value;",
@@ -189,7 +194,7 @@ export const buildExecutionSource = (code: string): string => {
     "const __textMatcher = (value, label) => value instanceof RegExp ? { regex: value.source, flags: value.flags } : __stringMatcher(value, label);",
     "const __tabId = (tab) => typeof tab === 'string' ? tab : tab && typeof tab.id === 'string' ? tab.id : undefined;",
     "const __selectTab = (tabId) => tabId === undefined ? Promise.resolve() : __callTool('browser.tabs', { action: 'select', id: tabId }).then(() => undefined);",
-    "const __callTabTool = (tabId, path, args = {}) => __selectTab(tabId).then(() => __callTool(path, args));",
+    "const __callTabTool = (tabId, path, args = {}) => __callTool(path, { ...args, ...(tabId === undefined ? {} : { tabId }) });",
     "const __locatorDescriptor = (value, label = 'locator') => { if (!value || typeof value !== 'object' || !value.__locator) throw new Error(label + ' must be a Browser locator'); return value.__locator; };",
     "const __locatorLeaf = (kind, value, options = {}) => ({ [kind]: ['label','placeholder','text'].includes(kind) ? __textMatcher(value, kind) : __stringMatcher(value, kind), ...(options.exact === undefined ? {} : { exact: options.exact === true }), ...(kind === 'role' && options.name !== undefined ? { name: __textMatcher(options.name, 'name') } : {}) });",
     "const __withoutFrame = (locator) => Object.fromEntries(Object.entries(locator).filter(([key]) => key !== 'frame'));",
@@ -215,6 +220,8 @@ export const buildExecutionSource = (code: string): string => {
     "    innerText: (options = {}) => __callTabTool(tabId, 'browser.playwright.innerText', { locator, timeoutMs: options.timeoutMs }).then(value => value.value),",
     "    textContent: (options = {}) => __callTabTool(tabId, 'browser.playwright.textContent', { locator, timeoutMs: options.timeoutMs }).then(value => value.value),",
     "    evaluate: (fn, arg, options = {}) => { if (typeof fn !== 'function' && typeof fn !== 'string') throw new Error('evaluate expects a function or function source string'); return __callTabTool(tabId, 'browser.playwright.evaluate', { locator, function: String(fn), arg, timeoutMs: options.timeoutMs }).then(value => value.value); },",
+    "    evaluateAll: (fn, arg, options = {}) => __callTabTool(tabId, 'browser.playwright.evaluateAll', { locator, function: String(fn), arg, timeoutMs: options.timeoutMs }).then(value => value.value),",
+    "    pressSequentially: (value, options = {}) => __callTabTool(tabId, 'browser.playwright.pressSequentially', { locator, value: String(value), timeoutMs: options.timeoutMs }).then(() => undefined),",
     "    downloadMedia: (options = {}) => __callTabTool(tabId, 'browser.playwright.downloadMedia', { locator, timeoutMs: options.timeoutMs }).then(() => undefined),",
     "    waitFor: (options = {}) => __callTabTool(tabId, 'browser.playwright.waitFor', { locator, state: options.state ?? 'visible', timeoutMs: options.timeoutMs }).then(() => undefined),",
     "    first: () => __makePlaywrightLocator({ ...locator, index: 0 }, tabId),",
@@ -268,7 +275,7 @@ export const buildExecutionSource = (code: string): string => {
     "    waitForTimeout: (timeoutMs) => __callTabTool(tabId, 'browser.playwright.waitForTimeout', { timeoutMs }).then(() => undefined),",
     "    waitForURL: (url, options = {}) => __callTabTool(tabId, 'browser.playwright.waitForURL', { url: __stringMatcher(url, 'url'), timeoutMs: options.timeoutMs, waitUntil: options.waitUntil }).then(() => undefined),",
     "    waitForLoadState: (options = {}) => __callTabTool(tabId, 'browser.playwright.waitForLoadState', { state: options.state, timeoutMs: options.timeoutMs }).then(() => undefined),",
-    "    expectNavigation: async (action, options = {}) => { if (typeof action !== 'function') throw new Error('action must be a function'); const result = await action(); if (options.url !== undefined) await __callTabTool(tabId, 'browser.playwright.waitForURL', { url: __stringMatcher(options.url, 'url'), timeoutMs: options.timeoutMs, waitUntil: options.waitUntil }); else await __callTabTool(tabId, 'browser.playwright.waitForLoadState', { state: options.waitUntil === 'commit' ? 'domcontentloaded' : options.waitUntil, timeoutMs: options.timeoutMs }); return result; }",
+    "    expectNavigation: async (action, options = {}) => { if (typeof action !== 'function') throw new Error('action must be a function'); const baseline = await __callTabTool(tabId, 'browser.playwright.armNavigation'); const result = await action(); await __callTabTool(tabId, 'browser.playwright.waitForNavigation', { ...baseline, ...options }); return result; }",
     "  });",
     "};",
     "const __makeCua = (tabId) => __strict('tab.cua', {",
@@ -310,12 +317,17 @@ export const buildExecutionSource = (code: string): string => {
     "  const tabId = __tabId(info);",
     "  return __strict('tab', {",
     "    id: tabId,",
+    "    getAXState: () => __callTabTool(tabId, 'browser.snapshot'),",
+    "    click: (ref, options = {}) => __callTabTool(tabId, 'browser.click', { ...options, target: ref }),",
+    "    fill: (ref, text) => __callTabTool(tabId, 'browser.type', { target: ref, text, submit: false }),",
+    "    pressKey: (key) => __callTabTool(tabId, 'browser.press_key', { key }),",
     "    index: info.index,",
     "    info: { id: tabId, index: info.index, title: info.title, url: info.url, selected: info.selected, origin: info.origin, groupId: info.groupId },",
     "    playwright: __makePlaywright(tabId),",
     "    cua: __makeCua(tabId),",
     "    dom_cua: __makeDomCua(tabId),",
     "    clipboard: __makeClipboard(tabId),",
+    "    content: { export: (options = {}) => __callTabTool(tabId, 'browser.content.export', options) },",
     "    capabilities: __makeCapabilities(tabId),",
     "    dev: { logs: (options = {}) => __callTabTool(tabId, 'browser.dev.logs', options).then(value => value.entries) },",
     "    getJsDialog: () => __callTabTool(tabId, 'browser.getJsDialog', {}).then(value => __makeJsDialog(tabId, value.dialog)),",
@@ -355,7 +367,7 @@ export const buildExecutionSource = (code: string): string => {
     "__tabs.content = async () => { throw new Error('tabs.content is not supported by Codevisor\\'s CDP browser backends'); };",
     "const __user = {",
     "  openTabs: () => __callTool('browser.openTabs', {}).then(result => result.tabs.map(__makeTab)),",
-    "  claimTab: (tab) => { const id = __tabId(tab); if (id === undefined) throw new Error('claimTab expects a tab returned by openTabs'); return __callTool('browser.claimTab', { id }).then(() => __makeTab({ id })); },",
+    "  claimTab: (tab) => { const id = __tabId(tab); if (id === undefined) throw new Error('claimTab expects a tab returned by openTabs'); return __callTool('browser.claimTab', { id, title: tab.info?.title ?? tab.title, url: tab.info?.url ?? tab.url }).then(() => __makeTab({ id })); },",
     "  history: (options = {}) => __callTool('browser.user.history', options).then(value => value.entries)",
     "};",
     "const __tabGroupTabIds = (tabs) => { if (!Array.isArray(tabs) || tabs.length === 0) throw new Error('tabGroups expects a non-empty array of tabs or tab ids'); return tabs.map((tab, index) => { const id = __tabId(tab); if (id === undefined) throw new Error('tabGroups tabs[' + index + '] must be a tab or a tab id'); return id; }); };",
@@ -369,7 +381,7 @@ export const buildExecutionSource = (code: string): string => {
     "  ungroup: (tabs) => __callTool('browser.tab_groups', { action: 'ungroup', tabIds: __tabGroupTabIds(tabs) }).then(() => undefined)",
     "});",
     "const __browserTab = __makeTab();",
-    "const __browserCore = { browserId: 'codevisor', capabilities: __makeBrowserCapabilities(), tab: __browserTab, tabs: __tabs, tabGroups: __tabGroups, user: __user, documentation: async () => 'Codevisor Browser exposes native-shaped tabs (tabs.list() returns usable tab objects whose info field holds the listed id, title, url, and groupId), Chrome tab groups through tabGroups.list/ensure/create/add/update/ungroup (ensure reuses a same-titled group) in the user\\'s Chrome, Playwright locators plus page-level mouse and keyboard on tab.playwright, clipboard, developer logs, user history, and optional viewport, CDP, and page-assets capabilities through tools.browser. Binary tool results such as screenshots arrive as artifacts with a url; embed that url as ![label](url) in your reply to show the user. Finish with tabs.finalize({ keep }) where each keep entry is a tab, a tab id, or { tab, status: \\'deliverable\\' | \\'handoff\\' }; agent-created tabs not listed in keep are closed and the result reports kept, closed, and released tab ids.', nameSession: (_name) => Promise.resolve() };",
+    `const __browserCore = { browserId: 'codevisor', capabilities: __makeBrowserCapabilities(), tab: __browserTab, tabs: __tabs, tabGroups: __tabGroups, user: __user, documentation: async () => ${JSON.stringify(browserDocumentation)}, nameSession: (name) => __callTool('browser.nameSession', { name: __stringMatcher(name, 'name') }).then(() => undefined) };`,
     "const __browser = new Proxy(__browserCore, { get(target, prop) { if (prop === 'then' || typeof prop === 'symbol') return undefined; if (prop in target) return target[prop]; return __makeToolsProxy(['browser', String(prop)]); } });",
     "const __enumerationError = (path) => new Error((path.length === 0 ? 'tools' : 'tools.' + path.join('.')) + ' is a lazy proxy and cannot be enumerated. Use tools.search({ query: \"...\" }) to find tools.');",
     "const __makeToolsProxy = (path = []) => new Proxy(() => undefined, {",
@@ -396,8 +408,12 @@ export const buildExecutionSource = (code: string): string => {
     "  debug: (...args) => __log('debug', args.map(__format).join(' '))",
     "};",
     "const fetch = () => { throw new Error('fetch is disabled in Codevisor code execution'); };",
-    "(async () => {",
+    ...(persistent
+      ? ["globalThis.browser ??= __browser; globalThis.browser.write = emit;"]
+      : ["(async () => {"]),
     body,
     "})()"
   ].join("\n")
 }
+
+export const buildBrowserReplSource = (code: string): string => buildExecutionSource(code, true)

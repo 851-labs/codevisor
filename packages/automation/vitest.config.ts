@@ -22,6 +22,12 @@ export default defineConfig({
         "**/dist/**",
         "**/*.test.ts",
         "src/browser-cdp-test-support.ts",
+        // Browser session adapters are covered with real Chromium and gateway fixtures.
+        "src/browser-runtime-lifecycle.ts",
+        "src/browser-content.ts",
+        "src/browser-frame.ts",
+        "src/browser-load-state.ts",
+        "src/browser-repl.ts",
         "src/browser-cdp-engine.ts",
         "src/browser-cdp.ts",
         "src/browser-chromium.ts",
@@ -42,7 +48,10 @@ export default defineConfig({
         "src/browser-use-provider.ts",
         "src/code-executor-source.ts",
         "src/code-executor.ts",
-        "src/computer-use-provider.ts"
+        "src/computer-use-provider.ts",
+        // Persistent desktop cells compile and execute code in QuickJS. Their
+        // sandbox API is covered by the REPL integration suite, like code-executor-source.
+        "src/computer-use-repl-source.ts"
       ],
       provider: "v8",
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

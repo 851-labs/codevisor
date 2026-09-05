@@ -59,6 +59,11 @@ describe("browser keyboard", () => {
     expect(browserKeyDescription("Shift")).toMatchObject({ key: "Shift", code: "ShiftLeft" })
     expect(browserKeyDescription("Meta")).toMatchObject({ key: "Meta", windowsVirtualKeyCode: 91 })
     expect(browserKeyDescription("F5")).toMatchObject({ key: "F5", windowsVirtualKeyCode: 116 })
+    expect(browserKeyDescription("Enter")).toMatchObject({ text: "\r" })
+    expect(browserKeyDescription("Space")).toMatchObject({ text: " " })
+    expect(browserKeyDescription(" ")).toMatchObject({ text: " ", code: "Space" })
+    expect(browserKeyDescription("+")).toMatchObject({ text: "+", key: "+" })
+    expect(browserKeyDescription("Control+Enter")).not.toHaveProperty("text")
   })
 
   it("applies modifiers held through key_down like Playwright's Keyboard", () => {
@@ -71,7 +76,8 @@ describe("browser keyboard", () => {
     expect(plain).toEqual(browserKeyDescription("a"))
     expect(heldKeyDescription("a", 8)).toMatchObject({ key: "A", modifiers: 8, text: "A" })
     expect(heldKeyDescription("a", 2)).not.toHaveProperty("text")
-    expect(heldKeyDescription("Enter", 8)).toMatchObject({ key: "Enter", modifiers: 8 })
+    expect(heldKeyDescription("Enter", 8)).toMatchObject({ key: "Enter", modifiers: 8, text: "\r" })
+    expect(heldKeyDescription("a", 1)).toMatchObject({ text: "a", modifiers: 1 })
   })
 
   it("dispatches split key events with the right CDP shapes", async () => {

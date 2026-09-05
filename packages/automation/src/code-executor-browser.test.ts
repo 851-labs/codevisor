@@ -36,7 +36,13 @@ describe.sequential("Codevisor browser facade", () => {
     )
     expect(result).toMatchObject({ result: "ok" })
     const actions = calls.filter((call) => call.path !== "browser.tabs")
-    expect(actions).toEqual([
+    expect(actions.every((call) => (call.args as { tabId?: string }).tabId === "tab-1")).toBe(true)
+    expect(
+      actions.map((call) => {
+        const { tabId: _, ...args } = call.args as Record<string, unknown>
+        return { ...call, args }
+      })
+    ).toEqual([
       { path: "browser.press_key", args: { key: "r" } },
       { path: "browser.mouse_move", args: { x: 300, y: 300 } },
       { path: "browser.mouse_down", args: { button: "left" } },
@@ -117,8 +123,7 @@ describe.sequential("Codevisor browser facade", () => {
     })
     expect(calls).toEqual([
       { path: "browser.tabs", args: { action: "list", scope: "session" } },
-      { path: "browser.tabs", args: { action: "select", id: "tab-2" } },
-      { path: "browser.mouse_move", args: { x: 1, y: 2 } }
+      { path: "browser.mouse_move", args: { tabId: "tab-2", x: 1, y: 2 } }
     ])
   })
 

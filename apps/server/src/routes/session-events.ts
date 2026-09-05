@@ -47,6 +47,11 @@ export const sessionEventSink =
     }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
       return (async () => {
+        await services.mcp?.finishTurn(sessionId).catch((cause: unknown) => {
+          console.error(
+            `Browser tab cleanup failed for ${sessionId}: ${cause instanceof Error ? cause.message : String(cause)}`
+          )
+        })
         // Attachments the reply embeds must be durable before the turn closes,
         // so the finalized item and the turn-end event land in that order.
         await promoteAssistantArtifacts(services, fanout, serverId, sessionId).catch(
