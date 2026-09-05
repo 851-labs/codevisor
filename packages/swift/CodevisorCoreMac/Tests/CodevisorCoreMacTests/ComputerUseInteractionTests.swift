@@ -8,7 +8,15 @@ struct ComputerUseInteractionTests {
   @Test("Cold launch waits through missing windows and a transient AX timeout")
   func windowReadiness() throws {
     var reads = 0
-    let window = try computerUseReadReadyWindow(timeout: 1, retryDelay: 0) {
+    var time: TimeInterval = 0
+    var delays: [TimeInterval] = []
+    let window = try computerUseReadReadyWindow(
+      timeout: 1, now: { time },
+      sleep: {
+        delays.append($0)
+        time += $0
+      }
+    ) {
       reads += 1
       if reads == 1 { throw ComputerUseNoWindow() }
       if reads == 2 { throw ComputerUseWindowReadError(code: .cannotComplete) }
@@ -16,25 +24,50 @@ struct ComputerUseInteractionTests {
     }
     #expect(window == "ready")
     #expect(reads == 3)
+    #expect(delays == [0.1, 0.1])
   }
 
   @Test("Window readiness preserves permission errors and stops at its deadline")
   func windowReadinessFailures() {
     var reads = 0
     #expect(throws: ComputerUseWindowReadError.self) {
-      try computerUseReadReadyWindow(timeout: 1) { () -> String in
+      try computerUseReadReadyWindow(
+        timeout: 1, now: { 0 },
+        sleep: { _ in
+          Issue.record("Permission errors must not schedule another read")
+        }
+      ) { () -> String in
         reads += 1
         throw ComputerUseWindowReadError(code: .apiDisabled)
       }
     }
     #expect(reads == 1)
     #expect(throws: ComputerUseWindowReadError.self) {
-      try computerUseReadReadyWindow(timeout: 0) { () -> String in
+      try computerUseReadReadyWindow(
+        timeout: 0, now: { 0 },
+        sleep: { _ in
+          Issue.record("An expired deadline must not schedule another read")
+        }
+      ) { () -> String in
         reads += 1
         throw ComputerUseWindowReadError(code: .cannotComplete)
       }
     }
     #expect(reads == 2)
+  }
+
+  @Test("Window readiness retries until the controlled deadline and preserves the final AX error")
+  func windowReadinessDeadline() {
+    var time: TimeInterval = 0
+    var observations: [TimeInterval] = []
+    #expect(throws: ComputerUseWindowReadError.self) {
+      try computerUseReadReadyWindow(timeout: 1, retryDelay: 0.25, now: { time }, sleep: { time += $0 }) {
+        () -> String in
+        observations.append(time)
+        throw ComputerUseWindowReadError(code: .cannotComplete)
+      }
+    }
+    #expect(observations == [0, 0.25, 0.5, 0.75, 1])
   }
 
   @Test("Values include control states and redact secure text fields")

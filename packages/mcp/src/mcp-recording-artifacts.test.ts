@@ -43,12 +43,12 @@ describe("recording attachment persistence", () => {
     )
     const issued = await manager.issueGateway(session.id)
     const client = new Client({ name: "recording-test", version: "1" })
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(issued.url), {
-        requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
-      }) as unknown as Transport
-    )
     try {
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(issued.url), {
+          requestInit: { headers: { authorization: `Bearer ${issued.bearerToken}` } }
+        }) as unknown as Transport
+      )
       const result = await client.callTool({
         name: "execute",
         arguments: { code: 'async () => tools["computer.stop_recording"]({recording_id:"r"})' }

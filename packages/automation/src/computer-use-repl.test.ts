@@ -27,8 +27,8 @@ describe("Computer Use REPL", () => {
     const video = {
       recordingId: "r",
       status: "stopped",
-      file: { path: "/recordings/fix.mp4", url: "https://attachments.codevisor.invalid/f" },
-      markdown: "![Fix](https://attachments.codevisor.invalid/f)"
+      file: { path: "/recordings/fix.mp4" },
+      markdown: "![Fix](</recordings/fix.mp4>)"
     }
     const invoke = async (method: string, args: Record<string, unknown>) => {
       calls.push({ method, args })
@@ -101,28 +101,31 @@ describe("Computer Use REPL", () => {
     ).toBe(true)
   })
 
-  it("releases a long-lived session after repeated large screenshot observations", async () => {
+  it("releases a session after replacing a large screenshot observation", async () => {
     const repl = pool()
+    // Two replacements of a 4 MB image still reproduce the old Bellard engine's
+    // JS_FreeRuntime assertion. Thirty replacements only added stress-test work.
+    const image = { type: "image" as const, mimeType: "image/png", data: "A".repeat(4_000_000) }
     const invoke = async () => ({
-      content: [
-        ...reply({ snapshotId: "s", text: "1 AXWindow" }).content,
-        { type: "image" as const, mimeType: "image/png", data: "A".repeat(4_000_000) }
-      ]
+      content: [...reply({ snapshotId: "s", text: "1 AXWindow" }).content, image]
     })
-    await repl.execute(
+    const initialized = await repl.execute(
       "large",
       'let app = await computer.getApp("Music", {emit:false}); let s;',
       invoke
     )
-    for (let index = 0; index < 30; index++) {
+    expect(initialized.isError, text(initialized)).toBeUndefined()
+    for (let index = 0; index < 2; index++) {
       const result = await repl.execute(
         "large",
         "s = await app.getState(); computer.write(s.image);",
         invoke
       )
       expect(result.isError, text(result)).toBeUndefined()
+      expect(result.content.filter((block) => block.type === "image")).toEqual([image])
     }
     await repl.reset("large")
+    expect(text(await repl.execute("large", "typeof app", invoke))).toBe("undefined")
   })
   it("keeps app bindings and follows menu -> submenu -> selection without hidden input or observations", async () => {
     const repl = pool()

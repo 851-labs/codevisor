@@ -3,15 +3,22 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { createServer } from "node:http"
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { makeBrowserUseProvider } from "@codevisor/automation"
-import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
+import {
+  cleanupMcpManagerTests,
+  directories,
+  listen,
+  run,
+  testManager
+} from "./mcp-manager-test-support.js"
 
 afterEach(cleanupMcpManagerTests)
 it("preserves browser cells and applies gateway upload validation and attachment persistence to nested operations", async () => {
   const root = await mkdtemp(join(tmpdir(), "browser-repl-gateway-"))
+  directories.push(root)
   const provider = makeBrowserUseProvider(root)
   const nested: string[] = []
   const { db, manager, directory } = await testManager(undefined, {
@@ -49,17 +56,17 @@ it("preserves browser cells and applies gateway upload validation and attachment
   manager.setBaseUrl(await listen(createServer(manager.handleGatewayRequest)))
   const gateway = await manager.issueGateway(session.id, project.id)
   const client = new Client({ name: "browser-repl-test", version: "1" })
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL(gateway.url), {
-      requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
-    }) as unknown as Transport
-  )
-  const execute = (code: string) =>
-    client.callTool({
-      name: "execute",
-      arguments: { code: `async () => tools["browser.js"]({code: ${JSON.stringify(code)}})` }
-    })
   try {
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(gateway.url), {
+        requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
+      }) as unknown as Transport
+    )
+    const execute = (code: string) =>
+      client.callTool({
+        name: "execute",
+        arguments: { code: `async () => tools["browser.js"]({code: ${JSON.stringify(code)}})` }
+      })
     expect((await execute("var retained = 41; retained")).isError).not.toBe(true)
     expect(JSON.stringify((await execute("retained + 1")).content)).toContain("42")
     const exported = await execute("await browser.content.export({format:'markdown'})")
@@ -79,7 +86,5 @@ it("preserves browser cells and applies gateway upload validation and attachment
     await manager.finishTurn(session.id)
   } finally {
     await client.close()
-    await manager.close()
-    await rm(root, { recursive: true, force: true })
   }
 })

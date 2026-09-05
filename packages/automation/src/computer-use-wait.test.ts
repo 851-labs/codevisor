@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { computerUseState, waitForComputerState } from "./computer-use-wait.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 const reply = (text: string): CallToolResult => ({
@@ -13,6 +13,8 @@ const clock = () => {
     }
   }
 }
+
+afterEach(() => vi.useRealTimers())
 
 describe("Computer Use waits", () => {
   it("waits for a menu using accessibility-only reads and captures one final screenshot", async () => {
@@ -89,12 +91,20 @@ describe("Computer Use waits", () => {
     expect(reads).toBe(5)
   })
 
-  it("uses the real polling clock and tolerates an observation with no text", async () => {
+  it("uses the default scheduler and tolerates an observation with no text", async () => {
+    vi.useFakeTimers()
     let reads = 0
-    const result = await waitForComputerState({ text: "Ready", timeout_ms: 1000 }, async () =>
+    const completed = vi.fn()
+    const operation = waitForComputerState({ text: "Ready", timeout_ms: 1000 }, async () =>
       ++reads === 1 ? { content: [{ type: "text", text: '{"windows":[]}' }] } : reply("Ready")
     )
-    expect(computerUseState(result).matched).toBe(true)
+    const settled = operation.then(completed)
+    await vi.advanceTimersByTimeAsync(199)
+    expect(completed).not.toHaveBeenCalled()
+    expect(reads).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await settled
+    expect(computerUseState(completed.mock.calls[0]![0]).matched).toBe(true)
     expect(reads).toBe(2)
   })
 

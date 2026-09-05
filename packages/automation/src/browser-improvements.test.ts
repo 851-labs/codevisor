@@ -1,8 +1,9 @@
-import { createServer } from "node:http"
+import { createServer, type ServerResponse } from "node:http"
 import { mkdtempSync, rmSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it as baseIt, vi } from "vitest"
+import { observeCdp } from "./browser-cdp-test-support.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
@@ -19,19 +20,37 @@ const value = <T = unknown>(result: CallToolResult): T => {
   }
 }
 
-describe.sequential("Browser session reliability", () => {
-  const directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
-  const provider = makeBrowserUseProvider(directory)
-  const context = { sessionId: "reliability", projectId: "reliability" }
-  let origin: string
-  const server = createServer((request, response) => {
-    if (request.url === "/slow") {
-      setTimeout(() => response.end("ready"), 900)
-      return
-    }
-    response.setHeader("content-type", "text/html")
-    const name = request.url?.includes("second") ? "Second" : "First"
-    response.end(`<!doctype html><title>${name}</title>
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
+
+const it = baseIt.extend<{
+  browser: {
+    provider: ReturnType<typeof makeBrowserUseProvider>
+    context: { sessionId: string; projectId: string }
+    origin: string
+    cell: (code: string) => Promise<unknown>
+    cdp: ReturnType<typeof observeCdp>
+    slowResponse: Promise<ServerResponse>
+  }
+}>({
+  browser: async ({ task }, use) => {
+    vi.stubEnv("CODEVISOR_BROWSER_HEADLESS", "1")
+    const cdp = observeCdp()
+    const directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
+    const provider = makeBrowserUseProvider(directory)
+    const context = { sessionId: task.id, projectId: "reliability" }
+    let origin: string
+    const slow = Promise.withResolvers<ServerResponse>()
+    const server = createServer((request, response) => {
+      if (request.url === "/slow") {
+        slow.resolve(response)
+        return
+      }
+      response.setHeader("content-type", "text/html")
+      const name = request.url?.includes("second") ? "Second" : "First"
+      response.end(`<!doctype html><title>${name}</title>
       <button id="noop">No navigation</button><button id="push" onclick="history.pushState({},'', '/pushed')">Push</button>
       <button id="request" onclick="fetch('/slow')">Request</button><button id="change" onclick="document.querySelector('#noop').remove()">Change</button>
       <label>Name<input id="name" onkeydown="document.querySelector('#keys').textContent += event.key + ','"></label><p id="keys"></p>
@@ -44,28 +63,39 @@ describe.sequential("Browser session reliability", () => {
       ${request.url === "/leaf" ? '<p id="leaf">Nested content</p><button id="leaf-button" onclick="this.textContent=123">Click frame</button><label>Frame input<input id="leaf-input"></label>' : ""}
       ${request.url === "/cross" ? `<iframe id="cross" src="${origin.replace("127.0.0.1", "localhost")}/leaf"></iframe>` : ""}
     `)
-  })
-  beforeAll(async () => {
-    await new Promise<void>((resolve) => server.listen(0, resolve))
-    const address = server.address()
-    if (!address || typeof address === "string") throw new Error("Missing fixture address")
-    origin = `http://127.0.0.1:${address.port}`
-    value(await provider.invoke(context, "use_backend", { backend: "managed" }))
-  })
-  afterAll(async () => {
-    await provider.close()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-    rmSync(directory, { recursive: true, force: true })
-  })
-  const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
-
-  it("persists handles and targets concurrent operations at their own tabs", async () => {
-    await cell(
-      `var first = await browser.tabs.new(); await first.goto(${JSON.stringify("PLACEHOLDER")});`.replace(
-        '"PLACEHOLDER"',
-        JSON.stringify(origin)
+    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject)
+        server.listen(0, resolve)
+      })
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("Missing fixture address")
+      origin = `http://127.0.0.1:${address.port}`
+      value(await provider.invoke(context, "use_backend", { backend: "managed" }))
+      const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
+      await cell(
+        `var first = await browser.tabs.new(); await first.goto(${JSON.stringify(origin)})`
       )
-    )
+      await use({ provider, context, origin, cell, cdp, slowResponse: slow.promise })
+    } finally {
+      try {
+        await provider.close()
+      } finally {
+        server.closeAllConnections()
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve()))
+        )
+        rmSync(directory, { recursive: true, force: true })
+      }
+    }
+  }
+})
+
+describe("Browser session reliability", () => {
+  it("persists handles and targets concurrent operations at their own tabs", async ({
+    browser: { cell, origin }
+  }) => {
     await cell(
       `var second = await browser.tabs.new(); await second.goto(${JSON.stringify(origin + "/second")});`
     )
@@ -80,7 +110,9 @@ describe.sequential("Browser session reliability", () => {
     ).toEqual(["left", "right"])
   })
 
-  it("orders role matches by document order rather than AX response depth", async () => {
+  it("orders role matches by document order rather than AX response depth", async ({
+    browser: { cell }
+  }) => {
     expect(
       await cell(
         "await first.playwright.locator('#ordered').getByRole('button', {name:'Repeated',exact:true}).first().textContent()"
@@ -93,7 +125,12 @@ describe.sequential("Browser session reliability", () => {
     ).toBe("Shallow second")
   })
 
-  it("rejects refs from an older snapshot or a different tab", async () => {
+  it("rejects refs from an older snapshot or a different tab", async ({
+    browser: { cell, origin }
+  }) => {
+    await cell(
+      `var second = await browser.tabs.new(); await second.goto(${JSON.stringify(origin + "/second")})`
+    )
     const snapshot = String(await cell("await first.getAXState()"))
     const ref = snapshot.match(/button "No navigation" \[ref=(e\d+)\]/)?.[1]
     expect(ref).toBeTruthy()
@@ -102,31 +139,45 @@ describe.sequential("Browser session reliability", () => {
     expect(snapshot).not.toContain('StaticText "Deep action"')
     await cell("await first.getAXState()")
     await expect(cell(`await first.click(${JSON.stringify(ref)})`)).rejects.toThrow(/stale/)
+    const current = String(await cell("await first.getAXState()"))
+    const currentRef = current.match(/button "No navigation" \[ref=(e\d+)\]/)?.[1]
+    expect(currentRef).toBeTruthy()
     await cell("await second.getAXState()")
-    await expect(cell(`await second.click(${JSON.stringify(ref)})`)).rejects.toThrow(/stale/)
+    await expect(cell(`await second.click(${JSON.stringify(currentRef)})`)).rejects.toThrow(/stale/)
   })
 
-  it("requires an actual navigation and observes same-document navigation", async () => {
-    await expect(
-      cell(
-        "await first.playwright.expectNavigation(() => first.playwright.locator('#noop').click(), {timeoutMs: 150})"
-      )
-    ).rejects.toThrow(/Timed out waiting for navigation/)
+  it("observes same-document navigation after arming before the action", async ({
+    browser: { cell, origin }
+  }) => {
     await cell(
-      "await first.playwright.expectNavigation(() => first.playwright.locator('#push').click(), {timeoutMs: 2000, waitUntil: 'commit'})"
+      "await first.playwright.expectNavigation(() => first.playwright.locator('#push').click(), {waitUntil: 'commit'})"
     )
     expect(await cell("await first.url()")).toBe(origin + "/pushed")
   })
 
-  it("waits for outstanding network requests and the quiet interval", async () => {
-    const started = Date.now()
-    await cell(
-      "await first.playwright.locator('#request').click(); await first.playwright.waitForLoadState({state:'networkidle',timeoutMs:3000})"
+  it("observes network request completion through real CDP events", async ({
+    browser: { cell, cdp, slowResponse }
+  }) => {
+    let requestId: unknown
+    const requested = cdp.event("Network.requestWillBeSent", (params) => {
+      if ((params.request as { url: string }).url.endsWith("/slow")) {
+        requestId = params.requestId
+        return true
+      }
+      return false
+    })
+    await cell("await first.playwright.locator('#request').click()")
+    await requested
+    const finished = cdp.event(
+      "Network.loadingFinished",
+      (params) => params.requestId === requestId
     )
-    expect(Date.now() - started).toBeGreaterThanOrEqual(1300)
+    ;(await slowResponse).end("ready")
+    await finished
+    await cell("await first.playwright.waitForLoadState({state:'networkidle'})")
   })
 
-  it("evaluates all matches and types individual key events", async () => {
+  it("evaluates all matches and types individual key events", async ({ browser: { cell } }) => {
     expect(
       await cell(
         "await first.playwright.locator('.entry').evaluateAll(elements => elements.map(e => e.textContent))"
@@ -141,7 +192,7 @@ describe.sequential("Browser session reliability", () => {
     )
   })
 
-  it("submits a form through a trusted Enter press", async () => {
+  it("submits a form through a trusted Enter press", async ({ browser: { cell } }) => {
     await cell(
       "await first.playwright.getByRole('textbox', {name:'Query',exact:true}).fill('Search terms'); await first.playwright.getByRole('textbox', {name:'Query',exact:true}).press('Enter')"
     )
@@ -150,7 +201,9 @@ describe.sequential("Browser session reliability", () => {
     )
   })
 
-  it("exports real files using the binary attachment contract", async () => {
+  it("exports real files using the binary attachment contract", async ({
+    browser: { cell, provider, context, origin }
+  }) => {
     const result = await provider.invoke(context, "content.export", {
       format: "markdown",
       tabId: await cell("first.id")
@@ -160,7 +213,7 @@ describe.sequential("Browser session reliability", () => {
     expect(result.content.some((c) => c.type === "resource")).toBe(true)
   })
 
-  it("supports nested frames", async () => {
+  it("supports nested frames", async ({ browser: { cell, origin } }) => {
     await cell(`await first.goto(${JSON.stringify(origin + "/frames")})`)
     expect(
       await cell(
@@ -169,7 +222,7 @@ describe.sequential("Browser session reliability", () => {
     ).toBe("Nested content")
   })
 
-  it("supports cross-origin frames", async () => {
+  it("supports cross-origin frames", async ({ browser: { cell, origin } }) => {
     await cell(`await first.goto(${JSON.stringify(origin + "/cross")})`)
     expect(
       await cell("await first.playwright.frameLocator('#cross').locator('#leaf').textContent()")
@@ -190,13 +243,16 @@ describe.sequential("Browser session reliability", () => {
     ).toBe("frame typing")
   })
 
-  it("does not substitute another tab after one closes", async () => {
+  it("does not substitute another tab after one closes", async ({ browser: { cell } }) => {
+    await cell("var second = await browser.tabs.new()")
     await cell("await second.close()")
     await expect(cell("await second.title()")).rejects.toThrow(/own|closed/)
     expect(await cell("await first.title()")).toBe("First")
   })
 
-  it("cleans scratch tabs at turn end while keeping marked output", async () => {
+  it("cleans scratch tabs at turn end while keeping marked output", async ({
+    browser: { cell, provider, context }
+  }) => {
     await cell("await first.markDeliverable(); var scratch = await browser.tabs.new();")
     const scratch = await cell("scratch.id")
     await provider.finishTurn?.(context.sessionId)

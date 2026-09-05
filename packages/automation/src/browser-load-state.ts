@@ -18,7 +18,7 @@ const loadFor = (runtime: BrowserRuntime, session: string) => {
   }
   let state = sessions.get(session)
   if (!state) {
-    state = { requests: new Set(), changedAt: Date.now() }
+    state = { requests: new Set(), changedAt: performance.now() }
     sessions.set(session, state)
   }
   return state
@@ -38,10 +38,10 @@ export const observeBrowserLoadEvent = (
     params.type !== "EventSource"
   ) {
     state.requests.add(String(params.requestId))
-    state.changedAt = Date.now()
+    state.changedAt = performance.now()
   } else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") {
     state.requests.delete(String(params.requestId))
-    state.changedAt = Date.now()
+    state.changedAt = performance.now()
   }
   if (method === "Page.frameNavigated" || method === "Page.navigatedWithinDocument") {
     const target = [...runtime.sessions].find(([, id]) => id === session)?.[0]
@@ -74,7 +74,7 @@ export const waitForBrowserState = async (
   const state = options.state ?? "load"
   if (!["commit", "domcontentloaded", "load", "networkidle"].includes(state))
     throw new Error("Unsupported browser load state")
-  const deadline = Date.now() + Math.max(0, Math.min(30_000, options.timeoutMs ?? 30_000))
+  const deadline = performance.now() + Math.max(0, Math.min(30_000, options.timeoutMs ?? 30_000))
   while (true) {
     const navigated =
       options.afterSequence === undefined ||
@@ -99,14 +99,14 @@ export const waitForBrowserState = async (
       if (
         documentReady &&
         (state !== "networkidle" ||
-          (network.requests.size === 0 && Date.now() - network.changedAt >= 500))
+          (network.requests.size === 0 && performance.now() - network.changedAt >= 500))
       )
         return
     }
-    if (Date.now() >= deadline)
+    if (performance.now() >= deadline)
       throw new Error(
         `Timed out waiting for ${options.afterSequence === undefined ? "page" : "navigation"} ${state}${options.url ? ` at ${options.url}` : ""}`
       )
-    await delay(Math.min(50, Math.max(1, deadline - Date.now())))
+    await delay(Math.min(50, Math.max(1, deadline - performance.now())))
   }
 }

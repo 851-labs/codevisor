@@ -21,9 +21,11 @@ struct ComputerUseWindowReadError: Error, CustomStringConvertible {
 func computerUseReadReadyWindow<T>(
   timeout: TimeInterval,
   retryDelay: TimeInterval = 0.1,
+  now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+  sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
   read: () throws -> T
 ) throws -> T {
-  let deadline = ProcessInfo.processInfo.systemUptime + timeout
+  let deadline = now() + timeout
   while true {
     do {
       return try read()
@@ -31,9 +33,9 @@ func computerUseReadReadyWindow<T>(
       let isStarting =
         error is ComputerUseNoWindow
         || (error as? ComputerUseWindowReadError)?.code == .cannotComplete
-      let remaining = deadline - ProcessInfo.processInfo.systemUptime
+      let remaining = deadline - now()
       guard isStarting, remaining > 0 else { throw error }
-      Thread.sleep(forTimeInterval: min(retryDelay, remaining))
+      sleep(min(retryDelay, remaining))
     }
   }
 }
