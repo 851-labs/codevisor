@@ -48,11 +48,6 @@ private struct DelayedNewChatLoadingView: View {
   }
 }
 
-struct NewProjectTarget: Identifiable {
-  let serverId: String
-  var id: String { serverId }
-}
-
 struct NewChatView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
@@ -90,8 +85,6 @@ struct NewChatView: View {
   @State var selectedProjectId: UUID?
   @State private var appliedInitialProjectTarget: NewChatTarget?
   @State private var focus = TerminalFocusController()
-  @State var newProjectTarget: NewProjectTarget?
-  @State var managedProject: Project?
   /// Which run picker chip the pointer is over; its neighbouring dividers
   /// hide so the hover capsule never butts against a hairline.
   @State var hoveredRunPicker: RunPicker?
@@ -225,16 +218,6 @@ struct NewChatView: View {
       }
     }
     .attachmentDropTarget(controller)
-    .sheet(item: $newProjectTarget) { target in
-      NewProjectSheet(serverId: target.serverId) { project in
-        if let controller, showsRunPickers {
-          selectTargetProject(project, controller: controller)
-        } else {
-          selectedProjectId = project.id
-          selection = .newChat(NewChatTarget(project))
-        }
-      }
-    }
     // "No project" is a stable choice, so a project arriving later never
     // hijacks the draft; only a missing controller gets set up here.
     .onChange(of: projects.map(\.id)) { _, _ in
@@ -242,18 +225,8 @@ struct NewChatView: View {
         setUpController()
       }
     }
-    .sheet(item: $managedProject) { project in
-      ManageProjectSheet(
-        project: project,
-        client: environment.machines.client(for: project.serverId),
-        didUpdate: {
-          await environment.projectList.refreshFromServer(
-            serverId: project.serverId,
-            client: environment.machines.client(for: project.serverId)
-          )
-        },
-        onArchive: { archiveManagedProject(project, controller: controller) }
-      )
+    .onChange(of: selectedDraftProjectIsArchived, initial: true) { _, isArchived in
+      if isArchived, let controller { selectNoProject(controller) }
     }
     // Established installs stay stale-while-revalidate. The one-shot
     // onboarding handoff keeps its loading surface mounted until this

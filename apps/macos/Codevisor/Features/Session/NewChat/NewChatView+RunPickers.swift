@@ -16,7 +16,6 @@ extension NewChatView {
   enum RunLocationPickerTarget: Hashable {
     case projectDirectory
     case newWorktree
-    case manageProject
   }
 
   /// Hairline between two chips. It hides (instantly, like the hover fill
@@ -165,10 +164,11 @@ extension NewChatView {
       .favorites(favorites)
       .labelsHidden()
       Autocomplete.Section(id: "actions") {
-        Autocomplete.Action("New Project…", systemImage: "folder.badge.plus") {
-          newProjectTarget = NewProjectTarget(serverId: selected.serverId)
+        Autocomplete.Action("Manage projects…", systemImage: "gearshape") {
+          SettingsRouter.shared.showProjects(machineId: selected.serverId)
+          openSettings()
         }
-        .help("Add a project")
+        .help("Open Project Settings")
       }
     }
     .autocompleteSearchLabel("Search projects")
@@ -202,9 +202,10 @@ extension NewChatView {
       .labelsHidden()
       Autocomplete.Section(id: "actions") {
         Autocomplete.Action("Manage Project…", systemImage: "gearshape") {
-          managedProject = liveProject(for: controller)
+          SettingsRouter.shared.showProject(liveProject(for: controller))
+          openSettings()
         }
-        .help("Manage this project")
+        .help("Open this project's settings")
       }
     }
     .autocompleteSearchLabel("Search run locations")
@@ -330,12 +331,14 @@ extension NewChatView {
     }
   }
 
-  /// Archiving the draft's project leaves the draft with no project rather
-  /// than guessing another one.
-  func archiveManagedProject(_ project: Project, controller: SessionController?) {
-    environment.projectList.archive(project)
-    guard let controller else { return }
-    selectNoProject(controller)
+  /// Settings can archive the checkout while this standalone draft stays
+  /// mounted. A missing cache entry during refresh is not an archive.
+  var selectedDraftProjectIsArchived: Bool {
+    guard showsRunPickers, let controller else { return false }
+    return environment.projectList.projects.contains {
+      $0.serverId == controller.project.serverId
+        && $0.id == controller.project.id && $0.isArchived
+    }
   }
 
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {

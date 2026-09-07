@@ -4,12 +4,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Adds a project on one machine. Suggestions exclude folders that are
-/// already registered; existing projects stay in the composer's inline menu.
+/// already registered. The selected machine is local to this sheet.
 struct NewProjectSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.theme) private var theme
 
-  let serverId: String
+  @State private var serverId: String
   let onAdded: (Project) -> Void
 
   @State private var recommendations: [ProjectRecommendation] = []
@@ -19,6 +20,31 @@ struct NewProjectSheet: View {
   @State private var showingLocalImporter = false
   @State private var showingRemoteBrowser = false
   @State private var showingGitClone = false
+  @State private var loadError: String?
+  @State private var loadGeneration = 0
+
+  init(serverId: String, onAdded: @escaping (Project) -> Void) {
+    _serverId = State(initialValue: serverId)
+    self.onAdded = onAdded
+  }
+
+  private var isTargetReady: Bool {
+    environment.machines.availability(for: serverId) == .ready
+  }
+
+  private var machineSelection: Binding<String> {
+    Binding(
+      get: { serverId },
+      set: {
+        loadGeneration += 1
+        serverId = $0
+        recommendations = []
+        selectedPath = nil
+        loadError = nil
+        isLoading = true
+      }
+    )
+  }
 
   private var registeredPaths: Set<String> {
     Set(
@@ -62,7 +88,9 @@ struct NewProjectSheet: View {
       footer
     }
     .frame(width: 560, height: 420)
-    .task(id: serverId) { await load() }
+    .themedSurface(.sheet)
+    .interactiveDismissDisabled(isAdding)
+    .task(id: "\(serverId):\(isTargetReady)") { await load(serverId: serverId) }
     .fileImporter(
       isPresented: $showingLocalImporter,
       allowedContentTypes: [.folder]
@@ -84,18 +112,34 @@ struct NewProjectSheet: View {
   }
 
   private var header: some View {
-    HStack {
+    VStack(alignment: .leading, spacing: 12) {
       Text("Add Project")
         .font(.title2.weight(.semibold))
-      Spacer()
+      if environment.machines.allMachines.count > 1 {
+        Picker("Machine", selection: machineSelection) {
+          ForEach(environment.machines.allMachines) { machine in
+            Text(machine.name).tag(machine.id)
+              .disabled(environment.machines.availability(for: machine.id) != .ready)
+          }
+        }
+        .disabled(isAdding || showingLocalImporter || showingRemoteBrowser || showingGitClone)
+      } else {
+        Text(machineName).foregroundStyle(.secondary)
+      }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 20)
     .padding(.vertical, 16)
   }
 
   @ViewBuilder
   private var content: some View {
-    if isLoading {
+    if !isTargetReady {
+      ContentUnavailableView(
+        "Machine Unavailable", systemImage: "desktopcomputer",
+        description: Text("Reconnect \(machineName) or choose another machine to add a project.")
+      )
+    } else if isLoading {
       ProgressView()
         .controlSize(.small)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -105,8 +149,16 @@ struct NewProjectSheet: View {
         Image(systemName: "folder")
           .font(.system(size: 32, weight: .regular))
           .foregroundStyle(.secondary)
-        Text("No Projects")
+        Text(loadError == nil ? "No Projects" : "Couldn't Find Projects")
           .font(.title3.weight(.semibold))
+        if let loadError {
+          Text(loadError)
+            .foregroundStyle(theme.statusError)
+            .font(.callout)
+            .multilineTextAlignment(.center)
+          Button("Retry") { Task { await load(serverId: serverId) } }
+            .disabled(isAdding)
+        }
         Button("Browse Files…") { browseFiles() }
           .buttonStyle(.borderedProminent)
           .disabled(isAdding)
@@ -126,7 +178,7 @@ struct NewProjectSheet: View {
   private var footer: some View {
     HStack(spacing: 8) {
       Button("Clone Repository…") { showingGitClone = true }
-        .disabled(isAdding)
+        .disabled(isAdding || !isTargetReady)
       Spacer()
       Button("Cancel") { dismiss() }
         .keyboardShortcut(.cancelAction)
@@ -144,7 +196,7 @@ struct NewProjectSheet: View {
         }
       }
       .keyboardShortcut(.defaultAction)
-      .disabled(selectedRecommendation == nil || isAdding)
+      .disabled(selectedRecommendation == nil || isAdding || !isTargetReady)
     }
     .padding(.horizontal, 20)
     .padding(.vertical, 14)
@@ -195,17 +247,35 @@ struct NewProjectSheet: View {
     }
   }
 
-  private func load() async {
+  private func load(serverId: String) async {
+    loadGeneration += 1
+    let generation = loadGeneration
     isLoading = true
     recommendations = []
+    selectedPath = nil
+    loadError = nil
+    guard isTargetReady else {
+      isLoading = false
+      return
+    }
+    let client = environment.machines.client(for: serverId)
     async let refresh: ServerNavigationRefreshResult = environment.projectList.refreshFromServer(
       serverId: serverId,
       client: client
     )
-    let loaded = (try? await environment.recommendedProjects(serverId: serverId)) ?? []
+    let loaded: [ProjectRecommendation]
+    let errorMessage: String?
+    do {
+      loaded = try await environment.recommendedProjects(serverId: serverId)
+      errorMessage = nil
+    } catch {
+      loaded = []
+      errorMessage = serverErrorMessage(error)
+    }
     _ = await refresh
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled, self.serverId == serverId, generation == loadGeneration else { return }
     recommendations = loaded
+    loadError = errorMessage
     isLoading = false
   }
 
@@ -215,8 +285,10 @@ struct NewProjectSheet: View {
   }
 
   private func addFolder(_ url: URL) {
-    guard !isAdding else { return }
+    guard !isAdding, isTargetReady else { return }
     isAdding = true
+    let serverId = serverId
+    let client = client
     Task {
       let project = await environment.projectList.addProject(
         folderURL: url,

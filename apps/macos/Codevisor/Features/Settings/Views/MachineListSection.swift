@@ -47,7 +47,7 @@ struct MachineListSection<Content: View, Footer: View>: View {
     } else {
       Section {
         ForEach(machines) { machine in
-          NavigationLink(value: MachinePaneRoute(pane: pane, machineId: machine.id)) {
+          NavigationLink(value: SettingsPaneRoute.machine(MachinePaneRoute(pane: pane, machineId: machine.id))) {
             HStack {
               Text(machine.name)
               Spacer(minLength: 12)

@@ -12,7 +12,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
   // Fleet-synced config planes: the panes render the app's selected
   // machine, whose content converges with every other machine.
   case agents, mcps, skills, plugins
-  case machines
+  case projects, machines
 
   var id: String { rawValue }
 
@@ -27,6 +27,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .mcps: "MCP Servers"
     case .skills: "Skills"
     case .plugins: "Plugins"
+    case .projects: "Projects"
     case .machines: "Machines"
     }
   }
@@ -42,17 +43,23 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case .mcps: "puzzlepiece.extension"
     case .skills: "book.closed"
     case .plugins: "puzzlepiece"
+    case .projects: "folder"
     case .machines: "desktopcomputer"
     }
   }
 }
 
-/// A place in Settings: the sidebar section plus any machine pages pushed
+enum SettingsPaneRoute: Hashable {
+  case machine(MachinePaneRoute)
+  case project(ProjectGroup.ID)
+}
+
+/// A place in Settings: the sidebar section plus any detail pages pushed
 /// over it. The unit of the router's back/forward history — pushes are
 /// history steps, so Back always retraces exactly one page.
 struct SettingsLocation: Equatable {
   var tab: SettingsTab
-  var panePath: [MachinePaneRoute]
+  var panePath: [SettingsPaneRoute]
 }
 
 /// A one-shot deep link to one harness's account manager on one machine.
@@ -70,8 +77,10 @@ struct HarnessAccountSettingsRequest: Equatable {
 final class SettingsRouter {
   static let shared = SettingsRouter()
   var selectedTab: SettingsTab = .general
-  /// Machine pages pushed over the current pane (list row → machine page).
-  var panePath: [MachinePaneRoute] = []
+  /// Detail pages pushed over the current pane.
+  var panePath: [SettingsPaneRoute] = []
+  /// Seeds Add Project without changing the app's selected machine or draft.
+  var projectCreationMachineId: String?
   /// Pages behind and ahead of the current one. Every navigation —
   /// sidebar selection, push, pop, deep link — lands the previous page in
   /// `backHistory`; going back moves the current page to
@@ -91,7 +100,7 @@ final class SettingsRouter {
     SettingsLocation(tab: selectedTab, panePath: panePath)
   }
 
-  var canGoBack: Bool { !backHistory.isEmpty }
+  var canGoBack: Bool { !backHistory.isEmpty || !panePath.isEmpty }
   var canGoForward: Bool { !forwardHistory.isEmpty }
 
   /// Files the page just left into the back history. Called by the view's
@@ -103,7 +112,10 @@ final class SettingsRouter {
   }
 
   func goBack() {
-    guard let target = backHistory.popLast() else { return }
+    // A detail deeplink can arrive before the Settings window exists, so
+    // its parent wasn't observed as a history step. Back still reaches it.
+    let parent = panePath.isEmpty ? nil : SettingsLocation(tab: selectedTab, panePath: Array(panePath.dropLast()))
+    guard let target = backHistory.popLast() ?? parent else { return }
     forwardHistory.append(currentLocation)
     apply(target)
   }
@@ -125,6 +137,19 @@ final class SettingsRouter {
     selectedTab = .machines
   }
 
+  func showProjects(machineId: String? = nil) {
+    projectCreationMachineId = machineId
+    panePath = []
+    selectedTab = .projects
+  }
+
+  /// Opens the selected repository's details from a composer's checkout.
+  func showProject(_ project: Project) {
+    projectCreationMachineId = project.serverId
+    panePath = [.project(ProjectGroup.groupID(for: project))]
+    selectedTab = .projects
+  }
+
   /// Opens the Updates pane — the one surface for everything updatable.
   func showUpdates() {
     panePath = []
@@ -134,7 +159,7 @@ final class SettingsRouter {
   /// Opens the Harnesses pane, optionally inside one machine's page.
   func showHarnesses(machineId: String? = nil) {
     pendingHarnessAccountRequest = nil
-    panePath = machineId.map { [MachinePaneRoute(pane: .harnesses, machineId: $0)] } ?? []
+    panePath = machineId.map { [.machine(MachinePaneRoute(pane: .harnesses, machineId: $0))] } ?? []
     selectedTab = .agents
   }
 
@@ -144,7 +169,7 @@ final class SettingsRouter {
       machineId: machineId,
       harnessId: harnessId
     )
-    panePath = [MachinePaneRoute(pane: .harnesses, machineId: machineId)]
+    panePath = [.machine(MachinePaneRoute(pane: .harnesses, machineId: machineId))]
     selectedTab = .agents
   }
 
@@ -271,8 +296,15 @@ struct SettingsView: View {
       NavigationStack(path: $router.panePath) {
         detailRoot
           .settingsNavigationToolbar()
-          .navigationDestination(for: MachinePaneRoute.self) { route in
-            machinePage(for: route)
+          .navigationDestination(for: SettingsPaneRoute.self) { route in
+            switch route {
+            case let .machine(machineRoute):
+              machinePage(for: machineRoute)
+            case let .project(groupId):
+              ProjectSettingsDetailView(groupId: groupId)
+                .navigationBarBackButtonHidden(true)
+                .settingsNavigationToolbar()
+            }
           }
       }
       .themedToolbarBackground(theme, role: .content)
@@ -301,6 +333,7 @@ struct SettingsView: View {
 
   private func selectSidebarTab(_ tab: SettingsTab) {
     if tab != router.selectedTab { router.panePath = [] }
+    if tab == .projects { router.projectCreationMachineId = nil }
     router.selectedTab = tab
   }
 
@@ -334,6 +367,9 @@ struct SettingsView: View {
     case .plugins:
       PluginsSettingsView()
         .navigationTitle("Plugins")
+    case .projects:
+      ProjectsSettingsView()
+        .navigationTitle("Projects")
     case .machines:
       MachinesSettingsView()
         .navigationTitle("Machines")
