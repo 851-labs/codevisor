@@ -6,6 +6,17 @@ import StreamMarkdown
 /// turn text and each subagent bucket use separate namespaces because their
 /// reducer-local fallback ids (`t0`, `t1`, …) may otherwise collide.
 public enum TranscriptStreamingTextIdentity {
+  /// Snapshot provenance must travel with the projected rows. Reading the
+  /// current model at presentation time can consume a restoration while an
+  /// older compact projection is still on screen. Include the message id
+  /// because detail revisions are local to each restored turn.
+  public static func restorationID(for item: ConversationItem) -> String? {
+    guard case let .assistant(message) = item,
+      message.turn.hasHydratedWorkedDetails
+    else { return nil }
+    return "\(message.id.uuidString):\(message.turn.detailRevision)"
+  }
+
   public static func main(turnID: UUID, entryID: String) -> String {
     "\(turnID.uuidString):main:\(entryID)"
   }

@@ -26,7 +26,9 @@ extension SessionTranscriptView {
     return ActiveTranscriptProjectionScope(
       controller: controller,
       projectedRows: projectedRows
-    ) { activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection in
+    ) {
+      activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection,
+      activeTextRestorationID in
       let visibleRows = workedRowsVisibilityCache.presentSettled(
         projectedRows,
         sourceVersion: projectedRowsVersion,
@@ -63,6 +65,7 @@ extension SessionTranscriptView {
           isPreparingInitialProjection: isPreparingTranscript,
           isActiveProjectionPending: isActiveProjectionPending,
           isAwaitingFirstActiveProjection: isAwaitingFirstActiveProjection,
+          activeTextRestorationID: activeTextRestorationID,
           layoutFingerprint: transcriptLayoutFingerprint,
           scrollCommand: scrollCommand,
           sendAnimationRequest: controller.userSendAnimationRequest,

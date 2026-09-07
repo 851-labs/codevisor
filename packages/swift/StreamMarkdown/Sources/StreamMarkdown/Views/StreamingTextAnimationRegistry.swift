@@ -8,6 +8,7 @@ public final class StreamingTextAnimationRegistry {
   public let presentation = StreamingTextAnimationPresentation()
   private var coordinators: [String: StreamingContentAnimationCoordinator] = [:]
   private var knownProjectedStreamIDs: Set<String> = []
+  private var settledRestorationIDs: Set<String> = []
   private var hasObservedProjection = false
   private var awaitsPresentationBaseline = false
   private var isPlaybackSuspended = false
@@ -42,19 +43,31 @@ public final class StreamingTextAnimationRegistry {
   /// mount any of it. The first snapshot is navigation state and therefore
   /// starts opaque. Later rows animate only at the followed live edge;
   /// offscreen arrivals are already presented when scrolling reaches them.
+  /// A restoration identity belongs to the published snapshot and remains
+  /// unchanged on later live appends. Its first projection settles both new
+  /// historical rows and restored text in already-mounted rows.
   public func observeProjectedStreams<S: Sequence>(
     _ streamIDs: S,
     animatesNewStreams: Bool,
-    initialProjectionIsPending: Bool = false
+    initialProjectionIsPending: Bool = false,
+    restorationID: String? = nil
   ) where S.Element == String {
     let current = Set(streamIDs)
+    let isRestoredProjection =
+      restorationID.map {
+        settledRestorationIDs.insert($0).inserted
+      } ?? false
 
     // A retained transcript can miss several provider projections while
     // detached. Its first authoritative snapshot after reappearing is a
     // navigation baseline, not a live arrival: settle both new rows and
     // appended content in retained rows before accepting later animation.
-    if awaitsPresentationBaseline {
-      guard !initialProjectionIsPending else { return }
+    // Hydration can finish after the compact navigation baseline. Its
+    // published rows are authoritative even if a newer provider revision
+    // is already being projected; waiting for the stream to go quiet
+    // would let restored text animate on its first native frame.
+    if awaitsPresentationBaseline || isRestoredProjection {
+      guard isRestoredProjection || !initialProjectionIsPending else { return }
       awaitsPresentationBaseline = false
       preservesNextProjectionDelta = false
       hasObservedProjection = true

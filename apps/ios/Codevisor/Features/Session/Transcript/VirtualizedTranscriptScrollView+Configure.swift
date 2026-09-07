@@ -145,7 +145,8 @@ extension VirtualizedTranscriptScrollView {
       },
       animatesNewStreams: newPresentationRole == .foreground
         && followsAnimationEdge,
-      initialProjectionIsPending: newIsActiveProjectionPending
+      initialProjectionIsPending: newIsLoadingInitialHistory || newIsActiveProjectionPending,
+      restorationID: input.activeTextRestorationID
     )
 
     if layoutFingerprintChanged, activeSendAnimationRequest != nil {

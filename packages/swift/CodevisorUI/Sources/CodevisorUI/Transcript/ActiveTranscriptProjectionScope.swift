@@ -6,13 +6,15 @@ import TranscriptKit
 /// and leaves the cached settled projection untouched.
 /// The content closure receives the active rows, their version, whether a
 /// newer projection than the published one is in flight, and whether no
-/// projection has been published yet for the current active item.
+/// projection has been published yet for the current active item, and the
+/// restoration identity belonging to those published rows.
 public struct ActiveTranscriptProjectionScope<Content: View>: View {
   private let controller: SessionController
   private let projectedRows: [TranscriptPresentationRow]
-  private let content: ([TranscriptPresentationRow], UInt64, Bool, Bool) -> Content
+  private let content: ([TranscriptPresentationRow], UInt64, Bool, Bool, String?) -> Content
   @State private var activeRows: [TranscriptPresentationRow] = []
   @State private var activeRowsVersion: UInt64 = 0
+  @State private var activeTextRestorationID: String?
   @State private var publishedProjectionKey: TaskKey?
   @State private var projectionStaging = ProjectionStaging()
   @State private var projectionWorker = TranscriptActiveProjectionWorker()
@@ -20,7 +22,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   public init(
     controller: SessionController,
     projectedRows: [TranscriptPresentationRow],
-    @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool, Bool) -> Content
+    @ViewBuilder content: @escaping ([TranscriptPresentationRow], UInt64, Bool, Bool, String?) -> Content
   ) {
     self.controller = controller
     self.projectedRows = projectedRows
@@ -42,39 +44,46 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     let isAwaitingFirstActiveProjection =
       projectedItem != nil
       && publishedProjectionKey?.projectedID != projectedItem?.id
-    content(activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection)
-      .task(id: taskKey) {
-        guard let projectedItem else {
-          projectionWorker.cancel()
-          projectionStaging.ready = ReadyProjection(key: taskKey, rows: [])
-          controller.requestTranscriptPresentationFrame()
-          return
-        }
-        let key = taskKey
-        let item = TranscriptActiveItemResolver.resolve(
-          projected: projectedItem,
-          live: controller.activeItem,
-          settled: controller.settledConversation
-        )
-        let waiting = controller.waitingBackgroundTaskDescription
-        projectionWorker.submit(
-          .init(
-            revision: key.revision,
-            projectedID: projectedItem.id,
-            item: item,
-            waitingOnBackgroundTask: waiting
-          )
-        ) { output in
-          projectionStaging.ready = ReadyProjection(key: key, rows: output.rows)
-          controller.requestTranscriptPresentationFrame()
-        }
-      }
-      .onChange(of: presentationFrame, initial: true) { _, _ in
-        publishReadyProjection()
-      }
-      .onDisappear {
+    content(
+      activeRows, activeRowsVersion, isActiveProjectionPending, isAwaitingFirstActiveProjection,
+      activeTextRestorationID
+    )
+    .task(id: taskKey) {
+      guard let projectedItem else {
         projectionWorker.cancel()
+        projectionStaging.ready = ReadyProjection(key: taskKey, rows: [])
+        controller.requestTranscriptPresentationFrame()
+        return
       }
+      let key = taskKey
+      let item = TranscriptActiveItemResolver.resolve(
+        projected: projectedItem,
+        live: controller.activeItem,
+        settled: controller.settledConversation
+      )
+      let waiting = controller.waitingBackgroundTaskDescription
+      projectionWorker.submit(
+        .init(
+          revision: key.revision,
+          projectedID: projectedItem.id,
+          item: item,
+          waitingOnBackgroundTask: waiting
+        )
+      ) { output in
+        projectionStaging.ready = ReadyProjection(
+          key: key,
+          rows: output.rows,
+          restorationID: TranscriptStreamingTextIdentity.restorationID(for: output.request.item)
+        )
+        controller.requestTranscriptPresentationFrame()
+      }
+    }
+    .onChange(of: presentationFrame, initial: true) { _, _ in
+      publishReadyProjection()
+    }
+    .onDisappear {
+      projectionWorker.cancel()
+    }
   }
 
   private var projectedItem: ConversationItem? {
@@ -111,6 +120,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
   private struct ReadyProjection {
     let key: TaskKey
     let rows: [TranscriptPresentationRow]
+    var restorationID: String? = nil
   }
 
   @MainActor
@@ -124,6 +134,7 @@ public struct ActiveTranscriptProjectionScope<Content: View>: View {
     else { return }
     projectionStaging.ready = nil
     activeRows = readyProjection.rows
+    activeTextRestorationID = readyProjection.restorationID
     activeRowsVersion &+= 1
     publishedProjectionKey = readyProjection.key
   }

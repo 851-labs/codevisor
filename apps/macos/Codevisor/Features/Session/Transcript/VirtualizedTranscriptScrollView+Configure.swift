@@ -142,7 +142,8 @@ extension VirtualizedTranscriptScrollView {
         return row.layoutKey
       },
       animatesNewStreams: allowsLiveTextAnimation && followsAnimationEdge,
-      initialProjectionIsPending: newIsActiveProjectionPending
+      initialProjectionIsPending: newIsLoadingInitialHistory || newIsActiveProjectionPending,
+      restorationID: input.activeTextRestorationID
     )
 
     if layoutFingerprintChanged, activeSendAnimationRequest != nil {

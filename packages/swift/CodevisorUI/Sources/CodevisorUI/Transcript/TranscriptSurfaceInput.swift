@@ -51,6 +51,9 @@ public struct TranscriptSurfaceInput {
   /// No precise active projection has been published yet for the current
   /// active item, so the aggregate placeholder is all the surface has.
   public var isAwaitingFirstActiveProjection: Bool
+  /// Identifies durable worked details in this active projection, even if
+  /// the model has advanced again while these rows were being prepared.
+  public var activeTextRestorationID: String?
   public var layoutFingerprint: Int
   public var scrollCommand: TranscriptScrollCommand
   public var sendAnimationRequest: UserSendAnimationRequest?
@@ -77,6 +80,7 @@ public struct TranscriptSurfaceInput {
     isPreparingInitialProjection: Bool,
     isActiveProjectionPending: Bool,
     isAwaitingFirstActiveProjection: Bool = false,
+    activeTextRestorationID: String? = nil,
     layoutFingerprint: Int,
     scrollCommand: TranscriptScrollCommand,
     sendAnimationRequest: UserSendAnimationRequest?,
@@ -102,6 +106,7 @@ public struct TranscriptSurfaceInput {
     self.isPreparingInitialProjection = isPreparingInitialProjection
     self.isActiveProjectionPending = isActiveProjectionPending
     self.isAwaitingFirstActiveProjection = isAwaitingFirstActiveProjection
+    self.activeTextRestorationID = activeTextRestorationID
     self.layoutFingerprint = layoutFingerprint
     self.scrollCommand = scrollCommand
     self.sendAnimationRequest = sendAnimationRequest
