@@ -120,6 +120,8 @@ struct ComposerBar: View {
       : !trimmed.isEmpty || !controller.composerAttachments.isEmpty)
       && !controller.isSubmitting
       && !controller.isConnecting
+      && controller.isServerReady
+      && (controller.isConnected || controller.selectedHarness != nil)
       && !controller.composerAttachments.contains { $0.state == .loading }
       && !isClearingGoal
       && controller.configurationValidationState == .ready
@@ -199,15 +201,7 @@ struct ComposerBar: View {
             .frame(height: runPickersHeight)
             .accessibilityHidden(true)
         } else {
-          runTargetChips
-            .font(.footnote)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .composerGlassSurface(
-              cornerRadius: 18,
-              id: .newChatConfiguration,
-              in: glassNamespace
-            )
+          runTargetControls
             .onGeometryChange(for: CGFloat.self) {
               $0.size.height
             } action: { height in

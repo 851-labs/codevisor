@@ -58,7 +58,10 @@ extension SessionController {
   /// on connect instead of a prompt.
   public func submitGoalFromComposer() async {
     let objective = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !objective.isEmpty, !isConnecting, !isSubmitting else { return }
+    guard !objective.isEmpty, !isConnecting, !isSubmitting,
+      isServerReady, configurationValidationState == .ready,
+      model != nil || selectedHarness != nil
+    else { return }
 
     if let model {
       guard await model.setGoal(objective: objective) else { return }

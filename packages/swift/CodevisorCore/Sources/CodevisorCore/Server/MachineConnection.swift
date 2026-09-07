@@ -431,6 +431,12 @@ extension MachineController {
     connectionsById.compactMapValues(\.availability)
   }
 
+  /// Undiscovered or not-yet-prepared targets must not accept a first send
+  /// merely because the composer restored cached capabilities for them.
+  public func availability(for machineId: String) -> ServerAvailability {
+    connectionsById[machineId]?.availability ?? .waiting(.connecting)
+  }
+
   public var navigationSyncStateByMachineId: [String: NavigationSyncState] {
     connectionsById.compactMapValues(\.navigationSyncState)
   }

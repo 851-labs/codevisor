@@ -181,7 +181,7 @@ final class SessionStore {
     // route too.
     for controller in draftsByServer.values
     where controller.project.serverId == machineId {
-      controller.adoptServerClient(environment.machines.client(for: machineId))
+      controller.adoptServerClient(environment.machines.client(for: machineId), forServer: machineId)
     }
   }
 
@@ -231,6 +231,7 @@ final class SessionStore {
         .workspace(id: $0, serverId: session.serverId)
       },
       serverClient: environment.machines.client(for: session.serverId),
+      machines: environment.machines,
       notificationDelivery: notificationDelivery
     )
     controller.configureExistingSession(session)

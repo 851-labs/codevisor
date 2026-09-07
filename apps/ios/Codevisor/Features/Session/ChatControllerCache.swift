@@ -60,7 +60,8 @@ final class ChatControllerCache {
         id: workspaceId,
         serverId: session.serverId
       ),
-      serverClient: environment.machines.client(for: session.serverId)
+      serverClient: environment.machines.client(for: session.serverId),
+      machines: environment.machines
     )
     controller.configureExistingSession(session)
     // Deferred sends persist the spawned agent id so relaunches resume
@@ -92,18 +93,26 @@ final class ChatControllerCache {
     if let draft = draftsByServer[serverId], draft.serverSession == nil {
       return draft
     }
-    let persisted = environment.composerDrafts.draft(forServer: serverId)
+    if let draft = draftsByServer.values.first(where: {
+      $0.serverSession == nil && $0.project.serverId == serverId
+    }) {
+      return draft
+    }
+    let persistedMatch =
+      environment.composerDrafts.draft(forServer: serverId).map {
+        (slotServerId: serverId, draft: $0)
+      } ?? environment.composerDrafts.draft(targetingServer: serverId)
+    let persisted = persistedMatch?.draft
+    let slotServerId = persistedMatch?.slotServerId ?? serverId
     let restoredProject =
       persisted.flatMap { saved in
-        // The saved draft may target ANOTHER machine's project (the
-        // picker is fleet-wide); older drafts carry no server id and
-        // mean this machine.
-        // A scratch folder is single-use: a draft pointing at one
-        // restores as "No project" (the placeholder id matches nothing).
-        environment.projectList.projects.first {
-          $0.serverId == (saved.projectServerId ?? serverId)
-            && $0.id == saved.projectId && !$0.isArchived && !$0.isScratch
-        }
+        var canonical = saved
+        let savedServerId = saved.projectServerId ?? serverId
+        canonical.projectServerId =
+          environment.machines.canonicalComposerMachineId(for: savedServerId) ?? savedServerId
+        return canonical.restoredProject(
+          in: environment.projectList.projects.filter { !$0.isArchived }, defaultServerId: serverId
+        )
       } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
         rememberedId in
         // A scratch folder is single-use: never the next chat's default.
@@ -113,7 +122,7 @@ final class ChatControllerCache {
       } ?? preferredProject
     if !restoredProject.isRunTargetPlaceholder {
       environment.composerDefaults.rememberNewWorkspaceProject(
-        serverId: serverId,
+        serverId: restoredProject.serverId,
         projectId: restoredProject.id
       )
     }
@@ -124,7 +133,8 @@ final class ChatControllerCache {
       composerDefaultsScope: .newWorkspace(serverId: restoredProject.serverId),
       // The restored project's OWN machine — a retargeted draft keeps
       // talking to the machine it was pointed at across relaunches.
-      serverClient: environment.machines.client(for: restoredProject.serverId)
+      serverClient: environment.machines.client(for: restoredProject.serverId),
+      machines: environment.machines
     )
     controller.applyComposerDefaults()
     // Fresh drafts start from the machine's remembered run-location
@@ -133,14 +143,14 @@ final class ChatControllerCache {
     controller.wantsNewWorktree =
       restoredProject.isGitRepository
       && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: serverId
+        forServer: restoredProject.serverId
       )
     if let persisted { controller.restoreDraft(persisted) }
     controller.onDraftChange = { [weak drafts = environment.composerDrafts] draft in
-      drafts?.saveDraft(draft, forServer: serverId)
+      drafts?.saveDraft(draft, forServer: slotServerId)
     }
-    environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: serverId)
-    draftsByServer[serverId] = controller
+    environment.composerDrafts.saveDraft(controller.draftSnapshot(), forServer: slotServerId)
+    draftsByServer[slotServerId] = controller
     return controller
   }
 
@@ -212,7 +222,9 @@ final class ChatControllerCache {
     }
     // Drafts have no live stream, but their next send must ride the new
     // route too.
-    draftsByServer[machineId]?.adoptServerClient(environment.machines.client(for: machineId))
+    for controller in draftsByServer.values where controller.project.serverId == machineId {
+      controller.adoptServerClient(environment.machines.client(for: machineId), forServer: machineId)
+    }
   }
 
   func reconcileInFlightControllers() async {
@@ -259,14 +271,5 @@ final class ChatControllerCache {
       scrollStates[key] = nil
       accessOrder.removeAll { $0 == key }
     }
-  }
-}
-
-extension SessionController {
-  func keepOrRetargetDraft(to project: Project) -> Bool {
-    if self.project.isArchived, self.project.id != project.id {
-      Task { await selectProject(project) }
-    }
-    return true
   }
 }

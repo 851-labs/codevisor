@@ -3,6 +3,26 @@ import CodevisorUI
 import SwiftUI
 
 extension ComposerBar {
+  var runTargetControls: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      runTargetChips
+        .font(.footnote)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .composerGlassSurface(
+          cornerRadius: 18, id: .newChatConfiguration, in: glassNamespace
+        )
+        .disabled(controller.isSubmitting)
+      ComposerServerAvailabilityView(
+        availability: controller.serverAvailability,
+        machineName: environment.machines.machine(for: controller.project.serverId)?.name ?? "this machine"
+      ) {
+        let serverId = controller.project.serverId
+        Task { await environment.machines.retryMachine(serverId) }
+      }
+    }
+  }
+
   /// The live project record. The controller holds a snapshot from when
   /// the project was picked; the server's git probe lands on the list
   /// afterwards, and the chip must follow the probed value.

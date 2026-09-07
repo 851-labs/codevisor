@@ -59,6 +59,7 @@ extension SessionStore {
       // The restored project's OWN machine — a retargeted draft keeps
       // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
+      machines: environment.machines,
       notificationDelivery: notificationDelivery
     )
     controller.applyComposerDefaults()

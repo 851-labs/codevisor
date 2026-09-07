@@ -102,10 +102,6 @@ struct NewChatView: View {
   /// no-project key represents the choice available on every machine.
   @ClientPreference("composer.favoriteProjects", default: [])
   var favoriteProjectIDs: [ProjectGroup.ID]
-  /// Set when the user escaped a blocked remote target from the
-  /// availability screen. Outranks navigation's initial target and the
-  /// remembered machine so the page re-points before a draft exists.
-  @State var composerMachineFallbackId: String?
   @Namespace private var composerGlassNamespace
   @Environment(\.openSettings) var openSettings
 
@@ -174,6 +170,7 @@ struct NewChatView: View {
                       }
                     }
                     .font(.callout)
+                    .disabled(controller.isSubmitting)
                     // The chips' hover capsules bleed 5pt
                     // sideways and 3pt vertically past their
                     // layout (HoverIconButtonStyle .chip), so
@@ -261,14 +258,8 @@ struct NewChatView: View {
     // Established installs stay stale-while-revalidate. The one-shot
     // onboarding handoff keeps its loading surface mounted until this
     // same authoritative refresh finishes.
-    .task(id: composerServerId) {
-      await environment.projectList.refreshFromServer(
-        serverId: composerServerId,
-        client: environment.machines.client(for: composerServerId)
-      )
-      if requiresInitialProjectResolution {
-        onInitialProjectResolutionCompleted?()
-      }
+    .task(id: composerPreparationIdentity) {
+      await refreshComposerTarget()
     }
     .task(id: setupIdentity) {
       guard !requiresInitialProjectResolution else { return }
@@ -304,7 +295,8 @@ struct NewChatView: View {
         return
       }
       controller.adoptServerClient(
-        environment.machines.client(for: controller.project.serverId)
+        environment.machines.client(for: controller.project.serverId),
+        forServer: controller.project.serverId
       )
       guard controller.preparationState == .failed || controller.harnesses.isEmpty
       else { return }
@@ -315,7 +307,8 @@ struct NewChatView: View {
     .onChange(of: routeForDraftMachine) { _, _ in
       guard let controller else { return }
       controller.adoptServerClient(
-        environment.machines.client(for: controller.project.serverId)
+        environment.machines.client(for: controller.project.serverId),
+        forServer: controller.project.serverId
       )
     }
     // Update knowledge is fetched separately from the picker's plain
@@ -343,7 +336,14 @@ struct NewChatView: View {
   /// Terminal setup errors use the pane's established top-banner position.
   @ViewBuilder
   private func statusLabel(_ controller: SessionController) -> some View {
-    if let waitMessage = controller.serverWaitMessage {
+    ComposerServerAvailabilityView(
+      availability: controller.serverAvailability,
+      machineName: environment.machines.machine(for: controller.project.serverId)?.name ?? "this machine"
+    ) {
+      let serverId = controller.project.serverId
+      Task { await environment.machines.retryMachine(serverId) }
+    }
+    if controller.isServerReady, let waitMessage = controller.serverWaitMessage {
       HStack {
         ShimmeringText(text: waitMessage)
         Spacer(minLength: 0)

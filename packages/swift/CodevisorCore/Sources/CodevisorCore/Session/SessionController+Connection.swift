@@ -3,6 +3,14 @@ import ACPKit
 import os
 
 extension SessionController {
+  /// Resolve the live target on every read, including after a draft switch.
+  /// Isolated controllers without a fleet retain their injected-client behavior.
+  public var serverAvailability: ServerAvailability {
+    machines?.availability(for: project.serverId) ?? .ready
+  }
+
+  public var isServerReady: Bool { serverAvailability == .ready }
+
   /// The directory the agent runs in: the session's server-resolved cwd
   /// (the workspace's one working directory — project folder or worktree),
   /// or the project folder for plain drafts.
@@ -209,6 +217,8 @@ extension SessionController {
     // old machine's client and catalog.
     modelConfigurationResolutionRevision &+= 1
     isResolvingModelConfiguration = false
+    harnessCapabilityRequestRevision &+= 1
+    isRefreshingHarnessCapabilities = false
     serverClient = client
     composerDefaultsScope = .newWorkspace(serverId: project.serverId)
     self.project = project
@@ -253,7 +263,8 @@ extension SessionController {
   /// used when a machine that wasn't routable at mount (a cloud relay
   /// still connecting) becomes reachable. Same machine, better transport;
   /// a machine CHANGE goes through `retarget(to:serverClient:)`.
-  public func adoptServerClient(_ client: any CodevisorServerClienting) {
+  public func adoptServerClient(_ client: any CodevisorServerClienting, forServer serverId: String) {
+    guard project.serverId == serverId else { return }
     serverClient = client
   }
 
@@ -265,7 +276,7 @@ extension SessionController {
   /// re-type itself. A controller with no model yet falls back to a full
   /// reconnect, which is the only way to obtain one.
   public func rehome(with client: any CodevisorServerClienting) async {
-    adoptServerClient(client)
+    adoptServerClient(client, forServer: project.serverId)
     guard let model, let serverSession else {
       await reconnect()
       return

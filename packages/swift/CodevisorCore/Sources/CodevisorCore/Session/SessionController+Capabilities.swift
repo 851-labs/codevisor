@@ -13,6 +13,7 @@ extension SessionController {
   /// harnesses if they've disabled everything); a resumed session always
   /// keeps its own harness.
   public func prepare() async {
+    guard isServerReady else { return }
     guard let serverClient else {
       preparationState = .failed
       return

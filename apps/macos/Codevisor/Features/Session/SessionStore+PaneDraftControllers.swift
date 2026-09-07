@@ -46,6 +46,7 @@ extension SessionStore {
         serverId: project.serverId
       ),
       serverClient: environment.machines.client(for: project.serverId),
+      machines: environment.machines,
       notificationDelivery: notificationDelivery
     )
     controller.applyComposerDefaults()

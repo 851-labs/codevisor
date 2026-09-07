@@ -243,6 +243,7 @@ final public class SessionController {
   /// The machine this chat talks to. Mutable for exactly one flow: a DRAFT
   /// retargeting to a project on another machine (`retarget(to:serverClient:)`).
   var serverClient: (any CodevisorServerClienting)?
+  @ObservationIgnored weak var machines: MachineController?
   /// Platform notification delivery; nil in previews/tests. Only used to
   /// prepare authorization at the first send.
   let notificationDelivery: (any ChatNotificationDelivering)?
@@ -329,6 +330,7 @@ final public class SessionController {
     composerDefaults: ComposerDefaultsStore? = nil,
     composerDefaultsScope: ComposerDefaultsStore.Scope? = nil,
     serverClient: (any CodevisorServerClienting)? = nil,
+    machines: MachineController? = nil,
     notificationDelivery: (any ChatNotificationDelivering)? = nil
   ) {
     self.project = project
@@ -338,6 +340,7 @@ final public class SessionController {
       composerDefaultsScope
       ?? composerDefaults.map { _ in .newWorkspace(serverId: project.serverId) }
     self.serverClient = serverClient
+    self.machines = machines
     self.notificationDelivery = notificationDelivery
     if seedFromCachedServerCapabilities() {
       preparationState = .ready

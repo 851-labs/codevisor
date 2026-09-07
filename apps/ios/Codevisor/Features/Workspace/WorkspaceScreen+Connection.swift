@@ -12,12 +12,16 @@ extension WorkspaceScreen {
       "session=\(activeSessionId.map(Self.diagnosticID) ?? "nil") controllers=\(controllers.count)"
     )
     guard let sessionId = activeSessionId else {
-      // Stale while revalidate, matching macOS New Chat: construct from
-      // the persisted project snapshot before the first suspension, then
-      // refresh metadata without holding the sheet behind a spinner.
       setUpDraftIfNeeded()
-      await environment.projectList.refreshFromServer()
-      setUpDraftIfNeeded()
+      guard let controller = draftController, controller.isServerReady else { return }
+      let targetServerId = controller.project.serverId
+      let client = environment.machines.client(for: targetServerId)
+      controller.adoptServerClient(client, forServer: targetServerId)
+      async let projects = environment.projectList.refreshFromServer(
+        serverId: targetServerId, client: client
+      )
+      await controller.prepare()
+      _ = await projects
       IOSNavigationDiagnostics.record("workspace.prepare.end", "draft=true")
       return
     }
@@ -73,61 +77,18 @@ extension WorkspaceScreen {
   /// Binds the app-wide retained draft controller and wires what its first
   /// send should do. Idempotent: re-runs harmlessly as the project list
   /// arrives.
-  func setUpDraftIfNeeded(preferredProject: Project? = nil) {
-    guard isDraft else { return }
-    guard let project = preferredProject ?? draftProjectCandidate
-    else {
-      setUpPlaceholderDraftIfNeeded()
-      return
-    }
-    // A project arrived (or was picked) while the project-less sentinel
-    // held the composer: carry the typed text into the real draft.
-    var carriedText = ""
-    if let sentinel = draftController, draftIsPlaceholderBorn {
-      carriedText = sentinel.composerText
-      draftController = nil
-      draftIsPlaceholderBorn = false
-    }
-    guard draftController?.keepOrRetargetDraft(to: project) != true else { return }
-    // The retained draft: leaving and coming back — or relaunching —
-    // restores the unsent message, attachments, and picked run location.
+  func setUpDraftIfNeeded() {
+    guard isDraft, draftController == nil, !environment.machines.allMachines.isEmpty else { return }
+    let project =
+      draftProjectCandidate
+      ?? .runTargetPlaceholder(serverId: resolvedServerId)
+    // Every draft, including No Project, has one durable controller. Picker
+    // changes retarget it in place, preserving attachments and configuration.
     let controller = ChatControllerCache.shared.draftController(
       preferredProject: project,
       environment: environment
     )
     serverConfig = environment.machines.serverConfig(for: controller.project.serverId)
-    // Pin the draft's pane group NOW: `centerInitial` mints a fresh pane id
-    // each call, so leaving it computed would hand the chat view a new
-    // identity every render — remounting it constantly.
-    if paneState == nil {
-      paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
-    }
-    controller.onFirstSend = { [weak controller] submittedText in
-      guard let controller else { return }
-      adoptSession(for: controller, submittedText: submittedText)
-    }
-    if !carriedText.isEmpty, controller.composerText.isEmpty {
-      controller.composerText = carriedText
-    }
-    draftController = controller
-    Task { await controller.prepare() }
-  }
-
-  /// No remembered project on the selected machine: the composer renders
-  /// bound to the "No Project" sentinel, sendable as-is — its first send
-  /// allocates a scratch folder and adopts the session like any draft.
-  /// The sentinel is never cached or persisted; picking a real project
-  /// swaps it for the durable draft while preserving the chosen harness.
-  private func setUpPlaceholderDraftIfNeeded() {
-    guard draftController == nil else { return }
-    let serverId = environment.defaultComposerServerId
-    let controller = SessionController.runTargetPlaceholder(
-      serverId: serverId,
-      environment: environment
-    )
-    serverConfig = environment.machines.serverConfig(
-      for: serverId
-    )
     if paneState == nil {
       paneState = PaneGroupState.centerInitial(sessionId: draftPlaceholderId)
     }
@@ -138,9 +99,7 @@ extension WorkspaceScreen {
       guard let controller else { return }
       adoptSession(for: controller, submittedText: submittedText)
     }
-    draftIsPlaceholderBorn = true
     draftController = controller
-    Task { await controller.prepare() }
   }
 
   /// The draft's first send: create the session and become its workspace,

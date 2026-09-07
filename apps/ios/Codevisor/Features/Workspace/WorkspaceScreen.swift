@@ -97,10 +97,6 @@ struct WorkspaceScreen: View {
   /// Stands in for the session id a draft doesn't have yet, so its pane
   /// group can exist (and keep a STABLE pane id) from the first frame.
   @State var draftPlaceholderId = UUID()
-  /// True while `draftController` is the project-less sentinel this screen
-  /// minted itself (never the cache's). The moment it points at a real
-  /// project, it is swapped for the durable cache-built draft.
-  @State var draftIsPlaceholderBorn = false
   /// The tab grid is workspace-local state, not another navigation
   /// destination. Keeping the active pane in Home's NavigationStack means
   /// the system back button and edge swipe always pop straight to Home.
@@ -333,8 +329,8 @@ struct WorkspaceScreen: View {
         }
       )
     }
-    .task(id: screenAvailability) {
-      guard case .ready = screenAvailability else { return }
+    .task(id: preparationIdentity) {
+      guard isDraft || screenAvailability == .ready else { return }
       await prepare()
     }
     .task(id: panePreviewLoadToken) {
@@ -351,19 +347,19 @@ struct WorkspaceScreen: View {
     .onChange(of: environment.projectList.projects.map(\.id)) { _, _ in
       setUpDraftIfNeeded()
     }
-    // The chip's picker retargets the sentinel at a real project in
-    // place; swap it for the durable cache-built draft (same text). A
-    // first send re-points the sentinel at its scratch folder instead —
-    // that controller is mid-send and must stay mounted.
-    .onChange(of: draftController?.project.id) { _, _ in
-      guard draftIsPlaceholderBorn,
-        let sentinel = draftController,
-        !sentinel.project.isRunTargetPlaceholder,
-        !sentinel.project.isScratch,
-        !sentinel.isSubmitting,
-        !sentinel.hasAcceptedFirstSend
+    .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
+      setUpDraftIfNeeded()
+      guard isDraft, let controller = draftController,
+        let canonical = environment.machines.canonicalComposerMachineId(for: controller.project.serverId),
+        canonical != controller.project.serverId
       else { return }
-      setUpDraftIfNeeded(preferredProject: sentinel.project)
+      let target =
+        environment.projectList.projects.first {
+          $0.serverId == canonical && $0.id == controller.project.id
+        } ?? .runTargetPlaceholder(serverId: canonical)
+      Task {
+        await controller.retarget(to: target, serverClient: environment.machines.client(for: canonical))
+      }
     }
     // A machine's harness catalog changed (sign-in, enablement, a
     // ferried credential landing): refresh a mounted draft composer so
@@ -383,11 +379,26 @@ struct WorkspaceScreen: View {
   /// belong to any machine in the fleet (a chat sent to another machine's
   /// project), and the selected machine's hiccups must never block it —
   /// nor may its content wait on the wrong machine becoming ready.
+  private struct PreparationIdentity: Equatable {
+    let serverId: String
+    let availability: ServerAvailability
+    let route: MachineRoute?
+  }
+
+  private var preparationIdentity: PreparationIdentity {
+    PreparationIdentity(
+      serverId: resolvedServerId,
+      availability: screenAvailability,
+      route: environment.machines.statusByMachineId[resolvedServerId]?.route
+    )
+  }
+
   private var screenAvailability: ServerAvailability {
-    environment.machines.availabilityByMachineId[resolvedServerId] ?? .ready
+    environment.machines.availability(for: resolvedServerId)
   }
 
   private var blocksServerContent: Bool {
+    if isDraft { return false }
     if case .ready = screenAvailability {
       return false
     }

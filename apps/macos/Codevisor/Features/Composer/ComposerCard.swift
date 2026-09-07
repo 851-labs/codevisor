@@ -387,8 +387,10 @@ private extension ComposerCard {
         && controller.isConnectingToHarness
       let isEnabled =
         !isAppUpdateInProgress
+        && controller.isServerReady
         && (controller.isGoalComposerArmed
           ? hasSubmittableContent
+            && (controller.isConnected || controller.selectedHarness != nil)
             && !controller.isConnecting
             && !controller.isConnectingToHarness
           : !controller.isConnectingToHarness
@@ -520,6 +522,8 @@ private extension ComposerCard {
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .isEmpty
       guard hasGoal,
+        controller.isServerReady,
+        controller.isConnected || controller.selectedHarness != nil,
         !controller.isConnecting,
         !controller.isConnectingToHarness,
         !isAppUpdateInProgress

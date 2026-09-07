@@ -9,6 +9,7 @@ extension SessionController {
     let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composerAttachments.isEmpty,
       !isConnecting,
+      isServerReady,
       configurationValidationState == .ready,
       !isSubmitting
     else { return }
