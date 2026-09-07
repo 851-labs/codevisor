@@ -2,7 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The native iOS project step used by the run-target sheet. "No Project"
+/// The native iOS project picker. "No project"
 /// heads the list (the chat runs in its own folder), then this machine's
 /// projects and recommendations, with project creation exposed as a
 /// consistent add action.
@@ -10,6 +10,7 @@ struct ProjectSelectionScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
   let serverId: String
+  let selectedProjectId: UUID
   let onOpenFolder: () -> Void
   let onCloneRepository: () -> Void
   let onSelected: (Project) -> Void
@@ -75,11 +76,13 @@ struct ProjectSelectionScreen: View {
           onSelected(.runTargetPlaceholder(serverId: serverId))
         } label: {
           projectRow(
-            title: "No Project",
+            title: "No project",
             path: "Runs in its own folder on \(machineName)",
-            systemImage: EntitySystemSymbol.projectList
+            systemImage: EntitySystemSymbol.projectList,
+            isSelected: selectedProjectId == Project.runTargetPlaceholderID
           )
         }
+        .accessibilityAddTraits(selectedProjectId == Project.runTargetPlaceholderID ? .isSelected : [])
       }
 
       if !projects.isEmpty {
@@ -92,9 +95,10 @@ struct ProjectSelectionScreen: View {
                 title: project.name,
                 path: project.folderURL.standardizedFileURL.path,
                 systemImage: EntitySystemSymbol.project,
-                showsDisclosure: project.isGitRepository
+                isSelected: project.id == selectedProjectId
               )
             }
+            .accessibilityAddTraits(project.id == selectedProjectId ? .isSelected : [])
           }
         }
       }
@@ -165,7 +169,7 @@ struct ProjectSelectionScreen: View {
     path: String,
     systemImage: String,
     isWorking: Bool = false,
-    showsDisclosure: Bool = false
+    isSelected: Bool = false
   ) -> some View {
     HStack(spacing: 12) {
       if isWorking {
@@ -178,6 +182,7 @@ struct ProjectSelectionScreen: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
           .foregroundStyle(.primary)
+          .fixedSize(horizontal: false, vertical: true)
         Text(Self.abbreviatedPath(path))
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -185,13 +190,14 @@ struct ProjectSelectionScreen: View {
           .truncationMode(.middle)
       }
       Spacer(minLength: 0)
-      if showsDisclosure {
-        Image(systemName: "chevron.right")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.tertiary)
+      if isSelected {
+        Image(systemName: "checkmark")
+          .foregroundStyle(.tint)
       }
     }
     .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(title), \(path)")
   }
 
   private func load() async {

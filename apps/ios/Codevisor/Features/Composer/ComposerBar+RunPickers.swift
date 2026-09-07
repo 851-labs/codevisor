@@ -4,73 +4,75 @@ import SwiftUI
 
 extension ComposerBar {
   var runTargetControls: some View {
-    runTargetChips
-      .font(.footnote)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 7)
-      .composerGlassSurface(
-        cornerRadius: 18, id: .newChatConfiguration, in: glassNamespace
-      )
-      .disabled(controller.isSubmitting)
+    let machine = environment.machines.machine(for: controller.project.serverId)
+    let isPlaceholder = controller.project.isRunTargetPlaceholder || controller.project.isScratch
+    return ComposerRunTargetBar(
+      machineName: environment.machines.allMachines.count > 1 ? (machine?.name ?? "Machine") : nil,
+      machineSymbol: machine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local),
+      machines: environment.machines.allMachines,
+      selectedServerId: controller.project.serverId,
+      readyMachineIds: Set(
+        environment.machines.allMachines
+          .filter { environment.machines.availability(for: $0.id) == .ready }
+          .map(\.id)
+      ),
+      projectName: isPlaceholder ? "No project" : liveProject.name,
+      isPlaceholder: isPlaceholder,
+      isGitRepository: !isPlaceholder && liveProject.isGitRepository,
+      wantsNewWorktree: controller.wantsNewWorktree,
+      onMachine: selectTargetMachine,
+      onProject: { showsProjectPicker = true },
+      onLocation: selectRunLocation,
+      onManageMachines: { showsMachineSettings = true },
+      onManageProject: { managedProject = liveProject }
+    )
+    // Keep 44-point controls while drawing a slimmer pill behind them.
+    .padding(.vertical, -6)
+    .composerGlassSurface(
+      cornerRadius: 16, id: .newChatConfiguration, in: glassNamespace
+    )
+    .padding(.vertical, 6)
+    .disabled(controller.isSubmitting)
   }
 
-  /// The live project record. The controller holds a snapshot from when
-  /// the project was picked; the server's git probe lands on the list
-  /// afterwards, and the chip must follow the probed value.
+  /// Follow the server's current git probe, rather than the draft's snapshot.
   private var liveProject: Project {
-    environment.projectList.projects.first {
+    environment.projectList.fleetActiveProjects.first {
       $0.serverId == controller.project.serverId && $0.id == controller.project.id
     } ?? controller.project
   }
 
-  /// ONE chip for the whole run target: the run-location icon and the
-  /// project name ("No Project" for a chat that will run in its own
-  /// folder). Tapping opens the stepped machine → project → run-location
-  /// sheet.
-  var runTargetChips: some View {
-    // A retained scratch-backed draft (first send failed, retry pending)
-    // still reads as "No Project".
-    let isPlaceholder = controller.project.isRunTargetPlaceholder || controller.project.isScratch
-    return Button {
-      showsRunTargetPicker = true
-    } label: {
-      HStack(spacing: 4) {
-        Image(
-          systemName: isPlaceholder
-            ? EntitySystemSymbol.projectList
-            : (controller.wantsNewWorktree ? "arrow.triangle.branch" : "folder.fill")
-        )
-        .font(.caption)
-        Text(isPlaceholder ? "No Project" : controller.project.name)
-          .lineLimit(1)
-      }
-      .foregroundStyle(.secondary)
+  /// Keep the linked checkout and location when possible, matching macOS.
+  /// Otherwise restore the destination's remembered project, or No project.
+  func selectTargetMachine(_ machine: CodevisorMachine) {
+    let current = controller.project
+    guard machine.id != current.serverId,
+      environment.machines.availability(for: machine.id) == .ready
+    else { return }
+    if let linked = environment.projectList.fleetProjectGroup(containing: current)?
+      .member(on: machine.id)
+    {
+      selectTargetProject(linked, wantsWorktree: controller.wantsNewWorktree)
+      return
     }
-    .contextMenu {
-      if !isPlaceholder {
-        Button {
-          managedProject = liveProject
-        } label: {
-          Label("Manage Project…", systemImage: "gearshape")
-        }
-      }
+    let remembered = environment.composerDefaults.lastProjectId(forServer: machine.id)
+    let project = environment.projectList.fleetActiveProjects.first {
+      $0.serverId == machine.id && $0.id == remembered && !$0.isScratch
     }
-    .accessibilityLabel("Run target")
-    .accessibilityValue(
-      isPlaceholder
-        ? "No project"
-        : "\(controller.project.name), \(controller.wantsNewWorktree ? "new worktree" : "project directory")"
-    )
+    if !current.isRunTargetPlaceholder, !current.isScratch, let project {
+      selectTargetProject(project)
+    } else {
+      selectTargetProject(.runTargetPlaceholder(serverId: machine.id))
+    }
   }
 
-  /// Applies a picker choice: re-points the draft (across machines when
-  /// needed) and fixes the run location, remembering both per machine.
+  /// Re-points the draft in place, keeping its text and staged attachments.
   func applyRunTarget(_ project: Project, wantsWorktree: Bool) {
-    // "No project" is remembered as the placeholder id, so the next draft
-    // on this machine starts the same way.
+    runTargetSelectionRevision &+= 1
+    let revision = runTargetSelectionRevision
     environment.composerDefaults.rememberNewWorkspaceProject(
       serverId: project.serverId,
-      projectId: project.id
+      projectId: project.isScratch ? Project.runTargetPlaceholderID : project.id
     )
     let effectiveWorktree = project.isGitRepository && wantsWorktree
     if project.isGitRepository {
@@ -80,10 +82,11 @@ extension ComposerBar {
       )
     }
     Task {
+      guard revision == runTargetSelectionRevision else { return }
+      // Set this before awaiting preparation so the independent location
+      // picker reflects the new target immediately and remains editable.
+      controller.wantsNewWorktree = effectiveWorktree
       if project.serverId != controller.project.serverId {
-        // Another machine's project: the draft re-points there in
-        // place — client, catalog and all. The app's selected
-        // machine follows at first send, not now.
         await controller.retarget(
           to: project,
           serverClient: environment.machines.client(for: project.serverId)
@@ -92,13 +95,7 @@ extension ComposerBar {
       } else {
         await controller.selectProject(project)
       }
-      guard controller.project.serverId == project.serverId,
-        controller.project.id == project.id
-      else { return }
-      controller.wantsNewWorktree = effectiveWorktree
     }
-    // Re-probe git capability on the picked project's machine so the
-    // chip's icon tracks fresh data.
     Task {
       await environment.projectList.refreshFromServer(
         serverId: project.serverId,
@@ -107,19 +104,25 @@ extension ComposerBar {
     }
   }
 
-  /// A picked project carries the machine's remembered worktree preference
-  /// (worktrees only make sense for git projects).
-  func selectTargetProject(_ project: Project) {
+  func selectTargetProject(_ project: Project, wantsWorktree: Bool? = nil) {
+    // Selecting the checked row should preserve the draft's own location.
+    guard project.serverId != controller.project.serverId || project.id != controller.project.id
+    else { return }
     let prefersWorktree =
-      project.isGitRepository
-      && environment.composerDefaults.prefersWorktreeForNewWorkspaces(
-        forServer: project.serverId
-      )
+      wantsWorktree
+      ?? environment.composerDefaults.prefersWorktreeForNewWorkspaces(forServer: project.serverId)
     applyRunTarget(project, wantsWorktree: prefersWorktree)
   }
 
-  /// Archiving the draft's project leaves the draft with no project rather
-  /// than guessing another one.
+  private func selectRunLocation(_ newWorktree: Bool) {
+    guard liveProject.isGitRepository else { return }
+    environment.composerDefaults.rememberNewWorkspaceWorktreePreference(
+      serverId: controller.project.serverId,
+      createsWorktree: newWorktree
+    )
+    controller.wantsNewWorktree = newWorktree
+  }
+
   func archiveManagedProject(_ project: Project) {
     controller.project.isArchived = true
     environment.projectList.archive(project)

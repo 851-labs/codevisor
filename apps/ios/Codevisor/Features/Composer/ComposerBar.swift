@@ -91,9 +91,11 @@ struct ComposerBar: View {
   @State var isPickingPhotos = false
   @State var isPickingFiles = false
   @State var isCapturingPhoto = false
-  @State var isAddingProject = false
   @State var managedProject: Project?
-  @State var showsRunTargetPicker = false
+  @State var showsProjectPicker = false
+  @State var showsMachineSettings = false
+  /// Only the latest queued target selection starts preparing the draft.
+  @State var runTargetSelectionRevision = 0
   /// Paste-provider failures have no attachment bytes left to anchor a
   /// status to. Keep their recovery beside this composer instead of using
   /// the session's connection/error channel.
@@ -129,6 +131,8 @@ struct ComposerBar: View {
 
   private static let minEditorHeight: CGFloat = 30
   private static let collapsedMaxEditorHeight: CGFloat = 148
+  // The picker's invisible tap area already adds 6 points below its glass.
+  private static let runPickerSpacing: CGFloat = 2
   /// Chrome around the editor inside the card: paddings, toolbar row, and
   /// the spacing between them.
   private static let cardChromeHeight: CGFloat = 96
@@ -143,7 +147,7 @@ struct ComposerBar: View {
     // On the new-chat page the run-picker chips live above the card in
     // this same stack: a fully expanded card leaves them their room at
     // the top rather than growing the stack past `maxHeight`.
-    let pickersOverhead = showsRunPickers ? runPickersHeight + 8 : 0
+    let pickersOverhead = showsRunPickers ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
     return max(
       Self.collapsedMaxEditorHeight,
@@ -178,14 +182,14 @@ struct ComposerBar: View {
   /// overlay at the root gives it a higher z-order than the run pickers;
   /// using the card edge makes the palette cover those chips while open.
   private var slashPaletteOffset: CGFloat {
-    let pickersHeight = showsRunPickers ? runPickersHeight + 8 : 0
+    let pickersHeight = showsRunPickers ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeHeight = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
     let cardTop = pickersHeight + noticeHeight
     return cardTop - slashPaletteHeight - ComposerGlassStyle.clusterSpacing
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: Self.runPickerSpacing) {
       // The new-chat page chooses where the chat will work from the
       // composer: a project and, for git projects, project directory
       // vs a new worktree. The chips float above the card in one glass
@@ -209,8 +213,10 @@ struct ComposerBar: View {
             }
         }
       }
-      pasteFailureRail
-      card
+      VStack(alignment: .leading, spacing: 8) {
+        pasteFailureRail
+        card
+      }
     }
     // The root-level overlay always draws above both children. On New
     // Chat it is positioned from the card, intentionally covering the
@@ -228,21 +234,14 @@ struct ComposerBar: View {
     // back from zero) still morphs the glass out of/into the composer.
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
-    .sheet(isPresented: $isAddingProject) {
-      AddProjectSheet(serverId: controller.project.serverId) { project in
-        selectTargetProject(project)
-      }
-    }
-    .sheet(isPresented: $showsRunTargetPicker) {
-      RunTargetPickerSheet(
-        initialServerId: controller.project.serverId,
-        currentProject: controller.project.isRunTargetPlaceholder
-          ? nil : controller.project,
-        currentWantsWorktree: controller.wantsNewWorktree,
-        onFinish: { project, wantsWorktree in
-          applyRunTarget(project, wantsWorktree: wantsWorktree)
-        }
+    .sheet(isPresented: $showsProjectPicker) {
+      RunTargetProjectPickerSheet(
+        currentProject: controller.project,
+        onSelected: { selectTargetProject($0) }
       )
+    }
+    .sheet(isPresented: $showsMachineSettings) {
+      SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }
     .sheet(item: $managedProject) { project in
       ManageProjectSheet(
