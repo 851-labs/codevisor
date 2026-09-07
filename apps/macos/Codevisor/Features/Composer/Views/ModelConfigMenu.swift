@@ -55,7 +55,7 @@ private extension ModelConfigMenu {
         .favorites($favoriteModelIDs)
       }
       Autocomplete.Section(id: "actions") {
-        Autocomplete.Action("Manage Harnesses…", systemImage: "gearshape", action: showHarnessSettings)
+        Autocomplete.Action("Manage Harnesses…", action: showHarnessSettings)
           .help("Open Harness Settings")
       }
     } label: {
