@@ -247,7 +247,10 @@ let package = Package(
         "TranscriptKit",
       ],
       path: "CodevisorUI/Sources/CodevisorUI",
-      resources: [.copy("Resources/plugin-bridge.js")],
+      resources: [
+        .copy("Resources/plugin-bridge.js"), .copy("Resources/BrowserRouting"),
+        .copy("Resources/browser-navigation.js"),
+      ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(

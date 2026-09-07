@@ -18,6 +18,8 @@ export interface BrowserSnapshot {
 }
 
 export interface BrowserRuntime {
+  readonly native?: boolean
+  synchronizeCookies?: () => Promise<void>
   readonly connection: CdpConnection
   readonly processHandle: ChildProcess | undefined
   readonly owned: boolean

@@ -15,3 +15,5 @@ export * from "./sync.js"
 export * from "./events.js"
 export * from "./terminals.js"
 export * from "./openapi.js"
+
+export * from "./browser-state.js"

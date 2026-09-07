@@ -275,10 +275,12 @@ extension SessionContainerView {
     controller.rememberCurrentComposerConfiguration()
   }
 
-  /// A chat pane's display title: its referenced session's LIVE title
-  /// (auto-titles and renames flow through); drafts show their own name.
+  /// Browser titles follow this client's page; chat titles follow their session.
   func paneTitle(_ descriptor: PaneDescriptorState) -> String {
-    descriptor.kind == .chat ? chatPaneTitle(descriptor) : descriptor.name
+    if descriptor.kind == .browser, let title = store.localBrowserTitle(paneId: descriptor.id) {
+      return title
+    }
+    return descriptor.kind == .chat ? chatPaneTitle(descriptor) : descriptor.name
   }
 
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {

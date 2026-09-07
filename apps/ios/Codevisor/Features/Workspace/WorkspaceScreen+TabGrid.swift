@@ -227,14 +227,44 @@ extension WorkspaceScreen {
       connectChat: { await connectChat(sessionId: $0) },
       onConvertToChat: { convertToChat(pane) },
       onConvertToTerminal: { convertToTerminal(pane) },
+      onConvertToBrowser: { convertToBrowser(pane) },
       onConvertToPlugin: { convertToPlugin(pane, option: $0) },
       serverConfig: serverConfig,
       workspaceCwd: workspaceCwd,
       machineClient: environment.machines.client(for: resolvedServerId),
       machineId: resolvedServerId,
+      browserPaneModel: { browserPaneModel(for: $0) },
       pluginPaneModel: { pluginPaneModel(for: $0) },
       onRenamePane: { renamePane($0, to: $1) }
     )
+    // BrowserPaneView extends its page separately so its floating controls
+    // retain the home-indicator and keyboard safe areas.
+    .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])
+  }
+
+  private func browserPaneModel(for pane: PaneDescriptorState) -> BrowserPaneModel {
+    let machines = environment.machines
+    let serverId = resolvedServerId
+    let model = BrowserPaneCache.shared.model(for: pane.id) {
+      BrowserPaneModel(
+        paneId: pane.id, machineId: serverId, machineName: machines.machine(for: serverId)?.name ?? "Machine",
+        initialURL: pane.browserURL ?? "https://www.google.com/",
+        client: machines.client(for: serverId),
+        resolveBaseURL: { [weak machines] in
+          await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
+        })
+    }
+    model.onNavigate = { url, title in
+      var state = panes
+      guard let index = state.panes.firstIndex(where: { $0.id == pane.id }),
+        state.panes[index].browserURL != url || state.panes[index].name != title
+      else { return }
+      state.panes[index].browserURL = url
+      state.panes[index].name = title
+      paneBinding.wrappedValue = state
+      publishPane(state.panes[index])
+    }
+    return model
   }
 
   /// The pane's cached plugin model — the webview and its load state

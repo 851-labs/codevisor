@@ -1,3 +1,4 @@
+import { makeBrowserStateService } from "./browser-state-service.js"
 import type Database from "better-sqlite3"
 import { Effect } from "effect"
 import { makeAuthService } from "./auth-service.js"
@@ -94,6 +95,7 @@ export const createService = (
     ...makeHarnessService(context),
     ...makeMcpService(context),
     ...makeAuthService(context),
+    ...makeBrowserStateService(context),
     ...makeUpdatesService(context),
     ...makeSyncService(context)
   }

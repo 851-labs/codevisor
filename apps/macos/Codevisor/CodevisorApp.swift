@@ -5,7 +5,6 @@ import CodevisorCoreMac
 import QuickLook
 import CodevisorUI
 
-@main
 struct CodevisorApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var environment: AppEnvironment?
@@ -132,6 +131,7 @@ struct CodevisorApp: App {
         MachineCommands(machines: environment.machines)
         TerminalCommands()
         WorkspaceLayoutCommands()
+        BrowserCommands()
         DebugOverlayCommands()
       }
     }

@@ -50,6 +50,7 @@ struct PaneTab: View {
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"
+    case .browser: "globe"
     }
   }
 
@@ -60,6 +61,7 @@ struct PaneTab: View {
     case .newTab: "New tab"
     case .plugin: "Plugin pane"
     case .document: "Markdown document"
+    case .browser: "Browser"
     }
   }
 

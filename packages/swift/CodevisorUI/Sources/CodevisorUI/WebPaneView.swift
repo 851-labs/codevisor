@@ -1,6 +1,5 @@
-//  The one WebKit surface in the codebase: plugin panes are a deliberate,
-//  contained exception to the "no webviews" rule, and every WebKit detail
-//  stays inside this file (plus the plugin-bridge.js resource it injects).
+//  The plugin WebKit surface. Browser panes use BrowserPaneModel with their
+//  own proxy configuration and no plugin bridge or theme injection.
 //
 //  A WebPaneController owns a WKWebView configured with bridge v1 (frozen):
 //  `window.codevisor.getContext()/openUrl()/setTitle()`, `--codevisor-*`

@@ -36,6 +36,7 @@ struct WorkspacePaneContentView: View {
   let connectChat: (UUID) async -> Void
   let onConvertToChat: () -> Void
   let onConvertToTerminal: () -> Void
+  let onConvertToBrowser: () -> Void
   let onConvertToPlugin: (PluginNewTabOption) -> Void
   let serverConfig: CodevisorServerConfig?
   let workspaceCwd: String
@@ -44,6 +45,7 @@ struct WorkspacePaneContentView: View {
   let machineId: String
   /// The pane's cached plugin model (webview + load state), resolved by
   /// WorkspaceScreen so the cache sees every visibility change.
+  let browserPaneModel: (PaneDescriptorState) -> BrowserPaneModel
   let pluginPaneModel: (PaneDescriptorState) -> PluginPaneModel
   /// `codevisor.setTitle` from a plugin pane: rename that pane's tab.
   let onRenamePane: (PaneDescriptorState, String) -> Void
@@ -94,10 +96,13 @@ struct WorkspacePaneContentView: View {
       NewTabPaneView(
         onNewChat: onConvertToChat,
         onNewTerminal: onConvertToTerminal,
+        onNewBrowser: onConvertToBrowser,
         client: machineClient,
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
       )
+    case .browser:
+      BrowserPaneView(model: browserPaneModel(pane))
     case .document:
       if let path = pane.documentPath {
         MarkdownDocumentView(

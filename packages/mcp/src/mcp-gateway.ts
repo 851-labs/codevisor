@@ -242,7 +242,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     if (provider.id === "browser") {
       if (toolName === "use_backend") {
         const requested = safeArgs.backend
-        if (requested === "managed" || requested === "extension") {
+        if (requested === "managed" || requested === "extension" || requested === "builtin") {
           await browserSetupBroker.resolveBackend(context.sessionId, requested)
         }
       } else if (toolName !== "backends" && toolName !== "connection_status") {

@@ -20,6 +20,7 @@ export const serializedBrowserOperation = async <T>(
 
 export const closeBrowserRuntime = async (active: BrowserRuntime): Promise<void> => {
   await active.queue.catch(() => undefined)
+  await active.synchronizeCookies?.().catch(() => undefined)
   for (const dispose of active.eventDisposers.splice(0)) dispose()
   if (active.owned) {
     await active.connection.send("Browser.close").catch(() => undefined)

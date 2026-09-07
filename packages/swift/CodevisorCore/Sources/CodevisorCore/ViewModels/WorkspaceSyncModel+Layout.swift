@@ -60,7 +60,7 @@ extension WorkspaceSyncModel {
       pane.chatSessionId.map { "session:\($0.uuidString.lowercased())" }
     case .terminal:
       "terminal:\(pane.terminalKey.lowercased())"
-    case .newTab, .plugin, .document:
+    case .newTab, .plugin, .document, .browser:
       nil
     }
   }

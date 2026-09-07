@@ -2,7 +2,11 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-public protocol CodevisorServerClienting: Sendable {
+public protocol CodevisorServerClienting: BrowserStateClienting {
+  func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
+  func browserNavigation(paneId: UUID) async throws -> BrowserNavigation?
+  func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws
+  func browserProxySession() async throws -> ServerBrowserProxySession
   func health() async throws -> ServerHealth
   func info() async throws -> ServerInfo
   /// This machine's cloud registration (`GET /v1/cloud`).

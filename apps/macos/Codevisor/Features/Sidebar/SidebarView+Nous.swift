@@ -133,6 +133,9 @@ extension SidebarView {
   private func nousPaneTitle(_ descriptor: PaneDescriptorState?, chatSession: ChatSession?) -> String {
     guard let descriptor else { return "New Tab" }
     if descriptor.kind == .chat { return chatSession?.title ?? descriptor.name }
+    if descriptor.kind == .browser, let title = store?.localBrowserTitle(paneId: descriptor.id) {
+      return title
+    }
     return descriptor.name
   }
 

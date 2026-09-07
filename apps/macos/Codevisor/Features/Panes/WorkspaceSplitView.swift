@@ -276,7 +276,15 @@ private struct SplitLeafView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .contentShape(Rectangle())
-      .simultaneousGesture(TapGesture().onEnded { model.onActivated?() })
+      .simultaneousGesture(
+        TapGesture().onEnded { model.onActivated?() },
+        including: model.state.selectedPane?.kind == .browser ? .subviews : .all
+      )
+      .background {
+        if model.state.selectedPane?.kind == .browser {
+          BrowserPaneActivationObserver { model.onActivated?() }
+        }
+      }
     }
   }
 
@@ -310,17 +318,6 @@ private struct SplitLeafView: View {
       .allowsHitTesting(false)
       // Active-group changes should read as focus changes, not motion.
       .transaction { $0.animation = nil }
-  }
-}
-
-private extension SplitEdge {
-  var dividerAlignment: Alignment {
-    switch self {
-    case .leading: .trailing
-    case .trailing: .leading
-    case .top: .bottom
-    case .bottom: .top
-    }
   }
 }
 
@@ -381,6 +378,7 @@ private struct SplitLeafHeader: View {
     case .terminal: pane?.attachOnly == true ? "server.rack" : "terminal"
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"
+    case .browser: "globe"
     case .newTab, .none: "square.dashed"
     }
   }
@@ -446,7 +444,7 @@ private struct SplitLeafHeader: View {
     switch pane?.kind {
     case .chat: "Rename Chat"
     case .terminal: "Rename Terminal"
-    case .newTab, .plugin, .document, .none: "Rename Pane"
+    case .newTab, .plugin, .document, .browser, .none: "Rename Pane"
     }
   }
 
@@ -529,5 +527,16 @@ private struct SplitLeafHeader: View {
     }
     // Leading and top have no key equivalent; `shortcut(_:)` no-ops there.
     .shortcut(.split(towards: edge))
+  }
+}
+
+private extension SplitEdge {
+  var dividerAlignment: Alignment {
+    switch self {
+    case .leading: .trailing
+    case .trailing: .leading
+    case .top: .bottom
+    case .bottom: .top
+    }
   }
 }

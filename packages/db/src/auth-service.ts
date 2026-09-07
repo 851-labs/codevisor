@@ -95,7 +95,9 @@ export const makeAuthService = (
       const row = sqlite
         .prepare("select value from instance_meta where key = 'browser-preference'")
         .get() as { readonly value: string } | undefined
-      return row?.value === "chrome" || row?.value === "managed" ? row.value : undefined
+      return row?.value === "chrome" || row?.value === "managed" || row?.value === "builtin"
+        ? row.value
+        : undefined
     }),
     setBrowserPreference: (preference) =>
       attempt("setBrowserPreference", () => {

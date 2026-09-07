@@ -232,6 +232,8 @@ struct WorkspaceScreen: View {
       return title.isEmpty ? "New Chat" : title
     case .newTab:
       return "New Tab"
+    case .browser:
+      return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
     case .terminal, .plugin, .document:
       return pane.name
     }

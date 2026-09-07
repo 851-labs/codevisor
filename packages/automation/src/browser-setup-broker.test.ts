@@ -22,7 +22,7 @@ const fixture = (
   const openWebStore = vi.fn()
   const db = {
     getBrowserPreference: Effect.sync(() => preference),
-    setBrowserPreference: (value: "chrome" | "managed" | undefined) =>
+    setBrowserPreference: (value: "chrome" | "managed" | "builtin" | undefined) =>
       Effect.sync(() => {
         preference = value
       })
@@ -106,40 +106,24 @@ const answer = (
   })
 
 describe("browser setup broker", () => {
-  it("asks once, remembers the choice, and lets explicit managed selection bypass UI", async () => {
-    const selected = fixture({ chrome: false })
-    const resolving = selected.broker.resolveBackend("session")
-    await selected.nextQuestion()
-    expect(
-      (
-        selected.events.at(-1)!.payload as {
-          questions: Array<{
-            allowsOther: boolean
-            presentation?: string
-            question: string
-          }>
-        }
-      ).questions[0]
-    ).toMatchObject({
-      allowsOther: false,
-      presentation: "browserChoice",
-      question: "Which browser should I use?"
-    })
-    await answer(selected.broker, selected.events, "Use Codevisor Browser")
-    await expect(resolving).resolves.toBe("managed")
-    expect(selected.preference()).toBe("managed")
-
-    const explicit = fixture()
-    await expect(explicit.broker.resolveBackend("session", "managed")).resolves.toBe("managed")
-    expect(explicit.events).toHaveLength(0)
-    expect(explicit.preference()).toBeUndefined()
+  it("defaults to built-in without a picker and preserves explicit preferences", async () => {
+    const current = fixture({ chrome: false })
+    await expect(current.broker.resolveBackend("session")).resolves.toBe("builtin")
+    expect(current.events).toHaveLength(0)
+    expect(current.preference()).toBeUndefined()
+    for (const backend of ["managed", "builtin"] as const) {
+      const explicit = fixture({ preference: "chrome" })
+      await expect(explicit.broker.resolveBackend("session", backend)).resolves.toBe(backend)
+      expect(explicit.events).toHaveLength(0)
+      expect(explicit.preference()).toBe("chrome")
+      const saved = fixture({ preference: backend })
+      await expect(saved.broker.resolveBackend("session")).resolves.toBe(backend)
+    }
   })
 
   it("resumes when Chrome is connected from another client", async () => {
-    const current = fixture()
+    const current = fixture({ preference: "chrome" })
     const resolving = current.broker.resolveBackend("session")
-    await current.nextQuestion()
-    await answer(current.broker, current.events, "Use Google Chrome")
     await current.nextQuestion()
 
     const setup = current.events.at(-1)!.payload as {
@@ -174,25 +158,18 @@ describe("browser setup broker", () => {
     expect(current.preference()).toBe("managed")
   })
 
-  it("asks again when a saved Chrome preference is no longer available", async () => {
+  it("does not silently switch a missing explicit extension preference", async () => {
     const current = fixture({ chrome: false, preference: "chrome" })
-    const resolving = current.broker.resolveBackend("session")
-    await current.nextQuestion()
-    const options = (
-      current.events.at(-1)!.payload as {
-        questions: Array<{ options: Array<{ label: string }> }>
-      }
-    ).questions[0]?.options
-    expect(options?.map((option) => option.label)).toEqual(["Use Codevisor Browser"])
-    await answer(current.broker, current.events, "Use Codevisor Browser")
-    await expect(resolving).resolves.toBe("managed")
+    await expect(current.broker.resolveBackend("session")).rejects.toThrow(
+      "Codevisor Extension requires Chrome"
+    )
+    expect(current.events).toHaveLength(0)
+    expect(current.preference()).toBe("chrome")
   })
 
   it("uses Back as navigation without rejecting the held call", async () => {
-    const current = fixture()
+    const current = fixture({ preference: "chrome" })
     const resolving = current.broker.resolveBackend("session")
-    await current.nextQuestion()
-    await answer(current.broker, current.events, "Use Google Chrome")
     await current.nextQuestion()
     const setup = current.events.at(-1)!.payload as {
       message?: string
@@ -215,15 +192,13 @@ describe("browser setup broker", () => {
     const question = (current.events.at(-1)!.payload as { questions: Array<{ question: string }> })
       .questions[0]?.question
     expect(question).toBe("Which browser should I use?")
-    await answer(current.broker, current.events, "Use Codevisor Browser")
+    await answer(current.broker, current.events, "Use Chromium")
     await expect(resolving).resolves.toBe("managed")
   })
 
   it("opens Chrome Extensions and auto-resumes when the extension connects", async () => {
-    const current = fixture()
+    const current = fixture({ preference: "chrome" })
     const resolving = current.broker.resolveBackend("session")
-    await current.nextQuestion()
-    await answer(current.broker, current.events, "Use Google Chrome")
     await current.nextQuestion()
     await answer(current.broker, current.events, "Open Extensions")
     await current.nextQuestion()
@@ -305,13 +280,13 @@ describe("browser setup broker", () => {
 
   it("turns invalid answers and Escape into deterministic tool rejection", async () => {
     const other = fixture()
-    const otherCall = other.broker.resolveBackend("session")
+    const otherCall = other.broker.resolveBackend("session", "extension")
     await other.nextQuestion()
     await answer(other.broker, other.events, undefined, "Do not use a browser")
     await expect(otherCall).rejects.toThrow("Do not use a browser")
 
     const dismissed = fixture()
-    const dismissedCall = dismissed.broker.resolveBackend("session")
+    const dismissedCall = dismissed.broker.resolveBackend("session", "extension")
     await dismissed.nextQuestion()
     await dismissed.broker.answerQuestion("session", latestQuestionId(dismissed.events), {
       outcome: "cancelled"

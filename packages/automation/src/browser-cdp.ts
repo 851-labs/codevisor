@@ -24,19 +24,33 @@ interface FailedSessionCommand {
 
 type SessionRecoveryHandler = (command: FailedSessionCommand) => Promise<string | undefined>
 
+interface CdpSocket {
+  readonly readyState: number
+  on(event: "message", listener: (data: RawData) => void): unknown
+  on(event: "error", listener: (error: Error) => void): unknown
+  on(event: "close", listener: () => void): unknown
+  once(event: "close", listener: () => void): unknown
+  send(message: string): void
+  close(): void
+  terminate(): void
+}
 export class CdpConnection {
-  readonly #socket: WebSocket
+  readonly #socket: CdpSocket
   readonly #pending = new Map<number, PendingCommand>()
   readonly #handlers = new Map<string, Set<EventHandler>>()
   #nextId = 1
   #closed: Error | undefined
   #sessionRecoveryHandler: SessionRecoveryHandler | undefined
 
-  private constructor(socket: WebSocket) {
+  private constructor(socket: CdpSocket) {
     this.#socket = socket
     socket.on("message", (data) => this.#receive(data))
     socket.on("error", (cause) => this.#fail(cause))
     socket.on("close", () => this.#fail(new Error("Browser debugging connection closed")))
+  }
+
+  get closed(): boolean {
+    return this.#closed !== undefined
   }
 
   static connect(endpoint: string): Promise<CdpConnection> {
@@ -51,7 +65,7 @@ export class CdpConnection {
     })
   }
 
-  static fromSocket(socket: WebSocket): CdpConnection {
+  static fromSocket(socket: CdpSocket): CdpConnection {
     if (socket.readyState !== WebSocket.OPEN) {
       throw new Error("Browser relay socket is not open")
     }

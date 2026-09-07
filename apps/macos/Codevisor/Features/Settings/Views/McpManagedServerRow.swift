@@ -59,29 +59,17 @@ struct McpManagedServerRow: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       if server.kind == "browserUse", let browserConfiguration {
         Menu {
-          // A remote machine can use an extension that is already
-          // connected, but installation controls stay on its host.
-          if browserConfiguration.chromeAvailable,
-            browserConfiguration.supportsExtensionFlow
-              || browserConfiguration.chromeConnected
-          {
+          ForEach(
+            [("chrome", "Codevisor Extension"), ("managed", "Chromium"), ("builtin", "Built-in Browser")], id: \.0
+          ) { value, label in
             Button {
-              Task { await setPreferredBrowser("chrome") }
+              Task { await setPreferredBrowser(value) }
             } label: {
-              if browserConfiguration.preferredBrowser == "chrome" {
-                Label("Google Chrome", systemImage: "checkmark")
+              if (browserConfiguration.preferredBrowser ?? "builtin") == value {
+                Label(label, systemImage: "checkmark")
               } else {
-                Text("Google Chrome")
+                Text(label)
               }
-            }
-          }
-          Button {
-            Task { await setPreferredBrowser("managed") }
-          } label: {
-            if browserConfiguration.preferredBrowser == "managed" {
-              Label("Codevisor Browser", systemImage: "checkmark")
-            } else {
-              Text("Codevisor Browser")
             }
           }
           if browserConfiguration.chromeAvailable,
@@ -201,11 +189,9 @@ struct McpManagedServerRow: View {
 
   private func preferredBrowserLabel(_ configuration: ServerBrowserUseConfiguration) -> String {
     switch configuration.preferredBrowser {
-    case "chrome":
-      if configuration.chromeConnected { return "Chrome" }
-      return configuration.supportsExtensionFlow ? "Chrome · Setup" : "Codevisor Browser"
-    case "managed": return "Codevisor Browser"
-    default: return "Choose Browser"
+    case "chrome": return configuration.chromeConnected ? "Codevisor Extension" : "Codevisor Extension · Setup"
+    case "managed": return "Chromium"
+    default: return "Built-in Browser"
     }
   }
 }

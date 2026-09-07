@@ -170,13 +170,33 @@ export const invokePageTools = async (
       const height = Math.round(numberArgument(args, "height"))
       await active.connection.send(
         "Emulation.setDeviceMetricsOverride",
-        { width, height, deviceScaleFactor: 1, mobile: false },
+        {
+          width,
+          height,
+          deviceScaleFactor: Number(args.deviceScaleFactor ?? 1),
+          mobile: args.mobile === true
+        },
         page.sessionId
       )
-      return jsonResult({ width, height })
+      await active.connection.send(
+        "Emulation.setTouchEmulationEnabled",
+        { enabled: args.touch === true || args.mobile === true },
+        page.sessionId
+      )
+      return jsonResult({
+        width,
+        height,
+        deviceScaleFactor: Number(args.deviceScaleFactor ?? 1),
+        mobile: args.mobile === true
+      })
     }
     case "viewport.reset":
       await active.connection.send("Emulation.clearDeviceMetricsOverride", {}, page.sessionId)
+      await active.connection.send(
+        "Emulation.setTouchEmulationEnabled",
+        { enabled: false },
+        page.sessionId
+      )
       return jsonResult({ reset: true })
     case "cdp.send": {
       const method = stringArgument(args, "method")

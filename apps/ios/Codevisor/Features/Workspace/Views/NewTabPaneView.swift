@@ -19,6 +19,7 @@ struct PluginNewTabOption: Identifiable, Equatable {
 struct NewTabPaneView: View {
   let onNewChat: () -> Void
   let onNewTerminal: () -> Void
+  var onNewBrowser: () -> Void = {}
   /// The machine's API client, for the machine-scoped plugin pane rows.
   /// Nil (previews) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
@@ -44,6 +45,9 @@ struct NewTabPaneView: View {
             action: onNewTerminal
           ) {
             Image(systemName: "terminal")
+          }
+          newTabOption(title: "New Browser", action: onNewBrowser) {
+            Image(systemName: "globe")
           }
           ForEach(pluginOptions) { option in
             newTabOption(

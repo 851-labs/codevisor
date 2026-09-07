@@ -300,6 +300,38 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         }
         return repaired
       }
+      // Earlier Browser Use builds inserted browsers into a chat's leaf.
+      // Keep that leaf's original content and lift the extra browser panes
+      // into real workspace tabs without changing shared pane identities.
+      var browsersToLift: [(pane: PaneDescriptorState, selected: Bool)] = []
+      for tabIndex in workspace.centerTabs.indices {
+        let tab = workspace.centerTabs[tabIndex]
+        for group in tab.root.allGroups where group.state.panes.count > 1 {
+          let anchor = group.state.panes.first { $0.kind != .browser } ?? group.state.panes[0]
+          let overflow = group.state.panes.filter { $0.kind == .browser && $0.id != anchor.id }
+          guard !overflow.isEmpty else { continue }
+          let ids = Set(overflow.map(\.id))
+          workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root.updatingGroup(id: group.id) {
+            state in
+            var state = state
+            state.panes.removeAll { ids.contains($0.id) }
+            if state.selectedPaneId.map(ids.contains) ?? true { state.selectedPaneId = anchor.id }
+            return state
+          }
+          for pane in overflow {
+            browsersToLift.append(
+              (
+                pane,
+                workspace.selectedCenterTabId == tab.id && tab.activeLeafId == group.id
+                  && group.state.selectedPaneId == pane.id
+              ))
+          }
+        }
+      }
+      for browser in browsersToLift {
+        let tabId = workspace.upsertCenterPane(browser.pane, selecting: false)
+        if browser.selected { workspace.selectedCenterTabId = tabId }
+      }
       if workspace.centerTabs.isEmpty {
         let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
         workspace.centerTabs = [tab]

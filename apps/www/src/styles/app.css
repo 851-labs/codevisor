@@ -33,6 +33,13 @@ body {
   color-scheme: dark;
 }
 
+/* The document canvas also paints Safari / WebKit's overscroll area. */
+html:has(.marketing-shell),
+body:has(.marketing-shell) {
+  background-color: var(--color-page);
+  color-scheme: dark;
+}
+
 .privacy-copy a {
   color: var(--color-text);
   text-decoration: underline;

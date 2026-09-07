@@ -80,7 +80,7 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   })
   const browserProvider = initializeAutomationProvider(
     "Browser Use",
-    config.makeBrowserProvider ?? (() => makeBrowserUseProvider(config.dataDir)),
+    config.makeBrowserProvider ?? (() => makeBrowserUseProvider(config.dataDir, config.db)),
     unavailableBrowserProvider
   )
   const computerProvider = initializeAutomationProvider(

@@ -1,11 +1,17 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorUI
 import ACPKit
 
 // MARK: - PaneGroups
 
 extension SessionStore {
+  func localBrowserTitle(paneId: UUID) -> String? {
+    let groups = Array(centerLeafGroups.values) + Array(bottomGroups.values)
+    return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model.title }.first
+  }
+
   /// Returns the cached bottom-panel pane group for a session's WORKSPACE,
   /// creating it on first use. Mirrors `controller(for:project:)` so panes
   /// (and their terminals) survive panel close + navigation away and back.
@@ -184,6 +190,11 @@ extension SessionStore {
         )
       }
     )
+    if placement == .center {
+      model.createBrowserTab = { [weak self] url in
+        self?.createBrowserTab(for: session, project: project, url: url)
+      }
+    }
     model.onPaneChanged = { [weak environment] pane in
       guard let environment else { return }
       environment.workspaceSync.publishPane(
@@ -218,6 +229,33 @@ extension SessionStore {
       ? .bottom
       : resolvedLeafId.map { .centerLeaf($0) }
     return model
+  }
+
+  /// Browser Use appends a workspace tab in the background, like a pane
+  /// arriving from another device. The user's selected tab and focus stay put.
+  private func createBrowserTab(
+    for session: ChatSession, project: Project, url: String
+  ) -> ChromiumBrowserModel? {
+    var workspace = workspace(for: session, project: project)
+    let paneId = UUID()
+    let descriptor = PaneDescriptorState(
+      id: paneId, kind: .browser, name: "Browser", terminalKey: paneId.uuidString,
+      browserURL: BrowserLocation.sharedURL(url)?.absoluteString
+    )
+    let tabId = workspace.upsertCenterPane(descriptor, selecting: false)
+    environment.workspaces.save(workspace)
+    guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return nil }
+    let group = centerGroup(
+      leafId: tab.activeLeafId, workspace: workspace, session: session, project: project
+    )
+    guard let browser = group.pane(for: descriptor) as? BrowserPane else { return nil }
+    browser.model.automationInitialURL = url
+    environment.workspaceSync.publishPane(
+      descriptor, workspaceId: workspace.id,
+      client: environment.machines.client(for: session.serverId)
+    )
+    workspaceLayoutRevision += 1
+    return browser.model
   }
 
   /// Drops a dissolved leaf's cached model (its panes have already moved

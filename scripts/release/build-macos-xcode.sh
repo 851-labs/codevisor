@@ -78,7 +78,10 @@ if [[ ! -f "$ghostty_resources" ]]; then
 fi
 echo "Building with GhosttyKit from $ghostty_library"
 
+node "$repo_root/scripts/chromium-artifact.mjs" arm64 x86_64
+
 ghostty_link_flags=(
+  '$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/libcef_dll_wrapper.a'
   "-force_load"
   "$ghostty_library"
   "-lc++"

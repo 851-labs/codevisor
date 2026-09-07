@@ -22,7 +22,9 @@ export const browserUseNativeTools: ReadonlyArray<Tool> = [
   tool(
     "use_backend",
     "Select the Browser Use backend for this session. extension connects to the user's open Chrome through Codevisor's bundled relay; managed uses Codevisor's isolated Chromium fallback. The connection response is always nonblocking.",
-    objectSchema({ backend: { type: "string", enum: ["managed", "extension"] } }, ["backend"])
+    objectSchema({ backend: { type: "string", enum: ["managed", "extension", "builtin"] } }, [
+      "backend"
+    ])
   ),
   tool(
     "tabs",

@@ -275,6 +275,15 @@ done
 codesign "${sign_args[@]}" --preserve-metadata=entitlements "$sparkle_framework"
 codesign --verify --deep --strict "$sparkle_framework"
 
+# Chromium contains separately signed libraries and sandboxed helper apps.
+# Re-sign inside-out with the release identity, retaining renderer JIT rights.
+while IFS= read -r library; do
+  codesign "${sign_args[@]}" "$library"
+done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
+while IFS= read -r helper; do
+  codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
+done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Helper*.app" -type d)
+
 # Every other embedded framework needs the same treatment for a simpler
 # reason: a binary xcframework (Sentry) ships completely unsigned, and Xcode
 # embeds it with signing disabled, so nothing ever seals it. Signing the app

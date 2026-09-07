@@ -75,7 +75,13 @@ export const browserUsePageTools: ReadonlyArray<Tool> = [
     "viewport.set",
     "Set a CDP viewport override for the selected tab.",
     objectSchema(
-      { width: { type: "number", minimum: 1 }, height: { type: "number", minimum: 1 } },
+      {
+        width: { type: "number", minimum: 1, maximum: 10000 },
+        height: { type: "number", minimum: 1, maximum: 10000 },
+        deviceScaleFactor: { type: "number", minimum: 0.1, maximum: 8 },
+        mobile: { type: "boolean" },
+        touch: { type: "boolean" }
+      },
       ["width", "height"]
     )
   ),

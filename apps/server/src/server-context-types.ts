@@ -1,3 +1,4 @@
+import type { BrowserProxy } from "./infra/browser-proxy.js"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { EventEnvelope, ServerKind, SessionSummary, UpdateInfo } from "@codevisor/api"
@@ -151,12 +152,14 @@ export interface RunningCodevisorServer {
 }
 
 export interface CodevisorServerApp {
+  readonly handleConnect: (request: IncomingMessage, socket: Socket, head: Buffer) => void
   readonly handleRequest: (request: IncomingMessage, response: ServerResponse) => void
   readonly handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer) => void
   readonly close: Effect.Effect<void, ServerError>
 }
 
 export interface RouteState {
+  readonly browserProxy?: BrowserProxy
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>
   readonly activePromptSessions: Set<string>

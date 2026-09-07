@@ -25,6 +25,7 @@ public enum PaneKind: String, Codable, Sendable {
   case plugin
   /// A read-only Markdown document on the workspace's machine.
   case document
+  case browser
 }
 
 /// Which of a session's pane groups a state belongs to: the center group
@@ -63,6 +64,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var pluginId: String?
   /// Plugin panes only: which of the plugin's pane types this renders.
   public var pluginPaneType: String?
+  public var browserURL: String?
   public var documentPath: String?
   /// Every pane moves between groups alike — tabs are tabs (the only
   /// rule with real stakes is the CLOSE rule: a lone placeholder only
@@ -80,7 +82,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     ownerChatSessionId: UUID? = nil,
     pluginId: String? = nil,
     pluginPaneType: String? = nil,
-    documentPath: String? = nil
+    documentPath: String? = nil,
+    browserURL: String? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -92,6 +95,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.pluginId = pluginId
     self.pluginPaneType = pluginPaneType
     self.documentPath = documentPath
+    self.browserURL = browserURL
   }
 
   public init(from decoder: Decoder) throws {
@@ -113,7 +117,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       // payload.
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
-      documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath)
+      documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
+      browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL)
     )
   }
 }
@@ -376,6 +381,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
         )
       else { return nil }
       pane = converted
+    case .browser:
+      pane = PaneDescriptorState(
+        id: paneId, kind: .browser, name: "Browser",
+        terminalKey: paneId.uuidString, browserURL: "https://www.google.com/")
     case .newTab, .document:
       return nil
     }

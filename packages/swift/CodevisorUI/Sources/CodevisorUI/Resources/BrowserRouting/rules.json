@@ -1,0 +1,246 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?localhost\\.?[:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?127\\.[0-9.]+[:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?0\\.0\\.0\\.0[:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?\\[::1\\][:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?\\[::ffff:[a-f0-9:.]+\\][:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^[a-z]+://([^/@]+@)?\\[0*:0*:0*:0*:0*:0*:0*:0*1\\][:/]",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 10,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "host": "proxy.localhost"
+        }
+      }
+    },
+    "condition": {
+      "regexFilter": "^https?://localhost\\.?[:/]",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 10,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "host": "proxy.localhost"
+        }
+      }
+    },
+    "condition": {
+      "regexFilter": "^https?://0\\.0\\.0\\.0[:/]",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 10,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "host": "ipv6.proxy.localhost"
+        }
+      }
+    },
+    "condition": {
+      "regexFilter": "^https?://\\[::1\\][:/]",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 10,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "regexSubstitution": "\\1://ipv4-127-\\2-\\3-\\4.proxy.localhost\\5"
+      }
+    },
+    "condition": {
+      "regexFilter": "^(https?)://127\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)([:/].*)$",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "xmlhttprequest",
+        "ping",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  }
+]

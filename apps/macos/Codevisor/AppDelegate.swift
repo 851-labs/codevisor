@@ -84,15 +84,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// The window whose sheet is currently asking; a second ⌘Q while it's
   /// up just brings that window forward instead of stacking alerts.
   private var pendingQuitWindow: NSWindow?
+  private var chromiumShutdownComplete = false
+  private var chromiumShutdownInProgress = false
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if chromiumShutdownComplete { return .terminateNow }
+    if chromiumShutdownInProgress { return .terminateCancel }
     let skip = skipsNextConfirmation
     skipsNextConfirmation = false
-    guard !skip, let settings, settings.confirmBeforeQuitting else { return .terminateNow }
+    guard !skip, let settings, settings.confirmBeforeQuitting else { return terminateBrowsers(sender) }
     // Sparkle quits the app itself to swap the bundle in; the user already
     // chose "Install and Relaunch", and a cancelled quit would leave the
     // installer waiting on this process forever.
-    if appUpdate?.isUpdating == true { return .terminateNow }
+    if appUpdate?.isUpdating == true { return terminateBrowsers(sender) }
     if let pendingQuitWindow {
       pendingQuitWindow.makeKeyAndOrderFront(nil)
       return .terminateCancel
@@ -106,16 +110,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // only Settings closed) fall back to the standalone app-modal panel.
     guard let window = Self.quitAlertHost() else {
       return Self.recordQuit(alert, response: alert.runModal(), settings: settings)
-        ? .terminateNow : .terminateCancel
+        ? terminateBrowsers(sender) : .terminateCancel
     }
     pendingQuitWindow = window
     window.makeKeyAndOrderFront(nil)
     alert.beginSheetModal(for: window) { [weak self] response in
       self?.pendingQuitWindow = nil
       let quit = Self.recordQuit(alert, response: response, settings: settings)
-      NSApp.reply(toApplicationShouldTerminate: quit)
+      NSApp.reply(toApplicationShouldTerminate: false)
+      if quit {
+        _ = self?.terminateBrowsers(NSApp)
+      }
     }
     return .terminateLater
+  }
+
+  private func terminateBrowsers(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    // CEF defers destruction until the current sendEvent unwinds. AppKit's
+    // terminateLater enters a nested event loop, so waiting there deadlocks
+    // browser teardown. Finish the event, close browsers, then terminate again.
+    chromiumShutdownInProgress = true
+    DispatchQueue.main.async {
+      CVShutdownChromium {
+        self.chromiumShutdownComplete = true
+        sender.terminate(nil)
+      }
+    }
+    return .terminateCancel
   }
 
   private static func quitAlertHost() -> NSWindow? {

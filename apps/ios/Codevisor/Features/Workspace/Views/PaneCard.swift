@@ -23,6 +23,7 @@ struct PaneCard: View {
     case .newTab: "plus.square.on.square"
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"
+    case .browser: "globe"
     }
   }
 

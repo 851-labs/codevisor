@@ -20,7 +20,14 @@ await ensureBuildDirectories(layout)
 const environment = localDevelopmentEnvironment(layout)
 
 if (target === "macos") {
-  await bootstrapDevelopment(repoRoot, { environment, ghostty: true })
+  await bootstrapDevelopment(repoRoot, {
+    environment,
+    ghostty: true,
+    architectures: forwardedArguments
+      .find((arg) => arg.startsWith("ARCHS="))
+      ?.slice(6)
+      .split(/\s+/)
+  })
   await runXcodebuild(
     repoRoot,
     "macos",

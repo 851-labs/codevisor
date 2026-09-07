@@ -1,12 +1,15 @@
+import { connectNativeBrowser } from "./browser-native-connection.js"
+import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
-import { observeBrowserLoadEvent } from "./browser-load-state.js"
+import { observeBrowserRuntime } from "./browser-runtime-events.js"
 import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { createHash, randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import type { ChildProcess } from "node:child_process"
-import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
+import type { AutomationProviderContext } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import { CdpConnection } from "./browser-cdp.js"
 import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
@@ -35,43 +38,28 @@ import {
   type BrowserAssetInventory
 } from "./browser-use-invoke.js"
 import { browserUseTools } from "./browser-use-tools.js"
-import { handleTargetLifecycleEvent, installSessionRecovery } from "./browser-session-recovery.js"
-import type WebSocket from "ws"
 
 export { managedBrowserSandboxArguments } from "./browser-chromium.js"
 export type { ManagedBrowserLaunchEnvironment } from "./browser-chromium.js"
 export { browserKeyDescription } from "./browser-input.js"
 export { browserUseTools } from "./browser-use-tools.js"
 
-export type BrowserBackend = "managed" | "extension"
-export type BrowserExtensionSetupMode = "development" | "webStore"
+export type {
+  BrowserBackend,
+  BrowserExtensionSetupMode,
+  BrowserUseProviderStatus,
+  BrowserUseProvider
+} from "./browser-use-provider-types.js"
+import type {
+  BrowserBackend,
+  BrowserExtensionSetupMode,
+  BrowserUseProvider
+} from "./browser-use-provider-types.js"
 
-export interface BrowserUseProviderStatus extends Readonly<Record<string, unknown>> {
-  readonly extensionConnected: boolean
-  readonly chromeAvailable: boolean
-  readonly extensionSetupMode: BrowserExtensionSetupMode
-  readonly developmentExtensionPath?: string
-  readonly extensionArchivePath?: string
-}
-
-export interface BrowserUseProvider extends AutomationToolProvider {
-  readonly ensureSetup: () => Promise<void>
-  readonly status: () => BrowserUseProviderStatus
-  readonly sessionBackend: (sessionId: string) => BrowserBackend | undefined
-  readonly setSessionBackend: (sessionId: string, backend: BrowserBackend) => void
-  readonly acceptExtensionConnection: (socket: WebSocket) => void
-  readonly waitForExtensionConnection: () => Promise<void>
-  readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
-  readonly openDevelopmentExtensionFolder: () => void
-  readonly openDevelopmentExtensionPage: () => void
-  readonly openDevelopmentExtensionInstaller: () => void
-  readonly openExtensionWebStore: () => void
-  readonly extensionArchivePath: () => string
-  readonly extensionIconPath: () => string
-  readonly configureExtensionRelay: (serverBaseUrl: string) => void
-}
-
-export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
+export const makeBrowserUseProvider = (
+  dataDir: string,
+  db?: CodevisorDatabaseService
+): BrowserUseProvider => {
   const repls = makeBrowserRepls()
   const contexts = new Map<string, AutomationProviderContext>()
   const browsersDir = join(dataDir, "browser", "browsers")
@@ -82,6 +70,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
   mkdirSync(profilesDir, { recursive: true, mode: 0o700 })
   mkdirSync(downloadsDir, { recursive: true, mode: 0o700 })
   mkdirSync(assetsDir, { recursive: true, mode: 0o700 })
+  const fallbackSessions = new Set<string>()
   const runtimes = new Map<string, Promise<BrowserRuntime>>()
   const sessionBackends = new Map<string, BrowserBackend>()
   const selectedTargets = new Map<string, string>()
@@ -149,6 +138,8 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       .digest("hex")
       .slice(0, 24)
 
+  let fallbackLaunch: Promise<unknown> = Promise.resolve()
+
   const createRuntime = async (
     context: AutomationProviderContext,
     backend: BrowserBackend
@@ -156,6 +147,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
     let connection: CdpConnection
     let processHandle: ChildProcess | undefined
     let owned = false
+    let native = false
     if (backend === "extension") {
       const endpoint = extensionEndpoint()
       connection =
@@ -163,19 +155,50 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
           ? await extensionRelay.connect()
           : await CdpConnection.connect(endpoint)
     } else {
-      await ensureSetup()
-      const executablePath = systemChromePath() ?? downloadedChromiumPath(browsersDir)
-      if (executablePath === undefined) throw new Error("No managed Chromium is installed")
-      const profileDir = join(profilesDir, profileKey(context))
-      mkdirSync(profileDir, { recursive: true, mode: 0o700 })
-      const launched = await launchManagedBrowser(executablePath, profileDir)
-      connection = launched.connection
-      processHandle = launched.processHandle
-      owned = launched.processHandle !== undefined
+      const local =
+        backend === "builtin" && !fallbackSessions.has(context.sessionId)
+          ? await connectNativeBrowser(dataDir, context.sessionId)
+          : undefined
+      if (local) {
+        connection = local
+        native = true
+      } else {
+        if (backend === "builtin") fallbackSessions.add(context.sessionId)
+        await ensureSetup()
+        const executablePath = systemChromePath() ?? downloadedChromiumPath(browsersDir)
+        if (executablePath === undefined) throw new Error("No managed Chromium is installed")
+        const profileDir = join(
+          profilesDir,
+          backend === "builtin" ? "builtin" : profileKey(context)
+        )
+        mkdirSync(profileDir, { recursive: true, mode: 0o700 })
+        // Serialize access to the shared fallback profile so concurrent sessions
+        // connect to one process instead of racing Chromium's profile lock.
+        const launch = () => launchManagedBrowser(executablePath, profileDir)
+        const pendingLaunch = backend === "builtin" ? fallbackLaunch.then(launch, launch) : launch()
+        if (backend === "builtin") fallbackLaunch = pendingLaunch.catch(() => undefined)
+        const launched = await pendingLaunch
+        connection = launched.connection
+        processHandle = launched.processHandle
+        owned = launched.processHandle !== undefined
+      }
     }
-    await connection.send("Target.setDiscoverTargets", { discover: true })
+    try {
+      await connection.send("Target.setDiscoverTargets", { discover: true })
+    } catch (cause) {
+      await connection.close().catch(() => undefined)
+      if (native) {
+        // Initialization has not executed a browser action, so fallback here
+        // cannot repeat a click or submit a form twice.
+        fallbackSessions.add(context.sessionId)
+        return createRuntime(context, backend)
+      }
+      processHandle?.kill("SIGTERM")
+      throw cause
+    }
     const active: BrowserRuntime = {
       connection,
+      native,
       processHandle,
       owned,
       sessions: new Map(),
@@ -191,71 +214,21 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       tabOrder: [],
       queue: Promise.resolve()
     }
-    installSessionRecovery(active, backend === "extension")
-    active.eventDisposers.push(
-      connection.on("*", (params, event) => {
-        observeBrowserLoadEvent(active, event.method, params, event.sessionId)
-        const sequence = ++active.eventSequence
-        active.eventLog.push({
-          method: event.method,
-          params,
-          sequence,
-          ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId })
-        })
-        if (active.eventLog.length > 5_000)
-          active.eventLog.splice(0, active.eventLog.length - 5_000)
-        handleTargetLifecycleEvent(active, event.method, params)
-        if (event.sessionId !== undefined) {
-          if (
-            event.method === "Runtime.consoleAPICalled" ||
-            event.method === "Runtime.exceptionThrown" ||
-            event.method === "Log.entryAdded"
-          ) {
-            const entries = active.logs.get(event.sessionId) ?? []
-            entries.push({ method: event.method, ...params, sequence })
-            if (entries.length > 1_000) entries.splice(0, entries.length - 1_000)
-            active.logs.set(event.sessionId, entries)
-          } else if (event.method === "Page.javascriptDialogOpening") {
-            active.dialogs.set(event.sessionId, { ...params })
-          } else if (event.method === "Page.javascriptDialogClosed") {
-            active.dialogs.delete(event.sessionId)
-          }
-        }
-        if (
-          event.method === "Browser.downloadWillBegin" ||
-          event.method === "Page.downloadWillBegin"
-        ) {
-          const guid = typeof params.guid === "string" ? params.guid : randomUUID()
-          active.downloads.set(guid, {
-            guid,
-            url: String(params.url ?? ""),
-            suggestedFilename: String(params.suggestedFilename ?? "download"),
-            ...(typeof params.filePath === "string" ? { path: params.filePath } : {})
-          })
-        } else if (
-          (event.method === "Browser.downloadProgress" ||
-            event.method === "Page.downloadProgress") &&
-          typeof params.guid === "string"
-        ) {
-          const existing = active.downloads.get(params.guid)
-          if (existing !== undefined) {
-            active.downloads.set(params.guid, {
-              ...existing,
-              ...(typeof params.state === "string"
-                ? { state: params.state }
-                : existing.state === undefined
-                  ? {}
-                  : { state: existing.state }),
-              ...(typeof params.filePath === "string"
-                ? { path: params.filePath }
-                : params.state === "completed" && existing.path === undefined
-                  ? { path: join(downloadsDir, params.guid) }
-                  : {})
-            })
-          }
-        }
-      })
-    )
+    if (native)
+      active.synchronizeCookies = async () => {
+        await connection.send("Codevisor.synchronizeCookies")
+      }
+    if (db && backend === "builtin" && !native) {
+      try {
+        const sync = await synchronizeManagedCookies(connection, db)
+        active.synchronizeCookies = sync.synchronize
+        active.eventDisposers.push(sync.stop)
+      } catch (cause) {
+        await closeBrowserRuntime(active)
+        throw cause
+      }
+    }
+    observeBrowserRuntime(active, downloadsDir, backend === "extension")
     return active
   }
 
@@ -341,6 +314,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         const extension = browserExtensionInstallation()
         return jsonResult({
           preferred: sessionBackends.get(context.sessionId),
+          builtin: { available: true, fallback: "managed", localOnly: true },
           managed: { available: status().backend !== "missing", engine: "codevisor-cdp" },
           extension: {
             available: extension.bundled,
@@ -374,8 +348,8 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       }
       if (toolName === "use_backend") {
         const backend = args.backend
-        if (backend !== "managed" && backend !== "extension") {
-          return textToolResult("backend must be managed or extension", true)
+        if (backend !== "managed" && backend !== "extension" && backend !== "builtin") {
+          return textToolResult("backend must be managed, extension, or builtin", true)
         }
         if (
           backend === "extension" &&
@@ -390,7 +364,7 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
       if (!browserUseTools.some((candidate) => candidate.name === toolName)) {
         return textToolResult(`Unknown Browser Use tool: ${toolName}`, true)
       }
-      const backend = sessionBackends.get(context.sessionId) ?? "managed"
+      const backend = sessionBackends.get(context.sessionId) ?? "builtin"
       sessionBackends.set(context.sessionId, backend)
       let effectiveTool = toolName
       let effectiveArgs = args
@@ -412,15 +386,39 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         !extensionRelay.connected()
       )
         return textToolResult("Chrome is not connected to Codevisor", true)
+      let active: BrowserRuntime | undefined
       try {
-        const active = await runtime(context, backend)
+        active = await runtime(context, backend)
+        if (active.native && active.connection.closed)
+          throw new Error("Native browser disconnected")
+        const ready = active
         if (effectiveTool === "playwright.waitForEvent") {
-          return await invokeTool(context, active, effectiveTool, effectiveArgs)
+          return await invokeTool(context, ready, effectiveTool, effectiveArgs)
         }
-        return await serializedBrowserOperation(active, () =>
-          invokeTool(context, active, effectiveTool, effectiveArgs)
-        )
+        return await serializedBrowserOperation(ready, async () => {
+          await ready.synchronizeCookies?.().catch(() => undefined)
+          const result = await invokeTool(context, ready, effectiveTool, effectiveArgs)
+          await ready.synchronizeCookies?.().catch(() => undefined)
+          return result
+        })
       } catch (cause) {
+        if (
+          active?.native &&
+          (active.connection.closed || /timed out|disconnected/i.test(String(cause)))
+        ) {
+          fallbackSessions.add(context.sessionId)
+          runtimes.delete(runtimeKey(context, backend))
+          for (const dispose of active.eventDisposers) dispose()
+          await active.connection.close()
+          const key = `${runtimeKey(context, backend)}:${context.sessionId}`
+          selectedTargets.delete(key)
+          sessionTargets.delete(key)
+          sessionDispositions.delete(key)
+          return textToolResult(
+            "The built-in browser disconnected. The next browser call will use independent Chromium on this server. The interrupted action was NOT retried; its outcome may be unknown. Discard old tab IDs, locators and snapshots, then open or observe a new tab before continuing.",
+            true
+          )
+        }
         return textToolResult(cause instanceof Error ? cause.message : String(cause), true)
       }
     },
@@ -437,10 +435,14 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
         )
     },
     closeSession: async (sessionId) => {
+      const nativeKey = contexts.has(sessionId)
+        ? runtimeKey(contexts.get(sessionId)!, "builtin")
+        : undefined
       await provider.finishTurn?.(sessionId)
       contexts.delete(sessionId)
       await repls.reset(sessionId)
       sessionBackends.delete(sessionId)
+      fallbackSessions.delete(sessionId)
       const suffix = `:${sessionId}`
       const keys = new Set(
         [...selectedTargets.keys(), ...sessionTargets.keys(), ...sessionDispositions.keys()].filter(
@@ -465,6 +467,15 @@ export const makeBrowserUseProvider = (dataDir: string): BrowserUseProvider => {
               .catch(() => undefined)
           }
           discardTargetState(resolved, targetId)
+        }
+      }
+      if (nativeKey) {
+        const active = await runtimes.get(nativeKey)?.catch(() => undefined)
+        // Native connections belong to the agent session. Closing them detaches
+        // automation while leaving the user's panes and the app running.
+        if (active?.native) {
+          runtimes.delete(nativeKey)
+          await closeBrowserRuntime(active)
         }
       }
     },

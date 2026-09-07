@@ -1,3 +1,4 @@
+import { BrowserProxy } from "./infra/browser-proxy.js"
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import { hasExistingListener } from "./infra/listener-probe.js"
@@ -102,7 +103,9 @@ export const makeCodevisorServerApp = (
     // Resolved at call time: routeState is assembled just below.
     redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId)
   })
+  const browserProxy = new BrowserProxy()
   const routeState: RouteState = {
+    browserProxy,
     ...turns,
     gatedSessions: new Map(),
     pendingPromptActions: new Set(),
@@ -259,10 +262,17 @@ export const makeCodevisorServerApp = (
     handleRequest: (request: IncomingMessage, response: ServerResponse): void => {
       void handleRequest(services, config, fanout, routeState, request, response)
     },
+    handleConnect: (request: IncomingMessage, socket: Socket, head: Buffer) =>
+      browserProxy.handleConnect(request, socket, head),
     handleUpgrade: (request: IncomingMessage, socket: Socket, head: Buffer): void => {
+      if (isBrowserProxyRequest(request)) {
+        browserProxy.handleUpgrade(request, socket, head)
+        return
+      }
       void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
     },
     close: serverAttempt("closeApp", () => {
+      browserProxy.close()
       clearInterval(staleTurnSweep)
       restart.close()
       attentionSettle.close()
@@ -325,6 +335,13 @@ export const startCodevisorServer = (
               return
             }
             app.handleRequest(request, response)
+          })
+          server.on("connect", (request, socket, head) => {
+            if (app === undefined) {
+              socket.destroy()
+              return
+            }
+            app.handleConnect(request, socket as Socket, head)
           })
           server.on("upgrade", (request, socket, head) => {
             if (app === undefined) {
@@ -410,3 +427,4 @@ const serverAttempt = <A>(operation: string, runSync: () => A): Effect.Effect<A,
   })
 
 export { defaultDatabasePath } from "./infra/data-dir.js"
+import { isBrowserProxyRequest } from "./infra/browser-forward-proxy.js"

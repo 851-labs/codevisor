@@ -17,6 +17,7 @@ private struct NewTabOption: Identifiable, Equatable {
   enum Kind: Equatable {
     case chat
     case terminal
+    case browser
     case plugin(pluginId: String, paneType: String, iconPath: String?)
   }
 
@@ -52,6 +53,7 @@ struct NewTabPageView: View {
   private var options: [NewTabOption] {
     [
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
+      NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
     ] + pluginOptions
   }
@@ -93,6 +95,8 @@ struct NewTabPageView: View {
         switch option.kind {
         case .chat:
           Autocomplete.Action(option.title, id: option.id, systemImage: "text.bubble") { open(option) }
+        case .browser:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "globe") { open(option) }
         case .terminal:
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
         case let .plugin(pluginId, paneType, iconPath):
@@ -125,6 +129,8 @@ struct NewTabPageView: View {
       } else {
         group?.convertNewTabPane(id: paneId, to: .chat)
       }
+    case .browser:
+      group?.convertNewTabPane(id: paneId, to: .browser)
     case .terminal:
       group?.convertNewTabPane(id: paneId, to: .terminal)
     case let .plugin(pluginId, paneType, _):

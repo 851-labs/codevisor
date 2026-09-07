@@ -118,6 +118,7 @@ extension WorkspaceScreen {
       // process. The machine-side plugin remains available to other
       // clients, panes, and tools until the Codevisor server stops.
       PluginPaneCache.shared.remove(paneId: pane.id)
+      BrowserPaneCache.shared.remove(paneId: pane.id)
     }
     if pane.kind == .chat, let sessionId = pane.chatSessionId,
       let closed = environment.projectList.sessions.first(where: {
@@ -211,6 +212,11 @@ extension WorkspaceScreen {
       in: paneStorageId,
       bottomChrome: pane.kind == .chat ? PaneSnapshotCache.shared.activeBottomChrome : 0
     )
+    if pane.kind == .browser {
+      BrowserPaneCache.shared.capturePreview(paneId: pane.id) { image in
+        PaneSnapshotCache.shared.store(image, for: pane.id, in: paneStorageId)
+      }
+    }
     if pane.kind == .plugin {
       // The window capture can't see web content reliably
       // (drawHierarchy renders WKWebView blank on some OS versions);

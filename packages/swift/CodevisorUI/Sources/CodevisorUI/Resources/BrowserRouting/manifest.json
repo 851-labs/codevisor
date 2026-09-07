@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Codevisor browser routing",
+  "description": "Route local development requests through the connected machine.",
+  "version": "1.0",
+  "permissions": ["declarativeNetRequestWithHostAccess", "nativeMessaging"],
+  "host_permissions": ["<all_urls>"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "loopback",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  }
+}

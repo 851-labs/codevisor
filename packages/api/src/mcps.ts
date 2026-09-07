@@ -31,7 +31,7 @@ export const McpConnectionState = Schema.Literals([
 ])
 export type McpConnectionState = typeof McpConnectionState.Type
 
-export const BrowserPreference = Schema.Literals(["chrome", "managed"])
+export const BrowserPreference = Schema.Literals(["chrome", "managed", "builtin"])
 export type BrowserPreference = typeof BrowserPreference.Type
 
 export const BrowserUseConfiguration = Schema.Struct({

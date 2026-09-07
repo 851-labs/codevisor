@@ -300,6 +300,7 @@ extension PaneGroupModel {
       if let chat = livePane as? ChatPane {
         wireChatHost(chat, paneId: descriptor.id)
       }
+      if let browser = livePane as? BrowserPane { wireBrowser(browser) }
       live[descriptor.id] = livePane
     }
     if let previous, previous.id != descriptor.id {

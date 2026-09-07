@@ -125,3 +125,6 @@
 [submodule ".repos/Portal"]
 	path = .repos/Portal
 	url = https://github.com/Aeastr/Portal.git
+[submodule ".repos/cef"]
+	path = .repos/cef
+	url = https://github.com/chromiumembedded/cef.git

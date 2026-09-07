@@ -51,7 +51,11 @@ const TAB_GROUP_COLORS: ReadonlySet<string> = new Set([
 ])
 
 export const runtimeKey = (context: AutomationProviderContext, backend: BrowserBackend): string =>
-  backend === "managed" ? `managed:${context.projectId ?? "global"}` : "extension"
+  backend === "builtin"
+    ? `builtin:${context.sessionId}`
+    : backend === "managed"
+      ? `managed:${context.projectId ?? "global"}`
+      : "extension"
 
 export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
   const { selectedTargets, sessionBackends, sessionDispositions, sessionTargets } = state

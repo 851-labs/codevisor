@@ -11,9 +11,9 @@ Explicit browser intent wins. If the user asks to open, show, navigate, visually
 
 ## Choose the browser
 
-Codevisor owns browser selection and any required setup. Call Browser Use normally; when no preference exists, the app asks the user and resumes the same tool call after their choice.
+Codevisor owns browser selection and any required setup. Call Browser Use normally; when no preference exists, it uses Built-in Browser. If the selected backend requires setup, Codevisor handles it and resumes the same tool call.
 
-Only call `browser.use_backend` when the user explicitly requests a different browser. Use `{ backend: "managed" }` for Codevisor's separate browser and `{ backend: "extension" }` for the user's Chrome. Respect a rejected Browser Use call instead of retrying it.
+Only call `browser.use_backend` when the user explicitly requests a different browser. Use `{ backend: "builtin" }` for Codevisor browser panes (the default), `{ backend: "managed" }` for separate Chromium, and `{ backend: "extension" }` for Codevisor Extension in the user's Chrome. Built-in Browser only controls the client on the server machine; if it is unavailable, an independent Chromium browser runs there instead. After a disconnect, discard old tab IDs and snapshots, re-observe, and never blindly repeat an action whose outcome is unknown. Respect a rejected Browser Use call instead of retrying it.
 
 ## Persistent browser cells
 
@@ -123,7 +123,7 @@ const chooser = await chooserPromise
 await chooser.setFiles(["path/inside/the/workspace.txt"])
 ```
 
-Discover optional APIs with `browser.capabilities.list()` or `tab.capabilities.list()`, then call `get(id)`. Codevisor provides browser `viewport` and tab `cdp` and `pageAssets` capabilities. User Chrome also supports `browser.user.history(options)`.
+Discover optional APIs with `browser.capabilities.list()` or `tab.capabilities.list()`, then call `get(id)`. Codevisor provides browser `viewport` (`set({width,height,deviceScaleFactor?,mobile?,touch?})`, `reset()`) and tab `cdp` and `pageAssets` capabilities. User Chrome also supports `browser.user.history(options)`.
 
 ```js
 const cdp = await tab.capabilities.get("cdp")

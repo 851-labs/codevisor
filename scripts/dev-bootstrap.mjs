@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process"
 import process from "node:process"
 
+import { ensureChromium } from "./chromium-artifact.mjs"
+
 import { ensureGhosttyFramework } from "./ghostty-artifact.mjs"
 
 export async function bootstrapDevelopment(repoRoot, options = {}) {
   await run("bun", ["install", "--frozen-lockfile"], repoRoot, options.environment)
   if (options.ghostty === true) {
     await ensureGhosttyFramework(repoRoot, options.environment)
+    await ensureChromium(repoRoot, options.environment, options.architectures)
   }
 }
 

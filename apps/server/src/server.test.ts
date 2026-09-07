@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { Server } from "node:http"
+import { request, Server } from "node:http"
 import { WebSocket } from "ws"
 import { describe, expect, it, vi } from "vitest"
 import {
@@ -109,6 +109,21 @@ describe("@codevisor/server", () => {
     await new Promise<void>((resolve) => {
       const socket = new WebSocket(`ws://127.0.0.1:${port}/v1/events`)
       socket.once("error", () => resolve())
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const pending = request({
+        host: "127.0.0.1",
+        port,
+        method: "CONNECT",
+        path: "localhost:3000"
+      })
+      pending.once("error", () => resolve())
+      pending.once("connect", (_response, socket) => {
+        socket.destroy()
+        reject(new Error("Proxy opened during recovery"))
+      })
+      pending.end()
     })
 
     releaseRecovery?.()

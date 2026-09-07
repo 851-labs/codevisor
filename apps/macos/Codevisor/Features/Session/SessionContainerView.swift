@@ -66,6 +66,7 @@ struct SessionContainerView: View {
       // modifier here would change this container's view identity and
       // remount every pane on a mode switch.
       .navigationSubtitle(isNousMode ? nousSubtitle : "")
+      .focusedSceneValue(\.browserPage, (sessionFocus.centerGroup?.selectedPane as? BrowserPane)?.model)
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(

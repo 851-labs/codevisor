@@ -149,7 +149,7 @@ export const launchManagedBrowser = async (
         uid: process.getuid?.(),
         containerized: linuxContainerRuntime()
       }),
-      ...(process.env.CODEVISOR_BROWSER_HEADLESS === "1" ? ["--headless=new"] : []),
+      ...(managedBrowserHeadless(process.platform, process.env) ? ["--headless=new"] : []),
       "about:blank"
     ],
     { stdio: "ignore" }
@@ -187,3 +187,10 @@ export const userChromiumIsRunning = (): boolean => {
       : ["google-chrome", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"]
   return names.some((name) => spawnSync("pgrep", ["-x", name], { stdio: "ignore" }).status === 0)
 }
+
+export const managedBrowserHeadless = (platform: string, env: NodeJS.ProcessEnv): boolean =>
+  env.CODEVISOR_BROWSER_HEADLESS === "1" ||
+  (env.CODEVISOR_BROWSER_HEADLESS !== "0" &&
+    platform === "linux" &&
+    !env.DISPLAY &&
+    !env.WAYLAND_DISPLAY)

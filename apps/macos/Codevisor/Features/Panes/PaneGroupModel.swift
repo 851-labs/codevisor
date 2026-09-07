@@ -7,6 +7,7 @@ import Foundation
 import Observation
 import SwiftUI
 import CodevisorCore
+import CodevisorUI
 
 @MainActor
 @Observable
@@ -123,7 +124,20 @@ final class PaneGroupModel: Identifiable {
       self.state = initial
       repository.save(initial, sessionId: sessionId, placement: placement)
     }
+    ChromiumAutomationBridge.shared.addGroup(self)
   }
+
+  func canHostBrowserAutomation(sessionId requested: String) -> Bool {
+    guard placement == .center, createBrowserTab != nil, let descriptor = state.panes.first,
+      makeContext(descriptor).machine.isLocal
+    else { return false }
+    return sessionId.uuidString.lowercased() == requested.lowercased()
+      || state.panes.contains { $0.chatSessionId?.uuidString.lowercased() == requested.lowercased() }
+  }
+
+  /// Browser automation creates workspace tabs, not another selection inside
+  /// this leaf. The store owns the workspace and publishes the new pane.
+  @ObservationIgnored var createBrowserTab: ((String) -> ChromiumBrowserModel?)?
 
   // MARK: - Live panes
 
@@ -133,6 +147,10 @@ final class PaneGroupModel: Identifiable {
     if let existing = live[descriptor.id] { return existing }
     let pane: any Pane
     switch descriptor.kind {
+    case .browser:
+      let browser = BrowserPane(context: makeContext(descriptor), descriptor: descriptor)
+      wireBrowser(browser)
+      pane = browser
     case .document:
       let document = MarkdownDocumentPane(context: makeContext(descriptor), descriptor: descriptor)
       document.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
@@ -163,6 +181,21 @@ final class PaneGroupModel: Identifiable {
     return pane
   }
 
+  func wireBrowser(_ browser: BrowserPane) {
+    browser.model.onClose = { [weak self, weak browser] in if let browser { self?.closePane(id: browser.id) } }
+    browser.model.onSelect = { [weak self, weak browser] in if let browser { self?.select(id: browser.id) } }
+    browser.model.onNavigate = { [weak self, weak browser] url, title in
+      guard let self, let browser,
+        let index = self.state.panes.firstIndex(where: { $0.id == browser.id }),
+        self.state.panes[index].browserURL != url || self.state.panes[index].name != title
+      else { return }
+      self.state.panes[index].browserURL = url
+      self.state.panes[index].name = title
+      self.persist()
+      self.onPaneChanged?(self.state.panes[index])
+    }
+  }
+
   /// Binds a ChatPane host to THIS group: content resolves from the LIVE
   /// descriptor on every render (a draft transmutes into its session's
   /// chat the moment first-send binds it). Called at creation AND on
@@ -188,7 +221,7 @@ final class PaneGroupModel: Identifiable {
           self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
-      case .terminal, .plugin, .document:
+      case .terminal, .plugin, .document, .browser:
         break
       }
     }
@@ -382,6 +415,8 @@ final class PaneGroupModel: Identifiable {
       // re-pointed at another plugin/pane type needs a fresh webview.
       return previous.pluginId != next.pluginId
         || previous.pluginPaneType != next.pluginPaneType
+    case (.browser, .browser):
+      return false
     case (.document, .document):
       return previous.documentPath != next.documentPath
     default:

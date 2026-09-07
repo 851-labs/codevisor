@@ -25,6 +25,8 @@
 	</dict>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Codevisor uses window sharing to show which apps Computer Use can see and control.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Websites opened in Codevisor use Bluetooth to connect to nearby devices and security keys with your permission.</string>
 	<!-- Public event-ingestion configuration; this token cannot read PostHog data. -->
 	<key>CodevisorPostHogProjectToken</key>
 	<string>$(CODEVISOR_POSTHOG_PROJECT_TOKEN)</string>

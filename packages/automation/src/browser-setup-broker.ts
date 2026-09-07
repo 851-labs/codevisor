@@ -106,13 +106,13 @@ export const makeBrowserSetupBroker = (
     await emit(current.sessionId, resolved)
     current.resolve({
       outcome: "answered",
-      answers: { browser_preference: { answers: ["Use Google Chrome"] } }
+      answers: { browser_preference: { answers: ["Use Codevisor Extension"] } }
     })
     return true
   }
 
   const remember = async (backend: BrowserBackend): Promise<BrowserBackend> => {
-    await run(db.setBrowserPreference(backend === "extension" ? "chrome" : "managed"))
+    await run(db.setBrowserPreference(backend === "extension" ? "chrome" : backend))
     return backend
   }
 
@@ -183,17 +183,22 @@ export const makeBrowserSetupBroker = (
         header: "Browser Use",
         question: "Which browser should I use?",
         options: [
+          {
+            label: "Use Built-in Browser",
+            description:
+              "Use a Codevisor browser pane on this machine, with independent Chromium as fallback."
+          },
           ...(chromeAvailable
             ? [
                 {
-                  label: "Use Google Chrome",
+                  label: "Use Codevisor Extension",
                   description:
                     "Use Chrome on the machine running this chat and share task-relevant browser data."
                 }
               ]
             : []),
           {
-            label: "Use Codevisor Browser",
+            label: "Use Chromium",
             description: "Use a separate browser managed by Codevisor."
           }
         ],
@@ -204,9 +209,11 @@ export const makeBrowserSetupBroker = (
       const answer = await choice.answer
       if (answer.outcome !== "answered") throw rejection(answer)
       switch (selectedAnswer(answer).label) {
-        case "Use Codevisor Browser":
+        case "Use Built-in Browser":
+          return remember("builtin")
+        case "Use Chromium":
           return remember("managed")
-        case "Use Google Chrome": {
+        case "Use Codevisor Extension": {
           const configured = await chromeSetup(sessionId)
           if (configured !== "back") return configured
           break
@@ -228,9 +235,9 @@ export const makeBrowserSetupBroker = (
       (session !== "extension" || provider.status().extensionConnected)
     )
       return session
-    if (requested === "managed") {
-      provider.setSessionBackend(sessionId, "managed")
-      return "managed"
+    if (requested === "managed" || requested === "builtin") {
+      provider.setSessionBackend(sessionId, requested)
+      return requested
     }
     const existing = active.get(sessionId)
     if (existing !== undefined) return existing
@@ -247,7 +254,11 @@ export const makeBrowserSetupBroker = (
         } else if (preference === "chrome" && provider.status().chromeAvailable) {
           const configured = await chromeSetup(sessionId)
           backend = configured === "back" ? await choose(sessionId) : configured
-        } else backend = await choose(sessionId)
+        } else if (preference === "chrome") {
+          throw new Error(
+            "Codevisor Extension requires Chrome on the server machine. Choose Built-in Browser or Chromium in Browser Use settings."
+          )
+        } else backend = "builtin"
       }
       provider.setSessionBackend(sessionId, backend)
       return backend

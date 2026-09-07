@@ -4,6 +4,7 @@ import { InstallCommand } from "../components/install-command"
 import { SiteNav } from "../components/site-nav"
 
 export const Route = createFileRoute("/")({
+  head: () => ({ meta: [{ name: "theme-color", content: "#000000" }] }),
   component: Home
 })
 

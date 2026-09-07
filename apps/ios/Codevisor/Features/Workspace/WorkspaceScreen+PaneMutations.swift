@@ -30,6 +30,14 @@ extension WorkspaceScreen {
     }
   }
 
+  func convertToBrowser(_ pane: PaneDescriptorState) {
+    guard let workspaceSessionId = activeSessionId else { return }
+    var state = panes
+    let converted = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: workspaceSessionId)
+    paneBinding.wrappedValue = state
+    if let converted { publishPane(converted) }
+  }
+
   func convertToTerminal(_ pane: PaneDescriptorState) {
     guard let workspaceSessionId = activeSessionId else { return }
     var state = panes
@@ -137,7 +145,7 @@ extension WorkspaceScreen {
       return lhs.chatSessionId != nil && lhs.chatSessionId == rhs.chatSessionId
     case .terminal:
       return lhs.terminalKey.caseInsensitiveCompare(rhs.terminalKey) == .orderedSame
-    case .newTab, .plugin, .document:
+    case .newTab, .plugin, .document, .browser:
       return false
     }
   }
