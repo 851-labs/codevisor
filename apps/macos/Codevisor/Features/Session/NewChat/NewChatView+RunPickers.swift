@@ -94,7 +94,16 @@ extension NewChatView {
       chipSymbol: selectedMachine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local)
     ) {
       Autocomplete.Picker("Machines", selection: selection, options: machines) { machine in
-        Autocomplete.Choice(machine.name, value: machine.id, systemImage: EntitySystemSymbol.machine(machine))
+        Autocomplete.Choice(machine.name, value: machine.id) {
+          if case .waiting = environment.machines.availability(for: machine.id) {
+            ProgressView().controlSize(.small)
+          } else {
+            Image(systemName: EntitySystemSymbol.machine(machine))
+          }
+        } label: {
+          Text(machine.name)
+        }
+        .disabled(environment.machines.availability(for: machine.id) != .ready)
       }
       .favorites($favoriteMachineIDs)
       .labelsHidden()

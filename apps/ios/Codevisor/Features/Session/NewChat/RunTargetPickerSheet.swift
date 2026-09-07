@@ -99,15 +99,23 @@ struct RunTargetPickerSheet: View {
 
   // MARK: - Steps
 
-  /// Machines are never disabled here: a machine with no projects opens an
-  /// empty project step whose add action creates the first one.
+  /// Unavailable machines stay visible and become selectable as background
+  /// reconnection succeeds. The picker itself always remains accessible.
   private var machineStep: some View {
     List {
       ForEach(machines) { machine in
+        let availability = environment.machines.availability(for: machine.id)
         NavigationLink(value: Route.projects(serverId: machine.id)) {
-          Label(machine.name, systemImage: EntitySystemSymbol.machine(machine))
-            .foregroundStyle(Color.primary)
+          HStack {
+            Label(machine.name, systemImage: EntitySystemSymbol.machine(machine))
+              .foregroundStyle(availability == .ready ? Color.primary : Color.secondary)
+            Spacer()
+            if case .waiting = availability {
+              ProgressView().controlSize(.small)
+            }
+          }
         }
+        .disabled(availability != .ready)
       }
     }
   }

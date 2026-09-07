@@ -336,13 +336,6 @@ struct NewChatView: View {
   /// Terminal setup errors use the pane's established top-banner position.
   @ViewBuilder
   private func statusLabel(_ controller: SessionController) -> some View {
-    ComposerServerAvailabilityView(
-      availability: controller.serverAvailability,
-      machineName: environment.machines.machine(for: controller.project.serverId)?.name ?? "this machine"
-    ) {
-      let serverId = controller.project.serverId
-      Task { await environment.machines.retryMachine(serverId) }
-    }
     if controller.isServerReady, let waitMessage = controller.serverWaitMessage {
       HStack {
         ShimmeringText(text: waitMessage)
