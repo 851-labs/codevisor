@@ -93,21 +93,10 @@ final class TerminalFocusController {
   /// focus on it (blurring a focused terminal) so typing can hand off to the
   /// composer.
   weak var transcriptView: NSView?
-  weak var paneGroup: PaneGroupModel?
-  /// The session screen's panel toggle (it owns the open/close + focus
-  /// handoff); group models across all split leaves relay ⌘J here.
-  var requestPanelToggle: (() -> Void)?
   /// The active center split: workspace tab/split commands pressed while
   /// the chat has focus route through its model to the container.
   weak var centerGroup: PaneGroupModel?
   private var typeToFocusMonitor: Any?
-
-  func apply(_ target: SessionFocusTarget) {
-    switch target {
-    case .composer: focusComposer()
-    case .terminal: focusTerminal()
-    }
-  }
 
   /// Composer text views by CHAT SESSION, so multi-chat workspaces can
   /// focus the right one (the single `composerTextView` is whichever
@@ -287,10 +276,6 @@ final class TerminalFocusController {
     view.window?.makeFirstResponder(view)
   }
 
-  func focusTerminal() {
-    paneGroup?.focusSelectedPane()
-  }
-
   /// Gives a passive pane (currently New Tab) neutral keyboard focus. The
   /// window becomes its own first responder, which cleanly resigns a hidden
   /// terminal or editor without routing keys into an unrelated chat.
@@ -339,9 +324,6 @@ final class TerminalFocusController {
       // Focused terminals (either group) route their own commands.
       !(window.firstResponder is Ghostty.SurfaceView)
     else { return false }
-    // ⌘J is deliberately excluded: with focus outside a terminal the
-    // SwiftUI menu command handles it, and claiming it here would
-    // double-fire the toggle.
     guard let command = ShortcutCatalog.paneCommand(for: event) else { return false }
     centerGroup.handleCommand(command)
     return true
@@ -544,46 +526,5 @@ final class TerminalFocusController {
     // many keyboard layouts; dead-key events may have no characters and
     // still need to reach NSTextView.
     return event.characters != " " && event.characters != "\u{00A0}"
-  }
-}
-
-/// A scene-scoped action that toggles the focused session's terminal. Published
-/// by the session screen and invoked by the ⌘J menu command so the shortcut
-/// works regardless of whether the composer or terminal currently has focus.
-struct TerminalToggleAction: Equatable {
-  let sessionId: UUID
-  let toggle: @MainActor () -> Void
-
-  static func == (lhs: TerminalToggleAction, rhs: TerminalToggleAction) -> Bool {
-    lhs.sessionId == rhs.sessionId
-  }
-}
-
-private struct TerminalToggleKey: FocusedValueKey {
-  typealias Value = TerminalToggleAction
-}
-
-extension FocusedValues {
-  var terminalToggle: TerminalToggleAction? {
-    get { self[TerminalToggleKey.self] }
-    set { self[TerminalToggleKey.self] = newValue }
-  }
-}
-
-/// The ⌘J command. Reads the focused session's toggle action and invokes it.
-struct TerminalCommands: Commands {
-  var body: some Commands {
-    CommandGroup(after: .toolbar) {
-      TerminalToggleMenuItem()
-    }
-  }
-}
-
-private struct TerminalToggleMenuItem: View {
-  @FocusedValue(\.terminalToggle) private var action
-
-  var body: some View {
-    ShortcutButton(.toggleBottomPanel) { action?.toggle() }
-      .disabled(action == nil)
   }
 }

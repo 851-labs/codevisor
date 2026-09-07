@@ -1,9 +1,9 @@
-# Session Terminal (libghostty)
+# Workspace Terminals (libghostty)
 
-Each session has a terminal panel docked at the bottom of the session page,
-scoped to the session's working directory.
+Terminals live in workspace tabs and split panes, alongside chats and plugins.
+The sidebar lists those tabs, and each terminal uses its workspace's directory.
 
-> **Status: live.** `GhosttyKit.xcframework` is built and linked, so the panel
+> **Status: live.** `GhosttyKit.xcframework` is built and linked, so each pane
 > runs a real libghostty terminal. The framework and runtime resources are
 > required build inputs; missing Ghostty assets should fail the build.
 
@@ -51,14 +51,13 @@ Linux buckets so the renderer and advertised capabilities stay in sync.
 
 ## What's implemented
 
-- **Panel** at the bottom that pushes the chat + composer up, with a drag-to-resize
-  handle and a header (title, cwd, close).
-- **Toolbar toggle** (top-right of the session top bar) and **⌘J** to toggle.
-- **Focus handoff**: ⌘J / toggle opens the panel and focuses the terminal; toggling
-  again closes it and returns focus to the composer.
-- **Per-session, persistent**: one terminal per session, cached in `SessionStore`.
-  The surface (and its shell/scrollback) survives closing the panel and navigating
-  to other sessions and back.
+- **Workspace tabs and splits:** terminal panes share the workspace layout with
+  chats, plugins, and documents. Open a New Tab and choose a terminal.
+- **Focus routing:** selecting a terminal focuses its surface. Selecting a chat
+  returns focus to that chat's composer; tab and split shortcuts follow the
+  active pane.
+- **Persistent terminal sessions:** pane models retain live surfaces while tabs
+  and workspaces change, and server-owned shells can be reattached.
 
 The terminal backend is selected at launch via `TerminalRuntime`, and the only
 supported backend is the real libghostty surface.
@@ -113,7 +112,6 @@ macOS SDK (or once toolchain support lands), then drop the xcframework in.
 
 ## Notes / future work
 
-- One terminal per session for now.
 - Not vendored (candidates for later): `SurfaceScrollView` (native scrollbar
   overlay), child-exited message bar, URL-hover banner, terminal inspector UI.
 - Bundle `codevisor-terminal-proxy` inside the .app so the terminal works without

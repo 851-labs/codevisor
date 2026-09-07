@@ -37,21 +37,7 @@ extension SessionContainerView {
     return configuredCenterModel(leafId: leafId)
   }
 
-  func workspaceTabDescriptor(_ tab: WorkspaceTab) -> PaneDescriptorState? {
-    configuredCenterModel(leafId: tab.activeLeafId).state.selectedPane
-      ?? tab.root.group(id: tab.activeLeafId)?.selectedPane
-      ?? tab.root.allGroups.first?.state.selectedPane
-  }
-
-  func workspaceTabTitle(_ tab: WorkspaceTab) -> String {
-    if let customTitle = tab.customTitle {
-      return customTitle
-    }
-    guard let descriptor = workspaceTabDescriptor(tab) else { return "New Tab" }
-    return paneTitle(descriptor)
-  }
-
-  /// A sidebar-originated (Nous) tab action for this workspace.
+  /// A sidebar-originated tab action for this workspace.
   func performCenterTabRequest(_ request: CenterTabRequest) {
     switch request.action {
     case let .select(tabId): selectCenterTab(tabId)
@@ -126,18 +112,6 @@ extension SessionContainerView {
     // request into its picker once the page registers.
     let model = configuredCenterModel(leafId: tab.activeLeafId)
     DispatchQueue.main.async { model.focusSelectedPane() }
-  }
-
-  func moveCenterTab(_ sourceId: UUID, _ targetId: UUID) {
-    var workspace = store.workspace(for: session, project: project)
-    guard sourceId != targetId,
-      let source = workspace.centerTabs.firstIndex(where: { $0.id == sourceId }),
-      let target = workspace.centerTabs.firstIndex(where: { $0.id == targetId })
-    else { return }
-    let tab = workspace.centerTabs.remove(at: source)
-    workspace.centerTabs.insert(tab, at: target)
-    environment.workspaces.save(workspace)
-    workspaceRevision += 1
   }
 
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {

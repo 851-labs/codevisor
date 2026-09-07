@@ -35,7 +35,6 @@ extension ClientStorageBootstrap {
 
   private static let boolPreferenceKeys: Set<String> = [
     "sidebar.collapsed",
-    "sidebar.showArchived",
     "sidebar.archivedExpanded",
     "ios.onboarding.dismissed",
   ]

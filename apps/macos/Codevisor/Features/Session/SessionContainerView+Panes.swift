@@ -32,7 +32,6 @@ extension SessionContainerView {
     // since switching tabs remounts the chat and the composer registers
     // a tick later. ONLY chat panes: any other selected kind (New Tab
     // placeholder) must not steal focus into some arbitrary composer.
-    // ⌘J relays to the session screen's toggle.
     model.requestComposerFocus = { [weak model] in
       guard let selected = model?.state.selectedPane, selected.kind == .chat else { return }
       if let chatId = selected.chatSessionId {
@@ -42,7 +41,6 @@ extension SessionContainerView {
       }
     }
     model.requestBackgroundFocus = { sessionFocus.focusPaneBackground() }
-    model.requestToggle = { sessionFocus.requestPanelToggle?() }
     model.onPaneClosed = { descriptor in
       rememberClosedPane(descriptor, leafId: leafId)
       if descriptor.kind == .chat {

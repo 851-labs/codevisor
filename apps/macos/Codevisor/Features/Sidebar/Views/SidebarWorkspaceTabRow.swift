@@ -2,7 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A workspace tab as a sidebar row (Nous mode): the tab's kind glyph — a
+/// A workspace tab as a sidebar row: the tab's kind glyph — a
 /// chat tab borrows the chat row's live status icon — its title, and a
 /// hover close button.
 struct SidebarWorkspaceTabRow: View {
@@ -22,7 +22,6 @@ struct SidebarWorkspaceTabRow: View {
   let isSelected: Bool
   let isReordering: Bool
   let titleFont: Font
-  let hierarchyIndent: CGFloat
   let onActivate: () -> Void
   let onClose: () -> Void
   /// Nil for pane rows, which have no title of their own to pin.
@@ -54,7 +53,6 @@ struct SidebarWorkspaceTabRow: View {
         }
       }
       .padding(.horizontal, 8)
-      .padding(.leading, hierarchyIndent)
       .padding(.vertical, 5)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
@@ -102,9 +100,21 @@ struct SidebarWorkspaceTabRow: View {
       .frame(width: 14, height: 14)
       .frame(width: 18)
     } else {
-      Image(systemName: PaneTab.iconName(for: kind, isAgentOwned: isAgentOwned))
+      Image(systemName: iconName)
         .frame(width: 18)
         .foregroundStyle(.secondary)
     }
   }
+
+  private var iconName: String {
+    switch kind {
+    case .chat: "text.bubble"
+    case .terminal: isAgentOwned ? "server.rack" : "terminal"
+    case .newTab: "square.dashed"
+    case .plugin: "puzzlepiece.extension"
+    case .document: "doc.richtext"
+    case .browser: "globe"
+    }
+  }
+
 }

@@ -50,14 +50,12 @@ extension SessionContainerView {
       closeActiveLeaf()
     case .reopenClosedPane:
       reopenClosedPane()
-    case .togglePanel:
-      return false
     }
     return true
   }
 
   func selectRelativeCenterTab(offset: Int) {
-    if isNousMode, store.nousStepHandler?(offset) == true { return }
+    if store.sidebarTabStepHandler?(offset) == true { return }
     let workspace = store.workspace(for: session, project: project)
     guard workspace.centerTabs.count > 1,
       let index = workspace.selectedCenterTabIndex

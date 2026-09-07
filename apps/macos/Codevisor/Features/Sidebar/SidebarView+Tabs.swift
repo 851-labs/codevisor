@@ -2,23 +2,18 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Nous (prototype): a workspace's top tabs ARE its sidebar rows. Each
-/// expanded workspace lists its `centerTabs` — chat, terminal, plugin, or
-/// the New Tab placeholder — in place of the in-content tab strip, so ⌘T
-/// inside a workspace adds a row here and the strip never renders.
+/// A workspace's top tabs are its sidebar rows. Each workspace
+/// lists its chats, terminals, plugins, and New Tab
+/// placeholders. ⌘T adds a tab row to the current workspace.
 ///
 /// The sidebar only *asks* for tab changes. Selecting a chat tab routes
 /// through its chat like any chat row; anything else rides the workspace's
 /// routing chat and hands the mounted container a `CenterTabRequest` that
 /// names the tab (see `SessionContainerView`).
 extension SidebarView {
-  var isNousMode: Bool { organization == .nous }
-
-  /// Every tab row's identity in sidebar order: the reflow animation value,
-  /// and how additions reveal their workspace.
-  var nousTabIDs: [UUID] {
-    guard isNousMode else { return [] }
-    return workspaceItems.flatMap { item in
+  /// Every tab row's identity in sidebar order, driving reflow animations.
+  var workspaceTabRowIDs: [UUID] {
+    workspaceItems.flatMap { item in
       item.workspace.centerTabs.flatMap { tab in [tab.id] + tab.root.allGroups.map(\.id) }
     }
   }
@@ -26,7 +21,7 @@ extension SidebarView {
   // MARK: - Rows
 
   @ViewBuilder
-  func nousTabRows(_ item: SidebarWorkspaceListItem) -> some View {
+  func workspaceTabRows(_ item: SidebarWorkspaceListItem) -> some View {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
     ForEach(workspace.centerTabs) { tab in
@@ -34,7 +29,7 @@ extension SidebarView {
       // level (no grouping row): the active pane carries the selection.
       if tab.root.allGroups.count > 1 {
         ForEach(tab.root.allGroups, id: \.id) { leaf in
-          nousPaneRow(
+          workspacePaneRow(
             leafId: leaf.id,
             state: leaf.state,
             tab: tab,
@@ -44,13 +39,13 @@ extension SidebarView {
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
         }
       } else {
-        nousTabRow(tab, in: item, routesSelection: routesSelection)
+        workspaceTabRow(tab, in: item, routesSelection: routesSelection)
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
     }
   }
 
-  private func nousPaneRow(
+  private func workspacePaneRow(
     leafId: UUID,
     state: PaneGroupState,
     tab: WorkspaceTab,
@@ -58,10 +53,10 @@ extension SidebarView {
     routesSelection: Bool
   ) -> some View {
     let workspace = item.workspace
-    let descriptor = nousLeafDescriptor(leafId: leafId, persisted: state, in: workspace)
-    let chatSession = descriptor.flatMap { nousChatSession($0, serverId: workspace.serverId) }
+    let descriptor = leafDescriptor(leafId: leafId, persisted: state, in: workspace)
+    let chatSession = descriptor.flatMap { sessionForPane($0, serverId: workspace.serverId) }
     return SidebarWorkspaceTabRow(
-      title: nousPaneTitle(descriptor, chatSession: chatSession),
+      title: paneTitle(descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
       isAgentOwned: descriptor?.attachOnly ?? false,
       pluginId: descriptor?.pluginId,
@@ -74,23 +69,22 @@ extension SidebarView {
         && tab.activeLeafId == leafId,
       isReordering: isReordering,
       titleFont: itemTitleFont,
-      hierarchyIndent: hierarchyIndent,
-      onActivate: { activateNousLeaf(leafId, state: state, in: item) },
-      onClose: { requestNousTabAction(.closeLeaf(leafId), in: item) },
+      onActivate: { activateLeaf(leafId, state: state, in: item) },
+      onClose: { requestTabAction(.closeLeaf(leafId), in: item) },
       closeTitle: "Close Pane"
     )
   }
 
-  private func nousTabRow(
+  private func workspaceTabRow(
     _ tab: WorkspaceTab,
     in item: SidebarWorkspaceListItem,
     routesSelection: Bool
   ) -> some View {
     let workspace = item.workspace
-    let descriptor = nousTabDescriptor(tab, in: workspace)
-    let chatSession = descriptor.flatMap { nousChatSession($0, serverId: workspace.serverId) }
+    let descriptor = tabDescriptor(tab, in: workspace)
+    let chatSession = descriptor.flatMap { sessionForPane($0, serverId: workspace.serverId) }
     return SidebarWorkspaceTabRow(
-      title: nousTabTitle(tab, descriptor: descriptor, chatSession: chatSession),
+      title: tabTitle(tab, descriptor: descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
       isAgentOwned: descriptor?.attachOnly ?? false,
       pluginId: descriptor?.pluginId,
@@ -102,12 +96,11 @@ extension SidebarView {
       isSelected: routesSelection && workspace.selectedCenterTabId == tab.id,
       isReordering: isReordering,
       titleFont: itemTitleFont,
-      hierarchyIndent: hierarchyIndent,
-      onActivate: { activateNousTab(tab, in: item) },
-      onClose: { closeNousTab(tab, in: item) },
+      onActivate: { activateTab(tab, in: item) },
+      onClose: { closeTab(tab, in: item) },
       onRename: {
-        nousTabRenameTitle = nousTabTitle(tab, descriptor: descriptor, chatSession: chatSession)
-        renamingNousTab = NousTabRenameRequest(workspaceId: workspace.id, tabId: tab.id)
+        tabRenameTitle = tabTitle(tab, descriptor: descriptor, chatSession: chatSession)
+        renamingTab = SidebarTabRenameRequest(workspaceId: workspace.id, tabId: tab.id)
       }
     )
   }
@@ -115,13 +108,13 @@ extension SidebarView {
   /// The pane that names the tab: its active leaf's selected pane. A
   /// mounted leaf's live model runs ahead of the repository mid-edit (a New
   /// Tab converting into a terminal), so prefer it when there is one.
-  private func nousTabDescriptor(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneDescriptorState? {
-    nousLeafDescriptor(
+  private func tabDescriptor(_ tab: WorkspaceTab, in workspace: Workspace) -> PaneDescriptorState? {
+    leafDescriptor(
       leafId: tab.activeLeafId, persisted: tab.root.group(id: tab.activeLeafId), in: workspace
     ) ?? tab.root.allGroups.first?.state.selectedPane
   }
 
-  private func nousLeafDescriptor(
+  private func leafDescriptor(
     leafId: UUID,
     persisted: PaneGroupState?,
     in workspace: Workspace
@@ -130,7 +123,7 @@ extension SidebarView {
     return store?.centerLeafGroups[liveKey]?.state.selectedPane ?? persisted?.selectedPane
   }
 
-  private func nousPaneTitle(_ descriptor: PaneDescriptorState?, chatSession: ChatSession?) -> String {
+  private func paneTitle(_ descriptor: PaneDescriptorState?, chatSession: ChatSession?) -> String {
     guard let descriptor else { return "New Tab" }
     if descriptor.kind == .chat { return chatSession?.title ?? descriptor.name }
     if descriptor.kind == .browser, let title = store?.localBrowserTitle(paneId: descriptor.id) {
@@ -139,24 +132,24 @@ extension SidebarView {
     return descriptor.name
   }
 
-  private func nousTabTitle(
+  private func tabTitle(
     _ tab: WorkspaceTab,
     descriptor: PaneDescriptorState?,
     chatSession: ChatSession?
   ) -> String {
     if let customTitle = tab.customTitle { return customTitle }
     // Chat tabs follow the session's LIVE title (auto-titles, renames).
-    return nousPaneTitle(descriptor, chatSession: chatSession)
+    return paneTitle(descriptor, chatSession: chatSession)
   }
 
-  private func nousChatSession(_ descriptor: PaneDescriptorState, serverId: String) -> ChatSession? {
+  private func sessionForPane(_ descriptor: PaneDescriptorState, serverId: String) -> ChatSession? {
     guard descriptor.kind == .chat, let id = descriptor.chatSessionId else { return nil }
     return list.sessions.first { $0.serverId == serverId && $0.id == id }
   }
 
   /// The live chat a tab can route through: its selected pane's chat first,
   /// else any chat pane inside the tab's splits.
-  private func nousRoutableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
+  private func routableChat(in tab: WorkspaceTab, serverId: String) -> ChatSession? {
     let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
     let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
     for pane in panes where pane.kind == .chat {
@@ -172,52 +165,52 @@ extension SidebarView {
 
   // MARK: - Actions
 
-  func activateNousTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
+  func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .select(tab.id))
-    if let chat = nousRoutableChat(in: tab, serverId: workspace.serverId) {
+    if let chat = routableChat(in: tab, serverId: workspace.serverId) {
       activateSession(chat)
-    } else if !routesSelectedSession(workspace), let routing = item.primarySession {
+    } else if !routesSelectedSession(workspace), let routing = item.routingSession {
       activateSession(routing)
     }
   }
 
   /// A pane row: name the leaf, and route through its own chat when it
   /// has one so the sidebar selection lands right immediately.
-  func activateNousLeaf(_ leafId: UUID, state: PaneGroupState, in item: SidebarWorkspaceListItem) {
+  func activateLeaf(_ leafId: UUID, state: PaneGroupState, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .selectLeaf(leafId))
-    if let pane = state.selectedPane, let chat = nousChatSession(pane, serverId: workspace.serverId),
+    if let pane = state.selectedPane, let chat = sessionForPane(pane, serverId: workspace.serverId),
       !chat.isArchived
     {
       activateSession(chat)
-    } else if !routesSelectedSession(workspace), let routing = item.primarySession {
+    } else if !routesSelectedSession(workspace), let routing = item.routingSession {
       activateSession(routing)
     }
   }
 
-  func closeNousTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
-    requestNousTabAction(.close(tab.id), in: item)
+  func closeTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
+    requestTabAction(.close(tab.id), in: item)
   }
 
-  func addNousTab(in item: SidebarWorkspaceListItem) {
-    requestNousTabAction(.new, in: item)
+  func addTab(in item: SidebarWorkspaceListItem) {
+    requestTabAction(.new, in: item)
   }
 
   /// Closing and adding run the container's machinery, so a workspace that
   /// is not on screen is routed to first (its container consumes the
   /// request as it mounts).
-  private func requestNousTabAction(_ action: CenterTabRequest.Action, in item: SidebarWorkspaceListItem) {
+  private func requestTabAction(_ action: CenterTabRequest.Action, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: action)
-    if !routesSelectedSession(workspace), let routing = item.primarySession {
+    if !routesSelectedSession(workspace), let routing = item.routingSession {
       activateSession(routing)
     }
   }
 
   /// A rename is a plain layout write (no pane machinery), so the sidebar
   /// applies it directly.
-  func renameNousTab(_ request: NousTabRenameRequest, to title: String) {
+  func renameTab(_ request: SidebarTabRenameRequest, to title: String) {
     guard var workspace = environment.workspaces.workspace(id: request.workspaceId),
       let index = workspace.centerTabs.firstIndex(where: { $0.id == request.tabId })
     else { return }
@@ -232,7 +225,7 @@ extension SidebarView {
   // MARK: - Keyboard stepping
 
   /// One sidebar row: a single-pane tab, or one pane of a split tab.
-  private struct NousEntry {
+  private struct SidebarTabEntry {
     let item: SidebarWorkspaceListItem
     let tab: WorkspaceTab
     /// Nil for a single-pane tab (the tab itself is the row).
@@ -240,12 +233,12 @@ extension SidebarView {
   }
 
   /// The flat list exactly as the sidebar renders it, across workspaces.
-  private var nousEntries: [NousEntry] {
+  private var tabEntries: [SidebarTabEntry] {
     workspaceItems.flatMap { item in
-      item.workspace.centerTabs.flatMap { tab -> [NousEntry] in
+      item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
         let groups = tab.root.allGroups
-        guard groups.count > 1 else { return [NousEntry(item: item, tab: tab, leaf: nil)] }
-        return groups.map { NousEntry(item: item, tab: tab, leaf: ($0.id, $0.state)) }
+        guard groups.count > 1 else { return [SidebarTabEntry(item: item, tab: tab, leaf: nil)] }
+        return groups.map { SidebarTabEntry(item: item, tab: tab, leaf: ($0.id, $0.state)) }
       }
     }
   }
@@ -254,9 +247,8 @@ extension SidebarView {
   /// workspace boundaries but stopping at either end (no wrap). False when
   /// the routed workspace is not listed (filtered out), letting the
   /// container cycle locally.
-  func stepNous(_ offset: Int) -> Bool {
-    guard isNousMode else { return false }
-    let entries = nousEntries
+  func stepSidebarTab(_ offset: Int) -> Bool {
+    let entries = tabEntries
     guard !entries.isEmpty,
       let current = entries.firstIndex(where: { entry in
         routesSelectedSession(entry.item.workspace)
@@ -269,57 +261,28 @@ extension SidebarView {
     // container must not fall back to wrapping within its own tabs.
     guard entries.indices.contains(targetIndex) else { return true }
     let target = entries[targetIndex]
-    withAnimation(.snappy(duration: 0.28)) {
-      expandedWorkspaces.insert(target.item.workspace.id)
-    }
     if let leaf = target.leaf {
-      activateNousLeaf(leaf.id, state: leaf.state, in: target.item)
+      activateLeaf(leaf.id, state: leaf.state, in: target.item)
     } else {
-      activateNousTab(target.tab, in: target.item)
+      activateTab(target.tab, in: target.item)
     }
     return true
   }
 
-  // MARK: - Disclosure
-
-  /// Entering Nous opens the workspace the current chat lives in: the
-  /// mode exists to put that workspace's tabs in view.
-  func revealRoutedNousWorkspace() {
-    guard isNousMode, case let .session(_, sessionId) = selection,
-      let workspaceId = environment.workspaces.workspaceId(forSession: sessionId)
-    else { return }
-    withAnimation(.snappy(duration: 0.28)) {
-      expandedWorkspaces.insert(workspaceId)
-    }
-  }
-
-  /// Expand only for additions — not ordinary selection changes — so
-  /// navigating among tabs never overrides the user's disclosure choices.
-  func revealNousTabWorkspaces(added addedTabIDs: Set<UUID>) {
-    guard isNousMode, !addedTabIDs.isEmpty else { return }
-    let workspaceIDs =
-      workspaceItems
-      .filter { item in item.workspace.centerTabs.contains { addedTabIDs.contains($0.id) } }
-      .map(\.workspace.id)
-    guard !workspaceIDs.isEmpty else { return }
-    withAnimation(.snappy(duration: 0.28)) {
-      expandedWorkspaces.formUnion(workspaceIDs)
-    }
-  }
 }
 
 /// The tab a rename alert is editing.
-struct NousTabRenameRequest: Identifiable, Equatable {
+struct SidebarTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
   var id: UUID { tabId }
 }
 
-/// The Nous tab rename alert, chained after the sidebar's other alerts.
-struct NousTabRenameAlert: ViewModifier {
-  @Binding var request: NousTabRenameRequest?
+/// The tab rename alert, chained after the sidebar's other alerts.
+struct SidebarTabRenameAlert: ViewModifier {
+  @Binding var request: SidebarTabRenameRequest?
   @Binding var title: String
-  let onRename: (NousTabRenameRequest, String) -> Void
+  let onRename: (SidebarTabRenameRequest, String) -> Void
 
   func body(content: Content) -> some View {
     content

@@ -13,13 +13,9 @@ import CodevisorUI
 @Observable
 final class PaneGroupModel: Identifiable {
   let sessionId: UUID
-  /// Which of the session's groups this is: the center group hosting the
-  /// chat, or the ⌘J bottom panel.
+  /// A center leaf or the persisted group of background-task terminals.
   let placement: PaneGroupPlacement
   var state: PaneGroupState
-  /// Whether keyboard focus is inside one of this group's panes (a focused
-  /// terminal surface). Drives the bar's ⌘N shortcut hints.
-  private(set) var hasFocusedPane = false
   /// Builds a chat pane's content from its LIVE descriptor (drafts render
   /// the new-chat composer; established chats their session's ChatScreen).
   /// Wired by the container at model creation — before anything renders —
@@ -27,20 +23,16 @@ final class PaneGroupModel: Identifiable {
   /// where observable mutation would be illegal).
   @ObservationIgnored var chatContent: ((PaneDescriptorState) -> AnyView)?
 
-  @ObservationIgnored private var focusedPaneIds: Set<UUID> = []
   @ObservationIgnored var live: [UUID: any Pane] = [:]
   @ObservationIgnored private let repository: any PaneGroupRepository
   @ObservationIgnored private let makeContext: (PaneDescriptorState) -> PaneContext
   @ObservationIgnored let pluginIconClient: (any CodevisorServerClienting)?
   @ObservationIgnored let pluginIconCacheNamespace: String
-  /// Set by the session screen: performs the panel toggle with proper focus
-  /// handoff (the screen owns the composer/terminal focus controller).
-  @ObservationIgnored var requestToggle: (() -> Void)?
-  /// Set by the session screen: moves keyboard focus to the composer (used
+  /// Set by the workspace container: moves keyboard focus to the composer (used
   /// when closing the last tab collapses the group, and as the chat pane's
   /// focus target).
   @ObservationIgnored var requestComposerFocus: (() -> Void)?
-  /// Set by the session screen: clears focus from another pane without
+  /// Set by the workspace container: clears focus from another pane without
   /// inventing an input target for content that has none (currently the
   /// New Tab placeholder). This keeps a hidden terminal from remaining the
   /// first responder after its tab is replaced by a passive page.
@@ -83,9 +75,6 @@ final class PaneGroupModel: Identifiable {
   /// IS a dissolve, and in the workspace's last group it would just
   /// respawn. Nil (previews, bottom panel) means no.
   @ObservationIgnored var canDissolve: (() -> Bool)?
-  /// This group's identity for cross-group drops (bottom panel or a
-  /// center-tree leaf). Set by the store at creation; nil in previews.
-  @ObservationIgnored var dropRef: PaneGroupRef?
   /// Fired whenever the user acts IN this group (tab click, pane focus,
   /// new tab, adopted drop) — the container tracks the workspace's ACTIVE
   /// group with it, which is where keyboard tab commands route.
@@ -94,8 +83,6 @@ final class PaneGroupModel: Identifiable {
   /// container. Returning true means the command was consumed. This is
   /// ignored for bottom-panel models so their shortcuts always remain local.
   @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
-  /// Debounces height persistence during drags (state itself updates live).
-  @ObservationIgnored private var pendingHeightSave: Task<Void, Never>?
 
   init(
     sessionId: UUID,
@@ -115,7 +102,7 @@ final class PaneGroupModel: Identifiable {
       self.state = stored
     } else {
       // Persist immediately so both placements have repository state.
-      // Bottom starts empty; its first terminal is created by toggle().
+      // Background-task groups start empty; synchronization supplies terminals.
       let initial: PaneGroupState =
         switch placement {
         case .bottom: PaneGroupState()
@@ -175,7 +162,7 @@ final class PaneGroupModel: Identifiable {
     }
     pane.onGroupCommand = { [weak self] command in self?.handleCommand(command) }
     pane.onFocusChanged = { [weak self] focused in
-      self?.paneFocusChanged(id: descriptor.id, focused: focused)
+      self?.paneFocusChanged(focused: focused)
     }
     live[descriptor.id] = pane
     return pane
@@ -234,24 +221,8 @@ final class PaneGroupModel: Identifiable {
     }
   }
 
-  /// The live chat pane, if this group hosts one (center groups do). Used
-  /// by the session screen to provide the chat's content.
-  var chatPane: ChatPane? {
-    guard let descriptor = state.panes.first(where: { $0.kind == .chat }) else { return nil }
-    return pane(for: descriptor) as? ChatPane
-  }
-
-  func paneFocusChanged(id: UUID, focused: Bool) {
-    if focused {
-      focusedPaneIds.insert(id)
-      onActivated?()
-    } else {
-      focusedPaneIds.remove(id)
-    }
-    let hasFocus = !focusedPaneIds.isEmpty
-    if hasFocusedPane != hasFocus {
-      hasFocusedPane = hasFocus
-    }
+  func paneFocusChanged(focused: Bool) {
+    if focused { onActivated?() }
   }
 
   /// Keyboard shortcuts forwarded from a focused pane. Center leaves first
@@ -286,8 +257,6 @@ final class PaneGroupModel: Identifiable {
       DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
     case .split, .focusSplit, .previousSplit, .nextSplit, .reopenClosedPane:
       return
-    case .togglePanel:
-      requestToggle?()
     case .closeTab:
       guard let selected = state.selectedPane,
         canClose(id: selected.id)
@@ -361,23 +330,6 @@ final class PaneGroupModel: Identifiable {
     selectedPane?.focus()
   }
 
-  func setHeight(_ height: CGFloat, isFinal: Bool = false) {
-    state.setHeight(height)
-    if isFinal {
-      pendingHeightSave?.cancel()
-      pendingHeightSave = nil
-      persist()
-    } else {
-      // Debounce: one save shortly after the drag settles, not per tick.
-      pendingHeightSave?.cancel()
-      pendingHeightSave = Task { [weak self] in
-        try? await Task.sleep(for: .milliseconds(400))
-        guard !Task.isCancelled else { return }
-        self?.persist()
-      }
-    }
-  }
-
   /// App-side teardown for all live panes (backing shells survive on the
   /// server — app-quit semantics).
   func detachAll() {
@@ -395,7 +347,6 @@ final class PaneGroupModel: Identifiable {
     guard let pane = live.removeValue(forKey: id) else { return }
     pane.visibilityChanged(false)
     pane.detach()
-    paneFocusChanged(id: id, focused: false)
   }
 
   static func requiresNewLivePane(

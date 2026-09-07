@@ -129,7 +129,6 @@ struct CodevisorApp: App {
         AppUpdateCommands(environment: environment)
         FileCommands()
         MachineCommands(machines: environment.machines)
-        TerminalCommands()
         WorkspaceLayoutCommands()
         BrowserCommands()
         DebugOverlayCommands()

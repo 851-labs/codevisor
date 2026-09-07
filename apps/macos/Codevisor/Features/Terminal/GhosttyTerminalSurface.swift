@@ -101,12 +101,9 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   /// can go stale and would eat composer/menu key equivalents.
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     if event.type == .keyDown, window?.firstResponder === self, let onPaneCommand,
-      // ⌘J is claimed here rather than left to the menu command: the
-      // SwiftUI focused-scene value backing it is not reliably published
-      // while an AppKit view is first responder. ⌘W likewise closes the
-      // selected tab while a pane is focused; with focus elsewhere the
-      // window's normal ⌘W applies.
-      let command = ShortcutCatalog.paneCommand(for: event, includingPanelToggle: true)
+      // A focused terminal routes workspace commands to its pane model;
+      // all other key equivalents continue through Ghostty.
+      let command = ShortcutCatalog.paneCommand(for: event)
     {
       onPaneCommand(command)
       return true

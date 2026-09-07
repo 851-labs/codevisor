@@ -1,14 +1,10 @@
 import CodevisorCore
-import Foundation
 
-/// A workspace row in either workspace-based mode. Its tabs and primary
-/// session/project are resolved from the live session list so status and
-/// activation reuse the session machinery.
+/// A workspace and the chat that can route into its tabs. The routing chat
+/// may be archived when the workspace contains only non-chat content.
 struct SidebarWorkspaceListItem: Identifiable {
   let workspace: Workspace
-  let sessions: [ChatSession]
-  let primarySession: ChatSession?
-  let project: Project?
+  let routingSession: ChatSession?
 
   var id: SidebarFleetItemID { .workspace(workspace) }
 }

@@ -200,7 +200,6 @@ extension PaneGroupModel {
       ? state.replacePaneWithNewTab(id: id)
       : nil
     if replacement != nil {
-      paneFocusChanged(id: id, focused: false)
       requestBackgroundFocus?()
     } else if state.panes.count == 1 {
       // Closing the last tab also collapses the group. Suppress the
@@ -237,26 +236,6 @@ extension PaneGroupModel {
     selectedPane?.visibilityChanged(true)
   }
 
-  /// Toggles the group's content. Opening with zero panes creates
-  /// "Terminal 1". Returns the area that should receive focus.
-  @discardableResult
-  func toggle() -> SessionFocusTarget {
-    if !state.isVisible && state.panes.isEmpty {
-      addTerminalPane()
-      return .terminal
-    }
-    let target = state.toggle()
-    persist()
-    selectedPane?.visibilityChanged(state.isVisible)
-    return target
-  }
-
-  /// Drag-to-reorder: moves the dragged pane to the hovered tab's slot.
-  func movePane(id: UUID, onto targetId: UUID) {
-    state.movePane(id: id, onto: targetId)
-    persist()
-  }
-
   // MARK: - Cross-group transfer
 
   /// Removes a pane for adoption by another group, WITHOUT firing willDelete
@@ -269,7 +248,6 @@ extension PaneGroupModel {
   func extractPane(id: UUID) -> (descriptor: PaneDescriptorState, live: (any Pane)?)? {
     guard let descriptor = state.panes.first(where: { $0.id == id }) else { return nil }
     let livePane = live.removeValue(forKey: id)
-    paneFocusChanged(id: id, focused: false)
     state.removePane(id: id)
     persist()
     if state.isVisible, let selected = selectedPane {
@@ -293,7 +271,7 @@ extension PaneGroupModel {
     if let livePane {
       livePane.onGroupCommand = { [weak self] command in self?.handleCommand(command) }
       livePane.onFocusChanged = { [weak self] focused in
-        self?.paneFocusChanged(id: descriptor.id, focused: focused)
+        self?.paneFocusChanged(focused: focused)
       }
       // A carried ChatPane host still resolves content through its
       // OLD group's model — rebind it here or it renders nothing.

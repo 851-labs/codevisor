@@ -3,7 +3,7 @@ import CodevisorCore
 import CodevisorUI
 
 /// Hosts an already-resolved session controller below the native toolbar
-/// (which carries the editable workspace name).
+/// (which carries the editable tab name).
 struct SessionContainerView: View {
   let session: ChatSession
   let project: Project
@@ -13,7 +13,7 @@ struct SessionContainerView: View {
   let controller: SessionController
   /// Fired when the user's focus lands in a DIFFERENT chat of this
   /// workspace (composer/transcript click, chat tab) — the sidebar
-  /// selection follows, keeping the by-chat list in sync with focus.
+  /// selection follows, keeping its tab rows in sync with focus.
   /// Non-chat focus (terminals) fires nothing: the last chat stays.
   var onFocusedChatChanged: ((UUID) -> Void)? = nil
   @Environment(AppEnvironment.self) var environment
@@ -33,11 +33,11 @@ struct SessionContainerView: View {
   @State var liveCenterTree: SplitNode?
 
   /// The ACTIVE center group (the one the user last acted in): keyboard
-  /// tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→) route here and its bar shows the
-  /// ⌘-hints. Defaults to the primary (chat) leaf.
+  /// tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→) route here. Defaults to the
+  /// primary chat leaf.
   @State var activeLeafId: UUID?
   /// Repository writes are intentionally non-observable. Structural tab
-  /// changes bump this token so the strip and selected tree re-read truth.
+  /// changes bump this token so the sidebar and selected tree re-read truth.
   @State var workspaceRevision = 0
   /// Suppresses per-leaf dissolve while a whole top tab is closing.
   @State var closingCenterTabId: UUID?
@@ -47,25 +47,11 @@ struct SessionContainerView: View {
   /// The chat this container last published as focused, so `onDisappear`
   /// releases only its own focus (see the modifier in `body`).
   @State var publishedFocusCandidate: UUID?
-  @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
-  private var sidebarOrganizationRaw
-
-  /// Nous: the sidebar lists this workspace's tabs, so the in-content
-  /// strip stays hidden and sidebar clicks drive tab selection here.
-  var isNousMode: Bool {
-    SidebarOrganization(rawValue: sidebarOrganizationRaw) == .nous
-  }
 
   var body: some View {
     contentColumn
-      // The NATIVE toolbar names the workspace — editable inline, like a
-      // document title. Edits pin the name (it stops tracking the primary
-      // chat's title).
-      .navigationTitle(isNousMode ? nousTabTitle : workspaceName)
-      // Always applied (an empty subtitle renders nothing): a conditional
-      // modifier here would change this container's view identity and
-      // remount every pane on a mode switch.
-      .navigationSubtitle(isNousMode ? nousSubtitle : "")
+      .navigationTitle(tabTitle)
+      .navigationSubtitle(workspaceSubtitle)
       .focusedSceneValue(\.browserPage, (sessionFocus.centerGroup?.selectedPane as? BrowserPane)?.model)
       .focusedSceneValue(
         \.workspaceLayoutActions,
@@ -86,13 +72,8 @@ struct SessionContainerView: View {
           focus: focusAdjacentLeaf
         )
       )
-      // Background tasks that stream through a server-owned terminal get a
-      // tab in the bottom panel — a dev server is something running, not
-      // something a chat is waiting on. Synced at the WORKSPACE level
-      // across EVERY chat's controller (the panel is shared), with prunes
-      // scoped to each task's owning chat, so switching chats never tears
-      // down a sibling's tab. Reading the fingerprint in body keeps the
-      // observation live for all cached controllers.
+      // Keep background terminals synchronized across all of a workspace's
+      // chats, including persisted terminal descriptors from older layouts.
       .environment(\.openMarkdownDocument, openMarkdownDocument)
       .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
         syncWorkspaceBackgroundTerminals()
@@ -101,7 +82,7 @@ struct SessionContainerView: View {
         synchronizeMountedPaneGroups()
       }
       // Every structural tab write bumps the local token; mirror it to the
-      // store so the Nous sidebar re-reads the repository.
+      // store so the sidebar re-reads the repository.
       .onChange(of: workspaceRevision) { _, _ in
         store.workspaceLayoutRevision += 1
       }
@@ -174,7 +155,7 @@ struct SessionContainerView: View {
           workspaceRevision += 1
           liveCenterTree = tab.root
         }
-        // A Nous sidebar click names the exact tab to show (a terminal or
+        // A sidebar click names the exact tab to show (a terminal or
         // New Tab row has no chat of its own to route by); otherwise the
         // routed chat's tab wins.
         let pendingRequest = takeCenterTabRequest(for: routedWorkspace.id)
@@ -272,13 +253,6 @@ struct SessionContainerView: View {
       }
   }
 
-  /// Whether the center tab strip is on screen. Read by `contentColumn` to
-  /// decide whether the top hairline is still needed. Nous moves the tabs
-  /// into the sidebar, so the strip never shows there.
-  var isShowingCenterTabBar: Bool {
-    !isNousMode && store.workspace(for: session, project: project).centerTabs.count > 1
-  }
-
   /// Claims the sidebar's pending tab request if it targets this workspace.
   func takeCenterTabRequest(for workspaceId: UUID) -> CenterTabRequest? {
     guard let request = store.centerTabRequest, request.workspaceId == workspaceId else {
@@ -288,38 +262,18 @@ struct SessionContainerView: View {
     return request
   }
 
-  /// The session content: a browser-style tab bar above the selected
-  /// tab's split layout.
+  /// The selected sidebar tab's split layout.
   /// System themes reveal the native window backdrop. Custom themes paint
   /// one explicit page color behind every workspace pane.
   var contentColumn: some View {
     // WorkspaceRepository is intentionally non-observable. Server pane
     // reconciliation bumps this shared token so a tab created on another
-    // device materializes in the mounted macOS strip immediately.
+    // device materializes in the mounted workspace immediately.
     let _ = (workspaceRevision, environment.workspaceSync.revision)
     let workspace = store.workspace(for: session, project: project)
-    let bottomGroup = store.paneGroup(for: session, project: project)
     return VStack(spacing: 0) {
-      if isShowingCenterTabBar {
-        WorkspaceTabBar(
-          tabs: workspace.centerTabs,
-          selectedTabId: workspace.selectedCenterTabId,
-          title: workspaceTabTitle,
-          descriptor: workspaceTabDescriptor,
-          pluginIconClient: environment.machines.client(for: session.serverId),
-          pluginIconCacheNamespace: session.serverId,
-          showsShortcutHints: !bottomGroup.hasFocusedPane,
-          onSelect: selectCenterTab,
-          onClose: closeCenterTab,
-          onMove: moveCenterTab,
-          onRename: renameCenterTab,
-          onNew: addCenterTab
-        )
-      }
       SessionScreen(
         controller: controller,
-        paneGroup: bottomGroup,
-        isBottomPanelEnabled: !isNousMode,
         centerGroup: activeCenterModel(in: workspace),
         focus: sessionFocus,
         centerTree: liveCenterTree ?? workspace.centerTree,
@@ -342,24 +296,19 @@ struct SessionContainerView: View {
       )
     }
     .background(theme.contentBackground)
-    // The hairline under the top bar: drawn by the CENTER panel's top
-    // edge (the sidebar stays seamless under the toolbar). Suppressed
-    // when the tab bar is showing — the tab strip already has its own
-    // bottom divider, and two rules 28pt apart box the tabs in.
+    // The sidebar stays seamless under the toolbar; the content has a hairline.
     .overlay(alignment: .top) {
-      if !isShowingCenterTabBar {
-        theme.separator
-          .frame(height: 1)
-          .frame(maxWidth: .infinity)
-      }
+      theme.separator
+        .frame(height: 1)
+        .frame(maxWidth: .infinity)
     }
   }
 
-  /// Nous: the SIDEBAR carries the workspace name (it is the parent row),
+  /// The sidebar carries the workspace name (it is the parent row),
   /// so the header names the selected TAB instead — the active split's
   /// pane, matching the row the sidebar highlights. Editing pins the tab's
-  /// title, exactly as the strip's rename did.
-  var nousTabTitle: Binding<String> {
+  /// title through the workspace repository.
+  var tabTitle: Binding<String> {
     Binding(
       get: {
         let workspace = store.workspace(for: session, project: project)
@@ -378,7 +327,7 @@ struct SessionContainerView: View {
   /// The context the title no longer carries: where this tab runs. Ordered
   /// widest-to-narrowest and de-duplicated, since a workspace is commonly
   /// named after its worktree or project.
-  var nousSubtitle: String {
+  var workspaceSubtitle: String {
     let workspace = store.workspace(for: session, project: project)
     let candidates: [String?] = [
       workspace.name,
@@ -402,25 +351,5 @@ struct SessionContainerView: View {
       ?? tab.root.group(id: leafId)?.selectedPane
       ?? tab.root.allGroups.first?.state.selectedPane
   }
-
-  /// The workspace's name as an editable window title: edits save through
-  /// the repository with `hasCustomName` pinned so later worktree creation
-  /// does not replace it.
-  var workspaceName: Binding<String> {
-    Binding(
-      get: { store.workspace(for: session, project: project).name },
-      set: { newValue in
-        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        var workspace = store.workspace(for: session, project: project)
-        guard workspace.name != trimmed || !workspace.hasCustomName else { return }
-        workspace.name = trimmed
-        workspace.hasCustomName = true
-        environment.workspaces.save(workspace)
-      }
-    )
-  }
-
-  // MARK: - Workspace tabs and split commands
 
 }

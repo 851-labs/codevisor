@@ -2,17 +2,14 @@ import CodevisorCore
 import SwiftUI
 
 /// The sidebar's confirmation and rename alerts, in the same order they were
-/// chained on the sidebar content: import, chat rename, workspace rename,
+/// chained on the sidebar content: import, workspace rename,
 /// archived-item restore.
 struct SidebarAlertsModifier: ViewModifier {
   @Binding var pendingImport: PendingSessionImport?
-  @Binding var renamingSession: ChatSession?
-  @Binding var renameTitle: String
   @Binding var renamingWorkspace: Workspace?
   @Binding var workspaceRenameTitle: String
   @Binding var restoreRequest: ArchivedRestoreRequest?
   let onImport: (PendingSessionImport) -> Void
-  let onRenameSession: (ChatSession, String) -> Void
   /// Receives the workspace with its new name already applied and pinned.
   let onRenameWorkspace: (Workspace) -> Void
   let onPerformRestore: (ArchivedRestoreRequest) -> Void
@@ -35,22 +32,6 @@ struct SidebarAlertsModifier: ViewModifier {
         Text(importPromptMessage(for: pending))
       }
       .alert(
-        "Rename Chat",
-        isPresented: Binding(
-          get: { renamingSession != nil },
-          set: { if !$0 { renamingSession = nil } }
-        ),
-        presenting: renamingSession
-      ) { session in
-        TextField("Title", text: $renameTitle)
-        Button("Rename") {
-          let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !trimmed.isEmpty else { return }
-          onRenameSession(session, trimmed)
-        }
-        Button("Cancel", role: .cancel) {}
-      }
-      .alert(
         "Rename Workspace",
         isPresented: Binding(
           get: { renamingWorkspace != nil },
@@ -71,9 +52,7 @@ struct SidebarAlertsModifier: ViewModifier {
         }
         Button("Cancel", role: .cancel) {}
       }
-      // Archived rows are visually identical to live ones, so a click is
-      // just as likely to be exploratory as intentional. Confirm before
-      // pulling the item back into the sidebar.
+      // Confirm before restoring an archived item into the active list.
       .alert(
         restoreAlertTitle,
         isPresented: Binding(

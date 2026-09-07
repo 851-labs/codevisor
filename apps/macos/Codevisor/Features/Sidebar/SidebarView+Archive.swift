@@ -1,8 +1,5 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import CodevisorCore
-import CodevisorTheming
-import os
 import CodevisorUI
 
 extension SidebarView {
@@ -63,23 +60,24 @@ extension SidebarView {
     SidebarArchivedHeader(archivedExpanded: $archivedExpanded)
   }
 
-  /// Archived rows deliberately reuse the live row builders rather than
-  /// defining their own look: an archived chat should be visually identical
-  /// to an active one in whichever organization is selected, so the archive
-  /// reads as the same list rather than a separate widget. `isArchivedEntry`
-  /// only swaps the row's behavior (click asks to restore, and the archive
-  /// affordances are dropped), never its styling.
   private func archivedProjectRow(_ project: Project) -> some View {
-    // Archiving is per machine, so archived entries stay one row per
-    // record rather than folding by repository.
-    projectRow(ProjectGroup(solo: project), isArchivedEntry: true)
+    SidebarArchivedProjectRow(
+      project: project,
+      isReordering: isReordering,
+      titleFont: itemTitleFont,
+      onRestore: { restoreRequest = ArchivedRestoreRequest(target: .project(project)) }
+    )
   }
 
-  @ViewBuilder
   private func archivedSessionRow(_ session: ChatSession, project: Project) -> some View {
-    // Every organization deliberately shares the exact same agent row;
-    // only the live hierarchy around it changes.
-    chronologicalSessionRow(session, project: project, isArchivedEntry: true)
+    SidebarArchivedSessionRow(
+      session: session,
+      project: project,
+      store: store,
+      isReordering: isReordering,
+      titleFont: itemTitleFont,
+      onRestore: { restoreRequest = ArchivedRestoreRequest(target: .session(session)) }
+    )
   }
 
   /// Restores a chat and revives its workspace, mirroring the archive

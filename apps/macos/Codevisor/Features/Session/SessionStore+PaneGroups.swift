@@ -223,11 +223,6 @@ extension SessionStore {
         client: environment.machines.client(for: session.serverId)
       )
     }
-    // Identity for cross-group drops (bar targets, content zones).
-    model.dropRef =
-      placement == .bottom
-      ? .bottom
-      : resolvedLeafId.map { .centerLeaf($0) }
     return model
   }
 

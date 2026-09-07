@@ -43,9 +43,7 @@ struct PaneContext {
   var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
 }
 
-/// Group-level commands a focused pane can emit from keyboard shortcuts
-/// (⌘⌥←/→ to navigate tabs, ⌘T for a new terminal, ⌘1-9 to jump to a tab,
-/// ⌘J to toggle the panel).
+/// Workspace tab and split commands emitted by a focused pane.
 enum PaneGroupCommand {
   case previousTab
   case nextTab
@@ -55,7 +53,6 @@ enum PaneGroupCommand {
   case focusSplit(SplitEdge)
   case previousSplit
   case nextSplit
-  case togglePanel
   case closeTab
   case reopenClosedPane
 }

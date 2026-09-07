@@ -1,10 +1,8 @@
 import CodevisorUI
 import SwiftUI
 
-/// Matches the sidebar's projects header exactly — same font, color, and
-/// padding — so "Archived" reads as a peer of the Agents/Workspaces/Projects
-/// label rather than as another row in the list. The only addition is the
-/// disclosure chevron, since unlike that header this one collapses.
+/// Matches the workspace section headers, with a disclosure chevron
+/// for the collapsible archive.
 struct SidebarArchivedHeader: View {
   @Binding var archivedExpanded: Bool
 

@@ -28,7 +28,6 @@ enum ShortcutID: String, CaseIterable, Identifiable, Sendable {
   case focusSplitBelow
 
   // View
-  case toggleBottomPanel
   case toggleDebugOverlay
 
   // Composer
@@ -170,8 +169,6 @@ enum ShortcutCatalog {
         .focusSplitBelow, "Focus Split Below", ShortcutCombo(.downArrow, [.command, .option]),
         category: .tabsAndSplits)
 
-    case .toggleBottomPanel:
-      ShortcutDefinition(.toggleBottomPanel, "Toggle Bottom Panel", ShortcutCombo("j", .command), category: .view)
     case .toggleDebugOverlay:
       ShortcutDefinition(
         .toggleDebugOverlay, "Toggle Debug Overlay", ShortcutCombo("`", .command), category: .view)

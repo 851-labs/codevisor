@@ -15,7 +15,11 @@ struct SidebarFleetItemID: Hashable {
   let entityId: UUID
 
   static func project(_ project: Project) -> Self {
-    Self(kind: .project, serverId: project.serverId, entityId: project.id)
+    .project(serverId: project.serverId, id: project.id)
+  }
+
+  static func project(serverId: String, id: UUID) -> Self {
+    Self(kind: .project, serverId: serverId, entityId: id)
   }
 
   static func session(_ session: ChatSession) -> Self {
@@ -33,12 +37,10 @@ struct SidebarFleetItemID: Hashable {
 
 extension Project {
   var sidebarFleetItemID: SidebarFleetItemID { .project(self) }
-  var sidebarFleetOrderID: String { "project|\(serverId)|\(id.uuidString)" }
 }
 
 extension ChatSession {
   var sidebarFleetItemID: SidebarFleetItemID { .session(self) }
-  var sidebarFleetOrderID: String { "session|\(serverId)|\(id.uuidString)" }
 }
 
 struct SidebarSessionListItem: Identifiable {
@@ -46,5 +48,4 @@ struct SidebarSessionListItem: Identifiable {
   let project: Project
 
   var id: SidebarFleetItemID { session.sidebarFleetItemID }
-  var orderingID: String { session.sidebarFleetOrderID }
 }

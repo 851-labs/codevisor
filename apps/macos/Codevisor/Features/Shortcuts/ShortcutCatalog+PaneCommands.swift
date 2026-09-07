@@ -46,7 +46,6 @@ extension ShortcutCatalog {
     (.reopenClosedPane, .reopenClosedPane),
     (.splitRight, .split(.trailing)),
     (.closeSplit, .closeTab),
-    (.toggleBottomPanel, .togglePanel),
   ]
 
   /// The workspace command `event` triggers, if any.
@@ -55,16 +54,8 @@ extension ShortcutCatalog {
   /// surface's `performKeyEquivalent` and the focus controller's local event
   /// monitor — so they cannot drift from each other or from the menu.
   ///
-  /// - Parameter includingPanelToggle: ⌘J is only claimed here while a
-  ///   terminal surface is first responder, because the SwiftUI focused-scene
-  ///   value that backs the menu command is not reliably published then.
-  ///   Everywhere else the menu handles it and this must not intercept.
-  static func paneCommand(
-    for event: NSEvent,
-    includingPanelToggle: Bool = false
-  ) -> PaneGroupCommand? {
+  static func paneCommand(for event: NSEvent) -> PaneGroupCommand? {
     for (id, command) in paneCommandBindings {
-      if id == .toggleBottomPanel, !includingPanelToggle { continue }
       if let combo = combo(for: id), combo.matches(event) { return command }
     }
     return selectTabCommand(for: event)

@@ -109,18 +109,17 @@ final class SessionStore {
   var isWindowFocused = false
   /// Bumped by a mounted workspace container after it writes workspace
   /// LAYOUT (tabs added/closed/moved/selected). The repository is not
-  /// observable; this is how the sidebar's Nous mode — which renders those
-  /// tabs as rows — learns to re-read.
+  /// observable; this tells the sidebar to re-read its tab rows.
   var workspaceLayoutRevision = 0
   /// A sidebar-originated tab instruction for one workspace's container
-  /// (Nous mode). Consumed by that container: through its routing task
+  /// consumed by that container: through its routing task
   /// when it mounts, or immediately when it is already on screen.
   var centerTabRequest: CenterTabRequest?
-  /// Nous: ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
+  /// ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
   /// workspaces. Installed by the docked sidebar (which owns that order
   /// and the route change); returns false when it cannot answer, and the
   /// container falls back to cycling its own tabs.
-  @ObservationIgnored var nousStepHandler: ((Int) -> Bool)?
+  @ObservationIgnored var sidebarTabStepHandler: ((Int) -> Bool)?
   /// Panes the user closed, newest last, per workspace — what ⌘⇧T brings
   /// back. In memory only: the archive is the durable recovery for chats;
   /// this is the browser-style undo for the current run.

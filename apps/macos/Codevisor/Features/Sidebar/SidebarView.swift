@@ -1,21 +1,18 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import CodevisorCore
 import CodevisorTheming
-import os
 import CodevisorUI
+import os
 
 /// How many archived chats one page reveals.
 let archivedPageSize = 10
 
-/// The sidebar: a New Chat action, an organization control, and fleet-wide
-/// workspaces or agent sessions.
+/// The sidebar: a New Chat action and fleet-wide workspaces with their tabs.
 ///
-/// Built on `ScrollView` + `LazyVStack` (not `List`), because the sidebar-styled
+/// Built on `ScrollView` + `VStack` (not `List`), because the sidebar-styled
 /// `List` outline coordinator crashes on the current macOS SDK.
 struct SidebarView: View {
   @Environment(AppEnvironment.self) var environment
-  @Environment(\.theme) private var theme
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Binding var selection: SidebarSelection?
   var store: SessionStore? = nil
@@ -24,48 +21,16 @@ struct SidebarView: View {
   @State private var addProjectFlow = AddProjectFlow()
   @State private var showingRemoteMachine = false
   @State private var pendingImport: PendingSessionImport?
-  // Seeded from the SQLite preference after the view mounts; written back
-  // newline-separated. Project folders are keyed by `ProjectGroup.id` (a
-  // linked project is one folder across machines); workspaces by UUID.
-  @State var expanded: Set<String> = []
-  @State var expandedWorkspaces: Set<UUID> = []
-  @State var renamingSession: ChatSession?
-  @State var renameTitle = ""
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
-  @State var renamingNousTab: NousTabRenameRequest?
-  @State var nousTabRenameTitle = ""
+  @State var renamingTab: SidebarTabRenameRequest?
+  @State var tabRenameTitle = ""
   /// Bumped after workspace mutations (backfill sweep, renames) so the
   /// non-observable repository is re-read.
   @State var workspaceRevision = 0
-  @State var draggingProjectID: UUID?
-  @State var draggingSessionID: UUID?
-  @State var isPointerInsideSidebar = false
-  @State var deferredProjectOrder = InteractionDeferredOrder<String>()
-  @State var deferredSessionOrder = InteractionDeferredOrder<String>()
-  @State var orderingCache = SidebarOrderingCache()
-  /// Non-nil while a burst of automatic reorders is settling (the deferred
-  /// orders are locked without the pointer being inside the sidebar).
-  @State var reorderSettleHoldStart: Date?
-  @State var reorderSettleTask: Task<Void, Never>?
-  @ClientPreference("sidebar.organization", default: SidebarOrganization.compact.rawValue)
-  private var organizationRaw
-  @ClientPreference("sidebar.order", default: SidebarOrder.updated.rawValue)
-  var orderRaw
-  @ClientPreference("sidebar.manualProjectOrder", default: "")
-  var manualProjectOrderRaw
-  @ClientPreference("sidebar.manualSessionOrder", default: "")
-  var manualSessionOrderRaw
-  @ClientPreference("sidebar.expandedProjects", default: "")
-  private var expandedProjectsRaw
-  @ClientPreference("sidebar.expandedWorkspaces", default: "")
-  private var expandedWorkspacesRaw
-  @ClientPreference("sidebar.showEmptyProjects", default: false) var showEmptyProjects
-  @ClientPreference("sidebar.showEmptyWorkspaces", default: false)
-  var showEmptyWorkspaces
-  /// Archived content is hidden until explicitly enabled from the sidebar
-  /// filter menu, and the choice survives relaunches.
-  @ClientPreference("sidebar.showArchived", default: false) private var showArchived
+  @State var draggingWorkspaceID: UUID?
+  @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
+  var manualWorkspaceOrderRaw
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
   @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
@@ -77,12 +42,8 @@ struct SidebarView: View {
   @State var restoreRequest: ArchivedRestoreRequest?
 
   var list: ProjectListModel { environment.projectList }
-  var organization: SidebarOrganization { SidebarOrganization(rawValue: organizationRaw) ?? .compact }
-  var order: SidebarOrder { SidebarOrder(rawValue: orderRaw) ?? .updated }
-  var isReordering: Bool { draggingProjectID != nil || draggingSessionID != nil }
+  var isReordering: Bool { draggingWorkspaceID != nil }
   var itemTitleFont: Font { .body }
-  var hierarchyIndent: CGFloat { 8 }
-  private var notificationColor: Color { theme.isSystem ? .blue : theme.accent }
 
   var body: some View {
     sidebarConfiguredView
@@ -90,8 +51,8 @@ struct SidebarView: View {
 
   private var sidebarContent: some View {
     VStack(spacing: 0) {
-      // Development identity + New chat + the Projects header stay
-      // pinned; only the project/chat list itself scrolls.
+      // Development identity and New chat stay pinned; workspace
+      // sections scroll together with their tabs.
       VStack(alignment: .leading, spacing: 1) {
         if CodevisorAppVariant.isDevelopment {
           SidebarDevelopmentWorktreeRow()
@@ -104,8 +65,6 @@ struct SidebarView: View {
         ) {
           selection = .newChat(nil)
         }
-
-        projectsHeader
       }
       .padding(.horizontal, 8)
       .padding(.top, 8)
@@ -120,83 +79,32 @@ struct SidebarView: View {
           // (the state change that reorders a chat also restyles
           // its leading icon) animates each subview's position
           // independently, which reads as shearing/jitter.
-          if organization == .byProject {
-            ForEach(projectSectionGroups) { group in
-              projectFolder(group)
-                .geometryGroup()
-            }
-            // Chats without a project (scratch-backed sessions)
-            // share one folder rather than each single-use folder
-            // masquerading as a project.
-            if !looseProjectSessions.isEmpty {
-              noProjectFolder
-                .geometryGroup()
-            }
-          } else if organization.isWorkspaceList {
-            ForEach(workspaceItems) { item in
-              workspaceFolder(item)
-                .geometryGroup()
-                .transition(.identity)
-            }
-          } else {
-            ForEach(chronologicalSessions) { item in
-              reorderableChronologicalSessionRow(item.session, project: item.project)
-                .geometryGroup()
-                .transition(.identity)
-            }
-          }
-          if organization == .byProject && projectSectionGroups.isEmpty
-            && looseProjectSessions.isEmpty
-          {
-            Text("No projects yet")
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 4)
+          ForEach(workspaceItems) { item in
+            workspaceSection(item)
+              .geometryGroup()
               .transition(.identity)
-          } else if organization.isWorkspaceList && workspaceItems.isEmpty {
+          }
+          if workspaceItems.isEmpty {
             Text("No workspaces yet")
               .font(.caption)
               .foregroundStyle(.tertiary)
               .padding(.horizontal, 10)
               .padding(.vertical, 4)
               .transition(.identity)
-          } else if organization == .compact && chronologicalSessions.isEmpty {
-            Text("No agents yet")
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 4)
-              .transition(.identity)
           }
 
-          if showArchived {
-            archivedSection
-          }
+          archivedSection
 
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: nousTabIDs)
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: chronologicalSessions.map(\.id))
-        .animation(
-          Motion.listReflow(reduceMotion: reduceMotion),
-          value: projectSectionGroups.map(\.id)
-        )
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expanded)
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: expandedWorkspaces)
-        // Same reflow the project/workspace disclosures use, so the
-        // archive opens and closes with the rest of the sidebar.
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: showArchived)
+        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceTabRowIDs)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedExpanded)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedVisibleCount)
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
-      .contextMenu {
-        sidebarFilterMenuContent
-      }
 
       SidebarUpdateFooter(center: environment.updateCenter)
     }
@@ -205,15 +113,7 @@ struct SidebarView: View {
   private var sidebarInteractionView: some View {
     sidebarContent
       .themedSurface(.sidebar)
-      .hoverTracking($isPointerInsideSidebar, respectsSuspension: false)
-      .onChange(of: isPointerInsideSidebar) { _, isInside in
-        setAutomaticOrderDeferred(isInside)
-      }
-      .onDisappear {
-        releaseDeferredOrder(animated: false)
-      }
       .addProjectFlow(addProjectFlow) { project in
-        expanded.insert(ProjectGroup.groupID(for: project))
         selection = .newChat(NewChatTarget(project))
         offerSessionImport(for: project)
       }
@@ -224,13 +124,10 @@ struct SidebarView: View {
       .modifier(
         SidebarAlertsModifier(
           pendingImport: $pendingImport,
-          renamingSession: $renamingSession,
-          renameTitle: $renameTitle,
           renamingWorkspace: $renamingWorkspace,
           workspaceRenameTitle: $workspaceRenameTitle,
           restoreRequest: $restoreRequest,
           onImport: { environment.importSessions($0.sessions, into: $0.project) },
-          onRenameSession: { list.renameSession($0, to: $1) },
           onRenameWorkspace: { renamed in
             environment.workspaces.save(renamed)
             workspaceRevision += 1
@@ -239,10 +136,10 @@ struct SidebarView: View {
         )
       )
       .modifier(
-        NousTabRenameAlert(
-          request: $renamingNousTab,
-          title: $nousTabRenameTitle,
-          onRename: { renameNousTab($0, to: $1) }
+        SidebarTabRenameAlert(
+          request: $renamingTab,
+          title: $tabRenameTitle,
+          onRename: { renameTab($0, to: $1) }
         ))
   }
 
@@ -256,35 +153,13 @@ struct SidebarView: View {
           isLoadingMoreArchived = false
         }
       }
-      // Entering a workspace-based mode (or sessions changing while in it)
-      // sweeps the visible chats so every one has an owning workspace.
-      .onChange(of: organizationRaw, initial: true) { _, _ in
-        backfillWorkspaces()
-        revealRoutedNousWorkspace()
+      .onChange(of: Set(activeSessionItems.map(\.id))) { _, _ in
+        ensureSessionWorkspaces()
       }
-      // A tab added to a workspace (⌘T, a New Tab conversion elsewhere)
-      // shows up as a row; make sure its folder is open to receive it.
-      .onChange(of: nousTabIDs) { oldIDs, newIDs in
-        revealNousTabWorkspaces(added: Set(newIDs).subtracting(oldIDs))
-      }
-      .onChange(of: chronologicalSessions.map(\.orderingID)) { oldIDs, newIDs in
-        deferredSessionOrder.incorporate(newIDs)
-        backfillWorkspaces()
-        let addedOrderIDs = Set(newIDs).subtracting(Set(oldIDs))
-        let addedSessionIDs = chronologicalSessions.compactMap { item in
-          addedOrderIDs.contains(item.orderingID) ? item.session.id : nil
-        }
-        revealNewChatWorkspaces(Set(addedSessionIDs))
-      }
-      .onChange(of: visibleProjects.map(\.sidebarFleetOrderID)) { _, newIDs in
-        deferredProjectOrder.incorporate(newIDs)
-      }
-      // Bursty automatic reorders (several agents changing state at once)
-      // are jarring, and each interrupts the previous reflow animation
-      // mid-flight, which reads as jitter. Watching the unheld sort lets a
-      // burst land as one clean reflow after it settles.
-      .onChange(of: desiredAutomaticOrderIDs) { _, _ in
-        scheduleReorderSettleHold()
+      // Persist the initial order and incorporate new workspaces once, so
+      // adding or closing chats never changes an existing workspace's rank.
+      .onChange(of: workspaceItems.map(\.workspace.id), initial: true) { _, ids in
+        rememberWorkspaceOrder(ids)
       }
   }
 
@@ -316,21 +191,15 @@ struct SidebarView: View {
 
   private var sidebarConfiguredView: some View {
     sidebarSheetsView
-      .onAppear(perform: restoreExpandedState)
-      // The docked sidebar answers ⇧⌘[ / ⇧⌘] in Nous mode (the drawer copy
+      .onAppear(perform: ensureSessionWorkspaces)
+      // The docked sidebar answers ⇧⌘[ / ⇧⌘] (the drawer copy
       // stays passive so there is exactly one owner of the step).
       .task(id: store.map(ObjectIdentifier.init)) {
         guard publishesSceneActions else { return }
-        store?.nousStepHandler = { offset in stepNous(offset) }
+        store?.sidebarTabStepHandler = { offset in stepSidebarTab(offset) }
       }
       .onDisappear {
-        if publishesSceneActions { store?.nousStepHandler = nil }
-      }
-      .onChange(of: expanded) { _, newValue in
-        expandedProjectsRaw = newValue.sorted().joined(separator: "\n")
-      }
-      .onChange(of: expandedWorkspaces) { _, newValue in
-        expandedWorkspacesRaw = newValue.map(\.uuidString).sorted().joined(separator: "\n")
+        if publishesSceneActions { store?.sidebarTabStepHandler = nil }
       }
       .focusedSceneValue(
         \.sidebarActions,
@@ -349,37 +218,6 @@ struct SidebarView: View {
     addProjectFlow.begin()
   }
 
-  private func restoreExpandedState() {
-    expanded = restoredExpandedProjectGroupIDs(from: expandedProjectsRaw)
-    expandedWorkspaces = persistedIDs(from: expandedWorkspacesRaw)
-  }
-
-  /// Expanded project folders were once keyed by bare project UUID; those
-  /// entries map onto the group the project now belongs to, so a folder
-  /// left open before linking stays open after it.
-  private func restoredExpandedProjectGroupIDs(from rawValue: String) -> Set<String> {
-    var ids: Set<String> = []
-    for line in rawValue.split(separator: "\n") {
-      let entry = String(line)
-      if let legacyProjectID = UUID(uuidString: entry) {
-        for project in list.projects where project.id == legacyProjectID {
-          ids.insert(ProjectGroup.groupID(for: project))
-        }
-      } else {
-        ids.insert(entry)
-      }
-    }
-    return ids
-  }
-
-  private func persistedIDs(from rawValue: String) -> Set<UUID> {
-    let ids: [UUID] =
-      rawValue
-      .split(separator: "\n")
-      .compactMap { UUID(uuidString: String($0)) }
-    return Set(ids)
-  }
-
   /// After a project is added, look for existing harness sessions in its
   /// folder and — only when some are found — offer to import them.
   private func offerSessionImport(for project: Project) {
@@ -391,54 +229,6 @@ struct SidebarView: View {
       guard !importable.isEmpty else { return }
       pendingImport = PendingSessionImport(project: project, sessions: importable)
     }
-  }
-
-  // MARK: - Header rows
-
-  private var projectsHeader: some View {
-    HStack {
-      Text(
-        {
-          switch organization {
-          case .byWorkspace, .nous: "Workspaces"
-          case .compact: "Agents"
-          case .byProject: "Projects"
-          }
-        }()
-      )
-      .font(.subheadline.weight(.semibold))
-      .foregroundStyle(.secondary)
-      Spacer()
-      Menu {
-        sidebarFilterMenuContent
-      } label: {
-        Image(systemName: "line.3.horizontal.decrease")
-          .font(.callout.weight(.semibold))
-          .foregroundStyle(.secondary)
-      }
-      .menuStyle(.button)
-      .buttonStyle(.plain)
-      .help("Organize and filter sidebar")
-      .accessibilityLabel("Organize and filter sidebar")
-    }
-    .padding(.horizontal, 10)
-    .padding(.top, 12)
-    .padding(.bottom, 4)
-  }
-
-  /// Shared by the filter button and the empty-space sidebar context menu so
-  /// both entry points always expose the same organization and filter state.
-  private var sidebarFilterMenuContent: some View {
-    SidebarFilterMenu(
-      organization: organization,
-      order: order,
-      showEmptyProjects: $showEmptyProjects,
-      showEmptyWorkspaces: $showEmptyWorkspaces,
-      showArchived: $showArchived,
-      onSetOrganization: { organizationRaw = $0.rawValue },
-      onSetOrder: { setOrder($0) },
-      onResetManualOrder: { resetManualOrder() }
-    )
   }
 
 }

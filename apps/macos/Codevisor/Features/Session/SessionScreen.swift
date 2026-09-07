@@ -3,22 +3,10 @@ import CodevisorCore
 import ACPKit
 import CodevisorUI
 
-/// The active session screen: hosts the center pane group (the chat pane —
-/// see ChatScreen — plus any terminals beside it) over the ⌘J bottom panel,
-/// and owns the wiring both share: focus routing and the attachment store.
+/// The selected workspace tab, with focus routing and attachment loading.
 struct SessionScreen: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
-  /// The ⌘J bottom panel's pane group.
-  var paneGroup: PaneGroupModel
-  /// Nous mode turns the bottom panel off: it neither renders nor answers
-  /// ⌘J (every toggle path — menu, focused terminal, focus-controller
-  /// relay — ends in `togglePanes`, the one guard). Its persisted state is
-  /// left alone, so leaving the mode brings the panel back as it was.
-  var isBottomPanelEnabled = true
-  /// The center pane group: the chat pane plus any terminals opened (or
-  /// dropped) beside it. Always visible — it IS the page content. Its tab
-  /// strip is hosted by the container in the window's top bar.
+  /// The active split's pane group; keyboard commands route through it.
   var centerGroup: PaneGroupModel
   /// The session's focus coordinator. Owned by the container (which also
   /// wires every center leaf's chat content with it); previews get their
@@ -40,84 +28,34 @@ struct SessionScreen: View {
   var openingSplit: WorkspaceSplitOpening? = nil
   var onSplitOpeningFinished: ((WorkspaceSplitOpening) -> Void)? = nil
   var onCenterTreeChanged: ((SplitNode) -> Void)? = nil
-  /// Streamed on every frame of a divider drag (render only) so the
-  /// container's top-bar segments track the moving content divider.
+  /// Streamed during divider drags so the rendered tree tracks the divider.
   var onCenterTreeLiveChanged: ((SplitNode) -> Void)? = nil
   @State private var attachmentImages: AttachmentImageStore?
 
   var body: some View {
-    VStack(spacing: 0) {
-      centerContent
-
-      // The bottom panel (tab bar + selected pane) mounts only while
-      // open. ⌘J and View ▸ Toggle Bottom Panel bring it back; the
-      // bar's top edge is the resize handle.
-      if isBottomPanelEnabled && paneGroup.state.isVisible {
-        VStack(spacing: 0) {
-          PaneGroupBar(
-            group: paneGroup,
-            dragCoordinator: nil,
-            // The bottom bar is the shortcuts' target while one
-            // of its terminals holds keyboard focus.
-            showsShortcutHints: paneGroup.hasFocusedPane,
-            onToggle: { togglePanes() }
-          )
-          PaneGroupContent(group: paneGroup)
-            .frame(height: paneGroup.state.height)
+    centerContent
+      // Anchors the focus controller's key-command guard (⌘T/⌘W/⌘1-9) to
+      // this window — the composer's window can't serve: it unmounts with
+      // the chat tab whenever a terminal or New tab page is selected.
+      .background(
+        HostWindowCapture { [weak focus] window in
+          focus?.hostWindow = window
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .frame(width: 0, height: 0)
+      )
+      .onAppear {
+        focus.centerGroup = centerGroup
+        focus.startTypeToFocus()
+        installAttachmentImageStoreIfNeeded()
       }
-    }
-    // Anchors the focus controller's key-command guard (⌘T/⌘W/⌘1-9) to
-    // this window — the composer's window can't serve: it unmounts with
-    // the chat tab whenever a terminal or New tab page is selected.
-    .background(
-      HostWindowCapture { [weak focus] window in
-        focus?.hostWindow = window
+      .onChange(of: controller.previewCacheNamespace) {
+        installAttachmentImageStoreIfNeeded()
       }
-      .frame(width: 0, height: 0)
-    )
-    .animation(Motion.panel(reduceMotion: reduceMotion), value: paneGroup.state.isVisible)
-    // Nil while disabled so View ▸ Toggle Bottom Panel greys out rather
-    // than silently doing nothing.
-    .focusedSceneValue(
-      \.terminalToggle,
-      isBottomPanelEnabled
-        ? TerminalToggleAction(sessionId: paneGroup.sessionId) { togglePanes() }
-        : nil
-    )
-    // (Background-task terminal tabs are synced by the WORKSPACE
-    // container across every chat's controller — a per-chat sync here
-    // would prune sibling chats' tabs on chat switches.)
-    .onAppear {
-      focus.paneGroup = paneGroup
-      // Tab commands pressed while the chat has focus act on the
-      // center group.
-      focus.centerGroup = centerGroup
-      // ⌘J from inside a focused terminal routes here (the menu command
-      // doesn't fire reliably while an AppKit view is first responder).
-      // The relay serves EVERY center leaf's model (the container
-      // wires each one to it); the bottom panel wires directly.
-      focus.requestPanelToggle = { togglePanes() }
-      paneGroup.requestToggle = { togglePanes() }
-      // ⌘W closing the last bottom tab collapses the panel; focus
-      // returns to the composer. (Center leaves get their KEYED
-      // composer-focus wiring from the container — don't overwrite
-      // it here.)
-      paneGroup.requestComposerFocus = { focus.focusComposer() }
-      // Drop handling (bar inserts, content joins, splits) is wired by
-      // the container, which owns the workspace tree.
-      focus.startTypeToFocus()
-      installAttachmentImageStoreIfNeeded()
-    }
-    .onChange(of: controller.previewCacheNamespace) {
-      installAttachmentImageStoreIfNeeded()
-    }
-    .onDisappear {
-      focus.stopTypeToFocus()
-      splitDragCoordinator?.dragCancelled()
-    }
-    .environment(\.attachmentImages, attachmentImages)
+      .onDisappear {
+        focus.stopTypeToFocus()
+        splitDragCoordinator?.dragCancelled()
+      }
+      .environment(\.attachmentImages, attachmentImages)
   }
 
   private func installAttachmentImageStoreIfNeeded() {
@@ -168,43 +106,23 @@ struct SessionScreen: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
-  /// Toggles the pane group's content and moves keyboard focus to match
-  /// (selected pane on open, composer on close).
-  private func togglePanes() {
-    guard isBottomPanelEnabled else { return }
-    let target = paneGroup.toggle()
-    // Defer focus until SwiftUI has mounted/removed the panel.
-    DispatchQueue.main.async { focus.apply(target) }
-  }
 }
 
 #if DEBUG
   #Preview("Conversation") {
     SessionScreen(
       controller: .preview(model: .preview()),
-      paneGroup: previewPaneGroup(placement: .bottom),
-      centerGroup: previewPaneGroup(placement: .center),
+      centerGroup: previewPaneGroup(),
     )
     .frame(width: 900, height: 680)
   }
 
-  #Preview("With terminal") {
-    let group = previewPaneGroup(placement: .bottom)
-    group.toggle()
-    return SessionScreen(
-      controller: .preview(model: .preview()),
-      paneGroup: group,
-      centerGroup: previewPaneGroup(placement: .center),
-    )
-    .frame(width: 900, height: 680)
-  }
-
-  private func previewPaneGroup(placement: PaneGroupPlacement) -> PaneGroupModel {
+  private func previewPaneGroup() -> PaneGroupModel {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/shepherd"))
     let session = ChatSession(projectId: project.id, title: "Preview")
     return PaneGroupModel(
       sessionId: session.id,
-      placement: placement,
+      placement: .center,
       repository: DefaultPaneGroupRepository(store: InMemoryStore()),
       makeContext: { descriptor in
         PaneContext(
