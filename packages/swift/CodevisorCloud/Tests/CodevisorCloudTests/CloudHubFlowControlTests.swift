@@ -49,6 +49,7 @@ struct CloudHubFlowControlTests {
       reconnectDelay: { _ in .zero }
     )
     let recorder = Recorder()
+    let closed = TestSignal()
 
     let channel = try await hub.openFlowControlledChannel(
       machineDeviceId: machine.deviceId,
@@ -57,7 +58,10 @@ struct CloudHubFlowControlTests {
       params: .object(["service": .string("codevisor-loopback"), "version": .number(1)]),
       onMessage: { data, _ in recorder.record(data) },
       onCredit: { _ in },
-      onClosed: { recorder.recordClose($0) }
+      onClosed: {
+        recorder.recordClose($0)
+        closed.signal()
+      }
     )
     #expect(await waitUntil { machine.channel(channel.id) != nil })
     // An empty raw box costs 16 bytes (the tag). Granting only that much
@@ -68,7 +72,8 @@ struct CloudHubFlowControlTests {
       sealed: try machine.sealData(channelId: channel.id, payload: Data([1]))
     )
 
-    #expect(await waitUntil { recorder.closes == [.protocolError] })
+    await closed.wait()
+    #expect(recorder.closes == [.protocolError])
     #expect(recorder.messages.isEmpty)
     await hub.shutdown()
   }

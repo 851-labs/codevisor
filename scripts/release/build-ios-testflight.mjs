@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 import { runXcodebuild } from "../xcodebuild.mjs"
 import { appStoreClient, findApp } from "./app-store-connect.mjs"
+import { prepareEmbeddedCode, verifyDistributionSignatures } from "./ios-code-signing.mjs"
 import {
   authenticationArguments,
   exportOptions,
@@ -47,6 +48,7 @@ await runXcodebuild(repoRoot, "ios", [
   "-quiet",
   "archive"
 ])
+await prepareEmbeddedCode(join(archive, "Products/Applications/Codevisor.app"))
 
 const optionsPath = join(output, "ExportOptions.plist")
 execFileSync("plutil", ["-convert", "xml1", "-o", optionsPath, "-"], {
@@ -69,7 +71,7 @@ const ipa = join(exported, "Codevisor.ipa")
 const verification = join(output, "verification")
 execFileSync("ditto", ["-x", "-k", ipa, verification])
 const bundle = join(verification, "Payload/Codevisor.app")
-execFileSync("codesign", ["--verify", "--deep", "--strict", bundle], { stdio: "inherit" })
+await verifyDistributionSignatures(bundle, configuration.teamId)
 const plist = (path) =>
   JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", path], { encoding: "utf8" }))
 const info = plist(join(bundle, "Info.plist"))
