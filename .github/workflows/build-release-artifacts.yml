@@ -448,6 +448,19 @@ jobs:
           rm -f "$RUNNER_TEMP/original-keychains.txt"
           rm -rf dist/release node_modules
 
+  build-ios:
+    needs: guard
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      operation: build
+      version: ${{ inputs.version }}
+      source_sha: ${{ inputs.source_sha }}
+    secrets:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+
   provenance:
     needs:
       - checks
@@ -455,6 +468,7 @@ jobs:
       - build-server-linux-arm64
       - build-server-macos-x64
       - build-macos
+      - build-ios
     runs-on: ubuntu-24.04
     steps:
       - name: Record successful build provenance

@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: release-candidate-main
-  cancel-in-progress: true
+  # Finish the active run. GitHub keeps one pending run and replaces it with
+  # each newer push, so intermediate pending commits are skipped.
+  cancel-in-progress: false
 
 jobs:
   metadata:
@@ -60,6 +62,19 @@ jobs:
       APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+  testflight:
+    needs: [metadata, build]
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      operation: publish
+      version: ${{ needs.metadata.outputs.version }}
+      source_sha: ${{ github.sha }}
+    secrets:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
 
   publish:
     needs: build

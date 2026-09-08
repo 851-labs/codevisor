@@ -8,6 +8,12 @@
 	     ProMotion devices. The transcript clock remains paused when idle. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to your computers running Codevisor on your local network.</string>
+	<!-- Cloud channels use Apple's CryptoKit; HTTPS uses the system URLSession
+	     stack. The iOS app does not bundle an encryption implementation. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- Codevisor servers are self-hosted and speak plain HTTP on tailnet
 	     (100.64/10, *.ts.net) and LAN addresses, where transport security is
 	     WireGuard or the local network — hostnames ATS can't be scoped to in

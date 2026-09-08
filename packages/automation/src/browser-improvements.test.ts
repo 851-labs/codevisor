@@ -74,8 +74,10 @@ const it = baseIt.extend<{
       origin = `http://127.0.0.1:${address.port}`
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
       const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
+      // Establish the fixture document before testing tab reads. Page.navigate
+      // can return while the previous about:blank document is still interactive.
       await cell(
-        `var first = await browser.tabs.new(); await first.goto(${JSON.stringify(origin)})`
+        `var first = await browser.tabs.new(); await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin)}), {waitUntil: 'domcontentloaded'})`
       )
       await use({ provider, context, origin, cell, cdp, slowResponse: slow.promise })
     } finally {
@@ -97,7 +99,7 @@ describe("Browser session reliability", () => {
     browser: { cell, origin }
   }) => {
     await cell(
-      `var second = await browser.tabs.new(); await second.goto(${JSON.stringify(origin + "/second")});`
+      `var second = await browser.tabs.new(); await second.playwright.expectNavigation(() => second.goto(${JSON.stringify(origin + "/second")}), {waitUntil: 'domcontentloaded'});`
     )
     expect(await cell("await Promise.all([first.title(), second.title()])")).toEqual([
       "First",
