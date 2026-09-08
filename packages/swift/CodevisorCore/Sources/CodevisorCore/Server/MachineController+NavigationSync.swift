@@ -80,6 +80,8 @@ extension MachineController {
   /// Stops every machine's event stream (app teardown and tests).
   public func stopEventSync() {
     for connection in connectionsById.values {
+      connection.manualNavigationRefresh?.cancel()
+      connection.manualNavigationRefresh = nil
       connection.eventSyncTask?.cancel()
       connection.eventSyncTask = nil
       connection.pendingRefreshTask?.cancel()

@@ -30,11 +30,18 @@ struct BrowserProxyWebKitTests {
     defer { view.stopLoading(); view.navigationDelegate = nil }
     let url = URL(string: "http://proxy.localhost:3000/")!
     try await navigation.load(view, url: url)
+    _ = try await view.callAsyncJavaScript(
+      "return await window.initialRequest", arguments: [:], in: nil, contentWorld: .page)
     _ = try await view.evaluateJavaScript("history.pushState({}, '', '/retained'); window.unsaved = 'keep me'")
     let history = view.backForwardList.backList.map(\.url)
     let updated = try BrowserWebsiteProfile.configuredStore(
       machineId: machineId, endpoint: URL(string: "http://127.0.0.1:\(secondPort)")!, credential: credential)
     #expect(updated === store)
+    // Round-trip to WebKit's networking process after updating its proxy,
+    // before the web-content process starts the request through that proxy.
+    await withCheckedContinuation { continuation in
+      store.httpCookieStore.getAllCookies { _ in continuation.resume() }
+    }
     let response = try await view.callAsyncJavaScript(
       "return await (await fetch('http://recovered.proxy.localhost:3001/api')).text()",
       arguments: [:], in: nil, contentWorld: .page)

@@ -105,15 +105,6 @@ extension HomeView {
   }
 
   func refreshNavigation() async {
-    for machine in machines.allMachines {
-      // A failed machine is latched in the request gate; an ordinary
-      // refresh would fail instantly from cache. Pull-to-refresh is an
-      // explicit "try again" — re-prepare, which clears the latch.
-      if case .failed = machines.availabilityByMachineId[machine.id] {
-        await machines.prepareMachine(machine.id)
-      } else {
-        await machines.refreshNavigationState(for: machine.id)
-      }
-    }
+    await machines.refreshNavigation()
   }
 }

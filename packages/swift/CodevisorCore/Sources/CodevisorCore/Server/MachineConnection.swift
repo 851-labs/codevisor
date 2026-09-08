@@ -53,6 +53,8 @@ public final class MachineConnection {
   /// Per-machine authoritative snapshot reconciliation.
   @ObservationIgnored var navigationSyncToken: UUID?
   @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
+  /// Manual refresh work survives the gesture's short presentation budget.
+  @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
   /// Coalesces navigation-affecting events for this machine only.
   @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
   /// A scheduled automatic re-preparation after a failed remote
@@ -95,6 +97,7 @@ extension MachineController {
   /// the cloud machine list — left behind, it would keep hiding the
   /// machine's cloud twin.
   func removeConnection(for machineId: String) {
+    connectionsById[machineId]?.manualNavigationRefresh?.cancel()
     connectionsById[machineId]?.eventSyncTask?.cancel()
     connectionsById[machineId]?.preparationTask?.cancel()
     connectionsById[machineId]?.navigationSyncTask?.cancel()
