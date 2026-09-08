@@ -9,9 +9,9 @@ export function xcodebuildArguments(layout, platform, arguments_) {
   if (platformLayout === undefined || !["macos", "ios", "pixelbook"].includes(platform)) {
     throw new Error(`Unknown Xcode platform ${platform}`)
   }
-  // Exporting consumes an existing archive. Xcode rejects -derivedDataPath
-  // without a scheme, and rejects a scheme alongside -exportArchive.
-  if (arguments_.includes("-exportArchive")) {
+  // Export and platform installation do not build a scheme. Xcode rejects
+  // the build-specific cache flags for these standalone operations.
+  if (arguments_.includes("-exportArchive") || arguments_.includes("-downloadPlatform")) {
     return [...arguments_]
   }
   return [

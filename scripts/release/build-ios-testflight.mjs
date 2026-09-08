@@ -24,6 +24,9 @@ const exported = join(output, "export")
 const app = await findApp(appStoreClient(configuration), configuration.bundleId)
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
+// A Mac-only runner may have full Xcode without its optional iOS platform.
+// Xcode reuses the installed platform on subsequent runs.
+await runXcodebuild(repoRoot, "ios", ["-downloadPlatform", "iOS"])
 await runXcodebuild(repoRoot, "ios", [
   "-project",
   "apps/ios/Codevisor.xcodeproj",

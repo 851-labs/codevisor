@@ -19,7 +19,7 @@ test("xcodebuild builds pin worktree-local caches", () => {
   assert.deepEqual(arguments_.slice(6), ["-scheme", "Codevisor", "build"])
 })
 
-test("archive exports preserve paths without incompatible build flags", () => {
+test("standalone Xcode operations omit incompatible build flags", () => {
   const layout = developmentLayout("/repo/codevisor", {})
   const exportArguments = [
     "-exportArchive",
@@ -32,6 +32,10 @@ test("archive exports preserve paths without incompatible build flags", () => {
   ]
 
   assert.deepEqual(xcodebuildArguments(layout, "ios", exportArguments), exportArguments)
+  assert.deepEqual(xcodebuildArguments(layout, "ios", ["-downloadPlatform", "iOS"]), [
+    "-downloadPlatform",
+    "iOS"
+  ])
 })
 
 test("xcodebuild arguments reject unknown platforms", () => {
