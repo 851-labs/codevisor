@@ -50,6 +50,9 @@ struct PluginPaneView: View {
       // Failed panes retry through the same path automatically.
       model.loadIfNeeded(theme: tokens, updateRevision: moved)
     }
+    .task(id: environment.machines.httpConnectionState(forMachineId: model.serverId)) {
+      await model.connectionDidChange(theme: tokens, updateRevision: revision)
+    }
     .onChange(of: tokens) { _, updated in
       model.applyTheme(updated)
     }

@@ -28,6 +28,11 @@ public final class BrowserPaneModel: NSObject {
   @ObservationIgnored private let machineId: String
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
+  @ObservationIgnored private let recoverConnection: (@MainActor () async -> URL?)?
+  @ObservationIgnored private var connectionTask: Task<Void, Never>?
+  @ObservationIgnored private var connectionRecovery = WebConnectionRecovery()
+  @ObservationIgnored private var mainFrameRequest: URLRequest?
+  @ObservationIgnored private var retryRequest: URLRequest?
   @ObservationIgnored private var observations: [NSKeyValueObservation] = []
   @ObservationIgnored private var loadTask: Task<Void, Never>?
   @ObservationIgnored private var loadGeneration = UUID()
@@ -41,7 +46,8 @@ public final class BrowserPaneModel: NSObject {
   public init(
     paneId: UUID, machineId: String, machineName: String, initialURL: String?,
     client: any CodevisorServerClienting,
-    resolveBaseURL: @escaping @MainActor () async -> URL?
+    resolveBaseURL: @escaping @MainActor () async -> URL?,
+    recoverConnection: (@MainActor () async -> URL?)? = nil
   ) {
     self.paneSync = BrowserPaneSync(paneId: paneId, client: client)
     self.paneId = paneId
@@ -49,6 +55,7 @@ public final class BrowserPaneModel: NSObject {
     self.machineName = machineName
     self.client = client
     self.resolveBaseURL = resolveBaseURL
+    self.recoverConnection = recoverConnection
     let provider = BrowserSearchProvider(client: client, resolveBaseURL: resolveBaseURL)
     suggestions = BrowserSuggestions(profile: machineId, fetch: provider.suggestions)
     self.requestedURL = Self.navigationURL(initialURL ?? "https://www.google.com/")
@@ -127,6 +134,11 @@ public final class BrowserPaneModel: NSObject {
       return
     }
     requestedURL = target
+    connectionTask?.cancel()
+    connectionTask = nil
+    connectionRecovery.reset()
+    retryRequest = nil
+    mainFrameRequest = URLRequest(url: target)
     BrowserPageRetention.shared.touch(self)
     errorMessage = nil
     isLoading = true
@@ -167,6 +179,11 @@ public final class BrowserPaneModel: NSObject {
   }
 
   public func reload() {
+    if errorMessage != nil, retryRequest != nil, recoverConnection != nil {
+      connectionRecovery.reset()
+      recoverFailedNavigation()
+      return
+    }
     if errorMessage == nil, let webView, webView.url != nil {
       isLoading = webView.reload() != nil
       return
@@ -175,6 +192,8 @@ public final class BrowserPaneModel: NSObject {
   }
 
   public func stop() {
+    connectionTask?.cancel()
+    connectionTask = nil
     loadGeneration = UUID()
     loadTask?.cancel()
     loadTask = nil
@@ -293,11 +312,58 @@ public final class BrowserPaneModel: NSObject {
     }
   }
 
-  private func failed(_ error: any Error) {
+  /// Refresh the shared proxy even for healthy pages, without reloading
+  /// their documents. Failed GETs can resume after a connection revision.
+  public func connectionDidChange() async {
+    guard webView != nil, connectionTask == nil else { return }
+    let generation = loadGeneration
+    do {
+      guard let endpoint = await resolveBaseURL() else { return }
+      let credential = try await client.browserProxySession()
+      guard generation == loadGeneration, !Task.isCancelled else { return }
+      _ = try BrowserWebsiteProfile.configuredStore(
+        machineId: machineId, endpoint: endpoint, credential: credential, client: client)
+      if retryRequest != nil { recoverFailedNavigation() }
+    } catch {
+      Log.server.error("Browser connection refresh failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  private func recoverFailedNavigation() {
+    guard let recoverConnection, let request = retryRequest,
+      connectionTask == nil, connectionRecovery.canRetry
+    else { return }
+    let generation = loadGeneration
+    connectionTask = Task { [weak self] in
+      guard let self else { return }
+      defer { if generation == loadGeneration { connectionTask = nil } }
+      guard let endpoint = await recoverConnection() else { return }
+      do {
+        let credential = try await client.browserProxySession()
+        guard generation == loadGeneration, retryRequest == request, !Task.isCancelled,
+          connectionRecovery.claimRetry()
+        else { return }
+        _ = try BrowserWebsiteProfile.configuredStore(
+          machineId: machineId, endpoint: endpoint, credential: credential, client: client)
+        retryRequest = nil
+        errorMessage = nil
+        isLoading = true
+        webView?.load(request)
+      } catch {
+        Log.server.error("Browser connection recovery failed: \(String(describing: error), privacy: .public)")
+      }
+    }
+  }
+
+  private func failed(_ error: any Error, provisional: Bool) {
     guard (error as NSError).code != NSURLErrorCancelled else { return }
     updateState()
     isLoading = false
     errorMessage = "Couldn’t load this page through \(machineName). \(error.localizedDescription)"
+    retryRequest =
+      WebConnectionRecovery.accepts(error, method: mainFrameRequest?.httpMethod, provisional: provisional)
+      ? mainFrameRequest : nil
+    recoverFailedNavigation()
   }
 }
 
@@ -321,6 +387,7 @@ extension BrowserPaneModel: WKNavigationDelegate {
   public func webView(
     _ webView: WKWebView, decidePolicyFor action: WKNavigationAction
   ) async -> WKNavigationActionPolicy {
+    if action.targetFrame?.isMainFrame == true { mainFrameRequest = action.request }
     guard let target = action.request.url, let scheme = target.scheme?.lowercased() else { return .cancel }
     if action.targetFrame?.isMainFrame == true,
       let request = BrowserNetworkRules.redirectedNavigation(action.request)
@@ -335,6 +402,7 @@ extension BrowserPaneModel: WKNavigationDelegate {
 
   public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
     paneSync.cancelActivation()
+    retryRequest = nil
     errorMessage = nil
     isLoading = true
   }
@@ -344,14 +412,16 @@ extension BrowserPaneModel: WKNavigationDelegate {
     faviconLoader.reset()
   }
   public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    connectionRecovery.reset()
+    retryRequest = nil
     updateState(publish: true)
     faviconLoader.refresh(from: webView)
   }
   public func webView(
     _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error
-  ) { failed(error) }
+  ) { failed(error, provisional: true) }
   public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
-    failed(error)
+    failed(error, provisional: false)
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     // A discarded background process restores lazily on the next pane entry.

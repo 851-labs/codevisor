@@ -12,6 +12,39 @@ import WebKit
 @MainActor
 @Suite("WebKit browser proxy", .serialized, .timeLimit(.minutes(1)))
 struct BrowserProxyWebKitTests {
+  @Test func replacingTheProxyPreservesTheLoadedDocumentAndHistory() async throws {
+    _ = NSApplication.shared
+    let first = try ProxyFixture()
+    defer { first.close() }
+    let second = try ProxyFixture()
+    defer { second.close() }
+    let firstPort = try await first.start()
+    let secondPort = try await second.start()
+    let machineId = "proxy-recovery-\(UUID())"
+    let credential = ServerBrowserProxySession(username: "test", password: "secret")
+    let store = try BrowserWebsiteProfile.configuredStore(
+      machineId: machineId, endpoint: URL(string: "http://127.0.0.1:\(firstPort)")!, credential: credential)
+    let view = try await BrowserNetworkRules.makeWebView(store: store)
+    let navigation = NavigationResult()
+    view.navigationDelegate = navigation
+    defer { view.stopLoading(); view.navigationDelegate = nil }
+    let url = URL(string: "http://proxy.localhost:3000/")!
+    try await navigation.load(view, url: url)
+    _ = try await view.evaluateJavaScript("history.pushState({}, '', '/retained'); window.unsaved = 'keep me'")
+    let history = view.backForwardList.backList.map(\.url)
+    let updated = try BrowserWebsiteProfile.configuredStore(
+      machineId: machineId, endpoint: URL(string: "http://127.0.0.1:\(secondPort)")!, credential: credential)
+    #expect(updated === store)
+    let response = try await view.callAsyncJavaScript(
+      "return await (await fetch('http://recovered.proxy.localhost:3001/api')).text()",
+      arguments: [:], in: nil, contentWorld: .page)
+    #expect(response as? String == "proxied API")
+    #expect(second.authorities.contains("recovered.proxy.localhost:3001"))
+    #expect(try await view.evaluateJavaScript("window.unsaved") as? String == "keep me")
+    #expect(view.url?.path == "/retained")
+    #expect(view.backForwardList.backList.map(\.url) == history)
+  }
+
   @Test func faviconRequestsAndLoopbackRedirectsUseThePageProxy() async throws {
     let proxy = try ProxyFixture()
     let port = try await proxy.start()

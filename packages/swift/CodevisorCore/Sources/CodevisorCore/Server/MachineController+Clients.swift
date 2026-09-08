@@ -6,6 +6,29 @@ import Foundation
 /// machines in fallback, plain HTTP for active direct routes, and a
 /// loudly-failing client when a cloud id can't be routed yet.
 extension MachineController {
+  public struct HTTPConnectionState: Equatable {
+    let directURL: URL?
+    let relayDeviceId: String?
+    let revision: UInt64
+  }
+
+  /// Observed by raw-socket consumers, including cached browser/plugin panes.
+  public func httpConnectionState(forMachineId machineId: String) -> HTTPConnectionState {
+    if let cloud = relayMachine(forMachineId: machineId) {
+      return HTTPConnectionState(
+        directURL: nil, relayDeviceId: cloud.deviceId,
+        revision: cloudProvider?.loopbackRevision(for: cloud) ?? 0)
+    }
+    return HTTPConnectionState(directURL: machine(for: machineId)?.baseURL, relayDeviceId: nil, revision: 0)
+  }
+
+  public func recoverHTTPConnection(forMachineId machineId: String) async -> URL? {
+    if let cloud = relayMachine(forMachineId: machineId) {
+      guard await cloudProvider?.recoverLoopbackBridge(for: cloud) == true else { return nil }
+    }
+    return await effectiveHTTPBaseURL(forMachineId: machineId)
+  }
+
   func clientIfKnown(for machineId: String) -> (any CodevisorServerClienting)? {
     guard machine(for: machineId) != nil else { return nil }
     return client(for: machineId)

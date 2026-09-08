@@ -17,6 +17,8 @@ public protocol CloudMachineProviding: AnyObject {
   /// (the terminal proxy). Calling this may lazily start the bridge; nil
   /// until it is listening (or when the implementation doesn't bridge).
   func loopbackBaseURL(for machine: CloudMachine) -> URL?
+  func loopbackRevision(for machine: CloudMachine) -> UInt64
+  func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool
   /// Registers the machine this app runs on with the signed-in account.
   /// Nudged from local status refreshes so a server that starts after
   /// sign-in still registers.
@@ -25,6 +27,8 @@ public protocol CloudMachineProviding: AnyObject {
 
 public extension CloudMachineProviding {
   func loopbackBaseURL(for machine: CloudMachine) -> URL? { nil }
+  func loopbackRevision(for machine: CloudMachine) -> UInt64 { 0 }
+  func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }
   func registerLocalMachineIfNeeded() {}
 }
 

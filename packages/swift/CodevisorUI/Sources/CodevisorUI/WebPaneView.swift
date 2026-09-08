@@ -181,6 +181,8 @@ public final class WebPaneController: NSObject {
   /// A main-frame load failed; the message is user-presentable. The owner
   /// must render a native error state — never a blank webview.
   public var onNavigationFailed: ((String) -> Void)?
+  public var onConnectionFailure: ((any Error) -> Void)?
+  private var mainFrameMethod: String?
   public var onNavigationFinished: (() -> Void)?
 
   private var context: WebPaneBridgeContext
@@ -412,9 +414,12 @@ public final class WebPaneController: NSObject {
       || (nsError.domain == "WebKitErrorDomain" && nsError.code == 102)
   }
 
-  fileprivate func navigationFailed(_ error: any Error) {
+  fileprivate func navigationFailed(_ error: any Error, provisional: Bool = false) {
     guard !Self.isNavigationNoise(error) else { return }
     onNavigationFailed?(error.localizedDescription)
+    if WebConnectionRecovery.accepts(error, method: mainFrameMethod, provisional: provisional) {
+      onConnectionFailure?(error)
+    }
   }
 }
 
@@ -423,6 +428,9 @@ extension WebPaneController: WKNavigationDelegate {
     _ webView: WKWebView,
     decidePolicyFor navigationAction: WKNavigationAction
   ) async -> WKNavigationActionPolicy {
+    if navigationAction.targetFrame?.isMainFrame == true {
+      mainFrameMethod = navigationAction.request.httpMethod
+    }
     guard let url = navigationAction.request.url else { return .cancel }
     if url.scheme?.lowercased() == "about" { return .allow }
     if let allowedOrigin, WebPaneOrigin(url: url) == allowedOrigin { return .allow }
@@ -442,7 +450,7 @@ extension WebPaneController: WKNavigationDelegate {
     didFailProvisionalNavigation navigation: WKNavigation!,
     withError error: any Error
   ) {
-    navigationFailed(error)
+    navigationFailed(error, provisional: true)
   }
 
   public func webView(

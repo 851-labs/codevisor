@@ -44,6 +44,11 @@ final class PluginPaneModel: Identifiable {
   /// baseURL, relay machines start the loopback bridge on demand
   /// (MachineController.effectiveHTTPBaseURL).
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
+  @ObservationIgnored private let recoverConnection: @MainActor () async -> URL?
+  @ObservationIgnored private var loadedBaseURL: URL?
+  @ObservationIgnored private var lastTheme: WebPaneThemeTokens?
+  @ObservationIgnored private var connectionFailure = false
+  @ObservationIgnored private var connectionRecovery = WebConnectionRecovery()
   @ObservationIgnored private var controller: WebPaneController?
   @ObservationIgnored private var loadTask: Task<Void, Never>?
   /// The plugin-update revision the last load ran against; a moved
@@ -60,7 +65,8 @@ final class PluginPaneModel: Identifiable {
     workspaceId: UUID?,
     cwd: String,
     client: any CodevisorServerClienting,
-    resolveBaseURL: @escaping @MainActor () async -> URL?
+    resolveBaseURL: @escaping @MainActor () async -> URL?,
+    recoverConnection: @escaping @MainActor () async -> URL?
   ) {
     self.id = paneId
     self.serverId = serverId
@@ -70,6 +76,7 @@ final class PluginPaneModel: Identifiable {
     self.cwd = cwd
     self.client = client
     self.resolveBaseURL = resolveBaseURL
+    self.recoverConnection = recoverConnection
   }
 
   /// The live webView for grid-card snapshots — only once a document has
@@ -103,8 +110,16 @@ final class PluginPaneModel: Identifiable {
     controller.onNavigationFailed = { [weak self] message in
       self?.phase = .failed(message)
     }
+    controller.onConnectionFailure = { [weak self] _ in
+      guard let self, let theme = lastTheme, let revision = loadedUpdateRevision else { return }
+      connectionFailure = true
+      guard connectionRecovery.canRetry else { return }
+      load(theme: theme, updateRevision: revision, recovering: true)
+    }
     controller.onNavigationFinished = { [weak self] in
       self?.phase = .ready
+      self?.connectionFailure = false
+      self?.connectionRecovery.reset()
     }
     self.controller = controller
     return controller
@@ -120,6 +135,21 @@ final class PluginPaneModel: Identifiable {
   }
 
   func retry(theme: WebPaneThemeTokens, updateRevision: UInt64) {
+    connectionRecovery.reset()
+    load(theme: theme, updateRevision: updateRevision, recovering: true)
+  }
+
+  /// A retained pane may still reference a retired local origin. Refresh
+  /// only when that origin changed, or a failed read-only load can retry.
+  func connectionDidChange(theme: WebPaneThemeTokens, updateRevision: UInt64) async {
+    guard phase != .idle, phase != .loading else { return }
+    if connectionFailure {
+      if connectionRecovery.canRetry { load(theme: theme, updateRevision: updateRevision, recovering: true) }
+      return
+    }
+    guard phase == .ready, let base = await resolveBaseURL(), !Task.isCancelled,
+      phase == .ready, let loadedBaseURL, base != loadedBaseURL
+    else { return }
     load(theme: theme, updateRevision: updateRevision)
   }
 
@@ -127,7 +157,9 @@ final class PluginPaneModel: Identifiable {
     controller?.applyTheme(theme)
   }
 
-  private func load(theme: WebPaneThemeTokens, updateRevision: UInt64) {
+  private func load(theme: WebPaneThemeTokens, updateRevision: UInt64, recovering: Bool = false) {
+    lastTheme = theme
+    if !recovering { connectionRecovery.reset(); connectionFailure = false }
     loadedUpdateRevision = updateRevision
     guard !pluginId.isEmpty, !paneType.isEmpty else {
       phase = .failed("This pane's plugin information is missing.")
@@ -150,7 +182,8 @@ final class PluginPaneModel: Identifiable {
         guard !Task.isCancelled else { return }
         // Resolved per load so a Retry after a relay reconnect picks
         // up the fresh loopback origin.
-        guard let base = await self.resolveBaseURL() else {
+        let base = recovering ? await self.recoverConnection() : await self.resolveBaseURL()
+        guard let base else {
           guard !Task.isCancelled else { return }
           self.phase = .failed(
             "This machine's relay connection isn't available yet. Try again once it reconnects."
@@ -158,10 +191,12 @@ final class PluginPaneModel: Identifiable {
           return
         }
         guard !Task.isCancelled else { return }
+        if recovering, !connectionRecovery.claimRetry() { return }
         guard let url = Self.paneURL(base: base, path: response.path) else {
           self.phase = .failed("The server returned an unusable pane address.")
           return
         }
+        loadedBaseURL = base
         controller.load(url)
       } catch {
         guard !Task.isCancelled, !isTaskCancellation(error) else { return }
@@ -189,6 +224,9 @@ final class PluginPaneModel: Identifiable {
     controller?.stopLoading()
     controller = nil
     phase = .idle
+    loadedBaseURL = nil
+    connectionFailure = false
+    connectionRecovery.reset()
   }
 }
 

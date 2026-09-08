@@ -106,6 +106,36 @@ private final class RawTCPClient: @unchecked Sendable {
 
 @Suite("CloudRelayLoopbackBridge")
 struct CloudRelayLoopbackBridgeTests {
+  @Test("Failure after ready clears the live port and rejects late ready callbacks")
+  func listenerFailureAfterStartup() async throws {
+    let changed = TestSignal()
+    let bridge = CloudRelayLoopbackBridge(endpoint: UnusedLoopbackEndpoint(), onStateChange: changed.signal)
+    defer { bridge.stop() }
+    let port = try await bridge.start()
+    await changed.wait()
+    #expect(bridge.port == port)
+    bridge.listenerStateChanged(.failed(.posix(.ENETDOWN)), port: port)
+    #expect(bridge.isStopped)
+    #expect(bridge.port == nil)
+    bridge.listenerStateChanged(.ready, port: port)
+    #expect(bridge.port == nil)
+    await #expect(throws: CloudRelayLoopbackBridge.BridgeError.self) { _ = try await bridge.start() }
+  }
+
+  @Test("Waiting withdraws the address and ready restores the same listener")
+  func listenerWaitingAndReady() async throws {
+    let bridge = CloudRelayLoopbackBridge(endpoint: UnusedLoopbackEndpoint())
+    defer { bridge.stop() }
+    let port = try await bridge.start()
+    bridge.listenerStateChanged(.waiting(.posix(.ENETDOWN)), port: port)
+    #expect(bridge.port == nil)
+    #expect(!bridge.isStopped)
+    bridge.listenerStateChanged(.ready, port: port)
+    #expect(bridge.port == port)
+    bridge.stop()
+    #expect(bridge.port == nil)
+  }
+
   @Observable
   final class ScriptedByteMachine: @unchecked Sendable {
     private struct OpenPayload: Decodable {

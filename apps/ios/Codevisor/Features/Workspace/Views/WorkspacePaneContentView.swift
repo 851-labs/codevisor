@@ -6,6 +6,7 @@ import SwiftUI
 /// terminal. All state stays with WorkspaceScreen; this view receives the
 /// resolved values and closures for the pane it renders.
 struct WorkspacePaneContentView: View {
+  @Environment(AppEnvironment.self) private var environment
   let pane: PaneDescriptorState
   /// Resolved via the cache (and the draft controller) so an already-live
   /// chat renders on the FIRST frame — a just-sent message must never flash
@@ -103,6 +104,9 @@ struct WorkspacePaneContentView: View {
       )
     case .browser:
       BrowserPaneView(model: browserPaneModel(pane))
+        .task(id: environment.machines.httpConnectionState(forMachineId: machineId)) {
+          await browserPaneModel(pane).connectionDidChange()
+        }
     case .document:
       if let path = pane.documentPath {
         MarkdownDocumentView(

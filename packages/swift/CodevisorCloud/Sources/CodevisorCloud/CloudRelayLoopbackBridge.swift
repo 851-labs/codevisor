@@ -27,10 +27,18 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
   private var listener: NWListener?
   private var stopped = false
   private var connections: [ObjectIdentifier: LoopbackConnection] = [:]
-  public private(set) var port: UInt16?
+  private var listeningPort: UInt16?
+  private var startup: CheckedContinuation<UInt16, any Error>?
+  private let onStateChange: @Sendable () -> Void
+  public var port: UInt16? { lock.withLock { listeningPort } }
+  public var isStopped: Bool { lock.withLock { stopped } }
 
-  public init(endpoint: any CloudChannelTransport) {
+  public init(
+    endpoint: any CloudChannelTransport,
+    onStateChange: @escaping @Sendable () -> Void = {}
+  ) {
     self.endpoint = endpoint
+    self.onStateChange = onStateChange
   }
 
   /// Starts a loopback-only listener on an ephemeral port.
@@ -46,49 +54,73 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     listener.newConnectionHandler = { [weak self] connection in
       self?.adopt(connection)
     }
-    let port: UInt16 = try await withCheckedThrowingContinuation { continuation in
-      let once = OnceFlag()
-      listener.stateUpdateHandler = { state in
-        let result: Result<UInt16, any Error>
-        switch state {
-        case .ready:
-          guard let port = listener.port?.rawValue else {
-            result = .failure(BridgeError.stopped)
-            break
-          }
-          result = .success(port)
-        case let .failed(error):
-          result = .failure(error)
-        case .cancelled:
-          result = .failure(BridgeError.stopped)
-        default:
-          return
-        }
-        guard once.claim() else { return }
-        continuation.resume(with: result)
+    return try await withCheckedThrowingContinuation { continuation in
+      let accepted = lock.withLock {
+        guard !stopped else { return false }
+        startup = continuation
+        return true
+      }
+      guard accepted else {
+        listener.cancel()
+        continuation.resume(throwing: BridgeError.stopped)
+        return
+      }
+      listener.stateUpdateHandler = { [weak self, weak listener] state in
+        self?.listenerStateChanged(state, port: listener?.port?.rawValue)
       }
       listener.start(queue: queue)
     }
-    lock.withLock { self.port = port }
-    Log.cloud.info(
-      "Cloud loopback bridge for \(self.endpoint.machineDeviceId, privacy: .public) listening on 127.0.0.1:\(port)"
-    )
-    return port
+  }
+
+  // Observe the entire listener lifetime, including failure after start()
+  // returned. Never let a late ready callback resurrect a stopped bridge.
+  func listenerStateChanged(_ state: NWListener.State, port: UInt16?) {
+    switch state {
+    case .ready:
+      guard let port else { finish(throwing: BridgeError.stopped); return }
+      let result = lock.withLock { () -> (Bool, CheckedContinuation<UInt16, any Error>?) in
+        guard !stopped else { return (false, nil) }
+        listeningPort = port
+        let pending = startup
+        startup = nil
+        return (true, pending)
+      }
+      guard result.0 else { return }
+      result.1?.resume(returning: port)
+      onStateChange()
+    case .waiting:
+      lock.withLock { listeningPort = nil }
+      onStateChange()
+    case let .failed(error):
+      Log.cloud.error("Cloud loopback listener failed: \(String(describing: error), privacy: .public)")
+      finish(throwing: error)
+    case .cancelled:
+      finish(throwing: BridgeError.stopped)
+    default: break
+    }
   }
 
   /// Stops listening and tears down every active tunnel.
   public func stop() {
-    let (listener, open) = lock.withLock {
+    finish(throwing: BridgeError.stopped)
+  }
+
+  private func finish(throwing error: any Error) {
+    let result = lock.withLock { () -> (NWListener?, [LoopbackConnection], CheckedContinuation<UInt16, any Error>?)? in
+      guard !stopped else { return nil }
       stopped = true
-      let result = (self.listener, Array(connections.values))
+      listeningPort = nil
+      let result = (listener, Array(connections.values), startup)
       self.listener = nil
+      startup = nil
       connections.removeAll()
       return result
     }
+    guard let (listener, open, pending) = result else { return }
     listener?.cancel()
-    for connection in open {
-      connection.cancel()
-    }
+    for connection in open { connection.cancel() }
+    pending?.resume(throwing: error)
+    onStateChange()
   }
 
   private func adopt(_ connection: NWConnection) {
@@ -116,18 +148,6 @@ public final class CloudRelayLoopbackBridge: @unchecked Sendable {
     return count + 16
   }
 
-  private final class OnceFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
-
-    func claim() -> Bool {
-      lock.withLock {
-        let first = !claimed
-        claimed = true
-        return first
-      }
-    }
-  }
 }
 
 // MARK: - One accepted connection
@@ -185,6 +205,7 @@ private final class LoopbackConnection: @unchecked Sendable {
         }
       )
     } catch {
+      Log.cloud.error("Cloud byte tunnel could not open: \(String(describing: error), privacy: .public)")
       inboundContinuation.finish()
       creditContinuation.finish()
       return

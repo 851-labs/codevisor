@@ -64,6 +64,9 @@ final class FakeCloudProvider: CloudMachineProviding {
   /// Simulates a listening loopback bridge for a machine, like
   /// CloudAccountController publishes once its bridge is up.
   var loopbackURLsByDeviceId: [String: URL] = [:]
+  var loopbackRevisionsByDeviceId: [String: UInt64] = [:]
+  var loopbackRecoverySucceeds = true
+  private(set) var loopbackRecoveryRequests: [String] = []
   let requestTransport = FakeRelayRequestTransport()
   private(set) var configRequests: [String] = []
 
@@ -79,6 +82,13 @@ final class FakeCloudProvider: CloudMachineProviding {
 
   func loopbackBaseURL(for machine: CloudMachine) -> URL? {
     loopbackURLsByDeviceId[machine.deviceId]
+  }
+  func loopbackRevision(for machine: CloudMachine) -> UInt64 {
+    loopbackRevisionsByDeviceId[machine.deviceId, default: 0]
+  }
+  func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool {
+    loopbackRecoveryRequests.append(machine.deviceId)
+    return loopbackRecoverySucceeds
   }
 }
 

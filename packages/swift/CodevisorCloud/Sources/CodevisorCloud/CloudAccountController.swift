@@ -73,15 +73,7 @@ public final class CloudAccountController {
   /// go through `SwitchingChannelTransport`, which prefers a live verified
   /// direct pipe and falls back to the relay.
   public let directPaths: CloudDirectPathController
-  /// Per-machine loopback bridges (real 127.0.0.1 addresses that forward
-  /// onto the relay), created lazily on first `loopbackBaseURL` access and
-  /// torn down with the account. Keyed by cloud device id; the pinned
-  /// public key detects re-provisioned machines whose bridge is stale.
-  @ObservationIgnored private var loopbackBridges: [String: (bridge: CloudRelayLoopbackBridge, publicKey: String)] =
-    [:]
-  /// Ports of listening bridges. Observable so machine lists synthesized
-  /// from cloud presence recompute their base URLs when a bridge comes up.
-  private var loopbackPorts: [String: UInt16] = [:]
+  private let loopbackPool = CloudLoopbackBridgePool()
   /// Fired after a local sign-out (including a revoked session detected by
   /// refreshMachines) so the machine list can drop cloud selections.
   @ObservationIgnored public var onSignedOut: (() -> Void)?
@@ -535,65 +527,34 @@ public final class CloudAccountController {
       await hub.reconnect()
     }
     await refreshMachines()
+    // Chat recovery should not wait for a raw-socket probe to time out.
+    // Each machine's pool coalesces overlapping foreground/pane checks.
+    Task { [weak self] in await self?.recoverLoopbackBridges() }
   }
 
   // MARK: - Loopback bridges
 
-  /// Starts (idempotently) this machine's loopback bridge and publishes its
-  /// port once the listener is up. The synchronous caller sees nil until
-  /// then; the observable `loopbackPorts` mutation re-runs machine-list
-  /// synthesis when the real address becomes available.
-  private func ensureLoopbackBridge(for machine: CloudMachine) {
-    if let existing = loopbackBridges[machine.deviceId] {
-      // A re-provisioned machine (fresh keys under the same device id)
-      // needs a fresh bridge — the old one pins the old public key.
-      guard existing.publicKey != machine.publicKey else { return }
-      existing.bridge.stop()
-      loopbackBridges[machine.deviceId] = nil
-      Task { [weak self] in self?.loopbackPorts[machine.deviceId] = nil }
-    }
-    // TOFU: a machine presenting a key that conflicts with its pin gets
-    // no bridge at all until the user explicitly re-trusts it.
-    guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
-      return
-    }
-    let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey, hub: hub)
-    let bridge = CloudRelayLoopbackBridge(endpoint: endpoint)
-    loopbackBridges[machine.deviceId] = (bridge, verifiedKey)
-    let deviceId = machine.deviceId
-    Task { [weak self] in
-      do {
-        let port = try await bridge.start()
-        guard let self, self.loopbackBridges[deviceId]?.bridge === bridge else {
-          bridge.stop()
-          return
-        }
-        self.loopbackPorts[deviceId] = port
-      } catch {
-        Log.cloud.error("Cloud loopback bridge failed to start: \(String(describing: error), privacy: .public)")
-        guard let self, self.loopbackBridges[deviceId]?.bridge === bridge else { return }
-        self.loopbackBridges[deviceId] = nil
-      }
-    }
-  }
-
   private func stopLoopbackBridge(deviceId: String) {
-    loopbackBridges.removeValue(forKey: deviceId)?.bridge.stop()
-    loopbackPorts[deviceId] = nil
+    loopbackPool.remove(deviceId)
   }
 
   private func stopAllLoopbackBridges() {
-    for entry in loopbackBridges.values {
-      entry.bridge.stop()
+    loopbackPool.removeAll()
+  }
+
+  private func recoverLoopbackBridges() async {
+    let active = Set(loopbackPool.machineIds)
+    await withTaskGroup(of: Void.self) { group in
+      for machine in machines where active.contains(machine.deviceId) {
+        group.addTask { _ = await self.recoverLoopbackBridge(for: machine) }
+      }
     }
-    loopbackBridges = [:]
-    loopbackPorts = [:]
   }
 
   /// Drops bridges for machines that no longer exist on the account.
   private func pruneLoopbackBridges() {
     let known = Set(machines.map(\.deviceId))
-    for deviceId in loopbackBridges.keys where !known.contains(deviceId) {
+    for deviceId in loopbackPool.machineIds where !known.contains(deviceId) {
       stopLoopbackBridge(deviceId: deviceId)
     }
   }
@@ -707,9 +668,24 @@ extension CloudAccountController: CloudMachineProviding {
   }
 
   public func loopbackBaseURL(for machine: CloudMachine) -> URL? {
-    guard state.isSignedIn else { return nil }
-    ensureLoopbackBridge(for: machine)
-    guard let port = loopbackPorts[machine.deviceId] else { return nil }
-    return URL(string: "http://127.0.0.1:\(port)")
+    guard state.isSignedIn, let hub = hubConnection(),
+      let key = verifiedMachineKey(for: machine)
+    else { return nil }
+    return loopbackPool.baseURL(
+      for: machine.deviceId, key: key,
+      endpoint: machineTransport(for: machine, verifiedKey: key, hub: hub))
+  }
+
+  public func loopbackRevision(for machine: CloudMachine) -> UInt64 {
+    loopbackPool.revision(for: machine.deviceId)
+  }
+
+  public func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool {
+    guard state.isSignedIn, let hub = hubConnection(),
+      let key = verifiedMachineKey(for: machine)
+    else { return false }
+    return await loopbackPool.recover(
+      for: machine.deviceId, key: key,
+      endpoint: machineTransport(for: machine, verifiedKey: key, hub: hub))
   }
 }

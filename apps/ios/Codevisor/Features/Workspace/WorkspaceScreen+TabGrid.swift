@@ -252,6 +252,9 @@ extension WorkspaceScreen {
         client: machines.client(for: serverId),
         resolveBaseURL: { [weak machines] in
           await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
+        },
+        recoverConnection: { [weak machines] in
+          await machines?.recoverHTTPConnection(forMachineId: serverId)
         })
     }
     model.onNavigate = { url, title in
@@ -291,6 +294,9 @@ extension WorkspaceScreen {
         client: machines.client(for: serverId),
         resolveBaseURL: { [weak machines] in
           await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
+        },
+        recoverConnection: { [weak machines] in
+          await machines?.recoverHTTPConnection(forMachineId: serverId)
         }
       )
     }
