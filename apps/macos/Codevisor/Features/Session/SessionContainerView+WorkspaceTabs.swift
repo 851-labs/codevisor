@@ -129,9 +129,6 @@ extension SessionContainerView {
     guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let closing = workspace.centerTabs[index]
     let closesSelectedTab = workspace.selectedCenterTabId == tabId
-    let closesRoutedChat = closing.root.allGroups.contains { group in
-      group.state.panes.contains { $0.chatSessionId == session.id }
-    }
     closingCenterTabId = tabId
     for leaf in closing.root.allGroups {
       let model = configuredCenterModel(leafId: leaf.id)
@@ -156,9 +153,6 @@ extension SessionContainerView {
     liveCenterTree = workspace.centerTree
     if closesSelectedTab {
       activateLeaf(workspace.selectedCenterTab?.activeLeafId)
-    }
-    if closesSelectedTab, closesRoutedChat, let survivor = firstSurvivingChatId() {
-      onFocusedChatChanged?(survivor)
     }
   }
 }

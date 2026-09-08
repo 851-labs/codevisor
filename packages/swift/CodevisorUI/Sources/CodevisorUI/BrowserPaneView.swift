@@ -26,7 +26,9 @@ public struct BrowserPaneView: View {
         address = model.url?.absoluteString ?? "https://www.google.com/"
         model.setVisible(true)
       }
-      .onDisappear { model.setVisible(false) }
+      .onDisappear {
+        model.setVisible(false); model.suggestions.dismiss()
+      }
       .onChange(of: model.url) { _, url in
         if !addressFocused { address = url?.absoluteString ?? "" }
         isCollapsed = false
@@ -36,18 +38,21 @@ public struct BrowserPaneView: View {
         if focused {
           address = model.url?.absoluteString ?? address
           selection = TextSelection(range: address.startIndex..<address.endIndex)
+        } else {
+          model.suggestions.dismiss()
         }
+      }
+      .onChange(of: address) { _, value in
+        if addressFocused { model.suggestions.update(value) }
       }
       .onChange(of: model.errorMessage) { _, error in
         if error != nil { isCollapsed = false }
       }
-      #if os(macOS)
-        .background {
-          Button("Focus browser address") { editAddress() }
+      .background {
+        Button("Focus browser address") { editAddress() }
           .keyboardShortcut("l", modifiers: .command)
           .hidden()
-        }
-      #endif
+      }
   }
 
   @ViewBuilder private var surface: some View {
@@ -55,9 +60,20 @@ public struct BrowserPaneView: View {
       page
         .ignoresSafeArea(.container, edges: .vertical)
         .overlay(alignment: .bottom) {
-          toolbar
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+          VStack(spacing: 8) {
+            if addressFocused, !model.suggestions.items.isEmpty {
+              BrowserSuggestionList(suggestions: model.suggestions) { item in
+                model.suggestions.dismiss()
+                address = item.value
+                submitAddress()
+              }
+              .frame(maxHeight: 320)
+              .background(.regularMaterial, in: .rect(cornerRadius: 20))
+            }
+            toolbar
+          }
+          .padding(.horizontal, 12)
+          .padding(.bottom, 8)
         }
         .background(model.pageAppearance.chromeColor)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -214,6 +230,15 @@ public struct BrowserPaneView: View {
           .textFieldStyle(.plain)
           .focused($addressFocused)
           .onSubmit { submitAddress() }
+          .onKeyPress(.downArrow) {
+            model.suggestions.moveSelection(1); return .handled
+          }
+          .onKeyPress(.upArrow) {
+            model.suggestions.moveSelection(-1); return .handled
+          }
+          .onKeyPress(.escape) {
+            cancelEditing(); return .handled
+          }
           .accessibilityLabel("Browser address")
           .opacity(addressFocused ? 1 : 0)
           .allowsHitTesting(addressFocused)
@@ -280,7 +305,8 @@ public struct BrowserPaneView: View {
   }
 
   private func submitAddress() {
-    model.submitAddress(address)
+    model.submitAddress(model.suggestions.selected?.value ?? address)
+    model.suggestions.dismiss()
     addressFocused = false
     isCollapsed = false
   }

@@ -79,7 +79,12 @@ public final class BrowserCookieSync {
     var changed = false
     var appliedKeys = Set<String>()
     for entry in snapshot.entries {
+      let serverChanged = revisions[entry.key] != entry.revision
       revisions[entry.key] = entry.revision
+      // The engine may round expiry or normalize SameSite on import. An
+      // unchanged server revision already corresponds to our normalized
+      // baseline; reapplying it would invalidate every cached tab on each poll.
+      guard serverChanged || local[entry.key] != baseline?[entry.key] else { continue }
       // A page may set another cookie while the server is replying. Publish that
       // change on the next exchange instead of overwriting it with this reply.
       guard now[entry.key] == local[entry.key] else { continue }

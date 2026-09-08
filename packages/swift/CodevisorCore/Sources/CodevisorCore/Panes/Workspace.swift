@@ -322,13 +322,13 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   }
 
   /// Whether any center tab shows live content that is not a chat and not
-  /// the New Tab placeholder (a terminal or plugin pane). Such a workspace
+  /// the New Tab placeholder. Such a workspace
   /// is not empty even once its last chat closes: the sidebar keeps listing
   /// it and navigation keeps routing to it.
   public var hasOpenNonChatContent: Bool {
     centerTabs.contains { tab in
       tab.root.allGroups.contains { group in
-        group.state.panes.contains { $0.kind == .terminal || $0.kind == .plugin }
+        group.state.panes.contains { $0.kind != .chat && $0.kind != .newTab }
       }
     }
   }

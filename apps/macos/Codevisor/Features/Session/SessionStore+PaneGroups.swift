@@ -195,6 +195,11 @@ extension SessionStore {
       }
     )
     if placement == .center {
+      model.openBrowserLink = { [weak self] source, url, destination, popup in
+        self?.openBrowserLink(
+          for: session, project: project, sourcePaneId: source, url: url, destination: destination, popup: popup
+        ) ?? false
+      }
       model.createBrowserTab = { [weak self] url in
         self?.createBrowserTab(for: session, project: project, url: url)
       }

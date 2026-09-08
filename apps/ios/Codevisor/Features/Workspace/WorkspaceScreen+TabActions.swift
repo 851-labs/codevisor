@@ -118,6 +118,8 @@ extension WorkspaceScreen {
       // process. The machine-side plugin remains available to other
       // clients, panes, and tools until the Codevisor server stops.
       PluginPaneCache.shared.remove(paneId: pane.id)
+    }
+    if pane.kind == .browser {
       BrowserPaneCache.shared.remove(paneId: pane.id)
     }
     if pane.kind == .chat, let sessionId = pane.chatSessionId,

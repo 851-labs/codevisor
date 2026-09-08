@@ -144,6 +144,11 @@ export const launchManagedBrowser = async (
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
+      // Automation addresses tabs independently of window focus. Keep background
+      // renderers responsive, as Playwright does for its managed Chromium.
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-renderer-backgrounding",
       ...managedBrowserSandboxArguments({
         platform: process.platform,
         uid: process.getuid?.(),

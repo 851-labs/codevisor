@@ -20,6 +20,10 @@ final class ChromiumAutomationBridge {
   private var connections: [UUID: ChromiumAutomationConnection] = [:]
   private var token = ""
 
+  func isControlling(_ model: ChromiumBrowserModel) -> Bool {
+    connections.values.contains { $0.controls(model) }
+  }
+
   func addGroup(_ group: PaneGroupModel) {
     groups.removeAll { $0.value == nil }
     groups.append(WeakGroup(group))
@@ -109,6 +113,12 @@ private final class ChromiumAutomationConnection {
   private var popupOwners: [String: ChromiumBrowserModel] = [:]
   private var childSessions: [String: ChromiumBrowserModel] = [:]
   private var closed = false
+
+  func controls(_ model: ChromiumBrowserModel) -> Bool {
+    !closed
+      && (sessions.values.contains { $0.model === model }
+        || popupOwners.values.contains { $0 === model })
+  }
 
   init(connection: NWConnection, bridge: ChromiumAutomationBridge, token: String) {
     self.connection = connection; self.bridge = bridge; self.token = token

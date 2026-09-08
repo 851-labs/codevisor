@@ -14,6 +14,7 @@
 #include <functional>
 #include <vector>
 #include <set>
+#include <optional>
 
 @interface CVChromiumApplication : NSApplication <CefAppProtocol>
 @property(nonatomic) BOOL handlingSendEvent;
@@ -535,6 +536,24 @@ class ContextHandler final : public CefRequestContextHandler {
   IMPLEMENT_REFCOUNTING(ContextHandler);
 };
 
+namespace {
+enum LinkMenuCommand {
+  InspectPage = MENU_ID_USER_FIRST,
+  OpenLinkTab, OpenLinkWindow, OpenLinkSplit, CopyLinkAddress,
+};
+std::optional<CVBrowserLinkDestination> LinkDestination(cef_window_open_disposition_t disposition) {
+  switch (disposition) {
+    case CEF_WOD_NEW_BACKGROUND_TAB: return CVBrowserLinkDestinationBackgroundTab;
+    case CEF_WOD_NEW_FOREGROUND_TAB: return CVBrowserLinkDestinationForegroundTab;
+    case CEF_WOD_NEW_WINDOW: return CVBrowserLinkDestinationWindow;
+    default: return std::nullopt;
+  }
+}
+bool IsWebLink(NSString *address) {
+  return [@[@"http", @"https"] containsObject:[NSURL URLWithString:address].scheme.lowercaseString];
+}
+}
+
 class BrowserClient final : public CefClient, public CefLifeSpanHandler,
                             public CefDisplayHandler, public CefLoadHandler,
                             public CefRequestHandler, public CefContextMenuHandler {
@@ -546,15 +565,48 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
-  void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams>, CefRefPtr<CefMenuModel> menu) override {
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> menu) override {
+    if (!params->GetLinkUrl().empty()) {
+      int index = 0;
+      if (view_.openLink && IsWebLink(String(params->GetLinkUrl()))) {
+        menu->InsertItemAt(index++, OpenLinkTab, "Open Link in New Tab");
+        menu->InsertItemAt(index++, OpenLinkWindow, "Open Link in New Window");
+        menu->InsertItemAt(index++, OpenLinkSplit, "Open Link in Split");
+      }
+      menu->InsertItemAt(index++, CopyLinkAddress, "Copy Link Address");
+      if (menu->GetCount() > index) menu->InsertSeparatorAt(index);
+    }
     if (menu->GetCount()) menu->AddSeparator();
-    menu->AddItem(MENU_ID_USER_FIRST, "Inspect");
+    menu->AddItem(InspectPage, "Inspect");
   }
-  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams> params, int command, EventFlags) override {
-    if (command != MENU_ID_USER_FIRST) return false;
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>, CefRefPtr<CefContextMenuParams> params, int command, EventFlags flags) override {
+    NSString *url = String(params->GetLinkUrl());
+    if (command == CopyLinkAddress) {
+      [NSPasteboard.generalPasteboard clearContents];
+      [NSPasteboard.generalPasteboard setString:url forType:NSPasteboardTypeString];
+      return true;
+    }
+    std::optional<CVBrowserLinkDestination> destination;
+    switch (command) {
+      case OpenLinkTab: destination = flags & EVENTFLAG_SHIFT_DOWN ? CVBrowserLinkDestinationForegroundTab : CVBrowserLinkDestinationBackgroundTab; break;
+      case OpenLinkWindow: destination = CVBrowserLinkDestinationWindow; break;
+      case OpenLinkSplit: destination = CVBrowserLinkDestinationSplitRight; break;
+    }
+    CVChromiumView *view = view_;
+    if (destination) {
+      if (view.openLink && IsWebLink(url)) view.openLink(url, *destination);
+      return true;
+    }
+    if (command != InspectPage) return false;
     CefRefPtr<ContextInspection> inspection = new ContextInspection(view_);
     inspection->Start(browser, params->GetXCoord(), params->GetYCoord());
     return true;
+  }
+  bool OnOpenURLFromTab(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, const CefString& url,
+                         WindowOpenDisposition disposition, bool) override {
+    auto destination = LinkDestination(disposition);
+    CVChromiumView *view = view_;
+    return destination && view.openLink && IsWebLink(String(url)) && view.openLink(String(url), *destination);
   }
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
     browsers[browser->GetIdentifier()] = browser;
@@ -580,6 +632,10 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
     CVChromiumView *view = view_;
     if (view) {
+      if (!view->_closed && view.pageClosed) {
+        void (^closed)(void) = [view.pageClosed copy];
+        dispatch_async(dispatch_get_main_queue(), closed);
+      }
       [view closeDevTools];
       if (view->_protocolObserver) view->_protocolObserver->Close();
       view->_protocolRegistration = nullptr; view->_protocolObserver = nullptr;
@@ -674,7 +730,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     return true;
   }
   bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int popupID,
-                     const CefString&, const CefString&, WindowOpenDisposition, bool,
+                     const CefString& targetURL, const CefString&, WindowOpenDisposition disposition, bool,
                      const CefPopupFeatures&, CefWindowInfo& info, CefRefPtr<CefClient>& client,
                      CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&, bool*) override {
     CVChromiumView *parent = view_;
@@ -684,6 +740,11 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     popup->_started = YES;
     popup->_context = parent->_context;
     popup->_client = new BrowserClient(popup);
+    popup.openLink = parent.openLink;
+    popup.adoptPopup = parent.adoptPopup;
+    auto destination = LinkDestination(disposition);
+    bool adopted = destination && parent.adoptPopup && parent.adoptPopup(popup, String(targetURL), *destination);
+    if (!adopted) {
     NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 900, 720)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
         backing:NSBackingStoreBuffered defer:NO];
@@ -692,9 +753,11 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     window.contentView = popup;
     window.delegate = popup;
     popup->_popupWindow = window;
-    pendingPopups_[popupID] = popup;
     [window center]; [window makeKeyAndOrderFront:nil];
-    info.SetAsChild((__bridge CefWindowHandle)popup->_viewportHost, CefRect(0, 0, 900, 720));
+    }
+    pendingPopups_[popupID] = popup;
+    info.SetAsChild((__bridge CefWindowHandle)popup->_viewportHost,
+        CefRect(0, 0, popup->_viewportHost.bounds.size.width, popup->_viewportHost.bounds.size.height));
     info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
     client = popup->_client;
     // Creation is asynchronous. Keep both the popup and opener client alive
@@ -706,7 +769,11 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   }
   void OnBeforePopupAborted(CefRefPtr<CefBrowser>, int popupID) override {
     auto found = pendingPopups_.find(popupID);
-    if (found != pendingPopups_.end()) { [found->second closeBrowser]; pendingPopups_.erase(found); }
+    if (found != pendingPopups_.end()) {
+      CVChromiumView *popup = found->second;
+      if (popup.pageClosed) popup.pageClosed();
+      [popup closeBrowser]; pendingPopups_.erase(found);
+    }
   }
   NSString *title_ = @"Browser";
   std::function<void()> created_;
@@ -808,6 +875,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   CefString(&settings.cache_path) = String([root stringByAppendingPathComponent:_profile]);
   _context = CefRequestContext::CreateContext(settings, new ContextHandler(self));
 }
+- (BOOL)hasOpenDevTools { return _toolsContainer != nil; }
 - (void)createBrowser {
   if (_closed || _browser || _creating || !self.window || shutdownCompletion) return;
   _creating = YES;

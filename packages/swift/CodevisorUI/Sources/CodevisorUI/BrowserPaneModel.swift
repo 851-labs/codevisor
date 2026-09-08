@@ -8,6 +8,7 @@ import WebKit
 public final class BrowserPaneModel: NSObject {
   public let machineName: String
   public let paneId: UUID
+  public let suggestions: BrowserSuggestions
   public private(set) var webView: WKWebView?
   public private(set) var url: URL?
   public private(set) var title = "Browser"
@@ -20,6 +21,9 @@ public final class BrowserPaneModel: NSObject {
   private(set) var pageAppearance = BrowserPageAppearance()
   @ObservationIgnored public var onNavigate: ((String, String) -> Void)?
   @ObservationIgnored public var onFaviconChange: ((CGImage?) -> Void)?
+  @ObservationIgnored public var onOpenLink: ((URL) -> Void)?
+  @ObservationIgnored public var onCreatePopup: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
+  @ObservationIgnored public var onClose: (() -> Void)?
   private let faviconLoader = BrowserFaviconLoader()
   @ObservationIgnored private let machineId: String
   @ObservationIgnored private let client: any CodevisorServerClienting
@@ -31,6 +35,8 @@ public final class BrowserPaneModel: NSObject {
   @ObservationIgnored private let paneSync: BrowserPaneSync
   @ObservationIgnored private var activationTask: Task<Void, Never>?
   @ObservationIgnored private var navigationMessages: BrowserNavigationMessages?
+  @ObservationIgnored private var isVisible = false
+  @ObservationIgnored private var retentionRevision = 0
 
   public init(
     paneId: UUID, machineId: String, machineName: String, initialURL: String?,
@@ -43,7 +49,9 @@ public final class BrowserPaneModel: NSObject {
     self.machineName = machineName
     self.client = client
     self.resolveBaseURL = resolveBaseURL
-    self.requestedURL = initialURL.flatMap(Self.navigationURL)
+    let provider = BrowserSearchProvider(client: client, resolveBaseURL: resolveBaseURL)
+    suggestions = BrowserSuggestions(profile: machineId, fetch: provider.suggestions)
+    self.requestedURL = Self.navigationURL(initialURL ?? "https://www.google.com/")
     self.url = requestedURL
     super.init()
     faviconLoader.onChange = { [weak self] image in self?.onFaviconChange?(image) }
@@ -71,9 +79,29 @@ public final class BrowserPaneModel: NSObject {
     load(address: requestedURL.absoluteString, adoptShared: true)
   }
 
+  /// Use WebKit's supplied process/data-store configuration so the new pane is
+  /// still the real popup, including its opener, POST data and pending load.
+  public func adoptPopup(configuration: WKWebViewConfiguration) -> WKWebView {
+    let scripts = configuration.userContentController.userScripts
+    let content = WKUserContentController()
+    // The child must not send navigation messages to its parent's pane model.
+    for script in scripts { content.addUserScript(script) }
+    configuration.userContentController = content
+    let view = WKWebView(frame: .zero, configuration: configuration)
+    configureWebView(view)
+    BrowserWebsiteProfile.retain(machineId: machineId, paneId: paneId)
+    paneSync.recordLoadedCookies(BrowserWebsiteProfile.sync(machineId: machineId))
+    BrowserPageRetention.shared.touch(self)
+    isLoading = true
+    return view
+  }
+
   public func setVisible(_ visible: Bool) {
+    if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
+    isVisible = visible
     guard paneSync.setVisible(visible) else { return }
     if webView == nil { start(); return }
+    guard !isLoading else { return }
     activationTask = Task { [weak self] in
       guard let self else { return }
       await paneSync.activate(
@@ -87,6 +115,9 @@ public final class BrowserPaneModel: NSObject {
   }
 
   public func navigate(to address: String) {
+    suggestions.dismiss()
+    activationTask?.cancel()
+    paneSync.cancelActivation()
     load(address: address)
   }
 
@@ -96,6 +127,7 @@ public final class BrowserPaneModel: NSObject {
       return
     }
     requestedURL = target
+    BrowserPageRetention.shared.touch(self)
     errorMessage = nil
     isLoading = true
     loadTask?.cancel()
@@ -124,6 +156,7 @@ public final class BrowserPaneModel: NSObject {
           self.configureWebView(view)
           BrowserWebsiteProfile.retain(machineId: machineId, paneId: paneId)
         }
+        self.paneSync.recordLoadedCookies(BrowserWebsiteProfile.sync(machineId: self.machineId))
         self.webView?.load(URLRequest(url: loadTarget))
       } catch {
         guard !Task.isCancelled else { return }
@@ -150,12 +183,22 @@ public final class BrowserPaneModel: NSObject {
   }
 
   public func teardown() {
+    isVisible = false
+    BrowserPageRetention.shared.remove(self)
+    suggestions.dismiss()
+    releasePage()
+    onNavigate = nil
+    onFaviconChange = nil
+    onOpenLink = nil
+    onCreatePopup = nil
+    onClose = nil
+  }
+
+  private func releasePage() {
     BrowserWebsiteProfile.release(machineId: machineId, paneId: paneId)
     stop()
     activationTask?.cancel()
     _ = paneSync.setVisible(false)
-    onNavigate = nil
-    onFaviconChange = nil
     faviconLoader.stop()
     webView?.configuration.userContentController.removeScriptMessageHandler(forName: "codevisorBrowserNavigation")
     navigationMessages = nil
@@ -173,7 +216,8 @@ public final class BrowserPaneModel: NSObject {
     navigationMessages = messages
     view.configuration.userContentController.add(messages, name: "codevisorBrowserNavigation")
     if let path = Bundle.module.url(forResource: "browser-navigation", withExtension: "js"),
-      let script = try? String(contentsOf: path, encoding: .utf8)
+      let script = try? String(contentsOf: path, encoding: .utf8),
+      !view.configuration.userContentController.userScripts.contains(where: { $0.source == script })
     {
       view.configuration.userContentController.addUserScript(
         WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
@@ -232,6 +276,7 @@ public final class BrowserPaneModel: NSObject {
     guard let webView, !webView.isLoading, kind == "location",
       let target = Self.navigationURL(address)
     else { return }
+    paneSync.cancelActivation()
     url = target
     requestedURL = target
     faviconLoader.refresh(from: webView)
@@ -240,6 +285,7 @@ public final class BrowserPaneModel: NSObject {
 
   private func publishNavigation(_ address: String) {
     guard let location = BrowserLocation.sharedURL(address) else { return }
+    BrowserHistory.shared.record(url: address, title: title, profile: machineId)
     paneSync.publish(
       url: location.absoluteString, title: title, cookies: BrowserWebsiteProfile.sync(machineId: machineId)
     ) { [weak self] in
@@ -252,6 +298,22 @@ public final class BrowserPaneModel: NSObject {
     updateState()
     isLoading = false
     errorMessage = "Couldn’t load this page through \(machineName). \(error.localizedDescription)"
+  }
+}
+
+extension BrowserPaneModel: RetainedBrowserPage {
+  public var hasLiveBrowserPage: Bool { webView != nil || loadTask != nil }
+  public var protectsBrowserPage: Bool { isVisible || isLoading }
+  public func discardBrowserPage() async -> Bool {
+    guard !protectsBrowserPage, let view = webView else { return false }
+    let activity = retentionRevision
+    let token = loadGeneration
+    let allowed = try? await view.evaluateJavaScript(BrowserPageActivity.canDiscardScript) as? Bool
+    guard allowed == true, loadGeneration == token, retentionRevision == activity, !protectsBrowserPage else {
+      return false
+    }
+    releasePage()
+    return true
   }
 }
 
@@ -272,11 +334,15 @@ extension BrowserPaneModel: WKNavigationDelegate {
   }
 
   public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    paneSync.cancelActivation()
     errorMessage = nil
     isLoading = true
   }
 
-  public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { faviconLoader.reset() }
+  public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    paneSync.recordLoadedCookies(BrowserWebsiteProfile.sync(machineId: machineId))
+    faviconLoader.reset()
+  }
   public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     updateState(publish: true)
     faviconLoader.refresh(from: webView)
@@ -288,8 +354,14 @@ extension BrowserPaneModel: WKNavigationDelegate {
     failed(error)
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    errorMessage = "This page was closed to free memory. Reload to continue."
-    isLoading = false
+    // A discarded background process restores lazily on the next pane entry.
+    // An active crash keeps the existing explicit Retry UI to avoid a crash loop.
+    if isVisible {
+      errorMessage = "This page was closed to free memory. Reload to continue."
+      isLoading = false
+    } else {
+      releasePage()
+    }
   }
 }
 
@@ -298,11 +370,10 @@ extension BrowserPaneModel: WKUIDelegate {
     _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
     for action: WKNavigationAction, windowFeatures: WKWindowFeatures
   ) -> WKWebView? {
-    if let target = action.request.url, Self.navigationURL(target.absoluteString) != nil {
-      webView.load(BrowserNetworkRules.redirectedNavigation(action.request) ?? action.request)
-    }
-    return nil
+    onCreatePopup?(configuration, action.request.url)
   }
+
+  public func webViewDidClose(_ webView: WKWebView) { onClose?() }
 }
 
 @MainActor

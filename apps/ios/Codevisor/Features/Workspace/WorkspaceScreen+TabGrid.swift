@@ -242,7 +242,7 @@ extension WorkspaceScreen {
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])
   }
 
-  private func browserPaneModel(for pane: PaneDescriptorState) -> BrowserPaneModel {
+  func browserPaneModel(for pane: PaneDescriptorState) -> BrowserPaneModel {
     let machines = environment.machines
     let serverId = resolvedServerId
     let model = BrowserPaneCache.shared.model(for: pane.id) {
@@ -264,6 +264,13 @@ extension WorkspaceScreen {
       paneBinding.wrappedValue = state
       publishPane(state.panes[index])
     }
+    model.onOpenLink = { url in
+      openBrowserLink(from: pane.id, url: url, configuration: nil)
+    }
+    model.onCreatePopup = { configuration, url in
+      openBrowserLink(from: pane.id, url: url, configuration: configuration)
+    }
+    model.onClose = { close(pane) }
     return model
   }
 

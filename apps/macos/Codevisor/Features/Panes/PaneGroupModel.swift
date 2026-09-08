@@ -125,6 +125,7 @@ final class PaneGroupModel: Identifiable {
   /// Browser automation creates workspace tabs, not another selection inside
   /// this leaf. The store owns the workspace and publishes the new pane.
   @ObservationIgnored var createBrowserTab: ((String) -> ChromiumBrowserModel?)?
+  @ObservationIgnored var openBrowserLink: ((UUID, String, BrowserLinkDestination, CVChromiumView?) -> Bool)?
 
   // MARK: - Live panes
 
@@ -169,6 +170,10 @@ final class PaneGroupModel: Identifiable {
   }
 
   func wireBrowser(_ browser: BrowserPane) {
+    browser.model.onOpenLink = { [weak self, weak browser] url, destination, popup in
+      guard let self, let browser else { return false }
+      return self.openBrowserLink?(browser.id, url, destination, popup) ?? false
+    }
     browser.model.onClose = { [weak self, weak browser] in if let browser { self?.closePane(id: browser.id) } }
     browser.model.onSelect = { [weak self, weak browser] in if let browser { self?.select(id: browser.id) } }
     browser.model.onNavigate = { [weak self, weak browser] url, title in

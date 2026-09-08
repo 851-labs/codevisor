@@ -11,15 +11,7 @@ final class BrowserPaneCache {
   private var favicons: [UUID: UIImage] = [:]
   @ObservationIgnored private var faviconOrder: [UUID] = []
   @ObservationIgnored private var order: [UUID] = []
-  @ObservationIgnored private var observer: (any NSObjectProtocol)?
-
-  private init() {
-    observer = NotificationCenter.default.addObserver(
-      forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-    ) { _ in
-      MainActor.assumeIsolated { Self.shared.trim(to: 1) }
-    }
-  }
+  private init() {}
 
   func model(for id: UUID, make: () -> BrowserPaneModel) -> BrowserPaneModel {
     let model = models[id] ?? make()
@@ -27,7 +19,13 @@ final class BrowserPaneCache {
     models[id] = model
     order.removeAll { $0 == id }
     order.append(id)
-    trim(to: 4)
+    // BrowserPageRetention owns the live-page budget. Keep lightweight models
+    // so eviction doesn't invalidate a SwiftUI view or lose its last location.
+    while order.count > 128,
+      let oldest = order.first(where: {
+        $0 != id && models[$0]?.hasLiveBrowserPage == false && models[$0]?.protectsBrowserPage == false
+      })
+    { evictModel(paneId: oldest) }
     return model
   }
 
@@ -52,10 +50,6 @@ final class BrowserPaneCache {
     faviconOrder.removeAll { $0 == paneId }
     if image != nil { faviconOrder.append(paneId) }
     while faviconOrder.count > 128 { favicons.removeValue(forKey: faviconOrder.removeFirst()) }
-  }
-
-  private func trim(to capacity: Int) {
-    while order.count > capacity { evictModel(paneId: order[0]) }
   }
 
   func capturePreview(paneId: UUID, completion: @escaping @MainActor (UIImage) -> Void) {

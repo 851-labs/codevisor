@@ -223,6 +223,21 @@ public final class WorkspaceSyncModel {
         && repository.workspaceId(forSession: session.id) == workspaceId
     }
     if active.contains(where: { $0.id == anchorSessionId }) { return .keep }
+    // The route anchors the workspace, not the visible pane. Archiving a
+    // chat must not select some other chat's tab when the current layout
+    // still has content. Pane closure already chooses the surviving split
+    // (or adjacent tab); keep that selection until the user navigates.
+    if preservingSelectedPane, !active.isEmpty,
+      repository.workspaceId(forSession: anchorSessionId) == workspaceId,
+      workspace.selectedCenterTab?.root.allGroups.contains(where: { group in
+        group.state.panes.contains { pane in
+          pane.kind != .chat || pane.chatSessionId == nil
+            || active.contains(where: { $0.id == pane.chatSessionId })
+        }
+      }) == true
+    {
+      return .keep
+    }
     if let replacement = active.first { return .selectSession(replacement.id) }
     // No live chat left, but the workspace still shows a terminal or
     // plugin pane: it stays listed (Nous lists those tabs as rows) and a

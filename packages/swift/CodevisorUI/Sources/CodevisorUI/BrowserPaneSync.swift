@@ -25,6 +25,8 @@ public final class BrowserPaneSync {
     visible = value; activation += 1
     return value
   }
+  /// A local navigation wins over a delayed pane-entry reply.
+  public func cancelActivation() { activation += 1 }
   public func activate(
     cookies: BrowserCookieSync?, currentURL: String?, fallbackURL: String?,
     load: @escaping @MainActor (String, Bool) -> Void

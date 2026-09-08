@@ -85,6 +85,28 @@ struct BrowserStateSyncTests {
     #expect(server.entries[cookie.key]?.cookie == rotated)
   }
 
+  @Test func engineNormalizationDoesNotInvalidateCachedPagesOnEveryExchange() async throws {
+    let server = BrowserStateFixture()
+    var source = cookie
+    source.expires = 10_000_000_000.5
+    server.change(source, key: source.key)
+    var local: [String: BrowserCookie] = [:]
+    let cookies = BrowserCookieSync(
+      client: server, read: { Array(local.values) },
+      apply: { next, previous in
+        if let previous { local[previous.key] = nil }
+        if var next {
+          next.expires = next.expires.map { $0.rounded(.down) }
+          local[next.key] = next
+        }
+      })
+    try await cookies.synchronize()
+    let loadedGeneration = cookies.generation
+    try await cookies.synchronize()
+    #expect(cookies.generation == loadedGeneration)
+    #expect(server.sentChanges == 0)
+  }
+
   @Test func bootstrapDoesNotOverwriteANewLoginWhileTheServerReplies() async throws {
     let server = BrowserStateFixture()
     server.change(cookie, key: cookie.key)
@@ -137,6 +159,21 @@ struct BrowserStateSyncTests {
     _ = pane.setVisible(true)
     var loaded = false
     await pane.activate(cookies: cookies, currentURL: nil, fallbackURL: nil) { _, _ in loaded = true }
+    #expect(!loaded)
+  }
+
+  @Test func localNavigationWinsOverADelayedPaneEntryReply() async {
+    let server = BrowserStateFixture()
+    let pane = BrowserPaneSync(paneId: UUID(), client: server)
+    let cookies = BrowserCookieSync(client: server, read: { [] }, apply: { _, _ in })
+    server.navigation = BrowserNavigation(url: "https://example.test/old", title: "Old")
+    // The local page starts navigating while its activation exchange is pending.
+    server.beforeReply = { pane.cancelActivation() }
+    _ = pane.setVisible(true)
+    var loaded = false
+    await pane.activate(cookies: cookies, currentURL: "https://example.test/new", fallbackURL: nil) { _, _ in
+      loaded = true
+    }
     #expect(!loaded)
   }
 

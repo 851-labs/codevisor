@@ -6,16 +6,24 @@ struct ChromiumBrowserNavigationControls: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .navigation) {
-      ControlGroup {
-        Button("Back", systemImage: "chevron.left") { model.webView?.goBack() }
-          .disabled(!model.canGoBack)
-          .help("Back")
-        Button("Forward", systemImage: "chevron.right") { model.webView?.goForward() }
-          .disabled(!model.canGoForward)
-          .help("Forward")
-      }
-      .controlGroupStyle(.navigation)
+      ChromiumBrowserNavigationButtons(model: model)
     }
+  }
+}
+
+struct ChromiumBrowserNavigationButtons: View {
+  @Bindable var model: ChromiumBrowserModel
+
+  var body: some View {
+    ControlGroup {
+      Button("Back", systemImage: "chevron.left") { model.webView?.goBack() }
+        .disabled(!model.canGoBack)
+        .help("Back")
+      Button("Forward", systemImage: "chevron.right") { model.webView?.goForward() }
+        .disabled(!model.canGoForward)
+        .help("Forward")
+    }
+    .controlGroupStyle(.navigation)
   }
 }
 
@@ -26,18 +34,20 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
   // Keep the composite toolbar inside one native view. Otherwise SwiftUI's
   // toolbar adaptation promotes the first button's action and accessibility
   // metadata to the other controls, leaving the address editor inert.
-  func makeNSView(context: Context) -> NSHostingView<ChromiumBrowserToolbarContent> {
-    let view = NSHostingView(rootView: ChromiumBrowserToolbarContent(model: model))
+  func makeNSView(context: Context) -> ChromiumToolbarHost {
+    let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
+    view.focusAddress = { [weak model] in model?.focusAddress() }
     view.sizingOptions = [.intrinsicContentSize]
     return view
   }
 
-  func updateNSView(_ nsView: NSHostingView<ChromiumBrowserToolbarContent>, context: Context) {
+  func updateNSView(_ nsView: ChromiumToolbarHost, context: Context) {
+    nsView.focusAddress = { [weak model] in model?.focusAddress() }
     nsView.rootView = ChromiumBrowserToolbarContent(model: model)
   }
 
   func sizeThatFits(
-    _ proposal: ProposedViewSize, nsView: NSHostingView<ChromiumBrowserToolbarContent>, context: Context
+    _ proposal: ProposedViewSize, nsView: ChromiumToolbarHost, context: Context
   )
     -> CGSize?
   {
@@ -48,47 +58,27 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
 struct ChromiumBrowserToolbarContent: View {
   @Bindable var model: ChromiumBrowserModel
   @State private var address = ""
-  @FocusState private var editing: Bool
-  @State private var selection: TextSelection?
+  @State private var editing = false
+  @State private var focusRequest = 0
 
   var body: some View {
     GlassEffectContainer(spacing: 8) {
       HStack(spacing: 8) {
         HStack(spacing: 0) {
-          Button {
-            beginEditing()
-          } label: {
-            Text(model.url.map(BrowserLocation.display) ?? "Search or enter website name")
-              .font(.body)
-              .lineLimit(1)
-              .truncationMode(.middle)
-              .frame(maxWidth: .infinity)
-              .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .opacity(editing ? 0 : 1)
-          .accessibilityHidden(editing)
-          .accessibilityLabel("Website address")
-          .overlay {
-            TextField("Search or enter website name", text: $address, selection: $selection)
-              .textFieldStyle(.plain)
-              .font(.body)
-              .focused($editing)
-              .onSubmit {
-                model.submitAddress(address)
-                editing = false
-                model.webView?.focusPage()
-              }
-              .onExitCommand {
-                editing = false
-                updateAddress()
-                model.webView?.focusPage()
-              }
-              .opacity(editing ? 1 : 0)
-              .allowsHitTesting(editing)
-              .accessibilityHidden(!editing)
-              .accessibilityLabel("Website address")
-          }
+          BrowserAddressEditor(
+            text: $address, editing: $editing, focusRequest: focusRequest,
+            fullAddress: model.url?.absoluteString ?? "", suggestions: model.suggestions,
+            submit: { value in
+              model.submitAddress(value)
+              editing = false
+              model.webView?.focusPage()
+            },
+            cancel: {
+              editing = false
+              updateAddress()
+              model.webView?.focusPage()
+            }
+          )
           .padding(.leading, 14)
           browserButton(model.isLoading ? "Stop" : "Reload", symbol: model.isLoading ? "xmark" : "arrow.clockwise") {
             if model.isLoading { model.stop() } else { model.reload() }
@@ -112,14 +102,16 @@ struct ChromiumBrowserToolbarContent: View {
     .onAppear { updateAddress() }
     .onChange(of: model.url) { _, _ in if !editing { updateAddress() } }
     .onChange(of: editing) { _, focused in
-      if focused { address = model.url?.absoluteString ?? "" } else { updateAddress() }
+      if !focused { model.suggestions.dismiss(); updateAddress() }
     }
+    .onDisappear { model.suggestions.dismiss() }
     .onChange(of: model.addressFocusRequest) { _, _ in beginEditing() }
   }
   private func beginEditing() {
-    address = model.url?.absoluteString ?? ""
+    if !editing { address = model.url?.absoluteString ?? "" }
     editing = true
-    selection = TextSelection(range: address.startIndex..<address.endIndex)
+    model.suggestions.dismiss()
+    focusRequest += 1
   }
 
   private func updateAddress() { address = model.url.map(BrowserLocation.display) ?? "" }

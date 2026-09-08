@@ -53,17 +53,6 @@ extension SessionContainerView {
           }) {
             environment.archiveSession(closed)
           }
-          // The ROUTED chat left: hand the route to the
-          // workspace's first surviving chat, so the sidebar
-          // never points at an archived session (focus may land
-          // on a terminal, which reports nothing).
-          if closedSessionId == session.id,
-            leafId == activeLeafId,
-            closingCenterTabId == nil,
-            let survivor = firstSurvivingChatId()
-          {
-            onFocusedChatChanged?(survivor)
-          }
         } else {
           // A draft closed unsent: discard its composer state.
           store.removePaneDraft(paneId: descriptor.id)
@@ -263,22 +252,6 @@ extension SessionContainerView {
     return environment.projectList.sessions.first {
       $0.serverId == session.serverId && $0.id == id
     }?.title ?? descriptor.name
-  }
-
-  func firstSurvivingChatId() -> UUID? {
-    let descriptors = store.workspace(for: session, project: project)
-      .centerTabs.flatMap { tab in tab.root.allGroups }
-      .flatMap { group in group.state.panes }
-    return descriptors.first { descriptor in
-      guard descriptor.kind == .chat,
-        let candidateId = descriptor.chatSessionId
-      else { return false }
-      return environment.projectList.sessions.contains { candidate in
-        candidate.serverId == session.serverId
-          && candidate.id == candidateId
-          && !candidate.isArchived
-      }
-    }?.chatSessionId
   }
 
   /// Every chat in the workspace with a live cached controller, routed
