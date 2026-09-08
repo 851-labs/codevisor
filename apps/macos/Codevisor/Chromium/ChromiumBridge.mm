@@ -90,7 +90,12 @@ bool Initialize() {
   NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium"];
   CefString(&settings.root_cache_path) = String(root);
   CefString(&settings.log_file) = String([root stringByAppendingPathComponent:@"chromium.log"]);
-  NSString *helper = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:@"Codevisor Helper.app/Contents/MacOS/Codevisor Helper"];
+  NSString *appName = NSBundle.mainBundle.executablePath.lastPathComponent;
+  NSString *helperName = [appName stringByReplacingOccurrencesOfString:@"Codevisor" withString:@"Codevisor Browser Helper"
+                                                              options:NSAnchoredSearch range:NSMakeRange(0, appName.length)];
+  NSString *helperBundle = [NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:[helperName stringByAppendingString:@".app"]];
+  NSString *helper = [NSBundle bundleWithPath:helperBundle].executablePath;
+  if (!helper) return false;
   CefString(&settings.browser_subprocess_path) = String(helper);
   std::vector<std::string> arguments;
   for (NSString *argument in NSProcessInfo.processInfo.arguments) arguments.emplace_back(argument.UTF8String);

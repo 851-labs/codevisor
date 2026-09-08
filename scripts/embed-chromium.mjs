@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { run } from "./chromium-artifact.mjs"
+import { chromiumHelperName, chromiumHelperSuffixes, run } from "./chromium-artifact.mjs"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const env = process.env
@@ -80,9 +80,16 @@ await run(
   ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", framework],
   root
 )
-for (const suffix of ["", " (Alerts)", " (GPU)", " (Plugin)", " (Renderer)"]) {
-  const helperName = `Codevisor Helper${suffix}`
-  const contents = join(frameworks, helperName + ".app/Contents")
+for (const suffix of chromiumHelperSuffixes) {
+  const helperName = `${chromiumHelperName(env.PRODUCT_NAME)}${suffix}`
+  // Chromium derives each specialized bundle path from the base executable
+  // name, so the bundle and executable names must include the same dev suffix.
+  const bundle = join(frameworks, `${helperName}.app`)
+  // Recreate known helper bundles so renamed executables and old signatures
+  // cannot survive an incremental build or a switch between app variants.
+  await rm(join(frameworks, `Codevisor Helper${suffix}.app`), { recursive: true, force: true })
+  await rm(bundle, { recursive: true, force: true })
+  const contents = join(bundle, "Contents")
   await mkdir(join(contents, "MacOS"), { recursive: true })
   const executable = join(contents, "MacOS", helperName)
   if (architectures.length === 1)
@@ -102,6 +109,8 @@ for (const suffix of ["", " (Alerts)", " (GPU)", " (Plugin)", " (Renderer)"]) {
   const strings = {
     CFBundleExecutable: helperName,
     CFBundleName: helperName,
+    CFBundleDisplayName: helperName,
+    CFBundleIconFile: "AppIcon.icns",
     CFBundleIdentifier: identifier,
     CFBundlePackageType: "APPL",
     CFBundleVersion: "1",
@@ -113,27 +122,15 @@ for (const suffix of ["", " (Alerts)", " (GPU)", " (Plugin)", " (Renderer)"]) {
     `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>${Object.entries(
       strings
     )
-      .map(([key, value]) => `<key>${key}</key><string>${value}</string>`)
+      .map(
+        ([key, value]) =>
+          `<key>${key}</key><string>${value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</string>`
+      )
       .join(
         ""
       )}<key>LSUIElement</key><true/><key>LSEnvironment</key><dict><key>MallocNanoZone</key><string>0</string></dict></dict></plist>`
   )
-  await run(
-    "codesign",
-    [
-      "--force",
-      "--sign",
-      signing,
-      "--options",
-      "runtime",
-      "--timestamp=none",
-      ...(suffix === " (Renderer)"
-        ? ["--entitlements", join(root, "apps/macos/ChromiumHelper/entitlements.plist")]
-        : []),
-      join(contents, "..")
-    ],
-    root
-  )
+  // The final build phase copies the compiled app icon and signs the helpers.
 }
 const resources = join(env.TARGET_BUILD_DIR, env.UNLOCALIZED_RESOURCES_FOLDER_PATH)
 await mkdir(resources, { recursive: true })

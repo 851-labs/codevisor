@@ -282,7 +282,7 @@ while IFS= read -r library; do
 done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
 while IFS= read -r helper; do
   codesign "${sign_args[@]}" --preserve-metadata=entitlements "$helper"
-done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Helper*.app" -type d)
+done < <(find "$app_path/Contents/Frameworks" -maxdepth 1 -name "Codevisor Browser Helper*.app" -type d)
 
 # Every other embedded framework needs the same treatment for a simpler
 # reason: a binary xcframework (Sentry) ships completely unsigned, and Xcode

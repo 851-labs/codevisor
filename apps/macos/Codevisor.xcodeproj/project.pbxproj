@@ -83,6 +83,7 @@
 				000000000000000120000000 /* Sources */,
 				000000000000000130000000 /* Frameworks */,
 				000000000000000140000000 /* Resources */,
+				CEF000000000000000000002 /* Finalize Chromium Helpers */,
 			);
 			buildRules = (
 			);
@@ -152,6 +153,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		CEF000000000000000000002 /* Finalize Chromium Helpers */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			alwaysOutOfDate = 1;
+			name = "Finalize Chromium Helpers";
+			inputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/$(ASSETCATALOG_COMPILER_APPICON_NAME).icns");
+			outputPaths = ();
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nnode \"$SRCROOT/../../scripts/finalize-chromium-helpers.mjs\"\n";
+		};
 		CEF000000000000000000001 /* Embed Chromium */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
