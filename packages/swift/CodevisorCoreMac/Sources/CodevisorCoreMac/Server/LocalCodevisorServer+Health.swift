@@ -48,7 +48,9 @@ extension LocalCodevisorServer {
 
   func currentHealth() async -> ServerHealth? {
     do {
-      let health = try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health() }
+      let health = try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
+        try await client.health()
+      }
       return health.ok ? health : nil
     } catch {
       // Expected when no server is running yet; launch follows.
@@ -77,7 +79,9 @@ extension LocalCodevisorServer {
 
   func isHealthy() async -> Bool {
     do {
-      return try await StartupDeadline.run(for: .seconds(2)) { [client] in try await client.health().ok }
+      return try await StartupDeadline.run(for: .seconds(2), scheduler: startupScheduler) { [client] in
+        try await client.health().ok
+      }
     } catch {
       return false
     }

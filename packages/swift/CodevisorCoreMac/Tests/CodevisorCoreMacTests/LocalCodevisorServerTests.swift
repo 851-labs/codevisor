@@ -22,11 +22,31 @@ struct LocalCodevisorServerTests {
         return Process()
       }
     )
+    server.startupScheduler = AdvancingLocalServerScheduler().scheduler
 
     let state = await server.ensureRunning()
 
     #expect(state == .alreadyRunning)
     #expect(launches.isEmpty)
+  }
+
+  @Test("Initial and standalone health probes use the injected startup clock")
+  func healthProbesUseStartupClock() async {
+    let client = FakeLocalServerClient(healthResults: [.success(.ready), .success(.ready)])
+    let server = LocalCodevisorServer(client: client)
+    let clock = AdvancingLocalServerScheduler()
+    var deadlineStarts = 0
+    var scheduler = clock.scheduler
+    scheduler.now = {
+      deadlineStarts += 1
+      return clock.scheduler.now()
+    }
+    server.startupScheduler = scheduler
+
+    #expect(await server.currentHealth()?.ok == true)
+    #expect(await server.isHealthy())
+    #expect(deadlineStarts == 2)
+    #expect(clock.elapsed == .zero)
   }
 
   @Test("Launches the server entrypoint and waits for health")
