@@ -188,9 +188,11 @@ extension SessionContainerView {
   }
 
   func closeLeaf(_ leafId: UUID) {
+    let workspace = store.workspace(for: session, project: project)
+    let closesActiveLeaf = leafId == (activeLeafId ?? workspace.selectedCenterTab?.activeLeafId)
     let model = configuredCenterModel(leafId: leafId)
     guard let paneId = model.state.selectedPaneId else { return }
-    model.closePane(id: paneId)
+    model.closePane(id: paneId, activateRemainingPane: closesActiveLeaf)
   }
 
   func renameLeaf(_ leafId: UUID, to name: String) {

@@ -31,6 +31,7 @@ struct SidebarView: View {
   @State var draggingWorkspaceID: UUID?
   @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
   var manualWorkspaceOrderRaw
+  @ClientPreference("sidebar.showArchived", default: false) var showArchived
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
   @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
@@ -93,7 +94,9 @@ struct SidebarView: View {
               .transition(.identity)
           }
 
-          archivedSection
+          if showArchived {
+            archivedSection
+          }
 
         }
         .padding(.horizontal, 8)
@@ -113,6 +116,10 @@ struct SidebarView: View {
   private var sidebarInteractionView: some View {
     sidebarContent
       .themedSurface(.sidebar)
+      .contentShape(Rectangle())
+      .contextMenu {
+        Toggle("Show Archived", isOn: $showArchived)
+      }
       .addProjectFlow(addProjectFlow) { project in
         selection = .newChat(NewChatTarget(project))
         offerSessionImport(for: project)

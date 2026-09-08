@@ -58,6 +58,7 @@ extension SessionContainerView {
           // never points at an archived session (focus may land
           // on a terminal, which reports nothing).
           if closedSessionId == session.id,
+            leafId == activeLeafId,
             closingCenterTabId == nil,
             let survivor = firstSurvivingChatId()
           {
@@ -162,37 +163,13 @@ extension SessionContainerView {
         $0.root.group(id: leafId) != nil
       })
     else { return }
-    let oldLeafIds = workspace.centerTabs[tabIndex].root.allGroups.map(\.id)
-    if let pruned = workspace.centerTabs[tabIndex].root.removingGroup(id: leafId) {
-      workspace.centerTabs[tabIndex].root = pruned
-      let oldIndex = oldLeafIds.firstIndex(of: leafId) ?? 0
-      let survivors = pruned.allGroups.map(\.id)
-      workspace.centerTabs[tabIndex].activeLeafId =
-        survivors[
-          min(oldIndex, survivors.count - 1)
-        ]
-      environment.workspaces.save(workspace)
-      liveCenterTree = pruned
-      store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
-      workspaceRevision += 1
-      activateLeaf(workspace.centerTabs[tabIndex].activeLeafId)
-    } else {
-      let closingTabId = workspace.centerTabs[tabIndex].id
-      workspace.centerTabs.remove(at: tabIndex)
-      if workspace.centerTabs.isEmpty {
-        let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
-        workspace.centerTabs = [replacement]
-        workspace.selectedCenterTabId = replacement.id
-      } else if workspace.selectedCenterTabId == closingTabId {
-        workspace.selectedCenterTabId =
-          workspace.centerTabs[
-            min(tabIndex, workspace.centerTabs.count - 1)
-          ].id
-      }
-      environment.workspaces.save(workspace)
-      store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
-      workspaceRevision += 1
-      liveCenterTree = workspace.centerTree
+    let previousActiveLeaf = activeLeafId ?? workspace.selectedCenterTab?.activeLeafId
+    workspace.pruneClosedCenterTab(workspace.centerTabs[tabIndex].id)
+    environment.workspaces.save(workspace)
+    store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
+    workspaceRevision += 1
+    liveCenterTree = workspace.centerTree
+    if previousActiveLeaf != workspace.selectedCenterTab?.activeLeafId {
       activateLeaf(workspace.selectedCenterTab?.activeLeafId)
     }
   }

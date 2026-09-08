@@ -36,11 +36,21 @@ struct SidebarWorkspaceTabRow: View {
       isHoverForced: false
     ) { isHovered in
       HStack(spacing: 7) {
-        leadingIcon
-        Text(title)
-          .font(titleFont)
-          .lineLimit(1)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 7) {
+          leadingIcon
+          Text(title)
+            .font(titleFont)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        // Only the label activates on pointer-down. The close button is
+        // a sibling, so pressing it cannot select the row first.
+        .gesture(
+          DragGesture(minimumDistance: 0)
+            .onChanged { _ in onActivate() }
+        )
         if isHovered {
           Button(action: onClose) {
             Image(systemName: "xmark")
@@ -54,18 +64,11 @@ struct SidebarWorkspaceTabRow: View {
         }
       }
       .padding(.horizontal, 8)
-      .padding(.vertical, 5)
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
       // Native sidebar rows keep the label color whether or not they are
       // selected; only the glyph and hover controls read as secondary.
       .foregroundStyle(.primary)
-      // Activate on pointer-down, like chat rows. A row gesture (not an
-      // overlay) keeps the close button and context menu hit-testable.
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .onChanged { _ in onActivate() }
-      )
     }
     .contextMenu {
       if let onRename {

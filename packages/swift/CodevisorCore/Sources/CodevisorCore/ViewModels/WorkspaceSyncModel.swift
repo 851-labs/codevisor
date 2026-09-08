@@ -172,7 +172,8 @@ public final class WorkspaceSyncModel {
   /// its path. Resolve both through the same keep/sibling/dismiss policy.
   public func routeDisposition(
     sessionId: UUID,
-    serverId: String
+    serverId: String,
+    preservingSelectedPane: Bool = false
   ) -> WorkspaceRouteDisposition {
     if sessionsInvalidatedByWorkspaceDeletion[serverId]?.contains(sessionId) == true {
       return .dismiss
@@ -188,19 +189,33 @@ public final class WorkspaceSyncModel {
     return routeDisposition(
       workspaceId: workspaceId,
       anchorSessionId: sessionId,
-      serverId: serverId
+      serverId: serverId,
+      preservingSelectedPane: preservingSelectedPane
     )
   }
 
   public func routeDisposition(
     workspaceId: UUID,
     anchorSessionId: UUID,
-    serverId: String
+    serverId: String,
+    preservingSelectedPane: Bool = false
   ) -> WorkspaceRouteDisposition {
     guard let workspace = repository.workspace(id: workspaceId),
       workspace.serverId == serverId,
       !workspace.isArchived
     else { return .dismiss }
+
+    // macOS may be showing a browser, terminal, or New Tab through a chat
+    // route. Archiving that hidden routing chat must not replace the page
+    // with a sibling chat. The archived route still owns this workspace.
+    if preservingSelectedPane,
+      repository.workspaceId(forSession: anchorSessionId) == workspaceId,
+      let tab = workspace.selectedCenterTab,
+      let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
+      pane.kind != .chat
+    {
+      return .keep
+    }
 
     let active = projectList.sessions.filter { session in
       session.serverId == serverId

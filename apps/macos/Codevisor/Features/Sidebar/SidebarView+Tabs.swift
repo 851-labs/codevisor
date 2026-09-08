@@ -199,11 +199,20 @@ extension SidebarView {
     requestTabAction(.new, in: item)
   }
 
-  /// Closing and adding run the container's machinery, so a workspace that
-  /// is not on screen is routed to first (its container consumes the
-  /// request as it mounts).
+  /// Background closes use the store's pane lifecycle without mounting a
+  /// container. Only adding a tab should open an off-screen workspace.
   private func requestTabAction(_ action: CenterTabRequest.Action, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
+    if !routesSelectedSession(workspace) {
+      switch action {
+      case .close, .closeLeaf:
+        store?.closeBackgroundTab(action, in: workspace, routingSession: item.routingSession)
+        workspaceRevision += 1
+        return
+      default:
+        break
+      }
+    }
     store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: action)
     if !routesSelectedSession(workspace), let routing = item.routingSession {
       activateSession(routing)

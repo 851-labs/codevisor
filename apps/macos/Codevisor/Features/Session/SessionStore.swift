@@ -13,9 +13,8 @@ struct ClosedPaneRecord: Equatable {
 }
 
 /// What the sidebar asks a workspace's mounted container to do with its
-/// top tabs. The sidebar cannot act on tabs itself: a terminal or New Tab
-/// row has no chat to route through, and closing a tab runs the container's
-/// pane-close machinery (archiving chats, evicting leaves).
+/// top tabs. Off-screen closes run through the store directly; actions that
+/// open or change the visible tab are consumed by its mounted container.
 struct CenterTabRequest: Equatable {
   enum Action: Equatable {
     case select(UUID)

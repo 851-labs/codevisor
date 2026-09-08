@@ -390,7 +390,8 @@ struct RootView: View {
     _ = environment.workspaceSync.revision
     return environment.workspaceSync.routeDisposition(
       sessionId: sessionId,
-      serverId: serverId
+      serverId: serverId,
+      preservingSelectedPane: true
     )
   }
 

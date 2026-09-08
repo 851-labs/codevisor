@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it as baseIt, vi } from "vitest"
-import { observeCdp } from "./browser-cdp-test-support.js"
+import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
@@ -37,6 +37,7 @@ const it = baseIt.extend<{
 }>({
   browser: async ({ task }, use) => {
     vi.stubEnv("CODEVISOR_BROWSER_HEADLESS", "1")
+    emulateBrowserFocus()
     const cdp = observeCdp()
     const directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
     const provider = makeBrowserUseProvider(directory)

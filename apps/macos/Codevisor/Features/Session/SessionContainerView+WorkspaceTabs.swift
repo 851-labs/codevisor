@@ -128,6 +128,7 @@ extension SessionContainerView {
     var workspace = store.workspace(for: session, project: project)
     guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let closing = workspace.centerTabs[index]
+    let closesSelectedTab = workspace.selectedCenterTabId == tabId
     let closesRoutedChat = closing.root.allGroups.contains { group in
       group.state.panes.contains { $0.chatSessionId == session.id }
     }
@@ -135,7 +136,7 @@ extension SessionContainerView {
     for leaf in closing.root.allGroups {
       let model = configuredCenterModel(leafId: leaf.id)
       for paneId in model.state.panes.map(\.id) {
-        model.closePane(id: paneId)
+        model.closePane(id: paneId, activateRemainingPane: closesSelectedTab)
       }
     }
     closingCenterTabId = nil
@@ -145,39 +146,18 @@ extension SessionContainerView {
     // converted in place and the tab remains. Otherwise empty leaves and
     // the now-empty layout tab are purely local cleanup.
     workspace = store.workspace(for: session, project: project)
-    guard let refreshedIndex = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else {
-      return
-    }
-    if let pruned = workspace.centerTabs[refreshedIndex].root.prunedEmptyGroups {
-      workspace.centerTabs[refreshedIndex].root = pruned
-      if pruned.group(id: workspace.centerTabs[refreshedIndex].activeLeafId) == nil,
-        let first = pruned.allGroups.first?.id
-      {
-        workspace.centerTabs[refreshedIndex].activeLeafId = first
-      }
-      workspace.selectedCenterTabId = tabId
-    } else {
-      workspace.centerTabs.remove(at: refreshedIndex)
-    }
+    workspace.pruneClosedCenterTab(tabId)
     for leaf in closing.root.allGroups
     where workspace.centerTabs.allSatisfy({ $0.root.group(id: leaf.id) == nil }) {
       store.evictCenterLeaf(workspaceId: workspace.id, leafId: leaf.id)
     }
-    if workspace.centerTabs.isEmpty {
-      let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
-      workspace.centerTabs = [replacement]
-      workspace.selectedCenterTabId = replacement.id
-    } else if workspace.selectedCenterTabId == tabId {
-      workspace.selectedCenterTabId =
-        workspace.centerTabs[
-          min(refreshedIndex, workspace.centerTabs.count - 1)
-        ].id
-    }
     environment.workspaces.save(workspace)
     workspaceRevision += 1
     liveCenterTree = workspace.centerTree
-    activateLeaf(workspace.selectedCenterTab?.activeLeafId)
-    if closesRoutedChat, let survivor = firstSurvivingChatId() {
+    if closesSelectedTab {
+      activateLeaf(workspace.selectedCenterTab?.activeLeafId)
+    }
+    if closesSelectedTab, closesRoutedChat, let survivor = firstSurvivingChatId() {
       onFocusedChatChanged?(survivor)
     }
   }

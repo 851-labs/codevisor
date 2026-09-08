@@ -187,7 +187,7 @@ extension PaneGroupModel {
   /// Closes a tab: fires the pane's willDelete hook (kills its backing
   /// resources) and moves selection per the state rules. No-op when the
   /// rules forbid closing (the workspace's anchoring chat).
-  func closePane(id: UUID) {
+  func closePane(id: UUID, activateRemainingPane: Bool = true) {
     guard let descriptor = state.panes.first(where: { $0.id == id }),
       canClose(id: id)
     else { return }
@@ -200,7 +200,7 @@ extension PaneGroupModel {
       ? state.replacePaneWithNewTab(id: id)
       : nil
     if replacement != nil {
-      requestBackgroundFocus?()
+      if activateRemainingPane { requestBackgroundFocus?() }
     } else if state.panes.count == 1 {
       // Closing the last tab also collapses the group. Suppress the
       // removal/collapse animations: the tab's exit transition would
@@ -217,7 +217,7 @@ extension PaneGroupModel {
     Task { await closing.willDelete() }
     onPaneRemoved?(descriptor, replacement)
     onPaneClosed?(descriptor)
-    if state.isVisible, let selected = selectedPane {
+    if activateRemainingPane, state.isVisible, let selected = selectedPane {
       selected.visibilityChanged(true)
     }
   }
