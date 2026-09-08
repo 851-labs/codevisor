@@ -95,57 +95,22 @@ struct UpdateCenterView: View {
 
   // MARK: - Machines
 
-  /// A machine's section: the header IS the machine's Codevisor — name,
-  /// version line, and its update control — and the rows are the harnesses
-  /// and plugins on it.
+  /// Codevisor leads the machine's updates, followed by harnesses and plugins.
   private func machineSection(_ group: UpdateMachineGroup) -> some View {
     Section {
-      if group.components.isEmpty {
-        Text("Harnesses and plugins are up to date.")
+      if let codevisor = group.codevisor,
+        codevisor.updateAvailable || codevisor.phase != .idle
+      {
+        row(for: codevisor)
+      } else if group.components.isEmpty {
+        Text("Everything is up to date.")
           .foregroundStyle(.secondary)
-      } else {
-        ForEach(group.components) { component in
-          row(for: component)
-        }
+      }
+      ForEach(group.components) { component in
+        row(for: component)
       }
     } header: {
-      machineHeader(group)
-    }
-  }
-
-  private func machineHeader(_ group: UpdateMachineGroup) -> some View {
-    HStack(alignment: .center, spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(group.isLocal ? "\(group.machineName) (This Mac)" : group.machineName)
-        if let codevisor = group.codevisor {
-          Text(codevisorDetail(codevisor))
-            .font(.callout)
-            .fontWeight(.regular)
-            .foregroundStyle(
-              codevisor.isFailed ? AnyShapeStyle(theme.statusError) : AnyShapeStyle(.secondary)
-            )
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .help(codevisorDetail(codevisor))
-        }
-      }
-      Spacer(minLength: 12)
-      if let codevisor = group.codevisor {
-        trailing(for: codevisor)
-          .font(.body)
-          .fontWeight(.regular)
-      }
-    }
-    .padding(.bottom, 2)
-  }
-
-  /// "Codevisor 0.1.99", "Codevisor 0.1.99 → 0.2.0", "Codevisor · Downloading… 42%",
-  /// or the failure line as is.
-  private func codevisorDetail(_ component: UpdateComponent) -> String {
-    switch component.phase {
-    case .idle: "Codevisor \(component.detailText)"
-    case .updating: "Codevisor · \(component.detailText)"
-    case .failed: component.detailText
+      Text(group.machineName)
     }
   }
 
@@ -176,8 +141,11 @@ struct UpdateCenterView: View {
   private func icon(for component: UpdateComponent) -> some View {
     switch component.kind {
     case .app, .server:
-      // Never a row: a machine's Codevisor is its section header.
-      EmptyView()
+      Image("CodevisorMark")
+        .resizable()
+        .scaledToFit()
+        .frame(width: 15, height: 15)
+        .accessibilityHidden(true)
     case .harness:
       HarnessIcon(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
     case .plugin:

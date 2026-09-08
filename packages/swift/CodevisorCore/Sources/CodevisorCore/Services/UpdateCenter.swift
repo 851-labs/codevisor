@@ -65,8 +65,8 @@ extension UpdateComponent {
 }
 
 /// One machine in the Updates pane: the machine's own Codevisor (the app
-/// locally, the server remotely) as the section's identity, and the
-/// harnesses and plugins on it as the section's rows.
+/// locally, the server remotely) as the first row when it needs attention,
+/// followed by the harnesses and plugins on it.
 public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
   /// The machine id.
   public let id: String
@@ -214,9 +214,7 @@ public final class UpdateCenter {
         machineId: machine.id,
         machineName: machine.name,
         subjectId: "",
-        // The machine's Codevisor, whatever form it takes there; the pane
-        // shows it as the machine section itself, never as a peer of the
-        // harnesses it hosts.
+        // The machine's Codevisor, whatever form it takes there.
         title: "Codevisor",
         installedVersion: AppUpdateModel.displayedVersion(
           info.currentVersion,

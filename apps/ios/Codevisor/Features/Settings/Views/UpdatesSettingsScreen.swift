@@ -15,16 +15,20 @@ struct UpdatesSettingsScreen: View {
       summarySection
       ForEach(center.machineGroups) { group in
         Section {
-          if group.components.isEmpty {
-            Text("Agents and plugins are up to date.")
+          if let codevisor = group.codevisor,
+            codevisor.updateAvailable || codevisor.phase != .idle
+          {
+            row(for: codevisor)
+          } else if group.components.isEmpty {
+            Text("Everything is up to date.")
               .foregroundStyle(.secondary)
-          } else {
-            ForEach(group.components) { component in
-              row(for: component)
-            }
+          }
+          ForEach(group.components) { component in
+            row(for: component)
           }
         } header: {
-          machineHeader(group)
+          Text(group.machineName)
+            .textCase(nil)
         }
       }
     }
@@ -71,29 +75,16 @@ struct UpdatesSettingsScreen: View {
     }
   }
 
-  /// The section header is the machine's Codevisor: name, version line, and
-  /// its update control. Rows beneath are the agents and plugins on it.
-  private func machineHeader(_ group: UpdateMachineGroup) -> some View {
-    HStack(alignment: .center, spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(group.machineName)
-        if let codevisor = group.codevisor {
-          Text(codevisor.isFailed ? codevisor.detailText : "Codevisor \(codevisor.detailText)")
-            .font(.footnote)
-            .foregroundStyle(codevisor.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-            .lineLimit(1)
-        }
-      }
-      Spacer(minLength: 12)
-      if let codevisor = group.codevisor {
-        trailing(for: codevisor)
-      }
-    }
-    .textCase(nil)
-  }
-
   private func row(for component: UpdateComponent) -> some View {
     HStack(spacing: 10) {
+      if component.kind == .app || component.kind == .server {
+        Image("CodevisorMark")
+          .resizable()
+          .scaledToFit()
+          .foregroundStyle(.secondary)
+          .frame(width: 15, height: 15)
+          .accessibilityHidden(true)
+      }
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
         Text(component.detailText)
