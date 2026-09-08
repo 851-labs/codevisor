@@ -31,6 +31,23 @@ extension HomeView {
     // doesn't need to follow a send.
     flow.sessionId = sessionId
     let workspace = ensureWorkspace(for: session)
+    flow.promotionServerId = session.serverId
+    flow.promotionWorkspaceId = workspace.id
+    flow.phase = .animating
+    // Navigation must exist even when UIKit cannot supply animation
+    // geometry. The local send owns the route; animation only reveals it.
+    path.append(
+      .workspace(
+        serverId: session.serverId,
+        workspaceId: workspace.id,
+        anchorSessionId: sessionId,
+        preferredChatSessionId: sessionId
+      )
+    )
+    flow.promotionWatchdog.start { [weak flow] in
+      guard let flow else { return }
+      finishNewChatPromotionWithoutAnimation(flow, reason: "handoff-timeout")
+    }
     // Host the surface in the PRESENTING (main) window, not the sheet's:
     // zoom presentations can put the sheet in a transient portal window
     // whose layer tree detaches from the render server — an animator
@@ -39,35 +56,14 @@ extension HomeView {
       let presentationWindow = presentationSession.promotionHostWindow,
       let sourceFrame = presentationSession.visibleFrame(in: presentationWindow)
     else {
-      // The resolver is installed with the first native-sheet frame, so
-      // this should be unreachable in normal interaction. Keeping the
-      // draft in the sheet is safer than starting a promotion without
-      // exact source geometry.
-      IOSNavigationDiagnostics.record(
-        "home.newChatPromotion.skipped",
-        "reason=sheet-geometry-missing session=\(shortID(sessionId))"
-      )
+      finishNewChatPromotionWithoutAnimation(flow, reason: "sheet-geometry-missing")
       return
     }
-    flow.promotionServerId = session.serverId
-    flow.promotionWorkspaceId = workspace.id
     flow.promotionSourceFrame = sourceFrame
     flow.promotionSourceCornerRadius = presentationSession.presentationCornerRadius
     IOSNavigationDiagnostics.record(
       "home.newChatPromotion",
       "workspace=\(shortID(workspace.id)) session=\(shortID(sessionId)) pathBefore=\(navigationPathSummary(path))"
-    )
-
-    // Mount the real destination in Home's authoritative stack first. The
-    // native sheet still covers this push, so it cannot flash or compete
-    // with the system presentation. The morph reveals this exact route.
-    path.append(
-      .workspace(
-        serverId: session.serverId,
-        workspaceId: workspace.id,
-        anchorSessionId: sessionId,
-        preferredChatSessionId: sessionId
-      )
     )
 
     // The replica starts at destination depth so its navigation chrome
@@ -216,6 +212,7 @@ extension HomeView {
   private func commitNewChatPromotion(_ flow: NewChatFlow) {
     let complete = {
       guard newChatFlow === flow else { return }
+      flow.promotionWatchdog.cancel()
 
       // This terminal state removes every promotion-owned surface. The
       // already-mounted Home route switches to a normal foreground
@@ -225,6 +222,7 @@ extension HomeView {
       let editorSettled = ComposerTextViewHandoffRegistry.settlePromotedEditor(
         id: flow.id
       )
+      if !editorSettled { ComposerTextViewHandoffRegistry.cancel(flow.id) }
       flow.promotionSurface?.remove()
       flow.promotionSurface = nil
       presentedNewChatFlow = nil
@@ -243,6 +241,27 @@ extension HomeView {
       presentationSession.dismissWithoutAnimation(completion: complete)
     } else {
       complete()
+    }
+  }
+
+  private func finishNewChatPromotionWithoutAnimation(_ flow: NewChatFlow, reason: String) {
+    guard newChatFlow === flow, flow.sessionId != nil else { return }
+    IOSNavigationDiagnostics.record("home.newChatPromotion.fallback", "reason=\(reason)")
+    flow.promotionWatchdog.cancel()
+    // Drive the SwiftUI sheet binding directly: a missing UIKit resolver
+    // or dismissal completion must never become another wait condition.
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      flow.phase = .settled
+      if !ComposerTextViewHandoffRegistry.settlePromotedEditor(id: flow.id) {
+        ComposerTextViewHandoffRegistry.cancel(flow.id)
+      }
+      flow.promotionSurface?.remove()
+      flow.promotionSurface = nil
+      presentedNewChatFlow = nil
+      newChatFlow = nil
+      resetNewChatPresentation()
     }
   }
 
@@ -349,7 +368,11 @@ extension HomeView {
   }
 
   private func cancelNewChat(_ flow: NewChatFlow) {
-    guard newChatFlow === flow, flow.sessionId == nil else { return }
+    guard newChatFlow === flow else { return }
+    if flow.sessionId != nil {
+      finishNewChatPromotionWithoutAnimation(flow, reason: "close-during-handoff")
+      return
+    }
     presentedNewChatFlow = nil
   }
 

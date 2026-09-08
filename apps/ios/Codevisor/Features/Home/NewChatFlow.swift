@@ -25,6 +25,7 @@ final class NewChatFlow: Identifiable {
   var presentationSession: NewChatPresentationSession?
   @ObservationIgnored var homeSnapshot: UIImage?
   @ObservationIgnored var promotionSurface: NewChatPromotionSurface?
+  @ObservationIgnored let promotionWatchdog = NewChatPromotionWatchdog()
 
   var isPromoting: Bool { phase == .animating || phase == .committing }
   func consumeFocusRequest(_ request: UUID) {

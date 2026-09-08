@@ -127,7 +127,7 @@ extension ComposerBar {
         .expandedHitTarget(base: 28)
     }
     .buttonStyle(.plain)
-    .disabled(remainingAttachmentSlots == 0)
+    .disabled(remainingAttachmentSlots == 0 || controller.isSubmitting)
     .accessibilityLabel("Attach files")
   }
 

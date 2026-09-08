@@ -71,7 +71,9 @@ final class NewChatPresentationSession {
     let editor = hidingComposerText ? firstEditableTextView(in: view) : nil
     let previousAlpha = editor?.alpha
     editor?.alpha = 0
-    let snapshot = view.snapshotView(afterScreenUpdates: false)
+    // Include the visibility change in the captured pixels; the previous
+    // display frame still contains the submitted text in the composer.
+    let snapshot = view.snapshotView(afterScreenUpdates: hidingComposerText)
     if let previousAlpha { editor?.alpha = previousAlpha }
     return snapshot
   }
@@ -322,12 +324,11 @@ final class NewChatPromotionSurface {
       if anchorsBottom {
         let fill = UIView(frame: clippingView.bounds)
         fill.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        // Sheets draw at dark mode's ELEVATED level (gray), while
-        // this view lives in the base-level app window where
-        // systemBackground resolves to pure black. Match the sheet's
-        // actual surface or the extended strip reads as a black bar.
+        // Match WorkspaceScreen's grouped background in both appearances.
+        // The overlay lives in the base-level app window, so retain the
+        // sheet's elevated level when resolving its dark-mode surface.
         fill.traitOverrides.userInterfaceLevel = .elevated
-        fill.backgroundColor = .systemBackground
+        fill.backgroundColor = .systemGroupedBackground
         fill.isUserInteractionEnabled = false
         clippingView.addSubview(fill)
         topFillView = fill

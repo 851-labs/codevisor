@@ -300,6 +300,11 @@ struct ComposerBar: View {
       text = newValue
       selection = NSRange(location: (newValue as NSString).length, length: 0)
     }
+    .onChange(of: controller.isSubmitting) { _, submitting in
+      if !submitting, !controller.hasAcceptedFirstSend {
+        retainsSubmittedTextForPromotion = false
+      }
+    }
     .onChange(of: controller.isGoalEditing) { _, isEditing in
       if isEditing {
         setExpanded(false)
@@ -327,6 +332,7 @@ struct ComposerBar: View {
     // was typed since the last flush.
     .onChange(of: scenePhase) { _, phase in
       guard phase == .background else { return }
+      guard !retainsSubmittedTextForPromotion || !controller.hasAcceptedFirstSend else { return }
       controller.composerText = text
     }
     .photosPicker(

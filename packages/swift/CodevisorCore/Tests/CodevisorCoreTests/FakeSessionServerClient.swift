@@ -78,6 +78,21 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   /// When false, prompts are accepted without the scripted assistant echo,
   /// leaving the turn generating so tests can emit their own events.
   var echoOnPrompt = true
+  var openSessionResponse: ServerSessionOpenResponse?
+  var openSessionFailure: CodevisorServerClientError?
+  var openSessionGate: AsyncStream<Void>?
+  let openSessionRequests = TestSignal()
+  var promptFailure: CodevisorServerClientError?
+  let promptRequests = TestSignal()
+
+  func openSession(
+    _ session: ChatSession, project: Project?, transcriptLimit: Int
+  ) async throws -> ServerSessionOpenResponse? {
+    openSessionRequests.signal()
+    if let openSessionGate { for await _ in openSessionGate {} }
+    if let openSessionFailure { throw openSessionFailure }
+    return openSessionResponse
+  }
 
   init(sessionId: UUID) {
     self.sessionId = sessionId
@@ -400,9 +415,11 @@ extension FakeSessionServerClient {
 
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
     lock.withLock { _promptedTexts.append(text) }
+    promptRequests.signal()
     if let gate = lock.withLock({ _promptGate }) {
       for await _ in gate { break }
     }
+    if let promptFailure { throw promptFailure }
     guard echoOnPrompt else {
       return ServerPromptAccepted(accepted: true, sessionId: id.uuidString)
     }

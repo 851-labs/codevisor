@@ -447,12 +447,12 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func sendAnimationTarget(
-    in host: UIView,
+    in host: TranscriptRowHost,
     rowKey: String
   ) -> TranscriptSendAnimationTarget? {
     guard rowByKey[rowKey]?.isUserMessage == true,
       !host.bounds.isEmpty,
-      let snapshot = host.snapshotView(afterScreenUpdates: false)
+      let snapshot = host.snapshotForSendAnimation()
     else { return nil }
     snapshot.isUserInteractionEnabled = false
     snapshot.accessibilityElementsHidden = true
