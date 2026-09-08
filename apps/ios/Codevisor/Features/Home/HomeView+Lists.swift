@@ -20,13 +20,13 @@ extension HomeView {
       sessionList
     } else if anyMachineSynced {
       // At least one machine answered with a real (empty) list: the
-      // honest presentation is "no chats"; the alert names stragglers.
+      // honest presentation is "no chats"; the toolbar flags sync failures.
       refreshableState(allowsStateHitTesting: false) {
         emptyState
       }
     } else if !failedSyncMachines.isEmpty {
       // Keep the list blank instead of showing stale cached rows.
-      // The native alert explains the failure and opens machine settings.
+      // The toolbar warning opens machine settings with the failure details.
       refreshableState(allowsStateHitTesting: false) {
         EmptyView()
       }

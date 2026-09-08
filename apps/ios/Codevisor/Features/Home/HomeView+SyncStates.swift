@@ -2,7 +2,7 @@ import CodevisorCore
 import SwiftUI
 
 /// The home screen's sync-state presentation: navigation visibility, the
-/// native failure alert, and the refreshable surface used by loading, empty,
+/// connection warning, and the refreshable surface used by loading, empty,
 /// and unavailable states.
 extension HomeView {
   var settingsButton: some View {
@@ -14,18 +14,23 @@ extension HomeView {
     .accessibilityLabel("Settings")
   }
 
-  /// Machines whose last sync attempt failed — named in the alert and
-  /// retried together. Fleet-aggregated: no single "selected" machine
-  /// gets to speak for the others.
+  var machineConnectionWarningButton: some View {
+    Button(action: openFailedMachineSettings) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
+    }
+    .tint(.orange)
+    .accessibilityLabel("Machine connection issues")
+    .accessibilityHint("Opens Machines settings")
+  }
+
+  /// Machines whose last sync attempt failed, surfaced together in the
+  /// toolbar and retried together.
   var failedSyncMachines: [CodevisorMachine] {
     machines.allMachines.filter { machine in
       if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
       return false
     }
-  }
-
-  var failedSyncMachineIDs: Set<String> {
-    Set(failedSyncMachines.map(\.id))
   }
 
   /// Cached records stay persisted for recovery, but Home only presents
@@ -38,35 +43,6 @@ extension HomeView {
           : nil
       }
     )
-  }
-
-  var showsSyncFailureAlert: Bool {
-    !failedSyncMachineIDs.subtracting(dismissedSyncFailureMachineIDs).isEmpty
-  }
-
-  var syncFailureAlertIsPresented: Binding<Bool> {
-    Binding(
-      get: { showsSyncFailureAlert },
-      set: { isPresented in
-        if !isPresented {
-          dismissSyncFailureAlert()
-        }
-      }
-    )
-  }
-
-  var syncFailureAlertTitle: String {
-    if let machine = failedSyncMachines.first, failedSyncMachines.count == 1 {
-      return "\(machine.name) is unavailable"
-    }
-    return "\(failedSyncMachines.count) machines are unavailable"
-  }
-
-  var syncFailureAlertMessage: String {
-    if failedSyncMachines.count == 1 {
-      return "Chats from this machine are hidden until it reconnects."
-    }
-    return "Chats from these machines are hidden until they reconnect."
   }
 
   /// True once ANY machine has completed a sync this launch — enough to
@@ -97,13 +73,8 @@ extension HomeView {
     }
   }
 
-  func dismissSyncFailureAlert() {
-    dismissedSyncFailureMachineIDs.formUnion(failedSyncMachineIDs)
-  }
-
   func openFailedMachineSettings() {
     let failed = failedSyncMachines
-    dismissSyncFailureAlert()
     presentedSettingsDestination = .machines(
       focusedMachineID: failed.count == 1 ? failed[0].id : nil
     )

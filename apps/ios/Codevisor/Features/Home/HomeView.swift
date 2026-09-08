@@ -47,8 +47,6 @@ struct HomeView: View {
   /// but it may never outlive the wait — after this it becomes retry.
   @State var initialSyncDeadlineExpired = false
   @State var presentedSettingsDestination: SettingsDestination?
-  /// Dismissals apply to this outage; recovery lets a later failure alert again.
-  @State var dismissedSyncFailureMachineIDs: Set<String> = []
   @State private var pendingHarnessSignIn: HarnessSignInRequest?
   @State var newChatFlow: NewChatFlow?
   /// Presentation and promotion have different lifetimes. SwiftUI owns this
@@ -179,10 +177,6 @@ struct HomeView: View {
       .onAppear {
         expandedProjectIDs = persistedIDs(from: expandedProjectsRaw)
       }
-      .onChange(of: failedSyncMachineIDs, initial: true) { _, failedIDs in
-        // Recovery re-arms a future failure alert.
-        dismissedSyncFailureMachineIDs.formIntersection(failedIDs)
-      }
       // Bursty automatic reorders (several agents changing state at
       // once) are jarring. Watching the unheld sort lets a burst land
       // as one animated reflow after it settles.
@@ -235,6 +229,11 @@ struct HomeView: View {
           // there is no machine switcher — selection follows the
           // chat you open, and machines are managed in Settings.
           ToolbarItem(placement: .topBarLeading) { settingsButton }
+          if !failedSyncMachines.isEmpty {
+            ToolbarItem(placement: .topBarLeading) {
+              machineConnectionWarningButton
+            }
+          }
           ToolbarItem(placement: .topBarTrailing) { organizeMenu }
         }
       }
@@ -261,14 +260,6 @@ struct HomeView: View {
             preferredChatSessionId: preferredChatSessionId
           )
         }
-      }
-      .alert(syncFailureAlertTitle, isPresented: syncFailureAlertIsPresented) {
-        Button("Open Settings") {
-          openFailedMachineSettings()
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: {
-        Text(syncFailureAlertMessage)
       }
       .sheet(item: $presentedSettingsDestination) { destination in
         SettingsSheet(initialDestination: destination)
