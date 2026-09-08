@@ -31,8 +31,7 @@ extension SessionContainerView {
 
   func activeCenterModel(in workspace: Workspace) -> PaneGroupModel {
     let leafId =
-      activeLeafId
-      ?? workspace.selectedCenterTab?.activeLeafId
+      workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId)
       ?? workspace.centerTree.allGroups.first!.id
     return configuredCenterModel(leafId: leafId)
   }

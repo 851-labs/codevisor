@@ -114,7 +114,7 @@ extension SessionContainerView {
   /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
     let workspace = store.workspace(for: session, project: project)
-    guard let leafId = activeLeafId ?? workspace.selectedCenterTab?.activeLeafId else {
+    guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil
     }
     let model = store.centerGroup(

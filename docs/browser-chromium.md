@@ -4,6 +4,13 @@ macOS browser panes embed Chromium (CEF Alloy) in the native workspace. iOS uses
 WKWebView and retains its existing native glass toolbar and scroll behavior.
 New panes start at Google; words entered in the address field search Google.
 
+The macOS window toolbar hosts the active browser pane's address and navigation
+controls. Back and Forward stay at the leading edge, disabled when their history
+is unavailable; the address field stays centered. Switching tabs or focused splits
+updates the toolbar without recreating the browser. The sidebar displays favicons
+downloaded and decoded through the page's Chromium request context and proxy;
+pages without an icon use the browser glyph.
+
 On macOS, right-click a page and choose **Inspect** to reveal that element, or
 press **⌥⌘I** to open DevTools. Its **Customize and control DevTools → Dock side**
 menu supports a separate window, left, bottom, and right. Right is the default;

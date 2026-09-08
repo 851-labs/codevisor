@@ -10,6 +10,7 @@ FOUNDATION_EXPORT void CVShutdownChromium(void (^completion)(void));
 @interface CVChromiumView : NSView
 @property(nonatomic, copy, nullable) void (^stateChanged)(NSString *url, NSString *title, BOOL loading, BOOL back, BOOL forward);
 @property(nonatomic, copy, nullable) void (^browserReady)(void);
+@property(nonatomic, copy, nullable) void (^faviconChanged)(NSData * _Nullable image);
 @property(nonatomic, copy, nullable) void (^viewportScaleChanged)(CGFloat scale);
 @property(nonatomic, copy, nullable) void (^protocolEvent)(NSString *json);
 - (void)sendProtocol:(NSString *)json completion:(void (^)(NSString *reply))completion;

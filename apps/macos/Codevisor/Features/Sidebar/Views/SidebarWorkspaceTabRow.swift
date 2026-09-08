@@ -9,6 +9,7 @@ struct SidebarWorkspaceTabRow: View {
   let title: String
   let kind: PaneKind
   let isAgentOwned: Bool
+  var browserFavicon: NSImage? = nil
   /// A plugin pane's identity, so the row shows the plugin's own artwork
   /// (fetched through `pluginIconClient`) instead of the generic glyph.
   var pluginId: String? = nil
@@ -89,6 +90,13 @@ struct SidebarWorkspaceTabRow: View {
     if let chatSession {
       ChatSessionLeadingIcon(session: chatSession, store: store, activityColor: .secondary)
         .foregroundStyle(.secondary)
+    } else if kind == .browser, let browserFavicon {
+      Image(nsImage: browserFavicon)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 14, height: 14)
+        .frame(width: 18)
+        .accessibilityHidden(true)
     } else if kind == .plugin, let pluginId, let pluginIconClient {
       PluginIconView(
         pluginId: pluginId,

@@ -13,6 +13,7 @@ final class ChromiumBrowserModel {
   private(set) var webView: CVChromiumView?
   private(set) var url: URL?
   private(set) var title = "Browser"
+  private(set) var favicon: NSImage?
   private(set) var isLoading = false
   private(set) var canGoBack = false
   private(set) var canGoForward = false
@@ -112,6 +113,12 @@ final class ChromiumBrowserModel {
             guard let self, self.generation == token else { return }
             self.errorMessage = "Couldn’t load this page through \(self.machineName). \(message)"
             self.isLoading = false
+          }
+        }
+        view.faviconChanged = { [weak self] data in
+          Task { @MainActor [weak self] in
+            guard let self, self.generation == token else { return }
+            self.favicon = data.flatMap { NSImage(data: $0) }
           }
         }
         view.browserReady = { [weak self, weak view] in

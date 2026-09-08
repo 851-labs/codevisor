@@ -3,7 +3,7 @@ import CodevisorCore
 import CodevisorUI
 
 /// Hosts an already-resolved session controller below the native toolbar
-/// (which carries the editable tab name).
+/// (which follows the active pane).
 struct SessionContainerView: View {
   let session: ChatSession
   let project: Project
@@ -50,9 +50,20 @@ struct SessionContainerView: View {
 
   var body: some View {
     contentColumn
-      .navigationTitle(tabTitle)
-      .navigationSubtitle(workspaceSubtitle)
-      .focusedSceneValue(\.browserPage, (sessionFocus.centerGroup?.selectedPane as? BrowserPane)?.model)
+      .navigationTitle(activePaneTitle)
+      .navigationSubtitle(activePaneDescriptor?.kind == .chat ? activePaneSubtitle : "")
+      .toolbar(removing: activePaneDescriptor?.kind == .browser ? .title : nil)
+      .toolbar {
+        if let browser = activeBrowserModel {
+          ChromiumBrowserNavigationControls(model: browser)
+          ToolbarItem(placement: .principal) {
+            ChromiumBrowserToolbar(model: browser)
+              .id(browser.paneId)
+          }
+          .sharedBackgroundVisibility(.hidden)
+        }
+      }
+      .focusedSceneValue(\.browserPage, activeBrowserModel)
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(
@@ -303,53 +314,4 @@ struct SessionContainerView: View {
         .frame(maxWidth: .infinity)
     }
   }
-
-  /// The sidebar carries the workspace name (it is the parent row),
-  /// so the header names the selected TAB instead — the active split's
-  /// pane, matching the row the sidebar highlights. Editing pins the tab's
-  /// title through the workspace repository.
-  var tabTitle: Binding<String> {
-    Binding(
-      get: {
-        let workspace = store.workspace(for: session, project: project)
-        guard let tab = workspace.selectedCenterTab else { return workspace.name }
-        if let customTitle = tab.customTitle { return customTitle }
-        guard let descriptor = headerDescriptor(in: tab) else { return "New Tab" }
-        return paneTitle(descriptor)
-      },
-      set: { newValue in
-        let workspace = store.workspace(for: session, project: project)
-        renameCenterTab(workspace.selectedCenterTabId, to: newValue)
-      }
-    )
-  }
-
-  /// The context the title no longer carries: where this tab runs. Ordered
-  /// widest-to-narrowest and de-duplicated, since a workspace is commonly
-  /// named after its worktree or project.
-  var workspaceSubtitle: String {
-    let workspace = store.workspace(for: session, project: project)
-    let candidates: [String?] = [
-      workspace.name,
-      project.name,
-      workspace.worktreeName,
-      environment.machines.fleetMachineName(for: session.serverId),
-    ]
-    var parts: [String] = []
-    for candidate in candidates {
-      guard let candidate, !candidate.isEmpty, !parts.contains(candidate) else { continue }
-      parts.append(candidate)
-    }
-    return parts.joined(separator: " · ")
-  }
-
-  /// The pane the header speaks for: the LIVE active leaf when it belongs
-  /// to this tab (the sidebar can move it), else the tab's persisted one.
-  private func headerDescriptor(in tab: WorkspaceTab) -> PaneDescriptorState? {
-    let leafId = activeLeafId.flatMap { tab.root.group(id: $0) != nil ? $0 : nil } ?? tab.activeLeafId
-    return configuredCenterModel(leafId: leafId).state.selectedPane
-      ?? tab.root.group(id: leafId)?.selectedPane
-      ?? tab.root.allGroups.first?.state.selectedPane
-  }
-
 }

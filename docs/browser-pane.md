@@ -6,8 +6,12 @@ controls use native Liquid Glass. On iOS, the controls float above the page at
 the bottom, collapse to a hostname pill while scrolling down, and expand when
 scrolling up or tapping the address. Tapping the minimal pill expands the controls;
 tapping the expanded address starts editing. Editing keeps them expanded above the
-keyboard. macOS keeps the controls above the page and supports Command-L and
-Command-R to reload the focused browser pane. On iOS, pulling down from the top
+keyboard. On macOS, the window toolbar follows the active pane: browser panes show
+the address and navigation controls, chats show their title and workspace context,
+and other panes show their title. Command-L edits the active browser's address and
+Command-R reloads it. Browser rows in the macOS sidebar and cards in the iOS tab
+picker show the page's favicon when available. Favicons use the workspace machine's
+proxy, including redirects to localhost. On iOS, pulling down from the top
 uses the native refresh control, including on short pages. Its indicator ends
 when loading completes, fails, or is stopped.
 The iOS navigation bar stays fixed with a translucent system material so content

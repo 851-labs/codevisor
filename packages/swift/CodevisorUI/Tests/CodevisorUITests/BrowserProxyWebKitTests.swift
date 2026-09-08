@@ -12,6 +12,25 @@ import WebKit
 @MainActor
 @Suite("WebKit browser proxy", .serialized, .timeLimit(.minutes(1)))
 struct BrowserProxyWebKitTests {
+  @Test func faviconRequestsAndLoopbackRedirectsUseThePageProxy() async throws {
+    let proxy = try ProxyFixture()
+    let port = try await proxy.start()
+    defer { proxy.close() }
+    let store = try BrowserWebsiteProfile.configuredStore(
+      machineId: "favicon-test-\(UUID())", endpoint: URL(string: "http://127.0.0.1:\(port)")!,
+      credential: ServerBrowserProxySession(username: "test", password: "secret"))
+    let session = try BrowserFaviconLoader.session(for: store)
+    defer { session.invalidateAndCancel() }
+    let page = URL(string: "http://localhost:\(port)/")!
+    let url = try #require(BrowserFaviconLoader.candidates(["/redirect-icon"], page: page).first)
+    let data = try await BrowserFaviconLoader.download(url, session: session)
+    #expect(String(decoding: data, as: UTF8.self) == "proxied API")
+    #expect(proxy.authorities.contains("proxy.localhost:\(port)"))
+    #expect(proxy.authorities.contains("ipv4-127-0-0-1.proxy.localhost:\(port)"))
+    #expect(proxy.directRequests == 0)
+    #expect(proxy.authorizedConnections >= 2)
+  }
+
   @Test func remoteOriginsUseCONNECT() async throws {
     let host = "proxy.localhost"
     _ = NSApplication.shared
@@ -29,6 +48,8 @@ struct BrowserProxyWebKitTests {
     webView.uiDelegate = navigation
     defer { webView.stopLoading(); webView.navigationDelegate = nil; webView.uiDelegate = nil }
     try await navigation.load(webView, url: URL(string: "http://\(host):3000/")!)
+    let icons = try await webView.evaluateJavaScript(BrowserFaviconLoader.discoveryScript) as? [String]
+    #expect(icons == ["http://\(host):3000/icon.png", "http://\(host):3000/icon.svg"])
     let initial = try await webView.callAsyncJavaScript(
       "return await window.initialRequest", arguments: [:], in: nil, contentWorld: .page)
     #expect(initial as? String == "proxied API")
@@ -275,6 +296,12 @@ private final class ProxyFixture {
           self.authorities.append(header.components(separatedBy: " ")[1])
           self.send(connection, "HTTP/1.1 200 Connection Established\r\n\r\n")
           self.read(connection, proxyHandshake: false, buffer: Data())
+        } else if header.hasPrefix("GET /redirect-icon ") {
+          self.send(
+            connection,
+            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:\(self.listener.port!.rawValue)/api\r\nContent-Length: 0\r\n\r\n"
+          )
+          self.read(connection, proxyHandshake: false, buffer: Data())
         } else if header.lowercased().contains("upgrade: websocket") {
           let key = header.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("sec-websocket-key:") }!
             .components(separatedBy: ":")[1].trimmingCharacters(in: .whitespaces)
@@ -294,7 +321,10 @@ private final class ProxyFixture {
             body = "proxied API"
           } else {
             body = """
-              <!doctype html><title>Proxied page</title><script>
+              <!doctype html><title>Proxied page</title>
+              <link rel="icon" type="image/svg+xml" href="/icon.svg">
+              <link rel="shortcut icon" href="/icon.png">
+              <link rel="icon" media="not all" href="/hidden.png"><script>
               window.initialRequest = fetch('http://localhost:\(self.listener.port!.rawValue)/api').then(r => r.text());
               </script><p>Loaded through proxy</p>
               """

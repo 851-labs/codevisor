@@ -88,7 +88,13 @@ struct PanePreviewTile: View {
 
   @ViewBuilder
   private var paneIcon: some View {
-    if pane.kind == .plugin, let pluginId = pane.pluginId {
+    if pane.kind == .browser, let favicon = BrowserPaneCache.shared.favicon(paneId: pane.id) {
+      Image(uiImage: favicon)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 28, height: 28)
+        .accessibilityHidden(true)
+    } else if pane.kind == .plugin, let pluginId = pane.pluginId {
       PluginIconView(
         pluginId: pluginId,
         paneType: pane.pluginPaneType,

@@ -7,9 +7,13 @@ import ACPKit
 // MARK: - PaneGroups
 
 extension SessionStore {
-  func localBrowserTitle(paneId: UUID) -> String? {
+  func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
     let groups = Array(centerLeafGroups.values) + Array(bottomGroups.values)
-    return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model.title }.first
+    return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model }.first
+  }
+
+  func localBrowserTitle(paneId: UUID) -> String? {
+    localBrowserModel(paneId: paneId)?.title
   }
 
   /// Returns the cached bottom-panel pane group for a session's WORKSPACE,

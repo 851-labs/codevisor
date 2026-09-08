@@ -1,4 +1,5 @@
 #import "ChromiumBridge.h"
+#import "ChromiumFavicon.h"
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
 #include "include/cef_client.h"
@@ -156,6 +157,8 @@ class DevToolsClient;
   BOOL _contextReady;
   BOOL _creating;
   BOOL _closed;
+  NSUInteger _faviconGeneration;
+  BOOL _faviconRequested;
   NSString *_address;
   NSString *_profile;
   NSString *_proxyHost;
@@ -595,6 +598,39 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
     if (view) view->_popupWindow.title = title_;
   }
   void OnLoadingStateChange(CefRefPtr<CefBrowser>, bool, bool, bool) override { [view_ publish]; }
+  void OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, TransitionType) override {
+    if (!frame->IsMain()) return;
+    CVChromiumView *view = view_;
+    if (!view) return;
+    ++view->_faviconGeneration;
+    view->_faviconRequested = NO;
+    if (view.faviconChanged) view.faviconChanged(nil);
+  }
+  void OnFaviconURLChange(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls) override {
+    if (!urls.empty()) LoadFavicon(browser, urls);
+  }
+  void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int) override {
+    CVChromiumView *view = view_;
+    if (!frame->IsMain() || !view || view->_faviconRequested) return;
+    NSURL *page = [NSURL URLWithString:String(frame->GetURL())];
+    if (![@[@"http", @"https"] containsObject:page.scheme]) return;
+    NSURL *fallback = [NSURL URLWithString:@"/favicon.ico" relativeToURL:page];
+    LoadFavicon(browser, {String(fallback.absoluteString)});
+  }
+  void LoadFavicon(CefRefPtr<CefBrowser> browser, const std::vector<CefString>& urls) {
+    CVChromiumView *view = view_;
+    if (!view || view->_closed) return;
+    view->_faviconRequested = YES;
+    NSUInteger generation = ++view->_faviconGeneration;
+    __weak CVChromiumView *weakView = view;
+    CVDownloadFavicon(browser, urls, ^(NSData *data) {
+      CVChromiumView *current = weakView;
+      // A response from the previous page or icon candidate must not replace
+      // the current page's icon, including after a pane has closed.
+      if (!current || current->_closed || current->_faviconGeneration != generation) return;
+      if (current.faviconChanged) current.faviconChanged(data);
+    });
+  }
   void OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, ErrorCode code,
                    const CefString& text, const CefString&) override {
     CVChromiumView *view = view_;
@@ -942,7 +978,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (void)closeBrowser {
   if (_closed) return;
   _closed = YES;
-  self.stateChanged = nil; self.loadFailed = nil;
+  self.stateChanged = nil; self.loadFailed = nil; self.faviconChanged = nil;
   [self closeDevTools];
   if (_browser) _browser->GetHost()->CloseBrowser(true);
   else {

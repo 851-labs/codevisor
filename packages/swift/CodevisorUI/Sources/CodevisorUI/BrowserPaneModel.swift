@@ -11,6 +11,7 @@ public final class BrowserPaneModel: NSObject {
   public private(set) var webView: WKWebView?
   public private(set) var url: URL?
   public private(set) var title = "Browser"
+  public var favicon: CGImage? { faviconLoader.image }
   public private(set) var isLoading = false
   public private(set) var progress = 0.0
   public private(set) var canGoBack = false
@@ -18,6 +19,8 @@ public final class BrowserPaneModel: NSObject {
   public private(set) var errorMessage: String?
   private(set) var pageAppearance = BrowserPageAppearance()
   @ObservationIgnored public var onNavigate: ((String, String) -> Void)?
+  @ObservationIgnored public var onFaviconChange: ((CGImage?) -> Void)?
+  private let faviconLoader = BrowserFaviconLoader()
   @ObservationIgnored private let machineId: String
   @ObservationIgnored private let client: any CodevisorServerClienting
   @ObservationIgnored private let resolveBaseURL: @MainActor () async -> URL?
@@ -43,6 +46,7 @@ public final class BrowserPaneModel: NSObject {
     self.requestedURL = initialURL.flatMap(Self.navigationURL)
     self.url = requestedURL
     super.init()
+    faviconLoader.onChange = { [weak self] image in self?.onFaviconChange?(image) }
   }
 
   public static func navigationURL(_ input: String) -> URL? {
@@ -151,6 +155,8 @@ public final class BrowserPaneModel: NSObject {
     activationTask?.cancel()
     _ = paneSync.setVisible(false)
     onNavigate = nil
+    onFaviconChange = nil
+    faviconLoader.stop()
     webView?.configuration.userContentController.removeScriptMessageHandler(forName: "codevisorBrowserNavigation")
     navigationMessages = nil
     observations.removeAll()
@@ -228,6 +234,7 @@ public final class BrowserPaneModel: NSObject {
     else { return }
     url = target
     requestedURL = target
+    faviconLoader.refresh(from: webView)
     publishNavigation(target.absoluteString)
   }
 
@@ -269,7 +276,11 @@ extension BrowserPaneModel: WKNavigationDelegate {
     isLoading = true
   }
 
-  public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { updateState(publish: true) }
+  public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { faviconLoader.reset() }
+  public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    updateState(publish: true)
+    faviconLoader.refresh(from: webView)
+  }
   public func webView(
     _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error
   ) { failed(error) }
