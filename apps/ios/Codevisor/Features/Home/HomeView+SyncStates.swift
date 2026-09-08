@@ -24,8 +24,8 @@ extension HomeView {
     .accessibilityHint("Opens Machines settings")
   }
 
-  /// Machines whose last sync attempt failed, surfaced together in the
-  /// toolbar and retried together.
+  /// Machines whose last completed sync attempt failed, including retries
+  /// in progress, surfaced together in the toolbar and retried together.
   var failedSyncMachines: [CodevisorMachine] {
     machines.allMachines.filter { machine in
       if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }

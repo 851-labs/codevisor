@@ -16,11 +16,17 @@ struct MachinePreparationRetryTests {
     fake.setInfoFails(true)
     let clock = TestClock()
     let controller = makeController(fake: fake, clock: clock)
+    defer { controller.stopEventSync() }
     let remote = try controller.addRemote(host: "10.0.0.9", select: false)
 
     await controller.prepareMachine(remote.id)
     guard case .failed = controller.availabilityByMachineId[remote.id] else {
       Issue.record("A failed preparation should surface as failed availability")
+      return
+    }
+    let failure = try #require(controller.navigationSyncStateByMachineId[remote.id])
+    guard case .stale = failure else {
+      Issue.record("A failed preparation should keep its connection warning visible")
       return
     }
     // Latched: the gate fails instantly without touching the network.
@@ -30,15 +36,35 @@ struct MachinePreparationRetryTests {
 
     // The machine comes back; the scheduled retry recovers on its own —
     // no foreground event, no user retry.
+    let probeStarted = TestSignal()
+    let probeGate = TestSignal()
+    fake.setInfoDelay {
+      probeStarted.signal()
+      await probeGate.wait()
+    }
+    let snapshotStarted = TestSignal()
+    let snapshotGate = TestSignal()
+    fake.setSnapshotDelay {
+      snapshotStarted.signal()
+      await snapshotGate.wait()
+    }
     fake.setInfoFails(false)
     await clock.waitForSleep(.seconds(2))
+    #expect(controller.navigationSyncStateByMachineId[remote.id] == failure)
     clock.advance(by: .seconds(2))
-    try await waitUntil {
-      controller.availabilityByMachineId[remote.id] == .ready
-    }
+    await probeStarted.wait()
+    #expect(controller.availabilityByMachineId[remote.id] == .waiting(.connecting))
+    #expect(controller.navigationSyncStateByMachineId[remote.id] == failure)
+    probeGate.signal()
+
+    await snapshotStarted.wait()
+    #expect(controller.availabilityByMachineId[remote.id] == .ready)
+    #expect(controller.navigationSyncStateByMachineId[remote.id] == failure)
+    snapshotGate.signal()
     try await waitUntil {
       controller.navigationSyncStateByMachineId[remote.id] == .current
     }
+    await controller.connection(for: remote.id).preparationTask?.value
     // And the latch is gone: requests flow again.
     try await controller.requestGate.waitUntilReady(for: remote.id)
   }
@@ -85,12 +111,23 @@ private final class PreparationFakeServerClient: CodevisorServerClienting, @unch
 
   private let lock = NSLock()
   private var infoFails = false
+  private var infoDelay: (@Sendable () async -> Void)?
+  private var snapshotDelay: (@Sendable () async -> Void)?
+
+  func setInfoDelay(_ delay: @escaping @Sendable () async -> Void) {
+    lock.withLock { infoDelay = delay }
+  }
+
+  func setSnapshotDelay(_ delay: @escaping @Sendable () async -> Void) {
+    lock.withLock { snapshotDelay = delay }
+  }
 
   func setInfoFails(_ fails: Bool) {
     lock.withLock { infoFails = fails }
   }
 
   func info() async throws -> ServerInfo {
+    if let delay = lock.withLock({ infoDelay }) { await delay() }
     if lock.withLock({ infoFails }) { throw InfoFailure() }
     return ServerInfo(
       id: "remote", name: "Remote", kind: "remote", version: "0.1.0",
@@ -110,7 +147,10 @@ private final class PreparationFakeServerClient: CodevisorServerClienting, @unch
   }
 
   func listProjects() async throws -> [ServerProject] { [] }
-  func listSessions() async throws -> [ServerSession] { [] }
+  func listSessions() async throws -> [ServerSession] {
+    if let delay = lock.withLock({ snapshotDelay }) { await delay() }
+    return []
+  }
   func latestShellEventCursor() async throws -> Int { 0 }
 
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

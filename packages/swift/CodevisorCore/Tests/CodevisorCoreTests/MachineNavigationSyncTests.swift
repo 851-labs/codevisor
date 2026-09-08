@@ -192,8 +192,11 @@ struct MachineNavigationSyncTests {
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
   }
 
-  @Test("Failed navigation refresh remains visibly stale and can retry")
-  func failureIsVisibleAndRetryable() async {
+  @Test(
+    "Failed navigation sync stays visible through retries until a snapshot succeeds",
+    arguments: [NavigationSyncPresentation.background, .catchUp]
+  )
+  func failureIsVisibleAndRetryable(presentation: NavigationSyncPresentation) async throws {
     let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])
     fake.configureListSessionsFailure(true)
     let controller = MachineController(
@@ -201,16 +204,47 @@ struct MachineNavigationSyncTests {
       projectList: makeProjectList(),
       clientFactory: { _ in fake }
     )
+    defer { controller.stopEventSync() }
 
     await controller.refreshNavigationState(for: "local")
-    guard case .stale = controller.navigationSyncStateByMachineId["local"] else {
+    let failure = try #require(controller.navigationSyncStateByMachineId["local"])
+    guard case .stale = failure else {
       Issue.record("A failed snapshot was incorrectly presented as current")
       return
     }
 
-    fake.configureListSessionsFailure(false)
-    await controller.refreshNavigationState(for: "local")
-    #expect(controller.navigationSyncStateByMachineId["local"] == .current)
+    for retryFails in [true, false] {
+      let snapshotStarted = TestSignal()
+      let snapshotGate = TestSignal()
+      fake.configureListSessionDelay {
+        snapshotStarted.signal()
+        await snapshotGate.wait()
+      }
+      fake.configureListSessionsFailure(retryFails)
+      let retry = Task {
+        await controller.synchronizeNavigationState(
+          serverId: "local", client: fake, presentation: presentation
+        )
+      }
+      await snapshotStarted.wait()
+      #expect(controller.navigationSyncStateByMachineId["local"] == failure)
+
+      // A catch-up joining an in-flight retry must also retain the error.
+      let joining = TestSignal()
+      let joinedRetry = Task { @MainActor in
+        joining.signal()
+        await controller.synchronizeNavigationState(
+          serverId: "local", client: fake, presentation: .catchUp
+        )
+      }
+      await joining.wait()
+      #expect(controller.navigationSyncStateByMachineId["local"] == failure)
+
+      snapshotGate.signal()
+      await retry.value
+      await joinedRetry.value
+      #expect(controller.navigationSyncStateByMachineId["local"] == (retryFails ? failure : .current))
+    }
   }
 
   private func makeProjectList() -> ProjectListModel {

@@ -242,17 +242,12 @@ extension MachineController {
   ) async {
     let connection = connection(for: serverId)
     if let existing = connection.navigationSyncTask {
-      // `.current` machines keep their rows on screen while a warm
-      // resync runs (see beginWaiting): the blocking catch-up state is
-      // only for machines with nothing current to show.
-      if presentation == .catchUp, connection.navigationSyncState != .current {
-        connection.navigationSyncState = .catchingUp
+      if presentation == .catchUp {
+        connection.beginNavigationCatchUp()
       }
       await existing.value
-      // The joined task's terminal write can race the blocking write
-      // above (it may already be past its state-set when we joined).
-      // A blocking state must never be left displayed with no task
-      // running to clear it — re-enter once with the field clear.
+      // A superseded snapshot can finish without a terminal state. A
+      // cold catch-up must not stay displayed with no task to clear it.
       if connection.navigationSyncTask == nil,
         connection.navigationSyncState == .catchingUp
       {
@@ -308,14 +303,8 @@ extension MachineController {
     presentation: NavigationSyncPresentation
   ) async {
     guard !Task.isCancelled else { return }
-    // A warm resync of a `.current` machine stays `.current`: its cached
-    // rows are honest (the cursor below replays every gap), and demoting
-    // them evicted the machine's whole row set from fleet-aggregated
-    // lists just to reinsert it seconds later.
-    if presentation == .catchUp,
-      connection(for: serverId).navigationSyncState != .current
-    {
-      connection(for: serverId).navigationSyncState = .catchingUp
+    if presentation == .catchUp {
+      connection(for: serverId).beginNavigationCatchUp()
     }
     stopEventSync(for: serverId)
 

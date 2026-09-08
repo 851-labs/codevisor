@@ -43,13 +43,6 @@ extension MachineController {
   ) async {
     let machineId = machine.id
     beginWaiting(for: machineId, reason: machine.isLocal ? .starting : .connecting)
-    // A machine that is already `.current` stays `.current` through a
-    // warm re-preparation (foreground recovery): its cached rows are
-    // honest and the resync is gapless, so evicting them from
-    // fleet-aggregated lists just to reinsert seconds later is churn.
-    if connection(for: machineId).navigationSyncState != .current {
-      connection(for: machineId).navigationSyncState = .catchingUp
-    }
 
     if machine.isLocal, let localServer {
       let serverState = await localServer.ensureRunning()

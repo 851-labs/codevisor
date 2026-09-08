@@ -66,6 +66,15 @@ public final class MachineConnection {
   init(machineId: String) {
     self.machineId = machineId
   }
+
+  /// Cold connections show progress. Once a sync has finished, retain its
+  /// result during retries: current rows stay visible, and a stale snapshot
+  /// keeps its connection warning until a new snapshot succeeds.
+  func beginNavigationCatchUp() {
+    if navigationSyncState == nil || navigationSyncState == .cached {
+      navigationSyncState = .catchingUp
+    }
+  }
 }
 
 extension MachineController {
@@ -111,15 +120,7 @@ extension MachineController {
     connection.preparationRetryTask?.cancel()
     connection.preparationRetryTask = nil
     connection.availability = .waiting(reason)
-    // A machine already presenting a current snapshot keeps its rows on
-    // screen while it re-prepares (warm foreground, machine switching,
-    // restart): the event cursor makes the resync gapless, so the cached
-    // rows are honest. Demoting to `.catchingUp` here yanked the whole
-    // row set out of fleet-aggregated lists and reinserted it seconds
-    // later — a bulk disappear/reappear on every warm reconnect.
-    if connection.navigationSyncState != .current {
-      connection.navigationSyncState = .catchingUp
-    }
+    connection.beginNavigationCatchUp()
     requestGate.beginWaiting(for: machineId)
   }
 
