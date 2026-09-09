@@ -33,129 +33,68 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   }
 
   public let keys: [String]
-  public let heights: [CGFloat]
-  public let topOffsets: [CGFloat]
-  public let bottomOffsets: [CGFloat]
-  public let totalHeight: CGFloat
+  private let heightIndex: TranscriptHeightIndex
   public let indexByKey: [String: Int]
+  public var totalHeight: CGFloat { heightIndex.totalHeight }
+
+  /// Full geometry exports for persistence and diagnostics. Frame-time callers
+  /// use `frame(at:)` so they only visit the rows they need.
+  public var heights: [CGFloat] { heightIndex.allRows().map(\.height) }
+  public var topOffsets: [CGFloat] {
+    var top: CGFloat = 0
+    return heightIndex.allRows().map { row in
+      defer { top += row.extent }
+      return top
+    }
+  }
+  public var bottomOffsets: [CGFloat] {
+    var top: CGFloat = 0
+    return heightIndex.allRows().map { row in
+      defer { top += row.extent }
+      return totalHeight - top - row.height
+    }
+  }
+  var updatedHeightNodeCount: Int { heightIndex.updatedNodeCount }
 
   public init(
     items: [Item],
     measuredHeights: [String: CGFloat],
     spacing: CGFloat
   ) {
-    var keys: [String] = []
-    var heights: [CGFloat] = []
-    var topOffsets: [CGFloat] = []
-    var indexByKey: [String: Int] = [:]
-    keys.reserveCapacity(items.count)
-    heights.reserveCapacity(items.count)
-    topOffsets.reserveCapacity(items.count)
-    indexByKey.reserveCapacity(items.count)
-
-    var cursor: CGFloat = 0
-    for (index, item) in items.enumerated() {
-      let height = max(1, measuredHeights[item.key] ?? item.estimatedHeight)
-      keys.append(item.key)
-      heights.append(height)
-      topOffsets.append(cursor)
-      indexByKey[item.key] = index
-      cursor += height
-      if index < items.count - 1 {
-        cursor += item.spacingAfter ?? spacing
-      }
-    }
-
-    self.keys = keys
-    self.heights = heights
-    self.topOffsets = topOffsets
-    self.totalHeight = cursor
-    self.indexByKey = indexByKey
-    self.bottomOffsets = topOffsets.enumerated().map { index, top in
-      cursor - top - heights[index]
-    }
+    keys = items.map(\.key)
+    indexByKey = Dictionary(uniqueKeysWithValues: keys.enumerated().map { ($0.element, $0.offset) })
+    heightIndex = TranscriptHeightIndex(
+      rows: items.enumerated().map { index, item in
+        .init(
+          height: max(1, measuredHeights[item.key] ?? item.estimatedHeight),
+          spacing: index < items.count - 1 ? item.spacingAfter ?? spacing : 0
+        )
+      })
   }
 
-  /// Memberwise init for incremental copies — see `updatingHeight`.
-  private init(
-    keys: [String],
-    heights: [CGFloat],
-    topOffsets: [CGFloat],
-    bottomOffsets: [CGFloat],
-    totalHeight: CGFloat,
-    indexByKey: [String: Int]
-  ) {
+  private init(keys: [String], indexByKey: [String: Int], heightIndex: TranscriptHeightIndex) {
     self.keys = keys
-    self.heights = heights
-    self.topOffsets = topOffsets
-    self.bottomOffsets = bottomOffsets
-    self.totalHeight = totalHeight
     self.indexByKey = indexByKey
+    self.heightIndex = heightIndex
   }
 
-  /// A copy of this layout with one row's height replaced and every offset
-  /// reconciled. This is the streaming hot path — the active row's height
-  /// changes on nearly every flush — and the full initializer's cost is
-  /// dominated by re-hashing every key into `indexByKey` (plus, at the call
-  /// site, re-materializing every key string). Here `keys`/`indexByKey` are
-  /// shared and the numeric arrays take one memcpy + a linear float pass:
-  /// no hashing, no string work, no per-row allocation.
-  ///
-  /// Offset math (bottom-anchored): with `delta = newHeight - oldHeight`,
-  /// rows after the change shift their top offsets by `delta`; rows before
-  /// it move `delta` farther from the bottom; the changed row's own bottom
-  /// offset and every other value are unchanged.
-  ///
-  /// Returns nil when `key` is absent — the caller must fall back to a full
-  /// rebuild (row set changed).
   public func updatingHeight(forKey key: String, to height: CGFloat) -> VirtualTranscriptLayout? {
     updatingHeights([key: height])
   }
 
-  /// Applies a display-frame's complete measurement batch with one numeric
-  /// pass. Calling `updatingHeight` repeatedly copied and walked the layout
-  /// arrays once per changed row; a window that settled several rows in the
-  /// same frame therefore became O(rows × changes). This validates every key
-  /// up front and computes the same top- and bottom-relative geometry in
-  /// O(rows + changes).
+  /// Copies only affected height-index paths. Existing layout snapshots keep
+  /// their original geometry for restoration and animation. Unknown keys
+  /// require a topology rebuild; unchanged subtrees are reused.
   public func updatingHeights(_ updates: [String: CGFloat]) -> VirtualTranscriptLayout? {
     guard !updates.isEmpty else { return self }
-    var replacements: [Int: CGFloat] = [:]
+    var replacements: [(index: Int, height: CGFloat)] = []
     replacements.reserveCapacity(updates.count)
     for (key, height) in updates {
       guard let index = indexByKey[key] else { return nil }
-      replacements[index] = max(1, height)
-    }
-
-    var nextHeights = heights
-    var nextTopOffsets = topOffsets
-    var cumulativeDelta: CGFloat = 0
-    for index in nextHeights.indices {
-      nextTopOffsets[index] += cumulativeDelta
-      guard let replacement = replacements[index] else { continue }
-      cumulativeDelta += replacement - nextHeights[index]
-      nextHeights[index] = replacement
-    }
-    guard
-      cumulativeDelta != 0
-        || replacements.contains(where: {
-          heights[$0.key] != $0.value
-        })
-    else { return self }
-
-    let nextTotalHeight = totalHeight + cumulativeDelta
-    var nextBottomOffsets = bottomOffsets
-    for index in nextBottomOffsets.indices {
-      nextBottomOffsets[index] =
-        nextTotalHeight - nextTopOffsets[index] - nextHeights[index]
+      replacements.append((index, max(1, height)))
     }
     return VirtualTranscriptLayout(
-      keys: keys,
-      heights: nextHeights,
-      topOffsets: nextTopOffsets,
-      bottomOffsets: nextBottomOffsets,
-      totalHeight: nextTotalHeight,
-      indexByKey: indexByKey
+      keys: keys, indexByKey: indexByKey, heightIndex: heightIndex.replacing(replacements)
     )
   }
 
@@ -163,20 +102,15 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 
   /// The row containing `offset` (measured from the top of the first row).
   /// Spacing between two rows belongs to the nearer one, and offsets above
-  /// or below the transcript clamp to its first and last row. `bottomOffsets`
-  /// is bottom-anchored, so the bottom edge is derived from `heights` here.
+  /// or below the transcript clamp to its first and last row.
   public func index(nearestToOffset offset: CGFloat) -> Int? {
     guard !keys.isEmpty else { return nil }
-    if offset <= topOffsets[0] { return 0 }
-    var low = 0
-    var high = keys.count - 1
-    while low < high {
-      let mid = (low + high + 1) / 2
-      if topOffsets[mid] <= offset { low = mid } else { high = mid - 1 }
-    }
-    let bottom = topOffsets[low] + heights[low]
+    let next = heightIndex.firstTopReaching(offset)
+    if next < keys.count, frame(at: next).minY == offset { return next }
+    let low = max(0, min(keys.count - 1, next - 1))
+    let bottom = frame(at: low).maxY
     if offset > bottom, low + 1 < keys.count,
-      offset - bottom > topOffsets[low + 1] - offset
+      offset - bottom > frame(at: low + 1).minY - offset
     {
       return low + 1
     }
@@ -185,7 +119,8 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
 
   public func frame(at index: Int) -> CGRect {
     guard keys.indices.contains(index) else { return .zero }
-    return CGRect(x: 0, y: topOffsets[index], width: 0, height: heights[index])
+    let geometry = heightIndex.geometry(at: index)
+    return CGRect(x: 0, y: geometry.top, width: 0, height: geometry.height)
   }
 
   public func viewportTop(distanceFromBottom: CGFloat, viewportHeight: CGFloat) -> CGFloat {
@@ -208,10 +143,8 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     guard let previousIndex = previousLayout.indexByKey[key],
       let nextIndex = indexByKey[key]
     else { return nil }
-    let previousAnchorTopFromBottom =
-      previousLayout.bottomOffsets[previousIndex]
-      + previousLayout.heights[previousIndex]
-    let nextAnchorTopFromBottom = bottomOffsets[nextIndex] + heights[nextIndex]
+    let previousAnchorTopFromBottom = previousLayout.totalHeight - previousLayout.frame(at: previousIndex).minY
+    let nextAnchorTopFromBottom = totalHeight - frame(at: nextIndex).minY
     return max(
       0,
       previousDistanceFromBottom
@@ -303,7 +236,7 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     let index = firstIndexWhoseBottomExceeds(viewportTop)
     return VirtualTranscriptAnchor(
       key: keys[index],
-      offsetFromRowTop: viewportTop - topOffsets[index]
+      offsetFromRowTop: viewportTop - frame(at: index).minY
     )
   }
 
@@ -312,36 +245,15 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   /// fall back to their bottom-relative coordinate.
   public func viewportTop(restoring anchor: VirtualTranscriptAnchor) -> CGFloat? {
     guard let index = indexByKey[anchor.key] else { return nil }
-    return topOffsets[index] + anchor.offsetFromRowTop
+    return frame(at: index).minY + anchor.offsetFromRowTop
   }
 
   private func firstIndexWhoseBottomExceeds(_ value: CGFloat) -> Int {
-    var low = 0
-    var high = keys.count
-    while low < high {
-      let mid = (low + high) / 2
-      let bottom = topOffsets[mid] + heights[mid]
-      if bottom <= value {
-        low = mid + 1
-      } else {
-        high = mid
-      }
-    }
-    return min(low, keys.count - 1)
+    heightIndex.firstBottomExceeding(value)
   }
 
   private func firstIndexWhoseTopReaches(_ value: CGFloat) -> Int {
-    var low = 0
-    var high = keys.count
-    while low < high {
-      let mid = (low + high) / 2
-      if topOffsets[mid] < value {
-        low = mid + 1
-      } else {
-        high = mid
-      }
-    }
-    return low
+    heightIndex.firstTopReaching(value)
   }
 }
 

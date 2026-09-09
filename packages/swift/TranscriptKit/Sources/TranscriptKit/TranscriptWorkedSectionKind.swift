@@ -172,6 +172,7 @@ extension TranscriptAssistantRowProjection {
             documentSource: markdown,
             lifecycle: lifecycle,
             container: .assistantWorked,
+            animationSourceID: entryID,
             fragment: chunk.fragment
           )
           rows.append(

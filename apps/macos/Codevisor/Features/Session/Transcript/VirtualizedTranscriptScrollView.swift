@@ -29,10 +29,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   let transcriptDocumentView = FlippedTranscriptDocumentView()
-  let streamingTextFrameClock = StreamingTextAnimationFrameClock()
+  let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = NSProgressIndicator()
   /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
-  var rowSet = TranscriptRowSet()
   var rows: [TranscriptVirtualRow] { rowSet.rows }
   var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
   var projectedRows: [TranscriptVirtualRow] {
@@ -68,15 +67,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
 
   var deferredSendProjection: DeferredSendProjection?
-  var virtualLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: rowSpacing)
-  /// Measured row heights plus staleness. The ledger's invariant is the fix
-  /// for settled rows whose content keeps changing (background subagents
-  /// streaming into an ended turn): a revision change keeps the old height
-  /// as stale layout geometry instead of reverting the row to its estimate.
-  var measurements = TranscriptMeasurementLedger()
-  var measurementCache = SessionMeasurementCacheStore()
-  var layoutFingerprint = 0
-
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
   /// The transcript-wide text selection; see `+Selection.swift`.
   let textSelection = TranscriptSelectionState()
@@ -104,11 +94,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       initialRunwayViewportCount: Self.initialRunwayViewportCount
     )
   }
-  /// The desired pixel runway and the last runway known to be fully laid
-  /// out. Keeping both makes a window transition two-phase: prepare the new
-  /// runway first, then retire the previous one.
-  var virtualWindowHandoff = TranscriptVirtualWindowHandoff()
-  var pendingWindowScrollDelta: CGFloat = 0
   var lastObservedViewportTop: CGFloat?
   var runwayMotion = TranscriptRunwayMotion()
   var remainingMountsThisFrame = 2
@@ -129,9 +114,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   weak var sessionController: SessionController?
   var presentationFrameDriverToken: TranscriptFrameDriverToken?
   var presentationDisplayLink: CADisplayLink?
-  var displayFrameRequested = false
-  var modelPresentationFrameRequested = false
-  var mountedRowsUpdateRequested = false
   /// AppKit can synchronously post a clip-view bounds change while a newly
   /// mounted SwiftUI/TextKit row is being laid out. Re-entering reconciliation
   /// from that notification mutates AttributeGraph during its active update.
@@ -141,25 +123,15 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var deferredMountedRowsUpdateScheduled = false
   var deferredMountedRowsUpdateRequested = false
   var deferredMountedRowsRangeOverride: Range<Int>?
-  var initialPresentationGate = TranscriptInitialPresentationGate()
   /// A warm surface keeps displaying its last exact snapshot until both the
   /// newly-created outer and active projection scopes have caught up. This
   /// avoids replacing retained block rows with their provisional aggregate
   /// row during reattachment.
   var isAwaitingWarmProjection = false
-  var initialBottomPin = TranscriptInitialBottomPin()
-  var bottomJumpGate = TranscriptBottomJumpGate()
   var disclosureViewportAnchor: TranscriptDisclosureViewportAnchor?
   var disclosureAnchorReleaseTask: Task<Void, Never>?
 
   var pendingInitialState: SessionScrollState?
-  /// The saved bottom-distance stays authoritative through initial layout,
-  /// reverse pagination, and asynchronous height measurement. It is cleared
-  /// only by direct user scrolling or an explicit jump to the latest content.
-  var lockedRestoreDistance: CGFloat?
-  var initialPositionConfigured = false
-  var initialPositionApplied = false
-  var followsLatest = true
   var hasOlderHistory = false
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
   var isLoadingInitialHistory = false

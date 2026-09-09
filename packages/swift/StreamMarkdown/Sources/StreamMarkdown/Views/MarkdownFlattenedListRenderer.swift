@@ -1,5 +1,4 @@
-#if canImport(AppKit)
-  import AppKit
+#if canImport(AppKit) || canImport(UIKit)
   import SwiftUI
 
   /// Converts prose-only structural Markdown into one TextKit document.
@@ -8,7 +7,10 @@
   /// tables, and dividers) continue through `MarkdownRecursiveListView`.
   enum MarkdownFlattenedListRenderer {
     private static let listIndent: CGFloat = 24
-    private static let listMarkerWidth: CGFloat = 22
+    private static func markerWidth(_ markers: [String]) -> CGFloat {
+      let attributes: [NSAttributedString.Key: Any] = [.font: MarkdownTextRunRenderer.bodyFont]
+      return max(22, ceil(markers.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0) + 8)
+    }
     private static let quoteIndent = MarkdownFragmentMetrics.quoteIndent
 
     private struct RenderContext {
@@ -56,8 +58,8 @@
     static func attributedString(
       _ list: MarkdownList,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) -> NSAttributedString {
       let result = NSMutableAttributedString()
       append(
@@ -74,8 +76,8 @@
     static func attributedString(
       blockQuote blocks: [MarkdownBlock],
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) -> NSAttributedString {
       let result = NSMutableAttributedString()
       var marker: PendingMarker?
@@ -98,9 +100,11 @@
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
+      let markers = list.items.enumerated().map { list.marker(for: $0.element, at: $0.offset) }
+      let width = markerWidth(markers)
       for (itemIndex, item) in list.items.enumerated() {
         if itemIndex > 0 {
           appendSpacing(
@@ -112,7 +116,8 @@
         }
         append(
           item,
-          marker: list.marker(for: item, at: itemIndex),
+          marker: markers[itemIndex],
+          markerWidth: width,
           context: context,
           to: result,
           theme: theme,
@@ -125,11 +130,12 @@
     private static func append(
       _ item: MarkdownListItem,
       marker: String,
+      markerWidth: CGFloat,
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
       var pendingMarker: PendingMarker? = PendingMarker(
         text: marker,
@@ -140,7 +146,7 @@
           marker: pendingMarker,
           text: MarkdownText(""),
           font: MarkdownTextRunRenderer.bodyFont,
-          context: context.indented(by: listMarkerWidth),
+          context: context.indented(by: markerWidth),
           to: result,
           theme: theme,
           foreground: foreground,
@@ -149,7 +155,7 @@
         return
       }
 
-      let contentContext = context.indented(by: listMarkerWidth)
+      let contentContext = context.indented(by: markerWidth)
       for (blockIndex, block) in item.blocks.enumerated() {
         if blockIndex > 0 {
           appendSpacing(
@@ -232,8 +238,8 @@
       pendingMarker: inout PendingMarker?,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
       for (index, block) in blocks.enumerated() {
         if index > 0 {
@@ -262,8 +268,8 @@
       pendingMarker: inout PendingMarker?,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
       switch block {
       case let .heading(level, text):
@@ -365,9 +371,10 @@
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
+      let width = markerWidth(items.map { $0.0 })
       for (index, item) in items.enumerated() {
         if index > 0 {
           appendSpacing(
@@ -381,7 +388,7 @@
           marker: PendingMarker(text: item.0, indent: context.contentIndent),
           text: item.1,
           font: MarkdownTextRunRenderer.bodyFont,
-          context: context.indented(by: listMarkerWidth),
+          context: context.indented(by: width),
           to: result,
           theme: theme,
           foreground: foreground,
@@ -395,8 +402,8 @@
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
       guard let pending = take(&marker) else { return }
       appendLine(
@@ -414,12 +421,12 @@
     private static func appendLine(
       marker: PendingMarker?,
       text: MarkdownText,
-      font: NSFont,
+      font: MarkdownNativeFont,
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) {
       let line = NSMutableAttributedString()
       if let marker {
@@ -428,7 +435,7 @@
             string: "\(marker.text)\t",
             attributes: MarkdownTextRunRenderer.baseAttributes(
               font: MarkdownTextRunRenderer.bodyFont,
-              foreground: NSColor(theme.secondaryTextForeground),
+              foreground: MarkdownNativeColor(theme.secondaryTextForeground),
               lineSpacing: theme.lineSpacing
             )
           )
@@ -465,7 +472,7 @@
       context: RenderContext,
       to result: NSMutableAttributedString,
       theme: MarkdownTheme,
-      foreground: NSColor
+      foreground: MarkdownNativeColor
     ) {
       let separator = MarkdownTextRunRenderer.verticalSeparator(
         size: max(1, (theme.listItemSpacing - 2 * theme.lineSpacing) * 0.8),
@@ -487,7 +494,7 @@
       result.addAttribute(
         .streamMarkdownQuoteDecoration,
         value: TextKitQuoteDecoration(
-          color: NSColor(theme.quoteBarColor),
+          color: MarkdownNativeColor(theme.quoteBarColor),
           barOffsets: context.quoteBarOffsets
         ),
         range: NSRange(location: start, length: result.length - start)

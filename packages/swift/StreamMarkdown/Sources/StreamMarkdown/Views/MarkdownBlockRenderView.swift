@@ -279,13 +279,13 @@ private extension MarkdownBlock {
     case .heading, .paragraph, .bulletList, .orderedList:
       true
     case let .list(list):
-      #if canImport(AppKit)
+      #if canImport(AppKit) || canImport(UIKit)
         MarkdownTextRunRenderer.canRenderFlattenedList(list)
       #else
         false
       #endif
     case let .blockQuote(blocks):
-      #if canImport(AppKit)
+      #if canImport(AppKit) || canImport(UIKit)
         MarkdownTextRunRenderer.canRenderFlattenedText(blocks)
       #else
         false
@@ -331,7 +331,7 @@ struct MarkdownBlockView: View {
       )
 
     case let .list(list):
-      #if canImport(AppKit)
+      #if canImport(AppKit) || canImport(UIKit)
         if MarkdownTextRunRenderer.canRenderFlattenedList(list) {
           MarkdownTextRunView(
             blocks: [block],
@@ -392,7 +392,7 @@ struct MarkdownBlockView: View {
 
   @ViewBuilder
   private func quote(_ blocks: [MarkdownBlock]) -> some View {
-    #if canImport(AppKit)
+    #if canImport(AppKit) || canImport(UIKit)
       if MarkdownTextRunRenderer.canRenderFlattenedText(blocks) {
         MarkdownTextRunView(
           blocks: [.blockQuote(blocks)],

@@ -8,7 +8,7 @@ import UIKit
 
 // MARK: - FrameDriver
 
-extension VirtualizedTranscriptScrollView {
+extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   func prepareForDismantle() {
     if presentationRole == .foreground {
       // Capture the live, post-measurement coordinate before UIKit
@@ -123,24 +123,28 @@ extension VirtualizedTranscriptScrollView {
   }
 
   @objc func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
-    let shouldPresentModel = modelPresentationFrameRequested
-    let shouldUpdateMountedRows = mountedRowsUpdateRequested
+    surfaceController.presentFrame(at: displayLink.timestamp, adapter: self)
+    displayLink.isPaused = !displayFrameRequested
+  }
+
+  func prepareFrameBudget() {
     remainingMountsThisFrame = maximumMountsPerFrame
-    displayFrameRequested = false
-    modelPresentationFrameRequested = false
-    mountedRowsUpdateRequested = false
-    if shouldPresentModel, let presentationFrameDriverToken {
+  }
+
+  func presentPendingModel() {
+    if let presentationFrameDriverToken {
       sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
     }
-    if shouldUpdateMountedRows {
-      updateMountedRows()
-    }
-    if !pendingMeasurements.isEmpty,
-      measurementCommitGate.allowsGeometryCommit
-    {
-      commitPendingMeasurements()
-    }
-    streamingTextFrameClock.tick(at: displayLink.timestamp)
-    displayLink.isPaused = !displayFrameRequested
+  }
+
+  var hasPendingMeasurements: Bool {
+    !pendingMeasurements.isEmpty
+  }
+
+  var allowsMeasurementCommit: Bool {
+    measurementCommitGate.allowsGeometryCommit
+  }
+
+  func finishPresentationFrame() {
   }
 }

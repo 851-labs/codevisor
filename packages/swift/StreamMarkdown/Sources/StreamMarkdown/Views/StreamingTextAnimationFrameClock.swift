@@ -28,6 +28,10 @@ public final class StreamingTextAnimationFrameClock {
 
   public init() {}
 
+  /// Native surfaces currently scheduled for a reveal repaint. Useful for
+  /// distinguishing live fades from settled navigation frames in diagnostics.
+  public var activeClientCount: Int { entries.count }
+
   public func setFrameRequester(_ requestFrame: (@MainActor () -> Void)?) {
     self.requestFrame = requestFrame
     if !entries.isEmpty { requestFrame?() }

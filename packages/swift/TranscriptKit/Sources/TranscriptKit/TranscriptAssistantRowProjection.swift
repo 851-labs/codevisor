@@ -210,6 +210,7 @@ enum TranscriptAssistantRowProjection {
             documentSource: source,
             lifecycle: lifecycle,
             container: .assistantResponse,
+            animationSourceID: segmentIndex == 0 ? entryID : sourceID,
             fragment: chunk.fragment
           )
           responseRows.append(
@@ -341,6 +342,9 @@ enum TranscriptAssistantRowProjection {
     return 32
   }
 
+}
+
+extension TranscriptAssistantRowProjection {
   static func planningID(
     messageID: UUID,
     lifecycle: TranscriptBlockLifecycle

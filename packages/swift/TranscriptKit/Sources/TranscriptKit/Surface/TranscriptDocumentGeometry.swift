@@ -50,11 +50,11 @@ public enum TranscriptDocumentGeometry {
   ) -> Bool {
     let key = TranscriptPresentationRow.ID.bottomSpacer.layoutKey
     guard let previousIndex = previousLayout.indexByKey[key],
-      previousLayout.heights.indices.contains(previousIndex),
+      previousLayout.keys.indices.contains(previousIndex),
       let row = spacerRow
     else { return false }
     let nextHeight = measurements[key] ?? row.estimatedHeight
-    return abs(previousLayout.heights[previousIndex] - nextHeight) > 0.5
+    return abs(previousLayout.frame(at: previousIndex).height - nextHeight) > 0.5
   }
 }
 

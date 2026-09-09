@@ -7,6 +7,8 @@ import MarkdownCore
 public struct TranscriptMarkdownChunk: Sendable, Equatable {
   public let messageID: UUID
   public let sourceID: String
+  /// Provider text identity, independent of its current transcript section.
+  public let animationSourceID: String
   /// The first block's ordinal in the complete assistant response or plan.
   public let ordinal: Int
   public let blocks: [MarkdownBlock]
@@ -30,12 +32,14 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     documentSource: String,
     lifecycle: TranscriptBlockLifecycle,
     container: TranscriptMarkdownContainer,
+    animationSourceID: String? = nil,
     documentBlockCount: Int = 0,
     fragment: MarkdownFragmentLayout? = nil
   ) {
     precondition(!blocks.isEmpty, "Markdown chunks must contain at least one block")
     self.messageID = messageID
     self.sourceID = sourceID
+    self.animationSourceID = animationSourceID ?? sourceID
     self.ordinal = ordinal
     self.blocks = blocks
     self.documentSource = documentSource
@@ -43,6 +47,23 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
     self.container = container
     self.documentBlockCount = documentBlockCount
     self.fragment = fragment
+  }
+
+  /// A source append can leave this rendered prefix unchanged. Its pacing
+  /// source travels with the next actual content change; refreshing an equal
+  /// prefix would rebuild native animation metadata for unrelated new text.
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.messageID == rhs.messageID && lhs.sourceID == rhs.sourceID
+      && lhs.animationSourceID == rhs.animationSourceID
+      && lhs.ordinal == rhs.ordinal && lhs.blocks == rhs.blocks
+      && lhs.lifecycle == rhs.lifecycle && lhs.container == rhs.container
+      && lhs.fragment == rhs.fragment && lhs.documentBlockCount == rhs.documentBlockCount
+  }
+
+  public var animationGroupID: String { "\(messageID.uuidString):\(animationSourceID)" }
+
+  public var animationStreamID: String {
+    "\(animationGroupID):\(ordinal):\(fragment?.identity ?? "text")"
   }
 
   public var isFirstInDocument: Bool {
@@ -67,7 +88,7 @@ public struct TranscriptMarkdownChunk: Sendable, Equatable {
   var measurementRevision: Int {
     var hasher = Hasher()
     for block in blocks {
-      hasher.combine(block.id)
+      hasher.combine(block)
     }
     hasher.combine(documentBlockCount)
     hasher.combine(fragment)

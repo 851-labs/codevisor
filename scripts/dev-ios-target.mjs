@@ -98,6 +98,7 @@ export async function launchIOSDevelopmentApp({
     {
       ...environment,
       ...cloudEnvironment,
+      SIMCTL_CHILD_TRANSCRIPT_STRESS: environment.TRANSCRIPT_STRESS ?? "0",
       SIMCTL_CHILD_CODEVISOR_DEV_WORKTREE: worktreeName,
       SIMCTL_CHILD_CODEVISOR_DEV_INSTANCE_ID: instanceName,
       SIMCTL_CHILD_CODEVISOR_DEV_ICON_COLOR: developmentIconColor.hex,

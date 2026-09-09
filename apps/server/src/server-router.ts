@@ -1,4 +1,5 @@
 import { routeBrowserState } from "./routes/browser-state.js"
+import { routeTranscriptStress } from "./routes/transcript-stress.js"
 import { applyAfterDrain } from "./apply-after-drain.js"
 import { makeOpenApiDocument, RestartDrainRequest } from "@codevisor/api"
 import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from "@codevisor/api"
@@ -149,6 +150,8 @@ export const handleRequest = async (
     }
 
     await authorize(services.db, config, request)
+
+    if (await routeTranscriptStress(services, fanout, routeState, request, response, url)) return
 
     if (await routeBrowserState(services, request, response, url)) return
 

@@ -15,7 +15,11 @@ public struct TranscriptRowSet: Sendable {
 
   /// Settled rows from the projection worker, with one aggregate `.active`
   /// placeholder while a turn is streaming.
-  public var projectedRows: [Row] = []
+  public var projectedRows: [Row] = [] {
+    didSet { projectedRevision &+= 1 }
+  }
+  private var projectedRevision: UInt64 = 0
+  private var resolvedProjectedRevision: UInt64?
   /// The active slot's precisely projected rows, spliced over the aggregate
   /// `.active` placeholder in `rows`.
   public var activeRows: [Row] = []
@@ -113,30 +117,27 @@ public struct TranscriptRowSet: Sendable {
   /// otherwise the caller is handed the resolved list to rebuild from.
   /// `activeRows` and `activeRowsRange` are updated in both cases.
   public mutating func replaceActiveRows(_ newActiveRows: [Row]) -> ActiveReplacement {
-    let resolution = Self.resolve(projectedRows: projectedRows, activeRows: newActiveRows)
-    defer {
+    if resolvedProjectedRevision == projectedRevision,
+      let range = activeRowsRange,
+      range.count == newActiveRows.count,
+      range.upperBound <= rows.count,
+      zip(rows[range], newActiveRows).allSatisfy({ $0.layoutKey == $1.layoutKey })
+    {
+      let previous = Array(rows[range])
+      rows.replaceSubrange(range, with: newActiveRows)
+      for row in newActiveRows { rowByKey[row.layoutKey] = row }
       activeRows = newActiveRows
-      activeRowsRange = resolution.activeRange
-    }
-    guard let oldRange = activeRowsRange,
-      let newRange = resolution.activeRange,
-      oldRange.count == newRange.count,
-      oldRange.upperBound <= rows.count
-    else {
-      return .rebuild(rows: resolution.rows)
+      return .inPlace(range: range, previousRows: previous)
     }
 
-    let previousRows = Array(rows[oldRange])
-    let replacement = Array(resolution.rows[newRange])
-    guard zip(previousRows, replacement).allSatisfy({ $0.layoutKey == $1.layoutKey }) else {
-      return .rebuild(rows: resolution.rows)
-    }
-
-    rows.replaceSubrange(oldRange, with: replacement)
-    for row in replacement {
-      rowByKey[row.layoutKey] = row
-    }
-    return .inPlace(range: oldRange, previousRows: previousRows)
+    // Resolve the complete document only when the projected topology or active
+    // slice changes. Stable updates avoid rebuilding the resolved list; retained
+    // value snapshots can still cause Array or Dictionary copy-on-write copies.
+    let resolution = Self.resolve(projectedRows: projectedRows, activeRows: newActiveRows)
+    activeRows = newActiveRows
+    activeRowsRange = resolution.activeRange
+    resolvedProjectedRevision = projectedRevision
+    return .rebuild(rows: resolution.rows)
   }
 
   /// Carries the aggregate active host's measured height onto the single

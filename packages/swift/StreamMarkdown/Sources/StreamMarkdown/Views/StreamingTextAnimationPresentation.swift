@@ -54,7 +54,7 @@ public final class StreamingTextAnimationPresentation {
   }
 
   /// Reserves one entrance for rows whose content arrived at the visible
-  /// live edge (or while application playback was suspended). A reservation
+  /// live edge. A reservation
   /// survives an offscreen first mount but is consumed exactly once.
   public func reserveInitialAnimations<S: Sequence>(for streamIDs: S)
   where S.Element == String {

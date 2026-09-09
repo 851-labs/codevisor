@@ -2,6 +2,8 @@ import SwiftUI
 
 #if canImport(AppKit)
   import AppKit
+#elseif canImport(UIKit)
+  import UIKit
 #endif
 
 /// Process-level render caches.
@@ -179,6 +181,9 @@ public final class CodeHighlightResultCache {
     }
   }
 
+#endif
+
+#if canImport(AppKit) || canImport(UIKit)
   /// Final TextKit documents for settled prose blocks. Transcript row hosts
   /// are recycled as they leave the virtual window, so a view-local memo is
   /// not enough: without this bounded shared cache, re-entry rebuilds every
@@ -194,13 +199,21 @@ public final class CodeHighlightResultCache {
       let alpha: CGFloat
 
       init(_ color: Color) {
-        let resolved = NSColor(color)
-        let rgb = resolved.usingColorSpace(.deviceRGB)
-        colorSpace = rgb == nil ? String(describing: resolved) : "deviceRGB"
-        red = rgb?.redComponent ?? 0
-        green = rgb?.greenComponent ?? 0
-        blue = rgb?.blueComponent ?? 0
-        alpha = rgb?.alphaComponent ?? resolved.alphaComponent
+        #if canImport(AppKit)
+          let resolved = NSColor(color)
+          let rgb = resolved.usingColorSpace(.deviceRGB)
+          colorSpace = rgb == nil ? String(describing: resolved) : "deviceRGB"
+          red = rgb?.redComponent ?? 0
+          green = rgb?.greenComponent ?? 0
+          blue = rgb?.blueComponent ?? 0
+          alpha = rgb?.alphaComponent ?? resolved.alphaComponent
+        #else
+          let resolved = UIColor(color)
+          var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+          let rgb = resolved.getRed(&r, green: &g, blue: &b, alpha: &a)
+          colorSpace = rgb ? "deviceRGB" : String(describing: resolved)
+          red = r; green = g; blue = b; alpha = a
+        #endif
       }
     }
 

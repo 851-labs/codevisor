@@ -8,7 +8,7 @@ import TranscriptKit
 
 // MARK: - FrameDriver
 
-extension VirtualizedTranscriptScrollView {
+extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   /// Starts a new SwiftUI ownership lifetime without discarding the native
   /// presentation. Version counters are local to each SwiftUI tree, so make
   /// their first complete projection authoritative even if its number happens
@@ -174,34 +174,38 @@ extension VirtualizedTranscriptScrollView {
   }
 
   @objc func presentationDisplayLinkDidFire(_ displayLink: CADisplayLink) {
-    let shouldPresentModel = modelPresentationFrameRequested
-    let shouldUpdateMountedRows = mountedRowsUpdateRequested
+    surfaceController.presentFrame(at: displayLink.timestamp, adapter: self)
+    displayLink.isPaused = !displayFrameRequested
+  }
+
+  func prepareFrameBudget() {
     remainingMountsThisFrame = maximumMountsPerFrame
     initialMountWorkStartedAt = nil
     remainingRunwayPreparationsThisFrame = maximumRunwayPreparationsPerFrame
-    displayFrameRequested = false
-    modelPresentationFrameRequested = false
-    mountedRowsUpdateRequested = false
-    if shouldPresentModel, let presentationFrameDriverToken {
+  }
+
+  func presentPendingModel() {
+    if let presentationFrameDriverToken {
       sessionController?.transcriptPresentationFrameDidFire(presentationFrameDriverToken)
     }
-    if shouldUpdateMountedRows {
-      updateMountedRows()
-    }
-    if !pendingMeasuredHeights.isEmpty {
-      commitPendingMeasurements()
-    }
-    updateInitialPresentationReadiness()
+  }
+
+  var hasPendingMeasurements: Bool {
+    !pendingMeasuredHeights.isEmpty
+  }
+
+  var allowsMeasurementCommit: Bool {
+    true
+  }
+
+  func finishPresentationFrame() {
     // Host readiness can change without a height change. Its notification
     // requests this frame after the host's AppKit layout stack unwinds.
+    updateInitialPresentationReadiness()
     startPendingSendAnimationIfPossible()
-    streamingTextFrameClock.tick(at: displayLink.timestamp)
     if !isLiveScrolling, !isHandlingUserInput {
       drainRetiringHosts(limit: 1)
     }
-    if !retiringHosts.isEmpty {
-      requestDisplayFrame()
-    }
-    displayLink.isPaused = !displayFrameRequested
+    if !retiringHosts.isEmpty { requestDisplayFrame() }
   }
 }

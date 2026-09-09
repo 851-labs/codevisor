@@ -378,6 +378,16 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func emitViewportSnapshot() {
+    TranscriptPerformanceTrace.record(
+      "macos.viewport",
+      values: [
+        "distance": Double(currentDistanceFromBottom()),
+        "anchor": currentViewportAnchor().map { Double($0.key.hashValue & 0x1fffffffffffff) } ?? -1,
+        "anchorOffset": currentViewportAnchor().map { Double($0.offsetFromRowTop) } ?? -1,
+        "follow": followsLatest ? 1 : 0,
+        "ready": initialPresentationGate.isReady ? 1 : 0,
+      ])
+
     guard !isDetaching, !isAwaitingWarmProjection,
       initialPositionConfigured, initialPositionApplied,
       contentView.bounds.height > 0

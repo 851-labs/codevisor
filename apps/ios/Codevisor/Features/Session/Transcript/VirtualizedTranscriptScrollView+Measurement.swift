@@ -107,6 +107,13 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
+    let traceStart = TranscriptPerformanceTrace.begin()
+    defer {
+      surfaceController.recordPerformanceTrace(
+        "ios.geometry", since: traceStart,
+        hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
+    }
+
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
     // ChatGPT follows the bottom only while the latest turn is live. An

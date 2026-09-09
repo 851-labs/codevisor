@@ -29,6 +29,13 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func updateMountedRows(rangeOverride: Range<Int>? = nil) {
+    let traceStart = TranscriptPerformanceTrace.begin()
+    defer {
+      surfaceController.recordPerformanceTrace(
+        "ios.mount", since: traceStart,
+        hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
+    }
+
     guard initialPositionApplied || viewportHeight > 0,
       let hostingParent
     else { return }
@@ -283,7 +290,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func position(host: TranscriptRowHost, at index: Int) {
-    guard virtualLayout.heights.indices.contains(index) else { return }
+    guard virtualLayout.keys.indices.contains(index) else { return }
     let viewportWidth = max(1, bounds.width)
     let availableWidth = max(1, viewportWidth - Self.horizontalPadding * 2)
     let rowWidth = min(Self.maxRowWidth, availableWidth)
@@ -292,10 +299,10 @@ extension VirtualizedTranscriptScrollView {
       x: rowX,
       y: paginationHeaderLayout.rowOrigin(
         topPadding: Self.topPadding,
-        rowOffset: virtualLayout.topOffsets[index]
+        rowOffset: virtualLayout.frame(at: index).minY
       ),
       width: rowWidth,
-      height: virtualLayout.heights[index],
+      height: virtualLayout.frame(at: index).height,
     )
     if host.frame != nextFrame {
       host.frame = nextFrame
