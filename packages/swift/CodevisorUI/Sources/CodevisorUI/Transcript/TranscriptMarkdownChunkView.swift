@@ -5,17 +5,16 @@ import TranscriptKit
 /// Shared renderer for a projected Markdown row on macOS and iOS.
 public struct TranscriptMarkdownChunkView: View {
   private let chunk: TranscriptMarkdownChunk
-  private let streamID: String
   @Environment(\.markdownTheme) private var markdownTheme
 
-  public init(chunk: TranscriptMarkdownChunk, streamID: String) {
+  public init(chunk: TranscriptMarkdownChunk) {
     self.chunk = chunk
-    self.streamID = streamID
   }
 
   @ViewBuilder
   public var body: some View {
-    let animationGroupID = "\(chunk.messageID.uuidString):\(chunk.sourceID)"
+    let animationGroupID = chunk.animationGroupID
+    let streamID = chunk.animationStreamID
     Group {
       if chunk.container == .planDocument {
         PlanDocumentBlockView(

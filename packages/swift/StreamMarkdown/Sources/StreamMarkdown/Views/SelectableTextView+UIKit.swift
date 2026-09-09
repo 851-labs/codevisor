@@ -198,6 +198,8 @@
   }
 
   extension NSAttributedString.Key {
+    static let streamMarkdownQuoteDecoration = NSAttributedString.Key(
+      "com.851labs.codevisor.streamMarkdownQuoteDecoration")
     static let streamMarkdownRoundedBackground = NSAttributedString.Key(
       "com.851labs.codevisor.streamMarkdownRoundedBackground"
     )
@@ -207,6 +209,7 @@
     var animationTime = CACurrentMediaTime()
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+      drawMarkdownQuoteBars(forGlyphRange: glyphsToShow, at: origin)
       drawRoundedBackgrounds(forGlyphRange: glyphsToShow, at: origin)
       super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }

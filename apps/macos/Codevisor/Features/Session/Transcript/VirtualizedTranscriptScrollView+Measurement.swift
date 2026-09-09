@@ -126,6 +126,13 @@ extension VirtualizedTranscriptScrollView {
   /// work on the main thread for what is usually a one-row height change
   /// several times per second per streaming chat.
   func rebuildDocumentGeometry(changedHeights: [String: CGFloat]? = nil) {
+    let traceStart = TranscriptPerformanceTrace.begin()
+    defer {
+      surfaceController.recordPerformanceTrace(
+        "macos.geometry", since: traceStart,
+        hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
+    }
+
     // Capture the viewport before changing document size. A locked restore
     // target wins until the user deliberately scrolls. Once the reader has
     // moved away from the bottom, preserve the first visible row instead

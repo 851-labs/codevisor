@@ -113,6 +113,26 @@ struct StreamingTextAnimationPresentationTests {
     )
   }
 
+  @Test("Returning during continuous projection settles the first new published revision")
+  func continuouslyPendingReturn() {
+    let registry = StreamingTextAnimationRegistry()
+    registry.observeProjectedStreams(["before"], animatesNewStreams: true, projectionRevision: 1)
+    registry.prepareForPresentation()
+    registry.observeProjectedStreams(
+      ["before"], animatesNewStreams: true,
+      initialProjectionIsPending: true, projectionRevision: 1)
+    let oldToken = registry.presentation.settlementToken(for: "before")
+    registry.observeProjectedStreams(
+      ["before", "away"], animatesNewStreams: true,
+      initialProjectionIsPending: true, projectionRevision: 2)
+    #expect(registry.presentation.settlementToken(for: "before") != oldToken)
+    #expect(!registry.presentation.claimInitialAnimation(for: "away"))
+    registry.observeProjectedStreams(
+      ["before", "away", "live"], animatesNewStreams: true,
+      initialProjectionIsPending: true, projectionRevision: 3)
+    #expect(registry.presentation.claimInitialAnimation(for: "live"))
+  }
+
   @Test("A presentation baseline cancels an unmounted live reservation")
   func presentationCancelsReservation() {
     let registry = StreamingTextAnimationRegistry()
@@ -160,7 +180,7 @@ struct StreamingTextAnimationPresentationTests {
     #expect(registry.presentation.claimInitialAnimation(for: "later-live-work"))
   }
 
-  @Test("Application suspension preserves unseen arrivals for foreground playback")
+  @Test("Application suspension settles unseen arrivals on foreground playback")
   func suspendedProjectionBacklog() {
     let registry = StreamingTextAnimationRegistry()
     registry.observeProjectedStreams([], animatesNewStreams: true)
@@ -168,11 +188,11 @@ struct StreamingTextAnimationPresentationTests {
     registry.observeProjectedStreams(["background-row"], animatesNewStreams: false)
     registry.resumePlayback()
 
-    #expect(registry.presentation.claimInitialAnimation(for: "background-row"))
+    #expect(!registry.presentation.claimInitialAnimation(for: "background-row"))
     #expect(!registry.presentation.claimInitialAnimation(for: "background-row"))
   }
 
-  @Test("The first post-foreground projection preserves a delayed UIKit delta")
+  @Test("The first post-foreground projection settles a delayed UIKit delta")
   func postForegroundProjectionBacklog() {
     let registry = StreamingTextAnimationRegistry()
     registry.observeProjectedStreams(["before"], animatesNewStreams: true)
@@ -184,8 +204,13 @@ struct StreamingTextAnimationPresentationTests {
       animatesNewStreams: false
     )
     #expect(
-      registry.presentation.claimInitialAnimation(for: "published-after-resume")
+      !registry.presentation.claimInitialAnimation(for: "published-after-resume")
     )
+    registry.observeProjectedStreams(
+      ["before", "published-after-resume", "live-after-resume"],
+      animatesNewStreams: true
+    )
+    #expect(registry.presentation.claimInitialAnimation(for: "live-after-resume"))
   }
 
   @Test("A presentation baseline supersedes a suspended projection reservation")

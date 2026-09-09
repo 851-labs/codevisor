@@ -23,12 +23,11 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   static let atBottomThreshold: CGFloat = 2
   static let maxParkedHostCount = 16
   let canvasView = UIView()
-  let streamingTextFrameClock = StreamingTextAnimationFrameClock()
+  let surfaceController = TranscriptSurfaceController()
   let paginationLoadingIndicator = UIActivityIndicatorView(style: .medium)
   weak var hostingParent: UIViewController?
 
   /// Row bookkeeping shared with the other platform; see `TranscriptRowSet`.
-  var rowSet = TranscriptRowSet()
   var rows: [TranscriptVirtualRow] { rowSet.rows }
   var rowByKey: [String: TranscriptVirtualRow] { rowSet.rowByKey }
   var projectedRows: [TranscriptVirtualRow] {
@@ -49,14 +48,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var receivedProjectionRevision: UInt64?
   var appliedProjectionRevision: UInt64?
   var activeRowsVersion: TranscriptRowSetRevision?
-  var virtualLayout = VirtualTranscriptLayout(
-    items: [],
-    measuredHeights: [:],
-    spacing: rowSpacing,
-  )
-  var measurements = TranscriptMeasurementLedger()
-  var measurementCache = SessionMeasurementCacheStore()
-  var layoutFingerprint = 0
 
   var mountedHosts: [String: TranscriptRowHost] = [:]
   var parkedHosts: [String: TranscriptRowHost] = [:]
@@ -68,8 +59,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       initialRunwayViewportCount: Self.initialRunwayViewportCount
     )
   }
-  var virtualWindowHandoff = TranscriptVirtualWindowHandoff()
-  var pendingWindowScrollDelta: CGFloat = 0
   var lastObservedContentOffsetY: CGFloat?
   var remainingMountsThisFrame = 2
   var rowContent: ((TranscriptVirtualRow) -> AnyView)?
@@ -78,13 +67,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   weak var sessionController: SessionController?
   var presentationFrameDriverToken: TranscriptFrameDriverToken?
   var presentationDisplayLink: CADisplayLink?
-  var displayFrameRequested = false
-  var modelPresentationFrameRequested = false
-  var mountedRowsUpdateRequested = false
   var measurementCommitGate = TranscriptMeasurementCommitGate()
-  var initialPresentationGate = TranscriptInitialPresentationGate()
-  var initialBottomPin = TranscriptInitialBottomPin()
-  var bottomJumpGate = TranscriptBottomJumpGate()
   var deferredRowsDuringScroll: [TranscriptVirtualRow]?
   var deferredActiveRowsRange: Range<Int>?
   var deferredProjectionRevision: UInt64?
@@ -116,10 +99,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var disclosureAnchorReleaseTask: Task<Void, Never>?
 
   var pendingInitialState: SessionScrollState?
-  var lockedRestoreDistance: CGFloat?
-  var initialPositionConfigured = false
-  var initialPositionApplied = false
-  var followsLatest = true
   var hasOlderHistory = false
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
   var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?

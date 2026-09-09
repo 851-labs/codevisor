@@ -1,3 +1,4 @@
+import CodevisorUI
 import AppKit
 import StreamMarkdown
 import TranscriptKit

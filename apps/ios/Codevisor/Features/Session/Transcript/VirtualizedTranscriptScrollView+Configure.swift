@@ -10,6 +10,13 @@ import UIKit
 
 extension VirtualizedTranscriptScrollView {
   func configure(_ input: TranscriptSurfaceInput, callbacks: TranscriptSurfaceCallbacks) {
+    let traceStart = TranscriptPerformanceTrace.begin()
+    defer {
+      surfaceController.recordPerformanceTrace(
+        "ios.configure", since: traceStart,
+        hostCount: mountedHosts.count, distance: currentDistanceFromBottom())
+    }
+
     let newSessionController = input.sessionController
     let newProjectedRows = input.rows
     let newActiveRows = input.activeRows
@@ -30,7 +37,6 @@ extension VirtualizedTranscriptScrollView {
     let newSendAnimationRequest = input.sendAnimationRequest
     let newSendAnimationSourceFrame = input.sendAnimationSourceFrame
     let newPresentationRole = input.presentationRole
-    let textAnimationRegistry = input.textAnimationRegistry
     let newReduceMotion = input.reduceMotion
     let newScrollIndicatorBottomInset = input.scrollIndicatorBottomInset
     let newClaimSendAnimation = callbacks.claimSendAnimation
@@ -125,39 +131,14 @@ extension VirtualizedTranscriptScrollView {
 
     let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
     layoutFingerprint = newLayoutFingerprint
-    if !initialPositionConfigured {
-      initialPositionConfigured = true
+    if surfaceController.configureInitialPosition(initialState, followsLatest: newFollowsLatest) {
       pendingInitialState = initialState
       lastStableScrollState = initialState
-      initialBottomPin.configure(
-        restoresNonBottomPosition: initialState.map { !$0.isAtBottom } ?? false
-      )
-      followsLatest = initialState?.followMode.followsLatest ?? newFollowsLatest
-      if let initialState, !initialState.isAtBottom {
-        lockedRestoreDistance = initialState.distanceFromBottom
-      }
-      if let initialState {
-        measurementCache.restore(
-          caches: initialState.measurementCaches,
-          lru: initialState.measurementCacheLRU
-        )
-      }
       scrollCommand = newScrollCommand
     }
 
-    let followsAnimationEdge = followsLatest || newScrollCommand != scrollCommand
-    textAnimationRegistry.observeProjectedStreams(
-      newActiveRows.compactMap { row in
-        guard case let .markdownChunk(chunk) = row.content,
-          chunk.lifecycle == .receiving
-        else { return nil }
-        return row.layoutKey
-      },
-      animatesNewStreams: newPresentationRole == .foreground
-        && followsAnimationEdge,
-      initialProjectionIsPending: newIsLoadingInitialHistory || newIsActiveProjectionPending,
-      restorationID: input.activeTextRestorationID
-    )
+    surfaceController.currentScrollCommand = scrollCommand
+    surfaceController.observeStreamingPresentation(input)
 
     if layoutFingerprintChanged, activeSendAnimationRequest != nil {
       finishSendPresentation(notifyCompletion: true, reason: "layoutFingerprint")

@@ -1,7 +1,4 @@
-// The AppKit/TextKit rendering layer. iOS uses the matching UIKit/TextKit
-// implementation in `MarkdownTextRunView+UIKit.swift`.
-#if canImport(AppKit)
-  import AppKit
+#if canImport(AppKit) || canImport(UIKit)
   import SwiftUI
 
   /// Renders consecutive text-like Markdown blocks in one native TextKit view.
@@ -12,11 +9,13 @@
     let foregroundColor: Color
     let animationContext: StreamingTextAnimationContext?
     @Environment(\.markdownTheme) private var theme
-    /// The parse coordinator value-stabilizes unchanged blocks, so this memo makes
-    /// repeated transcript body evaluations O(1) for unchanged text.
+    /// Reuse the attributed string for unchanged blocks. Equality still compares
+    /// the block values; a hit avoids rebuilding attributes and native layout.
     @State private var memo = TextRunMemo()
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+      let _ = dynamicTypeSize
       SelectableTextView(
         attributedText: memo.rendered(
           for: blocks,
@@ -28,7 +27,7 @@
     }
   }
 
-  /// Converts parsed Markdown runs to AppKit attributes. Font choices match the
+  /// Converts parsed Markdown runs to native attributes. Font choices match the
   /// semantic SwiftUI styles previously used by `MarkdownTextRunView`; the host
   /// does not override MarkdownTheme's fonts today (tables follow the same
   /// semantic-font contract).
@@ -39,9 +38,9 @@
       foregroundColor: Color
     ) -> NSAttributedString {
       let result = NSMutableAttributedString()
-      let foreground = NSColor(foregroundColor)
-      let chipBackground = TextKitRoundedBackground(
-        color: NSColor(theme.inlineCodeBackground),
+      let foreground = MarkdownNativeColor(foregroundColor)
+      let chipBackground = MarkdownNativeChipBackground(
+        color: MarkdownNativeColor(theme.inlineCodeBackground),
         cornerRadius: theme.inlineCodeCornerRadius
       )
 
@@ -70,8 +69,8 @@
     private static func attributedString(
       for block: MarkdownBlock,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) -> NSAttributedString {
       switch block {
       case let .heading(level, text):
@@ -174,8 +173,8 @@
     private static func list(
       items: [(marker: String, text: MarkdownText)],
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) -> NSAttributedString {
       let result = NSMutableAttributedString()
       for (index, item) in items.enumerated() {
@@ -193,7 +192,7 @@
             string: "\(item.marker) ",
             attributes: baseAttributes(
               font: bodyFont,
-              foreground: NSColor(theme.secondaryTextForeground),
+              foreground: MarkdownNativeColor(theme.secondaryTextForeground),
               lineSpacing: theme.lineSpacing
             )
           )
@@ -213,17 +212,14 @@
 
     static func inlineAttributed(
       _ markdown: MarkdownText,
-      baseFont: NSFont,
+      baseFont: MarkdownNativeFont,
       theme: MarkdownTheme,
-      foreground: NSColor,
-      chipBackground: TextKitRoundedBackground
+      foreground: MarkdownNativeColor,
+      chipBackground: MarkdownNativeChipBackground
     ) -> NSAttributedString {
       let parsed = InlineMarkdown.attributedString(from: markdown, theme: theme)
       let output = NSMutableAttributedString()
-      let codeFont = NSFont.monospacedSystemFont(
-        ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize,
-        weight: .regular
-      )
+      let codeFont = MarkdownNativeTypography.codeFont
 
       for run in parsed.runs {
         let substring = String(parsed[run.range].characters)
@@ -242,19 +238,14 @@
           )
         var attributes = baseAttributes(
           font: font,
-          foreground: run.link == nil ? foreground : .linkColor,
+          foreground: run.link == nil ? foreground : MarkdownNativeTypography.linkColor,
           lineSpacing: theme.lineSpacing
         )
         if intent?.contains(.strikethrough) == true {
           attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
         if let link = run.link {
-          if markdownUsesServerFileLinkAttribute(link) {
-            attributes[.streamMarkdownServerFileLink] = link
-            attributes[.cursor] = NSCursor.pointingHand
-          } else {
-            attributes[.link] = link
-          }
+          MarkdownNativeTypography.installLink(link, into: &attributes)
         }
         if isCode {
           attributes[.streamMarkdownRoundedBackground] = chipBackground
@@ -267,7 +258,7 @@
     static func verticalSeparator(
       size: CGFloat,
       lineSpacing: CGFloat,
-      foreground: NSColor
+      foreground: MarkdownNativeColor
     ) -> NSAttributedString {
       NSAttributedString(
         string: "\n\n",
@@ -280,8 +271,8 @@
     }
 
     static func baseAttributes(
-      font: NSFont,
-      foreground: NSColor,
+      font: MarkdownNativeFont,
+      foreground: MarkdownNativeColor,
       lineSpacing: CGFloat
     ) -> [NSAttributedString.Key: Any] {
       let paragraph = NSMutableParagraphStyle()
@@ -293,35 +284,22 @@
       ]
     }
 
-    static var bodyFont: NSFont {
+    static var bodyFont: MarkdownNativeFont {
       .preferredFont(forTextStyle: .body)
     }
 
-    static func headingFont(for level: Int) -> NSFont {
-      let style: NSFont.TextStyle =
-        switch level {
-        case 1: .title1
-        case 2: .title2
-        case 3: .title3
-        case 4: .headline
-        default: .subheadline
-        }
-      return styled(.preferredFont(forTextStyle: style), bold: true, italic: false)
+    static func headingFont(for level: Int) -> MarkdownNativeFont {
+      MarkdownNativeTypography.headingFont(for: level)
     }
 
-    private static func styled(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {
-      guard bold || italic else { return font }
-      var traits = font.fontDescriptor.symbolicTraits
-      if bold { traits.insert(.bold) }
-      if italic { traits.insert(.italic) }
-      let descriptor = font.fontDescriptor.withSymbolicTraits(traits)
-      return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+    private static func styled(_ font: MarkdownNativeFont, bold: Bool, italic: Bool) -> MarkdownNativeFont {
+      MarkdownNativeTypography.styled(font, bold: bold, italic: italic)
     }
   }
 
   /// Last-value memo for the immutable attributed string handed to both the
   /// displayed TextKit view and its scratch measurer. Returning the same object
-  /// identity lets both paths skip unchanged Markdown in O(1).
+  /// identity lets the native consumers skip resetting unchanged text storage.
   @MainActor
   private final class TextRunMemo {
     private var blocks: [MarkdownBlock]?
@@ -334,7 +312,7 @@
       theme: MarkdownTheme,
       foregroundColor: Color
     ) -> NSAttributedString {
-      let fingerprint = theme.renderFingerprint
+      let fingerprint = theme.renderFingerprint ^ MarkdownTextRunRenderer.bodyFont.pointSize.hashValue
       if let cached,
         blocks == self.blocks,
         fingerprint == themeFingerprint,

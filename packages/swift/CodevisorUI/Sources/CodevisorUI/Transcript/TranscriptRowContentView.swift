@@ -122,7 +122,7 @@ public struct TranscriptRowContentView: View {
         message, isWaitingOnUser, waitingOnBackgroundTask, AssistantTurnPresentation(chromeSlice: slice)
       )
     case let .markdownChunk(chunk):
-      TranscriptMarkdownChunkView(chunk: chunk, streamID: row.layoutKey)
+      TranscriptMarkdownChunkView(chunk: chunk)
     case let .assistantAttachment(attachment):
       VStack(alignment: .leading, spacing: 4) {
         leaves.attachmentThumbnail(attachment.file)

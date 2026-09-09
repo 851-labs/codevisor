@@ -189,6 +189,19 @@ struct SettledMarkdownViewTests {
     #expect((label?.frame.minY ?? .infinity) < (scrollView?.frame.minY ?? 0))
   }
 
+  @Test("Syntax colors do not remeasure immutable code geometry")
+  func codeHighlightKeepsMeasuredGeometry() {
+    let code = "let answer = 42\nprint(answer)"
+    let native = NativeMarkdownCodeBlockView(
+      id: "highlight-geometry", language: "swift", code: code, theme: .default)
+    let height = native.contentHeight(forWidth: 500)
+    var highlighted = AttributedString(code)
+    highlighted.foregroundColor = .red
+    native.install(highlighted)
+    #expect(native.measurementCount == 1)
+    #expect(native.contentHeight(forWidth: 500) == height)
+  }
+
   @Test("Native tables preserve the established visible height")
   func tableHeightParity() {
     let parser = MarkdownParser()

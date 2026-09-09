@@ -11,11 +11,9 @@ public final class StreamingTextAnimationRegistry {
   private var settledRestorationIDs: Set<String> = []
   private var hasObservedProjection = false
   private var awaitsPresentationBaseline = false
+  private var lastProjectionRevision: UInt64?
+  private var baselineProjectionRevision: UInt64?
   private var isPlaybackSuspended = false
-  /// UIKit may publish its first post-foreground projection only after the
-  /// scene becomes active. Protect that single delta from offscreen
-  /// baselining just as if it had been observed during suspension.
-  private var preservesNextProjectionDelta = false
 
   public init() {}
 
@@ -37,6 +35,7 @@ public final class StreamingTextAnimationRegistry {
   /// treating later projection deltas as live arrivals.
   public func prepareForPresentation() {
     awaitsPresentationBaseline = true
+    baselineProjectionRevision = lastProjectionRevision
   }
 
   /// Observes the complete active Markdown row set before a virtualizer can
@@ -50,8 +49,10 @@ public final class StreamingTextAnimationRegistry {
     _ streamIDs: S,
     animatesNewStreams: Bool,
     initialProjectionIsPending: Bool = false,
-    restorationID: String? = nil
+    restorationID: String? = nil,
+    projectionRevision: UInt64? = nil
   ) where S.Element == String {
+    defer { lastProjectionRevision = projectionRevision }
     let current = Set(streamIDs)
     let isRestoredProjection =
       restorationID.map {
@@ -67,9 +68,15 @@ public final class StreamingTextAnimationRegistry {
     // is already being projected; waiting for the stream to go quiet
     // would let restored text animate on its first native frame.
     if awaitsPresentationBaseline || isRestoredProjection {
-      guard isRestoredProjection || !initialProjectionIsPending else { return }
+      let publishedSinceBoundary =
+        projectionRevision != nil
+        && baselineProjectionRevision != nil
+        && projectionRevision != baselineProjectionRevision
+      guard isRestoredProjection || !initialProjectionIsPending || publishedSinceBoundary else {
+        if baselineProjectionRevision == nil { baselineProjectionRevision = projectionRevision }
+        return
+      }
       awaitsPresentationBaseline = false
-      preservesNextProjectionDelta = false
       hasObservedProjection = true
       knownProjectedStreamIDs.formUnion(current)
       for coordinator in coordinators.values { coordinator.reset() }
@@ -92,36 +99,29 @@ public final class StreamingTextAnimationRegistry {
 
     let newlyProjected = current.subtracting(knownProjectedStreamIDs)
     knownProjectedStreamIDs.formUnion(current)
-    guard !newlyProjected.isEmpty else {
-      if preservesNextProjectionDelta { preservesNextProjectionDelta = false }
-      return
-    }
-
-    let preservesSuspendedArrival = isPlaybackSuspended || preservesNextProjectionDelta
-    preservesNextProjectionDelta = false
-    if animatesNewStreams || preservesSuspendedArrival {
+    guard !newlyProjected.isEmpty else { return }
+    if animatesNewStreams && !isPlaybackSuspended {
       presentation.reserveInitialAnimations(for: newlyProjected)
     } else {
       presentation.settleUnpresentedStreams(newlyProjected)
     }
   }
 
-  /// Freezes presentation time without disabling or settling the streams.
-  /// Provider/model state may continue advancing while the application is
-  /// backgrounded; every coordinator resumes from the same visual instant.
+  /// Hidden arrivals are navigation state. Rebaseline retained rows as well
+  /// as new rows when the next authoritative foreground snapshot arrives.
   public func suspendPlayback() {
     guard !isPlaybackSuspended else { return }
     isPlaybackSuspended = true
-    preservesNextProjectionDelta = false
-    for coordinator in coordinators.values { coordinator.suspendPlayback() }
+    for coordinator in coordinators.values { coordinator.reset() }
+    presentation.settleProjectedStreams(knownProjectedStreamIDs)
   }
 
   public func resumePlayback() {
     guard isPlaybackSuspended else { return }
     isPlaybackSuspended = false
-    preservesNextProjectionDelta = true
-    for coordinator in coordinators.values { coordinator.resumePlayback() }
+    prepareForPresentation()
   }
+
 }
 
 private struct StreamingTextAnimationRegistryKey: EnvironmentKey {

@@ -27,6 +27,7 @@
     private var highlightTask: Task<Void, Never>?
     private var copyResetTask: Task<Void, Never>?
     private var contentSize = CGSize(width: 1, height: 1)
+    private(set) var measurementCount = 0
 
     init(id: String, language: String?, code: String, theme: MarkdownTheme) {
       self.id = id
@@ -139,6 +140,11 @@
       codeTextView.focusRingType = .none
       codeTextView.textContainer?.lineFragmentPadding = 0
       codeTextView.textContainer?.widthTracksTextView = false
+      codeTextView.textContainer?.heightTracksTextView = false
+      codeTextView.textContainer?.size = NSSize(
+        width: CGFloat.greatestFiniteMagnitude,
+        height: CGFloat.greatestFiniteMagnitude
+      )
     }
 
     private func installInitialText() {
@@ -172,23 +178,25 @@
       }
     }
 
-    private func install(_ text: AttributedString) {
+    func install(_ text: AttributedString) {
       let native = nativeCodeAttributedString(
         text,
         foreground: NSColor(theme.codeForeground)
       )
       codeTextView.textStorage?.setAttributedString(native)
-      let bounds = native.boundingRect(
-        with: NSSize(
-          width: CGFloat.greatestFiniteMagnitude,
-          height: CGFloat.greatestFiniteMagnitude
-        ),
-        options: [.usesLineFragmentOrigin, .usesFontLeading]
-      )
-      contentSize = CGSize(
-        width: max(1, ceil(bounds.width) + Self.contentInset * 2),
-        height: max(1, ceil(bounds.height) + Self.contentInset * 2)
-      )
+      // The source and monospaced font are immutable; highlighting changes
+      // only foreground colors. Measure the actual text layout once. The
+      // separate unbounded boundingRect typesetter repeatedly traverses a
+      // highlighted document's runs and stalls on large code blocks.
+      if measurementCount == 0, let manager = codeTextView.textLayoutManager {
+        manager.ensureLayout(for: manager.documentRange)
+        let bounds = manager.usageBoundsForTextContainer
+        contentSize = CGSize(
+          width: max(1, ceil(bounds.width) + Self.contentInset * 2),
+          height: max(1, ceil(bounds.height) + Self.contentInset * 2)
+        )
+        measurementCount += 1
+      }
       needsLayout = true
       needsDisplay = true
     }

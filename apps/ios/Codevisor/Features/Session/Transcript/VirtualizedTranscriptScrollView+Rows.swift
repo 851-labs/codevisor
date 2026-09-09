@@ -8,66 +8,30 @@ import UIKit
 
 // MARK: - Rows
 
-extension VirtualizedTranscriptScrollView {
-  /// Adopts a resolved row list. Row bookkeeping lives in `TranscriptRowSet`;
-  /// this only sequences the platform side effects (measurement
-  /// invalidation, host eviction, document geometry) around it.
+extension VirtualizedTranscriptScrollView: TranscriptSurfaceOwner, TranscriptSurfaceAdapter {
   @discardableResult
-  func applyRows(
-    _ newRows: [TranscriptVirtualRow],
-    layoutFingerprintChanged: Bool,
-  ) -> Bool {
-    let geometryChanged = rowSet.geometryChanged(comparedTo: newRows)
-    if geometryChanged || layoutFingerprintChanged {
-      if !layoutFingerprintChanged {
-        TranscriptRowSet.preserveWaitingActivityHeight(from: rows, to: newRows, ledger: &measurements)
-      }
-      TranscriptRowSet.transferActiveHeightIfNeeded(from: rows, to: newRows, ledger: &measurements)
-      invalidateChangedMeasurements(
-        previousRowsByKey: rowByKey,
-        newRows: newRows,
-      )
-      let previousRowsByKey = rowSet.replaceRows(newRows)
-      removeDeletedMountedHosts(previousRowsByKey: previousRowsByKey)
-      if layoutFingerprintChanged {
-        discardParkedHosts()
-      } else {
-        evictChangedParkedHosts(previousRowsByKey: previousRowsByKey)
-      }
-      _ = activateMeasurementCacheIfNeeded()
-      installExactSpacerMeasurements()
-      // Row-set changes mount and recycle only the affected hosts below.
-      // Preserve every other hosting tree so an insertion/removal cannot
-      // blank the whole visible transcript for a SwiftUI commit.
-      if layoutFingerprintChanged {
-        refreshMountedRootViews()
-      } else {
-        refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
-      }
-      rebuildDocumentGeometry()
-      return true
-    } else {
-      let previousRowsByKey = rowSet.replaceRows(newRows)
-      evictChangedParkedHosts(previousRowsByKey: previousRowsByKey)
-      refreshChangedMountedRootViews(previousRowsByKey: previousRowsByKey)
-      return false
-    }
+  func applyRows(_ rows: [TranscriptVirtualRow], layoutFingerprintChanged: Bool) -> Bool {
+    surfaceController.applyRows(rows, layoutChanged: layoutFingerprintChanged, adapter: self)
   }
 
   @discardableResult
-  func applyActiveRows(_ newActiveRows: [TranscriptVirtualRow]) -> Bool {
-    switch rowSet.replaceActiveRows(newActiveRows) {
-    case let .rebuild(resolvedRows):
-      return applyRows(resolvedRows, layoutFingerprintChanged: false)
-    case let .inPlace(_, previousRows):
-      evictChangedActiveParkedHosts(previousRows: previousRows)
-      refreshChangedMountedRootViews(
-        previousRowsByKey: Dictionary(
-          uniqueKeysWithValues: previousRows.map { ($0.layoutKey, $0) }
-        )
-      )
-      return false
+  func applyActiveRows(_ rows: [TranscriptVirtualRow]) -> Bool {
+    surfaceController.applyActiveRows(rows, adapter: self)
+  }
+
+  func reconcileRetainedHosts(
+    previousRowsByKey: [String: TranscriptVirtualRow], layoutChanged: Bool
+  ) {
+    removeDeletedMountedHosts(previousRowsByKey: previousRowsByKey)
+    if layoutChanged {
+      discardParkedHosts()
+    } else {
+      evictChangedParkedHosts(previousRowsByKey: previousRowsByKey)
     }
+  }
+
+  func reconcileChangedActiveHosts(previousRows: [TranscriptVirtualRow]) {
+    evictChangedActiveParkedHosts(previousRows: previousRows)
   }
 
   func evictChangedActiveParkedHosts(
