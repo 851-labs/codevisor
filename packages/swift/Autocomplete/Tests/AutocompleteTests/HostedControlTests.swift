@@ -126,6 +126,37 @@
       #expect(favorites.value.isEmpty)
     }
 
+    @Test("Control-J/K in the native search field changes what Return accepts without editing the query")
+    func vimSearchNavigation() {
+      let query = SelectionStore("Match")
+      var accepted: [String] = []
+      let window = window(
+        Autocomplete.Suggestions(query: query.binding) {
+          Autocomplete.Action("Match A") { accepted.append("A") }
+          Autocomplete.Action("Match B") { accepted.append("B") }
+          Autocomplete.Action("Match C") { accepted.append("C") }
+        })
+      defer { window.contentView = nil }
+      guard let view = window.contentView, let field = field(in: view),
+        let coordinator = field.delegate as? Autocomplete.InputField.Coordinator
+      else { Issue.record("Search field did not mount"); return }
+      #expect(window.makeFirstResponder(field))
+      guard let editor = window.firstResponder as? NSTextView else { Issue.record("Missing field editor"); return }
+      for (key, code, characters): (String, UInt16, String) in [("j", 38, "\u{0A}"), ("k", 40, "\u{0B}")] {
+        let event = NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: .control, timestamp: 0,
+          windowNumber: window.windowNumber, context: nil, characters: characters,
+          charactersIgnoringModifiers: key, isARepeat: false, keyCode: code)!
+        let acceptedBeforeNavigation = accepted
+        #expect(field.performKeyEquivalent(with: event))
+        #expect(accepted == acceptedBeforeNavigation)
+        #expect(query.value == "Match")
+        #expect(editor.string == "Match")
+        #expect(coordinator.control(field, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+      }
+      #expect(accepted == ["B", "A"])
+    }
+
     @Test("Tab reaches the highlighted favorite and Space toggles it without selecting")
     func keyboardFavoriteFocus() async {
       let selection = SelectionStore("Other")

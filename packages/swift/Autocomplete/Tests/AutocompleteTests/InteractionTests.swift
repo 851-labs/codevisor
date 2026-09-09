@@ -166,15 +166,82 @@
         charactersIgnoringModifiers: key, isARepeat: false, keyCode: code)!
     }
 
-    @Test("Fallback Control-N/P navigation does not hijack Control-J/K")
+    @Test("Control-J/K and Control-N/P map to list navigation")
     func physicalKeys() {
       #expect(Autocomplete.Host.command(for: event("n", code: 45)) == .moveDown)
       #expect(Autocomplete.Host.command(for: event("p", code: 35)) == .moveUp)
-      #expect(Autocomplete.Host.command(for: event("j", code: 38)) == nil)
-      #expect(Autocomplete.Host.command(for: event("k", code: 40)) == nil)
+      #expect(Autocomplete.Host.command(for: event("j", code: 38)) == .moveDown)
+      #expect(Autocomplete.Host.command(for: event("k", code: 40)) == .moveUp)
     }
 
-    @Test("Marked text keeps Return, arrows, and Escape in AppKit")
+    @Test("Control-J/K navigate once from the search field or a focused row", arguments: [true, false])
+    func vimNavigation(editing: Bool) {
+      _ = NSApplication.shared
+      let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      defer { window.contentView = nil }
+      let host = Autocomplete.Host()
+      defer { host.stop() }
+      let snapshot = configure(host) {
+        Autocomplete.Action("First") { Issue.record("Navigation accepted an item") }
+        Autocomplete.Action("Disabled") { Issue.record("Navigation accepted an item") }.disabled()
+        Autocomplete.Action("Second") { Issue.record("Navigation accepted an item") }
+        Autocomplete.Action("Third") { Issue.record("Navigation accepted an item") }
+      }
+      let field = NSSearchField(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+      window.contentView?.addSubview(field)
+      host.inputField = field
+      if editing {
+        #expect(window.makeFirstResponder(field))
+      } else {
+        host.rowFocus = .item(snapshot.items[0].id)
+      }
+      let down = event("j", code: 38, window: window)
+      let up = event("k", code: 40, window: window)
+      #expect(host.handleEvent(down, window: window))
+      #expect(host.highlight.highlighted == snapshot.items[2].id)
+      #expect(host.handleEvent(up, window: window))
+      #expect(host.highlight.highlighted == snapshot.items[0].id)
+      for flags: NSEvent.ModifierFlags in [[], [.control, .shift], [.control, .command], [.control, .option]] {
+        #expect(!host.handleEvent(event("j", code: 38, flags: flags, window: window), window: window))
+      }
+      #expect(host.highlight.highlighted == snapshot.items[0].id)
+      if editing {
+        #expect(host.handleKeyEquivalent(down))
+        #expect(host.highlight.highlighted == snapshot.items[2].id)
+        #expect(host.handleKeyEquivalent(up))
+        #expect(host.highlight.highlighted == snapshot.items[0].id)
+      }
+      host.inputField = nil
+      host.rowFocus = nil
+      #expect(!host.handleEvent(down, window: window))
+      #expect(!host.handleKeyEquivalent(down))
+    }
+
+    @Test("Focused SwiftUI rows support Control-J/K and Control-N/P")
+    func focusedControlNavigation() {
+      let host = Autocomplete.Host()
+      let snapshot = configure(host) {
+        Autocomplete.Action("First") { Issue.record("Navigation accepted an item") }
+        Autocomplete.Action("Second") { Issue.record("Navigation accepted an item") }
+        Autocomplete.Action("Third") { Issue.record("Navigation accepted an item") }
+      }
+      let bindings: [(KeyEquivalent, KeyEquivalent)] = [("j", "k"), ("n", "p")]
+      for (down, up) in bindings {
+        #expect(!host.handleFocusedKey(down, modifiers: .control))
+        host.rowFocus = .item(snapshot.items[0].id)
+        #expect(host.handleFocusedKey(down, modifiers: .control))
+        #expect(host.highlight.highlighted == snapshot.items[1].id)
+        #expect(host.handleFocusedKey(up, modifiers: .control))
+        #expect(host.highlight.highlighted == snapshot.items[0].id)
+        #expect(!host.handleFocusedKey(down, modifiers: [.control, .shift]))
+        #expect(!host.handleFocusedKey(down, modifiers: []))
+        host.rowFocus = nil
+      }
+    }
+
+    @Test("Marked text keeps navigation, Return, and Escape in AppKit")
     func markedText() {
       _ = NSApplication.shared
       let window = NSWindow(
@@ -189,6 +256,10 @@
         "ni", selectedRange: NSRange(location: 2, length: 0),
         replacementRange: NSRange(location: NSNotFound, length: 0))
       let host = Autocomplete.Host()
+      let snapshot = configure(host) {
+        Autocomplete.Action("First") { Issue.record("Composition accepted an item") }
+        Autocomplete.Action("Second") { Issue.record("Composition accepted an item") }
+      }
       host.inputField = field
       let coordinator = Autocomplete.InputField.Coordinator(
         text: .constant("ni"),
@@ -197,6 +268,12 @@
         })
       #expect(editor.hasMarkedText())
       #expect(!host.owns(event("\r", code: 36, flags: [], window: window), window: window))
+      for (key, code): (String, UInt16) in [("j", 38), ("k", 40)] {
+        let navigation = event(key, code: code, window: window)
+        #expect(!host.handleEvent(navigation, window: window))
+        #expect(!host.handleKeyEquivalent(navigation))
+      }
+      #expect(host.highlight.highlighted == snapshot.items[0].id)
       for selector in [
         #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.moveDown(_:)),
         #selector(NSResponder.cancelOperation(_:)),

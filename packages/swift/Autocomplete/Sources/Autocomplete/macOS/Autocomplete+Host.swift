@@ -95,18 +95,24 @@
           if handleShortcut(key: event.charactersIgnoringModifiers ?? "", modifiers: flags) { return true }
         }
 
-        guard !editing, let command = Self.command(for: event) else { return false }
+        // Control-J/K navigate before AppKit can interpret them as text edits.
+        // Control-N/P use the same path; unmodified field commands stay native.
+        guard !editing || modifiers == .control, let command = Self.command(for: event) else { return false }
         return handle(command)
+      }
+
+      private static func controlNavigation(for key: String) -> KeyCommand? {
+        switch key.lowercased() {
+        case "j", "n": .moveDown
+        case "k", "p": .moveUp
+        default: nil
+        }
       }
 
       static func command(for event: NSEvent) -> KeyCommand? {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         if modifiers == .control {
-          switch event.charactersIgnoringModifiers?.lowercased() {
-          case "n": return .moveDown
-          case "p": return .moveUp
-          default: return nil
-          }
+          return controlNavigation(for: event.charactersIgnoringModifiers ?? "")
         }
         guard modifiers.isEmpty else { return nil }
         switch event.keyCode {
@@ -126,6 +132,9 @@
         guard hasRowFocus else { return false }
         let modifiers = modifiers.intersection([.command, .control, .option, .shift])
         if handleShortcut(key: String(key.character), modifiers: modifiers) { return true }
+        if modifiers == .control, let command = Self.controlNavigation(for: String(key.character)) {
+          return handle(command)
+        }
         guard modifiers.isEmpty else { return false }
         let command: KeyCommand
         switch key {
