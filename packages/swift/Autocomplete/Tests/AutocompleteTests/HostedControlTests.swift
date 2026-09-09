@@ -167,7 +167,7 @@
           .environment(\.locale, Locale(identifier: "en_US_POSIX")))
       host.frame = NSRect(x: 0, y: 0, width: 300, height: 250)
       host.layoutSubtreeIfNeeded()
-      let field = try #require(field(in: host))
+      let field = try #require(self.field(in: host))
       let container = try #require(field.superview as? Autocomplete.InputCapsuleView)
       // Hold attachment until the pane is no longer the destination.
       _ = try #require(container.requestFocus)
