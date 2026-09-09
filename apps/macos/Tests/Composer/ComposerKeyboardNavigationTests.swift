@@ -1,5 +1,6 @@
 import AppKit
 import Autocomplete
+import CodevisorUI
 import SwiftUI
 import Testing
 @testable import ComposerSurface
@@ -299,15 +300,15 @@ private struct ToolbarFixture: View {
       .frame(height: height)
       HStack {
         Button("Attach") { state.activated += 1 }
-          .buttonStyle(.plain)
+          .buttonStyle(HoverIconButtonStyle())
           .composerKeyboardButton { state.activated += 1 }
         Autocomplete.Menu(isPresented: Binding(get: { state.isMenuOpen }, set: { state.isMenuOpen = $0 })) {
           Autocomplete.Action("Test model") {}
         } label: {
           Text("Model")
         }
-        .buttonStyle(.plain)
-        .composerKeyboardButton { state.isMenuOpen.toggle() }
+        .buttonStyle(HoverIconButtonStyle(shape: .chip))
+        .composerKeyboardButton(shape: .chip) { state.isMenuOpen.toggle() }
         Button("Disabled send") {}
           .buttonStyle(.plain)
           .composerKeyboardButton { state.activated += 100 }

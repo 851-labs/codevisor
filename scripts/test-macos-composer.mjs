@@ -11,6 +11,14 @@ const sources = join(harness, "Sources/ComposerSurface")
 await rm(join(harness, "Sources"), { recursive: true, force: true })
 await rm(join(harness, "Tests"), { recursive: true, force: true })
 await mkdir(sources, { recursive: true })
+await mkdir(join(harness, "Sources/CodevisorUI"), { recursive: true })
+await cp(
+  join(
+    root,
+    "packages/swift/CodevisorUI/Sources/CodevisorUI/DesignSystem/HoverIconButtonStyle.swift"
+  ),
+  join(harness, "Sources/CodevisorUI/HoverIconButtonStyle.swift")
+)
 await cp(
   join(root, "packages/swift/Autocomplete/Sources/Autocomplete"),
   join(harness, "Sources/Autocomplete"),
@@ -45,8 +53,9 @@ let package = Package(
   name: "MacOSComposerTests", defaultLocalization: "en", platforms: [.macOS("26.0")],
   targets: [
     .target(name: "Autocomplete", resources: [.process("Resources")]),
-    .target(name: "ComposerSurface", swiftSettings: [.swiftLanguageMode(.v5), .defaultIsolation(MainActor.self)]),
-    .testTarget(name: "ComposerSurfaceTests", dependencies: ["ComposerSurface", "Autocomplete"])
+    .target(name: "CodevisorUI"),
+    .target(name: "ComposerSurface", dependencies: ["CodevisorUI"], swiftSettings: [.swiftLanguageMode(.v5), .defaultIsolation(MainActor.self)]),
+    .testTarget(name: "ComposerSurfaceTests", dependencies: ["ComposerSurface", "Autocomplete", "CodevisorUI"])
   ]
 )
 `
