@@ -43,6 +43,7 @@ struct ComposerSubmitButton: View {
         .contentShape(Circle())
     }
     .buttonStyle(.plain)
+    .composerKeyboardButton(action: action)
     .disabled(!isEnabled)
     .onHover { isHovered = $0 }
     .help(help)

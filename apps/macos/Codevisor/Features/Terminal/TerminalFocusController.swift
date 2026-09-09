@@ -307,7 +307,7 @@ final class TerminalFocusController {
     window.makeFirstResponder(nil)
   }
 
-  /// Makes ordinary typing anywhere in the session move focus into the
+  /// Makes alphanumeric typing on passive chat surfaces move focus into the
   /// composer without dropping the first character, and makes a click
   /// anywhere in the chat history move keyboard focus onto the history (so
   /// a focused terminal stops receiving keystrokes). The monitor is scoped
@@ -401,6 +401,16 @@ final class TerminalFocusController {
     {
       return event
     }
+
+    let chatId = centerGroup?.state.selectedPane?.chatSessionId
+    let transcript = if let chatId { chatTranscripts[chatId]?.view } else { transcriptView }
+    let isUnfocusedPicker = target is QuestionPickerKeyView && window.firstResponder === window
+    guard
+      isUnfocusedPicker
+        || ComposerKeyboardNavigation.canResumeTyping(
+          from: window.firstResponder, editor: target, transcript: transcript
+        )
+    else { return event }
 
     guard window.makeFirstResponder(target) else { return event }
 
@@ -541,16 +551,6 @@ final class TerminalFocusController {
       }
     }
 
-    guard modifiers.intersection([.command, .control, .function]).isEmpty,
-      event.specialKey == nil
-    else { return false }
-
-    // Keep Space available for scrolling and Full Keyboard Access button
-    // activation when the ordinary composer is not focused. A question
-    // picker's Space is handled above because it toggles the highlighted
-    // option. Option is deliberately allowed because it produces text on
-    // many keyboard layouts; dead-key events may have no characters and
-    // still need to reach NSTextView.
-    return event.characters != " " && event.characters != "\u{00A0}"
+    return ComposerKeyboardNavigation.isTypingEvent(event)
   }
 }

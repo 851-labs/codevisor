@@ -77,7 +77,7 @@ struct ChatInputEditor: NSViewRepresentable {
     textView.textContainer?.widthTracksTextView = true
     textView.textContainer?.lineFragmentPadding = 0
 
-    let scroll = NSScrollView()
+    let scroll = ComposerNavigationScrollView()
     let clipView = GrowingTextClipView()
     clipView.maximumGrowingHeight = maxHeight
     scroll.contentView = clipView
@@ -226,7 +226,7 @@ struct ChatInputEditor: NSViewRepresentable {
       case #selector(NSResponder.insertTab(_:)):
         return parent.onKeyCommand?(.acceptSelection) == true
       case #selector(NSResponder.cancelOperation(_:)):
-        return parent.onKeyCommand?(.dismissSelection) == true
+        return (textView as? SubmittingTextView)?.dismissEditing() == true
       default:
         return false
       }
@@ -393,9 +393,14 @@ final class SubmittingTextView: NSTextView {
   }
 
   override func keyDown(with event: NSEvent) {
-    // 53 = Escape. Consume it here as well as in the delegate so it can
-    // never fall through to NSTextView's default `complete:` behavior.
-    if event.keyCode == 53, onKeyCommand?(.dismissSelection) == true {
+    // Let the input method finish/cancel marked text before interpreting
+    // Escape or Return as composer commands.
+    if hasMarkedText() {
+      super.keyDown(with: event)
+      return
+    }
+    // Close a palette/goal edit first; otherwise leave text editing.
+    if event.keyCode == 53, dismissEditing() {
       return
     }
     // 36 = Return, 76 = numeric keypad Enter.
@@ -411,5 +416,13 @@ final class SubmittingTextView: NSTextView {
       return
     }
     super.keyDown(with: event)
+  }
+
+  @discardableResult
+  func dismissEditing() -> Bool {
+    guard !hasMarkedText() else { return false }
+    if onKeyCommand?(.dismissSelection) == true { return true }
+    guard let navigation = enclosingScrollView as? ComposerNavigationScrollView else { return false }
+    return navigation.releaseEditorFocus()
   }
 }

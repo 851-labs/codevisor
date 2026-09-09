@@ -64,6 +64,7 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search models")
     .autocompleteEmptyMessage("No matching models")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .composerKeyboardButton { isPresented.toggle() }
     .fixedSize(horizontal: false, vertical: true)
     .disabled(isSwitchingHarness)
     .help("Choose model")
@@ -103,6 +104,7 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search model parameters")
     .autocompleteEmptyMessage("No matching parameters")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
+    .composerKeyboardButton { isParametersPresented.toggle() }
     .fixedSize()
     .disabled(isLoadingSettings)
     .help("Model parameters")

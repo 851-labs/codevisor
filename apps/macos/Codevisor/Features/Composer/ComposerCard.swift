@@ -60,6 +60,7 @@ struct ComposerCard: View {
   /// as a window sheet (matching the add-project flow) instead of the
   /// detached app-modal window `NSOpenPanel.runModal()` produces.
   @State private var isPickingFiles = false
+  @State private var controlTypingFocus = ComposerControlTypingFocus()
 
   /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
   private static let slashMenuMaxHeight: CGFloat = 220
@@ -85,6 +86,7 @@ struct ComposerCard: View {
         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       } else {
         standardContent
+          .environment(\.composerControlTypingFocus, controlTypingFocus)
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
@@ -192,7 +194,10 @@ private extension ComposerCard {
             onSubmit: submitOrAcceptSlash,
             onKeyCommand: handleKeyCommand,
             onPasteAttachments: handlePastedAttachments,
-            onTextViewReady: onTextViewReady
+            onTextViewReady: { textView in
+              controlTypingFocus.editor = textView
+              onTextViewReady?(textView)
+            }
           )
           .frame(height: editorHeight)
           .writingToolsAffordanceVisibility(.hidden)
@@ -296,9 +301,7 @@ private extension ComposerCard {
   }
 
   private var attachButton: some View {
-    Button {
-      isPickingFiles = true
-    } label: {
+    Button(action: pickFiles) {
       Image(systemName: "paperclip")
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(.secondary)
@@ -306,8 +309,13 @@ private extension ComposerCard {
         .contentShape(Rectangle())
     }
     .buttonStyle(HoverIconButtonStyle())
+    .composerKeyboardButton(action: pickFiles)
     .help("Attach files")
     .accessibilityLabel("Attach files")
+  }
+
+  private func pickFiles() {
+    isPickingFiles = true
   }
 
   /// Whether the composer holds something sendable (text or attachments).
@@ -338,9 +346,7 @@ private extension ComposerCard {
           .frame(width: 26, height: 26)
           .help("Stopping…")
       } else {
-        Button {
-          Task { await controller.stop() }
-        } label: {
+        Button(action: stop) {
           Image(systemName: "stop.fill")
             .font(.system(size: 10, weight: .bold))
             .frame(width: 26, height: 26)
@@ -355,12 +361,17 @@ private extension ComposerCard {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .composerKeyboardButton(action: stop)
         .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
         .onHover { isStopButtonHovered = $0 }
         .help("Stop")
         .accessibilityLabel("Stop")
       }
     }
+  }
+
+  private func stop() {
+    Task { await controller.stop() }
   }
 
   @ViewBuilder
