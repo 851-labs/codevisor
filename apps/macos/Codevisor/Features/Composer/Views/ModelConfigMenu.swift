@@ -102,7 +102,6 @@ private extension ModelConfigMenu {
     }
     .autocompleteSearchLabel("Search model parameters")
     .autocompleteEmptyMessage("No matching parameters")
-    .autocompleteSectionDividers(.hidden)
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
     .fixedSize()
     .disabled(isLoadingSettings)
