@@ -339,10 +339,6 @@ struct SessionTranscriptView: View {
     }
     // The watermark hands the space over rather than blinking out.
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsWatermark)
-    // Tab snapshots crop the composer out so previews show only content.
-    .onChange(of: composerHeight, initial: true) { _, height in
-      PaneSnapshotCache.shared.activeBottomChrome = height + 6
-    }
     .background(Color(.systemGroupedBackground))
   }
 

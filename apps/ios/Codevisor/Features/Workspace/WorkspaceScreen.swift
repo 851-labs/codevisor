@@ -6,15 +6,14 @@ import UIKit
 // MARK: - Workspace screen
 
 /// A workspace: one full-screen pane (tab) at a time — chats, terminals, and
-/// the new-tab page — with a Safari-style grid to switch, add, and close
-/// them. The nav bar shows the active pane's title between a sidebar button
-/// (back to the workspace list) and the tab-grid button; chat panes hide
-/// their title so the transcript scrolls clear off the top.
+/// the new-tab page. Tabs are switched from the sidebar, which lists every
+/// pane; the nav bar shows the active pane's title between the system back
+/// button and a new-tab button. Chat panes hide their title so the
+/// transcript scrolls clear off the top.
 struct WorkspaceScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.dismiss) var dismiss
   @Environment(\.accessibilityReduceMotion) var accessibilityReduceMotion
-  @Environment(\.displayScale) var displayScale
   /// The workspace's chat, or nil while the native New Chat sheet owns the
   /// draft composer. Its first send adopts a real session in place; Home then
   /// mounts an ordinary workspace route backed by the same cached controller
@@ -28,6 +27,9 @@ struct WorkspaceScreen: View {
   /// preferred chat; workspace rows leave it nil so the last-open tab wins.
   var workspaceId: UUID? = nil
   var preferredChatSessionId: UUID? = nil
+  /// A sidebar tab row names the exact pane to show (a terminal, browser,
+  /// plugin, or New Tab page) instead of the workspace's last selection.
+  var preferredPaneId: UUID? = nil
   /// Existing workspaces receive their cached-or-new controller from Home
   /// during destination construction, so the transcript shell is available
   /// on the first frame instead of waiting for this view's async task.
@@ -97,29 +99,6 @@ struct WorkspaceScreen: View {
   /// Stands in for the session id a draft doesn't have yet, so its pane
   /// group can exist (and keep a STABLE pane id) from the first frame.
   @State var draftPlaceholderId = UUID()
-  /// The tab grid is workspace-local state, not another navigation
-  /// destination. Keeping the active pane in Home's NavigationStack means
-  /// the system back button and edge swipe always pop straight to Home.
-  @State var showsGrid = false
-  /// Measured card endpoints for the snapshot-only tab zoom. These are
-  /// visual coordinates, never navigation or pane state.
-  @State var paneCardFrames: [UUID: CGRect] = [:]
-  /// Non-nil only while UIKit owns a native drag session for this card.
-  /// Pane order itself always changes through `paneBinding`, so every live
-  /// displacement is immediately durable and survives an interrupted drag.
-  @State var gridDrag: WorkspaceTabGridDragState?
-  @State var suppressedPaneTapId: UUID?
-  /// GestureState resets on both normal completion and system cancellation,
-  /// giving the lifted card one authoritative release/cleanup signal.
-  @GestureState var gridDragGestureIsActive = false
-  @State var gridLiftFeedback = 0
-  @State var pendingGridZoomPaneId: UUID?
-  /// Safari inserts the new tab into the grid first, then expands that
-  /// card. Keeping this separate from `pendingGridZoomPaneId` makes the
-  /// source of each transition explicit: an existing pane collapses into
-  /// the grid, while a newly-created placeholder expands out of it.
-  @State var pendingNewTabZoomPaneId: UUID?
-  @State var tabZoomSurface: WorkspaceTabZoomSurface?
 
   /// This workspace's chat: the routed one, or the one a draft's first send
   /// created. Nil only while an unsent draft.
@@ -257,9 +236,6 @@ struct WorkspaceScreen: View {
         isEnabled: extendsUnderPromotedHorizontalSafeArea
       )
     )
-    .allowsHitTesting(
-      tabZoomSurface == nil && pendingNewTabZoomPaneId == nil
-    )
   }
 
   private var workspaceContent: some View {
@@ -293,13 +269,11 @@ struct WorkspaceScreen: View {
         Color.clear
       } else if resolvedProject == nil {
         DelayedWorkspaceLoadingView()
-      } else if preferredChatSessionId != nil, paneState == nil {
+      } else if preferredChatSessionId != nil || preferredPaneId != nil, paneState == nil {
         // An agent-row tap is an explicit route. Do not paint the
         // workspace's previously selected terminal/chat while the
         // destination task applies the requested pane.
         DelayedWorkspaceLoadingView()
-      } else if showsGrid {
-        grid
       } else if let pane = activePane {
         paneContent(pane)
           .id(pane.id)
@@ -310,41 +284,22 @@ struct WorkspaceScreen: View {
     // Native navigation back to the workspaces list: the system back
     // button and the edge swipe-to-go-back gesture. Hiding the back
     // button for a custom sidebar button disabled the interactive pop.
-    // The exception is the tab grid: its back affordance returns to the
-    // last-open tab, because the grid is workspace-local navigation.
-    .navigationBarBackButtonHidden(showsGrid)
     .navigationTitle(baseTitle)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       WorkspaceScreenToolbar(
-        showsGrid: showsGrid,
         isNewChatPresentation: isNewChatPresentation,
         hasStarted: hasStarted,
         isFirstSendPromotionSurface: isFirstSendPromotionSurface,
         blocksServerContent: blocksServerContent,
         isDraft: isDraft,
-        onReopenSelectedPane: { reopenSelectedPane() },
         onDismissNewChat: { dismissNewChatPresentation() },
-        onAddTab: { addTab() },
-        onShowGrid: {
-          if let pane = activePane { showGrid(from: pane) }
-        }
+        onAddTab: { addTab() }
       )
     }
     .task(id: preparationIdentity) {
       guard isDraft || screenAvailability == .ready else { return }
       await prepare()
-    }
-    .task(id: panePreviewLoadToken) {
-      guard let paneStorageId else { return }
-      await PaneSnapshotCache.shared.loadPersistedPreviews(
-        workspaceId: paneStorageId,
-        paneIds: panes.panes.map(\.id)
-      )
-    }
-    .onChange(of: screenAvailability) { _, availability in
-      if case .ready = availability { return }
-      showsGrid = false
     }
     .onChange(of: environment.projectList.projects.map(\.id)) { _, _ in
       setUpDraftIfNeeded()
@@ -434,15 +389,13 @@ struct WorkspaceScreen: View {
     return IOSNavigationDiagnosticState(
       screen: "workspace",
       identifier: String(identifier.uuidString.prefix(8)),
-      showsGrid: showsGrid,
       isNewChatPresentation: isNewChatPresentation,
       hasStarted: hasStarted,
       isDraft: isDraft,
       blocksServerContent: blocksServerContent,
-      expectsNativeBack: !isNewChatPresentation && !showsGrid,
-      expectsLeadingButton: (showsGrid && !isNewChatPresentation)
-        || (isNewChatPresentation
-          && (hasStarted || isFirstSendPromotionSurface)),
+      expectsNativeBack: !isNewChatPresentation,
+      expectsLeadingButton: isNewChatPresentation
+        && (hasStarted || isFirstSendPromotionSurface),
       expectsTrailingButton: (isNewChatPresentation && !hasStarted)
         || (!blocksServerContent && !isDraft),
       contentPhase: contentPhase
@@ -456,9 +409,6 @@ struct WorkspaceScreen: View {
     // title clears like any other chat pane, so the nav bar doesn't change
     // shape under the send.
     if isDraft { return hasStarted ? "" : "New Chat" }
-    if showsGrid {
-      return "\(panes.panes.count) Tab\(panes.panes.count == 1 ? "" : "s")"
-    }
     guard let pane = activePane else { return "" }
     // Chat panes hide the title so the transcript scrolls off the top.
     return pane.kind == .chat ? "" : title(for: pane)

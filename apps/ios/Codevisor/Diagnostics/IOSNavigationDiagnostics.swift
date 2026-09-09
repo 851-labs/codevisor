@@ -12,7 +12,6 @@ import UIKit
 struct IOSNavigationDiagnosticState: Equatable {
   let screen: String
   let identifier: String
-  let showsGrid: Bool
   let isNewChatPresentation: Bool
   let hasStarted: Bool
   let isDraft: Bool
@@ -26,7 +25,6 @@ struct IOSNavigationDiagnosticState: Equatable {
     [
       "screen=\(screen)",
       "id=\(identifier)",
-      "grid=\(showsGrid)",
       "newChat=\(isNewChatPresentation)",
       "started=\(hasStarted)",
       "draft=\(isDraft)",
@@ -219,7 +217,6 @@ extension View {
         let leftCount = topItem?.leftBarButtonItems?.count ?? 0
         let hasExpectedLabel =
           !state.expectsTrailingButton
-          || labels.contains("Show tabs")
           || labels.contains("New tab")
           || labels.contains("Cancel")
         let anomaly =

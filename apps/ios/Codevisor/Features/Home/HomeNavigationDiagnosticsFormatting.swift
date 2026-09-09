@@ -10,12 +10,14 @@ func navigationPathSummary(_ routes: [HomeRoute]) -> String {
         serverId,
         workspaceId,
         anchorSessionId,
-        preferredChatSessionId
+        preferredChatSessionId,
+        preferredPaneId
       ):
         let preferred = preferredChatSessionId.map(navigationShortID) ?? "nil"
+        let pane = preferredPaneId.map(navigationShortID) ?? "nil"
         let workspace = navigationShortID(workspaceId)
         let anchor = navigationShortID(anchorSessionId)
-        return "workspace(\(serverId)/\(workspace)/\(anchor)/\(preferred))"
+        return "workspace(\(serverId)/\(workspace)/\(anchor)/\(preferred)/\(pane))"
       }
     }.joined(separator: ",") + "]"
 }

@@ -74,50 +74,12 @@ extension WorkspaceScreen {
   static func diagnosticID(_ id: UUID) -> String {
     String(id.uuidString.prefix(8))
   }
-
-  static func renderPaneCanvas(
-    for pane: PaneDescriptorState,
-    size: CGSize,
-    sourceCardFrame: CGRect,
-    displayScale: CGFloat
-  ) -> UIImage? {
-    guard size.width > 0, size.height > 0 else { return nil }
-    let content: AnyView
-    if pane.kind == .newTab {
-      content = AnyView(
-        NewTabPaneView(
-          onNewChat: {},
-          onNewTerminal: {}
-        )
-        .frame(width: size.width, height: size.height)
-      )
-    } else {
-      content = AnyView(
-        UncachedPanePreviewView(
-          kind: pane.kind,
-          canvasSize: size,
-          sourceCardSize: sourceCardFrame.size
-        )
-      )
-    }
-    let renderer = ImageRenderer(content: content)
-    renderer.scale = min(2, displayScale)
-    renderer.isOpaque = true
-    return renderer.uiImage
-  }
 }
 
 // MARK: - Pane storage identity (moved from WorkspaceScreen.swift for the size ratchet)
 extension WorkspaceScreen {
   var paneStorageId: UUID? {
     resolvedWorkspace?.id ?? activeSessionId
-  }
-
-  var panePreviewLoadToken: String {
-    guard let paneStorageId else { return "draft" }
-    return ([paneStorageId] + panes.panes.map(\.id))
-      .map(\.uuidString)
-      .joined(separator: ":")
   }
 
   var legacyPaneSessionIds: [UUID] {

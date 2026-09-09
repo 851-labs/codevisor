@@ -42,6 +42,10 @@ extension WorkspaceScreen {
           explicitlyOpenedPane = state.addChatPane(sessionId: preferredChatSessionId)
         }
       }
+      if let preferredPaneId {
+        // A pane sync already removed falls back to the last selection.
+        state.selectPane(id: preferredPaneId)
+      }
       paneState = state
       persistCompactPaneState(state)
       if let explicitlyOpenedPane {

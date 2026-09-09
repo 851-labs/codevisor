@@ -51,12 +51,4 @@ final class BrowserPaneCache {
     if image != nil { faviconOrder.append(paneId) }
     while faviconOrder.count > 128 { favicons.removeValue(forKey: faviconOrder.removeFirst()) }
   }
-
-  func capturePreview(paneId: UUID, completion: @escaping @MainActor (UIImage) -> Void) {
-    guard let view = models[paneId]?.webView, view.bounds.width > 0 else { return }
-    view.takeSnapshot(with: nil) { image, _ in
-      guard let image else { return }
-      MainActor.assumeIsolated { completion(image) }
-    }
-  }
 }

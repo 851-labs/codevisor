@@ -152,7 +152,8 @@ extension HomeView {
     serverId: String,
     workspaceId: UUID,
     anchorSessionId: UUID,
-    preferredChatSessionId: UUID?
+    preferredChatSessionId: UUID?,
+    preferredPaneId: UUID? = nil
   ) -> some View {
     let controller = projectList.sessions.first(where: {
       $0.serverId == serverId && $0.id == anchorSessionId
@@ -170,6 +171,7 @@ extension HomeView {
       serverId: serverId,
       workspaceId: workspaceId,
       preferredChatSessionId: preferredChatSessionId,
+      preferredPaneId: preferredPaneId,
       initialController: controller,
       onWorkspaceReady: markPromotedWorkspaceReady,
       // The canonical route lays out under the sheet but does not

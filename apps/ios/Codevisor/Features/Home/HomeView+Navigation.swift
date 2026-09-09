@@ -80,17 +80,15 @@ extension HomeView {
   }
 
   func backfillWorkspacesIfNeeded() {
-    guard organization == .byWorkspace else { return }
-
     let sessionsById = Dictionary(
-      visibleSessions.map { ($0.id, $0) },
+      activeSessions.map { ($0.id, $0) },
       uniquingKeysWith: { first, _ in first }
     )
     // Before workspaces were represented in the iOS navigator, sibling
     // chats lived only in the original chat's local pane payload. Process
     // the broadest layouts first so their shared workspace claims every
     // child before ordinary one-chat backfill runs.
-    let legacyLayouts = visibleSessions.compactMap { session -> (ChatSession, [UUID])? in
+    let legacyLayouts = activeSessions.compactMap { session -> (ChatSession, [UUID])? in
       guard let state = WorkspacePaneStore.shared.existingState(for: session.id) else {
         return nil
       }
@@ -120,50 +118,17 @@ extension HomeView {
       if changed { environment.workspaces.save(workspace) }
     }
 
-    for session in visibleSessions {
+    for session in activeSessions {
       _ = ensureWorkspace(for: session)
     }
     workspaceRevision += 1
-  }
-
-  func setProject(_ id: UUID, isExpanded: Bool) {
-    var ids = expandedProjectIDs
-    if isExpanded { ids.insert(id) } else { ids.remove(id) }
-    expandedProjectsRaw = ids.map(\.uuidString).sorted().joined(separator: "\n")
-    toggleDisclosure {
-      expandedProjectIDs = ids
-    }
-  }
-
-  func setWorkspace(_ id: UUID, isExpanded: Bool) {
-    var ids = expandedWorkspaces
-    if isExpanded { ids.insert(id) } else { ids.remove(id) }
-    let raw = ids.map(\.uuidString).sorted().joined(separator: "\n")
-    toggleDisclosure {
-      expandedWorkspacesRaw = raw
-    }
-  }
-
-  /// Applies a disclosure change in an update pass of its own. The tap
-  /// that toggles a row also ends the list's touch-hold gesture
-  /// (`DragGesture(minimumDistance: 0)`), whose `@GestureState` reset lands
-  /// in the same pass under its own, unanimated transaction; merged with
-  /// the toggle, the List honored whichever transaction came first, so
-  /// the open/close animation came and went at random. One turn later the
-  /// toggle is alone in its pass and always animates.
-  private func toggleDisclosure(_ change: @escaping @MainActor () -> Void) {
-    Task { @MainActor in
-      withAnimation(.snappy(duration: 0.28)) {
-        change()
-      }
-    }
   }
 
   /// Shared Core policy decides whether the current route remains valid,
   /// moves to a surviving sibling chat, or leaves the workspace entirely.
   var presentedWorkspaceDisposition: WorkspaceRouteDisposition {
     _ = environment.workspaceSync.revision
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _)? = path.last else {
+    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _)? = path.last else {
       return .keep
     }
     return environment.workspaceSync.routeDisposition(
@@ -174,7 +139,7 @@ extension HomeView {
   }
 
   func applyPresentedWorkspaceDisposition(_ disposition: WorkspaceRouteDisposition) {
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _)? = path.last else {
+    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _)? = path.last else {
       return
     }
     IOSNavigationDiagnostics.record(
@@ -250,13 +215,5 @@ extension HomeView {
       .buttonStyle(.borderedProminent)
       .buttonBorderShape(.capsule)
     }
-  }
-
-  /// Mail-style empty state: the navigation title already supplies the
-  /// context, so the body needs only a quiet confirmation that it is empty.
-  var emptyState: some View {
-    Text("No \(organization.title)")
-      .font(.title3.weight(.bold))
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

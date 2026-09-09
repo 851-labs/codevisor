@@ -79,13 +79,6 @@ final class PluginPaneModel: Identifiable {
     self.recoverConnection = recoverConnection
   }
 
-  /// The live webView for grid-card snapshots — only once a document has
-  /// actually rendered (a loading/failed pane has nothing worth capturing).
-  var snapshotWebView: WKWebView? {
-    guard phase == .ready else { return nil }
-    return controller?.webView
-  }
-
   /// The controller (and its webview), created lazily on first show and
   /// cached until the model is evicted.
   func ensureController(theme: WebPaneThemeTokens) -> WebPaneController {
@@ -285,20 +278,6 @@ final class PluginPaneCache {
     usageOrder.removeAll { $0 == paneId }
     lastUsed.removeValue(forKey: paneId)
     models.removeValue(forKey: paneId)?.teardown()
-  }
-
-  /// A ready pane's real pixels for its grid card, via WKWebView's own
-  /// snapshotter (ImageRenderer and layer rendering can't see web content).
-  func capturePreview(paneId: UUID, completion: @escaping @MainActor (UIImage) -> Void) {
-    guard let webView = models[paneId]?.snapshotWebView, webView.bounds.width > 0 else { return }
-    let configuration = WKSnapshotConfiguration()
-    configuration.afterScreenUpdates = false
-    webView.takeSnapshot(with: configuration) { image, _ in
-      guard let image else { return }
-      MainActor.assumeIsolated {
-        completion(image)
-      }
-    }
   }
 
   private func noteUsed(_ paneId: UUID) {

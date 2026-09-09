@@ -3,40 +3,18 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// The workspace navigation screen, organized and ordered like the macOS
-/// sidebar, with settings at the top left, the organize menu at the top
-/// right, and a fixed compose button at the bottom trailing edge.
+/// The workspace sidebar: every workspace in the fleet as a collapsible
+/// section listing its tabs, mirroring the macOS sidebar's layout with
+/// settings at the top left, sidebar options at the top right, and a fixed
+/// compose button at the bottom trailing edge.
 struct HomeView: View {
   static let newChatTransitionID = "home-new-chat"
 
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @Environment(\.scenePhase) private var scenePhase
 
-  @ClientPreference("sidebar.organization", default: HomeOrganization.compact.rawValue)
-  var organizationRaw
-  @ClientPreference("sidebar.order", default: HomeOrder.updated.rawValue)
-  var orderRaw
-  @ClientPreference("sidebar.manualProjectOrder", default: "")
-  var manualProjectOrder
   @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
   var manualWorkspaceOrder
-  @ClientPreference("sidebar.manualSessionOrder", default: "")
-  var manualSessionOrder
-  @ClientPreference("sidebar.expandedProjects", default: "")
-  var expandedProjectsRaw
-  /// View-owned mirror of `expandedProjectsRaw`, seeded on appear. The
-  /// disclosure animates off THIS state: toggling straight through the
-  /// shared preference store landed in whatever transaction happened to
-  /// be current (a tap also flips the touch hold), so the open/close
-  /// animation came and went at random.
-  @State var expandedProjectIDs: Set<UUID> = []
-  @ClientPreference("sidebar.expandedWorkspaces", default: "")
-  var expandedWorkspacesRaw
-  @ClientPreference("sidebar.showEmptyProjects", default: false)
-  var showEmptyProjects
-  @ClientPreference("sidebar.showEmptyWorkspaces", default: false)
-  var showEmptyWorkspaces
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
   @State var onboardingStart = OnboardingView.Step.welcome
@@ -64,26 +42,10 @@ struct HomeView: View {
   /// A codevisor://install-plugin deeplink (the web plugin directory's
   /// "Open in Codevisor" button), staged until the install sheet presents.
   @State private var pendingPluginInstall: PendingPluginInstall?
-  @State var isPointerInsideSidebar = false
-  @GestureState var isTouchingSidebar = false
-  /// Group reordering uses a dedicated flat List. The disclosure
-  /// preferences remain untouched so returning restores the prior layout.
-  @State var groupReorderOrganization: HomeOrganization?
-  @State var groupReorderInitialOrder: String?
-  @State var deferredSessionOrder = InteractionDeferredOrder<UUID>()
-  @State private var orderingCache = HomeSessionOrderingCache()
-  /// Non-nil while a burst of automatic reorders is settling (the deferred
-  /// order is locked without the user touching or hovering the list).
-  @State var reorderSettleHoldStart: Date?
-  @State var reorderSettleTask: Task<Void, Never>?
-  /// The active hold's pacing: reactive holds commit quickly; the
-  /// pre-emptive foreground hold waits out recovery latency and absorbs
-  /// the whole catch-up burst into one reflow.
-  @State var reorderSettleProfile = ReorderSettleProfile.reactive
-  /// True after the scene has been fully backgrounded, so the pre-emptive
-  /// settle hold engages only on a genuine re-open (not a control-center
-  /// or app-switcher peek that merely passes through `.inactive`).
-  @State private var wasBackgrounded = false
+  @State var renamingWorkspace: Workspace?
+  @State var workspaceRenameTitle = ""
+  @State var renamingTab: HomeTabRenameRequest?
+  @State var tabRenameTitle = ""
   /// The repository is deliberately non-observable. Bump this after a
   /// workspace backfill or local layout mutation so the hierarchy re-reads.
   @State var workspaceRevision = 0
@@ -92,19 +54,20 @@ struct HomeView: View {
     @State private var didHandleDiagnosticSessionLaunch = false
   #endif
 
-  var organization: HomeOrganization {
-    HomeOrganization(rawValue: organizationRaw) ?? .compact
-  }
-
-  var order: HomeOrder {
-    HomeOrder(rawValue: orderRaw) ?? .updated
-  }
-
   var machines: MachineController { environment.machines }
   var projectList: ProjectListModel { environment.projectList }
 
   private var hasRemoteMachines: Bool {
     machines.allMachines.contains { !$0.isLocal }
+  }
+
+  /// Debug builds can stand in a fixture sidebar for design review.
+  var showsSampleSidebar: Bool {
+    #if DEBUG
+      HomeSidebarSampleData.isEnabled
+    #else
+      false
+    #endif
   }
 
   /// True while no machine has synced and none has failed — the fleet is still converging.
@@ -119,87 +82,32 @@ struct HomeView: View {
   /// is up — and the empty state re-arms it.
   private var showsOnboarding: Binding<Bool> {
     Binding(
-      get: { readyForOnboarding && !onboardingDismissed && !hasRemoteMachines },
+      get: {
+        readyForOnboarding && !onboardingDismissed && !hasRemoteMachines && !showsSampleSidebar
+      },
       set: { if !$0 { onboardingDismissed = true } }
     )
   }
 
-  /// Active chats from current machines before interaction/settle holds apply.
-  /// Watched separately from `visibleSessions` to coalesce automatic reorders
-  /// (the held, displayed order does not change while locked).
-  private var desiredVisibleSessions: [ChatSession] {
-    // Cached chats stay hidden until their machine has a current snapshot.
-    let sessions = projectList.sessions.filter {
-      !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId)
-    }
-    let ordered = preferenceIDs(from: manualSessionOrder)
-    let manualRanks = Dictionary(
-      uniqueKeysWithValues: ordered.enumerated().map { ($0.element, $0.offset) }
-    )
-    return orderingCache.sessions(
-      sessions,
-      order: order,
-      manualRanks: manualRanks,
-      priority: priority
-    )
-  }
-
-  /// Active chats from current machines, in the chosen order.
-  var visibleSessions: [ChatSession] {
-    let desired = desiredVisibleSessions
-    guard order != .none else { return desired }
-    return deferredSessionOrder.applying(to: desired, id: \.id)
+  private var showsNewChatButton: Bool {
+    if showsSampleSidebar { return true }
+    return hasRemoteMachines && !(sidebarSections.isEmpty && !anyMachineSynced)
   }
 
   var body: some View {
     NavigationStack(path: $path) {
       Group {
-        if !hasRemoteMachines {
+        if showsSampleSidebar {
+          #if DEBUG
+            sampleSidebar
+          #endif
+        } else if !hasRemoteMachines {
           noMachineState
         } else {
           refreshableNavigationContent
         }
       }
-      .onHover { isPointerInsideSidebar = $0 }
-      .simultaneousGesture(
-        DragGesture(minimumDistance: 0)
-          .updating($isTouchingSidebar) { _, isTouching, _ in
-            isTouching = true
-          }
-      )
-      .onChange(of: isPointerInsideSidebar || isTouchingSidebar) { _, isInteracting in
-        setAutomaticOrderDeferred(isInteracting)
-      }
-      .onChange(of: visibleSessions.map(\.id)) { _, newIDs in
-        deferredSessionOrder.incorporate(newIDs)
-        backfillWorkspacesIfNeeded()
-      }
-      .onAppear {
-        expandedProjectIDs = persistedIDs(from: expandedProjectsRaw)
-      }
-      // Bursty automatic reorders (several agents changing state at
-      // once) are jarring. Watching the unheld sort lets a burst land
-      // as one animated reflow after it settles.
-      .onChange(of: desiredVisibleSessions.map(\.id)) { _, _ in
-        scheduleReorderSettleHold()
-      }
-      // Re-opening the app starts a catch-up that replays every
-      // machine's accumulated changes into a visible list. Freeze the
-      // order BEFORE that burst arrives so it lands as one reflow —
-      // a reactive hold always commits the burst's first change.
-      .onChange(of: scenePhase) { _, phase in
-        switch phase {
-        case .background:
-          wasBackgrounded = true
-        case .active:
-          guard wasBackgrounded else { break }
-          wasBackgrounded = false
-          beginForegroundSettleHold()
-        default:
-          break
-        }
-      }
-      .onChange(of: organizationRaw, initial: true) { _, _ in
+      .onChange(of: activeSessions.map(\.id), initial: true) { _, _ in
         backfillWorkspacesIfNeeded()
       }
       .onChange(of: path, initial: true) { oldPath, newPath in
@@ -211,37 +119,24 @@ struct HomeView: View {
       .onChange(of: presentedWorkspaceDisposition, initial: true) { _, disposition in
         applyPresentedWorkspaceDisposition(disposition)
       }
-      .onDisappear {
-        releaseDeferredOrder(animated: false)
-      }
-      .navigationTitle(organization.title)
-      .navigationBarTitleDisplayMode(.large)
+      // No title: the workspace headers are the page's headings, and the
+      // bar keeps only its two buttons. The pushed workspace's back button
+      // falls back to the system "Back" label.
+      .navigationTitle("")
+      .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        if groupReorderOrganization != nil {
-          ToolbarItem(placement: .cancellationAction) {
-            groupReorderCancelButton
+        // Settings on the left; Home itself is the fleet's, so there is
+        // no machine switcher — selection follows the chat you open, and
+        // machines are managed in Settings.
+        ToolbarItem(placement: .topBarLeading) { settingsButton }
+        if !failedSyncMachines.isEmpty {
+          ToolbarItem(placement: .topBarLeading) {
+            machineConnectionWarningButton
           }
-          ToolbarItem(placement: .confirmationAction) {
-            groupReorderConfirmButton
-          }
-        } else {
-          // Settings on the left; Home itself is the fleet's, so
-          // there is no machine switcher — selection follows the
-          // chat you open, and machines are managed in Settings.
-          ToolbarItem(placement: .topBarLeading) { settingsButton }
-          if !failedSyncMachines.isEmpty {
-            ToolbarItem(placement: .topBarLeading) {
-              machineConnectionWarningButton
-            }
-          }
-          ToolbarItem(placement: .topBarTrailing) { organizeMenu }
         }
       }
       .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-        if hasRemoteMachines,
-          !(visibleSessions.isEmpty && !anyMachineSynced),
-          groupReorderOrganization == nil
-        {
+        if showsNewChatButton {
           newChatButton
         }
       }
@@ -251,16 +146,28 @@ struct HomeView: View {
           serverId,
           workspaceId,
           anchorSessionId,
-          preferredChatSessionId
+          preferredChatSessionId,
+          preferredPaneId
         ):
           workspaceDestination(
             serverId: serverId,
             workspaceId: workspaceId,
             anchorSessionId: anchorSessionId,
-            preferredChatSessionId: preferredChatSessionId
+            preferredChatSessionId: preferredChatSessionId,
+            preferredPaneId: preferredPaneId
           )
         }
       }
+      .modifier(
+        HomeSidebarAlerts(
+          renamingWorkspace: $renamingWorkspace,
+          workspaceRenameTitle: $workspaceRenameTitle,
+          renamingTab: $renamingTab,
+          tabRenameTitle: $tabRenameTitle,
+          onRenameWorkspace: { renameWorkspace($0) },
+          onRenameTab: { renameSidebarTab($0, to: $1) }
+        )
+      )
       .sheet(item: $presentedSettingsDestination) { destination in
         SettingsSheet(initialDestination: destination)
       }
@@ -317,55 +224,59 @@ struct HomeView: View {
         try? await Task.sleep(for: .milliseconds(300))
         readyForOnboarding = true
         #if DEBUG || NAVIGATION_DIAGNOSTICS
-          if !didHandleDiagnosticSessionLaunch,
-            let value = ProcessInfo.processInfo.environment[
-              "CODEVISOR_DIAGNOSTIC_SESSION_ID"
-            ],
-            let id = UUID(uuidString: value)
-          {
-            didHandleDiagnosticSessionLaunch = true
-            for _ in 0..<50 {
-              if let session = projectList.sessions.first(where: {
-                $0.serverId == environment.defaultComposerServerId && $0.id == id
-              }) {
-                IOSNavigationDiagnostics.record(
-                  "home.diagnosticLaunchSession",
-                  "session=\(shortID(id))"
-                )
-                if let followupValue = ProcessInfo.processInfo.environment[
-                  "CODEVISOR_DIAGNOSTIC_FOLLOWUP_SESSION_ID"
-                ],
-                  let followupID = UUID(uuidString: followupValue)
-                {
-                  // Own this sequence independently of Home's
-                  // view task; pushing the first workspace
-                  // correctly cancels that view task.
-                  Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(4))
-                    path.removeAll()
-                    try? await Task.sleep(for: .milliseconds(750))
-                    if let followup = projectList.sessions.first(where: {
-                      $0.serverId == environment.defaultComposerServerId
-                        && $0.id == followupID
-                    }) {
-                      IOSNavigationDiagnostics.record(
-                        "home.diagnosticFollowupSession",
-                        "session=\(shortID(followupID))"
-                      )
-                      openChat(followup)
-                    }
-                  }
-                }
-                openChat(session)
-                break
-              }
-              try? await Task.sleep(for: .milliseconds(100))
-            }
-          }
+          await handleDiagnosticSessionLaunchIfNeeded()
         #endif
       }
     }
   }
+
+  #if DEBUG || NAVIGATION_DIAGNOSTICS
+    /// `CODEVISOR_DIAGNOSTIC_SESSION_ID` opens a persisted chat at launch
+    /// (and optionally a follow-up) without desktop automation.
+    private func handleDiagnosticSessionLaunchIfNeeded() async {
+      guard !didHandleDiagnosticSessionLaunch,
+        let value = ProcessInfo.processInfo.environment["CODEVISOR_DIAGNOSTIC_SESSION_ID"],
+        let id = UUID(uuidString: value)
+      else { return }
+      didHandleDiagnosticSessionLaunch = true
+      for _ in 0..<50 {
+        if let session = projectList.sessions.first(where: {
+          $0.serverId == environment.defaultComposerServerId && $0.id == id
+        }) {
+          IOSNavigationDiagnostics.record(
+            "home.diagnosticLaunchSession",
+            "session=\(shortID(id))"
+          )
+          if let followupValue = ProcessInfo.processInfo.environment[
+            "CODEVISOR_DIAGNOSTIC_FOLLOWUP_SESSION_ID"
+          ],
+            let followupID = UUID(uuidString: followupValue)
+          {
+            // Own this sequence independently of Home's view task;
+            // pushing the first workspace correctly cancels that task.
+            Task { @MainActor in
+              try? await Task.sleep(for: .seconds(4))
+              path.removeAll()
+              try? await Task.sleep(for: .milliseconds(750))
+              if let followup = projectList.sessions.first(where: {
+                $0.serverId == environment.defaultComposerServerId
+                  && $0.id == followupID
+              }) {
+                IOSNavigationDiagnostics.record(
+                  "home.diagnosticFollowupSession",
+                  "session=\(shortID(followupID))"
+                )
+                openChat(followup)
+              }
+            }
+          }
+          openChat(session)
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+    }
+  #endif
 }
 
 /// Sheet-presentation wrapper for a parsed install-plugin deeplink: the repo
