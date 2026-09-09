@@ -170,10 +170,6 @@ struct ComposerBar: View {
     return releaseHeight ?? baseEditorHeight
   }
 
-  private var placeholder: String {
-    return controller.isSending ? "Reply while it works" : "Ask for follow-up changes"
-  }
-
   /// Position the root-level overlay from the card's top edge. Keeping the
   /// overlay at the root gives it a higher z-order than the run pickers;
   /// using the card edge makes the palette cover those chips while open.
@@ -202,6 +198,9 @@ struct ComposerBar: View {
             .accessibilityHidden(true)
         } else {
           runTargetControls
+            .background {
+              ComposerPromotionRegion(kind: .runPickers)
+            }
             .onGeometryChange(for: CGFloat.self) {
               $0.size.height
             } action: { height in
@@ -213,6 +212,9 @@ struct ComposerBar: View {
         pasteFailureRail
         card
       }
+    }
+    .background {
+      ComposerPromotionRegion(kind: .composer)
     }
     // The root-level overlay always draws above both children. On New
     // Chat it is positioned from the card, intentionally covering the
@@ -525,7 +527,7 @@ extension ComposerBar {
         }
 
         if text.isEmpty {
-          Text(placeholder)
+          Text("Do something")
             .foregroundStyle(.tertiary)
             .padding(.top, 4)
             .allowsHitTesting(false)

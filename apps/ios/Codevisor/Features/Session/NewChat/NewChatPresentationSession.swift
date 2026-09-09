@@ -79,12 +79,13 @@ final class NewChatPresentationSession {
   /// the boundary between transcript content (which the expansion slides)
   /// and the composer + keyboard (bottom-anchored in sheet and route alike).
   var composerTop: CGFloat? {
-    guard let view = presentedController?.viewIfLoaded,
-      let editor = view.firstDescendant(where: { $0 is ComposerTextViewContainer })
-    else { return nil }
-    // The card's chrome sits a little above the editor; cut in the blank
-    // gap between the last row and the card so the seam is invisible.
-    return editor.convert(editor.bounds, to: view).minY - 24
+    guard let view = presentedController?.viewIfLoaded else { return nil }
+    return ComposerPromotionRegion.frame(of: .composer, in: view)?.minY
+  }
+
+  var runPickersFrame: CGRect? {
+    guard let view = presentedController?.viewIfLoaded else { return nil }
+    return ComposerPromotionRegion.frame(of: .runPickers, in: view)
   }
 
   /// Where the sheet's navigation bar ends, in the sheet's own coordinates.
@@ -199,12 +200,13 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
 /// whereas switching key windows is defined by UIKit as ending text entry.
 ///
 /// The expansion is not a cross-dissolve. The live route sits underneath
-/// from the start; over it, a bitmap of the resting sheet is split in two:
+/// from the start; over it, a bitmap of the resting sheet is split by region:
 /// its content slides the few points into the route's content position and
 /// simply vanishes once the two coincide, while its navigation-bar strip
 /// fades out to reveal the route's bar — so the × glass circle stays put
 /// and only its glyph turns into +, the title fades, and the back chevron
 /// appears, as the sheet's top edge rises to fill the screen.
+/// The composer stays anchored, while the picker row fades in its own slice.
 @MainActor
 final class NewChatPromotionSurface {
   /// A normally-contained NavigationStack receives this compact-width
@@ -219,6 +221,7 @@ final class NewChatPromotionSurface {
   private var liveHostingController: UIHostingController<AnyView>?
   private var contentImageView: UIImageView?
   private var composerImageView: UIImageView?
+  private var runPickersImageView: UIImageView?
   private var barImageView: UIImageView?
   private let container = UIView()
   private let clippingView = UIView()
@@ -293,7 +296,8 @@ final class NewChatPromotionSurface {
     sourceCornerRadius: CGFloat,
     snapshot: UIImage?,
     barHeight: CGFloat,
-    composerTop: CGFloat?
+    composerTop: CGFloat?,
+    runPickersFrame: CGRect?
   ) {
     guard !didStartExpansion, !sourceFrame.isEmpty, let sourceWindow else { return }
     prepareReplica()
@@ -335,6 +339,13 @@ final class NewChatPromotionSurface {
       let width = snapshot.size.width
       let height = snapshot.size.height
       let bar = min(max(barHeight, 0), height)
+      // Sliding the transcript exposes a gap above the stationary composer.
+      // Cover the content area with the sheet background, leaving the bar
+      // transparent so its fade can reveal the replica's navigation chrome.
+      let background = UIView(frame: CGRect(x: 0, y: bar, width: width, height: height - bar))
+      background.backgroundColor = .systemGroupedBackground
+      background.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+      clippingView.addSubview(background)
       func slice(_ rect: CGRect) -> UIImageView {
         let pixels = CGRect(
           x: rect.minX * scale, y: rect.minY * scale,
@@ -348,17 +359,22 @@ final class NewChatPromotionSurface {
         view.isUserInteractionEnabled = false
         return view
       }
-      // Transcript content slides into the route's position; the composer
-      // and keyboard below it are already where the route puts them, and
-      // their slice overlaps the transcript's so the seam never opens.
+      // Every pixel has one owner. In particular the picker band must not
+      // appear in both the moving transcript and stationary composer.
       let transcriptBottom = min(max(composerTop ?? height, bar), height)
-      let composerSliceTop = max(bar, transcriptBottom - 24)
       let content = slice(CGRect(x: 0, y: bar, width: width, height: transcriptBottom - bar))
+      let pickerBottom = min(max(runPickersFrame?.maxY ?? transcriptBottom, transcriptBottom), height)
       let composer = slice(
-        CGRect(x: 0, y: composerSliceTop, width: width, height: height - composerSliceTop))
+        CGRect(x: 0, y: pickerBottom, width: width, height: height - pickerBottom))
       let barStrip = slice(CGRect(x: 0, y: 0, width: width, height: bar))
       clippingView.addSubview(content)
       clippingView.addSubview(composer)
+      if pickerBottom > transcriptBottom {
+        let pickers = slice(
+          CGRect(x: 0, y: transcriptBottom, width: width, height: pickerBottom - transcriptBottom))
+        clippingView.addSubview(pickers)
+        runPickersImageView = pickers
+      }
       clippingView.addSubview(barStrip)
       contentImageView = content
       composerImageView = composer
@@ -385,7 +401,11 @@ final class NewChatPromotionSurface {
       self?.onExpanded?()
     }
     guard duration > 0 else {
-      UIView.performWithoutAnimation(changes)
+      UIView.performWithoutAnimation {
+        changes()
+        self.barImageView?.alpha = 0
+        self.runPickersImageView?.alpha = 0
+      }
       finish()
       return
     }
@@ -407,14 +427,13 @@ final class NewChatPromotionSurface {
     )
     self.animator = animator
     animator.addAnimations(changes)
-    // Only the bar strip fades: the route's bar beneath is at (nearly) the
-    // same place, so the glass circle holds still while × becomes +, the
-    // title fades, and the chevron appears. Its own even curve keeps the
-    // crossfade legible instead of riding the geometry's sharp ease-out.
-    let barFade = UIViewPropertyAnimator(duration: duration * 0.7, curve: .easeInOut) {
+    // Fade the sheet's bar into the route's chrome and retire its pickers.
+    // An even curve keeps both fades legible while the geometry eases out.
+    let chromeFade = UIViewPropertyAnimator(duration: duration * 0.7, curve: .easeInOut) {
       self.barImageView?.alpha = 0
+      self.runPickersImageView?.alpha = 0
     }
-    barFade.startAnimation(afterDelay: duration * 0.15)
+    chromeFade.startAnimation(afterDelay: duration * 0.15)
     animator.addCompletion { [weak self] position in
       IOSNavigationDiagnostics.record(
         "newChat.promotionSurface.expansionDone",
@@ -454,6 +473,8 @@ final class NewChatPromotionSurface {
     contentImageView = nil
     composerImageView?.removeFromSuperview()
     composerImageView = nil
+    runPickersImageView?.removeFromSuperview()
+    runPickersImageView = nil
     barImageView?.removeFromSuperview()
     barImageView = nil
   }

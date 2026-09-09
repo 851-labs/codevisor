@@ -21,7 +21,6 @@ struct ComposerCard: View {
   static let cornerRadius = ComposerGlassStyle.composerCornerRadius
 
   @Bindable var controller: SessionController
-  var placeholder: String = "Do anything"
   /// Surfaces the composer's text view so keyboard handoffs can move
   /// first-responder focus to it.
   var onTextViewReady: ((SubmittingTextView) -> Void)? = nil
@@ -208,7 +207,7 @@ private extension ComposerCard {
           )
 
           if controller.composerText.isEmpty {
-            Text(controller.isGoalComposerArmed ? "Describe the goal" : placeholder)
+            Text("Do something")
               .foregroundStyle(.tertiary)
               .padding(.top, 6)
               .allowsHitTesting(false)
@@ -613,7 +612,7 @@ private extension ComposerCard {
   }
 
   #Preview("Connected composer") {
-    ComposerCard(controller: .preview(model: .preview()), placeholder: "Ask for follow-up changes")
+    ComposerCard(controller: .preview(model: .preview()))
       .padding()
       .frame(width: 640)
   }

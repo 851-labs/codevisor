@@ -10,6 +10,23 @@ import UIKit
 
 extension VirtualizedTranscriptScrollView {
   func startPendingSendAnimationIfPossible() {
+    guard !isDetaching, !isStartingSendAnimation, !isSendAnimationStartScheduled,
+      pendingSendAnimationRequest != nil || sendCompletionSourceScreenYByRowKey != nil
+    else { return }
+    // Configure and measurement callbacks can run inside SwiftUI's graph
+    // update. Rendering the destination's layers there re-enters that same
+    // graph and can spin forever. Coalesce readiness signals, then capture
+    // the laid-out row after the current update has returned.
+    isSendAnimationStartScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.isSendAnimationStartScheduled = false
+      guard !self.isDetaching else { return }
+      self.beginPendingSendAnimationIfPossible()
+    }
+  }
+
+  private func beginPendingSendAnimationIfPossible() {
     // Reporting the start to the host (New Chat mutates observable flow
     // state there) can synchronously re-enter this pass via layout. The
     // inner pass would begin the flight and the outer one, resuming to

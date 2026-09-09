@@ -130,7 +130,6 @@ struct NewChatView: View {
                 VStack(alignment: .leading, spacing: ComposerGlassStyle.clusterSpacing) {
                   ComposerCard(
                     controller: controller,
-                    placeholder: "Do anything",
                     onTextViewReady: { textView in
                       focus.composerTextView = textView
                       if let paneFocus, let chatId = preCreatedSession?.id {

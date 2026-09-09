@@ -32,7 +32,7 @@ extension ComposerBar {
       cornerRadius: 16, id: .newChatConfiguration, in: glassNamespace
     )
     .padding(.vertical, 6)
-    .disabled(controller.isSubmitting)
+    .disabled(controller.isSubmitting || controller.hasAcceptedFirstSend)
   }
 
   /// Follow the server's current git probe, rather than the draft's snapshot.

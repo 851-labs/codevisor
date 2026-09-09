@@ -163,6 +163,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
   var activeSendAnimationRequest: UserSendAnimationRequest?
   var isStartingSendAnimation = false
+  var isSendAnimationStartScheduled = false
   var activeSendSourceLayout: VirtualTranscriptLayout?
   /// One bounded assistant hold is allowed per mounted host and send. This
   /// prevents a slow pending projection from re-hiding a row after its

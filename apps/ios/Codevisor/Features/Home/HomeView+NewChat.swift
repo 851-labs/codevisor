@@ -203,7 +203,8 @@ extension HomeView {
       sourceCornerRadius: presentationSession.presentationCornerRadius,
       snapshot: presentationSession.snapshotImage(),
       barHeight: presentationSession.navigationBarBottom ?? 54,
-      composerTop: presentationSession.composerTop
+      composerTop: presentationSession.composerTop,
+      runPickersFrame: presentationSession.runPickersFrame
     )
   }
 

@@ -51,7 +51,6 @@ extension ChatScreen {
       // identity while the content and surface geometry change.
       ComposerCard(
         controller: controller,
-        placeholder: "Ask for follow-up changes",
         onTextViewReady: { textView in
           // REGISTRATION ONLY — mounting never takes focus. The
           // container's open sequence is the single writer of the
