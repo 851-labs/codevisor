@@ -30,6 +30,9 @@
       }
       private var foreground: Color { highlighted ? style.itemHighlight.foreground : .primary }
       private var secondaryForeground: Color { highlighted ? style.itemHighlight.foreground : .secondary }
+      private var iconForeground: AnyShapeStyle {
+        highlighted ? AnyShapeStyle(style.itemHighlight.foreground) : AnyShapeStyle(.secondary)
+      }
       private var bottomRadius: CGFloat {
         bottomEdge.contains(bottom: rowBottom) ? style.metrics.bottomCornerRadius : style.metrics.itemCornerRadius
       }
@@ -54,7 +57,7 @@
                   .accessibilityHidden(true)
               }
               if let icon = item.definition.icon {
-                icon.foregroundStyle(secondaryForeground)
+                icon.foregroundStyle(iconForeground)
                   .frame(width: metrics.itemIconSize, height: metrics.itemIconSize)
                   .accessibilityHidden(true)
               } else if showsIcons {
@@ -118,7 +121,7 @@
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(secondaryForeground)
+                .foregroundStyle(iconForeground)
                 .focusable()
                 .focusEffectDisabled()
                 .focused(focus, equals: .secondary(item.id, index))
