@@ -16,12 +16,16 @@ struct AgentActivityIndicator: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
-    BrailleSpinnerLayer(color: color, colorScheme: colorScheme, isAnimated: !reduceMotion)
-      .frame(width: BrailleSpinnerFrames.size.width, height: BrailleSpinnerFrames.size.height)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("Working")
+    BrailleSpinnerLayer(
+      color: color, colorScheme: colorScheme,
+      isAnimated: !reduceMotion && scenePhase == .active
+    )
+    .frame(width: BrailleSpinnerFrames.size.width, height: BrailleSpinnerFrames.size.height)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Working")
   }
 }
 
@@ -94,35 +98,91 @@ private struct BrailleSpinnerLayer: UIViewRepresentable {
   let colorScheme: ColorScheme
   let isAnimated: Bool
 
+  func makeUIView(context: Context) -> BrailleSpinnerView {
+    BrailleSpinnerView(frame: .zero)
+  }
+
+  func updateUIView(_ view: BrailleSpinnerView, context: Context) {
+    view.update(color: color, colorScheme: colorScheme, isAnimated: isAnimated)
+  }
+}
+
+/// Owns the animation independently of SwiftUI's row updates. A cached pixel
+/// configuration does not imply that an animation survived a window change.
+@MainActor
+final class BrailleSpinnerView: UIView {
   private static let animationKey = "brailleFrames"
+  private let glyphLayer = CALayer()
+  private var color: Color = .secondary
+  private var colorScheme: ColorScheme = .light
+  private var isAnimated = false
+  private var renderedConfiguration: RenderConfiguration?
+  private var images: [CGImage] = []
 
-  @MainActor
-  final class Coordinator {
-    var appliedKey: String?
+  private struct RenderConfiguration: Equatable {
+    let color: Color
+    let colorScheme: ColorScheme
+    let scale: CGFloat
   }
 
-  func makeCoordinator() -> Coordinator { Coordinator() }
-
-  func makeUIView(context: Context) -> UIView {
-    let view = UIView()
-    view.isUserInteractionEnabled = false
-    view.layer.contentsGravity = .resizeAspect
-    return view
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    glyphLayer.contentsGravity = .resizeAspect
+    layer.addSublayer(glyphLayer)
   }
 
-  func updateUIView(_ view: UIView, context: Context) {
-    let layer = view.layer
-    let scale = view.window?.screen.scale ?? UIScreen.main.scale
-    let key = "\(color.hashValue)-\(colorScheme)-\(scale)-\(isAnimated)"
-    guard context.coordinator.appliedKey != key else { return }
-    context.coordinator.appliedKey = key
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
 
-    let images = BrailleSpinnerFrames.images(color: color, colorScheme: colorScheme, scale: scale)
-    guard let first = images.first else { return }
-    layer.contentsScale = scale
-    layer.removeAnimation(forKey: Self.animationKey)
-    layer.contents = first
-    guard isAnimated, images.count > 1 else { return }
+  func update(color: Color, colorScheme: ColorScheme, isAnimated: Bool) {
+    self.color = color
+    self.colorScheme = colorScheme
+    self.isAnimated = isAnimated
+    updateAnimation()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateAnimation()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    glyphLayer.frame = bounds
+    CATransaction.commit()
+    updateAnimation()
+  }
+
+  private func updateAnimation() {
+    let configuration = RenderConfiguration(
+      color: color, colorScheme: colorScheme,
+      scale: window?.screen.scale ?? traitCollection.displayScale
+    )
+    if renderedConfiguration != configuration {
+      images = BrailleSpinnerFrames.images(
+        color: color, colorScheme: colorScheme, scale: configuration.scale
+      )
+      glyphLayer.removeAnimation(forKey: Self.animationKey)
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      glyphLayer.contentsScale = configuration.scale
+      glyphLayer.contents = images.first
+      CATransaction.commit()
+      renderedConfiguration = configuration
+    }
+
+    guard isAnimated, window != nil, images.count > 1 else {
+      glyphLayer.removeAnimation(forKey: Self.animationKey)
+      return
+    }
+    // UIKit may remove animations while a List row is detached. Check the
+    // layer itself even when the color, scale, and activity are unchanged.
+    guard glyphLayer.animation(forKey: Self.animationKey) == nil else { return }
 
     let animation = CAKeyframeAnimation(keyPath: "contents")
     animation.values = images
@@ -131,7 +191,7 @@ private struct BrailleSpinnerLayer: UIViewRepresentable {
     animation.repeatCount = .infinity
     let now = CACurrentMediaTime()
     let phase = now.truncatingRemainder(dividingBy: animation.duration)
-    animation.beginTime = layer.convertTime(now, from: nil) - phase
-    layer.add(animation, forKey: Self.animationKey)
+    animation.beginTime = glyphLayer.convertTime(now, from: nil) - phase
+    glyphLayer.add(animation, forKey: Self.animationKey)
   }
 }
