@@ -56,7 +56,55 @@ struct MarkdownTableRendererTests {
       headers: ["A", "B"], alignments: [], rows: [["x", "y"]], theme: .default, width: 800
     )
     let width = laidOutWidth(attributed, containerWidth: 800)
-    #expect(width >= 780)
+    #expect(width == 800)
+  }
+
+  @Test("Header fill and separators reach the border after resizing, including fractional widths")
+  func paintedRowsFillDocument() throws {
+    let table = NativeMarkdownTableBlockView(
+      headers: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      alignments: Array(repeating: .center, count: 7),
+      rows: [["31", "1", "2", "3", "4", "**5**", "**6**"], ["7", "8", "9", "10", "11", "12", "13"]],
+      theme: .default,
+      linkAction: nil
+    )
+    let bleed = try #require(table.subviews.first as? TableBleedContainer)
+    let scroll = bleed.scrollView
+    let textView = scroll.tableTextView
+    let manager = try #require(textView.layoutManager)
+    let container = try #require(textView.textContainer)
+    let storage = try #require(textView.textStorage)
+
+    // Exercise both a fitting calendar and an overflowing one, then return
+    // to a cached width. A half-point document must not make TextKit scale
+    // all the integer columns down and lose one point per column again.
+    for width: CGFloat in [832, 831.5, 700, 320, 838, 832] {
+      table.frame = NSRect(x: 0, y: 0, width: width, height: table.contentHeight(forWidth: width))
+      table.needsLayout = true
+      table.layoutSubtreeIfNeeded()
+      manager.ensureLayout(for: container)
+      let document = try #require(scroll.documentView)
+      #expect(document.bounds.width >= width)
+      #expect(document.bounds.width == textView.bounds.width)
+      var rowBounds: [Int: CGRect] = [:]
+      storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) {
+        value, range, _ in
+        guard let style = value as? NSParagraphStyle,
+          let block = style.textBlocks.first as? NSTextTableBlock
+        else { return }
+        let rect = manager.boundsRect(
+          for: block,
+          glyphRange: manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        )
+        rowBounds[block.startingRow] = (rowBounds[block.startingRow] ?? .null).union(rect)
+        if block.startingRow == 0 { #expect(block.backgroundColor != nil) }
+      }
+      #expect(rowBounds.count == 3)
+      for rect in rowBounds.values {
+        #expect(rect.minX == 0)
+        #expect(rect.maxX == document.bounds.width)
+      }
+    }
   }
 
   /// The width assigned to each column of a rendered table, by column index.

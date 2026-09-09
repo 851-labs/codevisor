@@ -33,9 +33,8 @@ enum MarkdownTableMetrics {
   ///   floor: a single long cell makes the scale tiny and crushes narrow
   ///   columns to ~one character, wrapping them vertically.
   /// - Even the minimums don't fit → two strategies, chosen by the caller:
-  ///   `compressesBelowMinimums: true` (macOS TextKit — no horizontal
-  ///   scrolling exists there) scales the minimums down as a last resort;
-  ///   `false` (iOS — the table sits in a horizontal scroll view) keeps
+  ///   `compressesBelowMinimums: true` scales the minimums down as a last resort;
+  ///   `false` (both native table renderers use horizontal scroll views) keeps
   ///   every column at min-content and lets the table overflow its width.
   ///   Compressing below min-content degrades into per-character wrapping —
   ///   on a phone a wide table became thousands of points tall.

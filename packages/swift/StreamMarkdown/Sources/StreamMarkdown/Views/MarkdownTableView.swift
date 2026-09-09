@@ -333,7 +333,7 @@
     }
 
     private static func normalized(_ width: CGFloat) -> CGFloat {
-      CGFloat((max(1, width) * 2).rounded()) / 2
+      MarkdownTextTableGeometry.width(width)
     }
   }
 
@@ -541,7 +541,7 @@
     }
 
     private static func normalized(_ width: CGFloat) -> CGFloat {
-      CGFloat((max(1, width) * 2).rounded()) / 2
+      MarkdownTextTableGeometry.width(width)
     }
 
     private func preparedTable(for model: TableModel) -> MarkdownTableRenderer.PreparedTable {

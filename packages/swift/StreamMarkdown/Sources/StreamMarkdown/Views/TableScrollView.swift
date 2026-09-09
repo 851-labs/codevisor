@@ -100,7 +100,7 @@
       // wider. The text view rebuilds its `NSTextTable` at that width.
       let columnWidth = contentView.bounds.width - contentInsets.left - contentInsets.right
       guard columnWidth > 0 else { return }
-      let width = max(columnWidth, tableTextView.minimumTableWidth)
+      let width = MarkdownTextTableGeometry.width(max(columnWidth, tableTextView.minimumTableWidth))
       if abs(tableTextView.frame.width - width) > 0.25 {
         tableTextView.setFrameSize(NSSize(width: width, height: tableTextView.frame.height))
       }
