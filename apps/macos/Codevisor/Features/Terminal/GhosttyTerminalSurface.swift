@@ -88,10 +88,6 @@ private final class CodevisorGhosttySurfaceView: Ghostty.SurfaceView {
   }
 
   func focusForInput() {
-    if window == nil {
-      Ghostty.moveFocus(to: self)
-      return
-    }
     window?.makeFirstResponder(self)
   }
 

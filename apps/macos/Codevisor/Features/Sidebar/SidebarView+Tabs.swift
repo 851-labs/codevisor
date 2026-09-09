@@ -6,10 +6,9 @@ import SwiftUI
 /// lists its chats, terminals, plugins, and New Tab
 /// placeholders. ⌘T adds a tab row to the current workspace.
 ///
-/// The sidebar only *asks* for tab changes. Selecting a chat tab routes
-/// through its chat like any chat row; anything else rides the workspace's
-/// routing chat and hands the mounted container a `CenterTabRequest` that
-/// names the tab (see `SessionContainerView`).
+/// Tab selection commits synchronously before routing the workspace into
+/// the detail column. The routing chat supplies context; only visible chat
+/// panes load transcripts.
 extension SidebarView {
   /// Every tab row's identity in sidebar order, driving reflow animations.
   var workspaceTabRowIDs: [UUID] {
@@ -169,11 +168,11 @@ extension SidebarView {
 
   func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
-    store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .select(tab.id))
+    guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
     if let chat = routableChat(in: tab, serverId: workspace.serverId) {
-      activateSession(chat)
+      selection = .session(serverId: chat.serverId, id: chat.id)
     } else if !routesSelectedSession(workspace), let routing = item.routingSession {
-      activateSession(routing)
+      selection = .session(serverId: routing.serverId, id: routing.id)
     }
   }
 
@@ -181,13 +180,13 @@ extension SidebarView {
   /// has one so the sidebar selection lands right immediately.
   func activateLeaf(_ leafId: UUID, state: PaneGroupState, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
-    store?.centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .selectLeaf(leafId))
+    guard store?.selectDestination(.leaf(leafId), in: workspace.id) == true else { return }
     if let pane = state.selectedPane, let chat = sessionForPane(pane, serverId: workspace.serverId),
       !chat.isArchived
     {
-      activateSession(chat)
+      selection = .session(serverId: chat.serverId, id: chat.id)
     } else if !routesSelectedSession(workspace), let routing = item.routingSession {
-      activateSession(routing)
+      selection = .session(serverId: routing.serverId, id: routing.id)
     }
   }
 

@@ -17,6 +17,7 @@ struct TerminalSurfaceView: NSViewRepresentable {
 
   final class SurfaceContainerView: NSView {
     var reclaim: (() -> Void)?
+    var onAttach: (() -> Void)?
 
     override func layout() {
       super.layout()
@@ -27,12 +28,14 @@ struct TerminalSurfaceView: NSViewRepresentable {
       super.viewDidMoveToWindow()
       if window != nil {
         reclaim?()
+        onAttach?()
       }
     }
   }
 
   func makeNSView(context: Context) -> SurfaceContainerView {
     let container = SurfaceContainerView()
+    container.onAttach = { pane.onContentAttached?() }
     container.reclaim = { [weak container] in
       guard let container else { return }
       Self.attach(pane: pane, to: container)

@@ -380,6 +380,7 @@ struct RootView: View {
         $0.serverId == serverId && $0.id == sessionId
       })
     else { return }
+    store?.selectChat(session)
     selection = .session(serverId: serverId, id: sessionId)
   }
 
@@ -402,6 +403,11 @@ struct RootView: View {
       break
     case let .selectSession(replacementId):
       guard replacementId != sessionId else { return }
+      if let replacement = environment.projectList.sessions.first(where: {
+        $0.serverId == serverId && $0.id == replacementId
+      }) {
+        store?.selectChat(replacement)
+      }
       selection = .session(serverId: serverId, id: replacementId)
     case .dismiss:
       selection = .newChat(nil)

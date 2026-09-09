@@ -246,6 +246,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   }
   var maximumMountsPerFrame: Int { frameBudget.mountsPerFrame }
   var mountWorkBudget: CFTimeInterval { frameBudget.workBudget }
+  /// Monotonic work clock; tests can advance it without waiting on rendering.
+  var mountWorkTime: () -> CFTimeInterval = CACurrentMediaTime
+  var initialMountWorkStartedAt: CFTimeInterval?
   var maximumRunwayPreparationsPerFrame: Int {
     let viewportHeight = max(1, contentView.bounds.height)
     return TranscriptFrameBudget.runwayPreparationsPerFrame(

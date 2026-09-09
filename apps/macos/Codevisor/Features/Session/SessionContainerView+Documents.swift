@@ -18,23 +18,15 @@ extension SessionContainerView {
 
     for tab in workspace.centerTabs {
       for leaf in tab.root.allGroups {
-        let model = configuredCenterModel(leafId: leaf.id)
-        if let pane = model.state.panes.first(where: {
+        if let pane = leaf.state.panes.first(where: {
           $0.kind == .document && $0.documentPath == path
         }) {
-          selectCenterTab(tab.id)
-          activateLeaf(leaf.id)
-          model.select(id: pane.id)
+          store.selectDestination(.pane(pane.id), in: workspace.id)
           return true
         }
       }
     }
 
-    if let current = workspace.selectedCenterTab {
-      for leaf in current.root.allGroups {
-        configuredCenterModel(leafId: leaf.id).selectedPane?.visibilityChanged(false)
-      }
-    }
     let id = UUID()
     let pane = PaneDescriptorState(
       id: id, kind: .document, name: (path as NSString).lastPathComponent,
@@ -43,15 +35,10 @@ extension SessionContainerView {
     let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)
     let tab = WorkspaceTab(root: .leaf(state))
     workspace.centerTabs.append(tab)
-    workspace.selectedCenterTabId = tab.id
     environment.workspaces.save(workspace)
-    workspaceRevision += 1
-    liveCenterTree = tab.root
-    activateLeaf(tab.activeLeafId)
+    store.selectDestination(.tab(tab.id), in: workspace.id)
     publishPane(pane, workspaceId: workspace.id)
-    let model = configuredCenterModel(leafId: tab.activeLeafId)
-    model.selectedPane?.visibilityChanged(true)
-    DispatchQueue.main.async { model.focusSelectedPane() }
+    focusSelectedCenterPane()
     return true
   }
 }

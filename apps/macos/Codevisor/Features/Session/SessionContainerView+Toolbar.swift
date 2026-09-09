@@ -11,7 +11,10 @@ extension SessionContainerView {
     return configuredCenterModel(leafId: leafId)
   }
 
-  var activePaneDescriptor: PaneDescriptorState? { activeToolbarGroup?.state.selectedPane }
+  var activePaneDescriptor: PaneDescriptorState? {
+    guard let leafId = activeLeafId else { return nil }
+    return selectedWorkspace.selectedPane(inLeaf: leafId)
+  }
 
   var activeBrowserModel: ChromiumBrowserModel? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .browser else { return nil }

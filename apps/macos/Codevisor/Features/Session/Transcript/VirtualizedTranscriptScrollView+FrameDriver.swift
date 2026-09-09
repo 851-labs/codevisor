@@ -177,6 +177,7 @@ extension VirtualizedTranscriptScrollView {
     let shouldPresentModel = modelPresentationFrameRequested
     let shouldUpdateMountedRows = mountedRowsUpdateRequested
     remainingMountsThisFrame = maximumMountsPerFrame
+    initialMountWorkStartedAt = nil
     remainingRunwayPreparationsThisFrame = maximumRunwayPreparationsPerFrame
     displayFrameRequested = false
     modelPresentationFrameRequested = false
@@ -190,6 +191,7 @@ extension VirtualizedTranscriptScrollView {
     if !pendingMeasuredHeights.isEmpty {
       commitPendingMeasurements()
     }
+    updateInitialPresentationReadiness()
     // Host readiness can change without a height change. Its notification
     // requests this frame after the host's AppKit layout stack unwinds.
     startPendingSendAnimationIfPossible()

@@ -157,6 +157,30 @@
       #expect(accepted == ["B", "A"])
     }
 
+    @Test("A pane's deferred search focus is discarded after navigation")
+    func supersededPaneFocus() throws {
+      let focus = Autocomplete.InputFocus()
+      var isCurrent = true
+      focus.focus(ifCurrent: { isCurrent })
+      let host = NSHostingView(
+        rootView: Autocomplete.Suggestions(focus: focus) { Autocomplete.Action("Match") {} }
+          .environment(\.locale, Locale(identifier: "en_US_POSIX")))
+      host.frame = NSRect(x: 0, y: 0, width: 300, height: 250)
+      host.layoutSubtreeIfNeeded()
+      let field = try #require(field(in: host))
+      let container = try #require(field.superview as? Autocomplete.InputCapsuleView)
+      // Hold attachment until the pane is no longer the destination.
+      _ = try #require(container.requestFocus)
+      isCurrent = false
+      let window = FocusTestWindow(
+        contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+      defer { window.contentView = nil }
+      window.contentView = host
+      host.layoutSubtreeIfNeeded()
+      #expect((window.firstResponder as? NSTextView)?.delegate !== field)
+      #expect(container.requestFocus == nil)
+    }
+
     @Test("Tab reaches the highlighted favorite and Space toggles it without selecting")
     func keyboardFavoriteFocus() async {
       let selection = SelectionStore("Other")

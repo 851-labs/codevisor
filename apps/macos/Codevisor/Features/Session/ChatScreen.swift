@@ -56,6 +56,19 @@ struct ChatScreen: View {
   @State var presentationVisibilityOwner = UUID()
   @Namespace var composerGlassNamespace
 
+  private struct ContentLoadingIdentity: Equatable {
+    let controller: ObjectIdentifier
+    let isMounted: Bool
+  }
+
+  private var contentLoadingIdentity: ContentLoadingIdentity {
+    .init(controller: ObjectIdentifier(controller), isMounted: isTranscriptMounted)
+  }
+
+  private var mountedProjectionRequest: TranscriptProjectionRequest? {
+    isTranscriptMounted ? transcriptProjectionRequest : nil
+  }
+
   init(
     controller: SessionController,
     focus: TerminalFocusController,
@@ -122,11 +135,11 @@ struct ChatScreen: View {
         guard !Task.isCancelled else { return }
         isTranscriptMounted = true
       }
-      // Every chat pane loads its own history: only the ROUTED session's
-      // controller is prepared by the container, but a workspace can show
-      // several chats at once (splits, tabs) — without this, the others
-      // render empty transcripts.
-      .task(id: ObjectIdentifier(controller)) {
+      // Each visible chat owns its connection. Cold content work starts
+      // after the shell mount boundary above; workspace navigation never
+      // prepares a hidden routing chat.
+      .task(id: contentLoadingIdentity) {
+        guard isTranscriptMounted else { return }
         if controller.resumeAgentSessionId?.isEmpty == false {
           // Existing chats know their harness. Refresh only that one in
           // parallel; neither config inspection nor runtime startup may
@@ -145,8 +158,8 @@ struct ChatScreen: View {
           }
         }
       }
-      .task(id: transcriptProjectionRequest) {
-        let request = transcriptProjectionRequest
+      .task(id: mountedProjectionRequest) {
+        guard let request = mountedProjectionRequest else { return }
         let key = request.key
         let input = controller.transcriptProjectionInput
         if projectedSessionID != key.sessionID {

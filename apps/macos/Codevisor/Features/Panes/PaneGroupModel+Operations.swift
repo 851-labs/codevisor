@@ -109,7 +109,7 @@ extension PaneGroupModel {
     persist()
     if publishChange { onPaneChanged?(converted) }
     pane(for: converted).visibilityChanged(true)
-    DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+    requestSelectedPaneFocus()
   }
 
   /// Syncs the agent's background-task snapshot into tabs: ensures a pane
@@ -195,6 +195,7 @@ extension PaneGroupModel {
     // shell from a previous app run that willDelete must clean up.
     let closing = pane(for: descriptor)
     live[id] = nil
+    presentedPaneIDs.remove(id)
     let replacement =
       shouldReplaceClosedPaneWithNewTab?(descriptor) == true
       ? state.replacePaneWithNewTab(id: id)
@@ -226,14 +227,14 @@ extension PaneGroupModel {
   /// the always-visible bar reveal their content).
   func select(id: UUID) {
     guard state.selectedPaneId != id || !state.isVisible else { return }
-    let previous = state.isVisible ? selectedPane : nil
+    let previous = state.selectedPaneId.flatMap { live[$0] }
     state.selectPane(id: id)
     persist()
     onActivated?()
     if let previous, previous.id != id {
       previous.visibilityChanged(false)
     }
-    selectedPane?.visibilityChanged(true)
+    requestSelectedPaneFocus()
   }
 
   // MARK: - Cross-group transfer

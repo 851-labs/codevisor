@@ -11,10 +11,12 @@
     @Observable
     final class InputFocus {
       public private(set) var requestTick = 0
+      @ObservationIgnored var isCurrent: () -> Bool = { true }
 
       public init() {}
 
-      public func focus() {
+      public func focus(ifCurrent isCurrent: @escaping () -> Bool = { true }) {
+        self.isCurrent = isCurrent
         requestTick += 1
       }
     }
@@ -36,6 +38,7 @@
       var onKeyEquivalent: (NSEvent) -> Bool = { _ in false }
       var requestedFocus: Bool?
       var onAdvanceFocus: () -> Bool = { false }
+      var canTakeFocus: () -> Bool = { true }
 
       @Environment(\.autocompleteStyle) private var style
       @Environment(\.layoutDirection) private var layoutDirection
@@ -108,6 +111,11 @@
         let wantsBoundFocus = requestedFocus == true && !ownsEditor
         guard wantsInitialFocus || wantsRequestedFocus || wantsBoundFocus else { return }
         container.requestFocus = { [weak container] in
+          guard canTakeFocus() else {
+            coordinator.handledFocusTick = focusTick
+            container?.requestFocus = nil
+            return
+          }
           guard let field = container?.searchField, let window = field.window else { return }
           if window.makeFirstResponder(field) {
             coordinator.didFocus = true

@@ -50,7 +50,7 @@ final class PaneGroupModel: Identifiable {
     newTabFocusHandlers[paneId] = handler
     if pendingNewTabFocus == paneId {
       pendingNewTabFocus = nil
-      handler()
+      if canFocusSelectedPane, state.selectedPaneId == paneId { handler() }
     }
   }
 
@@ -79,6 +79,10 @@ final class PaneGroupModel: Identifiable {
   /// new tab, adopted drop) — the container tracks the workspace's ACTIVE
   /// group with it, which is where keyboard tab commands route.
   @ObservationIgnored var onActivated: (() -> Void)?
+  /// Programmatic focus may only follow the window's committed destination.
+  @ObservationIgnored var isFocusCurrent: (() -> Bool)?
+  @ObservationIgnored let deferredFocus = DeferredPaneFocus()
+  @ObservationIgnored var presentedPaneIDs: Set<UUID> = []
   /// Center leaves hand workspace-level tab/split commands to their
   /// container. Returning true means the command was consumed. This is
   /// ignored for bottom-panel models so their shortcuts always remain local.
@@ -144,7 +148,9 @@ final class PaneGroupModel: Identifiable {
       document.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
       pane = document
     case .terminal:
-      pane = TerminalPane(context: makeContext(descriptor))
+      let terminal = TerminalPane(context: makeContext(descriptor))
+      terminal.onContentAttached = { [weak self] in self?.requestSelectedPaneFocus() }
+      pane = terminal
     case .plugin:
       let plugin = PluginPane(context: makeContext(descriptor), descriptor: descriptor)
       // `codevisor.setTitle` renames the pane's tab like a manual
@@ -242,10 +248,10 @@ final class PaneGroupModel: Identifiable {
       // directly, since terminals are all it hosts.
       if placement == .bottom {
         addTerminalPane()
-        DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        requestSelectedPaneFocus()
       } else {
         addNewTabPane()
-        DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        requestSelectedPaneFocus()
       }
     case .nextTab, .previousTab:
       let panes = state.panes
@@ -255,11 +261,11 @@ final class PaneGroupModel: Identifiable {
       let step: Int = if case .nextTab = command { 1 } else { -1 }
       let target = panes[(index + step + panes.count) % panes.count]
       select(id: target.id)
-      DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+      requestSelectedPaneFocus()
     case .selectTab(let index):
       guard state.panes.indices.contains(index) else { return }
       select(id: state.panes[index].id)
-      DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+      requestSelectedPaneFocus()
     case .split, .focusSplit, .previousSplit, .nextSplit, .reopenClosedPane:
       return
     case .closeTab:
@@ -272,7 +278,7 @@ final class PaneGroupModel: Identifiable {
         // The group collapsed with the tab; hand focus back.
         requestComposerFocus?()
       } else {
-        DispatchQueue.main.async { [weak self] in self?.focusSelectedPane() }
+        requestSelectedPaneFocus()
       }
     }
   }
@@ -327,12 +333,35 @@ final class PaneGroupModel: Identifiable {
     return true
   }
 
+  var canFocusSelectedPane: Bool {
+    state.isVisible && (isFocusCurrent?() ?? true)
+  }
+
+  /// Focus is an effect of navigation, never another selection command.
+  /// Resolve only an already mounted pane: focus must not create a terminal
+  /// surface, browser, plugin webview, or chat controller on the key path.
   func focusSelectedPane() {
-    // Focusing an already-selected tab is still user activity in this
-    // group. This is load-bearing for a selected New Tab in an inactive
-    // split: select(id:) is otherwise a no-op and never activates it.
-    onActivated?()
-    selectedPane?.focus()
+    guard canFocusSelectedPane, let id = state.selectedPaneId else { return }
+    live[id]?.focus()
+  }
+
+  func requestSelectedPaneFocus() {
+    guard let id = state.selectedPaneId else { return }
+    deferredFocus.request(
+      isCurrent: { [weak self] in
+        self?.state.selectedPaneId == id && self?.canFocusSelectedPane == true
+      },
+      focus: { [weak self] in
+        guard let self, self.presentedPaneIDs.contains(id), self.live[id] != nil else { return false }
+        self.focusSelectedPane()
+        return true
+      }
+    )
+  }
+
+  func paneContentDidMount(id: UUID) {
+    presentedPaneIDs.insert(id)
+    if state.selectedPaneId == id, canFocusSelectedPane { requestSelectedPaneFocus() }
   }
 
   /// App-side teardown for all live panes (backing shells survive on the
@@ -342,6 +371,8 @@ final class PaneGroupModel: Identifiable {
       pane.detach()
     }
     live.removeAll()
+    presentedPaneIDs.removeAll()
+    deferredFocus.cancel()
   }
 
   func persist() {
@@ -349,6 +380,7 @@ final class PaneGroupModel: Identifiable {
   }
 
   func discardLivePane(id: UUID) {
+    presentedPaneIDs.remove(id)
     guard let pane = live.removeValue(forKey: id) else { return }
     pane.visibilityChanged(false)
     pane.detach()

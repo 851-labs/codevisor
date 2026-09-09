@@ -75,11 +75,16 @@ struct NewTabPageView: View {
     // activate the group, which routes focus to the picker's input.
     .simultaneousGesture(
       TapGesture().onEnded {
-        group?.focusSelectedPane()
+        group?.onActivated?()
+        group?.requestSelectedPaneFocus()
       }
     )
     .onAppear {
-      group?.registerNewTabFocus(paneId: paneId) { inputFocus.focus() }
+      group?.registerNewTabFocus(paneId: paneId) {
+        inputFocus.focus { [weak group] in
+          group?.canFocusSelectedPane == true && group?.state.selectedPaneId == paneId
+        }
+      }
     }
     .onDisappear {
       group?.unregisterNewTabFocus(paneId: paneId)

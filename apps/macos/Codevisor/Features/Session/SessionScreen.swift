@@ -12,6 +12,7 @@ struct SessionScreen: View {
   /// wires every center leaf's chat content with it); previews get their
   /// own.
   var focus: TerminalFocusController = TerminalFocusController()
+  var onWorkspaceCommand: ((PaneGroupCommand) -> Bool)?
   /// The workspace's center split tree + leaf plumbing (nil-safe defaults
   /// keep previews on the single-group path).
   var centerTree: SplitNode? = nil
@@ -44,6 +45,7 @@ struct SessionScreen: View {
         .frame(width: 0, height: 0)
       )
       .onAppear {
+        focus.workspaceCommandHandler = onWorkspaceCommand
         focus.centerGroup = centerGroup
         focus.startTypeToFocus()
         installAttachmentImageStoreIfNeeded()

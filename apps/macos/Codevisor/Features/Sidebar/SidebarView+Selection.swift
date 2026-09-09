@@ -8,6 +8,7 @@ extension SidebarView {
     let next = environment.projectList.sessions
       .filter { $0.serverId == serverId && !$0.isArchived }
       .max { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) }
+    if let next { store?.selectChat(next) }
     selection = next.map { .session(serverId: $0.serverId, id: $0.id) }
   }
 
@@ -24,7 +25,7 @@ extension SidebarView {
       workspaceRevision += 1
     }
     let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
-    guard selection != target else { return }
+    store?.selectChat(session)
     // A route owns its machine identity. Opening a chat on another machine
     // is the same synchronous selection change as opening a sibling chat;
     // its controller resolves that machine's client independently.

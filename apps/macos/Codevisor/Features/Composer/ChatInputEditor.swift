@@ -267,6 +267,13 @@ private final class GrowingTextClipView: NSClipView {
 /// `textView(_:doCommandBy:)`; only Return needs special-casing here because the
 /// Shift modifier isn't visible at the command-selector level.
 final class SubmittingTextView: NSTextView {
+  var onWindowChanged: (() -> Void)?
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    onWindowChanged?()
+  }
+
   var onSubmit: (() -> Void)?
   var onKeyCommand: ((ComposerKeyCommand) -> Bool)?
   var onPasteAttachments: (([PastedAttachment]) -> Bool)?

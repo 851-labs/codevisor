@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CodevisorCore
+import CodevisorUI
 import GhosttyKit
 
 /// Reports the hosting NSWindow to a callback (fires on mount and window
@@ -52,6 +53,11 @@ final class TerminalFocusController {
   /// (Terminal surfaces report the same through their own responder
   /// overrides.)
   var onChatComposerFocused: ((UUID) -> Void)?
+  /// Workspace navigation is available before any pane has mounted.
+  var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
+  var canFocusChat: ((UUID) -> Bool)?
+  var navigationRevision: (() -> Int)?
+  private let deferredComposerFocus = DeferredPaneFocus()
 
   private var responderObservation: NSKeyValueObservation?
 
@@ -60,14 +66,20 @@ final class TerminalFocusController {
       \.firstResponder, options: [.new]
     ) { [weak self] window, _ in
       let responder = window.firstResponder
+      let revision = self?.navigationRevision?()
       Task { @MainActor [weak self] in
-        self?.firstResponderChanged(responder)
+        guard let self, self.navigationRevision?() == revision,
+          self.hostWindow === window, window.firstResponder === responder
+        else { return }
+        self.firstResponderChanged(responder)
       }
     }
   }
 
   private func firstResponderChanged(_ responder: NSResponder?) {
-    guard let view = responder as? NSView else { return }
+    guard let view = responder as? NSView, view.window === hostWindow,
+      hostWindow?.isKeyWindow == true
+    else { return }
     for (chatId, box) in chatComposers {
       if let composer = box.view, view === composer || view.isDescendant(of: composer) {
         onChatComposerFocused?(chatId)
@@ -130,9 +142,10 @@ final class TerminalFocusController {
 
   func registerComposer(_ view: SubmittingTextView, forChat sessionId: UUID) {
     chatComposers[sessionId] = WeakTextView(view)
+    view.onWindowChanged = { [weak self] in self?.deferredComposerFocus.retry() }
     if pendingComposerFocus == sessionId {
       pendingComposerFocus = nil
-      focusWhenWindowed(view)
+      focusWhenWindowed(view, forChat: sessionId)
     }
   }
 
@@ -151,14 +164,18 @@ final class TerminalFocusController {
   /// held, but never steals from a terminal or another chat's editor.
   func registerQuestionPicker(_ view: NSView, forChat sessionId: UUID) {
     chatQuestionPickers[sessionId] = WeakNSView(view)
+    if let pending = pendingComposerFocus, canFocusChat?(pending) == false {
+      pendingComposerFocus = nil
+    }
     if pendingComposerFocus == sessionId {
       pendingComposerFocus = nil
-      focusWhenWindowed(view)
+      focusWhenWindowed(view, forChat: sessionId)
       return
     }
     // A parked intent for ANOTHER chat outranks this mount's grab.
     guard pendingComposerFocus == nil else { return }
-    focusWhenWindowed(view) { [weak self] window in
+    guard canFocusChat?(sessionId) != false else { return }
+    focusWhenWindowed(view, forChat: sessionId) { [weak self] window in
       self?.questionPickerMayTakeFocus(in: window, forChat: sessionId) ?? false
     }
   }
@@ -230,35 +247,37 @@ final class TerminalFocusController {
   /// Focuses a specific chat's composer area — immediately when possible,
   /// otherwise the moment it registers (see `pendingComposerFocus`).
   func requestComposerFocus(forChat sessionId: UUID) {
+    guard canFocusChat?(sessionId) != false else { return }
+    deferredComposerFocus.cancel()
+    pendingComposerFocus = nil
     if let view = composerAreaView(forChat: sessionId) {
-      focusWhenWindowed(view)
+      focusWhenWindowed(view, forChat: sessionId)
     } else {
       pendingComposerFocus = sessionId
     }
   }
 
-  /// Views register from makeNSView, BEFORE they are attached to a
-  /// window — and makeFirstResponder needs the window. Retry briefly
-  /// until attachment (the same trick the terminal's Ghostty.moveFocus
-  /// uses); a view that never lands in a window just times out. An
-  /// optional gate is re-evaluated at grab time (not schedule time) so
-  /// polite grabs judge the settled responder.
+  /// Attachment retries the pending request. Navigation can supersede it
+  /// at any point; a late composer or picker never chooses the destination.
   private func focusWhenWindowed(
     _ view: NSView,
-    attempts: Int = 20,
+    forChat sessionId: UUID,
     given shouldFocus: ((NSWindow) -> Bool)? = nil
   ) {
-    if let window = view.window {
-      if shouldFocus?(window) ?? true {
-        window.makeFirstResponder(view)
+    let revision = navigationRevision?()
+    deferredComposerFocus.request(
+      isCurrent: { [weak self, weak view] in
+        guard let self, view != nil else { return false }
+        return self.navigationRevision?() == revision && self.canFocusChat?(sessionId) != false
+      },
+      focus: { [weak view] in
+        guard let view, let window = view.window else { return false }
+        guard window.isKeyWindow, window.attachedSheet == nil, NSApp.modalWindow == nil,
+          shouldFocus?(window) ?? true
+        else { return true }
+        return window.makeFirstResponder(view)
       }
-      return
-    }
-    guard attempts > 0 else { return }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak view] in
-      guard let self, let view else { return }
-      self.focusWhenWindowed(view, attempts: attempts - 1, given: shouldFocus)
-    }
+    )
   }
 
   /// Focuses the ACTIVE group's selected chat's composer area when there
@@ -269,7 +288,7 @@ final class TerminalFocusController {
     if let chatId = centerGroup?.state.selectedPane?.chatSessionId,
       let view = composerAreaView(forChat: chatId)
     {
-      view.window?.makeFirstResponder(view)
+      if canFocusChat?(chatId) != false { view.window?.makeFirstResponder(view) }
       return
     }
     guard let view = (composerTextView as NSView?) ?? fallbackQuestionPicker else { return }
@@ -315,8 +334,7 @@ final class TerminalFocusController {
   /// (GhosttyTerminalSurfaceAdapter); both match against `ShortcutCatalog`,
   /// so the two paths and the menu share one definition of each shortcut.
   private func handleTabCommand(_ event: NSEvent) -> Bool {
-    guard let centerGroup,
-      let window = hostWindow ?? composerTextView?.window,
+    guard let window = hostWindow ?? composerTextView?.window,
       event.window === window,
       window.isKeyWindow,
       window.attachedSheet == nil,
@@ -325,11 +343,16 @@ final class TerminalFocusController {
       !(window.firstResponder is Ghostty.SurfaceView)
     else { return false }
     guard let command = ShortcutCatalog.paneCommand(for: event) else { return false }
+    if workspaceCommandHandler?(command) == true { return true }
+    guard let centerGroup else { return false }
     centerGroup.handleCommand(command)
     return true
   }
 
   func stopTypeToFocus() {
+    deferredComposerFocus.cancel()
+    pendingComposerFocus = nil
+    workspaceCommandHandler = nil
     guard let typeToFocusMonitor else { return }
     NSEvent.removeMonitor(typeToFocusMonitor)
     self.typeToFocusMonitor = nil
@@ -462,10 +485,13 @@ final class TerminalFocusController {
         return event  // Already writing in this chat.
       }
 
-      DispatchQueue.main.async {
+      let revision = navigationRevision?()
+      DispatchQueue.main.async { [weak self] in
         // Someone claimed focus from this click (text selection, a
         // menu, a control): leave it alone.
-        guard window.firstResponder === responderBeforeClick else { return }
+        guard let self, self.navigationRevision?() == revision,
+          zone.view.window === window, window.firstResponder === responderBeforeClick
+        else { return }
 
         // Clicking or dragging again in an already-focused text view
         // leaves the same first responder in place. Treat the hit

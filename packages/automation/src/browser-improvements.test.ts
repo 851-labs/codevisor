@@ -132,7 +132,7 @@ describe("Browser session reliability", () => {
     browser: { cell, origin }
   }) => {
     await cell(
-      `var second = await browser.tabs.new(); await second.goto(${JSON.stringify(origin + "/second")})`
+      `var second = await browser.tabs.new(); await second.playwright.expectNavigation(() => second.goto(${JSON.stringify(origin + "/second")}), {waitUntil: 'load'})`
     )
     const snapshot = String(await cell("await first.getAXState()"))
     const ref = snapshot.match(/button "No navigation" \[ref=(e\d+)\]/)?.[1]
@@ -217,7 +217,9 @@ describe("Browser session reliability", () => {
   })
 
   it("supports nested frames", async ({ browser: { cell, origin } }) => {
-    await cell(`await first.goto(${JSON.stringify(origin + "/frames")})`)
+    await cell(
+      `await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin + "/frames")}), {waitUntil: 'load'})`
+    )
     expect(
       await cell(
         "await first.playwright.frameLocator('#outer').frameLocator('#inner').locator('#leaf').textContent()"
@@ -226,7 +228,11 @@ describe("Browser session reliability", () => {
   })
 
   it("supports cross-origin frames", async ({ browser: { cell, origin } }) => {
-    await cell(`await first.goto(${JSON.stringify(origin + "/cross")})`)
+    // The load event includes the child frame's navigation and process swap.
+    // Reading immediately after Page.navigate can still see its blank document.
+    await cell(
+      `await first.playwright.expectNavigation(() => first.goto(${JSON.stringify(origin + "/cross")}), {waitUntil: 'load'})`
+    )
     expect(
       await cell("await first.playwright.frameLocator('#cross').locator('#leaf').textContent()")
     ).toBe("Nested content")

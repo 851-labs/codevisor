@@ -322,7 +322,7 @@ extension VirtualizedTranscriptScrollView {
     let requiredKeys = virtualLayout.keys(in: plannedMountedRange())
     let mountedKeys = Set(mountedHosts.keys)
     guard requiredKeys.isSubset(of: mountedKeys) else {
-      updateMountedRows()
+      requestMountedRowsUpdate()
       return
     }
     let resolvedKeys = TranscriptMountedWindowReadiness.resolvedKeys(

@@ -11,20 +11,7 @@ extension SessionContainerView {
   /// in front of repository truth.
   func synchronizeMountedPaneGroups() {
     let workspace = store.workspace(for: session, project: project)
-    let modelsChanged = store.reconcileMountedPaneGroups(in: workspace)
-    let storedTree = workspace.centerTree
-    let storedLeafIds = Set(storedTree.allGroups.map(\.id))
-    let liveLeafIds = liveCenterTree.map { Set($0.allGroups.map(\.id)) }
-    let topologyChanged = liveLeafIds.map { $0 != storedLeafIds } ?? false
-    if topologyChanged {
-      liveCenterTree = storedTree
-    }
-
-    let activeLeafChanged = activeLeafId.map { !storedLeafIds.contains($0) } ?? false
-    if activeLeafChanged {
-      activeLeafId = workspace.selectedCenterTab?.activeLeafId
-    }
-    if modelsChanged || topologyChanged || activeLeafChanged {
+    if store.reconcileMountedPaneGroups(in: workspace) {
       workspaceRevision += 1
     }
   }
@@ -39,49 +26,24 @@ extension SessionContainerView {
   /// A sidebar-originated tab action for this workspace.
   func performCenterTabRequest(_ request: CenterTabRequest) {
     switch request.action {
-    case let .select(tabId): selectCenterTab(tabId)
     case let .close(tabId): closeCenterTab(tabId)
     case .new: addCenterTab()
-    case let .selectLeaf(leafId): selectCenterLeaf(leafId)
     case let .closeLeaf(leafId): closeLeaf(leafId)
     }
   }
 
-  /// Brings one split leaf forward: its tab is selected first when it is
-  /// not the current one, then the leaf becomes the active group and its
-  /// pane takes focus — what clicking the pane's header would do.
-  func selectCenterLeaf(_ leafId: UUID) {
+  func selectCenterTab(_ tabId: UUID) {
     let workspace = store.workspace(for: session, project: project)
-    guard let tab = workspace.centerTabs.first(where: { $0.root.group(id: leafId) != nil }) else {
-      return
-    }
-    if workspace.selectedCenterTabId != tab.id {
-      selectCenterTab(tab.id)
-    }
-    guard (activeLeafId ?? tab.activeLeafId) != leafId || workspace.selectedCenterTabId != tab.id
-    else { return }
-    activateLeaf(leafId)
-    let model = configuredCenterModel(leafId: leafId)
-    model.selectedPane?.visibilityChanged(true)
-    DispatchQueue.main.async { model.focusSelectedPane() }
+    store.selectDestination(.tab(tabId), in: workspace.id)
   }
 
-  func selectCenterTab(_ tabId: UUID) {
-    var workspace = store.workspace(for: session, project: project)
-    guard let tab = workspace.centerTabs.first(where: { $0.id == tabId }) else { return }
-    if let old = workspace.selectedCenterTab, old.id != tabId {
-      for leaf in old.root.allGroups {
-        configuredCenterModel(leafId: leaf.id).selectedPane?.visibilityChanged(false)
-      }
-    }
-    workspace.selectedCenterTabId = tabId
-    environment.workspaces.save(workspace)
-    workspaceRevision += 1
-    liveCenterTree = tab.root
-    activateLeaf(tab.activeLeafId)
-    let model = configuredCenterModel(leafId: tab.activeLeafId)
-    model.selectedPane?.visibilityChanged(true)
-    DispatchQueue.main.async { model.focusSelectedPane() }
+  /// Focus follows committed navigation. A delayed callback from an earlier
+  /// click must never activate its old tab or steal the new pane's focus.
+  func focusSelectedCenterPane() {
+    guard let leafId = activeLeafId else { return }
+    let model = configuredCenterModel(leafId: leafId)
+    sessionFocus.centerGroup = model
+    model.requestSelectedPaneFocus()
   }
 
   func addCenterTab() {
@@ -92,25 +54,16 @@ extension SessionContainerView {
         in: workspace
       )
     }
-    if let current = workspace.selectedCenterTab {
-      for leaf in current.root.allGroups {
-        configuredCenterModel(leafId: leaf.id).selectedPane?.visibilityChanged(false)
-      }
-    }
     var state = PaneGroupState()
     let pane = state.addNewTabPane()
     let tab = WorkspaceTab(root: .leaf(state))
     workspace.centerTabs.append(tab)
-    workspace.selectedCenterTabId = tab.id
     environment.workspaces.save(workspace)
-    workspaceRevision += 1
-    liveCenterTree = tab.root
-    activateLeaf(tab.activeLeafId)
+    store.selectDestination(.tab(tab.id), in: workspace.id)
     publishPane(pane, workspaceId: workspace.id)
     // The New Tab page mounts a tick later; the group replays this focus
     // request into its picker once the page registers.
-    let model = configuredCenterModel(leafId: tab.activeLeafId)
-    DispatchQueue.main.async { model.focusSelectedPane() }
+    focusSelectedCenterPane()
   }
 
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {

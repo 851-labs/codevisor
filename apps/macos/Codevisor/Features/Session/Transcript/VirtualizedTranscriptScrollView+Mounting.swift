@@ -31,19 +31,15 @@ extension VirtualizedTranscriptScrollView {
     let reconciliation = reconcileVirtualWindow(rangeOverride: rangeOverride)
     let mountPlan = reconciliation.mountPlan
     let usesFrameBudget = presentationDisplayLink != nil && !inLiveResize
-    let mountStarted = CACurrentMediaTime()
-    // Loaded viewport rows are never optional. Mount and flush all of them
-    // before this native scroll frame can be presented; applying the frame
-    // budget here is what exposed transparent document space at speed.
-    for index in mountPlan.visibleIndices {
-      mountRow(at: index, requiresImmediatePresentation: true)
+    let budgetsInitialWindow = usesFrameBudget && !initialPresentationGate.isReady
+    if budgetsInitialWindow, initialMountWorkStartedAt == nil {
+      initialMountWorkStartedAt = mountWorkTime()
     }
-    assert(
-      mountPlan.visibleIndices.allSatisfy { index in
-        guard virtualLayout.keys.indices.contains(index) else { return false }
-        return mountedHosts[virtualLayout.keys[index]] != nil
-      },
-      "Loaded transcript viewport must be fully mounted"
+    let mountStarted = budgetsInitialWindow ? initialMountWorkStartedAt! : mountWorkTime()
+    mountViewportRows(
+      at: mountPlan.visibleIndices,
+      budgetsInitialWindow: budgetsInitialWindow,
+      workStartedAt: mountStarted
     )
 
     // Complete the closest directional runway rows one at a time. Mounting
@@ -137,7 +133,7 @@ extension VirtualizedTranscriptScrollView {
       }
       guard virtualLayout.keys.indices.contains(index) else { continue }
       if usesFrameBudget,
-        CACurrentMediaTime() - workStartedAt >= mountWorkBudget
+        mountWorkTime() - workStartedAt >= mountWorkBudget
       {
         break
       }

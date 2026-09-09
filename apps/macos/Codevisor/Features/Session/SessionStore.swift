@@ -13,15 +13,12 @@ struct ClosedPaneRecord: Equatable {
 }
 
 /// What the sidebar asks a workspace's mounted container to do with its
-/// top tabs. Off-screen closes run through the store directly; actions that
-/// open or change the visible tab are consumed by its mounted container.
+/// top tabs. Selection commits directly through `selectDestination`; only
+/// structural commands need the mounted container's pane lifecycle.
 struct CenterTabRequest: Equatable {
   enum Action: Equatable {
-    case select(UUID)
     case close(UUID)
     case new
-    /// A pane row: the split leaf to bring forward (its tab comes along).
-    case selectLeaf(UUID)
     case closeLeaf(UUID)
   }
 
@@ -110,9 +107,10 @@ final class SessionStore {
   /// LAYOUT (tabs added/closed/moved/selected). The repository is not
   /// observable; this tells the sidebar to re-read its tab rows.
   var workspaceLayoutRevision = 0
-  /// A sidebar-originated tab instruction for one workspace's container
-  /// consumed by that container: through its routing task
-  /// when it mounts, or immediately when it is already on screen.
+  /// Window-local navigation ownership, updated before panes mount or unmount.
+  @ObservationIgnored var navigationWorkspaceId: UUID?
+  @ObservationIgnored var navigationRevision = 0
+  /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?
   /// ⇧⌘[ / ⇧⌘] step through the sidebar's flat pane list, across
   /// workspaces. Installed by the docked sidebar (which owns that order

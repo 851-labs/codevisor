@@ -5,6 +5,13 @@ import CodevisorUI
 // MARK: - SplitCommands
 
 extension SessionContainerView {
+  /// Repeated keys can arrive before SwiftUI mounts the newly selected
+  /// workspace. Resolve navigation from the committed window destination.
+  var navigationWorkspace: Workspace {
+    store.navigationWorkspaceId.flatMap { environment.workspaces.workspace(id: $0) }
+      ?? store.workspace(for: session, project: project)
+  }
+
   func saveSelectedTree(_ tree: SplitNode, workspaceId: UUID) {
     guard var workspace = environment.workspaces.workspace(id: workspaceId),
       let index = workspace.selectedCenterTabIndex
@@ -35,9 +42,9 @@ extension SessionContainerView {
     case .nextTab:
       selectRelativeCenterTab(offset: 1)
     case let .selectTab(index):
-      let workspace = store.workspace(for: session, project: project)
+      let workspace = navigationWorkspace
       guard workspace.centerTabs.indices.contains(index) else { return true }
-      selectCenterTab(workspace.centerTabs[index].id)
+      store.selectDestination(.tab(workspace.centerTabs[index].id), in: workspace.id)
     case let .split(edge):
       splitActiveLeaf(edge: edge)
     case let .focusSplit(edge):
@@ -56,12 +63,12 @@ extension SessionContainerView {
 
   func selectRelativeCenterTab(offset: Int) {
     if store.sidebarTabStepHandler?(offset) == true { return }
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = navigationWorkspace
     guard workspace.centerTabs.count > 1,
       let index = workspace.selectedCenterTabIndex
     else { return }
     let target = (index + offset + workspace.centerTabs.count) % workspace.centerTabs.count
-    selectCenterTab(workspace.centerTabs[target].id)
+    store.selectDestination(.tab(workspace.centerTabs[target].id), in: workspace.id)
   }
 
   func splitActiveLeaf(edge: SplitEdge) {
@@ -91,8 +98,8 @@ extension SessionContainerView {
       newGroupId: newLeafId,
       newGroupState: state
     )
-    workspace.centerTabs[tabIndex].activeLeafId = newLeafId
     environment.workspaces.save(workspace)
+    store.selectDestination(.leaf(newLeafId), in: workspace.id)
     withAnimation(Motion.split(reduceMotion: reduceMotion)) {
       openingSplit = opening
       workspaceRevision += 1
@@ -104,14 +111,14 @@ extension SessionContainerView {
   /// Mounts and focuses the destination only after its shell has reached
   /// its final geometry. Existing panes stay live throughout the resize.
   func finishSplitOpening(_ opening: WorkspaceSplitOpening) {
-    guard openingSplit == opening else { return }
+    guard openingSplit == opening,
+      activeLeafId == opening.leafId,
+      selectedWorkspace.centerTree.group(id: opening.leafId) != nil
+    else { return }
     withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
       openingSplit = nil
     }
-    activateLeaf(opening.leafId)
-    DispatchQueue.main.async {
-      configuredCenterModel(leafId: opening.leafId).focusSelectedPane()
-    }
+    focusSelectedCenterPane()
   }
 
   /// Atomically relocates one whole leaf inside the selected top tab. The
@@ -139,9 +146,7 @@ extension SessionContainerView {
     liveCenterTree = moved
     activateLeaf(sourceLeafId)
 
-    DispatchQueue.main.async {
-      configuredCenterModel(leafId: sourceLeafId).focusSelectedPane()
-    }
+    focusSelectedCenterPane()
   }
 
   /// Validates the POST-move topology. A same-row reorder can be valid even
@@ -212,9 +217,9 @@ extension SessionContainerView {
   }
 
   func focusAdjacentLeaf(edge: SplitEdge) {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
-    let current = activeLeafId ?? tab.activeLeafId
+    let current = tab.activeLeafId
     let frames = normalizedLeafFrames(tab.root)
     guard let source = frames[current] else { return }
     let sourceCenter = CGPoint(x: source.midX, y: source.midY)
@@ -233,23 +238,21 @@ extension SessionContainerView {
       return ld < rd
     }?.key
     guard let target else { return }
-    activateLeaf(target)
-    DispatchQueue.main.async { configuredCenterModel(leafId: target).focusSelectedPane() }
+    store.selectDestination(.leaf(target), in: workspace.id)
   }
 
   /// Cycles through split leaves in stable visual reading order. This is
   /// deliberately independent of split orientation so ⌘[ / ⌘] remains
   /// predictable in nested horizontal and vertical layouts.
   func focusRelativeSplit(offset: Int) {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = navigationWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
     let leaves = tab.root.allGroups.map(\.id)
     guard leaves.count > 1 else { return }
-    let current = activeLeafId ?? tab.activeLeafId
+    let current = tab.activeLeafId
     let index = leaves.firstIndex(of: current) ?? 0
     let target = leaves[(index + offset + leaves.count) % leaves.count]
-    activateLeaf(target)
-    DispatchQueue.main.async { configuredCenterModel(leafId: target).focusSelectedPane() }
+    store.selectDestination(.leaf(target), in: workspace.id)
   }
 
   func normalizedLeafFrames(_ root: SplitNode) -> [UUID: CGRect] {

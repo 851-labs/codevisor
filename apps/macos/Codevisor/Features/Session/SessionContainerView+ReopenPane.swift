@@ -40,40 +40,28 @@ extension SessionContainerView {
       // go to it rather than open a duplicate.
       if record.descriptor.kind == .chat,
         let chatId = record.descriptor.chatSessionId,
-        let existingTabId = workspace.tabId(containingChat: chatId)
+        workspace.tabId(containingChat: chatId) != nil
       {
-        selectCenterTab(existingTabId)
+        store.selectDestination(.chat(chatId), in: workspace.id)
         if chatId != session.id { onFocusedChatChanged?(chatId) }
         return
       }
       guard let pane = restoredDescriptor(for: record.descriptor) else { continue }
 
-      if let current = workspace.selectedCenterTab {
-        for leaf in current.root.allGroups {
-          configuredCenterModel(leafId: leaf.id).selectedPane?.visibilityChanged(false)
-        }
-      }
       let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)
       let tab = WorkspaceTab(root: .leaf(state))
       let index =
         workspace.centerTabs.firstIndex(where: { $0.id == record.tabId }).map { $0 + 1 }
         ?? min(record.tabIndex, workspace.centerTabs.count)
       workspace.centerTabs.insert(tab, at: index)
-      workspace.selectedCenterTabId = tab.id
       environment.workspaces.save(workspace)
-      workspaceRevision += 1
-      liveCenterTree = tab.root
-      activateLeaf(tab.activeLeafId)
+      store.selectDestination(.tab(tab.id), in: workspace.id)
       publishPane(pane, workspaceId: workspace.id)
-      let model = configuredCenterModel(leafId: tab.activeLeafId)
-      model.selectedPane?.visibilityChanged(true)
       if pane.kind == .chat, let chatId = pane.chatSessionId, chatId != session.id {
-        // The sidebar follows the chat; its routing task then selects the
-        // tab and focuses the composer.
+        // The sidebar follows the already selected chat tab.
         onFocusedChatChanged?(chatId)
-      } else {
-        DispatchQueue.main.async { model.focusSelectedPane() }
       }
+      focusSelectedCenterPane()
       return
     }
   }

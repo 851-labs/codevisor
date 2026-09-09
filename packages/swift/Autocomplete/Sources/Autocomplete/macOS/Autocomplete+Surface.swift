@@ -99,7 +99,8 @@
             onCommand: handleInput, register: host.registerInput,
             onFocusChange: { configuration.searchFocused?.wrappedValue = $0 },
             onKeyEquivalent: host.handleKeyEquivalent, requestedFocus: configuration.requestedSearchFocus,
-            onAdvanceFocus: advanceFocus
+            onAdvanceFocus: advanceFocus,
+            canTakeFocus: { (focus ?? inputFocus).isCurrent() }
           )
           .frame(height: metrics.inputHeight)
           .padding(.horizontal, metrics.inputHorizontalInset)

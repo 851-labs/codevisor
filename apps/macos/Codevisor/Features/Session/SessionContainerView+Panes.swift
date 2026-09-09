@@ -17,6 +17,10 @@ extension SessionContainerView {
     // Acting in a group makes it the ACTIVE one: keyboard tab commands
     // follow the user (routed via the focus controller's centerGroup).
     model.onActivated = { [weak model] in
+      guard isVisible,
+        store.navigationWorkspaceId == selectedWorkspace.id,
+        selectedWorkspace.centerTree.group(id: leafId) != nil
+      else { return }
       activateLeaf(leafId)
       if let model {
         sessionFocus.centerGroup = model
@@ -24,6 +28,9 @@ extension SessionContainerView {
           rememberWorkspaceDefaults(from: chatId)
         }
       }
+    }
+    model.isFocusCurrent = {
+      isVisible && store.navigationWorkspaceId == selectedWorkspace.id && activeLeafId == leafId
     }
     model.workspaceCommandHandler = { command in
       handleWorkspaceCommand(command)
@@ -173,29 +180,9 @@ extension SessionContainerView {
 
   /// Makes a leaf the active group (keyboard routing + hints).
   func activateLeaf(_ leafId: UUID?) {
-    activeLeafId = leafId
-    if let leafId {
-      var workspace = store.workspace(for: session, project: project)
-      if let tabIndex = workspace.centerTabs.firstIndex(where: {
-        $0.root.group(id: leafId) != nil
-      }) {
-        var changed = false
-        if workspace.selectedCenterTabId != workspace.centerTabs[tabIndex].id {
-          workspace.selectedCenterTabId = workspace.centerTabs[tabIndex].id
-          liveCenterTree = workspace.centerTabs[tabIndex].root
-          changed = true
-        }
-        if workspace.centerTabs[tabIndex].activeLeafId != leafId {
-          workspace.centerTabs[tabIndex].activeLeafId = leafId
-          changed = true
-        }
-        if changed {
-          environment.workspaces.save(workspace)
-          workspaceRevision += 1
-        }
-      }
-      sessionFocus.centerGroup = configuredCenterModel(leafId: leafId)
-    }
+    guard let leafId else { return }
+    let workspace = store.workspace(for: session, project: project)
+    store.selectDestination(.leaf(leafId), in: workspace.id)
   }
 
   /// Promotes the focused chat's live configuration into the workspace
@@ -229,14 +216,7 @@ extension SessionContainerView {
       live.rememberCurrentComposerConfiguration()
       return
     }
-    guard chat.agentSessionId?.isEmpty == false,
-      let chatProject = environment.projectList.projects.first(where: {
-        $0.serverId == chat.serverId && $0.id == chat.projectId
-      })
-    else { return }
-    let controller = store.controller(for: chat, project: chatProject)
-    store.reconcile(controller, for: chat, project: chatProject)
-    controller.rememberCurrentComposerConfiguration()
+
   }
 
   /// Browser titles follow this client's page; chat titles follow their session.

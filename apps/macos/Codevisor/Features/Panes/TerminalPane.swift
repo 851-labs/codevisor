@@ -23,6 +23,7 @@ final class TerminalPane: Pane, Identifiable {
   /// Set by the pane group; forwarded from the surface's first-responder
   /// transitions.
   @ObservationIgnored var onFocusChanged: ((Bool) -> Void)?
+  @ObservationIgnored var onContentAttached: (() -> Void)?
 
   @ObservationIgnored private var _surface: (any TerminalSurface)?
 
@@ -80,17 +81,10 @@ final class TerminalPane: Pane, Identifiable {
   }
 
   func focus() {
-    let surface = ensureSurface()
-    if let view = surface.nsView as? Ghostty.SurfaceView {
-      // Retries until the view is attached to a window (new panes mount
-      // a runloop later); becomeFirstResponder updates the focus state.
-      // Never set the focus flag manually here: if first-responder
-      // assignment fails, a stale focused=true makes the surface eat
-      // ⌘-key equivalents meant for the composer/menus.
-      Ghostty.moveFocus(to: view)
-    } else {
-      surface.nsView.window?.makeFirstResponder(surface.nsView)
-    }
+    guard let view = _surface?.nsView, let window = view.window,
+      window.isKeyWindow, window.attachedSheet == nil, NSApp.modalWindow == nil
+    else { return }
+    window.makeFirstResponder(view)
   }
 
   func visibilityChanged(_ visible: Bool) {

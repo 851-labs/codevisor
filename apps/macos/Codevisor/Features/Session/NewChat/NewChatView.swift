@@ -509,6 +509,7 @@ struct NewChatView: View {
         // Select the locally complete workspace in this send turn.
         // Remote setup continues after this callback and must not
         // delay workspace presentation.
+        store.selectChat(session)
         selection = .session(serverId: session.serverId, id: session.id)
       }
     }

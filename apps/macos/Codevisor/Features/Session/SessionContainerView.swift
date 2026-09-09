@@ -27,15 +27,27 @@ struct SessionContainerView: View {
   /// against the same instance.
   @State var sessionFocus = TerminalFocusController()
 
-  /// The workspace's LIVE center tree (the repository isn't observable):
-  /// seeded per session, updated by divider drags so the layout re-renders
-  /// with what was just persisted.
-  @State var liveCenterTree: SplitNode?
+  /// Divider previews are valid only for the persisted tab they started
+  /// from. A navigation or remote layout change takes effect immediately.
+  @State private var centerTreePreview: WorkspaceTreePreview?
 
-  /// The ACTIVE center group (the one the user last acted in): keyboard
-  /// tab commands (⌘T/⌘W/⌘1-9/⌘⌥←→) route here. Defaults to the
-  /// primary chat leaf.
-  @State var activeLeafId: UUID?
+  var liveCenterTree: SplitNode? {
+    get { centerTreePreview?.tree(in: selectedWorkspace) }
+    nonmutating set {
+      centerTreePreview = newValue.map {
+        WorkspaceTreePreview(workspace: selectedWorkspace, tree: $0)
+      }
+    }
+  }
+
+  var selectedWorkspace: Workspace {
+    let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
+    return store.workspace(for: session, project: project)
+  }
+
+  var activeLeafId: UUID? {
+    selectedWorkspace.selectedCenterTab?.resolvedActiveLeafId(preferred: nil)
+  }
   /// Repository writes are intentionally non-observable. Structural tab
   /// changes bump this token so the sidebar and selected tree re-read truth.
   @State var workspaceRevision = 0
@@ -47,6 +59,7 @@ struct SessionContainerView: View {
   /// The chat this container last published as focused, so `onDisappear`
   /// releases only its own focus (see the modifier in `body`).
   @State var publishedFocusCandidate: UUID?
+  @State var isVisible = false
 
   var body: some View {
     contentColumn
@@ -97,16 +110,33 @@ struct SessionContainerView: View {
       .onChange(of: workspaceRevision) { _, _ in
         store.workspaceLayoutRevision += 1
       }
-      // A sidebar tab click while this workspace is already mounted.
-      // Requests that arrive with a route change are consumed by the
-      // routing task below instead; re-checking the store avoids acting
-      // twice when both observe the same request.
-      .onChange(of: store.centerTabRequest) { _, request in
+      // Structural commands may arrive as this workspace is mounting.
+      // Navigation itself has already committed before view construction.
+      .onChange(of: store.centerTabRequest, initial: true) { _, request in
         guard let request, store.centerTabRequest == request,
           request.workspaceId == store.workspace(for: session, project: project).id
         else { return }
         store.centerTabRequest = nil
         performCenterTabRequest(request)
+      }
+      .onChange(of: activePaneDescriptor?.id, initial: true) { _, _ in
+        focusSelectedCenterPane()
+      }
+      .onChange(of: selectedWorkspace.selectedCenterTabId) { _, _ in
+        openingSplit = nil
+      }
+      .onChange(of: activeLeafId) { _, leafId in
+        if let openingSplit, openingSplit.leafId != leafId { self.openingSplit = nil }
+      }
+      .onAppear {
+        isVisible = true
+        store.navigationWorkspaceId = selectedWorkspace.id
+        sessionFocus.navigationRevision = { store.navigationRevision }
+        sessionFocus.canFocusChat = { chatId in
+          isVisible && store.navigationWorkspaceId == selectedWorkspace.id
+            && activePaneDescriptor?.chatSessionId == chatId
+        }
+        focusSelectedCenterPane()
       }
       // Read = focus: publish the chat pane facing the user in this
       // window (selected pane of the active split leaf). The store
@@ -122,6 +152,7 @@ struct SessionContainerView: View {
       // would erase the new focus and leave that chat unread while the
       // user is looking straight at it.
       .onDisappear {
+        isVisible = false
         if let candidate = publishedFocusCandidate {
           store.clearFocusedChat(ifCurrent: candidate)
         }
@@ -142,99 +173,15 @@ struct SessionContainerView: View {
             edge: resolution.edge
           )
         }
-        // Lifecycle hooks (draft cleanup, dissolution) attach to the
-        // primary leaf up front; other leaves get them on first access.
-        // The ROUTED chat's leaf starts as the ACTIVE group, with the
-        // chat's TAB selected in it (the sidebar picked this chat — it
-        // must be the one facing the user, not whichever tab its group
-        // last showed).
-        var routedWorkspace = store.workspace(for: session, project: project)
-        let liveRoutedSession =
-          environment.projectList.sessions.first {
-            $0.serverId == session.serverId && $0.id == session.id
-          } ?? session
-        // A chat removed by closing its old pane keeps its grow-only
-        // workspace index. If it is later restored/unarchived, route it
-        // back into that workspace as a fresh single-chat top tab.
-        if !liveRoutedSession.isArchived,
-          routedWorkspace.tabId(containingChat: session.id) == nil
-        {
-          let tab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: session.id)))
-          routedWorkspace.centerTabs.append(tab)
-          routedWorkspace.selectedCenterTabId = tab.id
-          environment.workspaces.save(routedWorkspace)
-          workspaceRevision += 1
-          liveCenterTree = tab.root
-        }
-        // A sidebar click names the exact tab to show (a terminal or
-        // New Tab row has no chat of its own to route by); otherwise the
-        // routed chat's tab wins.
-        let pendingRequest = takeCenterTabRequest(for: routedWorkspace.id)
-        var requestedTabId: UUID?
-        var requestedLeafId: UUID?
-        switch pendingRequest?.action {
-        case let .select(tabId)? where routedWorkspace.centerTabs.contains(where: { $0.id == tabId }):
-          requestedTabId = tabId
-        case let .selectLeaf(leafId)?:
-          if let tab = routedWorkspace.centerTabs.first(where: { $0.root.group(id: leafId) != nil }) {
-            requestedTabId = tab.id
-            requestedLeafId = leafId
-          }
-        default:
-          break
-        }
-        let routedTabId = requestedTabId ?? routedWorkspace.tabId(containingChat: session.id)
-        if let routedTabId, routedWorkspace.selectedCenterTabId != routedTabId {
-          routedWorkspace.selectedCenterTabId = routedTabId
-          environment.workspaces.save(routedWorkspace)
-          workspaceRevision += 1
-          liveCenterTree = routedWorkspace.centerTree
-        }
-        if requestedTabId != nil,
-          let requestedTab = routedWorkspace.selectedCenterTab,
-          let leafId = requestedLeafId
-            ?? (requestedTab.root.groupId(containingChat: session.id) == nil
-              ? requestedTab.activeLeafId : nil)
-        {
-          // A named pane, or a tab holding no routed chat: that leaf takes
-          // over, exactly as clicking its header would arrange it.
-          let model = configuredCenterModel(leafId: leafId)
-          activateLeaf(leafId)
-          model.selectedPane?.visibilityChanged(true)
-          DispatchQueue.main.async { model.focusSelectedPane() }
-        } else if let primaryLeaf = routedWorkspace.centerTree.groupId(containingChat: session.id) {
-          let model = configuredCenterModel(leafId: primaryLeaf)
-          if let chatPane = model.state.panes.first(where: {
-            $0.kind == .chat && $0.chatSessionId == session.id
-          }), model.state.selectedPaneId != chatPane.id {
-            model.select(id: chatPane.id)
-          }
-          // Unconditional: with workspace-keyed identity this task
-          // re-runs for every routed-chat change WITHOUT a remount,
-          // and the newly routed chat's group takes over.
-          activateLeaf(primaryLeaf)
-          // The routed chat's composer takes keyboard focus — now
-          // if it's already registered, else the moment its
-          // (possibly later-laid-out) pane registers it.
-          sessionFocus.requestComposerFocus(forChat: session.id)
-        } else if let firstLeaf = routedWorkspace.centerTree.allGroups.first?.id {
-          // A legacy or draft CHAT-LESS workspace routed here through
-          // the grow-only session index uses its first group as the
-          // keyboard target.
-          _ = configuredCenterModel(leafId: firstLeaf)
-          activateLeaf(firstLeaf)
-        }
-        switch pendingRequest?.action {
-        case .new?: addCenterTab()
-        case let .close(tabId)?: closeCenterTab(tabId)
-        case let .closeLeaf(leafId)?: closeLeaf(leafId)
-        default: break
-        }
         // Upward focus feedback: clicking into any chat's composer
         // makes its group the active one (terminals do the same through
         // their surface responder callbacks) — and the sidebar's chat
         // selection follows the focused chat.
         sessionFocus.onChatComposerFocused = { chatId in
+          guard isVisible,
+            store.navigationWorkspaceId == selectedWorkspace.id,
+            store.workspace(for: session, project: project).centerTree.groupId(containingChat: chatId) != nil
+          else { return }
           if let leaf = store.workspace(for: session, project: project)
             .centerTree.groupId(containingChat: chatId),
             leaf != activeLeafId
@@ -247,30 +194,7 @@ struct SessionContainerView: View {
           }
         }
         store.markOpened(session.id, serverId: session.serverId)
-        controller.rememberCurrentComposerConfiguration()
-        // UNSTARTED chats (eagerly created records with no first message
-        // yet) must not connect here: connecting launches an agent with
-        // the DEFAULT harness, silently making the choice their new-chat
-        // composer still offers. Their first send owns the connection.
-        guard session.hasAgentSession || controller.isConnected else { return }
-        if !controller.isPrepared && !controller.isConnected {
-          await controller.prepare()
-        }
-        // Eagerly connect so the model/reasoning pickers are available for
-        // follow-ups (no-op if already connected, e.g. the new-chat handoff).
-        if !AppPreview.isRunning {
-          await controller.connectIfNeeded()
-        }
       }
-  }
-
-  /// Claims the sidebar's pending tab request if it targets this workspace.
-  func takeCenterTabRequest(for workspaceId: UUID) -> CenterTabRequest? {
-    guard let request = store.centerTabRequest, request.workspaceId == workspaceId else {
-      return nil
-    }
-    store.centerTabRequest = nil
-    return request
   }
 
   /// The selected sidebar tab's split layout.
@@ -280,16 +204,16 @@ struct SessionContainerView: View {
     // WorkspaceRepository is intentionally non-observable. Server pane
     // reconciliation bumps this shared token so a tab created on another
     // device materializes in the mounted workspace immediately.
-    let _ = (workspaceRevision, environment.workspaceSync.revision)
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     return VStack(spacing: 0) {
       SessionScreen(
         controller: controller,
         centerGroup: activeCenterModel(in: workspace),
         focus: sessionFocus,
+        onWorkspaceCommand: handleWorkspaceCommand,
         centerTree: liveCenterTree ?? workspace.centerTree,
         primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
-        activeLeafId: activeLeafId ?? workspace.selectedCenterTab?.activeLeafId,
+        activeLeafId: activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
         centerPaneTitle: paneTitle,
         sessionStore: store,

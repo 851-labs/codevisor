@@ -33,7 +33,7 @@ extension SessionStore {
     switch destination {
     case .backgroundTab: break
     case .foregroundTab, .split:
-      centerTabRequest = CenterTabRequest(workspaceId: workspace.id, action: .select(placement.tabId))
+      selectDestination(.tab(placement.tabId), in: workspace.id)
     case .window:
       browser.model.presentInWindow()
     }
