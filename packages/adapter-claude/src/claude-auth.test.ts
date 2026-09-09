@@ -14,7 +14,8 @@ const makeClient = (overrides: Record<string, unknown> = {}) => {
     },
     claudeOAuthWaitForCompletion: async () => {
       calls.push(["wait"])
-      return {}
+      // Claude clears its active flow before the callback resolves.
+      throw new Error("No active claude_authenticate flow")
     },
     interrupt: async () => {
       calls.push(["interrupt"])
@@ -34,16 +35,55 @@ const makeClient = (overrides: Record<string, unknown> = {}) => {
 }
 
 describe("spawnClaudeAuthClient", () => {
-  it("starts with the manual URL and completes the pasted exchange", async () => {
+  it("completes the pasted exchange after Claude clears its active flow", async () => {
     const { calls, client } = makeClient()
     expect(await client.start()).toEqual({ url: "https://manual.example" })
-    await client.submit(" the-code#the-state ")
+    await expect(client.submit(" the-code#the-state ")).resolves.toBeUndefined()
     expect(calls).toContainEqual(["callback", "the-code", "the-state"])
-    expect(calls).toContainEqual(["wait"])
     client.close()
     expect(calls).toContainEqual(["interrupt"])
     expect(calls).toContainEqual(["close"])
   })
+
+  it("waits for the callback to finish saving credentials before completing", async () => {
+    const entered = Promise.withResolvers<void>()
+    const saved = Promise.withResolvers<void>()
+    const { client } = makeClient({
+      claudeOAuthCallback: async () => {
+        entered.resolve()
+        await saved.promise
+      }
+    })
+    await client.start()
+    let settled = false
+    const submitted = client.submit("the-code#the-state").finally(() => {
+      settled = true
+    })
+    const completed = expect(submitted).resolves.toBeUndefined()
+    try {
+      await entered.promise
+      expect(settled).toBe(false)
+    } finally {
+      saved.resolve()
+      await completed
+      client.close()
+    }
+  })
+
+  it.each(["Invalid authorization code", "No active claude_authenticate flow"])(
+    "preserves callback failure: %s",
+    async (message) => {
+      const failure = new Error(message)
+      const { client } = makeClient({
+        claudeOAuthCallback: async () => {
+          throw failure
+        }
+      })
+      await client.start()
+      await expect(client.submit("the-code#the-state")).rejects.toBe(failure)
+      client.close()
+    }
+  )
 
   it("falls back to the automatic URL and tolerates a bare code", async () => {
     const { calls, client } = makeClient({

@@ -24,7 +24,6 @@ export interface ClaudeAuthSpawn {
 interface ClaudeAuthControl {
   claudeAuthenticate(loginWithClaudeAi: boolean): Promise<unknown>
   claudeOAuthCallback(code: string, state: string): Promise<unknown>
-  claudeOAuthWaitForCompletion(): Promise<unknown>
   interrupt?(): Promise<void>
   close?(): void
 }
@@ -59,8 +58,10 @@ export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient 
       // embedded in the URL the CLI generated.
       const [code, state] = pasted.trim().split("#", 2)
       if (!code) throw new Error("Paste the code from Claude's sign-in page")
+      // The callback waits for token persistence and clears the active flow
+      // before resolving. A subsequent wait-for-completion request would
+      // report "No active claude_authenticate flow" after a successful login.
       await control.claudeOAuthCallback(code, state ?? "")
-      await control.claudeOAuthWaitForCompletion()
     },
     close: () => {
       void control.interrupt?.().catch(() => undefined)
