@@ -13,6 +13,54 @@ import UIKit
 /// text can scroll, and never for a touch sequence a text interaction
 /// already owns.
 final class HeightReportingTextView: UITextView {
+  /// While a first-send promotion moves this editor from the New Chat
+  /// sheet's hosting controller into the workspace route, SwiftUI's focus
+  /// bridge resigns the responder it last saw inside the disappearing
+  /// sheet — ~60 ms after the editor has already been re-hosted. Refusing
+  /// that resignation keeps the keyboard session continuous.
+  private(set) var holdsFirstResponderForPromotion = false
+  private var promotionHoldRelease: DispatchWorkItem?
+
+  func setPromotionResponderHold(_ holds: Bool, releaseAfter delay: TimeInterval? = nil) {
+    promotionHoldRelease?.cancel()
+    promotionHoldRelease = nil
+    holdsFirstResponderForPromotion = holds
+    guard holds, let delay else { return }
+    let release = DispatchWorkItem { [weak self] in
+      self?.holdsFirstResponderForPromotion = false
+      self?.promotionHoldRelease = nil
+    }
+    promotionHoldRelease = release
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: release)
+  }
+
+  override func resignFirstResponder() -> Bool {
+    let wasFirstResponder = isFirstResponder
+    if wasFirstResponder, holdsFirstResponderForPromotion {
+      IOSNavigationDiagnostics.record("editor.resignFirstResponder", "refused=promotion-hold")
+      return false
+    }
+    let result = super.resignFirstResponder()
+    if wasFirstResponder {
+      // Name the caller: a keyboard that drops during first-send promotion
+      // is always some reconciliation path, and the stack says which.
+      let frames = Thread.callStackSymbols.dropFirst(2).prefix(14)
+        .map { frame in
+          // Keep the symbol, drop the addresses: "12 Codevisor 0x... $s..." → "$s..."
+          frame.split(separator: " ", omittingEmptySubsequences: true).dropFirst(3).joined(separator: " ")
+        }
+        .joined(separator: " <- ")
+      IOSNavigationDiagnostics.record("editor.resignFirstResponder", "result=\(result) stack=\(frames)")
+    }
+    return result
+  }
+
+  override func becomeFirstResponder() -> Bool {
+    let result = super.becomeFirstResponder()
+    IOSNavigationDiagnostics.record("editor.becomeFirstResponder", "result=\(result)")
+    return result
+  }
+
   var onContentHeightChange: ((CGFloat) -> Void)?
   var onPasteAttachmentEvent: ((ComposerPasteEvent) -> Void)?
   /// The composer's resize pan, reported in window coordinates so the

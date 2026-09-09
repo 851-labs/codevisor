@@ -66,10 +66,6 @@ struct ComposerBar: View {
   /// The command palette floats above the composer, so its rendered height
   /// drives the same explicit upward offset used by the macOS composer.
   @State var slashMenuContentHeight: CGFloat = 0
-  /// The source New Chat editor keeps drawing the submitted glyphs until
-  /// the promotion layer has covered it. The durable controller draft is
-  /// already empty, so newly mounted destination composers remain empty.
-  @State var retainsSubmittedTextForPromotion = false
   /// Measured height of the text itself, used for the collapsed size and as
   /// the starting point of a drag.
   @State private var measuredTextHeight: CGFloat = 0
@@ -289,21 +285,23 @@ struct ComposerBar: View {
         length: 0
       )
     }
+    #if DEBUG || NAVIGATION_DIAGNOSTICS
+      .onReceive(
+        NotificationCenter.default.publisher(for: .codevisorDiagnosticSubmitComposer)
+      ) { _ in
+        // Only the composer that actually holds the draft text sends;
+        // prewarmed and replica composers are empty.
+        guard !text.isEmpty else { return }
+        submitComposer()
+      }
+    #endif
     // The UIKit editor deliberately owns keystrokes locally, but model-
     // initiated changes (a successful send clearing the draft, or a
-    // failed send restoring it) still need to cross that boundary. On a
-    // first send this also prevents the newly mounted promotion composer
-    // from reconstructing itself with the just-sent text.
+    // failed send restoring it) still need to cross that boundary.
     .onChange(of: controller.composerText) { _, newValue in
-      if retainsSubmittedTextForPromotion, newValue.isEmpty { return }
       guard text != newValue else { return }
       text = newValue
       selection = NSRange(location: (newValue as NSString).length, length: 0)
-    }
-    .onChange(of: controller.isSubmitting) { _, submitting in
-      if !submitting, !controller.hasAcceptedFirstSend {
-        retainsSubmittedTextForPromotion = false
-      }
     }
     .onChange(of: controller.isGoalEditing) { _, isEditing in
       if isEditing {
@@ -322,9 +320,7 @@ struct ComposerBar: View {
       }
     }
     .onDisappear {
-      if !retainsSubmittedTextForPromotion {
-        controller.composerText = text
-      }
+      controller.composerText = text
     }
     // The editor's text lives in local state (see the type comment), so
     // backgrounding must flush it to the controller for the draft
@@ -332,7 +328,6 @@ struct ComposerBar: View {
     // was typed since the last flush.
     .onChange(of: scenePhase) { _, phase in
       guard phase == .background else { return }
-      guard !retainsSubmittedTextForPromotion || !controller.hasAcceptedFirstSend else { return }
       controller.composerText = text
     }
     .photosPicker(
@@ -492,17 +487,13 @@ extension ComposerBar {
           selection: $selection,
           handoffID: textEditorHandoffID,
           handoffRole: textEditorHandoffRole,
-          // The controller is briefly `isSubmitting` while the
-          // first-send destination mounts. Disabling either UIKit
-          // editor in that interval automatically resigns the
-          // source before focus can transfer and retracts the
-          // keyboard. Promotion editors stay editable through the
-          // atomic responder swap; normal composers keep the
-          // existing submission lock.
+          // Never disable the editor for a send in flight: turning
+          // `isEditable` off resigns first responder and retracts the
+          // keyboard (on a first send, exactly as the promoted route
+          // reconciles). Typing during a send is fine — the send button
+          // and `send()`'s own guard prevent a second submission.
           isEditable: textEditorHandoffRole != .none
-            || !(controller.isSubmitting
-              || controller.isResolvingQuestion
-              || isClearingGoal),
+            || !(controller.isResolvingQuestion || isClearingGoal),
           focusRequest: goalEditFocusRequest ?? initialFocusRequest,
           onFocusRequestFulfilled: fulfillFocusRequest,
           onPasteAttachmentEvent: handlePasteAttachmentEvent,

@@ -14,6 +14,8 @@ struct HomeExternalRouting: ViewModifier {
   /// Diagnostics builds route codevisor://diagnostic-open-session here;
   /// production passes a no-op.
   let openDiagnosticSession: (UUID) -> Void
+  /// Diagnostics builds route codevisor://diagnostic-new-chat here.
+  let openDiagnosticNewChat: (String) -> Void
 
   func body(content: Content) -> some View {
     content
@@ -22,15 +24,17 @@ struct HomeExternalRouting: ViewModifier {
       // the machine list (same contract as macOS).
       .onOpenURL { url in
         #if DEBUG || NAVIGATION_DIAGNOSTICS
-          // A diagnostics build can exercise a specific persisted
-          // chat without desktop automation of the Simulator.
-          // Production builds do not compile this route.
-          if url.host == "diagnostic-open-session",
-            let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-              .queryItems?.first(where: { $0.name == "id" })?.value,
-            let id = UUID(uuidString: value)
-          {
-            openDiagnosticSession(id)
+          // A diagnostics build can drive chats without desktop
+          // automation of the Simulator. Production builds do not
+          // compile these routes.
+          if let diagnostic = IOSDiagnosticDeeplink.parse(url) {
+            IOSNavigationDiagnostics.record("diag.deeplink", "\(diagnostic)")
+            switch diagnostic {
+            case let .openSession(id): openDiagnosticSession(id)
+            case let .newChat(text): openDiagnosticNewChat(text)
+            case .send:
+              NotificationCenter.default.post(name: .codevisorDiagnosticSubmitComposer, object: nil)
+            }
             return
           }
         #endif

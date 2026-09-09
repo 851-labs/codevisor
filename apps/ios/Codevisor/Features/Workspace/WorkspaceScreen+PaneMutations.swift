@@ -122,10 +122,19 @@ extension WorkspaceScreen {
         candidate.id == local.id || Self.sameResource(candidate, local)
       })
       guard let index else { continue }
-      reconciled.append(remaining.remove(at: index))
+      let candidate = remaining.remove(at: index)
+      if candidate.id != local.id {
+        // Same resource, new id: the mounted content keeps its identity.
+        paneViewIdentities[candidate.id] = paneViewIdentities[local.id] ?? local.id
+      }
+      reconciled.append(candidate)
     }
     reconciled.append(contentsOf: remaining)
     guard reconciled != state.panes else { return }
+    IOSNavigationDiagnostics.record(
+      "workspace.paneSync",
+      "old=\(state.panes.map { Self.diagnosticID($0.id) }) new=\(reconciled.map { Self.diagnosticID($0.id) })"
+    )
     state.panes = reconciled
     if !reconciled.contains(where: { $0.id == state.selectedPaneId }) {
       state.selectedPaneId = reconciled.first?.id

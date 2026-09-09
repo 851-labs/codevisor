@@ -266,9 +266,10 @@ extension ComposerBar {
   func submitComposer() {
     let outgoing = text
     let isSubmittingGoal = controller.isGoalComposerArmed
-    if preservesFocusAfterSend {
-      retainsSubmittedTextForPromotion = true
-    }
+    IOSNavigationDiagnostics.record(
+      "composer.submit",
+      "chars=\(outgoing.count) preservesFocus=\(preservesFocusAfterSend) role=\(textEditorHandoffRole)"
+    )
     if !isSubmittingGoal {
       onWillSend?(outgoing)
     }

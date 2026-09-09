@@ -82,7 +82,12 @@ extension WorkspaceScreen {
   /// send should do. Idempotent: re-runs harmlessly as the project list
   /// arrives.
   func setUpDraftIfNeeded() {
-    guard isDraft, draftController == nil, !environment.machines.allMachines.isEmpty else { return }
+    guard isDraft, draftController == nil else { return }
+    guard !environment.machines.allMachines.isEmpty else {
+      IOSNavigationDiagnostics.record("workspace.draftSetup.skipped", "reason=no-machines")
+      return
+    }
+    IOSNavigationDiagnostics.record("workspace.draftSetup", "server=\(resolvedServerId)")
     let project =
       draftProjectCandidate
       ?? .runTargetPlaceholder(serverId: resolvedServerId)
@@ -115,6 +120,7 @@ extension WorkspaceScreen {
     submittedText: String
   ) {
     guard let project = resolvedProject else { return }
+    onDraftWillStart?()
     let session = environment.projectList.newSession(
       in: project,
       title: Self.chatTitle(from: submittedText),
@@ -176,14 +182,16 @@ extension WorkspaceScreen {
     environment.workspaces.save(paneWorkspace)
     environment.workspaceSync.noteLocalMutation()
     if isNewChatPresentation {
-      // Keep the source draft hierarchy mounted until Home has moved
-      // first-responder ownership into the independent promotion
-      // window. Adopting the session in this sheet remounted its
-      // composer immediately, which dismissed the keyboard hundreds of
-      // milliseconds before the overlay editor existed.
+      // The sheet's own screen never renders its started state: the run
+      // pickers already collapsed on the optimistic row, its transcript
+      // flies the bubble in UIKit, and Home covers it with the expansion
+      // and dismisses it. Re-rendering this whole screen here would only
+      // sit in the commit the expansion is waiting on.
       onDraftStarted?(session.id)
       return
     }
+    // A draft pane inside a workspace transitions in place like any first
+    // send: the run pickers collapse and the chrome swaps, live.
     controllers[session.id] = controller
     self.project = project
     startedSessionId = session.id
@@ -199,9 +207,6 @@ extension WorkspaceScreen {
     ) {
       hasStarted = true
     }
-    // Mount the genuine workspace route in the same send turn. The
-    // covering surface and the optimistic row now start together instead
-    // of waiting for the request to leave the composer.
     onDraftStarted?(session.id)
   }
 

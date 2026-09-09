@@ -117,6 +117,7 @@ enum ComposerTextViewHandoffRegistry {
   /// sending. Normally there is no active entry at all; this also makes a
   /// cancelled/failed partial handoff idempotently safe.
   static func cancel(_ id: UUID) {
+    entries[id]?.editor.setPromotionResponderHold(false)
     if let entry = entries.removeValue(forKey: id) {
       entry.editor.alpha = entry.parkedAlpha ?? entry.editor.alpha
       entry.parkedAlpha = nil
@@ -178,6 +179,8 @@ enum ComposerTextViewHandoffRegistry {
     }
     editor.frame = owner.bounds
     owner.setNeedsLayout()
+    // The dismissed sheet's focus bridge still fires after this commit.
+    editor.setPromotionResponderHold(true, releaseAfter: 1.0)
     return editor.superview === owner
   }
 
@@ -251,6 +254,7 @@ enum ComposerTextViewHandoffRegistry {
     // the last possible moment. Before this call it remains a normal sheet
     // descendant; after it, its stable window ancestry survives the
     // sheet-to-route structural swap without retracting the keyboard.
+    entry.editor.setPromotionResponderHold(true)
     portal(entry, through: owner)
     if entry.parkedAlpha == nil {
       entry.parkedAlpha = entry.editor.alpha

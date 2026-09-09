@@ -25,7 +25,7 @@ extension WorkspaceScreen {
       activeSessionId: activeSessionId,
       session: { session(for: $0) },
       projectList: environment.projectList,
-      showsRunPickers: isDraft && !hasStarted,
+      showsRunPickers: isDraft && !presentsAsStarted,
       initialComposerFocusRequest: initialComposerFocusRequest,
       onInitialComposerFocusRequestFulfilled:
         onInitialComposerFocusRequestFulfilled,
@@ -33,12 +33,11 @@ extension WorkspaceScreen {
       onSendAnimationCompleted: onSendAnimationCompleted,
       onSendAnimationStarted: onSendAnimationStarted,
       onComposerWillSend: onComposerWillSend,
-      preservesComposerFocusOnSend: isNewChatPresentation
-        && !isFirstSendPromotionSurface,
+      preservesComposerFocusOnSend: isNewChatPresentation,
       composerTextEditorHandoffRole: composerTextEditorHandoffRole,
       composerTextEditorHandoffID: composerTextEditorHandoffID,
       isNewChatPresentation: isNewChatPresentation,
-      hasStarted: hasStarted,
+      hasStarted: presentsAsStarted,
       onWorkspaceReady: onWorkspaceReady,
       connectChat: { await connectChat(sessionId: $0) },
       onConvertToChat: { convertToChat(pane) },

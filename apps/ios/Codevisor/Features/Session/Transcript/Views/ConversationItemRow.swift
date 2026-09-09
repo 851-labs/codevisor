@@ -13,7 +13,7 @@ struct ConversationItemRow: View {
   var body: some View {
     switch item {
     case let .user(message):
-      UserBubbleRow(text: message.text, attachments: message.attachments)
+      UserBubbleRow(text: message.text, attachments: message.attachments, messageID: message.id)
     case let .assistant(message):
       AssistantTurnBody(
         turn: message.turn,

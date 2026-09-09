@@ -13,15 +13,15 @@ final class NewChatFlow: Identifiable {
   var sessionId: UUID?
   var phase = NewChatPromotionPhase.composing
   var isWorkspaceReady = false
+  var didPushCanonicalRoute = false
+  /// The replica shows the compose sheet's chrome until the expansion
+  /// begins, then morphs it into the route's in place.
+  var hasStartedExpansion = false
+  var didStartFirstSendAnimation = false
   var didFinishFirstSendAnimation = false
   var didFinishSurfaceAnimation = false
   var promotionServerId: String?
   var promotionWorkspaceId: UUID?
-  var promotionSourceFrame = CGRect.zero
-  var promotionSourceCornerRadius: CGFloat = 32
-  var didInstallPromotionSurface = false
-  var outgoingSourceEditorFrame = CGRect.zero
-  var promotionPath: [NewChatPromotionRoute] = []
   var presentationSession: NewChatPresentationSession?
   @ObservationIgnored var homeSnapshot: UIImage?
   @ObservationIgnored var promotionSurface: NewChatPromotionSurface?

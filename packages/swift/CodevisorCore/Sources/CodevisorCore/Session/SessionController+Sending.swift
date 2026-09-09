@@ -22,6 +22,13 @@ extension SessionController {
       Task { await notificationDelivery.prepareAuthorizationIfNeeded() }
     }
     isSubmitting = true
+    // A first send owns the connection from here: view-driven connects
+    // that arrive while the scratch folder or worktree is being prepared
+    // must not start a competing attempt (see `connectIfNeeded`).
+    if !hasSentFirst {
+      isFirstSendConnecting = true
+    }
+    defer { isFirstSendConnecting = false }
 
     // Plain-text sends have no asynchronous preparation. Keeping that
     // common path synchronous through first-send materialization lets the
@@ -37,15 +44,6 @@ extension SessionController {
         return
       }
       attachments = collected
-    }
-    // A chat with no project runs in a fresh single-use folder the server
-    // allocates now, so the session is born there like in any project.
-    if project.isRunTargetPlaceholder {
-      if let failure = await materializeScratchProject() {
-        isSubmitting = false
-        status = .failed(failure)
-        return
-      }
     }
     let outgoingMessage = UserMessage(text: text, attachments: attachments)
     let shouldAnimateTranscriptSend = !isSending
@@ -80,6 +78,22 @@ extension SessionController {
     let staged = composerAttachments
     composerText = ""
     composerAttachments = []
+    // A chat with no project runs in a fresh single-use folder the server
+    // allocates now, so the session is born there like in any project.
+    // This round-trip happens AFTER the optimistic row is published: the
+    // bubble must leave the composer on the tap, not when the folder
+    // exists. A failure puts the draft back exactly as it was.
+    if project.isRunTargetPlaceholder {
+      if let failure = await materializeScratchProject() {
+        composerText = text
+        composerAttachments = staged
+        pendingUserMessage = nil
+        cancelUserSendAnimation(for: outgoingMessage.id)
+        isSubmitting = false
+        status = .failed(failure)
+        return
+      }
+    }
     // Materialize the durable session before setup so the workspace and
     // pane keep a stable identity even if setup fails.
     if !hasSentFirst {

@@ -66,6 +66,8 @@ extension SessionController {
       await attempt.value
       return
     }
+    // A first send is connecting on its own path; it publishes the model.
+    guard !isFirstSendConnecting else { return }
     if let model {
       // A cached chat re-binds without reconnecting. If its turn has
       // been quiet past the stall window, re-verify against durable

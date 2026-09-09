@@ -10,7 +10,13 @@ import UIKit
 
 extension VirtualizedTranscriptScrollView {
   func startPendingSendAnimationIfPossible() {
-    guard !isApplyingSendCompletion else { return }
+    // Reporting the start to the host (New Chat mutates observable flow
+    // state there) can synchronously re-enter this pass via layout. The
+    // inner pass would begin the flight and the outer one, resuming to
+    // find the target hold already replaced, would tear it down.
+    guard !isApplyingSendCompletion, !isStartingSendAnimation else { return }
+    isStartingSendAnimation = true
+    defer { isStartingSendAnimation = false }
     if sendCompletionSourceScreenYByRowKey != nil {
       completePendingSendPresentationIfPossible()
       return
@@ -18,6 +24,23 @@ extension VirtualizedTranscriptScrollView {
     guard let request = pendingSendAnimationRequest,
       let rowKey = pendingSendAnimationRowKey
     else { return }
+    if let active = activeSendAnimationRequest, active.messageID == request.messageID,
+      active.token != request.token
+    {
+      // A re-issued request for the message already in flight (a queued
+      // first send promoted to its active turn): the running flight lands
+      // on the same row, so consume the duplicate without disturbing it.
+      IOSNavigationDiagnostics.record(
+        "transcript.sendAnimation.reissued",
+        "active=\(active.token) new=\(request.token)/\(request.destination)"
+      )
+      _ = claimSendAnimation?(request)
+      pendingSendAnimationRequest = nil
+      pendingSendAnimationRowKey = nil
+      pendingSendSourceLayout = nil
+      pendingSendSourceScreenYByRowKey = nil
+      return
+    }
     guard request.destination != .activeTurn || !isActiveProjectionPending,
       initialPositionApplied, bounds.width > 0, bounds.height > 0,
       let host = mountedHosts[rowKey], host.isPresentationReady,
@@ -39,6 +62,8 @@ extension VirtualizedTranscriptScrollView {
     } else {
       usesExternalFlight = false
     }
+    // The host's callback may have consumed or replaced the request.
+    guard pendingSendAnimationRequest?.token == request.token else { return }
     guard presentationRole == .foreground,
       let claimSendAnimation
     else { return }
@@ -52,34 +77,34 @@ extension VirtualizedTranscriptScrollView {
       return claimed
     }
 
-    func claimAndCompleteWithoutAnimation() {
+    func claimAndCompleteWithoutAnimation(_ reason: String) {
       let claimed = claimAndClear()
-      finishSendPresentation()
+      finishSendPresentation(reason: "withoutAnimation:\(reason)")
       guard claimed else { return }
       onSendAnimationCompleted?(request)
     }
 
     guard !reduceMotion else {
-      claimAndCompleteWithoutAnimation()
+      claimAndCompleteWithoutAnimation("reduceMotion")
       return
     }
     guard host.layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil else {
       // If the bounded pending hold expired before exact geometry was
       // ready, the model row is already visible. Consume the request
       // without hiding that row a second time.
-      claimAndCompleteWithoutAnimation()
+      claimAndCompleteWithoutAnimation("targetHoldExpired")
       return
     }
     guard pendingSendAssistantPresentationIsIntact() else {
       // A bounded assistant hold that has expired is already visible.
       // Never hide it again late merely to run the outgoing flight.
-      claimAndCompleteWithoutAnimation()
+      claimAndCompleteWithoutAnimation("assistantHoldExpired")
       return
     }
     guard pendingSendHistoryPresentationIsIntact() else {
       // Existing history has already fallen through to final model
       // geometry. Do not rewind it just to begin a late flight.
-      claimAndCompleteWithoutAnimation()
+      claimAndCompleteWithoutAnimation("historyHoldExpired")
       return
     }
     let sourceLayout = pendingSendSourceLayout
@@ -106,18 +131,38 @@ extension VirtualizedTranscriptScrollView {
         targetY: host.frame.minY
       )
     else {
-      claimAndCompleteWithoutAnimation()
+      IOSNavigationDiagnostics.record(
+        "transcript.sendAnimation.noPlan", "sourceY=\(Int(sourceY)) targetY=\(Int(host.frame.minY))")
+      claimAndCompleteWithoutAnimation("noPlan")
       return
     }
+    // The composer's text is already floating as a proxy bubble (staged
+    // on the Send tap); fly it into the laid-out bubble and keep the real
+    // row hidden until it lands. Falls back to lifting the row itself.
+    let morphTarget =
+      UserSendMorphCoordinator.shared.hasStagedProxy
+      ? UserBubbleGeometryRegistry.shared.frame(for: request.messageID) : nil
+    let usesMorph = !usesExternalFlight && morphTarget != nil
+    IOSNavigationDiagnostics.record(
+      "transcript.sendAnimation.start",
+      "external=\(usesExternalFlight) morph=\(usesMorph) staged=\(UserSendMorphCoordinator.shared.hasStagedProxy) "
+        + "target=\(morphTarget.map { NSCoder.string(for: $0) } ?? "nil") durationMs=\(Int(plan.duration * 1000)) sourceY=\(Int(sourceY)) targetY=\(Int(host.frame.minY))"
+    )
     let group = TranscriptSendAnimationLayerAnimations.flight(
       plan: plan,
-      fadesIn: !usesExternalFlight
+      fadesIn: !(usesExternalFlight || usesMorph)
     )
-    let completion = TranscriptSendAnimationCompletion { [weak self] _ in
+    let flightStartedAt = CACurrentMediaTime()
+    let completion = TranscriptSendAnimationCompletion { [weak self] finished in
+      IOSNavigationDiagnostics.record(
+        "transcript.sendAnimation.caStop",
+        "finished=\(finished) elapsedMs=\(Int((CACurrentMediaTime() - flightStartedAt) * 1000))"
+      )
       self?.finishSendPresentation(token: request.token, notifyCompletion: true)
     }
     guard claimAndClear() else {
-      finishSendPresentation()
+      IOSNavigationDiagnostics.record("transcript.sendAnimation.unclaimed")
+      finishSendPresentation(reason: "unclaimed")
       return
     }
 
@@ -132,7 +177,7 @@ extension VirtualizedTranscriptScrollView {
       sourceLayout: sourceLayout,
       sourceScreenYByRowKey: sourceScreenYByRowKey
     )
-    if usesExternalFlight {
+    if usesExternalFlight || usesMorph {
       holdSendPresentation(for: host)
     }
     activeSendAnimationRequest = request
@@ -140,6 +185,13 @@ extension VirtualizedTranscriptScrollView {
     group.delegate = completion
     host.layer.add(group, forKey: TranscriptSendAnimationKeys.flight)
     CATransaction.commit()
+    if usesMorph, let morphTarget {
+      UserSendMorphCoordinator.shared.beginFlight(
+        owner: ObjectIdentifier(self),
+        to: morphTarget,
+        duration: plan.duration
+      )
+    }
   }
 
   func beginSendPresentation(
@@ -147,7 +199,7 @@ extension VirtualizedTranscriptScrollView {
     sourceLayout: VirtualTranscriptLayout?,
     sourceScreenYByRowKey: [String: CGFloat]?
   ) {
-    finishSendPresentation()
+    finishSendPresentation(reason: "beginPresentation")
     activeSendAnimationRequest = request
     activeSendSourceLayout = sourceLayout
     let now = CACurrentMediaTime()
@@ -294,9 +346,13 @@ extension VirtualizedTranscriptScrollView {
     }
   }
 
-  func finishSendPresentation(notifyCompletion: Bool = false) {
+  func finishSendPresentation(notifyCompletion: Bool = false, reason: String = "unspecified") {
     _ = sendPresentationLifecycle.cancel()
     let request = activeSendAnimationRequest
+    if request != nil {
+      IOSNavigationDiagnostics.record(
+        "transcript.sendAnimation.finishActive", "reason=\(reason) notify=\(notifyCompletion)")
+    }
     clearSendPresentationVisuals()
     if notifyCompletion, let request {
       onSendAnimationCompleted?(request)
@@ -304,6 +360,10 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func finishSendPresentation(token: UInt64, notifyCompletion: Bool) {
+    IOSNavigationDiagnostics.record(
+      "transcript.sendAnimation.finish",
+      "owns=\(sendPresentationLifecycle.owns(token: token)) notify=\(notifyCompletion)"
+    )
     guard sendPresentationLifecycle.owns(token: token) else { return }
     sendCompletionNotifiesCompletion = sendCompletionNotifiesCompletion || notifyCompletion
     if sendCompletionSourceScreenYByRowKey == nil {
@@ -314,6 +374,7 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func clearSendPresentationVisuals() {
+    UserSendMorphCoordinator.shared.endFlight(owner: ObjectIdentifier(self))
     let wasApplyingCompletion = isApplyingSendCompletion
     isApplyingSendCompletion = true
     CATransaction.begin()
@@ -384,11 +445,15 @@ extension VirtualizedTranscriptScrollView {
           at: CACurrentMediaTime()
         )
       else { return }
-      self.finishSendPresentation(notifyCompletion: true)
+      self.finishSendPresentation(notifyCompletion: true, reason: "watchdog")
     }
   }
 
   func interruptSendPresentation() {
+    IOSNavigationDiagnostics.record(
+      "transcript.sendAnimation.interrupt",
+      "active=\(activeSendAnimationRequest != nil) pending=\(pendingSendAnimationRequest != nil)"
+    )
     if presentationRole == .foreground,
       let pendingSendAnimationRequest,
       let claimSendAnimation
@@ -399,7 +464,7 @@ extension VirtualizedTranscriptScrollView {
     pendingSendAnimationRowKey = nil
     pendingSendSourceLayout = nil
     pendingSendSourceScreenYByRowKey = nil
-    finishSendPresentation(notifyCompletion: true)
+    finishSendPresentation(notifyCompletion: true, reason: "interrupt")
   }
 
   func sendHistoryDestinationIsReady(

@@ -93,9 +93,19 @@ extension VirtualizedTranscriptScrollView {
     }
 
     if newSendAnimationRequest?.token != receivedSendAnimationToken {
-      finishSendPresentation(notifyCompletion: true)
+      IOSNavigationDiagnostics.record(
+        "transcript.sendAnimation.request",
+        "old=\(receivedSendAnimationToken.map(String.init) ?? "nil") new=\(newSendAnimationRequest.map { "\($0.token)/\($0.destination)" } ?? "nil") "
+          + "active=\(activeSendAnimationRequest.map { String($0.token) } ?? "nil") role=\(newPresentationRole)"
+      )
+      finishSendPresentation(notifyCompletion: true, reason: "newRequestToken")
       receivedSendAnimationToken = newSendAnimationRequest?.token
-      pendingSendAnimationRequest = newSendAnimationRequest
+      // A prewarming destination (the route mounted under the New Chat
+      // sheet) shows the landed row from its first frame: the sheet's
+      // own transcript flies the bubble, and holding this row invisible
+      // would only leave a hole when the sheet dissolves into it.
+      pendingSendAnimationRequest =
+        newPresentationRole == .foreground ? newSendAnimationRequest : nil
       pendingSendAnimationRowKey = nil
       pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
       pendingSendSourceScreenYByRowKey =
@@ -150,7 +160,7 @@ extension VirtualizedTranscriptScrollView {
     )
 
     if layoutFingerprintChanged, activeSendAnimationRequest != nil {
-      finishSendPresentation(notifyCompletion: true)
+      finishSendPresentation(notifyCompletion: true, reason: "layoutFingerprint")
     }
 
     let rowProjectionChanged =

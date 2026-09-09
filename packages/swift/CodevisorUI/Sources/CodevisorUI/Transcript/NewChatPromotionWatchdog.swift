@@ -4,7 +4,7 @@ import Foundation
 /// consume this deadline; it starts only when navigation begins.
 @MainActor
 public final class NewChatPromotionWatchdog {
-  public static let timeout: Duration = .seconds(2)
+  public static let timeout: Duration = .seconds(3)
   private let sleep: @Sendable (Duration) async throws -> Void
   private var task: Task<Void, Never>?
 

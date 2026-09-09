@@ -52,6 +52,7 @@ struct HomeView: View {
   @Namespace var newChatTransition
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     @State private var didHandleDiagnosticSessionLaunch = false
+    @State private var didHandleDiagnosticNewChatLaunch = false
   #endif
 
   var machines: MachineController { environment.machines }
@@ -210,6 +211,11 @@ struct HomeView: View {
             #if DEBUG || NAVIGATION_DIAGNOSTICS
               openDiagnosticSession(id)
             #endif
+          },
+          openDiagnosticNewChat: { text in
+            #if DEBUG || NAVIGATION_DIAGNOSTICS
+              presentDiagnosticNewChat(text: text)
+            #endif
           }
         )
       )
@@ -225,12 +231,46 @@ struct HomeView: View {
         readyForOnboarding = true
         #if DEBUG || NAVIGATION_DIAGNOSTICS
           await handleDiagnosticSessionLaunchIfNeeded()
+          await handleDiagnosticNewChatLaunchIfNeeded()
         #endif
       }
     }
   }
 
   #if DEBUG || NAVIGATION_DIAGNOSTICS
+    /// `CODEVISOR_DIAGNOSTIC_NEW_CHAT_TEXT` presents the New Chat sheet once
+    /// a machine has synced, types the text, and — after
+    /// `CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS` (default 4000) — taps
+    /// send through the composer's real button path. Custom-scheme
+    /// deeplinks can't do this headlessly: the system confirms them.
+    private func handleDiagnosticNewChatLaunchIfNeeded() async {
+      let environmentValues = ProcessInfo.processInfo.environment
+      guard !didHandleDiagnosticNewChatLaunch,
+        let text = environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_TEXT"], !text.isEmpty
+      else { return }
+      // Once per process: Home reappears after every promotion, and a
+      // second autostart would hijack the user's session.
+      didHandleDiagnosticNewChatLaunch = true
+      let delay =
+        environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS"].flatMap(Int.init) ?? 4000
+      for _ in 0..<200 {
+        if hasRemoteMachines, anyMachineSynced,
+          case .ready = machines.availability(for: environment.defaultComposerServerId)
+        {
+          break
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+      IOSNavigationDiagnostics.record(
+        "diag.newChat.launch",
+        "chars=\(text.count) delayMs=\(delay) availability=\(machines.availability(for: environment.defaultComposerServerId))"
+      )
+      presentDiagnosticNewChat(text: text)
+      try? await Task.sleep(for: .milliseconds(delay))
+      IOSNavigationDiagnostics.record("diag.newChat.autoSend")
+      NotificationCenter.default.post(name: .codevisorDiagnosticSubmitComposer, object: nil)
+    }
+
     /// `CODEVISOR_DIAGNOSTIC_SESSION_ID` opens a persisted chat at launch
     /// (and optionally a follow-up) without desktop automation.
     private func handleDiagnosticSessionLaunchIfNeeded() async {

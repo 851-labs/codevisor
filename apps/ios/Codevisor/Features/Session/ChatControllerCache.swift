@@ -48,6 +48,10 @@ final class ChatControllerCache {
         existing.project = project
       }
       if existing.serverSession != session {
+        IOSNavigationDiagnostics.record(
+          "cache.configureExistingSession",
+          "session=\(String(session.id.uuidString.prefix(8))) agent=\(session.agentSessionId?.isEmpty == false)"
+        )
         existing.configureExistingSession(session)
       }
       return existing

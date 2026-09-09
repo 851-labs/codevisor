@@ -272,6 +272,12 @@ final public class SessionController {
   /// `.connecting` status guard. Cancelled only by an explicit supersede
   /// (`reconnect()`).
   @ObservationIgnored var connectAttempt: Task<Void, Never>?
+  /// True while `send()` is connecting for a first send. View-driven
+  /// `connectIfNeeded()` calls (the destination route mounting under the
+  /// New Chat sheet) must not start a second connection: the loser would
+  /// publish a fresh model whose empty history wipes the optimistic
+  /// conversation and orphan the model that is actually streaming.
+  @ObservationIgnored var isFirstSendConnecting = false
   /// Usage snapshots are cumulative for a session; retain the previous one
   /// so turn events report coarse deltas instead of cumulative totals.
   var analyticsUsageBaseline: SessionUsage?

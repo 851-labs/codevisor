@@ -1,31 +1,20 @@
 import SwiftUI
 
-/// The workspace nav-bar controls: New Chat chrome on the leading edge,
-/// cancel / new-tab on the trailing edge. Tab switching lives in the sidebar.
+/// The workspace nav-bar controls. The New Chat sheet keeps its compose
+/// chrome (title, ×) for its whole life — a first send changes the content
+/// under it, and the sheet's expansion into the route morphs the chrome
+/// into the route's, the way iMessage's compose bar becomes the
+/// conversation bar as the sheet grows.
 struct WorkspaceScreenToolbar: ToolbarContent {
   let isNewChatPresentation: Bool
-  let hasStarted: Bool
-  let isFirstSendPromotionSurface: Bool
   let blocksServerContent: Bool
   let isDraft: Bool
   let onDismissNewChat: () -> Void
   let onAddTab: () -> Void
 
   var body: some ToolbarContent {
-    ToolbarItem(placement: .topBarLeading) {
-      if isNewChatPresentation,
-        hasStarted || isFirstSendPromotionSurface
-      {
-        Button {
-          onDismissNewChat()
-        } label: {
-          Image(systemName: "chevron.left")
-        }
-        .accessibilityLabel("Agents")
-      }
-    }
     ToolbarItem(placement: .topBarTrailing) {
-      if isNewChatPresentation, !hasStarted, !isFirstSendPromotionSurface {
+      if isNewChatPresentation {
         Button {
           onDismissNewChat()
         } label: {

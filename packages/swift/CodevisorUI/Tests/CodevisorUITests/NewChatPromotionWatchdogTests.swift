@@ -13,7 +13,7 @@ struct NewChatPromotionWatchdogTests {
     let fired = TestSignal()
     watchdog.start { fired.signal() }
     await clock.waitForSleep(NewChatPromotionWatchdog.timeout)
-    clock.advance(by: .milliseconds(1999))
+    clock.advance(by: NewChatPromotionWatchdog.timeout - .milliseconds(1))
     #expect(fired.value == 0)
     clock.advance(by: .milliseconds(1))
     await fired.wait()

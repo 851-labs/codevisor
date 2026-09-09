@@ -126,7 +126,39 @@ struct SessionTranscriptView: View {
         installAttachmentImageStoreIfNeeded()
       }
       .onChange(of: presentationRole) { _, role in
+        IOSNavigationDiagnostics.record(
+          "transcript.roleChanged", "role=\(role) session=\(diagnosticSessionID)")
         updateVisibleTranscriptLifecycle(for: role)
+      }
+      // Remount / reset diagnostics: every one of these is a candidate
+      // for a visible flicker after a first send.
+      .onAppear {
+        IOSNavigationDiagnostics.record(
+          "transcript.appear", "session=\(diagnosticSessionID) role=\(presentationRole)")
+      }
+      .onDisappear {
+        IOSNavigationDiagnostics.record(
+          "transcript.disappear", "session=\(diagnosticSessionID) role=\(presentationRole)")
+      }
+      .onChange(of: ObjectIdentifier(controller)) { _, _ in
+        IOSNavigationDiagnostics.record(
+          "transcript.controllerChanged", "session=\(diagnosticSessionID)")
+      }
+      .onChange(of: projectedRows.isEmpty) { _, isEmpty in
+        IOSNavigationDiagnostics.record(
+          "transcript.rowsEmptyChanged", "empty=\(isEmpty) session=\(diagnosticSessionID)")
+      }
+      .onChange(of: controller.isLoadingInitialHistory) { _, loading in
+        IOSNavigationDiagnostics.record(
+          "transcript.isLoadingInitialHistory", "value=\(loading) session=\(diagnosticSessionID)")
+      }
+      .onChange(of: showsWatermark) { _, shows in
+        IOSNavigationDiagnostics.record(
+          "transcript.watermark", "shows=\(shows) session=\(diagnosticSessionID)")
+      }
+      .onChange(of: controller.settledConversation.count) { old, new in
+        IOSNavigationDiagnostics.record(
+          "transcript.settledCount", "\(old)->\(new) session=\(diagnosticSessionID)")
       }
       .onChange(of: scenePhase, initial: true) { _, phase in
         if phase == .active {
@@ -187,6 +219,10 @@ struct SessionTranscriptView: View {
         guard !Task.isCancelled, isLoadingTranscriptContent else { return }
         showsInitialLoadingSpinner = true
       }
+  }
+
+  private var diagnosticSessionID: String {
+    controller.serverSession.map { String($0.id.uuidString.prefix(8)) } ?? "draft"
   }
 
   var isLoadingTranscriptContent: Bool {
@@ -377,6 +413,15 @@ struct SessionTranscriptView: View {
           sendAnimationSourceFrame = frame
         },
         onWillSend: { text in
+          // The text leaves the editor as a bubble in the same frame it
+          // clears; the transcript flies this proxy into the real row.
+          UserSendMorphCoordinator.shared.stage(
+            text: text,
+            sourceFrame: sendAnimationSourceFrame ?? .zero,
+            bubbleColor: UIColor(theme.bubbleBackground),
+            textColor: UIColor(theme.textPrimary),
+            in: UIWindow.codevisorKeyWindow
+          )
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
         }
       )
