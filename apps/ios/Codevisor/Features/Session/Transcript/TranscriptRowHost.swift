@@ -17,6 +17,8 @@ final class TranscriptRowHost: UIView {
   private lazy var contentWidthConstraint = contentHost.widthAnchor.constraint(
     equalToConstant: 1,
   )
+  private let verticalClipMask = CALayer()
+  private static let horizontalOverflow: CGFloat = 4_096
 
   private(set) var representedRow: TranscriptVirtualRow?
   private(set) var isPresentationReady = false
@@ -29,11 +31,12 @@ final class TranscriptRowHost: UIView {
   init(parent: UIViewController) {
     super.init(frame: .zero)
     backgroundColor = .clear
-    // The virtualizer is the only owner of row geometry. Until a natural
-    // height has been committed, keep the hosted content inside the
-    // current ledger frame so an estimate can never paint over its
-    // neighbor.
-    clipsToBounds = true
+    // Estimates must not paint over adjacent rows. Clip height only: wide
+    // tables deliberately extend their scroll viewport into the side margins.
+    clipsToBounds = false
+    verticalClipMask.backgroundColor = UIColor.black.cgColor
+    layer.mask = verticalClipMask
+    updateVerticalClipMask()
 
     parent.addChild(contentController)
     let hostedView = contentController.view!
@@ -60,10 +63,48 @@ final class TranscriptRowHost: UIView {
   }
 
   override func layoutSubviews() {
+    updateVerticalClipMask()
     if syncContentWidth() {
       contentController.invalidateContentSize(forceReport: true)
     }
     super.layoutSubviews()
+  }
+
+  override var bounds: CGRect {
+    didSet { updateVerticalClipMask() }
+  }
+
+  private func updateVerticalClipMask() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    verticalClipMask.frame = bounds.insetBy(dx: -Self.horizontalOverflow, dy: 0)
+    CATransaction.commit()
+  }
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    bounds.insetBy(dx: -Self.horizontalOverflow, dy: 0).contains(point)
+  }
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    guard !isHidden, alpha >= 0.01, isUserInteractionEnabled,
+      self.point(inside: point, with: event)
+    else { return nil }
+    if bounds.contains(point) { return super.hitTest(point, with: event) }
+    // UIKit rejects points outside a hosting view even when it doesn't
+    // clip. Reach the table's widened scroll view through those transparent
+    // ancestors, while respecting any descendant that does clip its bounds.
+    return hitTestOverflow(in: contentHost, at: point, event: event)
+  }
+
+  private func hitTestOverflow(in view: UIView, at point: CGPoint, event: UIEvent?) -> UIView? {
+    guard !view.isHidden, view.alpha >= 0.01, view.isUserInteractionEnabled else { return nil }
+    let local = convert(point, to: view)
+    if let hit = view.hitTest(local, with: event) { return hit }
+    guard !view.clipsToBounds else { return nil }
+    for child in view.subviews.reversed() {
+      if let hit = hitTestOverflow(in: child, at: point, event: event) { return hit }
+    }
+    return nil
   }
 
   @discardableResult

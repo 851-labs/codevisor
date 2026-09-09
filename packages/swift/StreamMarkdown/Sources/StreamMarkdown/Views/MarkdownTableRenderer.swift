@@ -173,12 +173,13 @@
       // column at its widest word and let the table overflow its host
       // (`TableScrollView` scrolls it sideways) instead of wrapping
       // mid-word into one-character-wide columns.
-      let columnWidths = MarkdownTableMetrics.distribute(
-        contentWidths: prepared.columnContentWidths,
-        minimumWidths: prepared.columnMinimumWidths,
-        toFit: width,
-        compressesBelowMinimums: false
-      )
+      let columnWidths = MarkdownTextTableGeometry.columns(
+        MarkdownTableMetrics.distribute(
+          contentWidths: prepared.columnContentWidths,
+          minimumWidths: prepared.columnMinimumWidths,
+          toFit: width.map(MarkdownTextTableGeometry.width),
+          compressesBelowMinimums: false
+        ))
 
       let table = NSTextTable()
       table.numberOfColumns = prepared.columnCount
