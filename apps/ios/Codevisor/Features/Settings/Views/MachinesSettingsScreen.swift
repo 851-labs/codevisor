@@ -22,10 +22,13 @@ struct MachinesSettingsScreen: View {
   @State private var discoveredTarget: TailnetMachineDiscovery.Discovered?
   @State private var renamingMachine: CodevisorMachine?
   @State private var renameText = ""
+  @State private var removingCloudMachine: CloudMachine?
+  @State private var trustingKey: CloudMachine?
 
   let focusedMachineID: String?
 
   private var machines: MachineController { environment.machines }
+  private var cloud: CloudAccountController { environment.cloud }
 
   init(focusedMachineID: String? = nil) {
     self.focusedMachineID = focusedMachineID
@@ -49,6 +52,10 @@ struct MachinesSettingsScreen: View {
               }
             }
             .id(machine.id)
+          }
+          if let lastError = cloud.lastError {
+            Text(lastError)
+              .foregroundStyle(.red)
           }
         } footer: {
           InlineCodeText("Run `codevisor setup` on a machine to print its address and token.")
@@ -93,13 +100,60 @@ struct MachinesSettingsScreen: View {
     .alert("Rename Machine", isPresented: renamePresented, presenting: renamingMachine) { machine in
       TextField("Name", text: $renameText)
       Button("Rename") {
-        try? machines.renameMachine(machine.id, to: renameText)
+        if machine.isCloud, let presence = cloudMachine(for: machine) {
+          let name = renameText
+          Task { await cloud.rename(deviceId: presence.deviceId, name: name) }
+        } else {
+          try? machines.renameMachine(machine.id, to: renameText)
+        }
         renamingMachine = nil
       }
       Button("Cancel", role: .cancel) { renamingMachine = nil }
     }
+    .confirmationDialog(
+      "Disconnect “\(removingCloudMachine?.name ?? "")”?",
+      isPresented: Binding(
+        get: { removingCloudMachine != nil },
+        set: { if !$0 { removingCloudMachine = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: removingCloudMachine
+    ) { machine in
+      Button("Disconnect Machine", role: .destructive) {
+        Task { await cloud.remove(deviceId: machine.deviceId) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { machine in
+      Text(
+        "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
+      )
+    }
+    .confirmationDialog(
+      "Trust the new key for “\(trustingKey?.name ?? "")”?",
+      isPresented: Binding(
+        get: { trustingKey != nil },
+        set: { if !$0 { trustingKey = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: trustingKey
+    ) { machine in
+      Button("Trust New Key", role: .destructive) {
+        cloud.trustChangedMachineKey(deviceId: machine.deviceId)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { machine in
+      Text(
+        "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
+      )
+    }
     .sheet(item: $discoveredTarget) { machine in
       AddMachineSheet(initialHost: machine.host, initialName: machine.name)
+    }
+    .task {
+      while !Task.isCancelled {
+        await cloud.refreshMachines()
+        try? await Task.sleep(for: .seconds(10))
+      }
     }
     // Discover only while this screen is on screen — no background polling.
     .task {
@@ -135,52 +189,86 @@ struct MachinesSettingsScreen: View {
     return nil
   }
 
-  private func isConnecting(to machine: CodevisorMachine) -> Bool {
-    if case .waiting = machines.availabilityByMachineId[machine.id] {
-      return true
-    }
-    return machines.navigationSyncStateByMachineId[machine.id] == .catchingUp
+  private func cloudMachine(for machine: CodevisorMachine) -> CloudMachine? {
+    let deviceId =
+      CodevisorMachine.cloudDeviceId(forMachineId: machine.id)
+      ?? machine.cloudDeviceId
+      ?? machines.statusByMachineId[machine.id]?.cloudDeviceId
+    return cloud.machines.first { $0.deviceId == deviceId }
   }
 
-  /// Keep the name and connection state on one line. The last error stays
-  /// available to VoiceOver while a trailing spinner shows an active retry.
+  private func removeMachine(_ machine: CodevisorMachine) {
+    if machine.isCloud, let presence = cloudMachine(for: machine) {
+      removingCloudMachine = presence
+    } else {
+      try? machines.removeMachine(machine.id)
+    }
+  }
+
+  /// Cloud presence and direct paths match the account's machine indicators.
+  /// Manually paired machines fall back to their latest reachability probe.
   private func machineRow(_ machine: CodevisorMachine) -> some View {
-    let error = connectionError(for: machine)
+    let presence = cloudMachine(for: machine)
+    let status = machines.statusByMachineId[machine.id]
+    let configuredDirect = !machine.isCloud && status?.isReachable == true && status?.route == .direct
+    let online = configuredDirect || (presence?.online ?? (status?.isReachable == true))
+    let direct = configuredDirect || presence.map { cloud.directPaths.machineIds.contains($0.deviceId) } == true
+    let error = online ? nil : connectionError(for: machine)
     return HStack(spacing: 10) {
-      if error != nil {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .foregroundStyle(.orange)
-          .accessibilityHidden(true)
-      } else {
-        Image(systemName: EntitySystemSymbol.machine(machine))
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-      }
+      Image(systemName: EntitySystemSymbol.machine(machine))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
       Text(machine.name)
       Spacer(minLength: 10)
-      if isConnecting(to: machine) {
-        ProgressView()
-          .controlSize(.small)
-          .accessibilityLabel("Connecting")
+      if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
+        Button {
+          trustingKey = presence
+        } label: {
+          HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.shield.fill")
+              .accessibilityHidden(true)
+            Text("Key Changed")
+              .font(.footnote)
+          }
+          .foregroundStyle(.orange)
+        }
+        .buttonStyle(.plain)
+      } else {
+        HStack(spacing: 5) {
+          Circle()
+            .fill(online ? Color.green : Color.gray)
+            .frame(width: 7, height: 7)
+            .accessibilityHidden(true)
+          Text(online ? (direct ? "Online · Direct" : "Online") : "Offline")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
       }
     }
     .accessibilityElement(children: .combine)
     .accessibilityValue(error ?? "")
     .contentShape(Rectangle())
     .contextMenu {
+      if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
+        Button {
+          trustingKey = presence
+        } label: {
+          Label("Trust New Key…", systemImage: "exclamationmark.shield")
+        }
+      }
       Button("Rename…") {
         renameText = machine.name
         renamingMachine = machine
       }
-      Button("Remove Machine…", role: .destructive) {
-        try? machines.removeMachine(machine.id)
+      Button(machine.isCloud ? "Disconnect…" : "Remove Machine…", role: .destructive) {
+        removeMachine(machine)
       }
     }
-    .swipeActions(edge: .trailing) {
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
       Button(role: .destructive) {
-        try? machines.removeMachine(machine.id)
+        removeMachine(machine)
       } label: {
-        Label("Remove", systemImage: "trash")
+        Label(machine.isCloud ? "Disconnect" : "Remove", systemImage: "trash")
       }
       Button {
         renameText = machine.name
