@@ -85,14 +85,6 @@ struct SidebarView: View {
               .geometryGroup()
               .transition(.identity)
           }
-          if workspaceItems.isEmpty {
-            Text("No workspaces yet")
-              .font(.caption)
-              .foregroundStyle(.tertiary)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 4)
-              .transition(.identity)
-          }
 
           if showArchived {
             archivedSection
