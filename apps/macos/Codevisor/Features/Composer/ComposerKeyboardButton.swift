@@ -12,11 +12,11 @@ extension View {
   func composerKeyboardButton(
     shape: HoverIconButtonStyle.HighlightShape = .circle, action: @escaping () -> Void
   ) -> some View {
-    modifier(ComposerKeyboardButtonModifier(shape: shape, action: action))
+    modifier(ComposerKeyboardButton(shape: shape, action: action))
   }
 }
 
-private struct ComposerKeyboardButtonModifier: ViewModifier {
+private struct ComposerKeyboardButton: ViewModifier {
   let shape: HoverIconButtonStyle.HighlightShape
   let action: () -> Void
   @Environment(\.isEnabled) private var isEnabled

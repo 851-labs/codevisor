@@ -269,6 +269,9 @@ struct ComposerKeyboardNavigationTests {
 
 private final class KeyboardButton: NSButton {
   override var acceptsFirstResponder: Bool { true }
+  // This fixture supplies a focusable control regardless of the host's
+  // full keyboard access preference. The hosted toolbar tests cover SwiftUI.
+  override var canBecomeKeyView: Bool { true }
 }
 
 private final class KeyboardTestWindow: NSWindow {

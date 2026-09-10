@@ -42,6 +42,25 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   private var tokenReadCount = 0
   private var deviceIdReadCount = 0
   private var secretKeyReadCount = 0
+  private var pinReadCount = 0
+  private var pinWriteCount = 0
+  private var mainThreadPinReadCount = 0
+  private var storedPinReadError: (any Error)?
+  private var storedPinWriteError: (any Error)?
+
+  var pinReadError: (any Error)? {
+    get { lock.withLock { storedPinReadError } }
+    set { lock.withLock { storedPinReadError = newValue } }
+  }
+
+  var pinWriteError: (any Error)? {
+    get { lock.withLock { storedPinWriteError } }
+    set { lock.withLock { storedPinWriteError = newValue } }
+  }
+
+  var pinCounts: (reads: Int, writes: Int, mainThreadReads: Int) {
+    lock.withLock { (pinReadCount, pinWriteCount, mainThreadPinReadCount) }
+  }
 
   init(base: InMemoryCloudCredentialStore) {
     self.base = base
@@ -74,8 +93,19 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
   }
 
   func saveAppSecretKey(_ key: Data) throws { try base.saveAppSecretKey(key) }
-  func pinnedMachineKeys() throws -> [String: String] { try base.pinnedMachineKeys() }
+  func pinnedMachineKeys() throws -> [String: String] {
+    try lock.withLock {
+      pinReadCount += 1
+      if Thread.isMainThread { mainThreadPinReadCount += 1 }
+      if let storedPinReadError { throw storedPinReadError }
+    }
+    return try base.pinnedMachineKeys()
+  }
   func savePinnedMachineKeys(_ pins: [String: String]) throws {
+    try lock.withLock {
+      pinWriteCount += 1
+      if let storedPinWriteError { throw storedPinWriteError }
+    }
     try base.savePinnedMachineKeys(pins)
   }
 }

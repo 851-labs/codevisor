@@ -64,6 +64,7 @@ public final class CloudAccountController {
 
   private let clientFactory: ClientFactory
   private let credentialStore: any CloudCredentialStore
+  private let machineKeyPins: CloudMachineKeyPinCache
   private let environmentCloud: CodevisorAppVariant.DevelopmentCloud?
   private let hubConnectionFactory: HubConnectionFactory
   /// The account's one relay connection, created lazily while signed in and
@@ -121,6 +122,7 @@ public final class CloudAccountController {
     self.presenceSleep = presenceSleep
     self.clientFactory = clientFactory
     self.credentialStore = credentialStore
+    self.machineKeyPins = CloudMachineKeyPinCache(store: credentialStore)
     self.environmentCloud = environmentCloud
     self.hubConnectionFactory = hubConnectionFactory
     self.directPaths = directPaths ?? CloudDirectPathController(credentialStore: credentialStore)
@@ -273,6 +275,7 @@ public final class CloudAccountController {
     // not the session); only the visible flags reset with the list.
     machinesWithChangedKeys = []
     state = .signedOut
+    machineKeyPins.invalidate()
     presenceRefreshTask?.cancel()
     presenceRefreshTask = nil
     stopAllLoopbackBridges()
@@ -310,6 +313,7 @@ public final class CloudAccountController {
   /// a token therefore replaces the hub too; otherwise a reconnect could
   /// keep authenticating with the previous account's cached session.
   private func discardHubForCredentialChange() async {
+    machineKeyPins.invalidate()
     stopAllLoopbackBridges()
     directPaths.dropAll()
     presenceRefreshTask?.cancel()
@@ -321,7 +325,9 @@ public final class CloudAccountController {
 
   public func refreshMachines() async {
     guard state.isSignedIn, let token = storedToken else { return }
+    let pinGeneration = machineKeyPins.generation
     do {
+      try await machineKeyPins.prepare()
       let accountClient = client
       var refreshedMachines = try await accountClient.machines(token: token)
       if let localClient = localServerClient {
@@ -345,6 +351,8 @@ public final class CloudAccountController {
           }
         }
       }
+      guard state.isSignedIn, machineKeyPins.generation == pinGeneration, !Task.isCancelled else { return }
+      try reconcileMachineKeyPins(refreshedMachines)
       machines = refreshedMachines
       if let hub {
         // Feed the authoritative REST snapshot back into the relay's
@@ -352,7 +360,6 @@ public final class CloudAccountController {
         // without replacing an otherwise healthy hub connection.
         await hub.reconcileAuthoritativeMachines(refreshedMachines)
       }
-      reconcileMachineKeyPins()
       #if DEBUG || NAVIGATION_DIAGNOSTICS
         let machineSummary = machines.map { machine in
           "\(machine.name){id=\(machine.deviceId),online=\(machine.online)}"
@@ -365,6 +372,8 @@ public final class CloudAccountController {
       reconcileDirectPaths()
       lastError = nil
       onMachinesRefreshed?()
+    } catch is CancellationError {
+      return
     } catch {
       Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
       lastError = error.localizedDescription
@@ -443,7 +452,7 @@ public final class CloudAccountController {
       signOut()
       try credentialStore.saveServerURL(nil)
       customInstanceName = nil
-      clearMachineKeyPins()
+      try clearMachineKeyPins()
       return
     }
     let info = try await clientFactory(url).discover()
@@ -454,10 +463,8 @@ public final class CloudAccountController {
     try credentialStore.saveServerURL(url)
     customInstanceName = info.instance
     authProviders = info.authProviders
-    // Pins belong to an instance's device-id namespace; a different
-    // server means a fresh TOFU world (sign-out alone keeps them, since
-    // re-signing into the same account must keep continuity knowledge).
-    clearMachineKeyPins()
+    // A different instance has a different device-id namespace.
+    try clearMachineKeyPins()
   }
 
   /// The account's relay hub connection, created on first use while signed
@@ -566,8 +573,8 @@ extension CloudAccountController {
   /// Reconciles the machine list against the pinned keys: unknown machines
   /// are pinned on first sight; a machine whose presented key conflicts with
   /// its pin is flagged and cut off from relay channels until re-trusted.
-  func reconcileMachineKeyPins() {
-    var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+  func reconcileMachineKeyPins(_ machines: [CloudMachine]) throws {
+    guard var pins = machineKeyPins.pins else { throw CancellationError() }
     var changed = Set<String>()
     var dirty = false
     for machine in machines {
@@ -581,7 +588,7 @@ extension CloudAccountController {
       }
     }
     if dirty {
-      persistMachineKeyPins(pins)
+      try machineKeyPins.save(pins)
     }
     for deviceId in changed.subtracting(machinesWithChangedKeys) {
       Log.cloud.error(
@@ -593,15 +600,10 @@ extension CloudAccountController {
     }
   }
 
-  /// The key to open channels with, iff it matches the TOFU pin (pinning it
-  /// on first sight). nil = the key changed; no channel may open.
+  /// Read-only verification against the prepared snapshot. Unknown or changed
+  /// keys cannot open channels; first-sight pinning belongs to roster refresh.
   func verifiedMachineKey(for machine: CloudMachine) -> String? {
-    var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
-    guard let pinned = pins[machine.deviceId] else {
-      pins[machine.deviceId] = machine.publicKey
-      persistMachineKeyPins(pins)
-      return machine.publicKey
-    }
+    guard let pinned = machineKeyPins.pins?[machine.deviceId] else { return nil }
     return pinned == machine.publicKey ? machine.publicKey : nil
   }
 
@@ -610,31 +612,34 @@ extension CloudAccountController {
   /// channel refusal. Never called automatically.
   public func trustChangedMachineKey(deviceId: String) {
     guard let machine = machines.first(where: { $0.deviceId == deviceId }) else { return }
-    var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+    guard var pins = machineKeyPins.pins else { return }
     pins[deviceId] = machine.publicKey
-    persistMachineKeyPins(pins)
+    guard persistMachineKeyPins(pins) else { return }
     machinesWithChangedKeys.remove(deviceId)
     Log.cloud.log("User re-trusted the changed key for machine \(deviceId, privacy: .public)")
   }
 
   func removeMachineKeyPin(deviceId: String) {
-    var pins = (try? credentialStore.pinnedMachineKeys()) ?? [:]
+    guard var pins = machineKeyPins.pins else { return }
     guard pins.removeValue(forKey: deviceId) != nil else { return }
-    persistMachineKeyPins(pins)
+    guard persistMachineKeyPins(pins) else { return }
     machinesWithChangedKeys.remove(deviceId)
   }
 
-  func clearMachineKeyPins() {
-    persistMachineKeyPins([:])
+  func clearMachineKeyPins() throws {
+    try machineKeyPins.save([:])
     machinesWithChangedKeys = []
   }
 
-  private func persistMachineKeyPins(_ pins: [String: String]) {
+  @discardableResult
+  private func persistMachineKeyPins(_ pins: [String: String]) -> Bool {
     do {
-      try credentialStore.savePinnedMachineKeys(pins)
+      try machineKeyPins.save(pins)
+      return true
     } catch {
       Log.cloud.error(
         "Failed to persist machine key pins: \(String(describing: error), privacy: .public)")
+      return false
     }
   }
 }
