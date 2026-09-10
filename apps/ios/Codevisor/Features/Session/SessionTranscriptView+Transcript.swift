@@ -201,7 +201,15 @@ extension SessionTranscriptView {
     hasher.combine(dynamicTypeSize)
     hasher.combine(displayScale)
     hasher.combine(markdownTheme.renderFingerprint)
-    hasher.combine(controller.previewCacheNamespace)
+    if composerTextEditorHandoffRole == .promotionSource, let composerTextEditorHandoffID {
+      // This sheet has its own short-lived measurement cache. Adopting a
+      // workspace changes its file namespace, not the bubble's geometry;
+      // invalidating here would cut the first send short. The destination
+      // uses the authoritative file namespace in its separate cache.
+      hasher.combine(composerTextEditorHandoffID)
+    } else {
+      hasher.combine(controller.previewCacheNamespace)
+    }
     hasher.combine(Self.transcriptMeasurementSchemaVersion)
     return hasher.finalize()
   }

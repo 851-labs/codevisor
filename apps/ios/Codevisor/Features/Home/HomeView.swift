@@ -8,6 +8,8 @@ import UIKit
 /// settings at the top left, sidebar options at the top right, and a fixed
 /// compose button at the bottom trailing edge.
 struct HomeView: View {
+  static let newChatTransitionID = "home-new-chat"
+  @Namespace var newChatTransition
 
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -133,10 +135,10 @@ struct HomeView: View {
             machineConnectionWarningButton
           }
         }
-      }
-      .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
         if showsNewChatButton {
-          newChatButton
+          ToolbarSpacer(.flexible, placement: .bottomBar)
+          ToolbarItem(placement: .bottomBar) { newChatButton }
+            .matchedTransitionSource(id: Self.newChatTransitionID, in: newChatTransition)
         }
       }
       .navigationDestination(for: HomeRoute.self) { route in

@@ -377,7 +377,7 @@ struct SessionTranscriptView: View {
     } action: { height in
       availableHeight = height
     }
-    .background(Color(.systemGroupedBackground))
+    .background { ChatSurfaceBackground() }
   }
 
   var composerCluster: some View {

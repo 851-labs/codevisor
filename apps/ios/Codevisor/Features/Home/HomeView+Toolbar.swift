@@ -12,11 +12,6 @@ extension HomeView {
       Image(systemName: "square.and.pencil")
         .font(.system(size: 18, weight: .semibold))
     }
-    .buttonStyle(.glass)
-    .buttonBorderShape(.circle)
-    .controlSize(.large)
-    .padding(.trailing, 16)
-    .padding(.bottom, 8)
     .accessibilityLabel("New chat")
   }
 }

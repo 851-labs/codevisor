@@ -346,6 +346,7 @@ extension HomeView {
     }
     .presentationDetents([.large])
     .presentationDragIndicator(.hidden)
+    .navigationTransition(.zoom(sourceID: Self.newChatTransitionID, in: newChatTransition))
     .interactiveDismissDisabled(flow.isPromoting)
   }
 

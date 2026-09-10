@@ -422,21 +422,9 @@ extension ComposerBar {
     // bottom. It tracks a resize drag frame-for-frame and only extends
     // downward, covering the gap to the screen edge.
     .background {
-      VStack(spacing: 0) {
-        LinearGradient(
-          colors: [
-            Color(.systemGroupedBackground).opacity(0),
-            Color(.systemGroupedBackground),
-          ],
-          startPoint: .top,
-          endPoint: .bottom
-        )
-        .frame(height: 28)
-        Rectangle()
-          .fill(Color(.systemGroupedBackground))
-      }
-      .padding(.bottom, -60)
-      .allowsHitTesting(false)
+      ChatSurfaceBackground(fadeHeight: 28)
+        .padding(.bottom, -60)
+        .allowsHitTesting(false)
     }
     .contentShape(Rectangle())
     // The last uncovered stretch of the card: its top padding, above the

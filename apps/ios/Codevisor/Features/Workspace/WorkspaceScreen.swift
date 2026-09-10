@@ -235,7 +235,7 @@ struct WorkspaceScreen: View {
 
   var body: some View {
     ZStack {
-      Color(.systemGroupedBackground)
+      ChatSurfaceBackground()
         .ignoresSafeArea()
       workspaceContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)

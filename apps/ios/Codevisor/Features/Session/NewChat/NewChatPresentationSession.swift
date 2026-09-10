@@ -11,9 +11,6 @@ final class NewChatPresentationSession {
 
   init(presentedController: UIViewController) {
     self.presentedController = presentedController
-    // A conversation uses the same surface in its sheet and navigation
-    // route. Elevated dark-mode system colors must not change at handoff.
-    presentedController.traitOverrides.userInterfaceLevel = .base
   }
 
   var liveView: UIView? { presentedController?.viewIfLoaded }
@@ -183,9 +180,14 @@ final class NewChatPromotionSurface {
     else { return }
     didStartExpansion = true
     liveView = view
+    let navigationBar = view.firstDescendant { $0 is UINavigationBar } as? UINavigationBar
+    let sourceBarFrame = navigationBar.map { $0.convert($0.bounds, to: sourceWindow) }
+    let sourceColor = UIColor.systemGroupedBackground.resolvedColor(with: view.traitCollection)
+    let destinationTraits = sourceWindow.traitCollection
+    let backgrounds = ChatSurfaceBackgroundView.inHierarchy(view)
+    backgrounds.forEach { $0.prepareForPromotion() }
     container.frame = sourceFrame
-    container.backgroundColor = .systemGroupedBackground
-    container.traitOverrides.userInterfaceLevel = .base
+    container.backgroundColor = sourceColor
     container.layer.cornerCurve = .continuous
     container.layer.cornerRadius = session.presentationCornerRadius
     container.clipsToBounds = true
@@ -207,16 +209,26 @@ final class NewChatPromotionSurface {
       view.setNeedsLayout()
       view.layoutIfNeeded()
       container.layoutIfNeeded()
+      if let navigationBar, let sourceBarFrame {
+        let destinationBarFrame = navigationBar.convert(navigationBar.bounds, to: sourceWindow)
+        navigationBar.transform = CGAffineTransform(
+          translationX: 0, y: sourceBarFrame.minY - destinationBarFrame.minY)
+      }
     }
     UserSendMorphCoordinator.shared.bringFlightToFront()
 
     let changes = {
       self.container.frame = sourceWindow.bounds
+      self.container.backgroundColor = UIColor.systemGroupedBackground.resolvedColor(
+        with: destinationTraits)
       view.frame = sourceWindow.bounds
-      self.container.layer.cornerRadius = 0
+      navigationBar?.transform = .identity
+      backgrounds.forEach { $0.animatePromotion(to: destinationTraits, duration: self.duration) }
       self.container.layoutIfNeeded()
     }
     let finish = { [weak self] in
+      backgrounds.forEach { $0.completePromotion() }
+      self?.container.layer.cornerRadius = 0
       IOSNavigationDiagnostics.record("newChat.promotionSurface.expanded")
       self?.onExpanded?()
     }
@@ -225,10 +237,7 @@ final class NewChatPromotionSurface {
       finish()
       return
     }
-    let animator = UIViewPropertyAnimator(
-      duration: duration,
-      timingParameters: TranscriptSendAnimationMetrics.propertyTimingParameters
-    )
+    let animator = UIViewPropertyAnimator(duration: duration, curve: .easeInOut)
     self.animator = animator
     animator.addAnimations(changes)
     animator.addCompletion { [weak self] _ in
