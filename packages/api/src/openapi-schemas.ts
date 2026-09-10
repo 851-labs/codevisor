@@ -1,3 +1,5 @@
+import { ClientContext, ClientNavigationRequest, ConnectedClient } from "./client-control.js"
+import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { Schema } from "effect"
 import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
 
@@ -32,6 +34,7 @@ import {
   Harness,
   HarnessAccount,
   HarnessAuthFlow,
+  AnswerHarnessAuthRequest,
   HarnessUsageLimits,
   HealthResponse,
   ImportNativeMcpsRequest,
@@ -145,6 +148,7 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/harnesses/:id/accounts": CreateHarnessAccountRequest,
   "PATCH /v1/harnesses/:id/accounts/:accountId": UpdateHarnessAccountRequest,
   "POST /v1/harnesses/:id/accounts/:accountId/login": StartHarnessLoginRequest,
+  "POST /v1/harnesses/:id/accounts/:accountId/login/:flowId/answer": AnswerHarnessAuthRequest,
   "POST /v1/harnesses/pi/providers/:providerId/login": StartPiAuthRequest,
   "POST /v1/harnesses/pi/auth-flows/:flowId/answer": AnswerPiAuthRequest,
   "POST /v1/harnesses/opencode/accounts/:accountId/providers/:providerId/login":
@@ -161,6 +165,8 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "PUT /v1/sync/:namespace": PutSyncRequest,
   "PUT /v1/sync-participation": SyncParticipation,
   "POST /v1/plugins/:pluginId/set-enabled": SetPluginEnabledRequest,
+  "POST /v1/clients/:clientId/navigate": ClientNavigationRequest,
+  "PUT /v1/mcps/:id/machine-state": SetMachineMcpEnabledRequest,
   "POST /v1/mcps": CreateMcpServerRequest,
   "POST /v1/mcps/detect-auth": DetectMcpAuthRequest,
   "PATCH /v1/mcps/:id": UpdateMcpServerRequest,
@@ -247,6 +253,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/harnesses/:id/accounts/:accountId/activate": arrayOf(HarnessAccount),
   "POST /v1/harnesses/:id/accounts/:accountId/auth/probe": HarnessAccount,
   "POST /v1/harnesses/:id/accounts/:accountId/login": HarnessAuthFlow,
+  "POST /v1/harnesses/:id/accounts/:accountId/login/:flowId/answer": HarnessAuthFlow,
   "POST /v1/harnesses/:id/accounts/:accountId/logout": HarnessAccount,
   "GET /v1/harnesses/custom": Schema.Struct({ harnesses: Schema.Array(CustomHarnessSpec) }),
   "PUT /v1/harnesses/custom": arrayOf(Harness),
@@ -267,6 +274,11 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenResponse,
   // The tool's own response body — opaque JSON, shaped by each plugin.
   "POST /v1/plugins/:pluginId/tools/:toolName": Schema.Unknown,
+  "GET /v1/clients": arrayOf(ConnectedClient),
+  "GET /v1/clients/:clientId/context": ClientContext,
+  "POST /v1/clients/:clientId/navigate": ClientContext,
+  "GET /v1/mcps/:id/machine-state": MachineMcpState,
+  "PUT /v1/mcps/:id/machine-state": MachineMcpState,
   "GET /v1/mcps": arrayOf(McpServer),
   "POST /v1/mcps": McpServer,
   "POST /v1/mcps/detect-auth": McpAuthDetection,

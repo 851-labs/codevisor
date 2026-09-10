@@ -342,6 +342,12 @@ struct WorkspaceScreen: View {
     .onChange(of: environment.workspaceSync.revision) { _, _ in
       synchronizePaneStateFromWorkspace()
     }
+    .onChange(of: preferredPaneId) { _, paneId in
+      guard let paneId else { return }
+      var state = panes
+      state.selectPane(id: paneId)
+      paneBinding.wrappedValue = state
+    }
     .iosNavigationDiagnostics(navigationDiagnosticState)
   }
 

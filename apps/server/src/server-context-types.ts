@@ -1,4 +1,5 @@
 import type { BrowserProxy } from "./infra/browser-proxy.js"
+import type { ClientControlBroker } from "./infra/client-control.js"
 import type { CredentialSource } from "@codevisor/harness-manager"
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { EventEnvelope, ServerKind, SessionSummary, UpdateInfo } from "@codevisor/api"
@@ -159,6 +160,7 @@ export interface CodevisorServerApp {
 }
 
 export interface RouteState {
+  readonly clientControl?: ClientControlBroker
   readonly browserProxy?: BrowserProxy
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>

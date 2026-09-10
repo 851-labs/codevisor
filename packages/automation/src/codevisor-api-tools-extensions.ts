@@ -1,4 +1,5 @@
 import {
+  SetMachineMcpEnabledRequest,
   CreateMcpServerRequest,
   CreateSkillRequest,
   DetectMcpAuthRequest,
@@ -17,6 +18,19 @@ import { enabledBody, apiTool, type CodevisorApiToolSpec } from "./codevisor-api
 
 /// MCP server, native MCP, and skill tools.
 export const codevisorExtensionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
+  apiTool(
+    "mcps.machine_state",
+    "Read an MCP's effective availability and per-machine disable on the current server machine.",
+    "GET",
+    "/v1/mcps/:id/machine-state"
+  ),
+  apiTool(
+    "mcps.machine_set_enabled",
+    "Set MCP availability on this server machine, matching the native Settings switch. Off preserves the shared definition. On clears this machine's override and enables the definition if needed.",
+    "PUT",
+    "/v1/mcps/:id/machine-state",
+    { body: SetMachineMcpEnabledRequest }
+  ),
   apiTool("mcps.list", "List MCP servers managed by Codevisor.", "GET", "/v1/mcps"),
   apiTool("mcps.create", "Add an MCP server to Codevisor.", "POST", "/v1/mcps", {
     body: CreateMcpServerRequest

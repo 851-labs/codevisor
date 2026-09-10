@@ -44,6 +44,10 @@ extension Workspace {
         return state
       }
     case let .pane(id):
+      if bottomGroup.panes.contains(where: { $0.id == id }) {
+        bottomGroup.selectPane(id: id)
+        return true
+      }
       guard
         let index = centerTabs.firstIndex(where: { tab in
           tab.root.allGroups.contains { $0.state.panes.contains { $0.id == id } }

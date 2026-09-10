@@ -245,3 +245,14 @@ export const SetNativeMcpEnabledRequest = Schema.Struct({
   enabled: Schema.Boolean
 })
 export type SetNativeMcpEnabledRequest = typeof SetNativeMcpEnabledRequest.Type
+
+export const SetMachineMcpEnabledRequest = Schema.Struct({ enabled: Schema.Boolean })
+export type SetMachineMcpEnabledRequest = typeof SetMachineMcpEnabledRequest.Type
+
+export const MachineMcpState = Schema.Struct({
+  machineId: Schema.String,
+  server: McpServer,
+  disabledHere: Schema.Boolean,
+  enabled: Schema.Boolean
+})
+export type MachineMcpState = typeof MachineMcpState.Type

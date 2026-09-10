@@ -225,12 +225,12 @@ private struct ClientDataStartupFailureView: View {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
-  @Environment(AppEnvironment.self) private var environment
+  @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
-  @Environment(\.controlActiveState) private var controlActiveState
-  @State private var selection: SidebarSelection?
+  @Environment(\.controlActiveState) var controlActiveState
+  @State var selection: SidebarSelection?
   @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
-  @State private var store: SessionStore?
+  @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController()
   @State private var panelLayout = AdaptivePanelLayout()
@@ -254,6 +254,13 @@ struct RootView: View {
       }
     }
     .environment(panelLayout)
+    .modifier(
+      ClientControlModifier(
+        name: Host.current().localizedName ?? "Codevisor Mac", platform: "macos",
+        isActive: controlActiveState == .key,
+        context: clientControlContext, navigate: navigateClient
+      )
+    )
     .environment(\.quickLook, quickLook)
     .quickLookPreview(
       Binding(

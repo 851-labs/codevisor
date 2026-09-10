@@ -13,6 +13,7 @@ struct HomeView: View {
 
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.scenePhase) var scenePhase
 
   @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
   var manualWorkspaceOrder
@@ -235,6 +236,12 @@ struct HomeView: View {
         #endif
       }
     }
+    .modifier(
+      ClientControlModifier(
+        name: UIDevice.current.name, platform: "ios", isActive: scenePhase == .active,
+        context: clientControlContext, navigate: navigateClient
+      )
+    )
   }
 
   #if DEBUG || NAVIGATION_DIAGNOSTICS

@@ -2,6 +2,13 @@
 /// metadata (summaries, success statuses) the OpenAPI builder reads.
 
 export const endpoints = [
+  "GET /v1/clients",
+  "GET /v1/clients/:clientId/context",
+  "POST /v1/clients/:clientId/navigate",
+  "GET /v1/clients/:clientId/socket",
+  "GET /v1/mcps/:id/machine-state",
+  "PUT /v1/mcps/:id/machine-state",
+  "POST /v1/harnesses/:id/accounts/:accountId/login/:flowId/answer",
   "GET /v1/health",
   "GET /v1/discovery",
   "GET /v1/info",
@@ -226,6 +233,7 @@ export const accepted = new Set<Endpoint>([
 ])
 
 export const websocketEndpoints = new Set<Endpoint>([
+  "GET /v1/clients/:clientId/socket",
   "GET /v1/events/socket",
   "GET /v1/sessions/:id/events/socket",
   "GET /v1/terminals/:id/socket"

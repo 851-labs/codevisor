@@ -23,6 +23,7 @@ import type {
 } from "./server-context.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { handleUpgrade } from "./routes/events.js"
+import { ClientControlBroker } from "./infra/client-control.js"
 import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
 import { readMcpOverlays } from "./infra/mcp-fleet.js"
 import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
@@ -104,7 +105,9 @@ export const makeCodevisorServerApp = (
     redrain: (sessionId) => drainPromptQueue(services, fanout, routeState, config.id, sessionId)
   })
   const browserProxy = new BrowserProxy()
+  const clientControl = new ClientControlBroker()
   const routeState: RouteState = {
+    clientControl,
     browserProxy,
     ...turns,
     gatedSessions: new Map(),
@@ -269,10 +272,20 @@ export const makeCodevisorServerApp = (
         browserProxy.handleUpgrade(request, socket, head)
         return
       }
-      void handleUpgrade(services, config, fanout, request, socket, head, webSocketServer)
+      void handleUpgrade(
+        services,
+        config,
+        fanout,
+        request,
+        socket,
+        head,
+        webSocketServer,
+        clientControl
+      )
     },
     close: serverAttempt("closeApp", () => {
       browserProxy.close()
+      clientControl.close()
       clearInterval(staleTurnSweep)
       restart.close()
       attentionSettle.close()

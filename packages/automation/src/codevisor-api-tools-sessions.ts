@@ -4,6 +4,7 @@ import {
   MarkSessionReadRequest,
   OpenSessionRequest,
   PromptRequest,
+  ReorderQueuedPromptsRequest,
   SetConfigRequest,
   SetGoalRequest,
   SetModeRequest,
@@ -103,6 +104,13 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     {
       body: UpdateQueuedPromptRequest
     }
+  ),
+  apiTool(
+    "sessions.queue_reorder",
+    "Reorder all queued prompts using their queue item ids in the desired order.",
+    "PATCH",
+    "/v1/sessions/:id/queue",
+    { body: ReorderQueuedPromptsRequest }
   ),
   apiTool(
     "sessions.queue_delete",
