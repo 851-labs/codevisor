@@ -160,6 +160,10 @@ final class SessionStore {
     environment.onMachineRouteChanged = { [weak self] machineId in
       self?.rerouteControllers(on: machineId)
     }
+    environment.onSessionStateChanged = { [weak self] session, revision in
+      guard let controller = self?.controllers[SessionKey(session)] else { return }
+      Task { await controller.reconcileServerSummary(session, revision: revision) }
+    }
   }
 
   /// A route flip (direct ↔ relay) leaves cached controllers streaming

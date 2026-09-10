@@ -194,9 +194,11 @@ extension SessionModel {
   /// against durable server history. Cursor replay heals a reconnected
   /// stream on its own; this covers what replay cannot — a reconcile that
   /// failed while the machine was unreachable, or a stuck durable row the
-  /// server repaired while the app was suspended. No-op while idle.
+  /// server repaired while the app was suspended. Includes the visible idle
+  /// chat because another device may have started a turn while we were away.
   public func reconcileIfInFlight() async {
-    guard isSending else { return }
+    guard isSending || isViewVisible else { return }
+    applySynchronization(.reconnecting)
     await reconcileFromServer()
   }
 
@@ -206,7 +208,7 @@ extension SessionModel {
   /// cycle. Deliberately narrower than `reconcileIfInFlight` — a healthy
   /// streaming turn must not restart its consumer on every navigation.
   public func reconcileIfStalled() async {
-    guard isSending, isTakingLongerThanExpected else { return }
+    guard (isSending && isTakingLongerThanExpected) || streamSynchronization != .caughtUp else { return }
     await reconcileFromServer()
   }
 
@@ -214,19 +216,40 @@ extension SessionModel {
     // The existing loop already retries and owns presentation timing.
     // Foreground, stall, and re-entry hooks can safely converge here.
     guard connectionRecoveryTask == nil else { return }
-    let outcome = await performReconciliationAttempt()
-    switch outcome {
-    case .loaded:
-      completeConnectionRecovery()
-    case .cancelled:
-      return
-    case let .failed(message, retryable):
-      if retryable {
-        beginConnectionRecovery(after: message)
-      } else {
-        surfaceConnectionRecoveryFailure(message)
+    connectionRecoveryGeneration &+= 1
+    let generation = connectionRecoveryGeneration
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      var handedOffRetry = false
+      defer {
+        if !handedOffRetry, self.connectionRecoveryGeneration == generation { self.connectionRecoveryTask = nil }
+      }
+      let outcome = await self.performReconciliationAttempt()
+      guard !Task.isCancelled else { return }
+      switch outcome {
+      case .loaded:
+        self.completeConnectionRecovery()
+      case .cancelled:
+        break
+      case let .failed(message, retryable):
+        if retryable {
+          handedOffRetry = true
+          self.connectionRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+              if self.connectionRecoveryGeneration == generation { self.connectionRecoveryTask = nil }
+            }
+            await self.runConnectionRecovery(firstFailureMessage: message)
+          }
+        } else {
+          self.surfaceConnectionRecoveryFailure(message)
+        }
       }
     }
+    connectionRecoveryTask = task
+    // Preserve the existing non-blocking retry contract for callers: wait
+    // only until the first attempt, not through an offline retry loop.
+    await task.value
   }
 
   private func performReconciliationAttempt() async -> SessionHistoryLoadOutcome {
@@ -239,6 +262,9 @@ extension SessionModel {
     isFlushScheduled = false
     let outcome = await loadHistoryForConnectionRecovery()
     guard case .loaded = outcome else {
+      // Keep live events buffered if the initial historical baseline is
+      // still missing. A retry must install those details before its suffix.
+      isActiveTranscriptHydrationPending = activeDeferredDetailItemId != nil
       // The cursor-backed socket is independently self-healing. Keep it
       // alive between snapshot retries so a failed GET never strands the
       // chat or hides events that resume meanwhile.
@@ -261,16 +287,7 @@ extension SessionModel {
     return outcome
   }
 
-  private func beginConnectionRecovery(after firstFailureMessage: String) {
-    guard connectionRecoveryTask == nil else { return }
-    connectionRecoveryTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      await self.runConnectionRecovery(firstFailureMessage: firstFailureMessage)
-    }
-  }
-
   private func runConnectionRecovery(firstFailureMessage: String) async {
-    defer { connectionRecoveryTask = nil }
     let startedAt = connectionRecoveryScheduler.now()
     var failures = 1
     var latestMessage = firstFailureMessage
@@ -345,7 +362,7 @@ extension SessionModel {
   }
 
   private func surfaceConnectionRecoveryFailure(_ message: String) {
-    connectionRecoveryMessage = nil
+    connectionRecoveryMessage = synchronizationMessage
     let previous = surfacedConnectionRecoveryError
     surfacedConnectionRecoveryError = message
     if errorMessage == nil || errorMessage == previous {
@@ -358,19 +375,37 @@ extension SessionModel {
   }
 
   func stopConnectionRecovery() {
+    connectionRecoveryGeneration &+= 1
     connectionRecoveryTask?.cancel()
     connectionRecoveryTask = nil
     clearConnectionRecoveryPresentation()
   }
 
   private func clearConnectionRecoveryPresentation() {
-    connectionRecoveryMessage = nil
+    connectionRecoveryMessage = synchronizationMessage
     if let surfacedConnectionRecoveryError,
       errorMessage == surfacedConnectionRecoveryError
     {
       errorMessage = nil
     }
     surfacedConnectionRecoveryError = nil
+  }
+
+  var synchronizationMessage: String? {
+    switch streamSynchronization {
+    case .reconnecting, .catchingUp: "Reconnecting…"
+    case .caughtUp, .cursor: nil
+    }
+  }
+
+  func applySynchronization(_ state: SessionStreamSynchronization) {
+    guard state != .cursor else { return }
+    streamSynchronization = state
+    if state == .caughtUp {
+      clearConnectionRecoveryPresentation()
+    } else {
+      connectionRecoveryMessage = synchronizationMessage
+    }
   }
 
   /// Switches the session mode. The optimistic local update only applies

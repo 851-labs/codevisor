@@ -323,6 +323,70 @@ describe("event routes", () => {
     global.close()
   })
 
+  it("repairs a lost completion from durable events and checkpoints replay before reporting caught up", async () => {
+    const fanout = await run(makeEventFanout)
+    const durable: Array<import("@codevisor/api").EventEnvelope> = [1, 2].map((revision) => ({
+      id: revision,
+      subjectRevision: revision,
+      subjectId: "chat",
+      serverId: "server-a",
+      kind: "session.output" as const,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      payload: {}
+    }))
+    const db = {
+      listSubjectEvents: (_id: string, since: number) =>
+        Effect.sync(() => durable.filter((event) => event.id > since))
+    }
+    const sent: Array<{ id: number; kind: string }> = []
+    const closers: Array<() => void> = []
+    const socket = {
+      readyState: 1,
+      send: (raw: string) => sent.push(JSON.parse(raw)),
+      on: (_name: string, handler: () => void) => closers.push(handler),
+      close: () => {
+        socket.readyState = 3
+        closers.forEach((handler) => handler())
+      }
+    }
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+    try {
+      await attachEventSocket(
+        db as never,
+        fanout,
+        1,
+        socket as never,
+        "server-a",
+        "chat",
+        25_000,
+        true
+      )
+      expect(sent.map(({ id, kind }) => [id, kind])).toEqual([
+        [2, "session.output"],
+        [2, "keepalive"]
+      ])
+      // Persisted but deliberately never published to the live fanout.
+      durable.push({
+        ...durable[1]!,
+        id: 3,
+        subjectRevision: 3,
+        kind: "session.updated",
+        payload: { status: "idle" }
+      })
+      await vi.advanceTimersByTimeAsync(25_000)
+      expect(sent.slice(-2).map(({ id, kind }) => [id, kind])).toEqual([
+        [3, "session.updated"],
+        [3, "keepalive"]
+      ])
+      await vi.advanceTimersByTimeAsync(25_000)
+      expect(sent.filter((event) => event.kind !== "keepalive").map((event) => event.id)).toEqual([
+        2, 3
+      ])
+    } finally {
+      socket.close()
+    }
+  })
+
   it("exposes an Effect service layer and EventFanout subscription", async () => {
     const { services } = await makeServices("layered")
     const layered = await run(

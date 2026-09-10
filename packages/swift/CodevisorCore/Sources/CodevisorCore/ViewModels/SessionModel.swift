@@ -117,9 +117,14 @@ public final class SessionModel {
   /// presentation remains stable instead of flashing connection plumbing.
   public internal(set) var connectionRecoveryMessage: String? {
     didSet {
-      if connectionRecoveryMessage != oldValue { activeItemRevision &+= 1 }
+      if connectionRecoveryMessage != oldValue {
+        activeItemRevision &+= 1
+        transcriptProjectionRevision &+= 1
+      }
     }
   }
+  @ObservationIgnored var streamSynchronization: SessionStreamSynchronization = .caughtUp
+  @ObservationIgnored var connectionRecoveryGeneration: UInt64 = 0
   public internal(set) var queuedPrompts: [ServerPromptQueueItem] = []
   /// A deferred initial queue fetch must not overwrite a newer queue event
   /// that arrived after the transcript stream started.

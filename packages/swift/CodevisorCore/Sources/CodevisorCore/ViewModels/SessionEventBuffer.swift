@@ -55,6 +55,10 @@ final class SessionEventBuffer: Sendable {
     state.withLock { $0.events.isEmpty }
   }
 
+  func accepts(generation: UInt64) -> Bool {
+    state.withLock { $0.acceptsEvents && $0.generation == generation }
+  }
+
   func takeAll() -> [SessionPendingStreamEvent] {
     state.withLock { state in
       let events = state.events

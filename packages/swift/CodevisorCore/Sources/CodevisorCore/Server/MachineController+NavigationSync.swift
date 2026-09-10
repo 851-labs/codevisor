@@ -152,6 +152,11 @@ extension MachineController {
       "session.archived", "session.unarchived":
       switch await projectList.applyServerSessionEvent(event, serverId: serverId) {
       case let .applied(workspaceMembershipChanged):
+        if let session = projectList.sessions.first(where: {
+          $0.serverId == serverId && $0.id.uuidString.caseInsensitiveCompare(event.subjectId) == .orderedSame
+        }) {
+          onSessionStateChanged?(session, event.subjectRevision)
+        }
         if workspaceMembershipChanged {
           await workspaceSync?.refreshFromServer(
             serverId: serverId,

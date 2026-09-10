@@ -27,6 +27,7 @@ public struct TranscriptProjectionInput: Sendable {
   public let serverWaitMessage: String?
   public let sessionErrorMessage: String?
   public let status: ConnectionStatus
+  public let activityMessage: String?
 
   public init(
     settledConversation: [ConversationItem],
@@ -38,7 +39,8 @@ public struct TranscriptProjectionInput: Sendable {
     isLoadingInitialHistory: Bool,
     serverWaitMessage: String?,
     sessionErrorMessage: String?,
-    status: ConnectionStatus
+    status: ConnectionStatus,
+    activityMessage: String? = nil
   ) {
     self.settledConversation = settledConversation
     self.pendingUserMessage = pendingUserMessage
@@ -50,6 +52,7 @@ public struct TranscriptProjectionInput: Sendable {
     self.serverWaitMessage = serverWaitMessage
     self.sessionErrorMessage = sessionErrorMessage
     self.status = status
+    self.activityMessage = activityMessage
   }
 }
 
@@ -59,11 +62,13 @@ public struct TranscriptProjectionKey: Hashable, Sendable {
   public let sessionID: UUID
   public let controllerRevision: UInt64
   public let modelRevision: UInt64
+  public let activityMessage: String?
 
-  public init(sessionID: UUID, controllerRevision: UInt64, modelRevision: UInt64) {
+  public init(sessionID: UUID, controllerRevision: UInt64, modelRevision: UInt64, activityMessage: String? = nil) {
     self.sessionID = sessionID
     self.controllerRevision = controllerRevision
     self.modelRevision = modelRevision
+    self.activityMessage = activityMessage
   }
 }
 
@@ -388,7 +393,7 @@ public actor TranscriptRowProjectionCache {
     var rows: [TranscriptPresentationRow] = []
     rows.reserveCapacity(input.settledConversation.count + 6)
     let settled = input.settledConversation
-    let hasSetup = !input.setupPhases.isEmpty
+    let hasSetup = !input.setupPhases.isEmpty && input.activityMessage == nil
     let pendingMessage = input.pendingUserMessage.flatMap { pending in
       settled.contains(where: { item in
         if case let .user(message) = item { return message.id == pending.id }
@@ -396,7 +401,7 @@ public actor TranscriptRowProjectionCache {
       }) ? nil : pending
     }
     let pendingIsOpeningRow = settled.isEmpty && !input.hasActiveItem
-    let waitingDescription = input.waitingBackgroundTaskDescription
+    let waitingDescription = input.activityMessage == nil ? input.waitingBackgroundTaskDescription : nil
     let waitingAssistantID: UUID? = {
       guard !input.hasActiveItem,
         waitingDescription != nil,
@@ -408,7 +413,7 @@ public actor TranscriptRowProjectionCache {
 
     if settled.isEmpty, !input.hasActiveItem {
       if let message = pendingMessage {
-        let showsStartingAgent = !hasSetup
+        let showsStartingAgent = !hasSetup && input.activityMessage == nil
         rows.append(
           .init(
             id: .message(message.id),
@@ -428,7 +433,7 @@ public actor TranscriptRowProjectionCache {
             estimatedHeight: 80
           ))
       }
-      if !input.isLoadingInitialHistory, pendingMessage == nil {
+      if !input.isLoadingInitialHistory, pendingMessage == nil, input.activityMessage == nil {
         if let message = input.serverWaitMessage {
           rows.append(
             .init(
@@ -523,11 +528,17 @@ public actor TranscriptRowProjectionCache {
           estimatedHeight: 32
         ))
     }
-    if let name = input.waitingHarnessUpdateName {
+    if let name = input.waitingHarnessUpdateName, input.activityMessage == nil {
       rows.append(.init(id: .updateGate, content: .updateGate(name), estimatedHeight: 32))
     }
-    if (!settled.isEmpty || input.hasActiveItem), let message = input.serverWaitMessage {
+    if (!settled.isEmpty || input.hasActiveItem), let message = input.serverWaitMessage, input.activityMessage == nil {
       rows.append(.init(id: .serverWait, content: .serverWait(message), estimatedHeight: 32))
+    }
+    if let message = input.activityMessage {
+      rows.append(
+        .init(
+          id: .connecting, content: .connecting(message), estimatedHeight: 32,
+          measurementRevision: message.hashValue))
     }
     if let message = input.sessionErrorMessage {
       rows.append(.init(id: .error, content: .error(message), estimatedHeight: 56))

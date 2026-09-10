@@ -503,3 +503,21 @@ extension TranscriptRowProjectionTests {
     #expect(chunks.count > 1)
   }
 }
+
+extension TranscriptRowProjectionTests {
+  @Test func reconnectingIsOneInlineRowAlongsideCachedHistory() throws {
+    let cached = ConversationItem.user(UserMessage(text: "Cached transcript"))
+    let input = TranscriptProjectionInput(
+      settledConversation: [cached], pendingUserMessage: nil, activeItem: nil,
+      setupPhases: [], waitingBackgroundTaskDescription: "build", waitingHarnessUpdateName: "Codex",
+      isLoadingInitialHistory: false, serverWaitMessage: "Waiting for server…",
+      sessionErrorMessage: nil, status: .connecting("Connecting…"), activityMessage: "Reconnecting…")
+    for includesConnecting in [true, false] {
+      let rows = try TranscriptRowProjectionCache.project(
+        input,
+        options: .init(includesConnectingRow: includesConnecting))
+      #expect(rows.map(\.id) == [.message(cached.id), .connecting])
+      #expect(rows.last?.content == .connecting("Reconnecting…"))
+    }
+  }
+}

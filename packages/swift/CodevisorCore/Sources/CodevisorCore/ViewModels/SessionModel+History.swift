@@ -34,22 +34,29 @@ extension SessionModel {
   /// recovery loop owns retry timing and decides when a failure becomes
   /// user-visible; ordinary history loads keep their immediate error UI.
   func loadHistoryForConnectionRecovery() async -> SessionHistoryLoadOutcome {
-    await loadHistoryOnce(preloaded: nil, defersPromptQueue: false)
+    await loadHistoryOnce(preloaded: nil, defersPromptQueue: false, preservingContent: true)
   }
 
   private func loadHistoryOnce(
     preloaded: TranscriptHistoryPage?,
-    defersPromptQueue: Bool
+    defersPromptQueue: Bool,
+    preservingContent: Bool = false
   ) async -> SessionHistoryLoadOutcome {
     cancelActiveTranscriptHydration()
     promptQueueLoadTask?.cancel()
     promptQueueLoadTask = nil
     do {
-      let page: TranscriptHistoryPage
+      var page: TranscriptHistoryPage
       if let preloaded {
         page = preloaded
       } else {
-        page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
+        do {
+          page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
+        } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
+          // Only a missing page endpoint selects legacy history. A missing
+          // detail item must never replace cached content with a legacy snapshot.
+          return await loadLegacyHistory()
+        }
       }
       usesPaginatedHistory = true
       if appliedStateIsCurrent(through: page.eventCursor) {
@@ -70,9 +77,44 @@ extension SessionModel {
         }
         return .loaded
       }
-      olderHistoryCursor = page.nextBefore
-      hasOlderHistory = page.hasMore
-      setConversation(page.conversation)
+      // Prepare a complete replacement off-screen. A failed/cancelled detail
+      // fetch leaves the cached transcript and its applied cursor intact.
+      if preservingContent {
+        let hydratedIDs = Set(
+          conversation.compactMap { item -> UUID? in
+            guard case let .assistant(message) = item,
+              message.turn.deferredDetailItemId == nil
+            else { return nil }
+            return message.id
+          })
+        for index in page.conversation.indices {
+          guard case let .assistant(message) = page.conversation[index],
+            let itemID = message.turn.deferredDetailItemId,
+            message.turn.isGenerating || hydratedIDs.contains(message.id)
+          else { continue }
+          let events: [ServerSessionStreamEvent]
+          do {
+            events = try await transport.transcriptDetails(itemId: itemID, throughRevision: page.eventCursor)
+          } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
+            return .failed(message: "Transcript details are unavailable. Reconnecting…", retryable: true)
+          }
+          page.conversation[index] = .assistant(
+            AssistantMessage(
+              id: message.id, turn: Self.hydratedTranscriptTurn(message, events: events)))
+        }
+      }
+      try Task.checkCancellation()
+      // Keep already loaded older pages (and their pagination cursor).
+      let prefix =
+        preservingContent
+        ? page.conversation.first.flatMap { first in
+          conversation.firstIndex(where: { $0.id == first.id }).map { Array(conversation.prefix($0)) }
+        } : nil
+      if prefix == nil {
+        olderHistoryCursor = page.nextBefore
+        hasOlderHistory = page.hasMore
+      }
+      setConversation((prefix ?? []) + page.conversation)
       if let persistedUsage = page.usage {
         usage = persistedUsage
       }
@@ -94,6 +136,7 @@ extension SessionModel {
       isSending = lastTurnIsGenerating
       if isSending { noteProviderActivity(.modelStream) }
       serverEventCursor = page.eventCursor
+      if preservingContent { applySynchronization(.catchingUp) }
       let activeDetailItemId = activeDeferredDetailItemId
       if activeDetailItemId != nil {
         isActiveTranscriptHydrationPending = true
@@ -111,9 +154,6 @@ extension SessionModel {
         await loadPromptQueue(ifUnchangedSince: promptQueueRevision)
       }
       return .loaded
-    } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
-      // Additive protocol compatibility: older remote servers keep using
-      // the legacy path until they are updated.
     } catch {
       // A cancelled load is the view going away (pane re-hosted, tab
       // switched), not a failure — the remounted view reloads history
@@ -122,7 +162,6 @@ extension SessionModel {
       return historyLoadOutcome(for: error)
     }
 
-    return await loadLegacyHistory()
   }
 
   /// Whether the live stream has already carried this model strictly past a
@@ -261,6 +300,9 @@ extension SessionModel {
         serverEventCursor = history.cursor ?? snapshot.eventCursor
       }
       await startConsumer()
+      // Legacy global streams have no session checkpoint. Their complete
+      // history replay is the strongest synchronization boundary available.
+      applySynchronization(.caughtUp)
       return .loaded
     } catch {
       isReplayingHistory = false
@@ -384,53 +426,7 @@ extension SessionModel {
       guard let location = transcriptItemLocation(itemId) else { return false }
       let original = location.item
       guard case let .assistant(originalMessage) = original else { return false }
-      var turn = AssistantTurn(
-        isGenerating: true,
-        isThinking: false,
-        startedAt: originalMessage.turn.startedAt
-      )
-      for event in events {
-        switch event {
-        case let .update(update):
-          TranscriptReducer.apply(update, to: &turn)
-        case let .assistantFinalized(markdown, messageId, attachments):
-          TranscriptReducer.finalizeAssistant(
-            markdown: markdown,
-            messageId: messageId,
-            attachments: attachments,
-            to: &turn
-          )
-        case let .finished(reason, detail, stopKind, retryable, _, _):
-          turn.stopReason = reason
-          turn.stopDetail = detail
-          turn.stopKind = stopKind
-          turn.retryable = retryable
-          turn.isGenerating = false
-        case let .failed(message, retryable, _):
-          turn.stopDetail = message
-          turn.retryable = retryable
-          turn.isGenerating = false
-        case let .authenticationRequired(message):
-          turn.stopDetail = message
-          turn.isGenerating = false
-        case .assistantItemStarted:
-          break
-        // `modelFallback` is session-level state, not per-turn detail:
-        // replaying history must not resurrect a dismissed notice.
-        case .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
-          .planApprovalRequired, .updateGate, .modelFallback:
-          break
-        }
-      }
-      turn.isGenerating = originalMessage.turn.isGenerating
-      turn.startedAt = originalMessage.turn.startedAt
-      turn.endedAt = originalMessage.turn.endedAt
-      turn.planDocument = turn.planDocument ?? originalMessage.turn.planDocument
-      if turn.attachments.isEmpty { turn.attachments = originalMessage.turn.attachments }
-      turn.deferredDetailItemId = nil
-      turn.hasDeferredWorkedDetails = false
-      turn.detailRevision = originalMessage.turn.detailRevision
-      turn.hasHydratedWorkedDetails = true
+      let turn = Self.hydratedTranscriptTurn(originalMessage, events: events)
       let hydrated = ConversationItem.assistant(AssistantMessage(id: originalMessage.id, turn: turn))
       transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(
         revision: originalMessage.turn.detailRevision,
@@ -446,6 +442,60 @@ extension SessionModel {
     }
   }
 
+  private static func hydratedTranscriptTurn(
+    _ originalMessage: AssistantMessage,
+    events: [ServerSessionStreamEvent]
+  ) -> AssistantTurn {
+    var turn = AssistantTurn(
+      isGenerating: true,
+      isThinking: false,
+      startedAt: originalMessage.turn.startedAt
+    )
+    for event in events {
+      switch event {
+      case let .update(update):
+        TranscriptReducer.apply(update, to: &turn)
+      case let .assistantFinalized(markdown, messageId, attachments):
+        TranscriptReducer.finalizeAssistant(
+          markdown: markdown,
+          messageId: messageId,
+          attachments: attachments,
+          to: &turn
+        )
+      case let .finished(reason, detail, stopKind, retryable, _, _):
+        turn.stopReason = reason
+        turn.stopDetail = detail
+        turn.stopKind = stopKind
+        turn.retryable = retryable
+        turn.isGenerating = false
+      case let .failed(message, retryable, _):
+        turn.stopDetail = message
+        turn.retryable = retryable
+        turn.isGenerating = false
+      case let .authenticationRequired(message):
+        turn.stopDetail = message
+        turn.isGenerating = false
+      case .assistantItemStarted:
+        break
+      // `modelFallback` is session-level state, not per-turn detail:
+      // replaying history must not resurrect a dismissed notice.
+      case .synchronization, .userMessage, .queueUpdated, .retrying, .backgroundTasks, .runtimeState,
+        .planApprovalRequired, .updateGate, .modelFallback:
+        break
+      }
+    }
+    turn.isGenerating = originalMessage.turn.isGenerating
+    turn.startedAt = originalMessage.turn.startedAt
+    turn.endedAt = originalMessage.turn.endedAt
+    turn.planDocument = turn.planDocument ?? originalMessage.turn.planDocument
+    if turn.attachments.isEmpty { turn.attachments = originalMessage.turn.attachments }
+    turn.deferredDetailItemId = nil
+    turn.hasDeferredWorkedDetails = false
+    turn.detailRevision = originalMessage.turn.detailRevision
+    turn.hasHydratedWorkedDetails = true
+    return turn
+  }
+
   /// Hydrates the compact, generating assistant item returned to a client
   /// that joined mid-turn. Events newer than `throughRevision` are already
   /// arriving on the socket, but remain in `pendingEvents` until this
@@ -458,7 +508,7 @@ extension SessionModel {
     let generation = activeTranscriptHydrationGeneration
     activeTranscriptHydrationTask = Task { @MainActor [weak self] in
       guard let self else { return }
-      _ = await self.fetchTranscriptDetails(
+      let hydrated = await self.fetchTranscriptDetails(
         itemId: itemId,
         throughRevision: throughRevision
       )
@@ -466,6 +516,13 @@ extension SessionModel {
         self.activeTranscriptHydrationGeneration == generation
       else { return }
       self.activeTranscriptHydrationTask = nil
+      guard hydrated else {
+        // Never apply a live suffix to a missing historical baseline.
+        // Recovery prehydrates its replacement and retries transient errors.
+        self.applySynchronization(.reconnecting)
+        await self.reconcileFromServer()
+        return
+      }
       self.isActiveTranscriptHydrationPending = false
       self.scheduleFlush()
     }
@@ -530,7 +587,7 @@ extension SessionModel {
     return nil
   }
 
-  private var activeDeferredDetailItemId: String? {
+  var activeDeferredDetailItemId: String? {
     guard case let .assistant(message) = activeItem,
       message.turn.isGenerating
     else { return nil }

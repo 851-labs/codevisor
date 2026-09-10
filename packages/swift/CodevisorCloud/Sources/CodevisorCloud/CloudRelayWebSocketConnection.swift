@@ -93,10 +93,12 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
   private let openTask: Task<CloudRelayChannel, any Error>
   private let gate = CloudChannelCreditGate()
   private var iterator: AsyncThrowingStream<Inbound, any Error>.Iterator
+  private let continuation: AsyncThrowingStream<Inbound, any Error>.Continuation
   private var cancelled = false
 
   init(endpoint: any CloudChannelTransport, request: URLRequest) {
     let (messages, continuation) = AsyncThrowingStream<Inbound, any Error>.makeStream()
+    self.continuation = continuation
     iterator = messages.makeAsyncIterator()
 
     var path = "/"
@@ -220,6 +222,9 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
       return first
     }
     guard shouldClose else { return }
+    continuation.finish(throwing: CancellationError())
+    gate.fail(CancellationError())
+    openTask.cancel()
     let openTask = openTask
     Task {
       if let channel = try? await openTask.value {

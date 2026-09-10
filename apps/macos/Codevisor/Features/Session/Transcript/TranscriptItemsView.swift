@@ -57,7 +57,7 @@ struct TranscriptItemsView: View {
       case let .contextCompaction(_, status):
         switch status {
         case .started:
-          ShimmeringText.compactingContext
+          EmptyView()  // The turn owns the single ephemeral activity label.
         case .completed:
           AgentStatusText.contextCompacted
         case .failed:

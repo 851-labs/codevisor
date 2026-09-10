@@ -184,7 +184,7 @@ public struct TranscriptActiveItemRow: View {
   public var body: some View {
     let revision = controller.activeItemRevision
     let waitingOnBackgroundTask = controller.waitingBackgroundTaskDescription
-    let connectionRecoveryMessage = controller.connectionRecoveryMessage
+    let connectionRecoveryMessage = controller.transcriptActivityOverride
     let goal = controller.model?.goal
     let goalActivity = goal?.status == .active ? goal?.activity : nil
     let item = TranscriptActiveItemResolver.resolve(

@@ -76,7 +76,10 @@ struct AssistantTurnBody: View {
   var body: some View {
     let animationEnabled = prepareTextAnimationPresentation()
     let finalText = turn.finalText
-    let postResponseGoalActivity = finalText == nil ? nil : goalActivity
+    let activity = AssistantTurnActivity.resolve(
+      turn: turn, isWaitingOnUser: isWaitingOnUser,
+      sessionActivity: transcriptController?.transcriptActivityOverride,
+      backgroundTask: waitingOnBackgroundTask, goalActivity: goalActivity)
     VStack(alignment: .leading, spacing: 14) {
       if presentation.showsPlanning {
         workedSection(
@@ -99,30 +102,8 @@ struct AssistantTurnBody: View {
           allowsDeferred: false
         )
       }
-      if presentation.showsActivity {
-        if !isWaitingOnUser, isGenerating, let retry = turn.retryStatus {
-          ChatActivityRow(retryLabel(retry))
-            .suppressedDuringStreamingTextEntrance()
-        } else if !isWaitingOnUser, isGenerating,
-          let message = transcriptController?.connectionRecoveryMessage
-        {
-          ShimmeringText(text: message)
-            .suppressedDuringStreamingTextEntrance()
-        } else if postResponseGoalActivity == nil,
-          !isWaitingOnUser,
-          turn.showsActivityIndicator,
-          turn.contextCompactionStatus != .started
-        {
-          if turn.isThinking {
-            ShimmeringText.thinking
-              .suppressedDuringStreamingTextEntrance()
-          } else {
-            // Commentary is not `finalText`, but its glyph fade is
-            // still visible activity and wins over this fallback.
-            ShimmeringText(text: "Waiting on harness...")
-              .suppressedDuringStreamingTextEntrance()
-          }
-        }
+      if presentation.showsActivity, let activity, !activity.followsResponse {
+        AssistantTurnActivityView(activity)
       }
       if presentation.showsResponse {
         ForEach(turn.generatedImageActivity) { call in
@@ -145,17 +126,12 @@ struct AssistantTurnBody: View {
       }
       if presentation.showsEpilogue {
         if case let .text(_, markdown) = finalText {
-          if let waitingOnBackgroundTask {
-            ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-              .suppressedDuringStreamingTextEntrance()
-          }
           if !isGenerating {
             MessageCopyButton(text: markdown, help: "Copy response")
           }
         }
-        if !isWaitingOnUser, let postResponseGoalActivity {
-          ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
-            .suppressedDuringStreamingTextEntrance()
+        if let activity, activity.followsResponse {
+          AssistantTurnActivityView(activity)
         }
         if !isGenerating, let stopDetail = turn.stopDetail {
           turnErrorRow(stopDetail)
@@ -301,18 +277,6 @@ struct AssistantTurnBody: View {
       linkedQuickLookURL = QuickLookURL(url: url)
     }
     return true
-  }
-
-  private func retryLabel(_ retry: RetryStatus) -> String {
-    guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
-    return "\(retry.message) \(attempt)/\(of)"
-  }
-
-  private func goalActivityLabel(_ activity: GoalActivity) -> String {
-    switch activity {
-    case .planning: "Planning…"
-    case .verifying: "Verifying…"
-    }
   }
 
   private func autoCollapse() {

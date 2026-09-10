@@ -232,8 +232,10 @@ final class ChatControllerCache {
   }
 
   func reconcileInFlightControllers() async {
-    for controller in controllers.values where controller.isSending {
-      await controller.reconcileInFlightTurn()
+    await withTaskGroup(of: Void.self) { group in
+      for controller in controllers.values where controller.isSending || controller.hasVisibleTranscript {
+        group.addTask { await controller.reconcileInFlightTurn() }
+      }
     }
   }
 

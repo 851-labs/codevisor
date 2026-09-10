@@ -39,6 +39,7 @@ public final class AppEnvironment {
   /// so the platform's chat cache can re-home live sessions onto a client
   /// resolved over the new route.
   @ObservationIgnored public var onMachineRouteChanged: ((String) -> Void)?
+  @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   /// Persists each session's pane-group state (terminal tabs, selection,
   /// panel visibility/height) so panes reattach to their shells after
   /// app restarts.
@@ -172,6 +173,7 @@ public final class AppEnvironment {
     }
     machines.onMachineConnected = { [weak self] in self?.noteMachineConnected($0) }
     machines.onMachineRouteChanged = { [weak self] in self?.onMachineRouteChanged?($0) }
+    machines.onSessionStateChanged = { [weak self] in self?.onSessionStateChanged?($0, $1) }
     machines.onMachineAdded = { [weak self] in self?.fleetRoster.publishMachine($0) }
     machines.onMachineRemoved = { [weak self] in
       self?.fleetRoster.publishRemoval(localMachineId: $0)

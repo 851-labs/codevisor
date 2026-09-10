@@ -81,6 +81,7 @@ struct CodevisorApp: App {
   /// launch gate. Cloud-only installs (and persisted cloud selections) do:
   /// their apparent empty list is merely unresolved until account bootstrap.
   private func shouldWaitForCloudRestore(environment: AppEnvironment) -> Bool {
+    guard !hasCompletedBootstrap else { return false }
     guard environment.cloud.isRestoringPersistedSession else { return false }
     let machines = environment.machines
     let hasConfiguredRemote = machines.machines.contains { !$0.isLocal }
@@ -143,6 +144,13 @@ struct CodevisorApp: App {
       guard let environment else { return }
       ChatControllerCache.shared.rerouteControllers(on: machineId, environment: environment)
     }
+    environment.onSessionStateChanged = { session, revision in
+      guard
+        let controller = ChatControllerCache.shared.existingController(
+          sessionId: session.id, serverId: session.serverId)
+      else { return }
+      Task { await controller.reconcileServerSummary(session, revision: revision) }
+    }
     let machines = environment.machines
     let hasConfiguredRemote = machines.machines.contains {
       !$0.isLocal && !$0.isCloud
@@ -182,14 +190,13 @@ struct CodevisorApp: App {
     recoveryInProgress = true
     defer { recoveryInProgress = false }
     await environment.cloud.reconnectHub()
-    await environment.prepareAllMachines()
+    // Start chat recovery alongside machine preparation so a cached chat
+    // immediately presents inline recovery while its requests await readiness.
+    async let machineRecovery: Void = environment.prepareAllMachines()
+    async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
+    _ = await (machineRecovery, chatRecovery)
     // Re-sweep fleet update state with transport restored.
     Task { await environment.updateCenter.refresh() }
-    // With transport restored, re-verify every in-flight chat against
-    // durable history. Stream replay heals missed events on its own, but
-    // not a turn whose state moved while the app was suspended in a way
-    // the replaced sockets never saw.
-    await ChatControllerCache.shared.reconcileInFlightControllers()
   }
 }
 

@@ -152,9 +152,18 @@ public actor CloudDirectConnection {
       await self?.expireWaiter(id: id)
     }
     defer { timeoutTask.cancel() }
-    try await withCheckedThrowingContinuation { continuation in
-      readyWaiters[id] = continuation
+    try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+        readyWaiters[id] = continuation
+      }
+    } onCancel: {
+      Task { await self.cancelReadyWaiter(id) }
     }
+  }
+
+  private func cancelReadyWaiter(_ id: Int) {
+    readyWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
   }
 
   private func expireWaiter(id: Int) {

@@ -34,6 +34,12 @@ public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
 }
 
 extension ServerEventEnvelope {
+  static func synchronization(_ state: SessionStreamSynchronization, cursor: Int) -> Self {
+    Self(
+      id: cursor, serverId: "", kind: "client.synchronization", subjectId: "",
+      createdAt: "", payload: .object(["state": .string(state.rawValue)]))
+  }
+
   /// Navigation events carry the authoritative session summary as their
   /// payload. Decode that summary directly so a one-session change does not
   /// require refetching and rebuilding the entire navigation snapshot.
@@ -113,10 +119,11 @@ extension CodevisorServerClient {
       let task = Task {
         var cursor = since
         var failures = 0
+        let scoped = path.hasPrefix("/v1/sessions/")
         while !Task.isCancelled {
           do {
             try await waitForServerIfNeeded(path: path)
-            var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)"))
+            var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)\(scoped ? "&sync=1" : "")"))
             applyAuthorization(to: &request)
             let socket = webSocketTransport.connect(
               request,
@@ -124,16 +131,21 @@ extension CodevisorServerClient {
             )
             defer { socket.cancel(with: .goingAway, reason: nil) }
 
-            // Armed by the first keepalive: a server that has
-            // proven it sends them makes prolonged silence mean
-            // "dead path", not "quiet turn". Per-connection, so an
-            // old server (no keepalives) keeps unbounded receives.
+            // Scoped sockets must never wait indefinitely, including
+            // when a replay starts but its final checkpoint is lost.
             var expectsKeepalives = false
+            var receivedFirstFrame = false
+            var recovering = failures > 0
             while !Task.isCancelled {
-              let message =
-                expectsKeepalives
-                ? try await withReceiveDeadline { try await socket.receive() }
-                : try await socket.receive()
+              let deadline: Duration? =
+                !receivedFirstFrame && scoped
+                ? Self.eventOpenDeadline : (scoped || expectsKeepalives ? Self.eventReceiveDeadline : nil)
+              let message = try await receiveEventMessage(socket, deadline: deadline)
+              receivedFirstFrame = true
+              if recovering, scoped {
+                continuation.yield(.synchronization(.catchingUp, cursor: cursor))
+                recovering = false
+              }
               guard let data = Self.data(from: message) else { continue }
               if let handledKinds {
                 let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
@@ -155,7 +167,19 @@ extension CodevisorServerClient {
               if event.kind == Self.keepaliveEventKind {
                 expectsKeepalives = true
                 failures = 0
+                if scoped {
+                  if cursor < ServerSessionTransport.liveOnlyEventCursor, event.id != cursor {
+                    throw EventStreamGapError(expected: cursor, received: event.id)
+                  }
+                  continuation.yield(.synchronization(.caughtUp, cursor: cursor))
+                }
                 continue
+              }
+              if scoped, cursor < ServerSessionTransport.liveOnlyEventCursor {
+                guard event.id > cursor else { continue }
+                if event.subjectRevision != nil, event.id != cursor + 1 {
+                  throw EventStreamGapError(expected: cursor + 1, received: event.id)
+                }
               }
               // A live-only sentinel cursor means "no real cursor
               // yet". Once the first event arrives, retain its real
@@ -170,6 +194,13 @@ extension CodevisorServerClient {
               continuation.finish()
               return
             }
+            if scoped {
+              continuation.yield(.synchronization(.reconnecting, cursor: cursor))
+            }
+            if error is EventStreamGapError {
+              continuation.finish(throwing: error)
+              return
+            }
             let failure = error as NSError
             if failure.domain == NSPOSIXErrorDomain,
               failure.code == POSIXErrorCode.EMSGSIZE.rawValue
@@ -179,7 +210,7 @@ extension CodevisorServerClient {
             }
             failures += 1
             Log.server.error(
-              "Event socket connection failed (consecutive failures: \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
+              "Event socket \(path, privacy: .public) at cursor \(cursor, privacy: .public) failed (attempt \(failures)); reconnecting: \(String(describing: error), privacy: .public)"
             )
             try? await eventSleep(Self.eventReconnectDelay(failures: failures))
           }
@@ -199,24 +230,40 @@ extension CodevisorServerClient {
   /// declared dead and the stream reconnects from its cursor. A few
   /// multiples of the server cadence, so ordinary jitter never trips it.
   static let eventReceiveDeadline: Duration = .seconds(90)
+  // Older servers send their first heartbeat at 25 seconds instead of an
+  // immediate checkpoint. Leave room for that additive compatibility path.
+  static let eventOpenDeadline: Duration = .seconds(35)
 
   struct EventStreamStalledError: Error {}
+  struct EventStreamGapError: Error {
+    let expected: Int
+    let received: Int
+  }
 
   /// Races `operation` against the receive deadline. On timeout the thrown
   /// error unwinds through the reconnect path exactly like a socket failure:
   /// the connection's `defer` cancels the socket (tearing down a relayed
   /// channel with it) and the stream re-dials from its cursor.
-  private func withReceiveDeadline<T: Sendable>(
-    _ operation: @escaping @Sendable () async throws -> T
-  ) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-      group.addTask { try await operation() }
-      group.addTask {
-        try await self.eventSleep(Self.eventReceiveDeadline)
-        throw EventStreamStalledError()
+  private func receiveEventMessage(
+    _ socket: any ServerWebSocketConnecting,
+    deadline: Duration?
+  ) async throws -> ServerWebSocketMessage {
+    try await withTaskCancellationHandler {
+      guard let deadline else { return try await socket.receive() }
+      return try await withThrowingTaskGroup(of: ServerWebSocketMessage.self) { group in
+        group.addTask { try await socket.receive() }
+        group.addTask {
+          try await self.eventSleep(deadline)
+          // Close before joining the receive task: cancellation alone may
+          // not release a native receive or a channel still being opened.
+          socket.cancel(with: .goingAway, reason: nil)
+          throw EventStreamStalledError()
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
       }
-      defer { group.cancelAll() }
-      return try await group.next()!
+    } onCancel: {
+      socket.cancel(with: .goingAway, reason: nil)
     }
   }
 

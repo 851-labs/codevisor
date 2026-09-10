@@ -88,7 +88,8 @@ struct EventStreamKeepaliveTests {
         webSocketTransport: transport
       ),
       eventSleep: { duration in
-        if duration == CodevisorServerClient.eventReceiveDeadline {
+        if duration == CodevisorServerClient.eventReceiveDeadline || duration == CodevisorServerClient.eventOpenDeadline
+        {
           try await clock.sleep(for: duration)
         }
       }
@@ -103,6 +104,7 @@ struct EventStreamKeepaliveTests {
     let delivered = TestSignal()
     let consumer = Task {
       for try await event in client.sessionEventStream(id: UUID(), since: 0) {
+        guard event.kind != "client.synchronization" else { continue }
         received.mutate { $0.append(event.id) }
         delivered.signal()
       }
@@ -163,15 +165,60 @@ struct EventStreamKeepaliveTests {
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "3")
 
-    // A keepalive-free socket (old server) keeps unbounded receives: no
-    // deadline, no churn.
-    await transport.socket(1)!.receiving.wait()
-    #expect(clock.pendingCount == 0)
-    clock.advance(by: .seconds(900))
-    #expect(transport.requests.count == 2)
+    // Every newly opened session socket has a first-frame deadline.
+    await clock.waitForSleep(CodevisorServerClient.eventOpenDeadline)
+    clock.advance(by: CodevisorServerClient.eventOpenDeadline)
+    await transport.connected.wait(for: 3)
+    #expect(since(of: transport.requests.last) == "3")
     consumer.cancel()
     _ = await consumer.result
   }
+  @Test("A socket that never delivers its first frame reconnects and reports recovery")
+  func firstFrameDeadline() async {
+    let clock = TestClock()
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport, clock: clock)
+    let recovering = TestSignal()
+    let consumer = Task {
+      for try await event in client.sessionEventStream(id: UUID(), since: 12) {
+        if event.payload["state"]?.stringValue == "reconnecting" { recovering.signal() }
+      }
+    }
+    await transport.connected.wait()
+    await clock.waitForSleep(CodevisorServerClient.eventOpenDeadline)
+    clock.advance(by: CodevisorServerClient.eventOpenDeadline)
+    await recovering.wait()
+    await transport.connected.wait(for: 2)
+    #expect(since(of: transport.requests.last) == "12")
+    consumer.cancel()
+    _ = await consumer.result
+  }
+
+  @Test("A revision gap ends the stream before later content is applied")
+  func revisionGapRequiresSnapshot() async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let consumer = Task { () throws -> [Int] in
+      var ids: [Int] = []
+      for try await event in client.sessionEventStream(id: UUID(), since: 3) {
+        if event.kind != "client.synchronization" { ids.append(event.id) }
+      }
+      return ids
+    }
+    await transport.connected.wait()
+    let gap = envelope(kind: "session.output", id: 5).replacingOccurrences(
+      of: "\"payload\":{}", with: "\"subjectRevision\":5,\"payload\":{}")
+    transport.socket(0)!.push(gap)
+    switch await consumer.result {
+    case .success: Issue.record("Gap was silently skipped")
+    case let .failure(error):
+      let gap = error as? CodevisorServerClient.EventStreamGapError
+      #expect(gap?.expected == 4)
+      #expect(gap?.received == 5)
+    }
+    #expect(transport.requests.count == 1)
+  }
+
 }
 
 /// Minimal thread-safe box for cross-task assertions.
@@ -189,5 +236,24 @@ private final class LockedBox<Value>: @unchecked Sendable {
 
   func mutate(_ transform: (inout Value) -> Void) {
     lock.withLock { transform(&stored) }
+  }
+}
+
+extension EventStreamKeepaliveTests {
+  @Test("A checkpoint beyond received events cannot declare the transcript caught up")
+  func checkpointDetectsMissingTail() async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let consumer = Task {
+      for try await event in client.sessionEventStream(id: UUID(), since: 3) {
+        #expect(event.payload["state"]?.stringValue != "caughtUp")
+      }
+    }
+    await transport.connected.wait()
+    transport.socket(0)!.push(envelope(kind: "keepalive", id: 4))
+    switch await consumer.result {
+    case .success: Issue.record("Missing tail was accepted as caught up")
+    case let .failure(error): #expect(error is CodevisorServerClient.EventStreamGapError)
+    }
   }
 }

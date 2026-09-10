@@ -120,7 +120,9 @@ export const handleUpgrade = async (
           numberSearchParam(url, "since"),
           webSocket,
           config.id,
-          sessionEventId
+          sessionEventId,
+          EVENT_SOCKET_KEEPALIVE_MS,
+          url.searchParams.get("sync") === "1"
         ).catch(
           /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
           () => webSocket.close()
@@ -168,10 +170,12 @@ export const attachEventSocket = async (
   webSocket: WebSocket,
   serverId: string,
   subjectId?: string,
-  keepaliveMs: number = EVENT_SOCKET_KEEPALIVE_MS
+  keepaliveMs: number = EVENT_SOCKET_KEEPALIVE_MS,
+  durableReplay: boolean = false
 ): Promise<void> => {
   const liveOnly = since >= Number.MAX_SAFE_INTEGER
   let cursor = liveOnly ? 0 : since
+  let hasDurableCursor = !liveOnly
   let isReplaying = true
   const liveQueue: Array<EventEnvelope> = []
   const sendEvent = (event: EventEnvelope): void => {
@@ -187,6 +191,7 @@ export const attachEventSocket = async (
       subjectId === undefined ? (event.globalEventId ?? event.id) : event.subjectRevision
     if (scopedId === undefined || scopedId <= cursor) return
     cursor = scopedId
+    hasDurableCursor = true
     if (webSocket.readyState === WebSocket.OPEN) {
       webSocket.send(JSON.stringify(subjectId === undefined ? event : { ...event, id: scopedId }))
     }
@@ -199,8 +204,46 @@ export const attachEventSocket = async (
     sendEvent(event)
   })
   webSocket.on("close", unsubscribe)
+  const sendCheckpoint = (): void => {
+    if (webSocket.readyState !== WebSocket.OPEN) return
+    webSocket.send(
+      JSON.stringify({
+        id: cursor,
+        serverId,
+        kind: "keepalive",
+        subjectId,
+        createdAt: new Date().toISOString(),
+        payload: {}
+      })
+    )
+  }
+  // The durable log repairs a missed fanout notification, including a lone
+  // completion event. Serialize replay with live delivery so the checkpoint
+  // certifies every event through its cursor, rather than mere socket health.
+  const catchUp = async (): Promise<void> => {
+    if (isReplaying || webSocket.readyState !== WebSocket.OPEN) return
+    // A live-only subscriber has no replay position until its first real
+    // event. A liveness checkpoint must not silently opt it into history.
+    if (!hasDurableCursor) {
+      sendCheckpoint()
+      return
+    }
+    isReplaying = true
+    try {
+      for (const event of await run(db.listSubjectEvents(subjectId!, cursor))) sendEvent(event)
+      isReplaying = false
+      for (const event of liveQueue.splice(0)) sendEvent(event)
+      sendCheckpoint()
+    } catch {
+      webSocket.close()
+    }
+  }
   if (subjectId !== undefined) {
     const keepalive = setInterval(() => {
+      if (durableReplay) {
+        void catchUp()
+        return
+      }
       /* v8 ignore next -- the close handler clears the interval before the socket normally leaves OPEN. */
       if (webSocket.readyState !== WebSocket.OPEN) return
       // A full envelope so every client decodes it. `id` is the socket's own
@@ -232,6 +275,8 @@ export const attachEventSocket = async (
     for (const event of liveQueue) {
       sendEvent(event)
     }
+    liveQueue.length = 0
+    if (durableReplay && subjectId !== undefined) sendCheckpoint()
   } catch {
     /* v8 ignore next -- defensive close path for database failures during websocket replay. */
     unsubscribe()

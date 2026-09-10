@@ -166,6 +166,7 @@ public final class MachineController {
   /// Invoked when a machine's live connection comes up — ConfigSync converges it
   /// immediately instead of waiting for the next periodic sweep.
   @ObservationIgnored public var onMachineConnected: ((String) -> Void)?
+  @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   /// Invoked after a remote machine is added or re-tokened (sheet,
   /// deeplink, or roster apply) — the fleet roster publishes it.
   @ObservationIgnored public var onMachineAdded: ((CodevisorMachine) -> Void)?

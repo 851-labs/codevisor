@@ -159,7 +159,9 @@ extension ServerSessionTransport {
       let task = Task {
         do {
           for try await event in upstream {
-            for update in Self.sessionStreamEvents(from: event) {
+            let updates = Self.sessionStreamEvents(from: event)
+            // Even events without visible content belong to the applied cursor.
+            for update in updates.isEmpty ? [.synchronization(.cursor)] : updates {
               continuation.yield(ServerSessionStreamEnvelope(cursor: event.id, event: update))
             }
           }
@@ -322,6 +324,11 @@ extension ServerSessionTransport {
   }
 
   private static func sessionStreamEvents(from event: ServerEventEnvelope) -> [ServerSessionStreamEvent] {
+    if event.kind == "client.synchronization",
+      let state = event.payload["state"]?.stringValue.flatMap(SessionStreamSynchronization.init(rawValue:))
+    {
+      return [.synchronization(state)]
+    }
     if event.payload["sessionUpdate"]?.stringValue == "assistant_message_finalized",
       let markdown = event.payload["markdown"]?.stringValue
     {

@@ -369,6 +369,13 @@ struct WorkspaceScreen: View {
 
   private var blocksServerContent: Bool {
     if isDraft { return false }
+    // Machine preparation runs on every foreground. A cached chat remains
+    // mounted, preserving its native surface, scroll position and composer.
+    if let pane = activePane, pane.kind == .chat,
+      let controller = chatController(for: pane), controller.model != nil
+    {
+      return false
+    }
     if case .ready = screenAvailability {
       return false
     }

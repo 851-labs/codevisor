@@ -29,6 +29,11 @@ extension SessionModel {
       do {
         for try await envelope in events {
           guard !Task.isCancelled, self != nil else { break }
+          if case let .synchronization(state) = envelope.event,
+            state == .reconnecting || state == .catchingUp
+          {
+            await self?.noteStreamRecovery(state, generation: consumerGeneration)
+          }
           if pendingEvents.append(
             envelope.event, cursor: envelope.cursor, generation: consumerGeneration
           ) {
@@ -39,10 +44,15 @@ extension SessionModel {
         }
         await self?.flushPendingEventsAtPresentationBoundary()
       } catch {
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, pendingEvents.accepts(generation: consumerGeneration) else { return }
         await self?.handleEventStreamFailure(error)
       }
     }
+  }
+
+  private func noteStreamRecovery(_ state: SessionStreamSynchronization, generation: UInt64) {
+    guard pendingEvents.accepts(generation: generation) else { return }
+    applySynchronization(state)
   }
 
   /// Re-homes a live session onto a new transport — the same machine over a
@@ -53,6 +63,8 @@ extension SessionModel {
   /// server replays anything after it, so the transcript neither regresses
   /// nor re-animates.
   public func adoptTransport(_ transport: ServerSessionTransport) async {
+    stopConnectionRecovery()
+    applySynchronization(.catchingUp)
     self.transport = transport
     consumerTask?.cancel()
     consumerTask = nil
@@ -67,7 +79,13 @@ extension SessionModel {
     Log.session.notice(
       "Adopting a new session transport; resuming the event stream from cursor \(String(describing: self.serverEventCursor), privacy: .public)"
     )
-    await startConsumer()
+    if usesPaginatedHistory {
+      await startConsumer()
+    } else {
+      // A legacy global stream cannot certify a session checkpoint. Get a
+      // snapshot instead, upgrading to scoped replay when the server supports it.
+      await reconcileFromServer()
+    }
   }
 
   private func handleEventStreamFailure(_ error: any Error) async {
@@ -170,7 +188,7 @@ extension SessionModel {
   /// conversation. Only ever moves forward: a coalesced batch carries the
   /// highest cursor it merged, and replayed history can never rewind it.
   func advanceServerEventCursor(to cursor: Int?) {
-    guard let cursor else { return }
+    guard let cursor, cursor < ServerSessionTransport.liveOnlyEventCursor else { return }
     if let current = serverEventCursor, current >= cursor { return }
     serverEventCursor = cursor
   }

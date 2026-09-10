@@ -38,7 +38,8 @@ extension SessionController {
       // replayed controller whose counters restarted at zero.
       sessionID: transcriptProjectionID,
       controllerRevision: transcriptProjectionRevision,
-      modelRevision: model?.transcriptProjectionRevision ?? 0
+      modelRevision: model?.transcriptProjectionRevision ?? 0,
+      activityMessage: transcriptActivityOverride
     )
   }
 
@@ -64,7 +65,8 @@ extension SessionController {
       isLoadingInitialHistory: isLoadingInitialHistory,
       serverWaitMessage: serverWaitMessage,
       sessionErrorMessage: sessionErrorMessage,
-      status: projectionStatus
+      status: projectionStatus,
+      activityMessage: transcriptActivityOverride
     )
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
@@ -267,7 +269,15 @@ extension SessionController {
     model?.providerActivityPhase
   }
   public var connectionRecoveryMessage: String? {
-    model?.connectionRecoveryMessage
+    if model != nil, serverAvailability != .ready { return "Reconnecting…" }
+    return model?.connectionRecoveryMessage
+  }
+
+  public var hasVisibleTranscript: Bool { visibleTranscriptViews > 0 }
+
+  public var transcriptActivityOverride: String? {
+    connectionRecoveryMessage ?? serverWaitMessage
+      ?? waitingHarnessUpdateName.map { "Waiting for \($0) to finish updating..." }
   }
 
   /// User-facing text for a refusal-driven model swap, with both model ids

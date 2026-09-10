@@ -112,7 +112,10 @@ struct AssistantTurnView: View {
     // that phase the ordinary Thinking…/tool activity remains the single
     // progress signal. The goal-specific label appears only once there is
     // a response for it to follow in transcript order.
-    let postResponseGoalActivity = finalText == nil ? nil : goalActivity
+    let activity = AssistantTurnActivity.resolve(
+      turn: turn, isWaitingOnUser: isWaitingOnUser,
+      sessionActivity: transcriptController?.transcriptActivityOverride,
+      backgroundTask: waitingOnBackgroundTask, goalActivity: goalActivity)
     VStack(alignment: .leading, spacing: 14) {
       // Planning/exploration collapses into the first "Worked for…"
       // section, above the proposed plan.
@@ -145,28 +148,9 @@ struct AssistantTurnView: View {
         )
       }
 
-      // A transient failure (e.g. 529 overload) is being retried — show it
-      // instead of the plain "Thinking…" so the chat isn't a silent freeze.
-      if presentation.showsActivity,
-        !isWaitingOnUser, turn.isGenerating, let retry = turn.retryStatus
-      {
-        ChatActivityRow(retryLabel(retry))
-          .suppressedDuringStreamingTextEntrance()
-      } else if postResponseGoalActivity == nil, presentation.showsActivity,
-        !isWaitingOnUser, turn.showsActivityIndicator,
-        turn.contextCompactionStatus != .started
-      {
-        if turn.isThinking {
-          ShimmeringText.thinking
-            .suppressedDuringStreamingTextEntrance()
-        } else {
-          // Commentary is not `finalText`, but its glyph fade is
-          // still visible activity and wins over this idle fallback.
-          ShimmeringText(text: "Waiting on harness...")
-            .suppressedDuringStreamingTextEntrance()
-        }
+      if presentation.showsActivity, let activity, !activity.followsResponse {
+        AssistantTurnActivityView(activity)
       }
-
       // The final answer streams here, final-styled from its first
       // chunk: the candidate is the last text span not phase-tagged
       // commentary. It demotes into the worked section only if the
@@ -206,10 +190,6 @@ struct AssistantTurnView: View {
       if presentation.showsEpilogue,
         let final = finalText, case let .text(_, markdown) = final
       {
-        if let waitingOnBackgroundTask {
-          ShimmeringText.waitingOnBackgroundTask(waitingOnBackgroundTask)
-            .suppressedDuringStreamingTextEntrance()
-        }
         if !turn.isGenerating {
           // Copies just the final answer text, not the worked/tool
           // content. Hidden until hover so the transcript stays clean.
@@ -218,9 +198,8 @@ struct AssistantTurnView: View {
         }
       }
 
-      if presentation.showsEpilogue, !isWaitingOnUser, let postResponseGoalActivity {
-        ShimmeringText(text: goalActivityLabel(postResponseGoalActivity))
-          .suppressedDuringStreamingTextEntrance()
+      if presentation.showsEpilogue, let activity, activity.followsResponse {
+        AssistantTurnActivityView(activity)
       }
 
       // A non-clean stop (error / limit / refusal / gave-up retry) surfaces
@@ -520,18 +499,6 @@ struct AssistantTurnView: View {
 /// Presentation-only labels and durations, kept out of the view body so the
 /// struct stays within the type-body budget.
 extension AssistantTurnView {
-  private func retryLabel(_ retry: RetryStatus) -> String {
-    guard let attempt = retry.attempt, let of = retry.of else { return retry.message }
-    return "\(retry.message) \(attempt)/\(of)"
-  }
-
-  private func goalActivityLabel(_ activity: GoalActivity) -> String {
-    switch activity {
-    case .planning: "Planning…"
-    case .verifying: "Verifying…"
-    }
-  }
-
   private func elapsedSeconds(to date: Date) -> Int {
     guard let start = turn.startedAt else { return 0 }
     return max(0, Int(date.timeIntervalSince(start)))

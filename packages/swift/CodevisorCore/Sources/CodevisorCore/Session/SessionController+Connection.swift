@@ -91,10 +91,23 @@ extension SessionController {
 
   /// Foreground/network-recovery hook: re-verifies this chat's in-flight
   /// turn against durable server history (see
-  /// `SessionModel.reconcileIfInFlight`). Safe to call broadly — idle
-  /// chats are a no-op.
+  /// `SessionModel.reconcileIfInFlight`). Includes a visible idle chat;
+  /// hidden idle chats are a no-op.
   public func reconcileInFlightTurn() async {
     await model?.reconcileIfInFlight()
+  }
+
+  public func reconcileServerSummary(_ session: ChatSession, revision: Int?) async {
+    // A sidebar event can predate a locally submitted prompt whose echo has
+    // not arrived yet. It cannot authoritatively end that optimistic turn.
+    guard let model, model.pendingOptimisticUserMessageIDs.isEmpty else { return }
+    if let revision, let applied = model.serverEventCursor, applied >= revision { return }
+    let serverFinished = [.idle, .unread, .errored].contains(session.sidebarState)
+    guard
+      (model.isSending && serverFinished)
+        || (hasVisibleTranscript && !model.isSending && session.sidebarState == .inProgress)
+    else { return }
+    await model.reconcileFromServer()
   }
 
   private func runConnectAttempt(harnessId: String, harnessName: String) async {

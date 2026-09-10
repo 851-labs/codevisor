@@ -125,16 +125,22 @@ extension SessionModel {
   }
 
   func apply(_ event: ServerSessionStreamEvent) {
+    if case let .synchronization(state) = event {
+      applySynchronization(state)
+      return
+    }
     // Any real session event proves the cursor-backed transport recovered.
     // Keep snapshot reconciliation as a backstop only while the stream is
     // actually quiet; never leave Reconnecting/error UI over live output.
-    if !isReplayingHistory, connectionRecoveryTask != nil {
+    if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization == .caughtUp {
       stopConnectionRecovery()
     }
     if !isReplayingHistory, let phase = providerActivityPhase(for: event) {
       noteProviderActivity(phase)
     }
     switch event {
+    case .synchronization:
+      break
     case let .update(update):
       apply(update)
     case let .assistantItemStarted(itemId):
@@ -387,7 +393,7 @@ extension SessionModel {
       return .modelStream
     case .assistantFinalized:
       return .modelStream
-    case .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
+    case .synchronization, .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
       .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
       return nil
     }

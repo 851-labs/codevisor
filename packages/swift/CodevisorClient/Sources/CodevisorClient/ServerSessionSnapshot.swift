@@ -44,6 +44,8 @@ public enum SessionRuntimeState: String, Equatable, Sendable {
 }
 
 public enum ServerSessionStreamEvent: Equatable, Sendable {
+  /// Transport markers are ordered with content, but never become transcript entries.
+  case synchronization(SessionStreamSynchronization)
   case update(SessionUpdate)
   /// A persisted user message. Carried outside `SessionUpdate` because the
   /// ACP update type cannot carry attachments.
@@ -92,6 +94,13 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
   /// re-run on a fallback model. The swap is sticky for the session, so this
   /// is session-level state rather than a per-turn line.
   case modelFallback(SessionModelFallback)
+}
+
+public enum SessionStreamSynchronization: String, Equatable, Sendable {
+  case reconnecting
+  case catchingUp
+  case caughtUp
+  case cursor
 }
 
 /// A refusal-driven model swap reported by the harness: the selected model's
