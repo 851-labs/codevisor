@@ -4,9 +4,8 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-/// The only controller SwiftUI installs for a transcript. It is a real UIKit
-/// containment boundary: row hosting controllers are descendants of this
-/// controller, not siblings injected into the navigation destination.
+/// Retained UIKit owner of the transcript and its row hosting controllers.
+/// Navigation containers attach this controller without rebuilding its rows.
 @MainActor
 final class TranscriptViewController: UIViewController {
   private let transcriptScrollView = VirtualizedTranscriptScrollView()
@@ -34,6 +33,14 @@ final class TranscriptViewController: UIViewController {
 
   func prepareForDismantle() {
     transcriptScrollView.prepareForDismantle()
+  }
+
+  func suspendPresentation() {
+    transcriptScrollView.suspendPresentation()
+  }
+
+  func prepareForPresentationAttachment() {
+    transcriptScrollView.prepareForPresentationAttachment()
   }
 
   override func didReceiveMemoryWarning() {

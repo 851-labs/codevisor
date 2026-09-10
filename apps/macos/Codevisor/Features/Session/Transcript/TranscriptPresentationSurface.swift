@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCore
+import CodevisorUI
 import StreamMarkdown
 
 /// One retained native transcript presentation. Unlike `SessionScrollState`,
@@ -87,49 +88,41 @@ final class TranscriptPresentationSurfaceCache {
     let paneID: UUID
   }
 
-  private struct Entry {
-    let surface: TranscriptPresentationSurface
-  }
-
-  private let maxDetachedSurfaceCount: Int
-  private var entries: [Key: Entry] = [:]
-  private var accessOrder: [Key] = []
+  private let cache: TranscriptPresentationCache<Key, TranscriptPresentationSurface>
   private var trimTask: Task<Void, Never>?
 
   init(maxDetachedSurfaceCount: Int = 6) {
-    self.maxDetachedSurfaceCount = max(1, maxDetachedSurfaceCount)
+    cache = TranscriptPresentationCache(
+      detachedLimit: maxDetachedSurfaceCount,
+      isAttached: { $0.isAttachedToWindow },
+      discard: { surface in
+        Task { @MainActor in
+          await Task.yield()
+          surface.prepareForEviction()
+        }
+      }
+    )
   }
 
   func surface(
     for key: Key,
     controller: SessionController
   ) -> TranscriptPresentationSurface {
-    if let entry = entries[key], entry.surface.matches(controller: controller) {
-      touch(key)
+    if let surface = cache.value(for: key), surface.matches(controller: controller) {
       scheduleTrim(excluding: key)
-      return entry.surface
+      return surface
     }
 
-    remove(key)
     let surface = TranscriptPresentationSurface(controller: controller)
-    entries[key] = Entry(surface: surface)
-    touch(key)
+    cache.insert(surface, for: key)
     scheduleTrim(excluding: key)
     return surface
   }
 
   func remove(serverID: String, sessionID: UUID) {
-    let keys = entries.keys.filter {
+    cache.remove {
       $0.serverID == serverID && $0.sessionID == sessionID
     }
-    for key in keys {
-      remove(key)
-    }
-  }
-
-  private func touch(_ key: Key) {
-    accessOrder.removeAll { $0 == key }
-    accessOrder.append(key)
   }
 
   /// Cache maintenance is lower priority than navigation. Waiting until the
@@ -142,29 +135,7 @@ final class TranscriptPresentationSurfaceCache {
       try? await Task.sleep(for: .milliseconds(16))
       guard !Task.isCancelled, let self else { return }
       trimTask = nil
-      trimDetachedSurfaces(excluding: protectedKey)
-    }
-  }
-
-  private func trimDetachedSurfaces(excluding protectedKey: Key) {
-    let detached = accessOrder.filter { key in
-      key != protectedKey
-        && entries[key]?.surface.isAttachedToWindow == false
-    }
-    guard detached.count > maxDetachedSurfaceCount else { return }
-    for key in detached.dropLast(maxDetachedSurfaceCount) {
-      remove(key)
-    }
-  }
-
-  private func remove(_ key: Key) {
-    accessOrder.removeAll { $0 == key }
-    guard let entry = entries.removeValue(forKey: key) else { return }
-    Task { @MainActor in
-      await Task.yield()
-      try? await Task.sleep(for: .milliseconds(16))
-      guard !Task.isCancelled else { return }
-      entry.surface.prepareForEviction()
+      cache.trim(excluding: protectedKey)
     }
   }
 }

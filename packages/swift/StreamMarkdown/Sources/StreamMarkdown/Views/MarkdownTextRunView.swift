@@ -1,4 +1,5 @@
 #if canImport(AppKit) || canImport(UIKit)
+  import MarkdownCore
   import SwiftUI
 
   /// Renders consecutive text-like Markdown blocks in one native TextKit view.
@@ -13,17 +14,26 @@
     /// the block values; a hit avoids rebuilding attributes and native layout.
     @State private var memo = TextRunMemo()
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var usesPreparedLayout: Bool
+
+    init(blocks: [MarkdownBlock], foregroundColor: Color, animationContext: StreamingTextAnimationContext?) {
+      self.blocks = blocks
+      self.foregroundColor = foregroundColor
+      self.animationContext = animationContext
+      _usesPreparedLayout = State(
+        initialValue: animationContext == nil && MarkdownLayoutPolicy.requiresBackgroundTextLayout(blocks))
+    }
 
     var body: some View {
       let _ = dynamicTypeSize
-      SelectableTextView(
-        attributedText: memo.rendered(
-          for: blocks,
-          theme: theme,
-          foregroundColor: foregroundColor
-        ),
-        streamingAnimation: animationContext
-      )
+      if usesPreparedLayout {
+        PreparedSelectableTextView(blocks: blocks, theme: theme, foregroundColor: foregroundColor)
+      } else {
+        SelectableTextView(
+          attributedText: memo.rendered(for: blocks, theme: theme, foregroundColor: foregroundColor),
+          streamingAnimation: animationContext
+        )
+      }
     }
   }
 

@@ -121,7 +121,10 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
 
   func installRootView(_ rootView: AnyView, knownHeight: CGFloat?) {
     presentationReady = false
-    attachmentGeometryReady = true
+    // Replacing the root preserves SwiftUI identity and its pending work.
+    // An unchanged unresolved preference will not publish again, so keep
+    // its readiness until preparation actually completes. Recycled hosts
+    // reset this state in prepareForMountedRow().
     hasAttemptedPresentation = false
     hasStableContentGeometry = knownHeight != nil
     canSkipContentLayout = false

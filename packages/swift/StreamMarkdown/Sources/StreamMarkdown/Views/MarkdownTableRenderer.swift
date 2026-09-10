@@ -33,7 +33,6 @@
 
     /// - Parameter width: the width to fill (columns are scaled to it). Nil lays
     ///   the table out at its natural content width — used by tests.
-    @MainActor
     static func make(
       headers: [String], alignments: [ColumnAlignment], rows: [[String]],
       theme: MarkdownTheme, width: CGFloat? = nil
@@ -55,7 +54,6 @@
     /// Parses and styles every cell exactly once, retaining both its attributed
     /// representation and natural width. The previous renderer repeated this
     /// work during the width pass and again while constructing the table.
-    @MainActor
     static func prepare(
       headers: [MarkdownText],
       rows: [[MarkdownText]],
@@ -67,7 +65,6 @@
       }
     }
 
-    @MainActor
     static func prepare(
       headers: [MarkdownText],
       rows: [[MarkdownText]],
@@ -109,7 +106,6 @@
       )
     }
 
-    @MainActor
     static func prepareResolvedCell(
       _ markdown: MarkdownText,
       isHeader: Bool,
@@ -124,7 +120,6 @@
       )
     }
 
-    @MainActor
     static func prepareCell(
       _ markdown: String,
       isHeader: Bool,
@@ -161,7 +156,6 @@
       return ceil(widest)
     }
 
-    @MainActor
     static func make(
       prepared: PreparedTable,
       alignments: [ColumnAlignment],

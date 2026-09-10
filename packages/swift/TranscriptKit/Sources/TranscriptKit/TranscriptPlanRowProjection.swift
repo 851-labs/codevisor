@@ -9,7 +9,9 @@ enum TranscriptPlanRowProjection {
     lifecycle: TranscriptBlockLifecycle,
     to rows: inout [TranscriptPresentationRow]
   ) {
-    let blocks = MarkdownParser().parse(markdown)
+    let blocks = TranscriptMarkdownParseCache.shared.parse(
+      markdown, messageID: messageID, sourceID: "plan"
+    )
     guard !blocks.isEmpty else { return }
 
     rows.append(

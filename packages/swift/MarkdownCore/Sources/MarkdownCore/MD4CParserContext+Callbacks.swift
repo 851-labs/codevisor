@@ -10,6 +10,12 @@ extension MD4CParserContext {
     ) -> Int32 = { type, detail, userdata in
       guard let context = context(userdata) else { return 0 }
 
+      if context.blockStack.count == 1 {
+        context.pendingSourceBlockOrdinal =
+          type == MD_BLOCK_P || type == MD_BLOCK_H || type == MD_BLOCK_TABLE
+          ? context.blocks.count : nil
+      }
+
       // Nested block content terminates an implicit tight-list paragraph.
       if type != MD_BLOCK_DOC && type != MD_BLOCK_LI && type != MD_BLOCK_P {
         context.flushImplicitParagraph()
@@ -104,11 +110,12 @@ extension MD4CParserContext {
       MD_BLOCKTYPE, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
     ) -> Int32 = { type, _, userdata in
       guard let context = context(userdata) else { return 0 }
+      if context.blockStack.count == 2 { context.pendingSourceBlockOrdinal = nil }
 
       switch type {
       case MD_BLOCK_QUOTE:
         guard case let .quote(blocks) = context.blockStack.popLast() else { return 0 }
-        context.appendBlock(.blockQuote(blocks))
+        context.appendBlock(.blockQuote(blocks.values))
       case MD_BLOCK_UL, MD_BLOCK_OL:
         guard case let .list(isOrdered, start, delimiter, isTight, items) = context.blockStack.popLast()
         else { return 0 }
@@ -118,7 +125,7 @@ extension MD4CParserContext {
             start: start,
             delimiter: delimiter,
             isTight: isTight,
-            items: items
+            items: items.values
           ))
       case MD_BLOCK_LI:
         context.flushImplicitParagraph()
@@ -128,15 +135,9 @@ extension MD4CParserContext {
             if case .list = $0 { return true }
             return false
           }),
-          case let .list(isOrdered, start, delimiter, isTight, items) = context.blockStack[listIndex]
+          case let .list(_, _, _, _, items) = context.blockStack[listIndex]
         else { return 0 }
-        context.blockStack[listIndex] = .list(
-          isOrdered: isOrdered,
-          start: start,
-          delimiter: delimiter,
-          isTight: isTight,
-          items: items + [MarkdownListItem(blocks: blocks, isTask: isTask, isChecked: isChecked)]
-        )
+        items.values.append(MarkdownListItem(blocks: blocks.values, isTask: isTask, isChecked: isChecked))
       case MD_BLOCK_H:
         guard case let .heading(level) = context.blockStack.popLast() else { return 0 }
         context.appendBlock(.heading(level: level, text: context.endInlineRoot()))
@@ -145,16 +146,16 @@ extension MD4CParserContext {
         context.appendBlock(.paragraph(context.endInlineRoot()))
       case MD_BLOCK_CODE:
         guard case let .code(language, _, isComplete, pieces) = context.blockStack.popLast() else { return 0 }
-        var code = pieces.joined()
+        var code = pieces.values.joined()
         if code.hasSuffix("\n") { code.removeLast() }
         context.appendBlock(.codeBlock(language: language, code: code, isComplete: isComplete))
       case MD_BLOCK_HR:
         context.appendBlock(.thematicBreak)
       case MD_BLOCK_TABLE:
         guard case let .table(headerRows, bodyRows) = context.blockStack.popLast() else { return 0 }
-        let headers = headerRows.first ?? []
+        let headers = headerRows.values.first ?? []
         let count = headers.count
-        let normalizedRows = bodyRows.map { row -> [MarkdownText] in
+        let normalizedRows = bodyRows.values.map { row -> [MarkdownText] in
           if row.count == count { return row }
           if row.count > count { return Array(row.prefix(count)) }
           return row + Array(repeating: MarkdownText(""), count: count - row.count)
@@ -175,9 +176,9 @@ extension MD4CParserContext {
         else { return 0 }
         switch context.tableSections.last {
         case .header:
-          context.blockStack[tableIndex] = .table(headerRows: headerRows + [cells], bodyRows: bodyRows)
+          headerRows.values.append(cells.values)
         default:
-          context.blockStack[tableIndex] = .table(headerRows: headerRows, bodyRows: bodyRows + [cells])
+          bodyRows.values.append(cells.values)
         }
       case MD_BLOCK_TH, MD_BLOCK_TD:
         guard case let .cell(alignment) = context.blockStack.popLast() else { return 0 }
@@ -188,7 +189,7 @@ extension MD4CParserContext {
             return false
           }), case let .row(cells) = context.blockStack[rowIndex]
         else { return 0 }
-        context.blockStack[rowIndex] = .row(cells + [text])
+        cells.values.append(text)
         if context.tableSections.last == .header {
           context.lastTableAlignments.append(alignment)
         }
@@ -264,6 +265,7 @@ extension MD4CParserContext {
       MD_TEXTTYPE, UnsafePointer<MD_CHAR>?, MD_SIZE, UnsafeMutableRawPointer?
     ) -> Int32 = { type, pointer, size, userdata in
       guard let context = context(userdata) else { return 0 }
+      context.noteTextSource(pointer)
       var text = copiedText(pointer, size: size)
 
       if context.appendCodeText(text) { return 0 }

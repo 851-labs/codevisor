@@ -20,6 +20,7 @@ struct SessionTranscriptView: View {
   static let transcriptMeasurementSchemaVersion = 3
 
   @Bindable var controller: SessionController
+  let presentationSurface: TranscriptPresentationSurface
   /// The new-chat page shows project/run-location chips above the composer;
   /// the first chat inside a workspace doesn't (its directory is fixed).
   /// This flag is the only difference between the two surfaces — everything
@@ -53,8 +54,10 @@ struct SessionTranscriptView: View {
   @Environment(\.dynamicTypeSize) var dynamicTypeSize
   @Environment(\.scenePhase) var scenePhase
   @Environment(\.theme) var theme
+  @Environment(\.markdownTheme) var markdownTheme
   @Environment(AppEnvironment.self) var environment
-  @State var disclosure = TranscriptDisclosureStore()
+  @State private var presentationOwner = UUID()
+  var disclosure: TranscriptDisclosureStore { presentationSurface.disclosure }
   @Namespace var composerGlassNamespace
   /// Resting measurements stay split so a live resize drag never republishes
   /// transcript geometry. `ComposerBar` owns the card measurement; the
@@ -90,10 +93,12 @@ struct SessionTranscriptView: View {
   @State var projectionPublication =
     TranscriptProjectionPublicationState<TranscriptProjectionRequest>()
   @State var ownsVisibleTranscriptLifecycle = false
-  @State var textAnimationVisibility = StreamingTextAnimationVisibility(
-    initiallyVisible: false
-  )
-  @State var textAnimationRegistry = StreamingTextAnimationRegistry()
+  var textAnimationVisibility: StreamingTextAnimationVisibility {
+    presentationSurface.textAnimationVisibility
+  }
+  var textAnimationRegistry: StreamingTextAnimationRegistry {
+    presentationSurface.textAnimationRegistry
+  }
   /// Window-space bounds of the live editor. UIKit uses this as the actual
   /// launch point for the optimistic user row instead of estimating from the
   /// transcript's bottom inset.
@@ -172,7 +177,8 @@ struct SessionTranscriptView: View {
         historyLoadTask = nil
         olderHistoryPresentation.cancel()
         publishAttentionFocus(isForeground: false)
-        textAnimationVisibility.disappear()
+        presentationSurface.disappear(owner: presentationOwner)
+        TranscriptPresentationSurfaceCache.shared.scheduleTrim()
         if ownsVisibleTranscriptLifecycle {
           ownsVisibleTranscriptLifecycle = false
           controller.transcriptViewDidDisappear()
@@ -258,11 +264,10 @@ struct SessionTranscriptView: View {
     guard shouldOwnLifecycle != ownsVisibleTranscriptLifecycle else { return }
     ownsVisibleTranscriptLifecycle = shouldOwnLifecycle
     if shouldOwnLifecycle {
-      textAnimationRegistry.prepareForPresentation()
-      textAnimationVisibility.appear()
+      presentationSurface.appear(owner: presentationOwner)
       controller.transcriptViewDidAppear()
     } else {
-      textAnimationVisibility.disappear()
+      presentationSurface.disappear(owner: presentationOwner)
       controller.transcriptViewDidDisappear()
     }
   }

@@ -157,12 +157,13 @@ extension TranscriptAssistantRowProjection {
       return true
     }
 
-    let parser = MarkdownParser()
     for item in items {
       switch item {
       case let .text(entryID, markdown):
         let sourceID = "worked:\(kind.layoutComponent):\(entryID)"
-        let blocks = parser.parse(markdown)
+        let blocks = TranscriptMarkdownParseCache.shared.parse(
+          markdown, messageID: message.id, sourceID: sourceID
+        )
         for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
           let projected = TranscriptMarkdownChunk(
             messageID: message.id,

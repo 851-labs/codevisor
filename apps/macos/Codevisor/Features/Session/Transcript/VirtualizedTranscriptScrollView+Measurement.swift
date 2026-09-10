@@ -274,6 +274,7 @@ extension VirtualizedTranscriptScrollView {
     guard let host = mountedHosts[key], host.setAttachmentGeometryReady(ready) else {
       return
     }
+    if !ready { pendingMeasuredHeights.removeValue(forKey: key) }
     promoteTargetWindowAndRetireIfReady()
     updateInitialPresentationReadiness()
   }
@@ -289,7 +290,7 @@ extension VirtualizedTranscriptScrollView {
 
   func recordMeasuredHeight(_ rawHeight: CGFloat, for key: String) {
     let height = max(1, rawHeight.rounded(.up))
-    guard rowByKey[key] != nil else { return }
+    guard rowByKey[key] != nil, mountedHosts[key]?.isAttachmentGeometryReady == true else { return }
     // A stale ledger key must reach the commit even when the reported
     // height is unchanged — that commit is what clears the staleness and
     // rewrites the row's revision-keyed cache entries.
@@ -328,7 +329,7 @@ extension VirtualizedTranscriptScrollView {
     pendingMeasuredHeights.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
     for (key, height) in pending {
-      guard rowByKey[key] != nil,
+      guard rowByKey[key] != nil, mountedHosts[key]?.isAttachmentGeometryReady == true,
         measurements.needsCommit(height, for: key)
       else { continue }
       if storeMeasuredHeight(height, for: key) {

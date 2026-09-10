@@ -1,3 +1,4 @@
+import MarkdownCore
 import SwiftUI
 #if canImport(AppKit)
   import AppKit
@@ -19,18 +20,29 @@ struct CodeBlockView: View {
   @Environment(\.markdownTheme) private var theme
   @State private var didCopy = false
   @State private var copyResetTask: Task<Void, Never>?
-  @State private var highlighted: AttributedString?
+  @State private var highlighted: CodeHighlightSnapshot?
   /// Memoizes the plain-text fallback: `AttributedString(code)` in `body`
   /// re-allocated attributed storage for the entire block on every body
   /// evaluation — for a streaming block, every ~16ms flush.
   @State private var plainMemo = PlainCodeMemo()
-  #if canImport(UIKit)
-    /// Memoizes the UIKit NSAttributedString conversion: the run-by-run
+  @State private var usesPreparedLayout: Bool
+  #if canImport(AppKit) || canImport(UIKit)
+    /// Memoizes the native NSAttributedString conversion: the run-by-run
     /// rebuild is O(tokens) on the main thread and `body` re-evaluates on
     /// every layout/measurement pass, so the same settled block re-converted
     /// repeatedly while scrolling.
     @State private var nativeMemo = NativeCodeMemo()
   #endif
+
+  init(id: String, language: String?, code: String, isComplete: Bool) {
+    self.id = id
+    self.language = language
+    self.code = code
+    self.isComplete = isComplete
+    _usesPreparedLayout = State(
+      initialValue: isComplete && code.utf8.count > MarkdownLayoutPolicy.maximumSynchronousTextBytes
+    )
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -66,24 +78,36 @@ struct CodeBlockView: View {
       Divider()
 
       #if canImport(AppKit)
-        HorizontalCodeScrollView(
-          text: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
-          foreground: theme.codeForeground
-        )
+        if usesPreparedLayout {
+          PreparedSelectableTextView(
+            text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
+          )
+        } else {
+          HorizontalCodeScrollView(
+            text: renderedText,
+            foreground: theme.codeForeground
+          )
+        }
       #elseif canImport(UIKit)
         ScrollView(.horizontal, showsIndicators: false) {
-          SelectableTextView(
-            attributedText: nativeMemo.attributed(
-              for: highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code),
-              fallback: theme.codeForeground
-            ),
-            fillsWidth: false
-          )
-          .padding(10)
+          if usesPreparedLayout {
+            PreparedSelectableTextView(
+              text: nativeMemo.attributed(for: renderedText, fallback: theme.codeForeground), wrapsText: false
+            ).padding(10)
+          } else {
+            SelectableTextView(
+              attributedText: nativeMemo.attributed(
+                for: renderedText,
+                fallback: theme.codeForeground
+              ),
+              fillsWidth: false
+            )
+            .padding(10)
+          }
         }
       #else
         ScrollView(.horizontal, showsIndicators: false) {
-          Text(highlighted ?? settledCacheProbe ?? plainMemo.attributed(for: code))
+          Text(renderedText)
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(theme.codeForeground)
             .padding(10)
@@ -114,13 +138,21 @@ struct CodeBlockView: View {
         if isComplete {
           CodeHighlightResultCache.shared.store(result, for: resultCacheKey)
         }
-        highlighted = result
+        highlighted = CodeHighlightSnapshot(
+          source: code, language: language, themeKey: theme.codeThemeKey, text: result
+        )
       }
     }
   }
 
   private var resultCacheKey: CodeHighlightResultCache.Key {
     CodeHighlightResultCache.Key(themeKey: theme.codeThemeKey, language: language, code: code)
+  }
+
+  private var renderedText: AttributedString {
+    settledCacheProbe
+      ?? highlighted?.renderedText(source: code, language: language, themeKey: theme.codeThemeKey)
+      ?? plainMemo.attributed(for: code)
   }
 
   /// The shared-cache lookup, gated on `isComplete`: only settled blocks are
@@ -130,11 +162,15 @@ struct CodeBlockView: View {
     isComplete ? CodeHighlightResultCache.shared.value(for: resultCacheKey) : nil
   }
 
-  // Re-highlight when the content grows, the block completes, or the theme
-  // changes (via codeThemeKey — the highlighter closure itself can't be
-  // compared). utf8.count: grapheme counting is O(n) per body evaluation.
-  private var highlightTaskKey: String {
-    "\(theme.codeThemeKey)|\(isComplete)|\(language ?? "")|\(code.utf8.count)"
+  private struct HighlightTaskKey: Equatable {
+    let result: CodeHighlightResultCache.Key
+    let isComplete: Bool
+  }
+
+  // Same-length replacements also need highlighting. String equality uses
+  // shared storage between unchanged view evaluations.
+  private var highlightTaskKey: HighlightTaskKey {
+    HighlightTaskKey(result: resultCacheKey, isComplete: isComplete)
   }
 
   private func copy() {
@@ -157,8 +193,8 @@ struct CodeBlockView: View {
 
 }
 
-#if canImport(UIKit)
-  /// Last-value memo for the UIKit attributed-text conversion. Plain class in
+#if canImport(AppKit) || canImport(UIKit)
+  /// Last-value memo for the native attributed-text conversion. Plain class in
   /// `@State`: non-observable, and the `AttributedString` comparison is cheap
   /// between evaluations that share storage — it does real work only when the
   /// highlighted text, Dynamic Type size, or theme foreground actually changes.
@@ -170,20 +206,25 @@ struct CodeBlockView: View {
     private var cached: NSAttributedString?
 
     func attributed(for text: AttributedString, fallback: Color) -> NSAttributedString {
-      let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
+      #if canImport(UIKit)
+        let font = UIFont.scaledMonospacedSystemFont(forTextStyle: .callout)
+      #else
+        let font = NSFont.monospacedSystemFont(
+          ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular)
+      #endif
       let size = font.pointSize
       if let cached, text == self.text, size == fontSize, fallback == self.fallback {
         return cached
       }
       let result = NSMutableAttributedString()
-      let fallbackColor = UIColor(fallback)
+      let fallbackColor = MarkdownNativeColor(fallback)
       for run in text.runs {
         result.append(
           NSAttributedString(
             string: String(text[run.range].characters),
             attributes: [
               .font: font,
-              .foregroundColor: run.foregroundColor.map { UIColor($0) }
+              .foregroundColor: run.foregroundColor.map { MarkdownNativeColor($0) }
                 ?? fallbackColor,
             ]
           )

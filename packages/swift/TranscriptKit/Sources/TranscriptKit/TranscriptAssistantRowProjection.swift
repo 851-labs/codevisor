@@ -193,12 +193,13 @@ enum TranscriptAssistantRowProjection {
     )
     var responseRows: [TranscriptPresentationRow] = []
     var ordinal = 0
-    let parser = MarkdownParser()
     for (segmentIndex, segment) in segments.enumerated() {
       let sourceID = "\(entryID):\(segmentIndex)"
       switch segment {
       case let .markdown(source):
-        let blocks = parser.parse(source)
+        let blocks = TranscriptMarkdownParseCache.shared.parse(
+          source, messageID: message.id, sourceID: sourceID
+        )
         let sourceOrdinal = ordinal
         for chunk in TranscriptMarkdownChunkProjection.chunks(from: blocks) {
           let chunkOrdinal = sourceOrdinal + chunk.firstOrdinal

@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorUI
 import QuartzCore
 import TranscriptKit
 

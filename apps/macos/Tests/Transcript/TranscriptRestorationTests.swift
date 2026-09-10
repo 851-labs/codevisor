@@ -235,4 +235,30 @@ struct TranscriptRestorationTests {
     #expect(reopened.contentView.bounds.minY == top)
     #expect(!reopened.followsLatest)
   }
+
+  @Test("Unprepared content cannot replace a saved height with a placeholder")
+  func placeholderHeightDoesNotMoveRestoredAnchor() throws {
+    let controller = controller()
+    let largeRow = row(height: 120_000)
+    let view = makeView()
+    defer { view.prepareForDismantle() }
+    configure(view, controller: controller, rows: [largeRow])
+    scrollUp(view)
+    let anchor = view.currentViewportAnchor()
+    let host = try #require(view.mountedHosts[largeRow.layoutKey])
+    view.recordMeasuredHeight(88_000, for: largeRow.layoutKey)
+    view.attachmentGeometryReadinessDidChange(false, for: largeRow.layoutKey)
+    view.commitPendingMeasurements()
+    #expect(view.measurements[largeRow.layoutKey] == 120_000)
+    view.recordMeasuredHeight(88_000, for: largeRow.layoutKey)
+    view.commitPendingMeasurements()
+    #expect(view.currentViewportAnchor() == anchor)
+    #expect(view.measurements[largeRow.layoutKey] == 120_000)
+    #expect(!host.isAttachmentGeometryReady)
+    view.attachmentGeometryReadinessDidChange(true, for: largeRow.layoutKey)
+    view.recordMeasuredHeight(121_000, for: largeRow.layoutKey)
+    view.commitPendingMeasurements()
+    #expect(view.measurements[largeRow.layoutKey] == 121_000)
+    #expect(view.currentViewportAnchor() == anchor)
+  }
 }

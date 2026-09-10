@@ -62,6 +62,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var lastObservedContentOffsetY: CGFloat?
   var remainingMountsThisFrame = 2
   var rowContent: ((TranscriptVirtualRow) -> AnyView)?
+  var openMarkdownLink: ((URL) -> Bool)?
   var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
   var measurementCommitTask: Task<Void, Never>?
   weak var sessionController: SessionController?
@@ -99,6 +100,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var disclosureAnchorReleaseTask: Task<Void, Never>?
 
   var pendingInitialState: SessionScrollState?
+  var isAwaitingWarmProjection = false
+  var hasReceivedScrollCommandForAttachment = false
   var hasOlderHistory = false
   var paginationHeaderLayout = TranscriptPaginationHeaderLayout()
   var olderHistoryPresentationTarget: TranscriptPaginationPresentationTarget?
@@ -262,6 +265,15 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   override func safeAreaInsetsDidChange() {
     super.safeAreaInsetsDidChange()
     updateTopContentInsetIfNeeded()
+  }
+
+  override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil, window != nil {
+      // Capture before detachment changes geometry. Accessibility scrolling
+      // can advance the viewport without UIKit's touch delegate callbacks.
+      emitViewportSnapshot()
+    }
+    super.willMove(toWindow: newWindow)
   }
 
   override func didMoveToWindow() {
