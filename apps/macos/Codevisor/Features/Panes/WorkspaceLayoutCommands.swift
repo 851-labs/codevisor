@@ -32,6 +32,7 @@ extension FocusedValues {
 
 struct WorkspaceLayoutCommands: Commands {
   @FocusedValue(\.workspaceLayoutActions) private var actions
+  @FocusedValue(\.sidebarActions) private var sidebarActions
 
   var body: some Commands {
     CommandMenu("Tabs & Splits") {
@@ -47,10 +48,10 @@ struct WorkspaceLayoutCommands: Commands {
 
       Divider()
 
-      ShortcutButton(.previousTab) { actions?.previousTab() }
-        .disabled(actions == nil)
-      ShortcutButton(.nextTab) { actions?.nextTab() }
-        .disabled(actions == nil)
+      ShortcutButton(.previousTab) { stepTab(-1) }
+        .disabled(actions == nil && sidebarActions == nil)
+      ShortcutButton(.nextTab) { stepTab(1) }
+        .disabled(actions == nil && sidebarActions == nil)
 
       Divider()
 
@@ -80,6 +81,19 @@ struct WorkspaceLayoutCommands: Commands {
         .disabled(actions == nil)
       ShortcutButton(.focusSplitBelow) { actions?.focus(.bottom) }
         .disabled(actions == nil)
+    }
+  }
+
+  private func stepTab(_ offset: Int) {
+    if let actions {
+      if offset < 0 {
+        actions.previousTab()
+      } else {
+        actions.nextTab()
+      }
+    } else {
+      // The standalone New Chat page has no workspace container.
+      sidebarActions?.stepTab(offset)
     }
   }
 }

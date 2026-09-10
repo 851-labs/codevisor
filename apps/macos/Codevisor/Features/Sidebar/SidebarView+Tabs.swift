@@ -234,23 +234,23 @@ extension SidebarView {
 
   // MARK: - Keyboard stepping
 
-  /// One sidebar row: a single-pane tab, or one pane of a split tab.
-  private struct SidebarTabEntry {
-    let item: SidebarWorkspaceListItem
-    let tab: WorkspaceTab
-    /// Nil for a single-pane tab (the tab itself is the row).
-    let leaf: (id: UUID, state: PaneGroupState)?
+  /// One sidebar row: New Chat, a single-pane tab, or one pane of a split tab.
+  private enum SidebarTabEntry {
+    case newChat
+    /// The leaf is nil for a single-pane tab (the tab itself is the row).
+    case tab(item: SidebarWorkspaceListItem, tab: WorkspaceTab, leaf: (id: UUID, state: PaneGroupState)?)
   }
 
   /// The flat list exactly as the sidebar renders it, across workspaces.
   private var tabEntries: [SidebarTabEntry] {
-    workspaceItems.flatMap { item in
-      item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
-        let groups = tab.root.allGroups
-        guard groups.count > 1 else { return [SidebarTabEntry(item: item, tab: tab, leaf: nil)] }
-        return groups.map { SidebarTabEntry(item: item, tab: tab, leaf: ($0.id, $0.state)) }
+    [.newChat]
+      + workspaceItems.flatMap { item in
+        item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
+          let groups = tab.root.allGroups
+          guard groups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
+          return groups.map { .tab(item: item, tab: tab, leaf: ($0.id, $0.state)) }
+        }
       }
-    }
   }
 
   /// ⇧⌘[ / ⇧⌘]: moves to the previous/next row of the flat list, crossing
@@ -259,22 +259,31 @@ extension SidebarView {
   /// container cycle locally.
   func stepSidebarTab(_ offset: Int) -> Bool {
     let entries = tabEntries
-    guard !entries.isEmpty,
+    guard
       let current = entries.firstIndex(where: { entry in
-        routesSelectedSession(entry.item.workspace)
-          && entry.item.workspace.selectedCenterTabId == entry.tab.id
-          && (entry.leaf == nil || entry.leaf?.id == entry.tab.activeLeafId)
+        switch entry {
+        case .newChat:
+          return isNewChatSelected
+        case let .tab(item, tab, leaf):
+          return routesSelectedSession(item.workspace)
+            && item.workspace.selectedCenterTabId == tab.id
+            && (leaf == nil || leaf?.id == tab.activeLeafId)
+        }
       })
     else { return false }
     let targetIndex = current + offset
     // At the end of the list the key is consumed but nothing moves — the
     // container must not fall back to wrapping within its own tabs.
     guard entries.indices.contains(targetIndex) else { return true }
-    let target = entries[targetIndex]
-    if let leaf = target.leaf {
-      activateLeaf(leaf.id, state: leaf.state, in: target.item)
-    } else {
-      activateTab(target.tab, in: target.item)
+    switch entries[targetIndex] {
+    case .newChat:
+      selection = .newChat(nil)
+    case let .tab(item, tab, leaf):
+      if let leaf {
+        activateLeaf(leaf.id, state: leaf.state, in: item)
+      } else {
+        activateTab(tab, in: item)
+      }
     }
     return true
   }

@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Scene-scoped creation actions published by the sidebar (via
-/// `.focusedSceneValue`) so the File menu drives the exact same code paths as
-/// the sidebar's own buttons. Absent during onboarding — the sidebar isn't on
+/// Scene-scoped creation and navigation actions published by the sidebar (via
+/// `.focusedSceneValue`) so menu commands drive the same code paths as
+/// the sidebar's own rows. Absent during onboarding — the sidebar isn't on
 /// screen — which leaves the menu items disabled.
 struct SidebarActions: Equatable {
   let newChat: @MainActor () -> Void
   let newProject: @MainActor () -> Void
   let addRemoteMachine: @MainActor () -> Void
+  let stepTab: @MainActor (Int) -> Void
 
   /// The closures capture stable references (bindings and the app
   /// environment), so any published instance is interchangeable.

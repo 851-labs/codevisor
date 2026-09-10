@@ -46,6 +46,13 @@ struct SidebarView: View {
   var isReordering: Bool { draggingWorkspaceID != nil }
   var itemTitleFont: Font { .body }
 
+  var isNewChatSelected: Bool {
+    switch selection {
+    case .newChat, .none: true
+    case .session: false
+    }
+  }
+
   var body: some View {
     sidebarConfiguredView
   }
@@ -62,6 +69,7 @@ struct SidebarView: View {
         SidebarActionRow(
           title: "New chat",
           systemImage: "square.and.pencil",
+          isSelected: isNewChatSelected,
           isHoverEnabled: !isReordering
         ) {
           selection = .newChat(nil)
@@ -202,11 +210,14 @@ struct SidebarView: View {
       }
       .focusedSceneValue(
         \.sidebarActions,
-        publishesSceneActions
+        // Navigation captures the store; wait until it is available before
+        // publishing the closures retained by the scene's focused value.
+        publishesSceneActions && store != nil
           ? SidebarActions(
             newChat: { selection = .newChat(nil) },
             newProject: { startAddProject() },
-            addRemoteMachine: { showingRemoteMachine = true }
+            addRemoteMachine: { showingRemoteMachine = true },
+            stepTab: { _ = stepSidebarTab($0) }
           )
           : nil
       )
