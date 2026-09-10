@@ -3,7 +3,7 @@ import { Schema } from "effect"
 export const McpTransport = Schema.Literals(["http", "stdio"])
 export type McpTransport = typeof McpTransport.Type
 
-export const McpServerKind = Schema.Literals(["managed", "browserUse", "computerUse"])
+export const McpServerKind = Schema.Literals(["managed", "browserUse", "computerUse", "codevisor"])
 export type McpServerKind = typeof McpServerKind.Type
 
 export const McpAuthType = Schema.Literals(["none", "bearer", "oauth"])

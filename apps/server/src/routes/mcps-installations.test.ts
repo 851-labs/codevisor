@@ -114,6 +114,14 @@ describe("mcp installation routes", () => {
       expect.arrayContaining([
         expect.objectContaining({ id, kind: "managed", name: "Renamed" }),
         expect.objectContaining({ id: "browser", canRemove: false, kind: "browserUse" }),
+        expect.objectContaining({
+          id: "codevisor",
+          kind: "codevisor",
+          canEdit: false,
+          canRemove: false,
+          enabled: true,
+          connectionState: "connected"
+        }),
         expect.objectContaining({ id: "computer", canEdit: false, kind: "computerUse" })
       ])
     )
@@ -241,7 +249,7 @@ describe("mcp installation routes", () => {
       ((await jsonRequest(server, "/v1/mcps")).body as ReadonlyArray<McpServer>).map(
         (candidate) => candidate.id
       )
-    ).toEqual(["browser", "computer"])
+    ).toEqual(["browser", "codevisor", "computer"])
 
     const automationAnswer = vi.spyOn(services.mcp, "answerQuestion").mockResolvedValueOnce(true)
     expect(

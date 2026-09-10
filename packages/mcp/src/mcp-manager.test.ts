@@ -161,6 +161,7 @@ describe("MCP manager", () => {
       )
       expect((await manager.list()).map((server) => server.id)).toEqual([
         "browser",
+        "codevisor",
         "computer",
         created.id
       ])
@@ -351,7 +352,11 @@ describe("MCP manager", () => {
       ).toBe("needsAuthorization")
       await manager.update(created.id, { authType: "none", enabled: false })
       await manager.remove(created.id)
-      expect((await manager.list()).map((server) => server.id)).toEqual(["browser", "computer"])
+      expect((await manager.list()).map((server) => server.id)).toEqual([
+        "browser",
+        "codevisor",
+        "computer"
+      ])
     }
   )
 })

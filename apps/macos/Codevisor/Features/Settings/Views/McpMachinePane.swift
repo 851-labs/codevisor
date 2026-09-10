@@ -150,8 +150,8 @@ struct McpMachinePane: View {
 
   @ViewBuilder
   private var paneContent: some View {
-    let builtIn = servers.filter { $0.kind == "browserUse" || $0.kind == "computerUse" }
-    let managed = servers.filter { $0.kind != "browserUse" && $0.kind != "computerUse" }
+    let builtIn = servers.filter(\.isBuiltIn)
+    let managed = servers.filter { !$0.isBuiltIn }
     if !builtIn.isEmpty {
       Section("Built-in Tools") {
         ForEach(builtIn) { server in

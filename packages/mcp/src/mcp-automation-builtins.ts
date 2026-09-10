@@ -8,8 +8,11 @@ import { errorMessage } from "./mcp-support.js"
 
 export const BUILTIN_MCP_SERVERS = [
   { id: "browser", name: "Browser Use", kind: "browserUse" as const },
-  { id: "computer", name: "Computer Use", kind: "computerUse" as const }
+  { id: "computer", name: "Computer Use", kind: "computerUse" as const },
+  { id: "codevisor", name: "Codevisor", kind: "codevisor" as const }
 ] as const
+
+export type BuiltinMcpId = (typeof BUILTIN_MCP_SERVERS)[number]["id"]
 
 export const automationSkillPath = (
   id: "browser" | "computer",

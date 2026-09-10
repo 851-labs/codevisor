@@ -17,23 +17,23 @@ import {
 afterEach(cleanupMcpManagerTests)
 
 describe("MCP manager built-in providers and suppression", () => {
-  it("keeps built-in automation providers immutable but disableable", async () => {
+  it.each([
+    ["browser", "browserUse"],
+    ["computer", "computerUse"],
+    ["codevisor", "codevisor"]
+  ])("keeps %s immutable but disableable", async (id, kind) => {
     const { manager } = await testManager()
-    await expect(manager.remove("browser")).rejects.toThrow("cannot be removed")
-    await expect(manager.update("computer", { name: "Renamed" })).rejects.toThrow(
-      "managed by Codevisor"
-    )
-    const disabled = await manager.update("computer", { enabled: false })
+    await expect(manager.remove(id)).rejects.toThrow("cannot be removed")
+    await expect(manager.update(id, { name: "Renamed" })).rejects.toThrow("managed by Codevisor")
+    const disabled = await manager.update(id, { enabled: false })
     expect(disabled).toMatchObject({
       canEdit: false,
       canRemove: false,
       enabled: false,
-      id: "computer",
-      kind: "computerUse"
+      id,
+      kind
     })
-    expect((await manager.resolved()).find((server) => server.id === "computer")?.enabled).toBe(
-      false
-    )
+    expect((await manager.resolved()).find((server) => server.id === id)?.enabled).toBe(false)
   })
 
   it("synchronizes proper managed skills with built-in provider state", async () => {

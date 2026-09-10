@@ -22,6 +22,13 @@ public struct ServerMcpServer: Codable, Equatable, Identifiable, Sendable {
   public var detail: String?
   public var createdAt: String
   public var updatedAt: String
+
+  public var isBuiltIn: Bool {
+    switch kind {
+    case "browserUse", "computerUse", "codevisor": true
+    default: false
+    }
+  }
 }
 
 public struct ServerBrowserUseConfiguration: Codable, Equatable, Sendable {

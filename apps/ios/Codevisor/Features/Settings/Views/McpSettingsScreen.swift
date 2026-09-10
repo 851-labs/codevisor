@@ -93,7 +93,7 @@ private struct McpMachineRows: View {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 6) {
           Text(server.name)
-          if server.kind == "browserUse" || server.kind == "computerUse" {
+          if server.isBuiltIn {
             Text("Built-in")
               .font(.caption2)
               .padding(.horizontal, 5)
