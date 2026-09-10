@@ -11,7 +11,7 @@ import SwiftUI
 public final class StreamingContentAnimationCoordinator {
   public private(set) var hasActiveEntranceAnimation = false
   /// Native text coordinators include this in their prepared snapshot key so
-  /// shifted deadlines restart the platform frame clock after foregrounding.
+  /// resumed deadlines and navigation baselines invalidate retained text.
   public private(set) var playbackRevision = 0
   let timeline = StreamingTextAnimationTimeline()
   private var pendingEntranceSourceIDs: Set<String> = []
@@ -59,6 +59,9 @@ public final class StreamingContentAnimationCoordinator {
 
   public func reset() {
     timeline.reset()
+    // An idle retained row has no activity change to observe. Wake it now
+    // so it consumes its navigation baseline before the next live append.
+    playbackRevision &+= 1
   }
 
   func suspendPlayback() {

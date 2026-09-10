@@ -34,6 +34,10 @@ extension VirtualizedTranscriptScrollView {
     let newIsAwaitingFirstActiveProjection = input.isAwaitingFirstActiveProjection
     let newLayoutFingerprint = input.layoutFingerprint
     let newScrollCommand = input.scrollCommand
+    if !hasReceivedScrollCommandForAttachment {
+      scrollCommand = newScrollCommand
+      hasReceivedScrollCommandForAttachment = true
+    }
     let newSendAnimationRequest = input.sendAnimationRequest
     let newSendAnimationSourceFrame = input.sendAnimationSourceFrame
     let newPresentationRole = input.presentationRole
@@ -55,6 +59,7 @@ extension VirtualizedTranscriptScrollView {
       deferredActivePlaceholderKey = nil
     }
     rowContent = newRowContent
+    openMarkdownLink = callbacks.openMarkdownLink
     self.onViewportChange = onViewportChange
     self.onBottomStateChange = onBottomStateChange
     self.onFollowStateChange = onFollowStateChange
@@ -64,6 +69,13 @@ extension VirtualizedTranscriptScrollView {
     isActiveProjectionPending = newIsActiveProjectionPending
     isAwaitingFirstActiveProjection = newIsAwaitingFirstActiveProjection
     isLoadingInitialHistory = newIsLoadingInitialHistory
+    if isAwaitingWarmProjection,
+      newIsPreparingInitialProjection || newIsAwaitingFirstActiveProjection
+    {
+      setNeedsLayout()
+      return
+    }
+    isAwaitingWarmProjection = false
     guard !newIsPreparingInitialProjection else {
       setNeedsLayout()
       return

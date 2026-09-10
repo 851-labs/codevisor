@@ -1,4 +1,5 @@
 import AppKit
+import MarkdownCore
 import CodevisorCore
 import CodevisorUI
 import QuartzCore
@@ -258,7 +259,7 @@ extension VirtualizedTranscriptScrollView {
 
   func usesNativeMarkdownHost(for row: TranscriptVirtualRow) -> Bool {
     guard case let .markdownChunk(chunk) = row.content else { return false }
-    return chunk.lifecycle == .settled
+    return chunk.lifecycle == .settled && !MarkdownLayoutPolicy.requiresBackgroundTextLayout(chunk.blocks)
   }
 
   func mountMarkdownRow(

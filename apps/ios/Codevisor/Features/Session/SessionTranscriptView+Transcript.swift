@@ -42,6 +42,7 @@ extension SessionTranscriptView {
         runningSubagentToolCallIDs: controller.runningSubagentToolCallIds
       )
       NativeTranscriptView(
+        presentationSurface: presentationSurface,
         input: TranscriptSurfaceInput(
           sessionController: controller,
           rows: visibleRows.rows,
@@ -72,6 +73,7 @@ extension SessionTranscriptView {
           sendAnimationSourceFrame: sendAnimationSourceFrame,
           presentationRole: presentationRole,
           textAnimationRegistry: textAnimationRegistry,
+          allowsLiveTextAnimation: textAnimationVisibility.isVisible,
           reduceMotion: reduceMotion,
           scrollIndicatorBottomInset: composerHeight + 6
         ),
@@ -85,7 +87,6 @@ extension SessionTranscriptView {
                 row: row, controller: controller, leaves: .iOS(controller: controller)
               )
               .reportsStreamingTextAnimationActivity()
-              .markdownLinkHandler(openMarkdownLink)
               .environment(\.theme, theme)
               .environment(\.attachmentImages, attachmentImages)
               .environment(\.transcriptDisclosure, disclosure)
@@ -132,6 +133,7 @@ extension SessionTranscriptView {
           onSendAnimationCompleted: { request in
             onSendAnimationCompleted?(request)
           },
+          openMarkdownLink: openMarkdownLink,
           onSendAnimationStarted: onSendAnimationStarted
         )
       )
@@ -198,6 +200,8 @@ extension SessionTranscriptView {
     var hasher = Hasher()
     hasher.combine(dynamicTypeSize)
     hasher.combine(displayScale)
+    hasher.combine(markdownTheme.renderFingerprint)
+    hasher.combine(controller.previewCacheNamespace)
     hasher.combine(Self.transcriptMeasurementSchemaVersion)
     return hasher.finalize()
   }

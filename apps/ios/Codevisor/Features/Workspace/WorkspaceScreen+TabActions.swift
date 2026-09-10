@@ -40,6 +40,9 @@ extension WorkspaceScreen {
     if pane.kind == .browser {
       BrowserPaneCache.shared.remove(paneId: pane.id)
     }
+    if pane.kind == .chat {
+      TranscriptPresentationSurfaceCache.shared.remove(paneID: pane.id)
+    }
     if pane.kind == .chat, let sessionId = pane.chatSessionId,
       let closed = environment.projectList.sessions.first(where: {
         $0.serverId == resolvedServerId && $0.id == sessionId

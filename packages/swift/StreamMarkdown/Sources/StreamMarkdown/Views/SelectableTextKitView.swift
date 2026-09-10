@@ -204,22 +204,31 @@
       }
     }
 
-    init() {
-      let textStorage = NSTextStorage()
-      let layoutManager = StreamingTextLayoutManager()
-      textStorage.addLayoutManager(layoutManager)
-      let textContainer = NSTextContainer(
-        size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-      )
-      textContainer.lineFragmentPadding = 0
-      // SwiftUI owns the view frame. Let sizeThatFits/layout set the
-      // TextKit width explicitly so a measurement probe cannot make
-      // NSTextView resize itself inside an active SwiftUI layout pass.
-      textContainer.widthTracksTextView = false
-      textContainer.heightTracksTextView = false
-      layoutManager.addTextContainer(textContainer)
+    init(preparedLayout: PreparedNativeTextLayout? = nil) {
+      let textStorage = preparedLayout?.storage ?? NSTextStorage()
+      let layoutManager = preparedLayout?.manager ?? StreamingTextLayoutManager()
+      let textContainer =
+        preparedLayout?.container
+        ?? NSTextContainer(
+          size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        )
+      if preparedLayout == nil {
+        textStorage.addLayoutManager(layoutManager)
+        textContainer.lineFragmentPadding = 0
+        // SwiftUI owns the view frame. Let sizeThatFits/layout set the
+        // TextKit width explicitly so a measurement probe cannot make
+        // NSTextView resize itself inside an active SwiftUI layout pass.
+        textContainer.widthTracksTextView = false
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+      }
 
-      super.init(frame: .zero, textContainer: textContainer)
+      super.init(frame: CGRect(origin: .zero, size: preparedLayout?.size ?? .zero), textContainer: textContainer)
+      if let preparedLayout {
+        representedText = preparedLayout.text
+        measuredWidth = preparedLayout.size.width
+        measuredHeight = preparedLayout.size.height
+      }
       isEditable = false
       isSelectable = true
       isRichText = true
@@ -250,6 +259,16 @@
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
       fatalError("init(coder:) has not been implemented")
+    }
+
+    func adoptPreparedLayout(_ layout: PreparedNativeTextLayout) {
+      guard layoutManager !== layout.manager else { return }
+      let selection = selectedRange()
+      replaceTextContainer(layout.container)
+      representedText = layout.text
+      measuredWidth = layout.size.width
+      measuredHeight = layout.size.height
+      if NSMaxRange(selection) <= layout.text.length { setSelectedRange(selection) }
     }
 
     func setContent(

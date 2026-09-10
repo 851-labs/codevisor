@@ -3,6 +3,7 @@ import CodevisorCore
 import CodevisorUI
 import QuickLook
 import SwiftUI
+import StreamMarkdown
 
 extension Attachment {
   /// PDFs render like images rather than as generic file chips.
@@ -30,13 +31,7 @@ extension PreviewFile {
 /// Aggregates unresolved, layout-affecting attachment geometry through a
 /// hosted transcript row. The native presentation gate consumes this before
 /// accepting the row's measured height as final.
-struct AttachmentGeometryReadinessPreferenceKey: PreferenceKey {
-  static var defaultValue = 0
-
-  static func reduce(value: inout Int, nextValue: () -> Int) {
-    value += nextValue()
-  }
-}
+typealias AttachmentGeometryReadinessPreferenceKey = ContentLayoutReadinessPreferenceKey
 
 /// A rounded thumbnail for an image, PDF, or video attachment in the
 /// transcript, or a file chip for other types. Tapping opens Quick Look.

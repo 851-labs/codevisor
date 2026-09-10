@@ -9,7 +9,23 @@ import UIKit
 // MARK: - FrameDriver
 
 extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
-  func prepareForDismantle() {
+  func prepareForPresentationAttachment() {
+    if initialPresentationGate.isReady, let state = lastStableScrollState {
+      pendingInitialState = state
+      initialPositionApplied = false
+      followsLatest = state.isAtBottom
+      lockedRestoreDistance = state.isAtBottom ? nil : state.distanceFromBottom
+    }
+    hasReceivedScrollCommandForAttachment = false
+    isAwaitingWarmProjection = initialPresentationGate.isReady
+    projectedRowsVersion = nil
+    receivedProjectionRevision = nil
+    activeRowsVersion = nil
+  }
+
+  /// Pause native work without destroying the visible row window. The next
+  /// SwiftUI owner installs fresh callbacks before reconciling new content.
+  func suspendPresentation() {
     if presentationRole == .foreground {
       // Capture the live, post-measurement coordinate before UIKit
       // starts changing bounds and safe-area geometry during teardown.
@@ -29,6 +45,20 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     olderHistoryPresentationTarget = nil
     disclosureAnchorReleaseTask?.cancel()
     interruptSendPresentation()
+    rowContent = nil
+    openMarkdownLink = nil
+    claimSendAnimation = nil
+    onSendAnimationStarted = nil
+    onSendAnimationCompleted = nil
+    onViewportChange = nil
+    onBottomStateChange = nil
+    onFollowStateChange = nil
+    onNearTop = nil
+    onOlderHistoryPresented = nil
+  }
+
+  func prepareForDismantle() {
+    suspendPresentation()
     for host in mountedHosts.values {
       host.removeFromSuperview()
       host.detachFromParent()

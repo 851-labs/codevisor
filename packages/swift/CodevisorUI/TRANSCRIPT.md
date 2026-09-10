@@ -15,10 +15,37 @@ AppKit still owns its host retirement, selection, and send animation.
 The shared Markdown text-run renderer produces the attributed strings for prose,
 headings, lists, nested lists, and compatible quotes on both platforms. Small
 typography adapters preserve native font styles, links, and pointer behavior.
-TextKit quote decoration and attributed-string caching are shared. Tables and
-native text-view ownership remain platform specific: macOS uses its native table
-renderer and retains transcript surfaces; iOS uses the SwiftUI table renderer and
-reconstructs native surfaces when navigating back.
+TextKit quote decoration and attributed-string caching are shared. Both apps
+retain native transcript surfaces through the shared `TranscriptPresentationCache`.
+Attached surfaces are protected; detached retention is limited to six on macOS
+and three on iOS. iOS also discards detached surfaces on memory pressure. A new
+SwiftUI navigation container reattaches the retained UIKit controller and installs
+fresh callbacks. Disclosure state, measured row hosts, and text layout survive
+that transition. Width, typography, theme, and preview namespace participate in
+layout invalidation.
+
+Native table presentation remains platform specific. macOS uses TextKit's table
+layout and native selection/copy. iOS prepares immutable attributed cells and
+prefix geometry off the main actor, then mounts native text views only for the
+visible rows and columns. Its nested horizontal scroll view stays close to the
+vertical transcript viewport, even when the semantic table is hundreds of
+thousands of points tall. This avoids document-sized UIKit rendering surfaces.
+Both tables preserve horizontal overflow and fill the complete header width.
+
+Large blocks first encountered as settled content prepare their attributed text
+and TextKit layout on a worker. The displayed native view adopts that same layout
+stack, avoiding a second main-actor typesetting pass. Small content stays on the
+synchronous path. A block that starts as live content keeps its presentation path
+through completion to preserve selection and reveal identity. Syntax snapshots
+match source, language, and theme; an append can keep valid prefix colors while
+its new tail awaits highlighting. Same-length edits invalidate stale colors.
+
+`LatestValuePreparationWorker` allows one executing request and one replaceable
+pending request per worker. It publishes useful intermediate results during a
+continuous stream and rejects results from a canceled presentation generation.
+TextKit stacks have exclusive worker ownership until publication, then UI actor
+ownership. Unprepared content cannot commit placeholder heights to the transcript
+measurement ledger, including measurements queued before readiness changes.
 
 Animation identity follows provider text, independently of a row's current
 section. Moving a response into a worked section therefore does not replay that
@@ -50,12 +77,24 @@ offset. With R rows, K changed heights, and V mounted rows:
 | Position V native hosts | O(V log R) |
 | Export all heights or offsets for diagnostics | O(R) |
 | Patch a stable active row slice | Proportional to the active slice when uniquely owned; retained Array/Dictionary snapshots can still cause O(R) copies |
-| Parse a growing Markdown source | Full-source parsing remains; repeated tiny appends can accumulate quadratic work |
+| Parse an append without reference syntax | Reparse the mutable top-level tail; reuse complete prefix blocks. Prefix comparison still costs O(N), and assembling the block array costs O(B) |
+| Parse an edit or source containing `[` | Conservative full-source parse, preserving global reference-link semantics |
+| Find visible iOS table cells | O(log T + log C + V), with T table rows, C columns, and V visible cells |
+| Prepare iOS table geometry | Measure all cells off the main actor; O(T × C) cell visits plus text shaping costs |
 
-This is bounded row mounting, not virtualization inside every block. A single
-huge paragraph, code block, or table can still require substantial layout work.
-Value equality and cache-key hashing also have content-dependent costs. The
-implementation does not promise constant-time rendering or zero dropped frames.
+Here N is source length and B is the number of top-level blocks. A bounded parser
+cache retains at most 16 documents within an estimated 8 MiB budget. MD4C records
+a conservative reparse boundary; reference definitions, edits, and unsupported
+tail boundaries retain full-document semantics. Mutable parser builders also
+avoid repeatedly copying growing child arrays.
+
+This does not virtualize layout inside every block. A giant paragraph or code
+block still requires complete initial shaping, now moved off the main actor when
+first encountered as settled content. A growing single block and sources with
+reference syntax can still accumulate quadratic parsing work. Equality, hashing,
+and native layout have content-dependent costs. Separate workers can execute
+concurrently; the request bound is per worker, not a global concurrency limit.
+The implementation does not promise constant-time rendering or zero dropped frames.
 
 The macOS code-block fix removes a separate unbounded `boundingRect` typesetting
 pass. It measures the actual TextKit 2 layout once for immutable source and font;
@@ -136,19 +175,148 @@ local run output. Anchor hashes identify rows only within one app process. Phase
 captures may include outgoing-surface events during navigation; restoration
 comparisons use the target surface's departure/return coordinates.
 
-The remaining priorities are bounding layout inside huge blocks, replacing or
-virtualizing iOS table layout, reusing iOS native content more effectively on
-cached return, and incremental parsing with a correct invalidation frontier.
-Large-block cold stalls remain measurable. Simulator accessibility page-scroll
-actions also do not currently update follow intent like touch gestures; the
-scrolling checks used touch input before paging. Accessibility inspection itself
-can stall when asking AppKit for an attributed substring of the enormous table,
-so those inspection pauses were excluded from rendering conclusions.
+These September 8 observations precede the preparation, table virtualization,
+and UIKit retention changes below. The older AppKit table accessibility stall
+also preceded the bounded attribute export: large accessibility substring queries
+now copy supported text attributes without the expensive native table block graph.
 
 An attempted iOS Animation Hitches capture reported that the instrument was
 unsupported on the simulator. The macOS capture did not establish reliable
 frame coverage. Neither capture supports a claim of zero hitches. Release-build
 frame measurements on physical devices remain necessary for that target.
+
+## Verification recorded September 9, 2026
+
+The same development workloads ran on the Mac Studio and iPhone 17 Pro simulator.
+Each number below is an observed maximum CPU callback duration from an individual
+run, with the same exclusions described above. The large blocks were also
+visually checked after preparation; placeholder-only captures are excluded.
+
+| Scenario / operation | macOS | iOS |
+| --- | ---: | ---: |
+| Huge paragraph: cold configuration | 35.12 ms | 68.91 ms |
+| 5,000-line code: cold configuration | 19.33 ms | 26.03 ms |
+| 2,000-row table: cold configuration | 11.72 ms | 35.62 ms |
+| 2,000-row table: retained return configuration | — | 0.15 ms |
+| 500 mixed turns: cold configuration | 28.70 ms | 37.15 ms |
+| 500 mixed turns: retained return configuration | — | 0.18 ms |
+| Mixed history pagination: largest observed shared frame callback | 28.72 ms | 13.26 ms |
+| iOS older-page boundary: configuration | — | 29.55 ms |
+| Continuous stream with navigation: shared frame callback | 1.29 ms | 3.60 ms |
+| Text-part transition: configuration | 18.90 ms | 33.47 ms |
+
+The iOS table returned with painted cells and the exact saved anchor and offset.
+Wide tables reached their final columns on both platforms; header backgrounds
+covered the final edge, and vertical dragging over an iOS table scrolled the
+transcript. Mixed history loaded older pages while retaining a bounded mounted
+window, rather than constructing views for all 500 turns.
+
+Repeated cached returns restored the exact row and offset. The iOS check also
+covered accessibility page scrolling: the viewport is captured before window
+detachment, independently of UIKit's touch callbacks. Both apps returned to the
+bottom after hidden arrivals with zero active reveals. A 200-chunk stream paced
+at ten chunks per second continued across navigation; both apps restored while
+generation was active and animated later visible chunks. Moving the first text
+part into a worked section left one active reveal for the new part. Completion
+produced zero active reveals. Native macOS table selection copied the selected
+fixture text exactly; iOS table cells reflowed at an accessibility Dynamic Type
+size and returned to the original size after restoring the setting.
+
+`bun run check` passed, including JavaScript checks and coverage, 1,689 shared
+Swift tests, 20 native macOS transcript tests, formatting, lint, and the iOS
+build. Both native development apps were built and exercised. Added regressions
+cover incremental parsing versus full parsing at every fixture prefix, global
+reference invalidation, bounded pending work and cancellation, native prepared
+layout/selection, table geometry and accessibility export, presentation retention,
+and rejection of placeholder heights during restoration.
+
+These changes substantially reduce large-block main-actor stalls, but cold
+configuration and some pagination bursts still exceed a 16.67 ms frame budget.
+Native cell layout during mounting, many newly visible blocks, full shaping of
+large live blocks, and O(R) topology rebuilds remain optimization opportunities.
+These debug traces establish neither zero dropped frames nor physical-device
+performance. Correctness tests assert semantics and operation bounds, not elapsed
+time thresholds.
+
+Local captures are under `tmp/transcript-performance/renderer-*`. Summarize any
+capture without relying on a particular machine's paths:
+
+```sh
+node scripts/transcript-performance-summary.mjs /path/to/trace.jsonl
+```
+
+The summary reports counts, p50, p95, and maximum CPU durations by event and the
+last viewport snapshot. Navigation captures can contain multiple surfaces; use
+the target surface's departure and return anchors when evaluating restoration.
+
+## Rebase verification, September 9, 2026
+
+The renderer branch was rebased onto `origin/main` at `1297160f`. The normal
+`bun run dev` runner rebuilt and launched both apps against the shared local
+server. Fresh processes repeated the same large-block workloads; macOS and iOS
+used equivalent seeded text. The iOS simulator's expired duplicate development
+connection was removed before its measurements.
+
+| Cold configuration, maximum CPU callback | macOS | iOS |
+| --- | ---: | ---: |
+| Huge styled paragraph | 29.20 ms | 41.00 ms |
+| 5,000-line code block | 17.12 ms | 24.73 ms |
+| 2,000-row table | 11.42 ms | 19.04 ms |
+| 500 mixed turns | 11.13 ms | 36.06 ms |
+
+The retained iOS mixed transcript returned with a 0.27 ms maximum configuration
+callback. Returning to the large table after accessibility page scrolling took
+7.62 ms and restored its 724-point bottom distance with painted cells. These
+remain individual debug observations, not total presentation latency or frame
+coverage. The full-height visual check matters: the first post-rebase macOS
+paragraph capture was invalid because its host retained a 320-point placeholder.
+
+That run exposed a root-replacement race in AppKit. Replacing a SwiftUI root
+preserves pending preparation and the unresolved preference's identity, so the
+host must preserve that readiness too. Resetting it prematurely loses the final
+measurement invalidation. A controlled native test reproduces the stale height
+with and without a cached measurement; another exercises actual worker-prepared
+Markdown. The corrected development app measured and displayed the full
+34,558-point paragraph instead of clipping it to the placeholder.
+
+The repeated scrolling pass also exposed an iOS input classification gap:
+accessibility paging bypasses touch delegate callbacks. Native movement outside
+our position transactions now clears follow intent at a stable viewport size.
+Both apps loaded an older page (39 to 75 projected rows); observed configuration
+peaks at that boundary were 22.05 ms on macOS and 28.39 ms on iOS. Neither app
+constructed views for all 500 turns. After leaving partway up, receiving 16
+hidden chunks, and returning, viewport coordinates matched exactly: 17,202 points
+on macOS and 18,088 points on iOS, measured as document height minus bottom
+distance. New content below the viewport changed bottom distance without moving
+the reading position.
+
+A 200-chunk stream paced at ten chunks per second, including navigation, had
+maximum shared frame callbacks of 2.56 ms on macOS and 3.19 ms on iOS on the
+final rebuild. This does
+not include all model/configuration work: those callbacks peaked at 20.50 and
+34.95 ms. A large iOS jump from old history back to the live edge incurred a
+103.43 ms configuration/mounting burst, and a text-part transition peaked at
+30.29 ms on macOS and 46.29 ms on iOS. Those spikes remain optimization work;
+the steady-state frame figures must not be used to hide them.
+
+The first appended chunk after an iOS cached return exposed a late animation
+baseline. Baselines now begin before native attachment/configuration, and the
+shared coordinator publishes its reset even when already idle. This wakes
+retained text immediately instead of waiting for a new chunk to discover the
+baseline. A deterministic observation/reconciliation regression checks opaque
+restored text and animation of the first following append.
+
+The final rebuild repeated this in both apps with the same unfinished paragraph:
+a hidden append returned with zero active reveals, then the first visible append
+produced one active reveal without changing the 43-row topology. Both stayed at
+the bottom. The earlier new-paragraph variant also passed. The focused shared
+presentation suite passed all 19 tests, including the new idle-row observation
+regression.
+
+The shared 20,000-row benchmark also ran after rebasing: six incremental height
+corrections took 0.005 ms, anchor planning 0.005 ms, viewport window planning
+0.097 ms, and full layout construction 16.943 ms per iteration. These benchmark
+averages measure different work from the native maximum callbacks above.
 
 ## Repeat the workload
 

@@ -194,6 +194,9 @@ extension VirtualizedTranscriptScrollView {
     let key = row.layoutKey
     return AnyView(
       rowContent(row)
+        .markdownLinkHandler { [weak self] url in
+          self?.openMarkdownLink?(url) ?? false
+        }
         .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
         .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)
         .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
@@ -218,6 +221,7 @@ extension VirtualizedTranscriptScrollView {
     guard let host = mountedHosts[key], host.setAttachmentGeometryReady(ready) else {
       return
     }
+    if !ready { pendingMeasurements.removeValue(forKey: key) }
     promoteTargetWindowIfReady()
     updateInitialPresentationReadiness()
   }
@@ -233,7 +237,7 @@ extension VirtualizedTranscriptScrollView {
         TranscriptPixelGeometry.ceil(rawMeasurement.height, scale: scale),
       ),
     )
-    guard accepts(measurement) else { return }
+    guard accepts(measurement), mountedHosts[measurement.key]?.isAttachmentGeometryReady == true else { return }
     let needsCommit =
       pendingMeasurements[measurement.key].map {
         $0.revision != measurement.revision
@@ -279,7 +283,7 @@ extension VirtualizedTranscriptScrollView {
     pendingMeasurements.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
     for (key, measurement) in pending {
-      guard accepts(measurement),
+      guard accepts(measurement), mountedHosts[key]?.isAttachmentGeometryReady == true,
         measurements.needsCommit(measurement.height, for: key)
       else { continue }
       if storeMeasuredHeight(measurement.height, for: key) {

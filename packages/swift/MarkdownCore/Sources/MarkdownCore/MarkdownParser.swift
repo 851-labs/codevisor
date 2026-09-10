@@ -8,9 +8,13 @@ public struct MarkdownParser: Sendable {
   public init() {}
 
   public func parse(_ markdown: String) -> [MarkdownBlock] {
-    guard !markdown.isEmpty else { return [] }
+    parseDocument(markdown).blocks
+  }
+
+  func parseDocument(_ markdown: String) -> MarkdownParseResult {
+    guard !markdown.isEmpty else { return MarkdownParseResult(blocks: []) }
     guard markdown.utf8.count <= Int(UInt32.max) else {
-      return [.paragraph(MarkdownText(markdown))]
+      return MarkdownParseResult(blocks: [.paragraph(MarkdownText(markdown))])
     }
 
     let context = MD4CParserContext(
@@ -19,6 +23,8 @@ public struct MarkdownParser: Sendable {
     var input = markdown
     let result: Int32 = input.withUTF8 { bytes in
       guard let baseAddress = bytes.baseAddress else { return 0 }
+      context.sourceBytes = bytes
+      defer { context.sourceBytes = nil }
       var parser = MD_PARSER()
       parser.abi_version = 0
       parser.flags =
@@ -47,11 +53,16 @@ public struct MarkdownParser: Sendable {
     }
 
     guard result == 0 else {
-      return markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        ? []
-        : [.paragraph(MarkdownText(markdown))]
+      return MarkdownParseResult(
+        blocks: markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ? [] : [.paragraph(MarkdownText(markdown))]
+      )
     }
-    return context.blocks
+    return MarkdownParseResult(
+      blocks: context.blocks,
+      reusableBlockCount: context.reusableBlockCount,
+      reparseStart: context.reparseStart
+    )
   }
 
   /// Parses an inline fragment with the same MD4C configuration used for
@@ -71,16 +82,25 @@ public struct MarkdownParser: Sendable {
 }
 
 final class MD4CParserContext {
+  /// Callback stacks retain these builders while a block is open. A value
+  /// array extracted from an enum payload would copy its whole prefix on
+  /// every append because the stack still owns the previous array.
+  final class Children<Element>: ExpressibleByArrayLiteral {
+    var values: [Element]
+
+    init(arrayLiteral elements: Element...) { values = elements }
+  }
+
   enum BlockState {
-    case document([MarkdownBlock])
-    case quote([MarkdownBlock])
-    case list(isOrdered: Bool, start: Int, delimiter: Character, isTight: Bool, items: [MarkdownListItem])
-    case item(isTask: Bool, isChecked: Bool, blocks: [MarkdownBlock], hasImplicitInline: Bool)
+    case document(Children<MarkdownBlock>)
+    case quote(Children<MarkdownBlock>)
+    case list(isOrdered: Bool, start: Int, delimiter: Character, isTight: Bool, items: Children<MarkdownListItem>)
+    case item(isTask: Bool, isChecked: Bool, blocks: Children<MarkdownBlock>, hasImplicitInline: Bool)
     case paragraph
     case heading(Int)
-    case code(language: String?, fence: Character?, isComplete: Bool, pieces: [String])
-    case table(headerRows: [[MarkdownText]], bodyRows: [[MarkdownText]])
-    case row([MarkdownText])
+    case code(language: String?, fence: Character?, isComplete: Bool, pieces: Children<String>)
+    case table(headerRows: Children<[MarkdownText]>, bodyRows: Children<[MarkdownText]>)
+    case row(Children<MarkdownText>)
     case cell(ColumnAlignment)
 
     var acceptsBlocks: Bool {
@@ -111,6 +131,11 @@ final class MD4CParserContext {
   var blockStack: [BlockState] = []
   var inlineStack: [InlineState] = []
   var tableSections: [TableSection] = []
+  // Valid only during md_parse; no borrowed pointers escape the parser.
+  var sourceBytes: UnsafeBufferPointer<UInt8>?
+  var pendingSourceBlockOrdinal: Int?
+  var reusableBlockCount = 0
+  var reparseStart = 0
   private let fenceCompletions: [Bool]
   private var nextFenceCompletion = 0
 
@@ -120,7 +145,26 @@ final class MD4CParserContext {
 
   var blocks: [MarkdownBlock] {
     guard case let .document(blocks) = blockStack.first else { return [] }
-    return blocks
+    return blocks.values
+  }
+
+  /// MD4C establishes the block boundary. The first text callback locates
+  /// its source line; scanning syntax ourselves would misclassify nested
+  /// lists, fenced code, and setext headings.
+  func noteTextSource(_ pointer: UnsafePointer<MD_CHAR>?) {
+    guard let ordinal = pendingSourceBlockOrdinal,
+      let pointer, let bytes = sourceBytes, let base = bytes.baseAddress
+    else { return }
+    let offset = Int(bitPattern: pointer) - Int(bitPattern: base)
+    guard offset >= 0, offset < bytes.count else { return }
+    pendingSourceBlockOrdinal = nil
+    var lineStart = offset
+    while lineStart > 0, bytes[lineStart - 1] != 10, bytes[lineStart - 1] != 13 {
+      lineStart -= 1
+    }
+    guard lineStart > 0 else { return }
+    reusableBlockCount = ordinal
+    reparseStart = lineStart
   }
 
   func beginInline(_ kind: InlineKind = .root) {
@@ -140,17 +184,8 @@ final class MD4CParserContext {
   func appendBlock(_ block: MarkdownBlock) {
     guard let index = blockStack.lastIndex(where: \.acceptsBlocks) else { return }
     switch blockStack[index] {
-    case let .document(blocks):
-      blockStack[index] = .document(blocks + [block])
-    case let .quote(blocks):
-      blockStack[index] = .quote(blocks + [block])
-    case let .item(isTask, isChecked, blocks, hasImplicitInline):
-      blockStack[index] = .item(
-        isTask: isTask,
-        isChecked: isChecked,
-        blocks: blocks + [block],
-        hasImplicitInline: hasImplicitInline
-      )
+    case let .document(blocks), let .quote(blocks), let .item(_, _, blocks, _):
+      blocks.values.append(block)
     default:
       break
     }
@@ -192,11 +227,11 @@ final class MD4CParserContext {
     else { return }
 
     let text = endInlineRoot()
-    let nextBlocks = text.spans.isEmpty ? blocks : blocks + [.paragraph(text)]
+    if !text.spans.isEmpty { blocks.values.append(.paragraph(text)) }
     blockStack[itemIndex] = .item(
       isTask: isTask,
       isChecked: isChecked,
-      blocks: nextBlocks,
+      blocks: blocks,
       hasImplicitInline: false
     )
   }
@@ -207,14 +242,9 @@ final class MD4CParserContext {
         if case .code = $0 { return true }
         return false
       }),
-      case let .code(language, fence, isComplete, pieces) = blockStack[index]
+      case let .code(_, _, _, pieces) = blockStack[index]
     else { return false }
-    blockStack[index] = .code(
-      language: language,
-      fence: fence,
-      isComplete: isComplete,
-      pieces: pieces + [text]
-    )
+    pieces.values.append(text)
     return true
   }
 

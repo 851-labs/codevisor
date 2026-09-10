@@ -57,6 +57,9 @@ struct WorkspacePaneContentView: View {
       if let controller = chatController(pane) {
         SessionTranscriptView(
           controller: controller,
+          presentationSurface: TranscriptPresentationSurfaceCache.shared.surface(
+            for: .init(paneID: pane.id, isNewChat: isNewChatPresentation), controller: controller
+          ),
           // A draft picks where it will run; sending fixes that, so
           // the chips animate away in place.
           showsRunPickers: showsRunPickers,

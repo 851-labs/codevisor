@@ -1,10 +1,9 @@
 import Foundation
+import MarkdownCore
 
-/// Serializes live-row projection and retains only the newest waiting request.
-/// MD4C projection is intentionally whole-document, so allowing every ACP
-/// revision to leave behind an uncancellable detached parse creates an
-/// unbounded CPU backlog on fast streams. This worker permits one parse in
-/// flight and one replaceable pending snapshot.
+/// Serializes live-row projection with the same bounded preparation queue
+/// used by native content layout. New input replaces only waiting work, so
+/// continuous streaming cannot starve presentation.
 @MainActor
 public final class TranscriptActiveProjectionWorker {
   public struct Request: Equatable, Sendable {
@@ -33,76 +32,25 @@ public final class TranscriptActiveProjectionWorker {
 
   typealias Projector = @Sendable (ConversationItem, String?) -> [TranscriptPresentationRow]
 
-  private struct PendingWork {
-    let generation: UInt64
-    let request: Request
-    let completion: @MainActor (Output) -> Void
-  }
-
-  private let projector: Projector
-  /// Cancellation epoch. New submissions replace only the waiting snapshot;
-  /// an already-running projection is still useful and may publish before
-  /// the newest pending snapshot. This prevents a continuous stream from
-  /// starving presentation until the provider becomes quiet.
-  private var generation: UInt64 = 0
-  private var pendingWork: PendingWork?
-  private var processingTask: Task<Void, Never>?
+  private let worker: LatestValuePreparationWorker<Request, [TranscriptPresentationRow]>
 
   public convenience init() {
     self.init { item, waiting in
-      TranscriptActiveRowProjection.rows(
-        for: item,
-        waitingOnBackgroundTask: waiting
-      )
+      TranscriptActiveRowProjection.rows(for: item, waitingOnBackgroundTask: waiting)
     }
   }
 
   init(projector: @escaping Projector) {
-    self.projector = projector
-  }
-
-  public func submit(
-    _ request: Request,
-    completion: @escaping @MainActor (Output) -> Void
-  ) {
-    pendingWork = PendingWork(
-      generation: generation,
-      request: request,
-      completion: completion
-    )
-    startIfNeeded()
-  }
-
-  public func cancel() {
-    generation &+= 1
-    pendingWork = nil
-    processingTask?.cancel()
-  }
-
-  private func startIfNeeded() {
-    guard processingTask == nil, pendingWork != nil else { return }
-    processingTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      while !Task.isCancelled, let work = self.takePendingWork() {
-        let projector = self.projector
-        let request = work.request
-        let rows = await Task.detached(priority: .userInitiated) {
-          projector(request.item, request.waitingOnBackgroundTask)
-        }.value
-        guard !Task.isCancelled else { break }
-        if work.generation == self.generation {
-          work.completion(Output(request: request, rows: rows))
-        }
-      }
-      self.processingTask = nil
-      // A submission can land after the loop observes an empty slot but
-      // before this task releases ownership.
-      self.startIfNeeded()
+    worker = LatestValuePreparationWorker { request in
+      projector(request.item, request.waitingOnBackgroundTask)
     }
   }
 
-  private func takePendingWork() -> PendingWork? {
-    defer { pendingWork = nil }
-    return pendingWork
+  public func submit(_ request: Request, completion: @escaping @MainActor (Output) -> Void) {
+    worker.submit(request) { request, result in
+      if case let .success(rows) = result { completion(Output(request: request, rows: rows)) }
+    }
   }
+
+  public func cancel() { worker.cancel() }
 }

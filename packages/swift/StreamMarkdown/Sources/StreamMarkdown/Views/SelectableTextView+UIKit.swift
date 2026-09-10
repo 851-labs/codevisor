@@ -115,7 +115,7 @@
     @MainActor
     public final class Coordinator: NSObject, UITextViewDelegate {
       fileprivate lazy var measurer = UIKitTextKitTextMeasurer()
-      fileprivate var linkAction: MarkdownLinkAction?
+      var linkAction: MarkdownLinkAction?
       private let animationState = StreamingTextAnimationState()
       private var attributedInput: NSAttributedString?
       private var stableAttributedText: NSAttributedString?
@@ -205,7 +205,7 @@
     )
   }
 
-  private final class UIKitStreamingTextLayoutManager: NSLayoutManager {
+  final class UIKitStreamingTextLayoutManager: NSLayoutManager {
     var animationTime = CACurrentMediaTime()
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
@@ -313,19 +313,28 @@
       }
     }
 
-    init() {
-      let textStorage = NSTextStorage()
-      let layoutManager = UIKitStreamingTextLayoutManager()
-      textStorage.addLayoutManager(layoutManager)
-      let textContainer = NSTextContainer(
-        size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-      )
-      textContainer.lineFragmentPadding = 0
-      textContainer.widthTracksTextView = true
-      textContainer.heightTracksTextView = false
-      layoutManager.addTextContainer(textContainer)
+    init(preparedLayout: PreparedNativeTextLayout? = nil) {
+      let textStorage = preparedLayout?.storage ?? NSTextStorage()
+      let layoutManager = preparedLayout?.manager ?? UIKitStreamingTextLayoutManager()
+      let textContainer =
+        preparedLayout?.container
+        ?? NSTextContainer(
+          size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        )
+      if preparedLayout == nil {
+        textStorage.addLayoutManager(layoutManager)
+        textContainer.lineFragmentPadding = 0
+        textContainer.widthTracksTextView = true
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+      }
 
-      super.init(frame: .zero, textContainer: textContainer)
+      super.init(frame: CGRect(origin: .zero, size: preparedLayout?.size ?? .zero), textContainer: textContainer)
+      if let preparedLayout {
+        representedText = preparedLayout.text
+        measuredWidth = preparedLayout.size.width
+        measuredHeight = preparedLayout.size.height
+      }
       isEditable = false
       isSelectable = true
       isScrollEnabled = false
