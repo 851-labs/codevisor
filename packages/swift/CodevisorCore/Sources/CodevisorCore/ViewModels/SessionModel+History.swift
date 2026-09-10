@@ -69,6 +69,7 @@ extension SessionModel {
         Log.session.notice(
           "Skipped a history snapshot at cursor \(page.eventCursor, privacy: .public); live stream already applied through \(String(describing: self.serverEventCursor), privacy: .public)"
         )
+        if preservingContent { applySynchronization(.catchingUp) }
         await startConsumer()
         if defersPromptQueue {
           schedulePromptQueueLoad()

@@ -97,8 +97,12 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
 }
 
 public enum SessionStreamSynchronization: String, Equatable, Sendable {
+  /// The event connection failed or stopped delivering frames.
   case reconnecting
+  /// Transport or snapshot progress resumed; checkpoint verification may
+  /// still be pending. This is normal synchronization, not a disconnect.
   case catchingUp
+  /// Every event through the server's checkpoint has been applied.
   case caughtUp
   case cursor
 }

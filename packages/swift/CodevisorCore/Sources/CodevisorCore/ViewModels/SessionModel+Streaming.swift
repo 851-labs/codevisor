@@ -30,7 +30,7 @@ extension SessionModel {
         for try await envelope in events {
           guard !Task.isCancelled, self != nil else { break }
           if case let .synchronization(state) = envelope.event,
-            state == .reconnecting || state == .catchingUp
+            state == .reconnecting
           {
             await self?.noteStreamRecovery(state, generation: consumerGeneration)
           }

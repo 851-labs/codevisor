@@ -129,10 +129,11 @@ extension SessionModel {
       applySynchronization(state)
       return
     }
-    // Any real session event proves the cursor-backed transport recovered.
-    // Keep snapshot reconciliation as a backstop only while the stream is
-    // actually quiet; never leave Reconnecting/error UI over live output.
-    if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization == .caughtUp {
+    // Applied traffic proves progress even before an older server's next
+    // checkpoint. Missing historical details still gate this application;
+    // later revision/checkpoint gaps still trigger durable reconciliation.
+    // Do not let a redundant snapshot retry put recovery UI over live output.
+    if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization != .reconnecting {
       stopConnectionRecovery()
     }
     if !isReplayingHistory, let phase = providerActivityPhase(for: event) {
