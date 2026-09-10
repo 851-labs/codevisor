@@ -11,6 +11,7 @@ vi.mock("./browser-chromium.js", async (original) => ({
   systemChromePath: () => "/fixture/chromium",
   userChromiumIsRunning: () => false
 }))
+import { browserResultValue } from "./browser-repl.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 import { managedBrowserHeadless } from "./browser-chromium.js"
 
@@ -28,11 +29,11 @@ const connection = (name: string) => ({
 afterEach(() => vi.clearAllMocks())
 
 describe("built-in browser recovery", () => {
-  it("reports an interrupted action, discards the old runtime, and stays on same-server fallback", async () => {
+  it("reports an interrupted action, discards the old runtime, and keeps same-server fallback until the next response", async () => {
     const directory = mkdtempSync(join(tmpdir(), "native-browser-fallback-"))
     const native = connection("native-tab")
     const managed = connection("fallback-tab")
-    mocks.connect.mockResolvedValue(native)
+    mocks.connect.mockResolvedValue({ connection: native })
     mocks.launch.mockResolvedValue({ connection: managed })
     const provider = makeBrowserUseProvider(directory)
     const context = { sessionId: "fixture-session" }
@@ -52,6 +53,13 @@ describe("built-in browser recovery", () => {
       await provider.invoke(context, "openTabs", {})
       expect(mocks.connect).toHaveBeenCalledTimes(1)
       expect(mocks.launch).toHaveBeenCalledTimes(1)
+      expect(
+        browserResultValue(await provider.invoke(context, "connection_status", {}))
+      ).toMatchObject({ requestedBackend: "builtin", backend: "managed", connected: true })
+      await provider.beginTurn(context.sessionId, "builtin")
+      expect(JSON.stringify(await provider.invoke(context, "openTabs", {}))).toContain("native-tab")
+      expect(mocks.connect).toHaveBeenCalledTimes(2)
+      expect(managed.close).not.toHaveBeenCalled()
       expect(native.send.mock.calls.filter(([method]) => method === "Browser.close")).toHaveLength(
         0
       )
@@ -64,7 +72,7 @@ describe("built-in browser recovery", () => {
     const directory = mkdtempSync(join(tmpdir(), "native-browser-setup-"))
     const native = connection("native-tab")
     native.send.mockRejectedValueOnce(Error("app closed during setup"))
-    mocks.connect.mockResolvedValue(native)
+    mocks.connect.mockResolvedValue({ connection: native })
     mocks.launch.mockResolvedValue({ connection: connection("fallback-tab") })
     const provider = makeBrowserUseProvider(directory)
     try {
@@ -82,14 +90,49 @@ describe("built-in browser recovery", () => {
   })
   it("uses independent Chromium when no local app is reachable", async () => {
     const directory = mkdtempSync(join(tmpdir(), "clientless-browser-"))
-    mocks.connect.mockResolvedValue(undefined)
+    mocks.connect.mockResolvedValue({ reason: "No local app" })
     mocks.launch.mockResolvedValue({ connection: connection("independent-tab") })
     const provider = makeBrowserUseProvider(directory)
+    const context = { sessionId: "fixture" }
     try {
+      await provider.beginTurn(context.sessionId, "builtin")
+      expect(
+        browserResultValue(await provider.invoke(context, "connection_status", {}))
+      ).toMatchObject({ backend: "unconnected", connected: false })
+      expect(mocks.launch).not.toHaveBeenCalled()
       expect(
         JSON.stringify(await provider.invoke({ sessionId: "fixture" }, "openTabs", {}))
       ).toContain("independent-tab")
       expect(mocks.connect).toHaveBeenCalledWith(directory, "fixture")
+      await provider.invoke(context, "js", { code: "var retained = 7" })
+      const status = () =>
+        provider.invoke(context, "connection_status", {}).then(browserResultValue)
+      expect(await status()).toMatchObject({
+        requestedBackend: "builtin",
+        backend: "managed",
+        fallbackReason: "No local app",
+        connected: true
+      })
+      await provider.beginTurn(context.sessionId, "builtin")
+      await provider.invoke(context, "openTabs", {})
+      expect(mocks.connect).toHaveBeenCalledTimes(2)
+      expect(mocks.launch).toHaveBeenCalledOnce()
+      expect(browserResultValue(await provider.invoke(context, "js", { code: "retained" }))).toBe(7)
+      const native = connection("recovered-local-tab")
+      mocks.connect.mockResolvedValue({ connection: native })
+      // Availability changing in the middle of a response does not switch it.
+      expect(JSON.stringify(await provider.invoke(context, "openTabs", {}))).toContain(
+        "independent-tab"
+      )
+      await provider.beginTurn(context.sessionId, "builtin")
+      expect(await status()).toMatchObject({ backend: "builtin", connected: true })
+      expect(await status()).not.toHaveProperty("fallbackReason")
+      expect(
+        browserResultValue(await provider.invoke(context, "js", { code: "typeof retained" }))
+      ).toBe("undefined")
+      await provider.beginTurn(context.sessionId, "builtin")
+      expect(mocks.connect).toHaveBeenCalledTimes(3)
+      expect(native.close).not.toHaveBeenCalled()
     } finally {
       await provider.close()
       rmSync(directory, { recursive: true, force: true })
@@ -98,7 +141,7 @@ describe("built-in browser recovery", () => {
   it("detaches a completed native session without closing the user's app or pages", async () => {
     const directory = mkdtempSync(join(tmpdir(), "native-browser-detach-"))
     const native = connection("native-tab")
-    mocks.connect.mockResolvedValue(native)
+    mocks.connect.mockResolvedValue({ connection: native })
     const provider = makeBrowserUseProvider(directory)
     try {
       await provider.invoke({ sessionId: "fixture" }, "openTabs", {})

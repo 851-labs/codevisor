@@ -19,6 +19,7 @@ interface AskedQuestion {
 type BrowserChoice = BrowserBackend | "back"
 
 export interface BrowserSetupBroker {
+  readonly beginTurn: (sessionId: string) => Promise<void>
   readonly setSink: (sessionId: string, sink: RuntimeEventSink) => void
   readonly resolveBackend: (
     sessionId: string,
@@ -62,6 +63,7 @@ export const makeBrowserSetupBroker = (
   const sinks = new Map<string, RuntimeEventSink>()
   const pending = new Map<string, PendingQuestion>()
   const active = new Map<string, Promise<BrowserBackend>>()
+  const preferences = new Map<string, string | undefined>()
 
   const emit = async (sessionId: string, payload: unknown): Promise<void> => {
     const sink = sinks.get(sessionId)
@@ -247,7 +249,9 @@ export const makeBrowserSetupBroker = (
         const configured = await chromeSetup(sessionId, false)
         backend = configured === "back" ? await choose(sessionId) : configured
       } else {
-        const preference = await run(db.getBrowserPreference)
+        const preference = preferences.has(sessionId)
+          ? preferences.get(sessionId)
+          : await run(db.getBrowserPreference)
         if (preference === "managed") backend = "managed"
         else if (preference === "chrome" && provider.status().extensionConnected) {
           backend = "extension"
@@ -268,6 +272,14 @@ export const makeBrowserSetupBroker = (
   }
 
   return {
+    beginTurn: async (sessionId) => {
+      const preference = await run(db.getBrowserPreference)
+      preferences.set(sessionId, preference)
+      await provider.beginTurn(
+        sessionId,
+        preference === "chrome" ? "extension" : preference === "managed" ? "managed" : "builtin"
+      )
+    },
     setSink: (sessionId, sink) => sinks.set(sessionId, sink),
     resolveBackend,
     answerQuestion: async (sessionId, questionId, answer) => {
@@ -288,6 +300,7 @@ export const makeBrowserSetupBroker = (
       return true
     },
     closeSession: async (sessionId) => {
+      preferences.delete(sessionId)
       sinks.delete(sessionId)
       for (const [questionId, current] of pending) {
         if (current.sessionId !== sessionId) continue
@@ -297,6 +310,7 @@ export const makeBrowserSetupBroker = (
       active.delete(sessionId)
     },
     close: async () => {
+      preferences.clear()
       for (const current of pending.values()) current.resolve({ outcome: "cancelled" })
       pending.clear()
       active.clear()

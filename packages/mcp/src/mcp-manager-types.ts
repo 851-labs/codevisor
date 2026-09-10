@@ -110,6 +110,7 @@ export interface McpManager {
   readonly browserExtensionArchive: () => string
   readonly browserExtensionIcon: () => string
   readonly finishTurn: (sessionId: string) => Promise<void>
+  readonly beginTurn: (sessionId: string) => Promise<void>
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly handleGatewayRequest: (
     request: IncomingMessage,

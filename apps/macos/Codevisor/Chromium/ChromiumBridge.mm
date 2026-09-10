@@ -88,7 +88,9 @@ bool Initialize() {
   settings.external_message_pump = true;
   settings.log_severity = LOGSEVERITY_WARNING;
   NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium"];
+  // Fresh profiles accompany the app-owned Keychain item. Do not try to
+  // decrypt old profiles with the new key or request Chromium's shared key.
+  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
   CefString(&settings.root_cache_path) = String(root);
   CefString(&settings.log_file) = String([root stringByAppendingPathComponent:@"chromium.log"]);
   NSString *appName = NSBundle.mainBundle.executablePath.lastPathComponent;
@@ -871,7 +873,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   CefRequestContextSettings settings;
   settings.persist_session_cookies = true;
   NSString *support = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium"];
+  NSString *root = [[support stringByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier] stringByAppendingPathComponent:@"Chromium-v2"];
   CefString(&settings.cache_path) = String([root stringByAppendingPathComponent:_profile]);
   _context = CefRequestContext::CreateContext(settings, new ContextHandler(self));
 }

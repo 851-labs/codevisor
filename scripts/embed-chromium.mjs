@@ -61,6 +61,28 @@ if (architectures.length > 1) {
   }
 }
 const signing = env.EXPANDED_CODE_SIGN_IDENTITY || "-"
+// dyld discovers interposers only in libraries loaded at process startup.
+// Both the app and every helper link this signed, app-owned dependency.
+const storageName = "CodevisorBrowserStorage.dylib"
+const storageLibrary = join(frameworks, storageName)
+if (architectures.length === 1)
+  await cp(join(source, architectures[0], storageName), storageLibrary)
+else
+  await run(
+    "lipo",
+    [
+      "-create",
+      ...architectures.map((arch) => join(source, arch, storageName)),
+      "-output",
+      storageLibrary
+    ],
+    root
+  )
+await run(
+  "codesign",
+  ["--force", "--sign", signing, "--options", "runtime", "--timestamp=none", storageLibrary],
+  root
+)
 for (const path of binaries)
   await run(
     "codesign",

@@ -91,6 +91,9 @@ final class ChromiumBrowserModel {
         )
         wireView(view, token: token)
         webView = view
+        // Admit local panes while they initialize, so automation can report a
+        // blocked browser instead of mistaking it for an empty tab list.
+        if isLocal { ChromiumAutomationBridge.shared.register(self) }
         if needsBackgroundHost { hostInBackgroundIfNeeded(view) }
       } catch {
         guard !Task.isCancelled, generation == token else { return }
@@ -111,6 +114,7 @@ final class ChromiumBrowserModel {
     isLoading = true
     wireView(view, token: generation, adopted: true)
     webView = view
+    if isLocal { ChromiumAutomationBridge.shared.register(self) }
     hostInBackgroundIfNeeded(view)
   }
 
@@ -159,6 +163,9 @@ final class ChromiumBrowserModel {
         guard let self, self.generation == token else { return }
         self.errorMessage = "Couldn’t load this page through \(self.machineName). \(message)"
         self.isLoading = false
+        if self.webView?.browserIsReady != true {
+          self.completeReady(.failure(ChromiumProtocolError(message)))
+        }
       }
     }
     view.faviconChanged = { [weak self] data in

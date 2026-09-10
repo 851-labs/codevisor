@@ -449,6 +449,9 @@ const runPromptInBackground = async (
       },
       sessionId
     )
+    // Queued prompts start a new response. Steering input never passes here,
+    // so a preference edit cannot replace the browser under a running agent.
+    await services.mcp?.beginTurn(sessionId)
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.

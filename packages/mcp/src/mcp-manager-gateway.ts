@@ -15,7 +15,7 @@ export interface McpGatewayOperationDeps {
 
 export type McpGatewayOperations = Pick<
   McpManager,
-  "close" | "closeSession" | "finishTurn" | "handleGatewayRequest" | "issueGateway"
+  "close" | "closeSession" | "beginTurn" | "finishTurn" | "handleGatewayRequest" | "issueGateway"
 >
 
 /// Per-session tool gateways: issuing credentials, routing gateway HTTP
@@ -173,5 +173,9 @@ export const makeMcpGatewayOperations = (
       [...automationProviders.values()].map((provider) => provider.finishTurn?.(sessionId))
     )
   }
-  return { close, closeSession, finishTurn, handleGatewayRequest, issueGateway }
+  const beginTurn = async (sessionId: string) => {
+    await builtinsReady
+    await browserSetupBroker.beginTurn(sessionId)
+  }
+  return { close, closeSession, beginTurn, finishTurn, handleGatewayRequest, issueGateway }
 }

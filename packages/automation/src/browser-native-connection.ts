@@ -50,21 +50,24 @@ export const connectNativeBrowser = async (
   dataDir: string,
   sessionId: string,
   platform: string = process.platform
-): Promise<CdpConnection | undefined> => {
-  if (platform !== "darwin") return undefined
+): Promise<
+  { connection: CdpConnection; reason?: never } | { connection?: never; reason: string }
+> => {
+  if (platform !== "darwin") return { reason: "The built-in browser requires a local macOS app." }
   let token: string
   try {
     token = readFileSync(join(dataDir, "browser-use-token"), "utf8")
   } catch {
-    return undefined
+    return { reason: "The local Codevisor app has not initialized browser automation." }
   }
   let connection: CdpConnection | undefined
+  let reason = "This session is not open in the Codevisor app on the server machine."
   try {
     const socket = await new Promise<Socket>((resolve, reject) => {
       const socket = createConnection(nativeBrowserSocketPath(dataDir))
       const timer = setTimeout(() => {
         socket.destroy()
-        reject(new Error("Native browser is unavailable"))
+        reject(new Error("Native browser connection timed out"))
       }, 1500)
       socket.once("error", (error) => {
         clearTimeout(timer)
@@ -82,10 +85,12 @@ export const connectNativeBrowser = async (
       undefined,
       1500
     )
-    if (result.available) return connection
-  } catch {
-    /* A local app is optional; the server owns its independent fallback. */
+    if (result.available) return { connection }
+  } catch (cause) {
+    reason = /timed out/i.test(String(cause))
+      ? "The local Codevisor app did not respond. Check that machine for a blocking dialog."
+      : "The local Codevisor browser connection is unavailable."
   }
   await connection?.close()
-  return undefined
+  return { reason }
 }

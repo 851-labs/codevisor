@@ -27,6 +27,9 @@ export default defineConfig({
         "src/browser-cdp-test-support.ts",
         // Browser session adapters are covered with real Chromium and gateway fixtures.
         "src/browser-runtime-lifecycle.ts",
+        // Connection construction extracted from browser-use-provider; covered
+        // by native fallback fixtures and the real Chromium integration suite.
+        "src/browser-runtime-factory.ts",
         "src/browser-content.ts",
         "src/browser-frame.ts",
         "src/browser-load-state.ts",

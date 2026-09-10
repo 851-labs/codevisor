@@ -35,6 +35,9 @@ const fixture = (
       extensionConnected: connected,
       extensionSetupMode: options.setupMode ?? "development"
     }),
+    beginTurn: async (sessionId: string, backend: BrowserBackend) => {
+      backends.set(sessionId, backend)
+    },
     sessionBackend: (sessionId: string) => backends.get(sessionId),
     setSessionBackend: (sessionId: string, backend: BrowserBackend) =>
       backends.set(sessionId, backend),
@@ -72,6 +75,9 @@ const fixture = (
     openExtensions,
     openWebStore,
     preference: () => preference,
+    setPreference: (value: string) => {
+      preference = value
+    },
     connect: () => {
       connected = true
       for (const listener of listeners) listener(true)
@@ -293,4 +299,25 @@ describe("browser setup broker", () => {
     })
     await expect(dismissedCall).rejects.toThrow("The user rejected Browser Use")
   })
+})
+
+it("snapshots the saved preference at response boundaries, including before the first browser call", async () => {
+  const f = fixture({ preference: "managed", connected: true })
+  try {
+    await f.broker.beginTurn("session")
+    f.setPreference("builtin")
+    expect(await f.broker.resolveBackend("session")).toBe("managed")
+    await f.broker.beginTurn("session")
+    expect(await f.broker.resolveBackend("session")).toBe("builtin")
+    expect(await f.broker.resolveBackend("session", "managed")).toBe("managed")
+    expect(await f.broker.resolveBackend("session")).toBe("managed")
+    await f.broker.beginTurn("session")
+    expect(await f.broker.resolveBackend("session")).toBe("builtin")
+    f.setPreference("chrome")
+    expect(await f.broker.resolveBackend("session")).toBe("builtin")
+    await f.broker.beginTurn("session")
+    expect(await f.broker.resolveBackend("session")).toBe("extension")
+  } finally {
+    await f.broker.close()
+  }
 })

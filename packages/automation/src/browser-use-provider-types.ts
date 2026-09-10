@@ -17,6 +17,8 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   readonly status: () => BrowserUseProviderStatus
   readonly sessionBackend: (sessionId: string) => BrowserBackend | undefined
   readonly setSessionBackend: (sessionId: string, backend: BrowserBackend) => void
+  /** Called only between responses, never for steering input during an active turn. */
+  readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
   readonly acceptExtensionConnection: (socket: WebSocket) => void
   readonly waitForExtensionConnection: () => Promise<void>
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void

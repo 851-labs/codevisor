@@ -2,6 +2,7 @@ import AppKit
 import CodevisorClient
 import Foundation
 import Network
+import OSLog
 
 /// A 0600 Unix socket in this installation's data namespace. It is never exposed
 /// through the HTTP server, cloud relay, or a client on a different machine.
@@ -16,6 +17,7 @@ final class ChromiumAutomationBridge {
   }
   private var models: [String: WeakModel] = [:]
   private var groups: [WeakGroup] = []
+  private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Codevisor", category: "BrowserAutomation")
   private var listener: NWListener?
   private var connections: [UUID: ChromiumAutomationConnection] = [:]
   private var token = ""
@@ -92,10 +94,22 @@ final class ChromiumAutomationBridge {
           client.start()
         }
       }
-      server.stateUpdateHandler = { state in if case .ready = state { chmod(path, 0o600) } }
+      server.stateUpdateHandler = { [weak self, weak server] state in
+        Task { @MainActor [weak self, weak server] in
+          guard let self, let server, self.listener === server else { return }
+          if case .ready = state { chmod(path, 0o600) }
+          if case .failed(let error) = state {
+            self.log.error("Local browser listener failed: \(error.localizedDescription, privacy: .public)")
+            server.cancel()
+            self.listener = nil
+          }
+        }
+      }
       listener = server
       server.start(queue: .main)
-    } catch { /* Absence makes the server choose its independent Chromium runtime. */  }
+    } catch {
+      log.error("Couldn’t start local browser automation: \(error.localizedDescription, privacy: .public)")
+    }
   }
 }
 

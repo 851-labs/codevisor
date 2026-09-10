@@ -52,6 +52,7 @@ export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider =
     }),
     sessionBackend: () => undefined,
     setSessionBackend: () => undefined,
+    beginTurn: async () => undefined,
     acceptExtensionConnection: (socket) => {
       socket.close()
     },

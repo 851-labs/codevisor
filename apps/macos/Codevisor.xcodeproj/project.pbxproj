@@ -359,6 +359,10 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Codevisor/Codevisor-Bridging-Header.h";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				OTHER_LDFLAGS = (
+					"-Xlinker",
+					"-needed_library",
+					"-Xlinker",
+					"$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/CodevisorBrowserStorage.dylib",
 					"$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/libcef_dll_wrapper.a",
 					"-force_load",
 					"$(SRCROOT)/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/ghostty-internal.a",
@@ -453,6 +457,10 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Codevisor/Codevisor-Bridging-Header.h";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				OTHER_LDFLAGS = (
+					"-Xlinker",
+					"-needed_library",
+					"-Xlinker",
+					"$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/CodevisorBrowserStorage.dylib",
 					"$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/libcef_dll_wrapper.a",
 					"-force_load",
 					"$(SRCROOT)/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/ghostty-internal.a",

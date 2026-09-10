@@ -15,6 +15,8 @@ Codevisor owns browser selection and any required setup. Call Browser Use normal
 
 Only call `browser.use_backend` when the user explicitly requests a different browser. Use `{ backend: "builtin" }` for Codevisor browser panes (the default), `{ backend: "managed" }` for separate Chromium, and `{ backend: "extension" }` for Codevisor Extension in the user's Chrome. Built-in Browser only controls the client on the server machine; if it is unavailable, an independent Chromium browser runs there instead. After a disconnect, discard old tab IDs and snapshots, re-observe, and never blindly repeat an action whose outcome is unknown. Respect a rejected Browser Use call instead of retrying it.
 
+Settings changes apply at the next response, when Codevisor also retries a previously unavailable local built-in browser. Remote client browsers cannot be controlled. Use `browser.connection_status` to check the requested backend, effective backend, connection state, and fallback reason when the expected tabs are missing. An unconnected backend has not been opened yet; an empty tab list alone does not identify which browser is in use. Browser bindings reset if the connection changes between responses, so reacquire tabs before continuing.
+
 ## Persistent browser cells
 
 Prefer the persistent browser REPL for multi-step work. Discover `browser.js`, then call it through Codevisor execute:

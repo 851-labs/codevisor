@@ -110,7 +110,37 @@ export async function ensureChromium(
     }
     const helper = join(destination, "Codevisor Helper")
     const helperSource = join(repoRoot, "apps/macos/ChromiumHelper/main.cc")
-    const signature = chromiumVersion + arch + (await digest(helperSource))
+    const keychainSource = join(repoRoot, "apps/macos/ChromiumHelper/ChromiumKeychain.mm")
+    const storageLibrary = join(destination, "CodevisorBrowserStorage.dylib")
+    await run(
+      "xcrun",
+      [
+        "clang++",
+        "-std=c++20",
+        "-arch",
+        arch,
+        "-mmacosx-version-min=12.0",
+        "-dynamiclib",
+        "-fobjc-arc",
+        keychainSource,
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Security",
+        "-install_name",
+        "@rpath/CodevisorBrowserStorage.dylib",
+        "-o",
+        storageLibrary
+      ],
+      repoRoot,
+      environment
+    )
+    const signature =
+      "storage-library-v1" +
+      chromiumVersion +
+      arch +
+      (await digest(helperSource)) +
+      (await digest(keychainSource))
     const stamp = join(destination, "helper.stamp")
     if (
       !(await exists(helper)) ||
@@ -128,9 +158,13 @@ export async function ensureChromium(
           "-I",
           sdk,
           helperSource,
+          `-Wl,-needed_library,${storageLibrary}`,
+          "-Wl,-rpath,@loader_path/../../..",
           wrapper,
           "-framework",
           "AppKit",
+          "-framework",
+          "Security",
           "-o",
           helper
         ],

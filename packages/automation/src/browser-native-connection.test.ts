@@ -60,7 +60,7 @@ describe("native browser local transport", () => {
   })
   it("authenticates locally and delivers fragmented replies and session events", async () => {
     const wire = setup()
-    const connection = await connectNativeBrowser("/fixture/data", "session", "darwin")
+    const { connection } = await connectNativeBrowser("/fixture/data", "session", "darwin")
     expect(connection).toBeDefined()
     try {
       expect(mocks.socket).toHaveBeenCalledWith(nativeBrowserSocketPath("/fixture/data"))
@@ -84,21 +84,29 @@ describe("native browser local transport", () => {
   })
   it("treats unsupported hosts, missing tokens, refused connections and rejected setup as unavailable", async () => {
     setup()
-    expect(await connectNativeBrowser("/fixture", "s", "linux")).toBeUndefined()
+    expect(await connectNativeBrowser("/fixture", "s", "linux")).toMatchObject({
+      reason: expect.any(String)
+    })
     mocks.read.mockImplementation(() => {
       throw Error("missing")
     })
-    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toBeUndefined()
+    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toMatchObject({
+      reason: expect.any(String)
+    })
     const refused = setup()
     refused.autoConnect = false
     mocks.socket.mockImplementation(() => {
       queueMicrotask(() => refused.emit("error", Error("refused")))
       return refused
     })
-    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toBeUndefined()
+    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toMatchObject({
+      reason: expect.any(String)
+    })
     const rejected = setup()
     rejected.reply = () => ({ available: false })
-    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toBeUndefined()
+    expect(await connectNativeBrowser("/fixture", "s", "darwin")).toMatchObject({
+      reason: expect.any(String)
+    })
   })
   it("bounds connection setup and authentication without depending on a client", async () => {
     vi.useFakeTimers()
@@ -108,21 +116,21 @@ describe("native browser local transport", () => {
     await vi.advanceTimersByTimeAsync(1499)
     expect(wire.written).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(1)
-    expect(await unavailable).toBeUndefined()
+    expect(await unavailable).toMatchObject({ reason: expect.any(String) })
     const unresponsive = setup()
     unresponsive.reply = () => undefined
     const authentication = connectNativeBrowser("/fixture", "s", "darwin")
     await vi.advanceTimersByTimeAsync(1500)
-    expect(await authentication).toBeUndefined()
+    expect(await authentication).toMatchObject({ reason: expect.any(String) })
   })
   it("closes a disconnected or oversized stream and rejects pending commands", async () => {
     const wire = setup()
-    const connection = await connectNativeBrowser("/fixture", "s", "darwin")
+    const { connection } = await connectNativeBrowser("/fixture", "s", "darwin")
     wire.emit("error", Error("lost native app"))
     await expect(connection!.send("Target.getTargets")).rejects.toThrow("lost native app")
     wire.destroy()
     const oversized = setup()
-    const next = await connectNativeBrowser("/fixture", "s", "darwin")
+    const { connection: next } = await connectNativeBrowser("/fixture", "s", "darwin")
     oversized.emit("data", "x".repeat(64 * 1024 * 1024 + 1))
     expect(next!.closed).toBe(true)
   })
