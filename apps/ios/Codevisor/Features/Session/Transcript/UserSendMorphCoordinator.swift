@@ -2,24 +2,22 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// Where each user bubble currently sits on screen, by message id, so a
-/// send can fly the composer's text into the exact bubble it becomes.
-@MainActor
-final class UserBubbleGeometryRegistry {
-  static let shared = UserBubbleGeometryRegistry()
-  private var frames: [UUID: CGRect] = [:]
+/// A geometry anchor inside this particular row host. A prewarming copy of
+/// the same message cannot overwrite the visible transcript's destination.
+struct UserBubbleGeometryAnchor: UIViewRepresentable {
+  func makeUIView(context: Context) -> UserBubbleGeometryView { UserBubbleGeometryView() }
+  func updateUIView(_ view: UserBubbleGeometryView, context: Context) {}
+}
 
-  func record(_ messageID: UUID, frame: CGRect) {
-    frames[messageID] = frame
+final class UserBubbleGeometryView: UIView {
+  init() {
+    super.init(frame: .zero)
+    isUserInteractionEnabled = false
+    accessibilityElementsHidden = true
   }
 
-  func forget(_ messageID: UUID) {
-    frames.removeValue(forKey: messageID)
-  }
-
-  func frame(for messageID: UUID) -> CGRect? {
-    frames[messageID].flatMap { $0.isEmpty ? nil : $0 }
-  }
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
 /// The composer's text becoming a bubble — iMessage's send, in one view.
@@ -35,17 +33,22 @@ final class UserSendMorphCoordinator {
 
   private var proxy: UserSendMorphView?
   private var owner: ObjectIdentifier?
-  /// The sheet expansion keeps the landed proxy on screen until its bitmap
-  /// (which may predate the real row) is gone.
-  private var holdsForExpansion = false
-  private var flightEndedDuringHold = false
+  private var session: ObjectIdentifier?
   private var stagingWatchdog: DispatchWorkItem?
   private var animators: [UIViewPropertyAnimator] = []
 
-  var hasStagedProxy: Bool { proxy != nil && owner == nil }
+  func hasStagedProxy(for session: ObjectIdentifier) -> Bool {
+    proxy != nil && owner == nil && self.session == session
+  }
+
+  func cancelStagedProxy(for session: ObjectIdentifier) {
+    guard self.session == session, owner == nil else { return }
+    removeProxy()
+  }
 
   func stage(
     text: String,
+    session: ObjectIdentifier,
     sourceFrame: CGRect,
     bubbleColor: UIColor,
     textColor: UIColor,
@@ -70,6 +73,7 @@ final class UserSendMorphCoordinator {
     view.layoutIfNeeded()
     window.addSubview(view)
     proxy = view
+    self.session = session
     owner = nil
     // A send that never produces a flight (failure, reduce motion) must
     // not leave a floating label behind.
@@ -78,7 +82,10 @@ final class UserSendMorphCoordinator {
       removeProxy()
     }
     stagingWatchdog = watchdog
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: watchdog)
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + TranscriptSendAnimationContract.presentationSafetyDuration,
+      execute: watchdog
+    )
   }
 
   /// Flies the staged proxy into `targetFrame` (window coordinates). Only
@@ -88,7 +95,8 @@ final class UserSendMorphCoordinator {
   func beginFlight(
     owner newOwner: ObjectIdentifier,
     to targetFrame: CGRect,
-    duration: TimeInterval
+    duration: TimeInterval,
+    completion: @escaping () -> Void
   ) -> Bool {
     IOSNavigationDiagnostics.record(
       "sendMorph.flight",
@@ -103,7 +111,7 @@ final class UserSendMorphCoordinator {
     proxy.superview?.bringSubviewToFront(proxy)
     let move = UIViewPropertyAnimator(
       duration: duration,
-      timingParameters: UISpringTimingParameters(dampingRatio: 0.84, initialVelocity: .zero)
+      timingParameters: TranscriptSendAnimationMetrics.propertyTimingParameters
     )
     move.addAnimations {
       proxy.frame = targetFrame
@@ -117,6 +125,7 @@ final class UserSendMorphCoordinator {
         "sendMorph.flightDone",
         "position=\(position.rawValue) elapsedMs=\(Int((CACurrentMediaTime() - startedAt) * 1000))"
       )
+      completion()
     }
     move.startAnimation()
     return true
@@ -129,44 +138,9 @@ final class UserSendMorphCoordinator {
     proxy.superview?.bringSubviewToFront(proxy)
   }
 
-  /// The sheet's content slides into the route's position during the
-  /// expansion; a proxy still flying slides with it.
-  func shiftFlight(by dy: CGFloat, duration: TimeInterval) {
-    guard let proxy, owner != nil, dy != 0 else { return }
-    let shift = UIViewPropertyAnimator(
-      duration: duration,
-      timingParameters: TranscriptSendAnimationMetrics.propertyTimingParameters
-    )
-    shift.addAnimations {
-      proxy.transform = CGAffineTransform(translationX: 0, y: dy)
-    }
-    animators.append(shift)
-    shift.startAnimation()
-  }
-
   func endFlight(owner endingOwner: ObjectIdentifier) {
-    IOSNavigationDiagnostics.record(
-      "sendMorph.endFlight",
-      "owned=\(owner == endingOwner) hold=\(holdsForExpansion)"
-    )
     guard owner == endingOwner else { return }
-    if holdsForExpansion {
-      flightEndedDuringHold = true
-      return
-    }
     removeProxy()
-  }
-
-  func beginExpansionHold() {
-    guard proxy != nil, owner != nil else { return }
-    holdsForExpansion = true
-    flightEndedDuringHold = false
-  }
-
-  func endExpansionHold() {
-    guard holdsForExpansion else { return }
-    holdsForExpansion = false
-    if flightEndedDuringHold { removeProxy() }
   }
 
   private func removeProxy() {
@@ -174,8 +148,6 @@ final class UserSendMorphCoordinator {
       IOSNavigationDiagnostics.record(
         "sendMorph.removeProxy", "owned=\(owner != nil) animators=\(animators.count)")
     }
-    holdsForExpansion = false
-    flightEndedDuringHold = false
     stagingWatchdog?.cancel()
     stagingWatchdog = nil
     for animator in animators where animator.state == .active {
@@ -185,6 +157,7 @@ final class UserSendMorphCoordinator {
     proxy?.removeFromSuperview()
     proxy = nil
     owner = nil
+    session = nil
   }
 }
 

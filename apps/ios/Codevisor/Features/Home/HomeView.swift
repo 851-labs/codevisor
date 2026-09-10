@@ -8,7 +8,6 @@ import UIKit
 /// settings at the top left, sidebar options at the top right, and a fixed
 /// compose button at the bottom trailing edge.
 struct HomeView: View {
-  static let newChatTransitionID = "home-new-chat"
 
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -49,7 +48,6 @@ struct HomeView: View {
   /// The repository is deliberately non-observable. Bump this after a
   /// workspace backfill or local layout mutation so the hierarchy re-reads.
   @State var workspaceRevision = 0
-  @Namespace var newChatTransition
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     @State private var didHandleDiagnosticSessionLaunch = false
     @State private var didHandleDiagnosticNewChatLaunch = false

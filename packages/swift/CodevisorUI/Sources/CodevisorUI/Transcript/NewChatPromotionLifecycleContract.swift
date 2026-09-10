@@ -16,11 +16,13 @@ public enum NewChatPromotionLifecycleContract {
   public static func canCommit(
     phase: NewChatPromotionPhase,
     canonicalWorkspaceReady: Bool,
-    surfaceAnimationFinished: Bool
+    surfaceAnimationFinished: Bool,
+    sendAnimationFinished: Bool
   ) -> Bool {
     phase == .animating
       && canonicalWorkspaceReady
       && surfaceAnimationFinished
+      && sendAnimationFinished
   }
 
   public static func resources(
@@ -35,7 +37,15 @@ public enum NewChatPromotionLifecycleContract {
         retainsComposerEditorAfterSheetDismissal: false,
         usesCanonicalWorkspaceNavigation: false
       )
-    case .animating, .committing:
+    case .animating:
+      NewChatPromotionResources(
+        keepsNativeSheet: true,
+        keepsTransitionSurface: true,
+        usesPortaledComposer: false,
+        retainsComposerEditorAfterSheetDismissal: false,
+        usesCanonicalWorkspaceNavigation: false
+      )
+    case .committing:
       NewChatPromotionResources(
         keepsNativeSheet: true,
         keepsTransitionSurface: true,

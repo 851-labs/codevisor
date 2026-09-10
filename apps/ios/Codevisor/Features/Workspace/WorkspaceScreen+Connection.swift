@@ -182,11 +182,9 @@ extension WorkspaceScreen {
     environment.workspaces.save(paneWorkspace)
     environment.workspaceSync.noteLocalMutation()
     if isNewChatPresentation {
-      // The sheet's own screen never renders its started state: the run
-      // pickers already collapsed on the optimistic row, its transcript
-      // flies the bubble in UIKit, and Home covers it with the expansion
-      // and dismisses it. Re-rendering this whole screen here would only
-      // sit in the commit the expansion is waiting on.
+      // Home drives the live sheet's chrome with its promotion phase.
+      // Preserve this pane identity until the canonical route takes over
+      // so the active transcript and first responder are not remounted.
       onDraftStarted?(session.id)
       return
     }

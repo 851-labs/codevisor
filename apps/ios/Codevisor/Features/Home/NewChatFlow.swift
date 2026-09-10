@@ -14,8 +14,7 @@ final class NewChatFlow: Identifiable {
   var phase = NewChatPromotionPhase.composing
   var isWorkspaceReady = false
   var didPushCanonicalRoute = false
-  /// The replica shows the compose sheet's chrome until the expansion
-  /// begins, then morphs it into the route's in place.
+  /// The live sheet morphs its navigation controls as expansion begins.
   var hasStartedExpansion = false
   var didStartFirstSendAnimation = false
   var didFinishFirstSendAnimation = false
@@ -23,7 +22,6 @@ final class NewChatFlow: Identifiable {
   var promotionServerId: String?
   var promotionWorkspaceId: UUID?
   var presentationSession: NewChatPresentationSession?
-  @ObservationIgnored var homeSnapshot: UIImage?
   @ObservationIgnored var promotionSurface: NewChatPromotionSurface?
   @ObservationIgnored let promotionWatchdog = NewChatPromotionWatchdog()
 

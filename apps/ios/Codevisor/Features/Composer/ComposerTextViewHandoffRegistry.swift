@@ -40,8 +40,8 @@ enum ComposerTextViewHandoffRegistry {
     makeEditor: () -> HeightReportingTextView
   ) -> HeightReportingTextView? {
     // Once Send has transferred this editor into window space, a source
-    // reconciliation must not create a replacement underneath the opaque
-    // transition surface or steal the responder back from its destination.
+    // reconciliation must not create a replacement inside the retiring
+    // sheet or steal the responder back from its destination.
     guard entries[id] == nil else { return nil }
 
     let port = ports[id] ?? Ports()
@@ -233,10 +233,9 @@ enum ComposerTextViewHandoffRegistry {
     entry.editor.frame = container.convert(container.bounds, to: window)
   }
 
-  /// The transition snapshot and message-flight view become the sole visual
-  /// owners of the draft while the real editor keeps the keyboard session
-  /// alive underneath them. Alpha does not alter responder ownership or the
-  /// editor's UIWindow ancestry.
+  /// Briefly park the same editor in window space while the live sheet is
+  /// replaced by its ready workspace. This runs after the message lands;
+  /// the editor remains inside the visible composer throughout the flight.
   static func beginStablePortalTransition(id: UUID) -> Bool {
     guard entries[id] == nil,
       let port = ports[id],

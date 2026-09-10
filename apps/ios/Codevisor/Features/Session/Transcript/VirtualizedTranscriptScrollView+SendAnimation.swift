@@ -96,6 +96,9 @@ extension VirtualizedTranscriptScrollView {
 
     func claimAndCompleteWithoutAnimation(_ reason: String) {
       let claimed = claimAndClear()
+      if let sessionController {
+        UserSendMorphCoordinator.shared.cancelStagedProxy(for: ObjectIdentifier(sessionController))
+      }
       finishSendPresentation(reason: "withoutAnimation:\(reason)")
       guard claimed else { return }
       onSendAnimationCompleted?(request)
@@ -156,13 +159,18 @@ extension VirtualizedTranscriptScrollView {
     // The composer's text is already floating as a proxy bubble (staged
     // on the Send tap); fly it into the laid-out bubble and keep the real
     // row hidden until it lands. Falls back to lifting the row itself.
-    let morphTarget =
-      UserSendMorphCoordinator.shared.hasStagedProxy
-      ? UserBubbleGeometryRegistry.shared.frame(for: request.messageID) : nil
+    let hasStagedProxy =
+      sessionController.map {
+        UserSendMorphCoordinator.shared.hasStagedProxy(for: ObjectIdentifier($0))
+      } ?? false
+    let morphTarget = hasStagedProxy ? host.userBubbleFrameInWindow : nil
     let usesMorph = !usesExternalFlight && morphTarget != nil
+    if !usesMorph, let sessionController {
+      UserSendMorphCoordinator.shared.cancelStagedProxy(for: ObjectIdentifier(sessionController))
+    }
     IOSNavigationDiagnostics.record(
       "transcript.sendAnimation.start",
-      "external=\(usesExternalFlight) morph=\(usesMorph) staged=\(UserSendMorphCoordinator.shared.hasStagedProxy) "
+      "external=\(usesExternalFlight) morph=\(usesMorph) staged=\(hasStagedProxy) "
         + "target=\(morphTarget.map { NSCoder.string(for: $0) } ?? "nil") durationMs=\(Int(plan.duration * 1000)) sourceY=\(Int(sourceY)) targetY=\(Int(host.frame.minY))"
     )
     let group = TranscriptSendAnimationLayerAnimations.flight(
@@ -198,15 +206,20 @@ extension VirtualizedTranscriptScrollView {
       holdSendPresentation(for: host)
     }
     activeSendAnimationRequest = request
-    sendAnimationCompletion = completion
-    group.delegate = completion
-    host.layer.add(group, forKey: TranscriptSendAnimationKeys.flight)
+    if !usesMorph {
+      sendAnimationCompletion = completion
+      group.delegate = completion
+      host.layer.add(group, forKey: TranscriptSendAnimationKeys.flight)
+    }
     CATransaction.commit()
     if usesMorph, let morphTarget {
       UserSendMorphCoordinator.shared.beginFlight(
         owner: ObjectIdentifier(self),
         to: morphTarget,
-        duration: plan.duration
+        duration: plan.duration,
+        completion: { [weak self] in
+          self?.finishSendPresentation(token: request.token, notifyCompletion: true)
+        }
       )
     }
   }
@@ -313,10 +326,10 @@ extension VirtualizedTranscriptScrollView {
       return
     }
     for (key, host) in mountedHosts {
-      guard
+      guard let row = rowByKey[key],
         TranscriptSendAnimationContract.shouldHoldAssistantRow(
           phase: context.phase,
-          rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+          rowID: row.id,
           rowExistedBeforeSend: context.sourceLayout?.indexByKey[key] != nil
         )
       else { continue }
@@ -330,10 +343,10 @@ extension VirtualizedTranscriptScrollView {
   func pendingSendAssistantPresentationIsIntact() -> Bool {
     guard pendingSendAnimationRequest != nil else { return true }
     return mountedHosts.allSatisfy { key, host in
-      guard
+      guard let row = rowByKey[key],
         TranscriptSendAnimationContract.shouldHoldAssistantRow(
           phase: .pending,
-          rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+          rowID: row.id,
           rowExistedBeforeSend: pendingSendSourceLayout?.indexByKey[key] != nil
         )
       else { return true }
@@ -533,15 +546,10 @@ extension VirtualizedTranscriptScrollView {
     rowKey: String
   ) -> TranscriptSendAnimationTarget? {
     guard rowByKey[rowKey]?.isUserMessage == true,
-      !host.bounds.isEmpty,
-      let snapshot = host.snapshotForSendAnimation()
+      !host.bounds.isEmpty
     else { return nil }
-    snapshot.isUserInteractionEnabled = false
-    snapshot.accessibilityElementsHidden = true
-    snapshot.backgroundColor = .clear
     return TranscriptSendAnimationTarget(
-      rowFrame: host.convert(host.bounds, to: nil),
-      rowSnapshot: snapshot
+      rowFrame: host.convert(host.bounds, to: nil)
     )
   }
 }

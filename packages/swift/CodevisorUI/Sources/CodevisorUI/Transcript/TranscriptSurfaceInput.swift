@@ -122,18 +122,12 @@ public struct TranscriptSurfaceInput {
 #if canImport(UIKit)
   import UIKit
 
-  /// The real virtualized row is the animation visual for a promoted first
-  /// send. Its snapshot and final window-space frame let the presentation
-  /// layer reuse the ordinary row animation without inventing another bubble
-  /// view.
-  @MainActor
+  /// Geometry of the live virtualized row when a send can begin.
   public struct TranscriptSendAnimationTarget {
     public let rowFrame: CGRect
-    public let rowSnapshot: UIView
 
-    public init(rowFrame: CGRect, rowSnapshot: UIView) {
+    public init(rowFrame: CGRect) {
       self.rowFrame = rowFrame
-      self.rowSnapshot = rowSnapshot
     }
   }
 #endif

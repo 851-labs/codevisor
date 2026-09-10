@@ -12,8 +12,6 @@ struct UserBubbleRow: View {
   @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
   let text: String
   let attachments: [Attachment]
-  /// Lets a send fly the composer's text into this exact bubble.
-  var messageID: UUID? = nil
 
   var body: some View {
     HStack {
@@ -51,16 +49,7 @@ struct UserBubbleRow: View {
             theme.bubbleBackground,
             in: RoundedRectangle(cornerRadius: 14)
           )
-          .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-          } action: { frame in
-            guard let messageID else { return }
-            UserBubbleGeometryRegistry.shared.record(messageID, frame: frame)
-          }
-          .onDisappear {
-            guard let messageID else { return }
-            UserBubbleGeometryRegistry.shared.forget(messageID)
-          }
+          .background { UserBubbleGeometryAnchor() }
           MessageCopyButton(text: text, help: "Copy message")
         }
       }

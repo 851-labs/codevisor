@@ -2,25 +2,21 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// A handle to the system-owned New Chat sheet. Compose, cancellation, and
-/// interactive dismissal remain entirely system-owned. First-send promotion
-/// uses a pixel overlay in the existing app window, so dismissing this
-/// controller cannot introduce a second key-window or keyboard transition.
+/// The native compose sheet stays live throughout its first-send expansion.
+/// Its controller is dismissed only after the message has landed and the
+/// canonical workspace can take over the same editor.
 @MainActor
 final class NewChatPresentationSession {
   private weak var presentedController: UIViewController?
 
   init(presentedController: UIViewController) {
     self.presentedController = presentedController
+    // A conversation uses the same surface in its sheet and navigation
+    // route. Elevated dark-mode system colors must not change at handoff.
+    presentedController.traitOverrides.userInterfaceLevel = .base
   }
 
-  var visibleFrameInWindow: CGRect? {
-    guard let view = presentedController?.viewIfLoaded,
-      let window = view.window,
-      !view.bounds.isEmpty
-    else { return nil }
-    return view.convert(view.bounds, to: window)
-  }
+  var liveView: UIView? { presentedController?.viewIfLoaded }
 
   var presentationCornerRadius: CGFloat {
     guard var view = presentedController?.viewIfLoaded else { return 32 }
@@ -36,11 +32,7 @@ final class NewChatPresentationSession {
     presentedController?.viewIfLoaded?.window
   }
 
-  /// The PRESENTING side's window — the stable app window that hosts
-  /// Home's navigation stack. Zoom-style sheet presentations can host the
-  /// presented controller in a transient portal window; a promotion
-  /// surface installed there can be detached from the render server,
-  /// which completes its animator instantly (the "no animation" sends).
+  /// The stable app window that also hosts Home's navigation stack.
   var presentingWindow: UIWindow? {
     presentedController?.presentingViewController?.viewIfLoaded?.window
   }
@@ -60,42 +52,6 @@ final class NewChatPresentationSession {
     return view.convert(view.bounds, to: window)
   }
 
-  /// The resting sheet's pixels as a bitmap, so the promotion surface can
-  /// treat its navigation bar and its content separately.
-  func snapshotImage() -> UIImage? {
-    guard let view = presentedController?.viewIfLoaded, !view.bounds.isEmpty else { return nil }
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = view.window?.screen.scale ?? UIScreen.main.scale
-    return UIGraphicsImageRenderer(bounds: view.bounds, format: format).image { _ in
-      // The last presented frame is exactly what the user sees; the bubble
-      // in flight is a separate window-level proxy that outlives the
-      // bitmap, so nothing pending needs forcing through a synchronous
-      // render here.
-      view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
-    }
-  }
-
-  /// Where the composer cluster begins, in the sheet's own coordinates —
-  /// the boundary between transcript content (which the expansion slides)
-  /// and the composer + keyboard (bottom-anchored in sheet and route alike).
-  var composerTop: CGFloat? {
-    guard let view = presentedController?.viewIfLoaded else { return nil }
-    return ComposerPromotionRegion.frame(of: .composer, in: view)?.minY
-  }
-
-  var runPickersFrame: CGRect? {
-    guard let view = presentedController?.viewIfLoaded else { return nil }
-    return ComposerPromotionRegion.frame(of: .runPickers, in: view)
-  }
-
-  /// Where the sheet's navigation bar ends, in the sheet's own coordinates.
-  var navigationBarBottom: CGFloat? {
-    guard let view = presentedController?.viewIfLoaded,
-      let bar = view.firstDescendant(where: { $0 is UINavigationBar })
-    else { return nil }
-    return bar.convert(bar.bounds, to: view).maxY
-  }
-
   func dismissWithoutAnimation(completion: @escaping () -> Void) {
     guard let presentedController else {
       completion()
@@ -110,7 +66,7 @@ final class NewChatPresentationSession {
 
 /// Resolves the real presentation controller from inside SwiftUI's `.sheet`.
 /// It does not present or alter anything, preserving the platform's native
-/// chrome, source zoom, dimming, keyboard coordination, and drag gesture.
+/// chrome, dimming, keyboard coordination, and drag gesture.
 @MainActor
 struct NewChatPresentationReader: UIViewControllerRepresentable {
   let onResolve: (NewChatPresentationSession) -> Void
@@ -193,42 +149,16 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
   }
 }
 
-/// A lightweight transition overlay in the app's EXISTING window. The native
-/// sheet remains the true compose surface and Home's NavigationStack remains
-/// the true destination; this owns only the pixels between them. Keeping one
-/// UIWindow is essential: keyboard continuity is a responder-chain transfer,
-/// whereas switching key windows is defined by UIKit as ending text entry.
-///
-/// The expansion is not a cross-dissolve. The live route sits underneath
-/// from the start; over it, a bitmap of the resting sheet is split by region:
-/// its content slides the few points into the route's content position and
-/// simply vanishes once the two coincide, while its navigation-bar strip
-/// fades out to reveal the route's bar — so the × glass circle stays put
-/// and only its glyph turns into +, the title fades, and the back chevron
-/// appears, as the sheet's top edge rises to fill the screen.
-/// The composer stays anchored, while the picker row fades in its own slice.
+/// Expands the actual sheet hierarchy in its existing window. No image of
+/// the transcript, composer, navigation bar, or backdrop is retained: every
+/// pixel continues to come from the live controls and their current traits.
 @MainActor
 final class NewChatPromotionSurface {
-  /// A normally-contained NavigationStack receives this compact-width
-  /// gutter from UIKit. The promotion host temporarily lives directly in
-  /// the existing window, so it must supply the same safe-area contract.
-  /// WorkspaceScreen opts its body back out horizontally, leaving only the
-  /// navigation chrome inset.
-  static let navigationHorizontalInset: CGFloat = 16
-
   private weak var sourceWindow: UIWindow?
-  private var liveContent: AnyView?
-  private var liveHostingController: UIHostingController<AnyView>?
-  private var contentImageView: UIImageView?
-  private var composerImageView: UIImageView?
-  private var runPickersImageView: UIImageView?
-  private var barImageView: UIImageView?
+  private var liveView: UIView?
   private let container = UIView()
-  private let clippingView = UIView()
   private var animator: UIViewPropertyAnimator?
-  private(set) var isReplicaPrepared = false
   private(set) var didStartExpansion = false
-  private var sourceFrame = CGRect.zero
   private let duration: TimeInterval
   private let editorHandoffID: UUID
   private var onExpanded: (() -> Void)?
@@ -237,287 +167,91 @@ final class NewChatPromotionSurface {
     window: UIWindow,
     duration: TimeInterval,
     editorHandoffID: UUID,
-    liveContent: AnyView,
     onExpanded: @escaping () -> Void
   ) {
     sourceWindow = window
     self.duration = duration
     self.editorHandoffID = editorHandoffID
-    self.liveContent = liveContent
     self.onExpanded = onExpanded
   }
 
-  /// Mounts the route replica, hidden, while the sheet is still being
-  /// composed. It renders the route's navigation chrome only — the bar
-  /// the expansion reveals at the top and crossfades the sheet's bar into
-  /// — over a flat background; the bitmap covers everything else until
-  /// commit. Nothing in it depends on the send, so the expansion's own
-  /// commit is instant when the moment comes.
-  func prepareReplica() {
-    guard !isReplicaPrepared,
-      let sourceWindow,
-      sourceWindow.bounds.width > 0,
-      sourceWindow.bounds.height > 0,
-      let liveContent
+  func expand(session: NewChatPresentationSession) {
+    guard !didStartExpansion, let sourceWindow,
+      let view = session.liveView,
+      let sourceFrame = session.visibleFrame(in: sourceWindow),
+      !sourceFrame.isEmpty
     else { return }
-    isReplicaPrepared = true
-    // This is a live visual replica, not another bitmap or UIWindow. It is
-    // retained only for the morph; Home's already-mounted workspace route
-    // owns every interaction and all navigation after completion.
-    let hostingController = UIHostingController(rootView: liveContent)
-    hostingController.additionalSafeAreaInsets = UIEdgeInsets(
-      top: 0,
-      left: Self.navigationHorizontalInset,
-      bottom: 0,
-      right: Self.navigationHorizontalInset
-    )
-    hostingController.view.frame = sourceWindow.bounds
-    hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    hostingController.view.backgroundColor = .clear
-    hostingController.view.isUserInteractionEnabled = false
-    // Above the sheet in the window, so hidden until the bitmap covers
-    // the sheet and the expansion reveals it.
-    hostingController.view.alpha = 0
-    hostingController.beginAppearanceTransition(true, animated: false)
-    sourceWindow.addSubview(hostingController.view)
-    hostingController.endAppearanceTransition()
-    liveHostingController = hostingController
-    self.liveContent = nil
-    hostingController.view.setNeedsLayout()
-    hostingController.view.layoutIfNeeded()
-    IOSNavigationDiagnostics.record("newChat.promotionSurface.replicaPrepared")
-  }
-
-  /// Covers the sheet with its resting bitmap, hands the editor into the
-  /// window, and grows the bitmap into the route: content slides, the bar
-  /// strip crossfades into the route's bar, the composer holds still.
-  func expand(
-    sourceFrame: CGRect,
-    sourceCornerRadius: CGFloat,
-    snapshot: UIImage?,
-    barHeight: CGFloat,
-    composerTop: CGFloat?,
-    runPickersFrame: CGRect?
-  ) {
-    guard !didStartExpansion, !sourceFrame.isEmpty, let sourceWindow else { return }
-    prepareReplica()
     didStartExpansion = true
-    self.sourceFrame = sourceFrame
-
-    let retainedResponder =
-      ComposerTextViewHandoffRegistry
-      .beginStablePortalTransition(id: editorHandoffID)
-    IOSNavigationDiagnostics.record(
-      "newChat.promotionSurface.sourceEditorCovered",
-      "retained=\(retainedResponder)"
-    )
-
+    liveView = view
     container.frame = sourceFrame
-    container.backgroundColor = .clear
-    // The card owns transition pixels only. All touches — including the
-    // destination composer and NavigationStack's interactive edge pop —
-    // must pass through to the live surface installed directly below it.
-    container.isUserInteractionEnabled = false
-    container.layer.shadowColor = UIColor.black.cgColor
-    container.layer.shadowOpacity = 0.16
-    container.layer.shadowRadius = 24
-    container.layer.shadowOffset = CGSize(width: 0, height: -2)
-    container.isAccessibilityElement = false
-
-    clippingView.frame = container.bounds
-    clippingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    clippingView.backgroundColor = .clear
-    clippingView.layer.cornerCurve = .continuous
-    clippingView.layer.cornerRadius = sourceCornerRadius
-    clippingView.layer.masksToBounds = true
-    if let snapshot, let cgImage = snapshot.cgImage {
-      // All slices anchor to the container's bottom: a sheet that reaches
-      // the screen bottom only ever grows at the TOP, so they stay
-      // pixel-stationary while the top edge rises and reveals the route's
-      // bar area beneath.
-      let scale = snapshot.scale
-      let width = snapshot.size.width
-      let height = snapshot.size.height
-      let bar = min(max(barHeight, 0), height)
-      // Sliding the transcript exposes a gap above the stationary composer.
-      // Cover the content area with the sheet background, leaving the bar
-      // transparent so its fade can reveal the replica's navigation chrome.
-      let background = UIView(frame: CGRect(x: 0, y: bar, width: width, height: height - bar))
-      background.backgroundColor = .systemGroupedBackground
-      background.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
-      clippingView.addSubview(background)
-      func slice(_ rect: CGRect) -> UIImageView {
-        let pixels = CGRect(
-          x: rect.minX * scale, y: rect.minY * scale,
-          width: rect.width * scale, height: rect.height * scale)
-        let view = UIImageView(
-          image: cgImage.cropping(to: pixels).map {
-            UIImage(cgImage: $0, scale: scale, orientation: .up)
-          })
-        view.frame = rect
-        view.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
-        view.isUserInteractionEnabled = false
-        return view
-      }
-      // Every pixel has one owner. In particular the picker band must not
-      // appear in both the moving transcript and stationary composer.
-      let transcriptBottom = min(max(composerTop ?? height, bar), height)
-      let content = slice(CGRect(x: 0, y: bar, width: width, height: transcriptBottom - bar))
-      let pickerBottom = min(max(runPickersFrame?.maxY ?? transcriptBottom, transcriptBottom), height)
-      let composer = slice(
-        CGRect(x: 0, y: pickerBottom, width: width, height: height - pickerBottom))
-      let barStrip = slice(CGRect(x: 0, y: 0, width: width, height: bar))
-      clippingView.addSubview(content)
-      clippingView.addSubview(composer)
-      if pickerBottom > transcriptBottom {
-        let pickers = slice(
-          CGRect(x: 0, y: transcriptBottom, width: width, height: pickerBottom - transcriptBottom))
-        clippingView.addSubview(pickers)
-        runPickersImageView = pickers
-      }
-      clippingView.addSubview(barStrip)
-      contentImageView = content
-      composerImageView = composer
-      barImageView = barStrip
-    }
-    container.addSubview(clippingView)
+    container.backgroundColor = .systemGroupedBackground
+    container.traitOverrides.userInterfaceLevel = .base
+    container.layer.cornerCurve = .continuous
+    container.layer.cornerRadius = session.presentationCornerRadius
+    container.clipsToBounds = true
+    container.accessibilityViewIsModal = true
     sourceWindow.addSubview(container)
-    container.layoutIfNeeded()
-    // The bitmap now covers the sheet; the replica can show beneath it.
-    liveHostingController?.view.alpha = 1
 
-    let shift = contentShift
-    let slide = CGAffineTransform(translationX: 0, y: -shift)
+    // Reparent within the same UIWindow so the text view's first-responder
+    // session and the live transcript survive. The sheet controller remains
+    // alive until the normal workspace has mounted behind this hierarchy.
+    container.addSubview(view)
+    view.transform = .identity
+    // Lay out once at the final window size. Resizing a hosting view while
+    // its keyboard safe area is changing briefly pushes the composer below
+    // the keyboard. Instead expand the clip around a stationary live view;
+    // opposite container/content offsets keep its window position fixed.
+    view.autoresizingMask = []
+    view.frame = sourceWindow.bounds.offsetBy(dx: -sourceFrame.minX, dy: -sourceFrame.minY)
+    UIView.performWithoutAnimation {
+      view.setNeedsLayout()
+      view.layoutIfNeeded()
+      container.layoutIfNeeded()
+    }
+    UserSendMorphCoordinator.shared.bringFlightToFront()
+
     let changes = {
       self.container.frame = sourceWindow.bounds
-      self.clippingView.layer.cornerRadius = 0
-      self.container.layer.shadowOpacity = 0
+      view.frame = sourceWindow.bounds
+      self.container.layer.cornerRadius = 0
       self.container.layoutIfNeeded()
-      self.contentImageView?.transform = slide
-      self.barImageView?.transform = slide
     }
     let finish = { [weak self] in
       IOSNavigationDiagnostics.record("newChat.promotionSurface.expanded")
       self?.onExpanded?()
     }
     guard duration > 0 else {
-      UIView.performWithoutAnimation {
-        changes()
-        self.barImageView?.alpha = 0
-        self.runPickersImageView?.alpha = 0
-      }
+      UIView.performWithoutAnimation(changes)
       finish()
       return
     }
-
-    let startedAt = CACurrentMediaTime()
-    IOSNavigationDiagnostics.record(
-      "newChat.promotionSurface.expansionStart",
-      "from=\(NSCoder.string(for: sourceFrame)) to=\(NSCoder.string(for: sourceWindow.bounds)) "
-        + "shift=\(shift) bar=\(barHeight) key=\(sourceWindow.isKeyWindow)"
-    )
-    // A bubble still in flight rides the same slide, above the bitmap, and
-    // stays as long as the bitmap does: the bitmap predates the landed row.
-    UserSendMorphCoordinator.shared.bringFlightToFront()
-    UserSendMorphCoordinator.shared.shiftFlight(by: -shift, duration: duration)
-    UserSendMorphCoordinator.shared.beginExpansionHold()
     let animator = UIViewPropertyAnimator(
       duration: duration,
       timingParameters: TranscriptSendAnimationMetrics.propertyTimingParameters
     )
     self.animator = animator
     animator.addAnimations(changes)
-    // Fade the sheet's bar into the route's chrome and retire its pickers.
-    // An even curve keeps both fades legible while the geometry eases out.
-    let chromeFade = UIViewPropertyAnimator(duration: duration * 0.7, curve: .easeInOut) {
-      self.barImageView?.alpha = 0
-      self.runPickersImageView?.alpha = 0
-    }
-    chromeFade.startAnimation(afterDelay: duration * 0.15)
-    animator.addCompletion { [weak self] position in
-      IOSNavigationDiagnostics.record(
-        "newChat.promotionSurface.expansionDone",
-        "elapsedMs=\(Int((CACurrentMediaTime() - startedAt) * 1000)) position=\(position.rawValue)"
-      )
-      // The bitmap (and the bubble above it) stay put: the replica beneath
-      // is chrome only, and Home's canonical route — pixel-identical to
-      // this resting bitmap — is what `remove()` reveals at commit.
+    animator.addCompletion { [weak self] _ in
       self?.animator = nil
       finish()
     }
     animator.startAnimation()
-    // Commit the animations to the render server NOW. The rest of this
-    // turn mounts SwiftUI hierarchies (the replica's follow-up passes, the
-    // canonical route), which would otherwise hold the expansion back a
-    // few frames after the bubble has already taken off.
-    CATransaction.flush()
-    IOSNavigationDiagnostics.record(
-      "newChat.promotionSurface.committed",
-      "ms=\(Int((CACurrentMediaTime() - startedAt) * 1000))"
-    )
-  }
-
-  /// How far the sheet's content must move up to sit where the route lays
-  /// out the same content: the sheet's bar bottom versus the route's.
-  private var contentShift: CGFloat {
-    guard let routeView = liveHostingController?.view,
-      let bar = routeView.firstDescendant(where: { $0 is UINavigationBar }),
-      let barHeight = barImageView?.bounds.height
-    else { return 0 }
-    let routeContentTop = bar.convert(bar.bounds, to: routeView).maxY
-    return (sourceFrame.minY + barHeight) - routeContentTop
-  }
-
-  private func removeBitmap() {
-    contentImageView?.removeFromSuperview()
-    contentImageView = nil
-    composerImageView?.removeFromSuperview()
-    composerImageView = nil
-    runPickersImageView?.removeFromSuperview()
-    runPickersImageView = nil
-    barImageView?.removeFromSuperview()
-    barImageView = nil
   }
 
   @discardableResult
   func completeStableEditorHandoff() -> Bool {
-    let retained = ComposerTextViewHandoffRegistry.completeStablePortalHandoff(
-      id: editorHandoffID
-    )
-    IOSNavigationDiagnostics.record(
-      "newChat.promotionSurface.stableEditorHandoff",
-      "retained=\(retained)"
-    )
-    return retained
-  }
-
-  func routeAccessibility(through session: NewChatPresentationSession?) {
-    guard let sourceWindow, let liveView = liveHostingController?.view else { return }
-    // Accessibility also treats the native sheet as modal. Override the
-    // app-window container while promotion is active so VoiceOver sees
-    // the same live navigation surface as sighted users. The keyboard is
-    // hosted by its own system window and remains independently exposed.
-    sourceWindow.accessibilityElements =
-      [liveView]
-      + (ComposerTextViewHandoffRegistry.promotedEditor(id: editorHandoffID)
-        .map { [$0] } ?? [])
+    // The editor stays visible inside the live composer during the flight.
+    // Its window portal exists only for the final structural replacement.
+    _ = ComposerTextViewHandoffRegistry.beginStablePortalTransition(id: editorHandoffID)
+    return ComposerTextViewHandoffRegistry.completeStablePortalHandoff(id: editorHandoffID)
   }
 
   func remove() {
     animator?.stopAnimation(true)
     animator = nil
-    UserSendMorphCoordinator.shared.endExpansionHold()
-    removeBitmap()
-    clippingView.removeFromSuperview()
+    liveView?.removeFromSuperview()
+    liveView = nil
     container.removeFromSuperview()
-    if let liveHostingController {
-      liveHostingController.beginAppearanceTransition(false, animated: false)
-      liveHostingController.view.removeFromSuperview()
-      liveHostingController.endAppearanceTransition()
-    }
-    liveHostingController = nil
-    liveContent = nil
-    sourceWindow?.accessibilityElements = nil
     sourceWindow = nil
     onExpanded = nil
   }

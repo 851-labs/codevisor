@@ -321,21 +321,20 @@ struct SessionTranscriptView: View {
     // out of SwiftUI's keyboard avoidance, which left the composer sitting
     // underneath the keyboard.
     ZStack(alignment: .bottom) {
-      if showsWatermark {
-        Image("hunk")
-          .resizable()
-          .renderingMode(.template)
-          .scaledToFit()
-          .frame(width: 130)
-          .foregroundStyle(Color.primary.opacity(0.08))
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-          // Center in the space the user can actually see — above
-          // the composer — and let keyboard avoidance (which
-          // shrinks this ZStack) float it upward, Grok-style.
-          .padding(.bottom, composerHeight + 20)
-          .allowsHitTesting(false)
-          .transition(.opacity)
-      }
+      Image("hunk")
+        .resizable()
+        .renderingMode(.template)
+        .scaledToFit()
+        .frame(width: 130)
+        .foregroundStyle(Color.primary.opacity(0.08))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        // Center in the space the user can actually see — above
+        // the composer — and let keyboard avoidance (which
+        // shrinks this ZStack) float it upward, Grok-style.
+        .padding(.bottom, composerHeight + 20)
+        .allowsHitTesting(false)
+        .opacity(showsWatermark ? 1 : 0)
+        .animation(Motion.quick(reduceMotion: reduceMotion), value: showsWatermark)
       // One always-mounted native transcript for every connection state.
       transcript
 
@@ -378,8 +377,6 @@ struct SessionTranscriptView: View {
     } action: { height in
       availableHeight = height
     }
-    // The watermark hands the space over rather than blinking out.
-    .animation(Motion.quick(reduceMotion: reduceMotion), value: showsWatermark)
     .background(Color(.systemGroupedBackground))
   }
 
@@ -420,13 +417,16 @@ struct SessionTranscriptView: View {
         onWillSend: { text in
           // The text leaves the editor as a bubble in the same frame it
           // clears; the transcript flies this proxy into the real row.
-          UserSendMorphCoordinator.shared.stage(
-            text: text,
-            sourceFrame: sendAnimationSourceFrame ?? .zero,
-            bubbleColor: UIColor(theme.bubbleBackground),
-            textColor: UIColor(theme.textPrimary),
-            in: UIWindow.codevisorKeyWindow
-          )
+          if !reduceMotion {
+            UserSendMorphCoordinator.shared.stage(
+              text: text,
+              session: ObjectIdentifier(controller),
+              sourceFrame: sendAnimationSourceFrame ?? .zero,
+              bubbleColor: UIColor(theme.bubbleBackground),
+              textColor: UIColor(theme.textPrimary),
+              in: UIWindow.codevisorKeyWindow
+            )
+          }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)
         }
       )

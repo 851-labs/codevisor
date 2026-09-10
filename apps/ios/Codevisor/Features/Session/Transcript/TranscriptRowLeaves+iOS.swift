@@ -38,7 +38,7 @@ extension TranscriptRowLeaves {
           ))
       },
       userMessage: { message in
-        AnyView(UserBubbleRow(text: message.text, attachments: message.attachments, messageID: message.id))
+        AnyView(UserBubbleRow(text: message.text, attachments: message.attachments))
       },
       workedItem: { item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
         AnyView(

@@ -154,18 +154,11 @@ final class TranscriptRowHost: UIView {
     contentHost.layoutIfNeeded()
   }
 
-  /// The destination is held invisible by a presentation animation while
-  /// New Chat prepares its flight. Snapshotting its last displayed frame
-  /// can therefore produce an empty replica. Render the laid-out model
-  /// layers instead, without releasing the destination's visibility hold.
-  func snapshotForSendAnimation() -> UIView? {
-    guard isPresentationReady, !bounds.isEmpty else { return nil }
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = TranscriptPixelGeometry.displayScale(for: self)
-    let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { context in
-      layer.render(in: context.cgContext)
-    }
-    return UIImageView(image: image)
+  var userBubbleFrameInWindow: CGRect? {
+    guard let bubble = firstDescendant(where: { $0 is UserBubbleGeometryView }),
+      !bubble.bounds.isEmpty
+    else { return nil }
+    return bubble.convert(bubble.bounds, to: nil)
   }
 
   func resetReportedContentHeight() {

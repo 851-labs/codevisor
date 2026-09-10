@@ -3,26 +3,23 @@ import Testing
 
 @Suite("New Chat promotion lifecycle")
 struct NewChatPromotionLifecycleTests {
-  @Test("The handoff waits for both the canonical route and surface animation")
-  func commitReadinessRequiresBothOwners() {
-    #expect(
-      !NewChatPromotionLifecycleContract.canCommit(
-        phase: .animating,
-        canonicalWorkspaceReady: false,
-        surfaceAnimationFinished: true
-      ))
-    #expect(
-      !NewChatPromotionLifecycleContract.canCommit(
-        phase: .animating,
-        canonicalWorkspaceReady: true,
-        surfaceAnimationFinished: false
-      ))
-    #expect(
-      NewChatPromotionLifecycleContract.canCommit(
-        phase: .animating,
-        canonicalWorkspaceReady: true,
-        surfaceAnimationFinished: true
-      ))
+  @Test("The sheet stays live until both animations land and the route is ready")
+  func commitReadinessRequiresEveryOwner() {
+    // Exercise every completion order, including a fast sheet expansion
+    // and a destination ready while the bubble is still leaving the editor.
+    for workspace in [false, true] {
+      for surface in [false, true] {
+        for send in [false, true] {
+          #expect(
+            NewChatPromotionLifecycleContract.canCommit(
+              phase: .animating,
+              canonicalWorkspaceReady: workspace,
+              surfaceAnimationFinished: surface,
+              sendAnimationFinished: send
+            ) == (workspace && surface && send))
+        }
+      }
+    }
   }
 
   @Test("A commit cannot run twice")
@@ -32,7 +29,8 @@ struct NewChatPromotionLifecycleTests {
         !NewChatPromotionLifecycleContract.canCommit(
           phase: phase,
           canonicalWorkspaceReady: true,
-          surfaceAnimationFinished: true
+          surfaceAnimationFinished: true,
+          sendAnimationFinished: true
         ))
     }
   }
@@ -59,9 +57,18 @@ struct NewChatPromotionLifecycleTests {
     #expect(!resources.usesCanonicalWorkspaceNavigation)
   }
 
+  @Test("The editor remains in the live composer throughout the flight")
+  func animatingDoesNotPortalEditor() {
+    let resources = NewChatPromotionLifecycleContract.resources(for: .animating)
+    #expect(resources.keepsNativeSheet)
+    #expect(resources.keepsTransitionSurface)
+    #expect(!resources.usesPortaledComposer)
+    #expect(!resources.retainsComposerEditorAfterSheetDismissal)
+  }
+
   @Test("The editor portal exists only during the structural handoff")
   func editorPortalIsTransient() {
-    for phase in [NewChatPromotionPhase.animating, .committing] {
+    for phase in [NewChatPromotionPhase.committing] {
       let resources = NewChatPromotionLifecycleContract.resources(for: phase)
 
       #expect(resources.keepsNativeSheet)

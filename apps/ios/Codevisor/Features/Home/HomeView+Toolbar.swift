@@ -15,10 +15,6 @@ extension HomeView {
     .buttonStyle(.glass)
     .buttonBorderShape(.circle)
     .controlSize(.large)
-    .matchedTransitionSource(
-      id: Self.newChatTransitionID,
-      in: newChatTransition
-    )
     .padding(.trailing, 16)
     .padding(.bottom, 8)
     .accessibilityLabel("New chat")

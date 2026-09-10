@@ -25,10 +25,7 @@ extension WorkspaceScreen {
       activeSessionId: activeSessionId,
       session: { session(for: $0) },
       projectList: environment.projectList,
-      // The promotion overlay fades the source pickers. Keep their layout
-      // intact until it captures the sheet; the canonical route omits them.
-      showsRunPickers: composerTextEditorHandoffRole == .promotionSource
-        || (isDraft && !presentsAsStarted),
+      showsRunPickers: isDraft && !presentsAsStarted,
       initialComposerFocusRequest: initialComposerFocusRequest,
       onInitialComposerFocusRequestFulfilled:
         onInitialComposerFocusRequestFulfilled,
