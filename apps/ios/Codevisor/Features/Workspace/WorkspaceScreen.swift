@@ -8,8 +8,8 @@ import UIKit
 /// A workspace: one full-screen pane (tab) at a time — chats, terminals, and
 /// the new-tab page. Tabs are switched from the sidebar, which lists every
 /// pane; the nav bar shows the active pane's title between the system back
-/// button and a new-tab button. Chat panes hide their title so the
-/// transcript scrolls clear off the top.
+/// button and a new-tab button. Chats also show their workspace and machine
+/// in the native navigation subtitle.
 struct WorkspaceScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.dismiss) var dismiss
@@ -289,7 +289,10 @@ struct WorkspaceScreen: View {
     // button and the edge swipe-to-go-back gesture. Hiding the back
     // button for a custom sidebar button disabled the interactive pop.
     .navigationTitle(baseTitle)
+    .navigationSubtitle(chatSubtitle)
     .navigationBarTitleDisplayMode(.inline)
+    // The editor role aligns the compact chat title and subtitle to the leading edge.
+    .toolbarRole(activePane?.kind == .chat ? .editor : .automatic)
     .toolbar {
       WorkspaceScreenToolbar(
         isNewChatPresentation: isNewChatPresentation,
@@ -427,16 +430,23 @@ struct WorkspaceScreen: View {
     )
   }
 
-  /// The draft's first surface when its machine has no usable project.
-  /// This is the real file picker, hosted by the sheet's navigation stack.
   private var baseTitle: String {
-    // An unsent draft says what it is; the moment it becomes a real chat the
-    // title clears like any other chat pane, so the nav bar doesn't change
-    // shape under the send.
-    if isNewChatPresentation { return isPromotingNewChat ? "" : "New Chat" }
-    if isDraft { return hasStarted ? "" : "New Chat" }
+    if isDraft { return "New Chat" }
     guard let pane = activePane else { return "" }
-    // Chat panes hide the title so the transcript scrolls off the top.
-    return pane.kind == .chat ? "" : title(for: pane)
+    return title(for: pane)
+  }
+
+  private var chatSubtitle: String {
+    guard activePane?.kind == .chat else { return "" }
+    let projectName = resolvedProject.flatMap {
+      $0.isScratch || $0.isRunTargetPlaceholder ? nil : $0.name
+    }
+    return [
+      resolvedWorkspace?.name ?? projectName,
+      environment.machines.fleetMachineName(for: resolvedServerId),
+    ]
+    .compactMap { $0 }
+    .filter { !$0.isEmpty }
+    .joined(separator: " · ")
   }
 }
