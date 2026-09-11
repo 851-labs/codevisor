@@ -86,7 +86,14 @@ extension SidebarView {
       titleFont: itemTitleFont,
       onActivate: { activateLeaf(leafId, state: state, in: item) },
       onClose: { requestTabAction(.closeLeaf(leafId), in: item) },
-      closeTitle: "Close Pane"
+      onRename: chatSession.map { session in
+        {
+          tabRenameTitle = session.title
+          renamingTab = SidebarTabRenameRequest(
+            workspaceId: workspace.id, tabId: tab.id, chatSessionId: session.id
+          )
+        }
+      }
     )
   }
 
@@ -233,13 +240,21 @@ extension SidebarView {
     }
   }
 
-  /// A rename is a plain layout write (no pane machinery), so the sidebar
-  /// applies it directly.
+  /// Tab renames pin a layout title; split chat rows rename their session.
   func renameTab(_ request: SidebarTabRenameRequest, to title: String) {
     guard var workspace = environment.workspaces.workspace(id: request.workspaceId),
       let index = workspace.centerTabs.firstIndex(where: { $0.id == request.tabId })
     else { return }
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let chatSessionId = request.chatSessionId {
+      guard !trimmed.isEmpty,
+        let session = list.sessions.first(where: {
+          $0.serverId == workspace.serverId && $0.id == chatSessionId
+        })
+      else { return }
+      list.renameSession(session, to: trimmed)
+      return
+    }
     let normalized = trimmed.isEmpty ? nil : trimmed
     guard workspace.centerTabs[index].customTitle != normalized else { return }
     workspace.centerTabs[index].customTitle = normalized
@@ -306,10 +321,11 @@ extension SidebarView {
 
 }
 
-/// The tab a rename alert is editing.
+/// The tab or split chat a rename alert is editing.
 struct SidebarTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
+  var chatSessionId: UUID? = nil
   var id: UUID { tabId }
 }
 
@@ -322,7 +338,7 @@ struct SidebarTabRenameAlert: ViewModifier {
   func body(content: Content) -> some View {
     content
       .alert(
-        "Rename Tab",
+        request?.chatSessionId != nil ? "Rename Chat" : "Rename Tab",
         isPresented: Binding(
           get: { request != nil },
           set: { if !$0 { request = nil } }

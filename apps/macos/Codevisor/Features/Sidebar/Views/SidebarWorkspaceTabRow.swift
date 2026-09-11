@@ -25,9 +25,8 @@ struct SidebarWorkspaceTabRow: View {
   let titleFont: Font
   let onActivate: () -> Void
   let onClose: () -> Void
-  /// Nil for pane rows, which have no title of their own to pin.
+  /// Nil for non-chat pane rows, which have no title of their own to pin.
   var onRename: (() -> Void)? = nil
-  var closeTitle = "Close Tab"
 
   var body: some View {
     HoverableRow(
@@ -58,7 +57,7 @@ struct SidebarWorkspaceTabRow: View {
           }
           .buttonStyle(.plain)
           .foregroundStyle(.secondary)
-          .help(closeTitle)
+          .help("Close")
           .accessibilityLabel("Close \(title)")
           .frame(width: 24, height: 14, alignment: .trailing)
         }
@@ -75,14 +74,19 @@ struct SidebarWorkspaceTabRow: View {
         Button {
           onRename()
         } label: {
-          Label("Rename Tab", systemImage: "pencil")
+          Label("Rename", systemImage: "pencil")
             .labelStyle(.titleAndIcon)
         }
       }
+
+      if let chatSession {
+        ChatSessionUnreadMenuItem(session: chatSession, store: store)
+      }
+
       Button {
         onClose()
       } label: {
-        Label(closeTitle, systemImage: "xmark")
+        Label("Close", systemImage: "xmark")
           .labelStyle(.titleAndIcon)
       }
     }

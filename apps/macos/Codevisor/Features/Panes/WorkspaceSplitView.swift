@@ -466,7 +466,7 @@ private struct SplitLeafHeader: View {
       }
 
       if let session = chatSession {
-        unreadToggleButton(session)
+        ChatSessionUnreadMenuItem(session: session, store: sessionStore)
       }
 
       Button(role: .destructive, action: onClose) {
@@ -486,32 +486,6 @@ private struct SplitLeafHeader: View {
     .fixedSize()
     .help("Pane actions")
     .accessibilityLabel("Pane actions")
-  }
-
-  /// Flips between marking the pane's chat unread and clearing an existing
-  /// unread badge, so the menu never offers the state the chat is already in.
-  @ViewBuilder
-  private func unreadToggleButton(_ session: ChatSession) -> some View {
-    if isUnread(session) {
-      Button {
-        sessionStore?.markRead(session)
-      } label: {
-        Label("Mark as read", systemImage: "message")
-          .labelStyle(.titleAndIcon)
-      }
-    } else {
-      Button {
-        sessionStore?.markUnread(session)
-      } label: {
-        Label("Mark as unread", systemImage: "message.badge")
-          .labelStyle(.titleAndIcon)
-      }
-    }
-  }
-
-  private func isUnread(_ session: ChatSession) -> Bool {
-    guard let sessionStore else { return false }
-    return sessionStore.unreadCount(session) > 0 || sessionStore.hasUnreadError(session)
   }
 
   private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {
