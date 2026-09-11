@@ -20,7 +20,6 @@ struct ChromiumBrowserZoomControls: View {
           .frame(width: 50, height: 30)
       }
       .buttonStyle(ZoomButtonStyle(shape: Capsule()))
-      .disabled(!model.canResetZoom)
       .help("Reset Zoom (⌘0)")
       .accessibilityLabel("Zoom \(model.zoomPercent)%, reset zoom")
       zoomButton("Zoom In (⌘+)", symbol: "plus", command: .zoomIn)
