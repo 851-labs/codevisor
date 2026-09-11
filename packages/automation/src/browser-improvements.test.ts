@@ -50,8 +50,7 @@ const it = baseIt.extend<{
         return
       }
       response.setHeader("content-type", "text/html")
-      const name = request.url?.includes("second") ? "Second" : "First"
-      response.end(`<!doctype html><title>${name}</title>
+      response.end(`<!doctype html><title>First</title>
       <button id="noop">No navigation</button><button id="push" onclick="history.pushState({},'', '/pushed')">Push</button>
       <button id="request" onclick="fetch('/slow')">Request</button><button id="change" onclick="document.querySelector('#noop').remove()">Change</button>
       <label>Name<input id="name" onkeydown="document.querySelector('#keys').textContent += event.key + ','"></label><p id="keys"></p>
@@ -96,23 +95,6 @@ const it = baseIt.extend<{
 })
 
 describe("Browser session reliability", () => {
-  it("persists handles and targets concurrent operations at their own tabs", async ({
-    browser: { cell, origin }
-  }) => {
-    await cell(
-      `var second = await browser.tabs.new(); await second.playwright.expectNavigation(() => second.goto(${JSON.stringify(origin + "/second")}), {waitUntil: 'domcontentloaded'});`
-    )
-    expect(await cell("await Promise.all([first.title(), second.title()])")).toEqual([
-      "First",
-      "Second"
-    ])
-    expect(
-      await cell(
-        "await Promise.all([first.playwright.getByRole('textbox', {name:'Name',exact:true}).fill('left'), second.playwright.getByRole('textbox', {name:'Name',exact:true}).fill('right')]); await Promise.all([first.playwright.getByRole('textbox', {name:'Name',exact:true}).evaluate(e => e.value), second.playwright.getByRole('textbox', {name:'Name',exact:true}).evaluate(e => e.value)])"
-      )
-    ).toEqual(["left", "right"])
-  })
-
   it("orders role matches by document order rather than AX response depth", async ({
     browser: { cell }
   }) => {
@@ -128,25 +110,18 @@ describe("Browser session reliability", () => {
     ).toBe("Shallow second")
   })
 
-  it("rejects refs from an older snapshot or a different tab", async ({
-    browser: { cell, origin }
+  // Handle persistence, concurrent routing, and stale refs have controlled
+  // fixtures in browser-repl.test.ts and browser-tab-routing.test.ts. Keep the
+  // real Chrome assertion here for its accessibility tree and DOM integration.
+  it("snapshots deeply nested controls without duplicate accessibility text", async ({
+    browser: { cell }
   }) => {
-    await cell(
-      `var second = await browser.tabs.new(); await second.playwright.expectNavigation(() => second.goto(${JSON.stringify(origin + "/second")}), {waitUntil: 'load'})`
-    )
     const snapshot = String(await cell("await first.getAXState()"))
     const ref = snapshot.match(/button "No navigation" \[ref=(e\d+)\]/)?.[1]
     expect(ref).toBeTruthy()
     expect(snapshot).toContain('button "Deep action"')
     expect(snapshot).not.toContain("InlineTextBox")
     expect(snapshot).not.toContain('StaticText "Deep action"')
-    await cell("await first.getAXState()")
-    await expect(cell(`await first.click(${JSON.stringify(ref)})`)).rejects.toThrow(/stale/)
-    const current = String(await cell("await first.getAXState()"))
-    const currentRef = current.match(/button "No navigation" \[ref=(e\d+)\]/)?.[1]
-    expect(currentRef).toBeTruthy()
-    await cell("await second.getAXState()")
-    await expect(cell(`await second.click(${JSON.stringify(currentRef)})`)).rejects.toThrow(/stale/)
   })
 
   it("observes same-document navigation after arming before the action", async ({

@@ -1,4 +1,4 @@
-import { delay } from "./browser-cdp.js"
+import type { ChildProcess } from "node:child_process"
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 
 export const serializedBrowserOperation = async <T>(
@@ -23,20 +23,23 @@ export const closeBrowserRuntime = async (active: BrowserRuntime): Promise<void>
   await active.synchronizeCookies?.().catch(() => undefined)
   for (const dispose of active.eventDisposers.splice(0)) dispose()
   if (active.owned) {
-    await active.connection.send("Browser.close").catch(() => undefined)
-    if (active.processHandle !== undefined && active.processHandle.exitCode === null) {
-      await Promise.race([
-        new Promise<void>((resolve) => active.processHandle!.once("exit", () => resolve())),
-        delay(500)
-      ])
-    }
-    if (active.processHandle !== undefined && active.processHandle.exitCode === null) {
-      active.processHandle.kill("SIGTERM")
-      await Promise.race([
-        new Promise<void>((resolve) => active.processHandle!.once("exit", () => resolve())),
-        delay(1_500)
-      ])
-    }
+    // Arm before Browser.close: the process may exit before CDP replies.
+    const exited = active.processHandle && browserProcessExit(active.processHandle)
+    const requested = active.connection.send("Browser.close").catch(() => undefined)
+    await (exited ?? requested)
   }
   await active.connection.close().catch(() => undefined)
+}
+
+const browserProcessExit = (child: ChildProcess): Promise<void> => {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const terminate = setTimeout(() => child.kill("SIGTERM"), 500)
+    const kill = setTimeout(() => child.kill("SIGKILL"), 2_000)
+    child.once("exit", () => {
+      clearTimeout(terminate)
+      clearTimeout(kill)
+      resolve()
+    })
+  })
 }
