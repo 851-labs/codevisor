@@ -54,7 +54,10 @@ final class CloudSignInCoordinator: NSObject, ASWebAuthenticationPresentationCon
     session.prefersEphemeralWebBrowserSession = false
     session.presentationContextProvider = self
     self.session = session
-    session.start()
+    if !session.start() {
+      self.session = nil
+      completion(nil)
+    }
   }
 
   nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

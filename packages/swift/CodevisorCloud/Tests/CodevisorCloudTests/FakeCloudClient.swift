@@ -20,6 +20,10 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var machinesResult: Result<[CloudMachine], any Error> = .success([])
   var renameError: (any Error)?
   var removeError: (any Error)?
+  var deleteError: (any Error)?
+  var generatedOneTimeToken = "management-ott"
+  private(set) var deletionTokens: [String] = []
+  private(set) var managementTokens: [String] = []
 
   private(set) var sessionTokens: [String] = []
   private(set) var machineTokens: [String] = []
@@ -36,6 +40,21 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
 
   func developmentLogin() async throws -> String {
     try lock.withLock { devLoginResult }.get()
+  }
+
+  func generateOneTimeToken(token: String) async throws -> String {
+    lock.withLock {
+      managementTokens.append(token)
+      return generatedOneTimeToken
+    }
+  }
+
+  func deleteAccount(token: String) async throws {
+    let error = lock.withLock {
+      deletionTokens.append(token)
+      return deleteError
+    }
+    if let error { throw error }
   }
 
   func session(token: String) async throws -> CloudSessionUser? {
@@ -166,6 +185,8 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
 struct OfflineError: Error {}
 
 struct OfflineCloudClient: CloudAccountClienting {
+  func generateOneTimeToken(token: String) async throws -> String { throw OfflineError() }
+  func deleteAccount(token: String) async throws { throw OfflineError() }
   func discover() async throws -> CloudInstanceInfo { throw OfflineError() }
   func verifyOneTimeToken(_ ott: String) async throws -> String { throw OfflineError() }
   func developmentLogin() async throws -> String { throw OfflineError() }

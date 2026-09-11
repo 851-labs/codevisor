@@ -160,34 +160,25 @@ private struct ConnectMachineStep: View {
         }
 
         if cloud.supportsGitHubSignIn {
-          Button(action: startCloudSignIn) {
-            Label {
-              Text("Sign in with GitHub")
-            } icon: {
-              gitHubMark
-            }
-          }
-          .buttonStyle(
-            OnboardingFilledButtonStyle(
-              background: Color(.label),
-              foreground: Color(.systemBackground)
-            )
-          )
+          CloudSignInProviderButton(
+            title: "Sign in with GitHub",
+            icon: .asset("GitHubMark")
+          ) { startCloudSignIn() }
           .disabled(isSigningInToCloud)
-          .accessibilityLabel("Sign in with GitHub")
+        }
+
+        if cloud.supportsAppleSignIn {
+          CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
+            .disabled(isSigningInToCloud)
         }
 
         if cloud.developmentAccountAvailable {
-          Button {
+          CloudSignInProviderButton(
+            title: "Use Development Account",
+            icon: .system("hammer")
+          ) {
             Task { await cloud.signInWithDevelopmentAccount() }
-          } label: {
-            Label {
-              Text("Use Development Account")
-            } icon: {
-              Image(systemName: "hammer")
-            }
           }
-          .buttonStyle(OnboardingOutlineButtonStyle())
           .disabled(isSigningInToCloud)
         }
 
@@ -288,14 +279,6 @@ private struct ConnectMachineStep: View {
     .padding(.horizontal, 24)
   }
 
-  private var gitHubMark: some View {
-    Image("GitHubMark")
-      .renderingMode(.template)
-      .resizable()
-      .scaledToFit()
-      .frame(width: 20, height: 20)
-  }
-
   private var secondaryManualLink: some View {
     NavigationLink {
       ManualSetupView()
@@ -334,12 +317,12 @@ private struct ConnectMachineStep: View {
 
   // MARK: Cloud sign-in
 
-  private func startCloudSignIn() {
+  private func startCloudSignIn(provider: CloudSignInProvider = .github) {
     let scheme = CloudSignInCoordinator.callbackScheme
     isSigningInToCloud = true
     environment.cloud.lastError = nil
     cloudSignIn.start(
-      url: environment.cloud.signInURL(scheme: scheme),
+      url: environment.cloud.signInURL(scheme: scheme, provider: provider),
       callbackScheme: scheme
     ) { callbackURL in
       isSigningInToCloud = false
@@ -354,9 +337,7 @@ private struct ConnectMachineStep: View {
 // MARK: - Onboarding button styles
 
 /// A full-width, large filled button shared by the onboarding CTAs so the
-/// "Get Started" and "Sign in with GitHub" actions line up pixel-for-pixel.
-/// Colours are passed in so the same style renders both the accent primary
-/// and the classic label-on-background OAuth look.
+/// "Get Started" and the later onboarding actions align consistently.
 private struct OnboardingFilledButtonStyle: ButtonStyle {
   var background: Color
   var foreground: Color
@@ -379,26 +360,6 @@ private struct OnboardingFilledButtonStyle: ButtonStyle {
       in: RoundedRectangle(cornerRadius: 14, style: .continuous)
     )
     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-  }
-}
-
-/// A full-width, large outlined secondary button — a clean tinted outline,
-/// never a filled gray blob.
-private struct OnboardingOutlineButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.body.weight(.semibold))
-      .foregroundStyle(.tint)
-      .frame(maxWidth: .infinity, minHeight: 50)
-      .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(Color.accentColor.opacity(configuration.isPressed ? 0.12 : 0))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .strokeBorder(Color(.separator), lineWidth: 1)
-      )
-      .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 

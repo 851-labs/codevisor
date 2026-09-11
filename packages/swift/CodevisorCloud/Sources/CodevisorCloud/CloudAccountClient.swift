@@ -80,6 +80,7 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
   case httpStatus(Int)
   case notACloudInstance
   case missingToken
+  case recentSignInRequired
 
   public var errorDescription: String? {
     switch self {
@@ -95,6 +96,8 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
       "That server doesn't look like a Codevisor Cloud instance. Check the URL and try again."
     case .missingToken:
       "Sign-in didn't complete: the server didn't return a session token."
+    case .recentSignInRequired:
+      "Sign out and sign in again before deleting your Cloud account."
     }
   }
 }
@@ -107,6 +110,8 @@ public protocol CloudAccountClienting: Sendable {
   /// Exchanges the browser handoff's one-time token for a session bearer
   /// token (`POST /api/auth/one-time-token/verify`).
   func verifyOneTimeToken(_ ott: String) async throws -> String
+  func generateOneTimeToken(token: String) async throws -> String
+  func deleteAccount(token: String) async throws
   /// Dev-only: a real session for the cloud's seeded development user.
   /// The instance advertises the capability via `authProviders: ["dev"]`;
   /// elsewhere the route does not exist.
@@ -165,6 +170,19 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
   public func developmentLogin() async throws -> String {
     let (data, response) = try await perform("/dev/login", method: "POST", body: Data())
     return try Self.sessionToken(fromHeader: response, body: data)
+  }
+
+  public func generateOneTimeToken(token: String) async throws -> String {
+    let (data, _) = try await perform("/api/auth/one-time-token/generate", token: token)
+    struct TokenBody: Decodable { let token: String }
+    guard let body = try? JSONDecoder().decode(TokenBody.self, from: data), !body.token.isEmpty else {
+      throw CloudAccountClientError.missingToken
+    }
+    return body.token
+  }
+
+  public func deleteAccount(token: String) async throws {
+    _ = try await perform("/api/auth/delete-user", method: "POST", body: Data("{}".utf8), token: token)
   }
 
   /// The bearer plugin returns the session token in a response header;
@@ -281,6 +299,10 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
       throw CloudAccountClientError.invalidResponse
     }
     guard (200..<300).contains(httpResponse.statusCode) else {
+      struct ErrorBody: Decodable { let code: String? }
+      if (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code == "SESSION_EXPIRED" {
+        throw CloudAccountClientError.recentSignInRequired
+      }
       throw CloudAccountClientError.httpStatus(httpResponse.statusCode)
     }
     return (data, httpResponse)

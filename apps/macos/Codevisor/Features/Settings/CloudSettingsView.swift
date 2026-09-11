@@ -16,6 +16,8 @@ struct CloudSettingsView: View {
   @State private var serverURLText = ""
   @State private var serverError: String?
   @State private var isConnectingServer = false
+  @State private var showsDeleteConfirmation = false
+  @State private var isDeletingAccount = false
 
   private var cloud: CloudAccountController { environment.cloud }
 
@@ -42,6 +44,19 @@ struct CloudSettingsView: View {
     } header: {
       Text("Cloud")
     }
+    .confirmationDialog("Delete Cloud Account?", isPresented: $showsDeleteConfirmation, titleVisibility: .visible) {
+      Button("Delete Cloud Account", role: .destructive) {
+        isDeletingAccount = true
+        Task {
+          await cloud.deleteAccount()
+          isDeletingAccount = false
+        }
+      }
+    } message: {
+      Text(
+        "This permanently deletes your Cloud account and disconnects all of your machines. Files and chats stored on your machines stay on those machines."
+      )
+    }
     // Refresh on appear and every 10s while visible, so presence dots
     // track machines connecting/disconnecting elsewhere.
     .task(id: isPollingActive) {
@@ -60,24 +75,26 @@ struct CloudSettingsView: View {
       Text("See and connect to all your machines from anywhere — end-to-end encrypted.")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-      HStack(spacing: 10) {
+      VStack(spacing: 12) {
         if cloud.supportsGitHubSignIn {
           CloudSignInProviderButton(
             title: "Sign in with GitHub",
             icon: .asset("GitHubMark")
           ) { startSignIn() }
-          .settingsActionTint(theme)
+        }
+        if cloud.supportsAppleSignIn {
+          CloudAppleSignInButton { startSignIn(provider: .apple) }
         }
         if cloud.developmentAccountAvailable {
           CloudSignInProviderButton(
             title: "Use Development Account",
-            icon: .system("person.crop.circle.dashed")
+            icon: .system("hammer")
           ) {
             Task { await cloud.signInWithDevelopmentAccount() }
           }
-          .settingsActionTint(theme)
         }
       }
+      .frame(width: 320)
       if let lastError = cloud.lastError {
         Text(lastError)
           .font(.callout)
@@ -114,6 +131,22 @@ struct CloudSettingsView: View {
       Spacer()
       Button("Sign Out") { cloud.signOut() }
         .settingsActionTint(theme)
+        .disabled(isDeletingAccount)
+    }
+
+    HStack {
+      Button("Manage Sign-In Methods") {
+        Task {
+          if let url = await cloud.accountManagementURL(scheme: callbackScheme) {
+            NSWorkspace.shared.open(url)
+          }
+        }
+      }
+      .settingsActionTint(theme)
+      Button(isDeletingAccount ? "Deleting Account…" : "Delete Cloud Account", role: .destructive) {
+        showsDeleteConfirmation = true
+      }
+      .disabled(isDeletingAccount)
     }
 
     // Cloud machines are NOT listed here — they merge into the Machines
@@ -230,9 +263,9 @@ struct CloudSettingsView: View {
   /// terminal tools use). GitHub redirects to the handoff page, which
   /// bounces back into the app via the codevisor(-dev)://cloud-auth
   /// deeplink handled in ContentView — no embedded browser window.
-  private func startSignIn() {
+  private func startSignIn(provider: CloudSignInProvider = .github) {
     cloud.lastError = nil
-    NSWorkspace.shared.open(cloud.signInURL(scheme: callbackScheme))
+    NSWorkspace.shared.open(cloud.signInURL(scheme: callbackScheme, provider: provider))
   }
 
   // MARK: - Formatting

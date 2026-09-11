@@ -14,6 +14,8 @@ struct CloudAccountScreen: View {
 
   @State private var signIn = CloudSignInCoordinator()
   @State private var isSigningIn = false
+  @State private var showsDeleteConfirmation = false
+  @State private var isDeletingAccount = false
   @State private var serverURLText = ""
   @State private var serverError: String?
   @State private var isConnectingServer = false
@@ -34,6 +36,19 @@ struct CloudAccountScreen: View {
     }
     .navigationTitle("Account")
     .navigationBarTitleDisplayMode(.inline)
+    .confirmationDialog("Delete Cloud Account?", isPresented: $showsDeleteConfirmation, titleVisibility: .visible) {
+      Button("Delete Cloud Account", role: .destructive) {
+        isDeletingAccount = true
+        Task {
+          await cloud.deleteAccount()
+          isDeletingAccount = false
+        }
+      }
+    } message: {
+      Text(
+        "This permanently deletes your Cloud account and disconnects all of your machines. Files and chats stored on your machines stay on those machines."
+      )
+    }
     .onAppear {
       serverURLText = cloud.customServerURL?.absoluteString ?? ""
     }
@@ -43,26 +58,26 @@ struct CloudAccountScreen: View {
 
   private var signedOutSection: some View {
     Section {
-      if cloud.supportsGitHubSignIn {
-        Button {
-          startSignIn()
-        } label: {
-          HStack {
-            Text("Sign in with GitHub")
-            if isSigningIn {
-              Spacer()
-              ProgressView()
-            }
+      VStack(spacing: 12) {
+        if cloud.supportsGitHubSignIn {
+          CloudSignInProviderButton(
+            title: "Sign in with GitHub",
+            icon: .asset("GitHubMark")
+          ) { startSignIn() }
+        }
+        if cloud.supportsAppleSignIn {
+          CloudAppleSignInButton { startSignIn(provider: .apple) }
+        }
+        if cloud.developmentAccountAvailable {
+          CloudSignInProviderButton(
+            title: "Use Development Account",
+            icon: .system("hammer")
+          ) {
+            Task { await cloud.signInWithDevelopmentAccount() }
           }
         }
-        .disabled(isSigningIn)
       }
-      if cloud.developmentAccountAvailable {
-        Button("Use Development Account") {
-          Task { await cloud.signInWithDevelopmentAccount() }
-        }
-        .disabled(isSigningIn)
-      }
+      .disabled(isSigningIn)
       if let lastError = cloud.lastError {
         Text(lastError)
           .foregroundStyle(.red)
@@ -101,9 +116,25 @@ struct CloudAccountScreen: View {
             .foregroundStyle(.secondary)
         }
       }
+      Button("Manage Sign-In Methods") {
+        isSigningIn = true
+        Task {
+          guard let url = await cloud.accountManagementURL(scheme: CloudSignInCoordinator.callbackScheme) else {
+            isSigningIn = false
+            return
+          }
+          openAuthentication(url: url)
+        }
+      }
+      .disabled(isSigningIn || isDeletingAccount)
       Button("Sign Out", role: .destructive) {
         cloud.signOut()
       }
+      .disabled(isDeletingAccount)
+      Button(isDeletingAccount ? "Deleting Account…" : "Delete Cloud Account", role: .destructive) {
+        showsDeleteConfirmation = true
+      }
+      .disabled(isDeletingAccount)
       if let lastError = cloud.lastError {
         Text(lastError)
           .foregroundStyle(.red)
@@ -187,12 +218,16 @@ struct CloudAccountScreen: View {
 
   // MARK: Sign-in flow
 
-  private func startSignIn() {
+  private func startSignIn(provider: CloudSignInProvider = .github) {
+    openAuthentication(url: cloud.signInURL(scheme: CloudSignInCoordinator.callbackScheme, provider: provider))
+  }
+
+  private func openAuthentication(url: URL) {
     let scheme = CloudSignInCoordinator.callbackScheme
     isSigningIn = true
     cloud.lastError = nil
     signIn.start(
-      url: cloud.signInURL(scheme: scheme),
+      url: url,
       callbackScheme: scheme
     ) { callbackURL in
       isSigningIn = false

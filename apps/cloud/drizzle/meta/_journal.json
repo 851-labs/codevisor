@@ -8,6 +8,13 @@
       "when": 1786136431308,
       "tag": "0000_better-auth-init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789080348220,
+      "tag": "0001_unique_provider_identity",
+      "breakpoints": true
     }
   ]
 }

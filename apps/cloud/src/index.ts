@@ -2,6 +2,8 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
+import { hasAppleAuth } from "./apple-auth.js"
+import { accountPage, authErrorPage } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
 import { devLoginPage, devicePage, handoffPage, homePage, loginPage } from "./pages/pages.js"
@@ -51,7 +53,8 @@ app.get("/.well-known/codevisor", (c) =>
     version: CLOUD_VERSION,
     protocols: [CLOUD_PROTOCOL_VERSION],
     authProviders: [
-      ...(c.env.GITHUB_CLIENT_ID !== undefined ? ["github"] : []),
+      ...(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET ? ["github"] : []),
+      ...(hasAppleAuth(c.env) ? ["apple"] : []),
       ...(isDevAuthEnabled(c.env) ? ["dev"] : [])
     ]
   })
@@ -80,23 +83,34 @@ app.post("/dev/login", async (c) => {
   return out
 })
 
-/// One-click GitHub sign-in for native apps: starts the social flow
-/// server-side and 302s straight to GitHub's consent page — no interstitial.
+/// One-click sign-in for native apps: starts the social flow
+/// server-side and redirects to the provider's consent page.
 /// Must be a server redirect (not an app-side POST) because Better Auth's
 /// PKCE/state cookies have to land in the browser session that will hit the
-/// OAuth callback. Falls back to the /login page when GitHub isn't configured.
-app.get("/login/github", async (c) => {
+/// OAuth callback. Falls back to /login when the provider isn't configured.
+app.get("/login/:provider", async (c) => {
+  const provider = c.req.param("provider")
+  if (provider !== "github" && provider !== "apple") return c.notFound()
   const redirect = c.req.query("redirect") ?? "/auth/handoff"
   // Relative paths only: this must never become an open redirect.
-  if (!redirect.startsWith("/") || redirect.startsWith("//")) {
+  if (
+    !redirect.startsWith("/") ||
+    redirect.startsWith("//") ||
+    redirect.includes("\\") ||
+    [...redirect].some((character) => character.charCodeAt(0) <= 32)
+  ) {
     return c.json({ error: "invalid redirect" }, 400)
   }
-  if (c.env.GITHUB_CLIENT_ID === undefined) {
+  if (
+    provider === "apple"
+      ? !hasAppleAuth(c.env)
+      : !c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET
+  ) {
     return c.redirect(`/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const auth = createAuth(c.env)
   const { headers, response } = await auth.api.signInSocial({
-    body: { provider: "github", callbackURL: redirect },
+    body: { provider, callbackURL: redirect, errorCallbackURL: "/auth/error" },
     headers: c.req.raw.headers,
     returnHeaders: true
   })
@@ -108,6 +122,9 @@ app.get("/login/github", async (c) => {
   for (const cookie of headers.getSetCookie()) out.headers.append("set-cookie", cookie)
   return out
 })
+
+app.get("/account", accountPage)
+app.get("/auth/error", authErrorPage)
 
 // -- Machine registry (session-authenticated REST for apps) -------------------
 

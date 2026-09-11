@@ -163,22 +163,23 @@ extension OnboardingView {
       Group {
         switch environment.cloud.state {
         case .signedOut:
-          VStack(spacing: 10) {
+          VStack(spacing: 12) {
             if environment.cloud.supportsGitHubSignIn {
               CloudSignInProviderButton(
                 title: "Sign in with GitHub",
                 icon: .asset("GitHubMark")
               ) { startCloudSignIn() }
-              .controlSize(.large)
+            }
+            if environment.cloud.supportsAppleSignIn {
+              CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
             }
             if environment.cloud.developmentAccountAvailable {
               CloudSignInProviderButton(
                 title: "Use Development Account",
-                icon: .system("person.crop.circle.dashed")
+                icon: .system("hammer")
               ) {
                 Task { await environment.cloud.signInWithDevelopmentAccount() }
               }
-              .controlSize(.large)
             }
             if let lastError = environment.cloud.lastError {
               Text(lastError)
@@ -187,6 +188,7 @@ extension OnboardingView {
                 .fixedSize(horizontal: false, vertical: true)
             }
           }
+          .frame(width: 320)
         case .validating:
           HStack(spacing: 8) {
             ProgressView().controlSize(.small)
@@ -243,9 +245,9 @@ extension OnboardingView {
 
   /// Opens the sign-in URL in the user's default browser; the handoff page
   /// bounces back via the cloud-auth deeplink handled in ContentView.
-  private func startCloudSignIn() {
+  private func startCloudSignIn(provider: CloudSignInProvider = .github) {
     environment.cloud.lastError = nil
-    NSWorkspace.shared.open(environment.cloud.signInURL(scheme: cloudCallbackScheme))
+    NSWorkspace.shared.open(environment.cloud.signInURL(scheme: cloudCallbackScheme, provider: provider))
   }
 
   // MARK: - Step header

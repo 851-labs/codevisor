@@ -6,6 +6,11 @@ export interface CloudEnv extends Env {
   BETTER_AUTH_SECRET?: string
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
+  APPLE_CLIENT_ID?: string
+  APPLE_TEAM_ID?: string
+  APPLE_KEY_ID?: string
+  /// PKCS#8 .p8 key stored only as a Worker secret.
+  APPLE_PRIVATE_KEY?: string
   /// GitHub API token for the plugin-index poller (public-repo read access is
   /// enough). Optional: without it the search runs unauthenticated and hits
   /// GitHub's much lower anonymous rate limit.

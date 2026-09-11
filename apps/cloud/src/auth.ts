@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth"
 import { bearer, deviceAuthorization } from "better-auth/plugins"
 import { oneTimeToken } from "better-auth/plugins/one-time-token"
 import { drizzle } from "drizzle-orm/d1"
+import { appleOptions, hasAppleAuth, revokeAppleAuthorization } from "./apple-auth.js"
 import * as schema from "./db/schema.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 
@@ -21,19 +22,53 @@ export const createAuth = (env: CloudEnv) => {
   if (secret === undefined) {
     throw new Error("BETTER_AUTH_SECRET is required when DEV_AUTH is not enabled")
   }
-  const github =
-    env.GITHUB_CLIENT_ID !== undefined && env.GITHUB_CLIENT_SECRET !== undefined
-      ? {
-          socialProviders: {
-            github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET }
-          }
-        }
-      : {}
   return betterAuth({
     baseURL: env.PUBLIC_BASE_URL,
     secret,
     database,
-    ...github,
+    socialProviders: {
+      ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+        ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } }
+        : {}),
+      ...(hasAppleAuth(env) ? { apple: () => appleOptions(env) } : {})
+    },
+    // Apple posts its authorization response cross-origin; state remains
+    // mandatory and bound to the browser that started the request.
+    trustedOrigins: ["https://appleid.apple.com"],
+    account: {
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: true,
+        allowDifferentEmails: true,
+        trustedProviders: ["apple", "github"]
+      }
+    },
+    // Unlinking Apple would discard the token needed for account deletion.
+    // This release supports connecting providers and deleting the whole account.
+    disabledPaths: ["/unlink-account"],
+    user: {
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (user) => {
+          await revokeAppleAuthorization(env, user.id)
+          // Revoke machine credentials before closing sockets. No deleted
+          // account can reconnect while Better Auth removes its sessions.
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id),
+            env.DB.prepare("DELETE FROM device_code WHERE user_id = ?").bind(user.id),
+            env.DB.prepare(
+              "DELETE FROM verification WHERE value IN (SELECT token FROM session WHERE user_id = ?)"
+            ).bind(user.id)
+          ])
+          await env.USER_HUB.get(env.USER_HUB.idFromName(user.id)).deleteAccount()
+        },
+        afterDelete: async (user) => {
+          // Also remove any key issued by a request already in flight when
+          // deletion started. Auth sessions no longer exist at this point.
+          await env.DB.prepare("DELETE FROM apikey WHERE reference_id = ?").bind(user.id).run()
+        }
+      }
+    },
     /// Dev-only credential login (see /dev/login route); never enabled unless
     /// the instance explicitly opted in via the DEV_AUTH var.
     emailAndPassword: { enabled: devAuth },

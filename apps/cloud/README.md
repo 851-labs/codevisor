@@ -6,7 +6,7 @@ port forwarding.
 
 One Cloudflare Worker contains the whole plane:
 
-- **Auth** — [Better Auth](https://better-auth.com) on D1: GitHub OAuth for
+- **Auth** — [Better Auth](https://better-auth.com) on D1: Apple and GitHub OAuth for
   apps, RFC 8628 device flow for `codevisor auth login`, long-lived revocable
   api keys as machine credentials.
 - **`UserHub` Durable Object** — one per account. Apps and machines dial in
@@ -90,6 +90,66 @@ trusting a server.
 `wrangler deploy`. Per-user hub storage migrates itself lazily on first use.
 
 ## Deploys (hosted instance)
+
+### Sign in with Apple
+
+macOS and iOS both use the Cloud's Apple web OAuth flow and existing single-use
+session handoff. iOS presents `ASWebAuthenticationSession`; macOS opens the
+default browser. Both use the **same Services ID**, so the verified Apple `sub`
+maps to the same `account(provider_id, account_id)` and Cloud user on both devices.
+This also supports Developer ID distribution of the Mac app. No native Apple
+identity tokens are accepted by the API.
+
+In Apple Developer, enable Sign in with Apple on the primary iOS App ID, associate
+a Services ID with it, and register the Cloud domain and return URL:
+`https://cloud.codevisor.dev/api/auth/callback/apple`. Create a Sign in with Apple
+key associated with that primary App ID. For the hosted instance these are:
+
+- Primary App ID: `com.dylanplayer.codevisor.ios`
+- Services ID / `APPLE_CLIENT_ID`: `com.dylanplayer.codevisor.cloud`
+- `APPLE_TEAM_ID`: `C4M7D4G7LG`
+- `APPLE_KEY_ID`: `265B2BLJG5`
+
+Store `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY`
+as Worker secrets. `APPLE_PRIVATE_KEY` is the complete PKCS#8 `.p8` file; keep it
+out of Git and app bundles. For example, from `apps/cloud`:
+
+```sh
+bunx wrangler secret put APPLE_CLIENT_ID
+bunx wrangler secret put APPLE_TEAM_ID
+bunx wrangler secret put APPLE_KEY_ID
+bunx wrangler secret put APPLE_PRIVATE_KEY < /secure/path/AuthKey_KEYID.p8
+```
+
+Push the implementation to `main` to run the Cloud deployment workflow. CI applies
+the D1 migration and deploys the Worker; do not deploy the hosted instance manually.
+
+Client secret JWTs are generated with a five-minute lifetime when needed; they
+do not require scheduled manual rotation. Rotate the private key through Apple
+Developer and update the two corresponding Worker secrets when necessary.
+
+Existing GitHub users should sign in with GitHub, then choose **Manage Sign-In
+Methods → Connect Apple** in account settings. Linking requires their current
+Cloud session and Apple authorization and supports Hide My Email. Accounts are
+never merged automatically by email; an Apple identity already owned by another
+Cloud user cannot be reassigned. Returning logins retain the original profile
+when Apple omits email or name.
+
+**Delete Cloud Account** in either app requires a recent session, revokes the
+Apple refresh token, deletes Cloud account/session/machine credentials, and
+disconnects and clears the account's relay hub. Deletion stops before removing
+records if Apple revocation fails, so the user can retry. Local files and chats
+stay on their machines. Individual provider unlinking is disabled so the Apple
+refresh token remains available for deletion.
+
+Validation covers separate Mac/iPhone browser sessions and native handoffs,
+identity verification failures, state/token replay, linking, and deletion using
+fake Apple endpoints and real D1/DO storage. Before App Store submission, also
+complete a real Apple sign-in on a Mac and an iPhone, confirm both see the same
+machines, and test deletion with a disposable Cloud account. This change does
+not configure Apple's optional server-to-server account-change notifications.
+
+### Continuous deployment
 
 `.github/workflows/deploy-cloud.yml` deploys continuously from `main`
 (path-filtered): typecheck + tests → D1 migrations → `wrangler deploy` to

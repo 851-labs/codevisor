@@ -22,7 +22,8 @@
     "better-auth": "1.6.26",
     "drizzle-orm": "0.45.2",
     "effect": "4.0.0-beta.92",
-    "hono": "4.12.27"
+    "hono": "4.12.27",
+    "jose": "6.2.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.3",
