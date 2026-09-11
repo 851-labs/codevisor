@@ -11,6 +11,7 @@ import SwiftUI
 struct PluginInstallSheet: View {
   @Environment(\.dismiss) private var dismiss
   var initialSource: String?
+  var machineName: String? = nil
   let discover: (String) async throws -> ServerPluginRemoteDiscovery
   let onInstall: (String) async throws -> Void
 
@@ -22,6 +23,11 @@ struct PluginInstallSheet: View {
   var body: some View {
     NavigationStack {
       Form {
+        if let machineName {
+          Section {
+            LabeledContent("Machine", value: machineName)
+          }
+        }
         // The source field only exists while typing one — once a
         // plugin is found, the consent stage shows the plugin itself
         // (Back returns here to edit).

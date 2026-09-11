@@ -10,23 +10,10 @@ import os
 /// install, update, restart, and uninstall act on that machine.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var activeSheet: PluginsRootSheet?
+  @State private var activeSession: PluginSettingsSession?
 
-  private enum PluginsRootSheet: Identifiable {
-    case install(initialSource: String?)
-    case browse
-    var id: String {
-      switch self {
-      case .install: "install"
-      case .browse: "browse"
-      }
-    }
-  }
-
-  /// Fleet-level installs land on the local machine; registry plugins
-  /// sync out from there.
-  private var localClient: any CodevisorServerClienting {
-    environment.machines.client(for: CodevisorMachine.local.id)
+  private var availableMachines: [CodevisorMachine] {
+    PluginSettingsSession.availableMachines(in: environment.machines)
   }
 
   var body: some View {
@@ -34,49 +21,69 @@ struct PluginsSettingsScreen: View {
       MachineListSection(badge: badge) { machine in
         PluginMachineRows(machine: machine)
       }
+      if availableMachines.isEmpty {
+        ContentUnavailableView {
+          Label("No Connected Machines", systemImage: "desktopcomputer")
+        } description: {
+          Text("Connect a machine to browse and install plugins.")
+        }
+      }
     }
     .navigationTitle("Plugins")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          activeSheet = .browse
-        } label: {
-          Label("Browse Plugins", systemImage: "magnifyingglass")
-        }
+        machineAction("Browse Plugins", systemImage: "magnifyingglass", page: .browse)
       }
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          activeSheet = .install(initialSource: nil)
-        } label: {
-          Label("Install Plugin", systemImage: "plus")
-        }
+        machineAction("Install Plugin", systemImage: "plus", page: .install(initialSource: nil))
       }
     }
-    .sheet(item: $activeSheet) { sheet in
-      switch sheet {
+    .sheet(item: $activeSession) { session in
+      switch session.page {
       case .install(let initialSource):
         PluginInstallSheet(
           initialSource: initialSource,
-          discover: { source in
-            try await localClient.discoverRemotePlugin(source: source)
-          },
-          onInstall: { source in
-            _ = try await localClient.importRemotePlugin(source: source)
-          }
+          machineName: session.machine.name,
+          discover: { try await session.discover(source: $0) },
+          onInstall: { try await session.install(source: $0) }
         )
       case .browse:
         PluginRegistryBrowseSheet(
-          fetchRegistry: { try await localClient.fetchPluginRegistry(query: nil) },
-          installedIds: [],
-          onInstall: { entry in
-            // The registry only discovers; installing goes
-            // through the consent flow with the entry's repo.
-            activeSheet = .install(initialSource: entry.repo)
-          }
+          fetchRegistry: { try await session.fetchRegistry() },
+          installedIds: session.installedIds,
+          onInstall: { session.showInstall(source: $0.repo) }
         )
       }
     }
+  }
+
+  @ViewBuilder
+  private func machineAction(
+    _ title: LocalizedStringKey, systemImage: String, page: PluginSettingsSession.Page
+  ) -> some View {
+    if environment.machines.allMachines.count > 1 {
+      Menu {
+        ForEach(environment.machines.allMachines) { machine in
+          Button(machine.name) { open(page, on: machine) }
+            .disabled(!availableMachines.contains(where: { $0.id == machine.id }))
+        }
+      } label: {
+        Label(title, systemImage: systemImage)
+      }
+      .disabled(availableMachines.isEmpty)
+    } else {
+      Button {
+        if let machine = availableMachines.first { open(page, on: machine) }
+      } label: {
+        Label(title, systemImage: systemImage)
+      }
+      .disabled(availableMachines.isEmpty)
+    }
+  }
+
+  private func open(_ page: PluginSettingsSession.Page, on machine: CodevisorMachine) {
+    activeSession = PluginSettingsSession(machines: environment.machines, machineId: machine.id, page: page)
   }
 
   private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
@@ -164,6 +171,7 @@ private struct PluginMachineRows: View {
       case .install(let initialSource):
         PluginInstallSheet(
           initialSource: initialSource,
+          machineName: machine.name,
           discover: { source in
             try await client.discoverRemotePlugin(source: source)
           },

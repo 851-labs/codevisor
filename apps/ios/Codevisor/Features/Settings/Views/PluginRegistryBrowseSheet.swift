@@ -82,6 +82,8 @@ struct PluginRegistryBrowseSheet: View {
         Label("Registry Unavailable", systemImage: "exclamationmark.triangle")
       } description: {
         Text(errorMessage)
+      } actions: {
+        Button("Retry") { Task { await load() } }
       }
     } else {
       ProgressView()
@@ -123,6 +125,7 @@ struct PluginRegistryBrowseSheet: View {
   }
 
   private func load() async {
+    errorMessage = nil
     do {
       entries = try await fetchRegistry().entries
       errorMessage = nil
