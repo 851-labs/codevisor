@@ -227,7 +227,7 @@ final class NewChatPromotionSurface {
       self.container.layoutIfNeeded()
     }
     let finish = { [weak self] in
-      backgrounds.forEach { $0.completePromotion() }
+      backgrounds.forEach { $0.finishPromotionAnimation() }
       self?.container.layer.cornerRadius = 0
       IOSNavigationDiagnostics.record("newChat.promotionSurface.expanded")
       self?.onExpanded?()

@@ -22,6 +22,10 @@ await cp(
   join(root, "apps/ios/Codevisor/Diagnostics/IOSNavigationDiagnostics.swift"),
   join(sources, "IOSNavigationDiagnostics.swift")
 )
+await cp(
+  join(root, "apps/ios/Codevisor/Features/Session/NewChat/ChatSurfaceBackground.swift"),
+  join(sources, "ChatSurfaceBackground.swift")
+)
 await cp(join(root, "apps/ios/TranscriptTests"), join(harness, "Tests/TranscriptSurfaceTests"), {
   recursive: true
 })

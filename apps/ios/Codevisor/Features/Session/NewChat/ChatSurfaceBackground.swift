@@ -77,10 +77,11 @@ final class ChatSurfaceBackgroundView: UIView {
     CATransaction.commit()
   }
 
-  func completePromotion() {
-    isPromoting = false
+  func finishPromotionAnimation() {
     gradient.removeAnimation(forKey: "promotionColor")
-    applyCurrentAppearance()
+    // The expanded source is still a sheet until the workspace is ready.
+    // Keep its destination color pinned through dismissal; resolving its
+    // elevated traits here would flash gray before the workspace takes over.
   }
 
   private func applyCurrentAppearance() {
