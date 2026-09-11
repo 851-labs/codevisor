@@ -298,6 +298,13 @@
 
   @MainActor
   public final class SelectableTextKitView: UITextView, StreamingTextAnimationFrameClient {
+    /// A native presentation copy uses the same text layout as the SwiftUI
+    /// transcript, so revealing the selectable view does not move its glyphs.
+    public convenience init(attributedText: NSAttributedString) {
+      self.init(preparedLayout: nil)
+      setContent(attributedText)
+    }
+
     private var representedText: NSAttributedString?
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
