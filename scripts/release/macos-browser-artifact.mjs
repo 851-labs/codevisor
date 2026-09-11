@@ -82,7 +82,7 @@ export async function verifyBrowserDistribution(app, architectures, run = execut
   if (!team) throw new Error("The release app must have a signing Team ID.")
   // Developer ID Application, issued by Apple's Developer ID intermediate,
   // with the same team as the app. Strict verification alone accepts ad-hoc.
-  const requirement = `anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
+  const requirement = `=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
   for (const binary of [...executables, ...(await embeddedLibraries(app))]) {
     run("codesign", ["--verify", "--strict", "--all-architectures", "-R", requirement, binary])
     // A universal dylib remains universal in the split apps. Check every slice,

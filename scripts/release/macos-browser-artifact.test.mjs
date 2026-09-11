@@ -163,6 +163,18 @@ test(
     }
     verifyBrowserLinkage(app, arches)
     await assert.rejects(verifyBrowserDistribution(app, arches), /signing Team ID/)
+    // Supply a claimed team so the real codesign requirement parser and trust
+    // check run against the ad-hoc fixture. A malformed -R argument must not
+    // masquerade as the intended rejection of a non-Developer-ID signature.
+    await assert.rejects(
+      verifyBrowserDistribution(app, arches, (command, args) => {
+        if (command === "codesign" && args.includes("-d") && !args.includes("--arch")) {
+          return "TeamIdentifier=TESTTEAM01\n"
+        }
+        return execFileSync(command, args, { encoding: "utf8", stdio: "pipe" })
+      }),
+      /code failed to satisfy specified code requirement/
+    )
     compile(mainSource, "-o", binaries[0])
     assert.throws(() => verifyBrowserLinkage(app, arches), /must load.*at startup/)
   }
