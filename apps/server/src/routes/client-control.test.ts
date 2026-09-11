@@ -31,18 +31,36 @@ describe("client control routes", () => {
         status: 200,
         body: [{ clientId: "window", name: "Test window" }]
       })
-      for (const method of ["context", "navigate"]) {
+      const commands = [
+        { method: "context", body: undefined },
+        { method: "navigate", body: { workspaceId: "workspace" } },
+        { method: "page", body: { page: "settings", section: "mcps" } },
+        {
+          method: "layout",
+          body: {
+            workspaceId: "workspace",
+            action: {
+              kind: "resize",
+              tabId: "tab",
+              branchPath: [],
+              fractions: [0.4, 0.6],
+              expectedChildren: [["left"], ["right"]]
+            }
+          }
+        },
+        { method: "window", body: { action: "frame", x: 20, y: 30, width: 1000, height: 800 } }
+      ]
+      for (const { method, body } of commands) {
         const command = once(socket, "message")
         const result = jsonRequest(
           server,
           `/v1/clients/window/${method}`,
-          method === "navigate"
-            ? { method: "POST", body: JSON.stringify({ workspaceId: "workspace" }) }
-            : {}
+          body ? { method: "POST", body: JSON.stringify(body) } : {}
         )
         const [raw] = await command
         const request = JSON.parse(String(raw))
         expect(request.method).toBe(method)
+        if (body) expect(request[method === "navigate" ? "navigation" : method]).toEqual(body)
         socket.send(
           JSON.stringify({
             type: "response",
@@ -51,6 +69,14 @@ describe("client control routes", () => {
           })
         )
         expect(await result).toMatchObject({ status: 200, body: { workspaceId: "workspace" } })
+      }
+      for (const method of ["page", "layout", "window"]) {
+        expect(await jsonRequest(server, `/v1/clients/window/${method}`)).toMatchObject({
+          status: 404
+        })
+        expect(
+          await jsonRequest(server, `/v1/clients/window/${method}`, { method: "POST", body: "{}" })
+        ).toMatchObject({ status: 400 })
       }
       expect(await jsonRequest(server, "/v1/clients/missing/context")).toMatchObject({
         status: 404

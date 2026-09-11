@@ -76,6 +76,7 @@ struct HarnessAccountSettingsRequest: Equatable {
 @Observable
 final class SettingsRouter {
   static let shared = SettingsRouter()
+  @ObservationIgnored weak var controlWindow: NSWindow?
   var selectedTab: SettingsTab = .general
   /// Detail pages pushed over the current pane.
   var panePath: [SettingsPaneRoute] = []

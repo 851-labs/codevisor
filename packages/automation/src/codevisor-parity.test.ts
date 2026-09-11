@@ -8,6 +8,8 @@ describe("Codevisor native action parity", () => {
 
   it("exposes the pane, plugin and prompt queue HTTP actions used by native clients", () => {
     const equivalents = new Set([
+      // Native transport, not an agent operation.
+      "GET /v1/clients/:clientId/socket",
       // Close has the exact same final-pane behavior as DELETE.
       "DELETE /v1/workspaces/:workspaceId/panes/:paneId",
       // Plugin tools are exposed dynamically by the gateway.
@@ -19,6 +21,7 @@ describe("Codevisor native action parity", () => {
     const covered = new Set(CODEVISOR_API_TOOLS.map((tool) => `${tool.method} ${tool.path}`))
     const actions = endpoints.filter(
       (endpoint) =>
+        endpoint.includes("/v1/clients") ||
         endpoint.includes("/v1/plugins") ||
         endpoint.includes("/v1/workspace") ||
         endpoint.includes("/queue")
@@ -79,5 +82,36 @@ describe("Codevisor native action parity", () => {
         body: { queueItemIds: ["second", "first"] }
       }
     ])
+  })
+  it("keeps UI command discriminants and nested layout inputs intact", async () => {
+    const bodies: unknown[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: URL, init: RequestInit) => {
+        bodies.push(JSON.parse(init.body as string))
+        return new Response("{}", { headers: { "content-type": "application/json" } })
+      })
+    )
+    const provider = makeCodevisorProvider(
+      () => "http://fixture",
+      async () => "token"
+    )
+    const context = { sessionId: "caller", projectId: "project" }
+    const page = { page: "settings", section: "mcps" }
+    const layout = {
+      workspaceId: "workspace",
+      action: {
+        kind: "resize",
+        tabId: "tab",
+        branchPath: [1],
+        fractions: [0.4, 0.6],
+        expectedChildren: [["left"], ["right"]]
+      }
+    }
+    const window = { action: "frame", x: 30, y: 40, width: 1200, height: 800 }
+    await provider.invoke(context, "clients.open_page", { clientId: "client", body: page })
+    await provider.invoke(context, "clients.layout", { clientId: "client", ...layout })
+    await provider.invoke(context, "clients.window", { clientId: "client", body: window })
+    expect(bodies).toEqual([page, layout, window])
   })
 })

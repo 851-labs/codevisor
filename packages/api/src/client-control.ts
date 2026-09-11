@@ -1,10 +1,19 @@
 import { Schema } from "effect"
+import {
+  ClientCapabilities,
+  ClientPageContext,
+  ClientSplitContext,
+  ClientWindowContext,
+  type ClientPageRequest,
+  type ClientLayoutRequest,
+  type ClientWindowRequest
+} from "./client-ui.js"
 
 export const ClientNavigationRequest = Schema.Struct({
   workspaceId: Schema.String,
   destination: Schema.optional(
     Schema.Struct({
-      kind: Schema.Literals(["tab", "pane", "chat"]),
+      kind: Schema.Literals(["tab", "pane", "chat", "leaf"]),
       id: Schema.String
     })
   )
@@ -15,11 +24,15 @@ export const ClientPaneContext = Schema.Struct({
   id: Schema.String,
   kind: Schema.String,
   title: Schema.String,
-  sessionId: Schema.optional(Schema.String)
+  sessionId: Schema.optional(Schema.String),
+  leafId: Schema.optional(Schema.String)
 })
 export const ClientTabContext = Schema.Struct({
   id: Schema.String,
-  panes: Schema.Array(ClientPaneContext)
+  panes: Schema.Array(ClientPaneContext),
+  title: Schema.optional(Schema.String),
+  activeLeafId: Schema.optional(Schema.String),
+  splits: Schema.optional(Schema.Array(ClientSplitContext))
 })
 export const ClientWorkspaceContext = Schema.Struct({
   id: Schema.String,
@@ -35,7 +48,10 @@ export const ClientWorkspaceContext = Schema.Struct({
 export const ClientContext = Schema.Struct({
   isActive: Schema.Boolean,
   workspaceId: Schema.optional(Schema.String),
-  workspaces: Schema.Array(ClientWorkspaceContext)
+  workspaces: Schema.Array(ClientWorkspaceContext),
+  page: Schema.optional(ClientPageContext),
+  capabilities: Schema.optional(ClientCapabilities),
+  window: Schema.optional(ClientWindowContext)
 })
 export type ClientContext = typeof ClientContext.Type
 
@@ -62,6 +78,9 @@ export const ClientControlFrame = Schema.Union([
 
 export interface ClientControlCommand {
   readonly requestId: string
-  readonly method: "context" | "navigate"
+  readonly method: "context" | "navigate" | "page" | "layout" | "window"
   readonly navigation?: ClientNavigationRequest
+  readonly page?: ClientPageRequest
+  readonly layout?: ClientLayoutRequest
+  readonly window?: ClientWindowRequest
 }

@@ -228,12 +228,14 @@ struct RootView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
   @Environment(\.controlActiveState) var controlActiveState
+  @Environment(\.openSettings) var openClientSettings
+  @State var clientWindow = ClientWindowControl()
   @State var selection: SidebarSelection?
-  @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
+  @ClientPreference("sidebar.collapsed", default: false) var sidebarCollapsed
   @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController()
-  @State private var panelLayout = AdaptivePanelLayout()
+  @State var panelLayout = AdaptivePanelLayout()
 
   var body: some View {
     Group {
@@ -257,10 +259,10 @@ struct RootView: View {
     .modifier(
       ClientControlModifier(
         name: Host.current().localizedName ?? "Codevisor Mac", platform: "macos",
-        isActive: controlActiveState == .key,
-        context: clientControlContext, navigate: navigateClient
+        context: clientControlContext, navigate: navigateClient, control: controlClient
       )
     )
+    .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
     .environment(\.quickLook, quickLook)
     .quickLookPreview(
       Binding(

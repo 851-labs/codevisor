@@ -1,4 +1,5 @@
 import { ClientContext, ClientNavigationRequest, ConnectedClient } from "./client-control.js"
+import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { Schema } from "effect"
 import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
@@ -166,6 +167,9 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "PUT /v1/sync-participation": SyncParticipation,
   "POST /v1/plugins/:pluginId/set-enabled": SetPluginEnabledRequest,
   "POST /v1/clients/:clientId/navigate": ClientNavigationRequest,
+  "POST /v1/clients/:clientId/page": ClientPageRequest,
+  "POST /v1/clients/:clientId/layout": ClientLayoutRequest,
+  "POST /v1/clients/:clientId/window": ClientWindowRequest,
   "PUT /v1/mcps/:id/machine-state": SetMachineMcpEnabledRequest,
   "POST /v1/mcps": CreateMcpServerRequest,
   "POST /v1/mcps/detect-auth": DetectMcpAuthRequest,
@@ -277,6 +281,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/clients": arrayOf(ConnectedClient),
   "GET /v1/clients/:clientId/context": ClientContext,
   "POST /v1/clients/:clientId/navigate": ClientContext,
+  "POST /v1/clients/:clientId/page": ClientContext,
+  "POST /v1/clients/:clientId/layout": ClientContext,
+  "POST /v1/clients/:clientId/window": ClientContext,
   "GET /v1/mcps/:id/machine-state": MachineMcpState,
   "PUT /v1/mcps/:id/machine-state": MachineMcpState,
   "GET /v1/mcps": arrayOf(McpServer),

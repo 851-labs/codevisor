@@ -6,11 +6,15 @@ import Foundation
 public enum ClientControlConnection {
   public typealias ContextReader = @MainActor () -> NativeClientContext
   public typealias Navigator = @MainActor (ClientNavigationRequest) async throws -> Void
+  public typealias Controller = @MainActor (ClientUIAction) async throws -> Void
 
   struct Command: Decodable {
     let requestId: String
     let method: String
-    let navigation: ClientNavigationRequest?
+    var navigation: ClientNavigationRequest?
+    var page: ClientPageRequest?
+    var layout: ClientLayoutRequest?
+    var window: ClientWindowRequest?
   }
   struct Response: Encodable {
     var type = "response"
@@ -25,7 +29,8 @@ public enum ClientControlConnection {
     platform: String,
     config: CodevisorServerConfig,
     context: @escaping ContextReader,
-    navigate: @escaping Navigator
+    navigate: @escaping Navigator,
+    control: @escaping Controller = { _ in throw ClientControlError("UI control is unavailable") }
   ) async {
     guard var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false) else {
       return
@@ -53,7 +58,7 @@ public enum ClientControlConnection {
             case .string(let text): data = Data(text.utf8)
             }
             let command = try JSONDecoder().decode(Command.self, from: data)
-            let response = await handle(command, context: context, navigate: navigate)
+            let response = await handle(command, context: context, navigate: navigate, control: control)
             try Task.checkCancellation()
             try await socket.send(.data(JSONEncoder().encode(response)))
           }
@@ -71,7 +76,8 @@ public enum ClientControlConnection {
   static func handle(
     _ command: Command,
     context: ContextReader,
-    navigate: Navigator
+    navigate: Navigator,
+    control: Controller = { _ in throw ClientControlError("UI control is unavailable") }
   ) async -> Response {
     do {
       try Task.checkCancellation()
@@ -82,6 +88,15 @@ public enum ClientControlConnection {
           throw ClientControlError("Missing navigation request")
         }
         try await navigate(request)
+      case "page":
+        guard let request = command.page else { throw ClientControlError("Missing page request") }
+        try await control(.page(request))
+      case "layout":
+        guard let request = command.layout else { throw ClientControlError("Missing layout request") }
+        try await control(.layout(request))
+      case "window":
+        guard let request = command.window else { throw ClientControlError("Missing window request") }
+        try await control(.window(request))
       default: throw ClientControlError("Unknown client command")
       }
       return Response(requestId: command.requestId, context: context())

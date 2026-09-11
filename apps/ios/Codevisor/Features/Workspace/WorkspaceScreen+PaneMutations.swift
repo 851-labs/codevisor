@@ -115,31 +115,20 @@ extension WorkspaceScreen {
     }
 
     var state = panes
-    var remaining = shared
-    var reconciled: [PaneDescriptorState] = []
-    for local in state.panes {
-      let index = remaining.firstIndex(where: { candidate in
-        candidate.id == local.id || Self.sameResource(candidate, local)
-      })
-      guard let index else { continue }
-      let candidate = remaining.remove(at: index)
-      if candidate.id != local.id {
-        // Same resource, new id: the mounted content keeps its identity.
+    // The repository owns this device's order and selection. Client-control
+    // writes must reach an already mounted screen just like sidebar changes.
+    let reconciled = shared
+    for candidate in shared {
+      if let local = state.panes.first(where: { $0.id == candidate.id || Self.sameResource(candidate, $0) }),
+        candidate.id != local.id
+      {
         paneViewIdentities[candidate.id] = paneViewIdentities[local.id] ?? local.id
       }
-      reconciled.append(candidate)
     }
-    reconciled.append(contentsOf: remaining)
-    guard reconciled != state.panes else { return }
-    IOSNavigationDiagnostics.record(
-      "workspace.paneSync",
-      "old=\(state.panes.map { Self.diagnosticID($0.id) }) new=\(reconciled.map { Self.diagnosticID($0.id) })"
-    )
+    let selected = Self.compactPaneState(from: workspace).selectedPaneId
+    guard reconciled != state.panes || selected != state.selectedPaneId else { return }
     state.panes = reconciled
-    if !reconciled.contains(where: { $0.id == state.selectedPaneId }) {
-      state.selectedPaneId = reconciled.first?.id
-    }
-
+    state.selectedPaneId = selected
     paneState = state
     persistCompactPaneState(state)
   }

@@ -67,6 +67,7 @@ private struct SettingsToolbarStyler: NSViewRepresentable {
       // System Settings and Xcode use, where AppKit renders toolbar
       // controls at large size, vertically centered.
       guard let window else { return }
+      SettingsRouter.shared.controlWindow = window
       if window.toolbarStyle != .unified {
         window.toolbarStyle = .unified
       }

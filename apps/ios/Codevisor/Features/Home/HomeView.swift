@@ -26,6 +26,8 @@ struct HomeView: View {
   /// First-launch budget: with nothing cached the spinner is allowed,
   /// but it may never outlive the wait — after this it becomes retry.
   @State var initialSyncDeadlineExpired = false
+  @State var clientSettingsSection = "root"
+  @State var clientPresentationCompletion = ClientPresentationCompletion()
   @State var presentedSettingsDestination: SettingsDestination?
   @State private var pendingHarnessSignIn: HarnessSignInRequest?
   @State var newChatFlow: NewChatFlow?
@@ -58,6 +60,15 @@ struct HomeView: View {
 
   var machines: MachineController { environment.machines }
   var projectList: ProjectListModel { environment.projectList }
+
+  var clientBlockingPresentation: String? {
+    if showsOnboarding.wrappedValue { return "onboarding" }
+    if pendingHarnessSignIn != nil { return "harness_sign_in" }
+    if pendingPluginInstall != nil { return "plugin_install" }
+    if pendingDeeplink != nil || deeplinkError != nil { return "machine_connection" }
+    if renamingWorkspace != nil || renamingTab != nil { return "rename" }
+    return nil
+  }
 
   private var hasRemoteMachines: Bool {
     machines.allMachines.contains { !$0.isLocal }
@@ -170,8 +181,10 @@ struct HomeView: View {
           onRenameTab: { renameSidebarTab($0, to: $1) }
         )
       )
-      .sheet(item: $presentedSettingsDestination) { destination in
-        SettingsSheet(initialDestination: destination)
+      .sheet(item: $presentedSettingsDestination, onDismiss: { clientPresentationCompletion.complete("settings") }) {
+        destination in
+        SettingsSheet(initialDestination: destination, onSectionChange: { clientSettingsSection = $0 })
+          .id(destination.id)
       }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
         presentedSettingsDestination = .root
@@ -238,8 +251,8 @@ struct HomeView: View {
     }
     .modifier(
       ClientControlModifier(
-        name: UIDevice.current.name, platform: "ios", isActive: scenePhase == .active,
-        context: clientControlContext, navigate: navigateClient
+        name: UIDevice.current.name, platform: "ios",
+        context: clientControlContext, navigate: navigateClient, control: controlClient
       )
     )
   }

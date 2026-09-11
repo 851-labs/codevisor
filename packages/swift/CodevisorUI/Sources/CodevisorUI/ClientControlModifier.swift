@@ -9,35 +9,36 @@ public struct ClientControlModifier: ViewModifier {
   @State private var clientId = UUID()
   let name: String
   let platform: String
-  let isActive: Bool
   let context: @MainActor (String) -> NativeClientContext
   let navigate: @MainActor (String, ClientNavigationRequest) async throws -> Void
+  let control: @MainActor (String, ClientUIAction) async throws -> Void
 
   public init(
     name: String,
     platform: String,
-    isActive: Bool,
     context: @escaping @MainActor (String) -> NativeClientContext,
-    navigate: @escaping @MainActor (String, ClientNavigationRequest) async throws -> Void
+    navigate: @escaping @MainActor (String, ClientNavigationRequest) async throws -> Void,
+    control: @escaping @MainActor (String, ClientUIAction) async throws -> Void
   ) {
     self.name = name
     self.platform = platform
-    self.isActive = isActive
     self.context = context
     self.navigate = navigate
+    self.control = control
   }
 
   public func body(content: Content) -> some View {
     content.background {
-      if scenePhase != .background {
+      if platform == "macos" || scenePhase != .background {
         ForEach(environment.machines.allMachines) { machine in
-          if !machine.isLocal || environment.localServer != nil {
+          // A dev Mac may use an externally managed local server, without
+          // owning a LocalServerProcess. iOS has no local server at all.
+          if platform == "macos" || !machine.isLocal {
             Color.clear.frame(width: 0, height: 0)
               .task(
                 id: ConnectionIdentity(
                   route: environment.machines.httpConnectionState(forMachineId: machine.id),
-                  config: environment.machines.serverConfig(for: machine.id),
-                  isActive: isActive
+                  config: environment.machines.serverConfig(for: machine.id)
                 )
               ) {
                 await ClientControlConnection.run(
@@ -46,7 +47,8 @@ public struct ClientControlModifier: ViewModifier {
                   platform: platform,
                   config: environment.machines.serverConfig(for: machine.id),
                   context: { context(machine.id) },
-                  navigate: { try await navigate(machine.id, $0) }
+                  navigate: { try await navigate(machine.id, $0) },
+                  control: { try await control(machine.id, $0) }
                 )
               }
           }
@@ -58,6 +60,5 @@ public struct ClientControlModifier: ViewModifier {
   private struct ConnectionIdentity: Equatable {
     let route: MachineController.HTTPConnectionState
     let config: CodevisorServerConfig
-    let isActive: Bool
   }
 }

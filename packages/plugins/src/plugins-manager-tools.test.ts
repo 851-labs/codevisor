@@ -126,7 +126,7 @@ describe("plugin tool invocation", () => {
       armed.resolve()
       return deadline.signal
     })
-    const { manager } = makeManager({ toolTimeoutMs: 100 }, toolManifest)
+    const { fake, manager } = makeManager({ toolTimeoutMs: 100 }, toolManifest)
     const timedOut = invalid(
       manager.invokeTool("owner.notes", "notes_slow", {}),
       "unavailable",
@@ -135,11 +135,16 @@ describe("plugin tool invocation", () => {
     await armed.promise
     deadline.abort(new DOMException("deadline reached", "TimeoutError"))
     await timedOut
-    timeout.mockRestore()
+    // Keep the next request's deadline controlled too: its real HTTP response
+    // must not race a 100 ms wall-clock timer under suite load.
+    timeout.mockReturnValue(new AbortController().signal)
     // The process is alive but was hung — the same instance keeps serving.
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({
       ok: true
     })
+    expect(timeout).toHaveBeenCalledTimes(2)
+    expect(timeout).toHaveBeenLastCalledWith(100)
+    expect(fake.spawnCount()).toBe(1)
   })
 
   it("kicks the runtime when the port is dead so the next call relaunches", async () => {

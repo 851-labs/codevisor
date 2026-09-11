@@ -2,7 +2,7 @@ import Foundation
 
 public struct ClientNavigationRequest: Codable, Sendable {
   public struct Destination: Codable, Sendable {
-    public enum Kind: String, Codable, Sendable { case tab, pane, chat }
+    public enum Kind: String, Codable, Sendable { case tab, pane, chat, leaf }
     public var kind: Kind
     public var id: UUID
 
@@ -11,6 +11,7 @@ public struct ClientNavigationRequest: Codable, Sendable {
       case .tab: .tab(id)
       case .pane: .pane(id)
       case .chat: .chat(id)
+      case .leaf: .leaf(id)
       }
     }
   }
@@ -42,17 +43,28 @@ public struct NativeClientContext: Codable, Sendable {
     public var kind: String
     public var title: String
     public var sessionId: UUID?
+    public var leafId: UUID?
 
-    init(_ pane: PaneDescriptorState) {
+    init(_ pane: PaneDescriptorState, leafId: UUID? = nil) {
       id = pane.id
       kind = pane.kind.rawValue
       title = pane.name
       sessionId = pane.kind == .chat ? pane.chatSessionId : nil
+      self.leafId = leafId
     }
   }
   public struct Tab: Codable, Sendable {
     public var id: UUID
     public var panes: [Pane]
+    public var title: String?
+    public var activeLeafId: UUID?
+    public var splits: [Split]?
+  }
+  public struct Split: Codable, Sendable {
+    public var branchPath: [Int]
+    public var orientation: String
+    public var fractions: [Double]
+    public var children: [[UUID]]
   }
   public struct Surface: Codable, Sendable {
     public var id: UUID
@@ -66,6 +78,9 @@ public struct NativeClientContext: Codable, Sendable {
   public var isActive: Bool
   public var workspaceId: UUID?
   public var workspaces: [Surface]
+  public var page: ClientPageContext?
+  public var capabilities: ClientCapabilities?
+  public var window: ClientWindowContext?
 
   public static func capture(
     repository: any WorkspaceRepository,
@@ -85,10 +100,24 @@ public struct NativeClientContext: Codable, Sendable {
           tabId: workspace.selectedCenterTabId, paneId: pane?.id,
           sessionId: pane?.kind == .chat ? pane?.chatSessionId : nil,
           tabs: workspace.centerTabs.map { tab in
-            Tab(id: tab.id, panes: tab.root.allGroups.flatMap { $0.state.panes.map(Pane.init) })
+            Tab(
+              id: tab.id,
+              panes: tab.root.allGroups.flatMap { group in group.state.panes.map { Pane($0, leafId: group.id) } },
+              title: tab.customTitle, activeLeafId: tab.activeLeafId, splits: splits(in: tab.root)
+            )
           }
         )
       }
     )
+  }
+
+  private static func splits(in node: SplitNode, path: [Int] = []) -> [Split] {
+    guard case let .split(orientation, children) = node else { return [] }
+    return [
+      Split(
+        branchPath: path, orientation: orientation.rawValue,
+        fractions: children.map(\.fraction), children: children.map { $0.node.allGroups.map(\.id) }
+      )
+    ] + children.enumerated().flatMap { splits(in: $0.element.node, path: path + [$0.offset]) }
   }
 }
