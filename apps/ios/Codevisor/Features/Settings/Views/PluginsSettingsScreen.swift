@@ -10,7 +10,6 @@ import os
 /// install, update, restart, and uninstall act on that machine.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var activeSession: PluginSettingsSession?
 
   private var availableMachines: [CodevisorMachine] {
     PluginSettingsSession.availableMachines(in: environment.machines)
@@ -18,8 +17,19 @@ struct PluginsSettingsScreen: View {
 
   var body: some View {
     List {
-      MachineListSection(badge: badge) { machine in
-        PluginMachineRows(machine: machine)
+      Section {
+        ForEach(environment.machines.allMachines) { machine in
+          NavigationLink {
+            PluginMachineScreen(machine: machine)
+          } label: {
+            HStack {
+              Text(machine.name)
+              Spacer(minLength: 12)
+              badge(machine).view
+                .font(.footnote)
+            }
+          }
+        }
       }
       if availableMachines.isEmpty {
         ContentUnavailableView {
@@ -31,59 +41,6 @@ struct PluginsSettingsScreen: View {
     }
     .navigationTitle("Plugins")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        machineAction("Browse Plugins", systemImage: "magnifyingglass", page: .browse)
-      }
-      ToolbarItem(placement: .topBarTrailing) {
-        machineAction("Install Plugin", systemImage: "plus", page: .install(initialSource: nil))
-      }
-    }
-    .sheet(item: $activeSession) { session in
-      switch session.page {
-      case .install(let initialSource):
-        PluginInstallSheet(
-          initialSource: initialSource,
-          machineName: session.machine.name,
-          discover: { try await session.discover(source: $0) },
-          onInstall: { try await session.install(source: $0) }
-        )
-      case .browse:
-        PluginRegistryBrowseSheet(
-          fetchRegistry: { try await session.fetchRegistry() },
-          installedIds: session.installedIds,
-          onInstall: { session.showInstall(source: $0.repo) }
-        )
-      }
-    }
-  }
-
-  @ViewBuilder
-  private func machineAction(
-    _ title: LocalizedStringKey, systemImage: String, page: PluginSettingsSession.Page
-  ) -> some View {
-    if environment.machines.allMachines.count > 1 {
-      Menu {
-        ForEach(environment.machines.allMachines) { machine in
-          Button(machine.name) { open(page, on: machine) }
-            .disabled(!availableMachines.contains(where: { $0.id == machine.id }))
-        }
-      } label: {
-        Label(title, systemImage: systemImage)
-      }
-      .disabled(availableMachines.isEmpty)
-    } else {
-      Button {
-        if let machine = availableMachines.first { open(page, on: machine) }
-      } label: {
-        Label(title, systemImage: systemImage)
-      }
-      .disabled(availableMachines.isEmpty)
-    }
-  }
-
-  private func open(_ page: PluginSettingsSession.Page, on machine: CodevisorMachine) {
-    activeSession = PluginSettingsSession(machines: environment.machines, machineId: machine.id, page: page)
   }
 
   private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
@@ -101,7 +58,7 @@ struct PluginsSettingsScreen: View {
 
 /// One machine's plugins: runtime-state chips, update/restore/uninstall,
 /// and the browse/install sheets — all scoped to that machine.
-private struct PluginMachineRows: View {
+private struct PluginMachineScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
 
@@ -110,6 +67,10 @@ private struct PluginMachineRows: View {
   }
 
   private var serverId: String { machine.id }
+
+  private var isMachineAvailable: Bool {
+    PluginSettingsSession.availableMachines(in: environment.machines).contains { $0.id == machine.id }
+  }
 
   @State private var plugins: [ServerPluginSummary]?
   @State private var updates: [String: ServerPluginUpdateStatus] = [:]
@@ -123,20 +84,18 @@ private struct PluginMachineRows: View {
   /// One sheet slot for both flows, so "Install" inside the browse sheet
   /// can swap straight into the install sheet's discover→consent stages.
   private enum PluginsSheet: Identifiable {
-    case install(initialSource: String?)
-    case browse
+    case session(PluginSettingsSession)
     case update(ServerPluginUpdatePlan)
     var id: String {
       switch self {
-      case .install: "install"
-      case .browse: "browse"
+      case .session(let session): "session:\(session.id)"
       case .update(let plan): "update:\(plan.planId)"
       }
     }
   }
 
   var body: some View {
-    Group {
+    List {
       if let actionError {
         Label(actionError, systemImage: "exclamationmark.triangle")
           .font(.callout)
@@ -159,6 +118,22 @@ private struct PluginMachineRows: View {
         }
       }
     }
+    .navigationTitle(machine.name)
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Browse Plugins", systemImage: "magnifyingglass") {
+          open(.browse)
+        }
+        .disabled(isMutating || !isMachineAvailable)
+      }
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Add Plugin", systemImage: "plus") {
+          open(.install(initialSource: nil))
+        }
+        .disabled(isMutating || !isMachineAvailable)
+      }
+    }
     .disabled(isMutating)
     .task(id: serverId) { await reload() }
     // plugin.state.updated events (start, crash, restart, and list
@@ -168,31 +143,27 @@ private struct PluginMachineRows: View {
     }
     .sheet(item: $activeSheet) { sheet in
       switch sheet {
-      case .install(let initialSource):
-        PluginInstallSheet(
-          initialSource: initialSource,
-          machineName: machine.name,
-          discover: { source in
-            try await client.discoverRemotePlugin(source: source)
-          },
-          onInstall: { source in
-            _ = try await mutate {
-              try await client.importRemotePlugin(source: source)
+      case .session(let session):
+        switch session.page {
+        case .install(let initialSource):
+          PluginInstallSheet(
+            initialSource: initialSource,
+            machineName: session.machine.name,
+            discover: { try await session.discover(source: $0) },
+            onInstall: { source in
+              try await mutate {
+                try await session.install(source: source)
+              }
+              await reload()
             }
-            await reload()
-          }
-        )
-      case .browse:
-        PluginRegistryBrowseSheet(
-          fetchRegistry: { try await client.fetchPluginRegistry(query: nil) },
-          installedIds: Set((plugins ?? []).map(\.id)),
-          onInstall: { entry in
-            // The registry only discovers; installing goes
-            // through the existing consent flow with the entry's
-            // repo as the source.
-            activeSheet = .install(initialSource: entry.repo)
-          }
-        )
+          )
+        case .browse:
+          PluginRegistryBrowseSheet(
+            fetchRegistry: { try await session.fetchRegistry() },
+            installedIds: session.installedIds,
+            onInstall: { session.showInstall(source: $0.repo) }
+          )
+        }
       case .update(let plan):
         PluginUpdateSheet(
           plan: plan,
@@ -232,6 +203,12 @@ private struct PluginMachineRows: View {
         "This restores the verified pre-update code and data. The current version becomes the next restore point."
       )
     }
+  }
+
+  private func open(_ page: PluginSettingsSession.Page) {
+    guard let session = PluginSettingsSession(machines: environment.machines, machineId: machine.id, page: page)
+    else { return }
+    activeSheet = .session(session)
   }
 
   private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
@@ -315,7 +292,7 @@ private struct PluginMachineRows: View {
     }
     if updates[plugin.id]?.state == .sourceUnknown {
       Button {
-        activeSheet = .install(initialSource: nil)
+        open(.install(initialSource: nil))
       } label: {
         Label("Reinstall to Enable Updates…", systemImage: "arrow.clockwise.circle")
       }
