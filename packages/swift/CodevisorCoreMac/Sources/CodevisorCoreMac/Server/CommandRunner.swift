@@ -106,14 +106,13 @@ public struct ProcessCommandRunner: CommandRunner {
     // Subscribe before launch and buffer an immediate exit, including a
     // short-lived launchctl command that finishes before the waiter starts.
     // This avoids a blocking wait on another thread's Foundation run loop.
-    let (exits, exitContinuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let exit = StartupOutcome<Int32>()
     process.terminationHandler = { finished in
       cancellation.markFinished()
-      exitContinuation.yield(finished.terminationStatus)
-      exitContinuation.finish()
+      exit.resolve(.success(finished.terminationStatus))
       onExit()
     }
-    defer { process.terminationHandler = nil; exitContinuation.finish() }
+    defer { process.terminationHandler = nil }
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       do {
@@ -132,13 +131,20 @@ public struct ProcessCommandRunner: CommandRunner {
       try? outPipe.fileHandleForWriting.close()
       try? errPipe.fileHandleForWriting.close()
 
-      // Drain both pipes while the process runs so output larger than a
-      // pipe buffer cannot deadlock the child.
-      async let outData = readToEnd(outPipe.fileHandleForReading)
-      async let errData = readToEnd(errPipe.fileHandleForReading)
-      var iterator = exits.makeAsyncIterator()
-      guard let exitCode = await iterator.next() else { throw CancellationError() }
-      let (out, err) = await (outData, errData)
+      // Drain both pipes concurrently. A task group avoids async-let stack
+      // teardown bugs in older Swift toolchains. Cancellation still waits for
+      // pipe EOF and the actual exit callback before releasing the process.
+      let (out, err) = await withTaskGroup(of: (Bool, Data).self) { group in
+        group.addTask { (true, await readToEnd(outPipe.fileHandleForReading)) }
+        group.addTask { (false, await readToEnd(errPipe.fileHandleForReading)) }
+        var out = Data()
+        var err = Data()
+        for await (isStandardOutput, data) in group {
+          if isStandardOutput { out = data } else { err = data }
+        }
+        return (out, err)
+      }
+      let exitCode = try await exit.value
       try Task.checkCancellation()
 
       return CommandResult(

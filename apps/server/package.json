@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.json",
-    "typecheck": "tsc -b tsconfig.json --pretty false && tsc -p test/tsconfig.json --pretty false",
+    "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tmp/typecheck.tsbuildinfo --pretty false && tsc -p test/tsconfig.json --pretty false",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "dev": "tsc -b tsconfig.json && node dist/main.js serve",

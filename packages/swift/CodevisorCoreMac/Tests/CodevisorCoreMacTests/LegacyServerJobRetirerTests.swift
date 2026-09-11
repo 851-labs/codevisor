@@ -188,6 +188,33 @@ struct LaunchctlPrintOutputTests {
 }
 
 extension ProcessCommandRunnerTests {
+  @Test("Cancellation waits for the child to exit and releases its output readers")
+  func cancelsRunningProcess() async {
+    let started = TestSignal()
+    let exited = TestSignal()
+    let runner = ProcessCommandRunner(onStart: started.signal, onExit: exited.signal)
+    let command = Task {
+      try await runner.run(
+        executableURL: URL(fileURLWithPath: "/usr/bin/tail"),
+        arguments: ["-f", "/dev/null"], environment: nil)
+    }
+    await started.wait()
+    command.cancel()
+    await #expect(throws: CancellationError.self) { try await command.value }
+    await exited.wait()
+  }
+
+  @Test("Drains stdout and stderr beyond pipe capacity without blocking the child")
+  func capturesLargeOutput() async throws {
+    let result = try await ProcessCommandRunner().run(
+      executableURL: URL(fileURLWithPath: "/bin/sh"),
+      arguments: ["-c", "/usr/bin/head -c 262144 /dev/zero; /usr/bin/head -c 262144 /dev/zero >&2"],
+      environment: [:])
+    #expect(result.standardOutput == String(repeating: "\0", count: 262144))
+    #expect(result.standardError == String(repeating: "\0", count: 262144))
+    #expect(result.exitCode == 0)
+  }
+
   @Test("Short commands deliver output and exit even if they finish before the waiter")
   func capturesQuickExit() async throws {
     let result = try await ProcessCommandRunner().run(
