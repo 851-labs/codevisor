@@ -146,6 +146,9 @@ function Footer() {
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
         <span>© {new Date().getFullYear()} 851 Inc.</span>
         <div className="flex items-center gap-5">
+          <a href="/terms" className="transition-colors hover:text-text">
+            Terms
+          </a>
           <a href="/privacy" className="transition-colors hover:text-text">
             Privacy
           </a>

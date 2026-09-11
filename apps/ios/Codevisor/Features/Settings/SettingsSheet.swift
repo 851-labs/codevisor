@@ -30,8 +30,12 @@ enum SettingsDestination: Hashable, Identifiable {
 struct SettingsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.openURL) private var openURL
   @State private var path: [SettingsDestination]
+  @State private var showsEmailFallback = false
   var onSectionChange: ((String) -> Void)?
+
+  private static let supportEmail = "hello@codevisor.dev"
 
   static let clientSections = [
     "root", "account", "machines", "updates", "general", "appearance", "agents", "mcps", "skills",
@@ -87,6 +91,41 @@ struct SettingsSheet: View {
             Label("Plugins", systemImage: "puzzlepiece")
           }
         }
+        Section {
+          Button {
+            openURL(URL(string: "mailto:\(Self.supportEmail)?subject=Codevisor%20iOS%20Support")!) {
+              accepted in
+              showsEmailFallback = !accepted
+            }
+          } label: {
+            externalLinkLabel("Contact Support", systemImage: "envelope")
+          }
+          .accessibilityIdentifier("settings.contactSupport")
+          .accessibilityHint("Opens your email app")
+          .contextMenu {
+            Button("Copy Email Address", systemImage: "doc.on.doc") {
+              UIPasteboard.general.string = Self.supportEmail
+            }
+          }
+          Link(destination: URL(string: "https://www.codevisor.dev/terms")!) {
+            externalLinkLabel("Terms of Use", systemImage: "doc.text")
+          }
+          .accessibilityIdentifier("settings.termsOfUse")
+          .accessibilityHint("Opens in your browser")
+          Link(destination: AIDataSharingConsent.privacyPolicyURL) {
+            externalLinkLabel("Privacy Policy", systemImage: "hand.raised")
+          }
+          .accessibilityIdentifier("settings.privacyPolicy")
+          .accessibilityHint("Opens in your browser")
+        } footer: {
+          Text("Version \(AppUpdateModel.bundleVersion())")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .accessibilityIdentifier("settings.appVersion")
+        }
       }
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
@@ -106,6 +145,14 @@ struct SettingsSheet: View {
         }
       }
     }
+    .alert("Can’t Open Email", isPresented: $showsEmailFallback) {
+      Button("Copy Email Address") {
+        UIPasteboard.general.string = Self.supportEmail
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Email us at \(Self.supportEmail). Copy the address to use it in your preferred email app.")
+    }
     .onChange(of: path, initial: true) { _, path in
       let section: String
       switch path.last {
@@ -117,6 +164,23 @@ struct SettingsSheet: View {
     }
     .presentationDragIndicator(.visible)
   }
+
+  private func externalLinkLabel(_ title: String, systemImage: String) -> some View {
+    HStack {
+      Label {
+        Text(title)
+          .foregroundStyle(.primary)
+      } icon: {
+        Image(systemName: systemImage)
+      }
+      Spacer()
+      Image(systemName: "arrow.up.right")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
+    }
+  }
+
   @ViewBuilder
   private func clientSection(_ section: String) -> some View {
     switch section {

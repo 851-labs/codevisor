@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
+import { LegalPage } from "../components/legal-page"
+
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
@@ -7,7 +9,7 @@ export const Route = createFileRoute("/privacy")({
       {
         name: "description",
         content:
-          "How Codevisor handles local data, Browser Use, optional analytics, and diagnostics."
+          "How Codevisor handles data across its apps, Cloud service, website, AI providers, and plugins."
       }
     ]
   }),
@@ -17,29 +19,39 @@ export const Route = createFileRoute("/privacy")({
 const sections = [
   {
     id: "scope",
-    title: "Scope",
+    title: "Who we are and what this covers",
     body: (
       <>
         <p>
-          This policy describes how the Codevisor Chrome extension and the Codevisor desktop
-          application handle information, including optional product analytics and crash
-          diagnostics. The extension’s single purpose is to connect Codevisor to your existing
-          Chrome session so an agent can complete browser tasks you request.
+          Codevisor is operated by 851 Inc. (“Codevisor,” “we,” or “us”). This policy covers our
+          desktop and iOS apps, Codevisor Cloud, website, and optional Chrome extension. It also
+          explains how using AI providers, browser features, and plugins can share information with
+          other services. Contact us at <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>
+          .
         </p>
         <p>
-          Browser Use is optional. The extension does not operate as a standalone service and
-          connects only to the Codevisor application running on your computer.
+          You choose the computers, agent tools, and services you connect. If you use a Cloud server
+          hosted by someone else, that operator handles the account and connection data described
+          below under its own policies. This policy governs the services we operate.
         </p>
       </>
     )
   },
   {
     id: "data",
-    title: "Information Browser Use handles",
+    title: "Your work and device data",
     body: (
       <>
-        <p>Depending on your task, Browser Use may handle:</p>
+        <p>Depending on the features and tasks you use, Codevisor handles:</p>
         <ul>
+          <li>Prompts, agent responses, conversation history, and tool inputs and results.</li>
+          <li>
+            Project information, code, file names and paths, terminal commands and output, and files
+            an agent accesses on the connected computer while performing your task.
+          </li>
+          <li>
+            Photos, files, screenshots, and other attachments you select, capture, or generate.
+          </li>
           <li>Open-tab metadata, including page titles and URLs.</li>
           <li>Web history results when you or your agent explicitly searches Chrome history.</li>
           <li>
@@ -47,37 +59,124 @@ const sections = [
             images, links, form fields, and page structure.
           </li>
           <li>
-            Browser actions and task artifacts, such as clicks, typed text, uploads, downloads,
-            dialog responses, screenshots, and download metadata.
+            Browser actions and task artifacts, such as clicks, typed text, uploads, downloads, and
+            dialog responses, plus browsing history and website cookies used by browser panes.
           </li>
           <li>
             Clipboard content only when a requested task reads from or writes to the clipboard.
           </li>
+          <li>Local preferences, drafts, connection credentials, and cached workspace state.</li>
         </ul>
         <p>
           Pages, files, history results, or clipboard content you choose to use may contain personal
-          identifiers, communications, authentication information, financial information, health
-          information, location information, or other sensitive content. Codevisor handles that
-          content only as needed for the task you requested.
+          identifiers, communications, authentication information, or other sensitive content. The
+          iOS app communicates with your connected computer to run agent and terminal tasks. The
+          apps and connected computer can keep local history, attachments, and caches so you can
+          return to your work. Relevant task content can also reach the providers described below.
+        </p>
+      </>
+    )
+  },
+  {
+    id: "cloud",
+    title: "Accounts and Codevisor Cloud",
+    body: (
+      <>
+        <p>
+          Cloud connects your devices through an account. When you sign in with Apple or GitHub, we
+          receive a provider account identifier and the profile information the provider supplies,
+          such as your name, email address, and profile image. Apple may supply a private relay
+          email address. We store linked sign-in records and authentication tokens needed to
+          maintain your account and revoke Apple authorization when you delete it.
+        </p>
+        <p>
+          Cloud stores registered-machine names and identifiers, operating system and app version,
+          public encryption keys, connection status, and last-seen times. Authentication and
+          operational records can include IP addresses, browser or device information, timestamps,
+          connection identifiers, errors, and traffic counts and sizes. We use these records to
+          authenticate devices, route connections, prevent abuse, and diagnose service failures.
+        </p>
+        <p>
+          Cloudflare hosts our Cloud service and processes network requests. Cloud uses IP-derived
+          location estimates supplied by Cloudflare to select a nearby service region; this does not
+          use your device’s GPS permission. Cloud temporarily buffers encrypted messages to allow
+          interrupted connections to resume. Account and connection metadata remain accessible to
+          the service even when message contents are encrypted.
         </p>
       </>
     )
   },
   {
     id: "use",
-    title: "How information is used",
+    title: "AI providers and agent tools",
     body: (
       <>
         <p>
-          The extension sends task data over a loopback connection to the Codevisor application on
-          the same computer. Codevisor uses it to show browser state to the agent you selected and
-          carry out the actions you requested.
+          The agent tool running on your connected computer sends requests to its configured model
+          provider. A request can include your prompt, relevant conversation history, code, files,
+          images, browser content, and tool results needed for the task. An agent can also send
+          information to websites or connected services when carrying out your instructions.
         </p>
         <p>
-          To provide an agent response, Codevisor may send relevant task instructions, page content,
-          screenshots, and tool results to the AI model or agent provider you selected. The provider
-          processes that information under its own terms and privacy policy. Codevisor may store
-          conversations and tool results in its local database so you can return to your work.
+          The recipients depend on the agent, model, integrations, and account you configure.
+          Provider policies include those of{" "}
+          <a href="https://openai.com/policies/privacy-policy/">OpenAI</a>,{" "}
+          <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>,{" "}
+          <a href="https://policies.google.com/privacy">Google</a>,{" "}
+          <a href="https://cursor.com/privacy">Cursor</a>, and{" "}
+          <a href="https://x.ai/legal/privacy-policy">xAI</a>. For other or custom providers,
+          consult the operator of the endpoint configured in your agent tool.
+        </p>
+        <p>
+          Providers handle requests under the terms for your account or API service. Retention,
+          human review, and use for model training can vary by provider, product, and account
+          settings. Cloud relay encryption does not prevent your selected provider from receiving
+          task content. Review those settings before sending information, and stop using a provider
+          or remove its credentials to stop future requests to it.
+        </p>
+      </>
+    )
+  },
+  {
+    id: "browser",
+    title: "Browser features",
+    body: (
+      <>
+        <p>
+          Browser Use is optional. The Chrome extension connects to Codevisor on the same computer
+          so an agent can inspect and interact with your existing Chrome session. It handles tab
+          information, requested history searches, page content, and browser actions for your task.
+          Chrome displays its debugging indicator while Codevisor controls a tab.
+        </p>
+        <p>
+          Codevisor also offers a separate managed browser and browser panes. Browser panes can
+          route web traffic through the selected computer and synchronize browsing state and website
+          cookies with that computer. Cookies may keep you signed in to websites, so this can make
+          an authenticated website session available to the connected browser profile. Browser and
+          plugin web views may store cookies, local storage, and cached content. Websites you visit
+          receive requests and handle information under their own policies.
+        </p>
+      </>
+    )
+  },
+  {
+    id: "plugins",
+    title: "Plugins and connected services",
+    body: (
+      <>
+        <p>
+          Plugins run on your connected computer and can display a pane inside Codevisor or add
+          agent tools. Their panes receive workspace context, including the working directory and
+          pane identifiers. Installing a plugin runs its declared commands on that computer.
+          Depending on its code, a plugin can access files and other resources available to its
+          process and send information to external services.
+        </p>
+        <p>
+          Review the source, commands, tools, and privacy information of a plugin before installing
+          it. Removing a plugin or a service credential stops the access that depends on it; it does
+          not delete information the provider already holds. Use that provider’s controls or contact
+          it for deletion. Browsing the plugin directory requests catalog information from Cloud,
+          and installation can download code from the source repository and package services.
         </p>
       </>
     )
@@ -88,14 +187,17 @@ const sections = [
     body: (
       <>
         <p>
-          If you enable usage analytics, Codevisor sends a small, fixed set of product events to
-          PostHog, such as opening the app, creating a chat, sending a message, selecting a model or
-          coding agent, and whether a turn completed. These events may include the Codevisor
-          version, macOS version, processor architecture, and coarse usage ranges.
+          Usage analytics in the macOS app is off by default. If you enable it, Codevisor sends
+          selected product events to PostHog, such as opening the app, creating a chat, sending a
+          message, selecting a model or agent, and whether a turn completed. Events may include the
+          app version, operating system, processor architecture, coarse usage ranges, and
+          automatically generated analytics identifiers.
         </p>
         <p>
           Analytics events do not include prompts, responses, code, file or project names, paths,
-          browser content, terminal commands, or a user profile. IP-based geolocation is disabled.
+          browser content, or terminal commands. We disable PostHog person profiles and IP-based
+          geolocation for these events. The current iOS app does not send these analytics events.
+          App analytics preferences do not control Cloud operational records or website analytics.
         </p>
       </>
     )
@@ -106,50 +208,81 @@ const sections = [
     body: (
       <>
         <p>
-          If you enable crash and error reporting, Codevisor uses Sentry to receive native crash
-          stack traces and a fixed allowlist of internal error identifiers. Reports may include the
-          Codevisor version and build, macOS name and version, processor architecture, loaded binary
-          identifiers needed for symbolication, and technical stack frames.
+          Crash and error reporting in the macOS app is off by default. If you enable it, Codevisor
+          uses Sentry to receive native crash stack traces and selected internal error identifiers.
+          Reports may include the Codevisor version and build, macOS name and version, processor
+          architecture, loaded binary identifiers needed for symbolication, and technical stack
+          frames.
         </p>
         <p>
-          Codevisor disables Sentry’s session recording, screenshots, view hierarchy capture,
-          network breadcrumbs, failed-request capture, performance tracing, file-I/O tracing,
-          application-hang tracking, logs, metrics, and user identification. Before a report leaves
-          the Mac, Codevisor removes exception messages, user and request fields, breadcrumbs,
-          arbitrary context, and directory components from binary and stack-frame paths.
+          We disable session recording, screenshots, automatic activity and network capture, and
+          performance tracing. Before sending a report, Codevisor removes user and request details,
+          exception messages, and directory paths from technical stack traces.
         </p>
         <p>
           Reports are designed not to include prompts, responses, code, file paths, project names,
-          browser content, terminal commands, or account identifiers.
+          browser content, terminal commands, or account identifiers. The current iOS app does not
+          send these reports to Sentry. These settings do not control diagnostic information you
+          separately choose to share with Apple through your device or TestFlight.
+        </p>
+      </>
+    )
+  },
+  {
+    id: "website",
+    title: "Website analytics and cookies",
+    body: (
+      <>
+        <p>
+          Our website uses PostHog to measure page views and interactions with installation
+          instructions, including the installation method selected or copied. Events include page
+          paths, browser and device information, and automatically generated identifiers. This
+          website measurement runs separately from the optional analytics in the native app.
+        </p>
+        <p>
+          Website analytics uses memory-only storage, with persistent analytics cookies and local
+          storage disabled. We disable session recording, automatic interaction capture, person
+          profiles, and IP-based geolocation. Network providers still receive IP addresses when
+          handling requests. Cloud sign-in pages and external websites may use cookies needed to
+          authenticate you and maintain their own sessions.
         </p>
       </>
     )
   },
   {
     id: "sharing",
-    title: "Sharing and limited use",
+    title: "Service providers and other sharing",
     body: (
       <>
         <p>
+          <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a> provides hosting,
+          databases, and network services. <a href="https://posthog.com/privacy">PostHog</a>{" "}
+          processes analytics, and <a href="https://sentry.io/privacy/">Sentry</a> processes enabled
+          crash and error reports. <a href="https://www.apple.com/legal/privacy/">Apple</a> and{" "}
+          <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">
+            GitHub
+          </a>{" "}
+          process sign-in requests when you choose those providers.
+        </p>
+        <p>
+          Service providers processing personal information on our behalf must protect it
+          consistently with this policy and use it to provide their contracted services. AI
+          accounts, websites, plugins, and services you connect also have their own terms and
+          privacy controls, as described above.
+        </p>
+        <p>
           We do not sell browser data, use it for advertising, or use it to determine
-          creditworthiness or for lending. We use and transfer browser data only to provide the
-          Browser Use feature, comply with applicable law, protect users and the service, or
-          complete a corporate transaction permitted by applicable policy.
+          creditworthiness or for lending. We do not permit employees or contractors to read browser
+          content except with your explicit consent for support, when necessary for security, or
+          when required by law. Codevisor’s use and transfer of information received from Google
+          APIs complies with the Chrome Web Store User Data Policy, including its Limited Use
+          requirements.
         </p>
         <p>
-          Browser data may be shared with the AI model or agent provider you selected, and with a
-          website or service when your requested task requires interacting with it. We do not permit
-          employees or contractors to read browser content except with your explicit consent for
-          support, when necessary for security, or when required by law.
-        </p>
-        <p>
-          Codevisor’s use and transfer of information received from Google APIs complies with the
-          Chrome Web Store User Data Policy, including its Limited Use requirements.
-        </p>
-        <p>
-          When you enable the corresponding privacy choices, PostHog processes product analytics and
-          Sentry processes crash and error reports on Codevisor’s behalf. They may not use this
-          information for advertising or sell it.
+          We may disclose information we hold to comply with law, address security or abuse, protect
+          users and our legal rights, or carry out a merger, acquisition, or other business
+          transfer, subject to applicable privacy requirements. If you contact support, we use your
+          contact details and the information you send to respond to your request.
         </p>
       </>
     )
@@ -160,31 +293,59 @@ const sections = [
     body: (
       <>
         <p>
-          The extension does not maintain a developer-operated cloud database. It keeps only the
-          temporary connection and tab state needed for an active Browser Use session.
+          Local conversations, attachments, browser state, and agent-tool records remain on the
+          devices or computers that store them until removed through the relevant app, tool, or
+          device controls. The Chrome extension keeps the connection and tab state needed for
+          Browser Use; the connected app and agent tools can separately retain task history.
         </p>
         <p>
-          Codevisor stores chat history and associated tool results locally until you remove them.
-          AI model providers and websites involved in a task may retain information according to
-          their own policies.
+          We retain Cloud account and machine-registration records to provide your account until you
+          delete the account or remove the machine. Successful account deletion removes active
+          account, linked sign-in, session, and machine-credential records and clears the account’s
+          relay state. Encrypted reconnection buffers are cleared after delivery or when the
+          reconnection session ends.
         </p>
         <p>
-          Optional analytics and diagnostic events are retained only as long as reasonably needed to
-          understand product usage, investigate reliability problems, and improve Codevisor.
+          Operational logs, support correspondence, analytics, and diagnostics have retention
+          criteria based on their purpose: maintaining the service, investigating failures or abuse,
+          resolving your request, and understanding product usage. Provider retention settings and
+          any legal preservation requirements also affect how long these records remain. Deleting an
+          account does not immediately erase copies in provider-managed backups or previously
+          collected analytics and logs. You can request deletion of personal information we hold at{" "}
+          <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
+        </p>
+        <p>
+          AI providers, plugin services, websites, and operators of servers you choose apply their
+          own retention policies. Your device or computer backups may also retain local data under
+          the backup settings you control.
         </p>
       </>
     )
   },
   {
     id: "security",
-    title: "Security",
+    title: "Security and processing locations",
     body: (
       <>
         <p>
-          The extension accepts connections only from the Codevisor application through a loopback
-          address on your computer. Chrome displays its debugging indicator while Codevisor controls
-          a tab. Codevisor limits extension data handling to the functionality exposed by Browser
-          Use and the permissions disclosed in the Chrome Web Store.
+          Cloud relay message contents are encrypted between your devices. The relay routes and
+          temporarily buffers encrypted messages without decrypting their contents. This protection
+          applies to relayed task content; Cloud still processes account, authentication, and
+          connection metadata. The connected computer and selected AI or tool provider receive the
+          content they need to perform your task.
+        </p>
+        <p>
+          Hosted Cloud connections use HTTPS and secure WebSockets. Direct connections use the
+          transport you configure, such as HTTPS, a private network tunnel, or local HTTP. Plain
+          HTTP alone does not encrypt traffic. Native apps use the system keychain for their stored
+          machine and Cloud credentials. The Chrome extension connects to Codevisor through a
+          loopback address on the same computer.
+        </p>
+        <p>
+          Our infrastructure and service providers can process information in the United States and
+          other countries where they operate. Cloud routing selects a nearby region where available;
+          it is not a guarantee that all data remains in your country. Providers you configure and
+          computers you connect have their own processing locations.
         </p>
       </>
     )
@@ -194,16 +355,45 @@ const sections = [
     title: "Your controls",
     body: (
       <>
-        <p>You can stop or limit Browser Use at any time:</p>
+        <p>You can control sharing and stored information in several ways:</p>
         <ul>
           <li>
-            Turn usage analytics or crash and error reporting on or off independently in Codevisor
-            Settings → Privacy &amp; Data.
+            On macOS, turn usage analytics and crash reporting on or off independently in Settings →
+            Privacy &amp; Data. Turning them off stops future app reporting; request deletion
+            separately for information already received.
+          </li>
+          <li>
+            On iOS, review AI data sharing or choose Withdraw AI consent in Settings → Privacy &amp;
+            Data. Withdrawing returns that device to the consent screen, where you must agree again
+            to continue. It does not stop tasks already running on connected computers or delete
+            information a provider has already received.
+          </li>
+          <li>
+            Choose Settings → Account → Delete Cloud Account to delete your Cloud account and
+            disconnect its machines. Apple authorization is revoked as part of deletion. You may
+            need to sign in again to confirm your identity. Files and chats on your computers
+            remain.
+          </li>
+          <li>
+            On iOS, choose Settings → Privacy &amp; Data → Delete All Data to reset that device’s
+            Codevisor state, saved connections, and sign-in. This does not delete your Cloud account
+            or data on connected computers. Browser profiles, plugins, and agent tools can keep
+            separate data that needs to be removed through their own controls.
+          </li>
+          <li>
+            Stop agent tasks, remove connected machines, uninstall plugins, and remove provider
+            credentials to stop the access that depends on those connections.
+          </li>
+          <li>
+            Control camera and local-network permissions through your device’s system settings.
           </li>
           <li>Stop Browser Use from Codevisor.</li>
           <li>Choose Codevisor’s separate managed browser instead of your Chrome session.</li>
           <li>Disable or uninstall the Codevisor extension in Chrome.</li>
-          <li>Remove local conversations and tool results from Codevisor.</li>
+          <li>
+            Use the relevant computer or agent tool’s controls to remove its conversations and
+            files.
+          </li>
           <li>
             Manage Chrome history and operating-system clipboard content using their controls.
           </li>
@@ -212,97 +402,40 @@ const sections = [
     )
   },
   {
+    id: "rights",
+    title: "Privacy requests",
+    body: (
+      <p>
+        Depending on applicable law, you may have rights to access, correct, delete, or receive a
+        copy of your personal information, withdraw consent, or object to or restrict certain
+        processing. Contact <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a> to make a
+        request. We may need to verify your identity and explain any information we are legally
+        required to retain. You may also have the right to complain to your local data protection
+        authority. For information held by a provider you use directly, contact that provider.
+      </p>
+    )
+  },
+  {
     id: "changes",
     title: "Changes and contact",
     body: (
-      <>
-        <p>
-          We may update this policy as Codevisor changes. The effective date above identifies the
-          current version.
-        </p>
-        <p>
-          Questions or privacy requests can be sent to{" "}
-          <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
-        </p>
-      </>
+      <p>
+        We may update this policy as Codevisor changes. The effective date identifies the current
+        version. Send questions or privacy requests to{" "}
+        <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
+      </p>
     )
   }
 ] as const
 
 function PrivacyPolicy() {
   return (
-    <div className="marketing-shell min-h-screen">
-      <header className="border-b border-hairline">
-        <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6 text-sm">
-          <a href="/" className="flex items-center gap-2 font-semibold tracking-tight text-text">
-            <img src="/codevisor-icon.png" alt="" className="size-7 rounded-md" />
-            Codevisor
-          </a>
-          <a href="/" className="text-muted transition-colors hover:text-text">
-            Back to Codevisor
-          </a>
-        </nav>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-6 py-16 sm:py-24">
-        <div className="border-b border-hairline pb-12">
-          <p className="text-xs font-medium tracking-[0.18em] text-muted uppercase">
-            Legal · Effective July 24, 2026
-          </p>
-          <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-[-0.035em] text-text sm:text-6xl">
-            Privacy, in plain language.
-          </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted">
-            Codevisor keeps your work local by default. This policy explains what the app and
-            optional browser extension handle, what can be shared, and how you stay in control.
-          </p>
-        </div>
-
-        <div className="grid gap-14 pt-12 md:grid-cols-[180px_minmax(0,1fr)]">
-          <aside className="hidden md:block">
-            <nav
-              className="sticky top-8 space-y-2 text-xs text-muted"
-              aria-label="Privacy sections"
-            >
-              {sections.map((section) => (
-                <a
-                  key={section.id}
-                  href={`#${section.id}`}
-                  className="block py-1 transition-colors hover:text-text"
-                >
-                  {section.title}
-                </a>
-              ))}
-            </nav>
-          </aside>
-
-          <article className="min-w-0">
-            {sections.map((section, index) => (
-              <section
-                key={section.id}
-                id={section.id}
-                className={
-                  index === 0 ? "scroll-mt-8" : "mt-12 scroll-mt-8 border-t border-hairline pt-12"
-                }
-              >
-                <h2 className="text-xl font-semibold tracking-tight text-text">{section.title}</h2>
-                <div className="privacy-copy mt-4 space-y-4 text-[15px] leading-7 text-muted">
-                  {section.body}
-                </div>
-              </section>
-            ))}
-          </article>
-        </div>
-      </main>
-
-      <footer className="border-t border-hairline px-6 py-8">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 text-xs text-muted">
-          <span>© {new Date().getFullYear()} 851 Inc.</span>
-          <a href="mailto:hello@codevisor.dev" className="transition-colors hover:text-text">
-            hello@codevisor.dev
-          </a>
-        </div>
-      </footer>
-    </div>
+    <LegalPage
+      title="Privacy, in plain language."
+      description="Understand what stays on your devices, what Codevisor Cloud handles, and what reaches your AI providers and connected services — plus your choices for sharing and deletion."
+      effectiveDate="September 11, 2026"
+      sectionsLabel="Privacy sections"
+      sections={sections}
+    />
   )
 }

@@ -19,6 +19,8 @@ struct HomeView: View {
   var manualWorkspaceOrder
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
+  @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
+  private var aiDataSharingConsentVersion
   @State var onboardingStart = OnboardingView.Step.welcome
   // Bootstrap adds the dev machine a beat after first render; the grace
   // period keeps onboarding from flashing over an already-paired install.
@@ -89,21 +91,26 @@ struct HomeView: View {
     !anyMachineSynced && failedSyncMachines.isEmpty && hasRemoteMachines
   }
 
-  /// Onboarding presents itself whenever no machine is paired. There is no
-  /// in-flow skip (the app is useless without a machine); the dismissed
-  /// flag only records programmatic closes — e.g. pairing while the cover
-  /// is up — and the empty state re-arms it.
+  /// Consent is required even for an existing installation with paired machines.
+  /// After consent, onboarding stays open until a machine is paired; the empty
+  /// state can reopen it later.
   private var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
-        readyForOnboarding && !onboardingDismissed && !hasRemoteMachines && !showsSampleSidebar
+        readyForOnboarding && !showsSampleSidebar && presentedSettingsDestination == nil
+          && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
       },
-      set: { if !$0 { onboardingDismissed = true } }
+      set: { if !$0 && hasAIDataSharingConsent { onboardingDismissed = true } }
     )
+  }
+
+  private var hasAIDataSharingConsent: Bool {
+    aiDataSharingConsentVersion == AIDataSharingConsent.currentVersion
   }
 
   private var showsNewChatButton: Bool {
     if showsSampleSidebar { return true }
+    guard hasAIDataSharingConsent else { return false }
     return hasRemoteMachines && !(sidebarSections.isEmpty && !anyMachineSynced)
   }
 
@@ -201,7 +208,8 @@ struct HomeView: View {
       .fullScreenCover(isPresented: showsOnboarding) {
         onboardingStart = .welcome
       } content: {
-        OnboardingView(start: onboardingStart)
+        OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
+          .interactiveDismissDisabled(!hasAIDataSharingConsent)
           // The QR flow lands here: alerts must present over the
           // cover, so it carries its own copy of the deeplink
           // alerts, active while it is the visible context.

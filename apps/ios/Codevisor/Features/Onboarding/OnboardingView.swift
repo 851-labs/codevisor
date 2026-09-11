@@ -2,7 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// First-launch onboarding: a welcome page, then a cloud-first "connect"
+/// First-launch onboarding: welcome, AI data-sharing consent, then a cloud-first "connect"
 /// page. The connect step is state-driven off `environment.cloud`:
 /// signed out leads with Codevisor Cloud sign-in, signed-in-with-no-machines
 /// shows install-and-login instructions (the machine logs itself into the
@@ -28,7 +28,7 @@ struct OnboardingView: View {
     NavigationStack {
       switch start {
       case .welcome: WelcomeStep()
-      case .connect: ConnectMachineStep()
+      case .connect: ConsentAndConnectStep()
       }
     }
   }
@@ -68,13 +68,24 @@ private struct WelcomeStep: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(.systemBackground))
     .safeAreaInset(edge: .bottom) {
-      NavigationLink {
-        ConnectMachineStep()
-      } label: {
-        Text("Get Started")
+      VStack(spacing: 12) {
+        NavigationLink {
+          ConsentAndConnectStep()
+        } label: {
+          Text("Continue")
+        }
+        .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
+        .accessibilityIdentifier("onboarding.continue")
+
+        Text(
+          "By continuing, you agree to our [Terms of Service](https://www.codevisor.dev/terms) and acknowledge our [Privacy Policy](https://www.codevisor.dev/privacy)."
+        )
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .tint(.accentColor)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
       }
-      .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
-      .accessibilityLabel("Get Started")
       .padding(.horizontal, 20)
       .padding(.top, 8)
       .padding(.bottom, 12)
@@ -84,6 +95,24 @@ private struct WelcomeStep: View {
 }
 
 // MARK: - Connect
+
+/// Pairing and restored machines never imply permission to share data with AI providers.
+private struct ConsentAndConnectStep: View {
+  @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
+  private var consentVersion
+
+  var body: some View {
+    Group {
+      if consentVersion == AIDataSharingConsent.currentVersion {
+        ConnectMachineStep()
+      } else {
+        AIDataSharingConsentScreen {
+          consentVersion = AIDataSharingConsent.currentVersion
+        }
+      }
+    }
+  }
+}
 
 /// The cloud-first connect page. Sign-in is the primary path; the manual QR /
 /// tailnet / add-machine flow lives one tap away behind "Set up a machine
@@ -340,8 +369,8 @@ private struct ConnectMachineStep: View {
 // MARK: - Onboarding button styles
 
 /// A full-width, large filled button shared by the onboarding CTAs so the
-/// "Get Started" and the later onboarding actions align consistently.
-private struct OnboardingFilledButtonStyle: ButtonStyle {
+/// welcome and the later onboarding actions align consistently.
+struct OnboardingFilledButtonStyle: ButtonStyle {
   var background: Color
   var foreground: Color
   var showsProgress = false
