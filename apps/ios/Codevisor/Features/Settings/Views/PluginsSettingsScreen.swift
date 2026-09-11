@@ -6,8 +6,8 @@ import os
 
 // MARK: - Plugins
 
-/// The Plugins screen: a machine list that pushes each machine's plugins —
-/// install, update, restart, and uninstall act on that machine.
+/// Open the only machine's plugins directly, or offer a machine list.
+/// Every plugin action stays scoped to the displayed machine.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
 
@@ -16,11 +16,23 @@ struct PluginsSettingsScreen: View {
   }
 
   var body: some View {
+    let machines = environment.machines.allMachines
+    Group {
+      if machines.count == 1, let only = machines.first {
+        PluginMachineScreen(machine: only, title: "Plugins")
+          .id(only.id)
+      } else {
+        machineList
+      }
+    }
+  }
+
+  private var machineList: some View {
     List {
       Section {
         ForEach(environment.machines.allMachines) { machine in
           NavigationLink {
-            PluginMachineScreen(machine: machine)
+            PluginMachineScreen(machine: machine, title: machine.name)
           } label: {
             HStack {
               Text(machine.name)
@@ -61,6 +73,7 @@ struct PluginsSettingsScreen: View {
 private struct PluginMachineScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
+  let title: String
 
   private var client: any CodevisorServerClienting {
     environment.machines.client(for: machine.id)
@@ -118,7 +131,7 @@ private struct PluginMachineScreen: View {
         }
       }
     }
-    .navigationTitle(machine.name)
+    .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
