@@ -14,28 +14,40 @@ struct SkillsSettingsScreen: View {
   @State private var scannedSkillsByMachine: [String: Set<String>] = [:]
 
   var body: some View {
+    let machines = environment.machines.allMachines
+    Group {
+      if machines.count == 1, let only = machines.first {
+        SkillMachineScreen(machine: only, title: "Skills")
+          .id(only.id)
+      } else {
+        machineList
+      }
+    }
+  }
+
+  private var machineList: some View {
     List {
-      MachineListSection(badge: badge) { machine in
-        SkillMachineRows(machine: machine)
+      Section {
+        ForEach(environment.machines.allMachines) { machine in
+          NavigationLink {
+            SkillMachineScreen(machine: machine, title: machine.name)
+          } label: {
+            HStack {
+              Text(machine.name)
+              Spacer(minLength: 12)
+              badge(machine).view
+                .font(.footnote)
+            }
+          }
+        }
       }
     }
     .navigationTitle("Skills")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          Task {
-            // Ferry skill content across the whole fleet, then
-            // refresh the badges from fresh scans.
-            await environment.configSync.synchronizeSkills()
-            await scanAllMachines()
-          }
-        } label: {
-          Label("Sync Skills", systemImage: "arrow.triangle.2.circlepath")
-        }
-      }
-    }
     .task(id: environment.machines.allMachines.map(\.id)) { await scanAllMachines() }
+    .onChange(of: environment.configSync.revisionsByNamespace["skills"]) { _, _ in
+      Task { await scanAllMachines() }
+    }
   }
 
   /// The badge tells the truth per machine: a machine missing skills the
@@ -63,78 +75,8 @@ struct SkillsSettingsScreen: View {
         }
       }
       for await (machineId, skills) in group {
-        if let skills { scannedSkillsByMachine[machineId] = skills }
+        scannedSkillsByMachine[machineId] = skills
       }
     }
-  }
-}
-
-/// One machine's global skills, with per-machine sync and removal.
-private struct SkillMachineRows: View {
-  @Environment(AppEnvironment.self) private var environment
-  let machine: CodevisorMachine
-  @State private var scan: ServerSkillsScan?
-  @State private var isLoading = true
-  @State private var errorMessage: String?
-
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: machine.id)
-  }
-
-  var body: some View {
-    Group {
-      if isLoading, scan == nil {
-        HStack {
-          Spacer(); ProgressView(); Spacer()
-        }
-      } else if let errorMessage {
-        Text(errorMessage).foregroundStyle(.red)
-      } else if let scan {
-        if scan.global.isEmpty {
-          Text("No skills on this machine yet.")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(scan.global, id: \.id) { skill in
-            skillRow(skill)
-          }
-        }
-      }
-    }
-    .task(id: machine.id) {
-      isLoading = true
-      await load()
-    }
-  }
-
-  private func skillRow(_ skill: ServerGlobalSkill) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(skill.name)
-      if let description = skill.description, !description.isEmpty {
-        // No detail screen exists, so the row is the only place this
-        // description can be read — let it wrap fully.
-        Text(description)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
-    }
-    .contextMenu {
-      Button(role: .destructive) {
-        Task {
-          scan = try? await client.removeSkill(directoryName: skill.directoryName)
-        }
-      } label: {
-        Label("Remove…", systemImage: "trash")
-      }
-    }
-  }
-
-  private func load() async {
-    do {
-      scan = try await client.listSkills()
-      errorMessage = nil
-    } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
-    }
-    isLoading = false
   }
 }

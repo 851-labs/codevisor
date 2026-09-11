@@ -430,9 +430,6 @@ public extension CodevisorServerClienting {
   func listNativeMcps() async throws -> ServerNativeMcpScan {
     ServerNativeMcpScan(candidates: [], harnesses: [])
   }
-  func listSkills() async throws -> ServerSkillsScan {
-    ServerSkillsScan(canonicalDir: "", global: [], harnesses: [])
-  }
   func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -444,30 +441,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func importSkill(path: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate] {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan {
     throw CodevisorServerClientError.invalidResponse
   }
 

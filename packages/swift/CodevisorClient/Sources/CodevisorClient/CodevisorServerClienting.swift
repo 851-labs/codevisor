@@ -174,6 +174,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Skills in the canonical ~/.agents/skills store plus each harness's own
   /// skills directory.
   func listSkills() async throws -> ServerSkillsScan
+  /// Read or replace SKILL.md on this machine, preserving supporting files.
+  func skillContent(directoryName: String) async throws -> String
+  func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsScan
   /// Create a skill in the canonical store — from a template, or from
   /// pasted SKILL.md content.
   func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan

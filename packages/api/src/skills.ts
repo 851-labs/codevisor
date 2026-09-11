@@ -73,6 +73,17 @@ export const CreateSkillRequest = Schema.Struct({
 })
 export type CreateSkillRequest = typeof CreateSkillRequest.Type
 
+export const SkillContent = Schema.Struct({
+  content: Schema.String
+})
+export type SkillContent = typeof SkillContent.Type
+
+/// Replace only SKILL.md, keeping the directory and supporting files.
+export const UpdateSkillRequest = Schema.Struct({
+  content: Schema.String
+})
+export type UpdateSkillRequest = typeof UpdateSkillRequest.Type
+
 /// Import a skill folder from a local path on the server's machine into the
 /// canonical store.
 export const ImportSkillRequest = Schema.Struct({

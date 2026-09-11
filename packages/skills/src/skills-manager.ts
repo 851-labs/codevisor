@@ -29,6 +29,11 @@ export { parseSkillSource, type ParsedSkillSource } from "./skills-remote-source
 /// hash-verified duplicate copies.
 export interface SkillsManager {
   readonly list: () => Promise<SkillsScan>
+  readonly read: (directoryName: string) => Promise<{ readonly content: string }>
+  readonly update: (
+    directoryName: string,
+    request: { readonly content: string }
+  ) => Promise<SkillsScan>
   /// Create a new skill in the canonical store — from a template, or from
   /// pasted SKILL.md content.
   readonly create: (request: {

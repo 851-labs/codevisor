@@ -140,6 +140,23 @@ extension CodevisorServerClient {
     try await get("/v1/skills")
   }
 
+  private struct SkillContentBody: Codable {
+    var content: String
+  }
+
+  public func skillContent(directoryName: String) async throws -> String {
+    let response: SkillContentBody = try await get("/v1/skills/\(pathComponent(directoryName))")
+    return response.content
+  }
+
+  public func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsScan {
+    try await send(
+      "/v1/skills/\(pathComponent(directoryName))",
+      method: "PUT",
+      body: SkillContentBody(content: content)
+    )
+  }
+
   private struct CreateSkillBody: Encodable {
     var name: String
     var description: String
