@@ -29,7 +29,7 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
     var request: Int
     var editing: Bool
     var loading: Bool
-    private var panel: ZoomPanel?
+    private var bubble: NSView?
     private var dismissal: Task<Void, Never>?
     private var hovering = false
     private var eventMonitor: Any?
@@ -49,45 +49,39 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
       if newWindow !== window { dismiss() }
       super.viewWillMove(toWindow: newWindow)
     }
-    override func layout() { super.layout(); positionPanel() }
+    override func layout() { super.layout(); positionBubble() }
 
     func present() {
       guard let window, window.isKeyWindow else { return }
       dismissal?.cancel()
-      if panel == nil {
-        let popup = ZoomPanel(
-          contentRect: NSRect(x: 0, y: 0, width: 132, height: 56),
-          styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        popup.isReleasedWhenClosed = false
-        popup.hidesOnDeactivate = true
-        popup.isOpaque = false
-        popup.backgroundColor = .clear
-        popup.hasShadow = false
-        popup.appearance = window.effectiveAppearance
-        popup.alphaValue = 0
+      if bubble == nil {
+        guard let content = window.contentView else { return }
+        // Keep the interactive glass in the key window's view hierarchy
+        // so it shares the address bar's active appearance.
         let controls = NSHostingView(
           rootView: ChromiumBrowserZoomControls(model: model)
             .onHover { [weak self] hovering in
               self?.hovering = hovering
               self?.scheduleDismissal()
-            })
-        controls.sizingOptions = []
-        let glass = NSGlassEffectView(frame: NSRect(x: 12, y: 12, width: 108, height: 32))
-        glass.cornerRadius = 16
-        glass.contentView = controls
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 132, height: 56))
-        content.addSubview(glass)
-        popup.contentView = content
-        panel = popup
-        positionPanel()
-        window.addChildWindow(popup, ordered: .above)
+            }
+            .padding(12))
+        controls.sizingOptions = [.intrinsicContentSize]
+        controls.setFrameSize(controls.fittingSize)
+        controls.alphaValue = 0
+        bubble = controls
+        content.addSubview(controls, positioned: .above, relativeTo: nil)
+        positionBubble()
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) {
           [weak self] event in
           guard let self else { return event }
           if event.type == .keyDown {
             if event.window === self.window, event.keyCode == 53 { self.dismiss(); return nil }
-          } else if event.window !== self.panel {
-            self.dismiss()
+          } else if let bubble = self.bubble {
+            if event.window !== self.window
+              || !bubble.bounds.contains(bubble.convert(event.locationInWindow, from: nil))
+            {
+              self.dismiss()
+            }
           }
           return event
         }
@@ -98,30 +92,30 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
             })
         }
       }
-      positionPanel()
-      panel?.orderFront(nil)
+      positionBubble()
       scheduleDismissal()
     }
 
-    private func positionPanel() {
-      guard let panel, let window else { return }
-      let anchor = window.convertToScreen(convert(bounds, to: nil))
-      panel.setFrame(
-        NSRect(x: anchor.maxX - 120, y: anchor.minY - 58, width: 132, height: 56), display: true)
+    private func positionBubble() {
+      guard let bubble, let content = bubble.superview else { return }
+      let anchor = convert(bounds, to: content)
+      let size = bubble.frame.size
+      let y = content.isFlipped ? anchor.maxY + 2 : anchor.minY - size.height - 2
+      bubble.setFrameOrigin(NSPoint(x: anchor.maxX - size.width + 12, y: y))
     }
 
     private func scheduleDismissal() {
       dismissal?.cancel()
       NSAnimationContext.runAnimationGroup { context in
         context.duration = 0.15
-        panel?.animator().alphaValue = 1
+        bubble?.animator().alphaValue = 1
       }
       guard !hovering else { return }
       dismissal = Task { [weak self] in
         do { try await Task.sleep(for: .seconds(3)) } catch { return }
         await NSAnimationContext.runAnimationGroup { context in
           context.duration = 0.15
-          self?.panel?.animator().alphaValue = 0
+          self?.bubble?.animator().alphaValue = 0
         }
         guard !Task.isCancelled else { return }
         self?.dismiss()
@@ -134,11 +128,8 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
       if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
       observers.forEach { NotificationCenter.default.removeObserver($0) }
       observers.removeAll()
-      if let panel {
-        panel.parent?.removeChildWindow(panel)
-        panel.close()
-      }
-      panel = nil
+      bubble?.removeFromSuperview()
+      bubble = nil
       hovering = false
     }
 
@@ -149,45 +140,4 @@ struct ChromiumBrowserZoomPopover: NSViewRepresentable {
     }
   }
 
-  final class ZoomPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-  }
-}
-
-private struct ChromiumBrowserZoomControls: View {
-  @Bindable var model: ChromiumBrowserModel
-
-  var body: some View {
-    HStack(spacing: 0) {
-      Button {
-        model.zoom(.zoomOut)
-      } label: {
-        Image(systemName: "minus").frame(width: 34, height: 32)
-      }
-      .disabled(!model.canZoomOut)
-      .help("Zoom Out (⌘−)")
-      .accessibilityLabel("Zoom Out (⌘−)")
-      Button {
-        model.zoom(.reset)
-      } label: {
-        Text("\(model.zoomPercent)%")
-          .font(.system(size: 11, weight: .medium).monospacedDigit())
-          .frame(width: 40, height: 32)
-      }
-      .disabled(!model.canResetZoom)
-      .help("Reset Zoom (⌘0)")
-      .accessibilityLabel("Zoom \(model.zoomPercent)%, reset zoom")
-      Button {
-        model.zoom(.zoomIn)
-      } label: {
-        Image(systemName: "plus").frame(width: 34, height: 32)
-      }
-      .disabled(!model.canZoomIn)
-      .help("Zoom In (⌘+)")
-      .accessibilityLabel("Zoom In (⌘+)")
-    }
-    .buttonStyle(.plain)
-    .fixedSize()
-  }
 }
