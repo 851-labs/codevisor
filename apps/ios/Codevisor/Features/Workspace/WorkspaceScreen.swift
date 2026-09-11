@@ -290,9 +290,10 @@ struct WorkspaceScreen: View {
     // button for a custom sidebar button disabled the interactive pop.
     .navigationTitle(baseTitle)
     .navigationSubtitle(chatSubtitle)
+    .navigationBarBackButtonHidden(isNewChatPresentation)
     .navigationBarTitleDisplayMode(.inline)
-    // The editor role aligns the compact chat title and subtitle to the leading edge.
-    .toolbarRole(activePane?.kind == .chat ? .editor : .automatic)
+    // Sent chats align their title and subtitle to the leading edge; drafts keep a centered title.
+    .toolbarRole(!isDraft && activePane?.kind == .chat ? .editor : .automatic)
     .toolbar {
       WorkspaceScreenToolbar(
         isNewChatPresentation: isNewChatPresentation,
@@ -437,7 +438,7 @@ struct WorkspaceScreen: View {
   }
 
   private var chatSubtitle: String {
-    guard activePane?.kind == .chat else { return "" }
+    guard !isDraft, activePane?.kind == .chat else { return "" }
     let projectName = resolvedProject.flatMap {
       $0.isScratch || $0.isRunTargetPlaceholder ? nil : $0.name
     }
