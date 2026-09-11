@@ -43,6 +43,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 - (void)navigate:(NSString *)address;
 - (CGFloat)setViewportWidth:(CGFloat)width height:(CGFloat)height;
 - (void)reload;
+- (void)reloadIgnoringCache;
 - (void)zoomIn;
 - (void)zoomOut;
 - (void)resetZoom;

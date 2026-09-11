@@ -283,10 +283,21 @@ final class ChromiumBrowserModel {
     if let webView, synchronized { webView.navigate(target.absoluteString) } else { start() }
   }
 
-  func reload() {
+  func reload(ignoringCache: Bool = false) {
+    // A failed navigation still has a live CEF browser. Retain it so a hard
+    // refresh retries that navigation with CEF's cache-bypass semantics.
+    if ignoringCache, synchronized, let webView, webView.browserIsReady {
+      errorMessage = nil
+      webView.reloadIgnoringCache()
+      return
+    }
     if errorMessage != nil { resetBrowser() }
     errorMessage = nil
-    if let webView { webView.reload() } else { start() }
+    if let webView {
+      if ignoringCache { webView.reloadIgnoringCache() } else { webView.reload() }
+    } else {
+      start()
+    }
   }
   func stop() { webView?.stop(); isLoading = false }
   func zoom(_ command: BrowserZoomCommand) {

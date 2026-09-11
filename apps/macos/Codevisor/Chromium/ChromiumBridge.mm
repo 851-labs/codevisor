@@ -927,6 +927,7 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (void)resetZoom { [self zoom:CEF_ZOOM_COMMAND_RESET]; }
 - (void)navigate:(NSString *)address { _address = [address copy]; if (_browser) _browser->GetMainFrame()->LoadURL(String(address)); }
 - (void)reload { if (_browser) _browser->Reload(); }
+- (void)reloadIgnoringCache { if (_browser) _browser->ReloadIgnoreCache(); }
 - (void)stop { if (_browser) _browser->StopLoad(); }
 - (void)goBack { if (_browser && _browser->CanGoBack()) _browser->GoBack(); }
 - (void)goForward { if (_browser && _browser->CanGoForward()) _browser->GoForward(); }

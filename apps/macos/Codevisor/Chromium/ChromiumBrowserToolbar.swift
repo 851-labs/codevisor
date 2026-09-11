@@ -37,6 +37,7 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
   func makeNSView(context: Context) -> ChromiumToolbarHost {
     let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
     view.focusAddress = { [weak model] in model?.focusAddress() }
+    view.reload = { [weak model] in model?.reload(ignoringCache: $0) }
     view.zoom = { [weak model] in model?.zoom($0) }
     view.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
     view.sizingOptions = [.intrinsicContentSize]
@@ -45,6 +46,7 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
 
   func updateNSView(_ nsView: ChromiumToolbarHost, context: Context) {
     nsView.focusAddress = { [weak model] in model?.focusAddress() }
+    nsView.reload = { [weak model] in model?.reload(ignoringCache: $0) }
     nsView.zoom = { [weak model] in model?.zoom($0) }
     nsView.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
     nsView.rootView = ChromiumBrowserToolbarContent(model: model)

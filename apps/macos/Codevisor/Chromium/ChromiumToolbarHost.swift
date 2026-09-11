@@ -5,6 +5,7 @@ import SwiftUI
 /// browser shortcuts to the active toolbar's key window, including page focus.
 final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
   var focusAddress: (() -> Void)?
+  var reload: ((Bool) -> Void)?
   var zoom: ((BrowserZoomCommand) -> Void)?
   var pageHasFocus: (() -> Bool)?
   private var keyMonitor: Any?
@@ -27,6 +28,15 @@ final class ChromiumToolbarHost: NSHostingView<ChromiumBrowserToolbarContent> {
       pageHasFocus?() == true || toolbarHasFocus
     {
       zoom?(command)
+      return nil
+    }
+    let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    if event.charactersIgnoringModifiers?.lowercased() == "r",
+      modifiers == .command || modifiers == [.command, .shift],
+      pageHasFocus?() == true || toolbarHasFocus,
+      let reload
+    {
+      reload(modifiers.contains(.shift))
       return nil
     }
     guard
