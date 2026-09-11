@@ -21,6 +21,11 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var renameError: (any Error)?
   var removeError: (any Error)?
   var deleteError: (any Error)?
+  var providers: Set<CloudSignInProvider> = [.github]
+  var appleToken = "native-token"
+  var appleStart: (@Sendable () async throws -> CloudAppleChallenge)?
+  var appleComplete: (@Sendable () async throws -> String)?
+  var linkedError: (any Error)?
   var generatedOneTimeToken = "management-ott"
   private(set) var deletionTokens: [String] = []
   private(set) var managementTokens: [String] = []
@@ -47,6 +52,21 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
       managementTokens.append(token)
       return generatedOneTimeToken
     }
+  }
+
+  func linkedProviders(token: String) async throws -> Set<CloudSignInProvider> {
+    if let error = lock.withLock({ linkedError }) { throw error }
+    return lock.withLock { providers }
+  }
+
+  func startAppleSignIn(link: Bool, token: String?) async throws -> CloudAppleChallenge {
+    if let start = lock.withLock({ appleStart }) { return try await start() }
+    return CloudAppleChallenge(id: "challenge", nonce: "server-nonce")
+  }
+
+  func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String {
+    if let complete = lock.withLock({ appleComplete }) { return try await complete() }
+    return lock.withLock { appleToken }
   }
 
   func deleteAccount(token: String) async throws {
@@ -185,6 +205,11 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
 struct OfflineError: Error {}
 
 struct OfflineCloudClient: CloudAccountClienting {
+  func linkedProviders(token: String) async throws -> Set<CloudSignInProvider> { throw OfflineError() }
+  func startAppleSignIn(link: Bool, token: String?) async throws -> CloudAppleChallenge { throw OfflineError() }
+  func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String {
+    throw OfflineError()
+  }
   func generateOneTimeToken(token: String) async throws -> String { throw OfflineError() }
   func deleteAccount(token: String) async throws { throw OfflineError() }
   func discover() async throws -> CloudInstanceInfo { throw OfflineError() }

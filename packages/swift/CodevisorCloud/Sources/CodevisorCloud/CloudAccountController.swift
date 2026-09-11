@@ -37,6 +37,8 @@ public final class CloudAccountController {
   /// this becomes true.
   public private(set) var hasCompletedBootstrap = false
   public var lastError: String?
+  public internal(set) var linkedProviders: Set<CloudSignInProvider>?
+  var authenticationRevision: UInt64 = 0
   /// The validated instance name of the current custom server, for display
   /// in Settings. Only populated after a successful `setCustomServer`.
   public private(set) var customInstanceName: String?
@@ -223,18 +225,26 @@ public final class CloudAccountController {
   /// The one sign-in completion: obtain a session token, store it, load
   /// the account. Every sign-in flow funnels through here so they cannot
   /// diverge.
-  private func adoptSession(_ obtainToken: () async throws -> String) async {
+  func adoptSession(_ obtainToken: () async throws -> String) async {
+    authenticationRevision &+= 1
+    let revision = authenticationRevision
+    let server = serverURL
     state = .validating
+    linkedProviders = nil
     lastError = nil
     let client = client
     do {
       let token = try await obtainToken()
+      guard authenticationRevision == revision, serverURL == server else { return }
       await discardHubForCredentialChange()
+      guard authenticationRevision == revision, serverURL == server else { return }
       try credentialStore.saveToken(token)
       let user = (try? await client.session(token: token)) ?? nil
+      guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
       state = .signedIn(userEmail: user?.email)
       await refreshMachines()
     } catch {
+      guard authenticationRevision == revision, serverURL == server else { return }
       Log.cloud.error("Cloud sign-in failed: \(String(describing: error), privacy: .public)")
       state = .signedOut
       lastError = error.localizedDescription
@@ -244,6 +254,9 @@ public final class CloudAccountController {
   /// Signs out locally: the token is cleared (a custom server choice is
   /// kept), the machine list emptied, and the relay connection torn down.
   public func signOut() {
+    authenticationRevision &+= 1
+    linkedProviders = nil
+    lastError = nil
     // Capture before the token is cleared: deregistering this machine
     // needs the session to revoke its api key on the account.
     let token = storedToken

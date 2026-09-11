@@ -48,6 +48,7 @@
   // miniflare bindings in vitest.config.ts. DEV_AUTH is deliberately absent
   // here — it must never be set on a deployed instance.
   "vars": {
+    "APPLE_NATIVE_CLIENT_ID": "com.dylanplayer.codevisor.ios",
     "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
     "INSTANCE_NAME": "Codevisor Cloud"
   }

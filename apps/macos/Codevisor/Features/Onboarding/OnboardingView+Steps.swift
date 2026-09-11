@@ -233,21 +233,13 @@ extension OnboardingView {
     .frame(maxWidth: .infinity)
   }
 
-  /// The URL scheme this build registered (codevisor-dev for development
-  /// builds), read from Info.plist so it always matches what the browser
-  /// can actually call back to. Mirrors CloudSettingsView.
-  private var cloudCallbackScheme: String {
-    let registered = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
-      .compactMap { ($0["CFBundleURLSchemes"] as? [String])?.first }
-      .first { $0.hasPrefix("codevisor") }
-    return registered ?? (CodevisorAppVariant.isDevelopment ? "codevisor-dev" : "codevisor")
-  }
-
-  /// Opens the sign-in URL in the user's default browser; the handoff page
-  /// bounces back via the cloud-auth deeplink handled in ContentView.
   private func startCloudSignIn(provider: CloudSignInProvider = .github) {
-    environment.cloud.lastError = nil
-    NSWorkspace.shared.open(environment.cloud.signInURL(scheme: cloudCallbackScheme, provider: provider))
+    guard !isSigningInToCloud else { return }
+    isSigningInToCloud = true
+    Task {
+      await cloudAuthentication.signIn(provider: provider, cloud: environment.cloud)
+      isSigningInToCloud = false
+    }
   }
 
   // MARK: - Step header

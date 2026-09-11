@@ -81,6 +81,7 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
   case notACloudInstance
   case missingToken
   case recentSignInRequired
+  case authenticationFailed(String)
 
   public var errorDescription: String? {
     switch self {
@@ -96,6 +97,8 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
       "That server doesn't look like a Codevisor Cloud instance. Check the URL and try again."
     case .missingToken:
       "Sign-in didn't complete: the server didn't return a session token."
+    case let .authenticationFailed(message):
+      message
     case .recentSignInRequired:
       "Sign out and sign in again before deleting your Cloud account."
     }
@@ -111,6 +114,9 @@ public protocol CloudAccountClienting: Sendable {
   /// token (`POST /api/auth/one-time-token/verify`).
   func verifyOneTimeToken(_ ott: String) async throws -> String
   func generateOneTimeToken(token: String) async throws -> String
+  func linkedProviders(token: String) async throws -> Set<CloudSignInProvider>
+  func startAppleSignIn(link: Bool, token: String?) async throws -> CloudAppleChallenge
+  func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String
   func deleteAccount(token: String) async throws
   /// Dev-only: a real session for the cloud's seeded development user.
   /// The instance advertises the capability via `authProviders: ["dev"]`;
@@ -187,7 +193,7 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
 
   /// The bearer plugin returns the session token in a response header;
   /// older instances put a `token` field in the body.
-  private static func sessionToken(
+  static func sessionToken(
     fromHeader response: HTTPURLResponse, body data: Data
   ) throws
     -> String
@@ -278,7 +284,7 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
   }
 
   @discardableResult
-  private func perform(
+  func perform(
     _ path: String,
     method: String = "GET",
     body: Data? = nil,
@@ -299,9 +305,15 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
       throw CloudAccountClientError.invalidResponse
     }
     guard (200..<300).contains(httpResponse.statusCode) else {
-      struct ErrorBody: Decodable { let code: String? }
+      struct ErrorBody: Decodable { let code: String?; let message: String? }
       if (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code == "SESSION_EXPIRED" {
         throw CloudAccountClientError.recentSignInRequired
+      }
+      if path.hasPrefix("/api/auth/apple/native/"),
+        let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.message,
+        !message.isEmpty, message.count <= 300
+      {
+        throw CloudAccountClientError.authenticationFailed(message)
       }
       throw CloudAccountClientError.httpStatus(httpResponse.statusCode)
     }

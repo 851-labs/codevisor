@@ -48,7 +48,10 @@ await runXcodebuild(repoRoot, "ios", [
   "-quiet",
   "archive"
 ])
-await prepareEmbeddedCode(join(archive, "Products/Applications/Codevisor.app"))
+await prepareEmbeddedCode(
+  join(archive, "Products/Applications/Codevisor.app"),
+  join(repoRoot, "apps/ios/Codevisor/Codevisor.entitlements")
+)
 
 const optionsPath = join(output, "ExportOptions.plist")
 execFileSync("plutil", ["-convert", "xml1", "-o", optionsPath, "-"], {
@@ -98,6 +101,7 @@ const entitlements = summary.entitlements
 if (
   entitlements["get-task-allow"] !== false ||
   entitlements["beta-reports-active"] !== true ||
+  !entitlements["com.apple.developer.applesignin"]?.includes("Default") ||
   entitlements["application-identifier"] !== `${configuration.teamId}.${configuration.bundleId}`
 ) {
   throw new Error(

@@ -91,8 +91,9 @@ private struct WelcomeStep: View {
 private struct ConnectMachineStep: View {
   @Environment(AppEnvironment.self) private var environment
 
-  @State private var cloudSignIn = CloudSignInCoordinator()
+  @State private var cloudSignIn = CloudAuthenticationCoordinator()
   @State private var isSigningInToCloud = false
+  @State private var showsSettings = false
   /// The signed-in branch holds a bare spinner until the account's machine
   /// list has actually been fetched once — rendering the add-machine
   /// instructions (or anything else) off an empty-because-unfetched list
@@ -130,6 +131,16 @@ private struct ConnectMachineStep: View {
     }
     .background(Color(.systemBackground))
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Settings", systemImage: "gearshape") { showsSettings = true }
+          .accessibilityIdentifier("onboarding.settings")
+      }
+    }
+    .sheet(isPresented: $showsSettings) { SettingsSheet() }
+    .onChange(of: cloud.state.isSignedIn) { _, _ in
+      hasCompletedFirstMachinesCheck = false
+    }
   }
 
   // MARK: Signed out (primary path)
@@ -318,18 +329,10 @@ private struct ConnectMachineStep: View {
   // MARK: Cloud sign-in
 
   private func startCloudSignIn(provider: CloudSignInProvider = .github) {
-    let scheme = CloudSignInCoordinator.callbackScheme
     isSigningInToCloud = true
-    environment.cloud.lastError = nil
-    cloudSignIn.start(
-      url: environment.cloud.signInURL(scheme: scheme, provider: provider),
-      callbackScheme: scheme
-    ) { callbackURL in
+    Task {
+      await cloudSignIn.signIn(provider: provider, cloud: environment.cloud)
       isSigningInToCloud = false
-      guard let callbackURL,
-        let deeplink = CloudAuthDeeplink.parse(callbackURL)
-      else { return }
-      Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
     }
   }
 }

@@ -58,6 +58,8 @@ struct OnboardingView: View {
     settings.onboardingStep.flatMap(Step.init(rawValue:)) ?? .welcome
   }
 
+  @State var cloudAuthentication = CloudAuthenticationCoordinator()
+  @State var isSigningInToCloud = false
   @State var step: Step
   /// Which way the current step change is travelling, so the slide matches.
   @State var isNavigatingBack = false

@@ -5,6 +5,7 @@ import { bearer, deviceAuthorization } from "better-auth/plugins"
 import { oneTimeToken } from "better-auth/plugins/one-time-token"
 import { drizzle } from "drizzle-orm/d1"
 import { appleOptions, hasAppleAuth, revokeAppleAuthorization } from "./apple-auth.js"
+import { nativeAppleAuth } from "./apple-native.js"
 import * as schema from "./db/schema.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 
@@ -74,6 +75,7 @@ export const createAuth = (env: CloudEnv) => {
     emailAndPassword: { enabled: devAuth },
     rateLimit: { storage: "database" },
     plugins: [
+      nativeAppleAuth(env),
       /// Native apps hold tokens, not cookies: session token arrives in the
       /// `set-auth-token` header and is sent back as `Authorization: Bearer`.
       bearer(),

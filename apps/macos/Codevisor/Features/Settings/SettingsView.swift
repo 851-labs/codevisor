@@ -7,7 +7,7 @@ import UserNotifications
 import CodevisorUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-  case general, updates, appearance, notifications
+  case general, account, updates, appearance, notifications
   case shortcuts
   // Fleet-synced config planes: the panes render the app's selected
   // machine, whose content converges with every other machine.
@@ -18,6 +18,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
+    case .account: "Account"
     case .updates: "Updates"
     case .general: "General"
     case .appearance: "Appearance"
@@ -34,6 +35,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
   var systemImage: String {
     switch self {
+    case .account: "person.crop.circle"
     case .updates: "arrow.down.circle"
     case .general: "gear"
     case .appearance: "paintpalette"
@@ -371,6 +373,9 @@ struct SettingsView: View {
     case .projects:
       ProjectsSettingsView()
         .navigationTitle("Projects")
+    case .account:
+      CloudSettingsView()
+        .navigationTitle("Account")
     case .machines:
       MachinesSettingsView()
         .navigationTitle("Machines")

@@ -93,12 +93,16 @@ trusting a server.
 
 ### Sign in with Apple
 
-macOS and iOS both use the Cloud's Apple web OAuth flow and existing single-use
-session handoff. iOS presents `ASWebAuthenticationSession`; macOS opens the
-default browser. Both use the **same Services ID**, so the verified Apple `sub`
-maps to the same `account(provider_id, account_id)` and Cloud user on both devices.
-This also supports Developer ID distribution of the Mac app. No native Apple
-identity tokens are accepted by the API.
+iOS presents Apple's native authorization sheet directly. The app obtains a
+single-use Cloud challenge, sets its nonce on the Apple request, then sends the
+authorization code to Cloud. Cloud exchanges it for the configured native App ID
+and verifies the signed identity token, audience, expiry, and nonce before
+creating a session. Link challenges also bind the initiating account and session.
+
+macOS uses `ASWebAuthenticationSession` with the associated Services ID; this
+supports Developer ID distribution. Group the Services ID with the primary iOS
+App ID so their verified Apple `sub` values resolve to the same
+`account(provider_id, account_id)` and Cloud user. Email is not an identity key.
 
 In Apple Developer, enable Sign in with Apple on the primary iOS App ID, associate
 a Services ID with it, and register the Cloud domain and return URL:
@@ -106,6 +110,7 @@ a Services ID with it, and register the Cloud domain and return URL:
 key associated with that primary App ID. For the hosted instance these are:
 
 - Primary App ID: `com.dylanplayer.codevisor.ios`
+- Native App ID / `APPLE_NATIVE_CLIENT_ID`: `com.dylanplayer.codevisor.ios` (public Worker variable)
 - Services ID / `APPLE_CLIENT_ID`: `com.dylanplayer.codevisor.cloud`
 - `APPLE_TEAM_ID`: `C4M7D4G7LG`
 - `APPLE_KEY_ID`: `265B2BLJG5`
@@ -128,12 +133,20 @@ Client secret JWTs are generated with a five-minute lifetime when needed; they
 do not require scheduled manual rotation. Rotate the private key through Apple
 Developer and update the two corresponding Worker secrets when necessary.
 
-Existing GitHub users should sign in with GitHub, then choose **Manage Sign-In
-Methods → Connect Apple** in account settings. Linking requires their current
-Cloud session and Apple authorization and supports Hide My Email. Accounts are
-never merged automatically by email; an Apple identity already owned by another
-Cloud user cannot be reassigned. Returning logins retain the original profile
-when Apple omits email or name.
+Existing users can add a provider under **Account → Connected Accounts** in either
+native app. Connected providers are listed there. The browser bridge for GitHub
+and macOS Apple linking only establishes the app's session and redirects to the
+selected provider; it has no account picker or completion UI. All native handoffs
+return directly to the app, including failures. Linking supports Hide My Email,
+never merges automatically by email, and cannot move an identity owned by another
+Cloud user. Returning logins retain the original profile when Apple omits it.
+
+The iOS target includes `com.apple.developer.applesignin`. CI attaches the declared
+entitlements to the unsigned archive before cloud distribution signing, uses
+automatic provisioning at export, and verifies the exported entitlement. The provisioning
+profile must include Sign in with Apple. A physical-device development build must
+use a registered, capable App ID; a worktree's unique simulator bundle ID does not
+have production Apple credentials.
 
 **Delete Cloud Account** in either app requires a recent session, revokes the
 Apple refresh token, deletes Cloud account/session/machine credentials, and

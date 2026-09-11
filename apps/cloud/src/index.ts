@@ -3,10 +3,10 @@ import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
 import { hasAppleAuth } from "./apple-auth.js"
-import { accountPage, authErrorPage } from "./pages/account.js"
+import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
-import { devLoginPage, devicePage, handoffPage, homePage, loginPage } from "./pages/pages.js"
+import { devLoginPage, devicePage, homePage, loginPage } from "./pages/pages.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
@@ -101,21 +101,25 @@ app.get("/login/:provider", async (c) => {
   ) {
     return c.json({ error: "invalid redirect" }, 400)
   }
+  const scheme = nativeScheme(
+    new URL(redirect, c.env.PUBLIC_BASE_URL).searchParams.get("app") ?? undefined
+  )
+  const errorCallbackURL = scheme ? `/auth/handoff?app=${scheme}&error=sign_in_failed` : "/login"
   if (
     provider === "apple"
       ? !hasAppleAuth(c.env)
       : !c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET
   ) {
-    return c.redirect(`/login?redirect=${encodeURIComponent(redirect)}`)
+    return c.redirect(scheme ? errorCallbackURL : `/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const auth = createAuth(c.env)
   const { headers, response } = await auth.api.signInSocial({
-    body: { provider, callbackURL: redirect, errorCallbackURL: "/auth/error" },
+    body: { provider, callbackURL: redirect, errorCallbackURL },
     headers: c.req.raw.headers,
     returnHeaders: true
   })
   if (response.url === undefined) {
-    return c.redirect(`/login?redirect=${encodeURIComponent(redirect)}`)
+    return c.redirect(scheme ? errorCallbackURL : `/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const out = c.redirect(response.url)
   // Carry Better Auth's state/PKCE cookies into the browser session.
@@ -123,8 +127,9 @@ app.get("/login/:provider", async (c) => {
   return out
 })
 
-app.get("/account", accountPage)
-app.get("/auth/error", authErrorPage)
+app.get("/auth/connect/:provider", connectAccount)
+app.get("/account", nativeHandoff)
+app.get("/auth/error", nativeHandoff)
 
 // -- Machine registry (session-authenticated REST for apps) -------------------
 
@@ -261,7 +266,7 @@ app.get("/", (c) => homePage(c))
 app.get("/login", (c) => loginPage(c))
 app.get("/dev-login", (c) => devLoginPage(c))
 app.get("/device", async (c) => devicePage(c))
-app.get("/auth/handoff", async (c) => handoffPage(c))
+app.get("/auth/handoff", nativeHandoff)
 
 // -- Worker entry ---------------------------------------------------------------
 

@@ -24,8 +24,8 @@ struct CloudAccountIdentityTests {
   @Test("Management handoff uses a single-use token in the fragment")
   func managementURL() async throws {
     let (controller, client, _) = await makeSignedIn(machines: [])
-    let url = try #require(await controller.accountManagementURL(scheme: "codevisor-dev"))
-    #expect(url.path == "/account")
+    let url = try #require(await controller.connectAccountURL(provider: .apple, scheme: "codevisor-dev"))
+    #expect(url.path == "/auth/connect/apple")
     #expect(url.query() == "app=codevisor-dev")
     #expect(url.fragment() == "ott=management-ott")
     #expect(client.managementTokens == ["t"])

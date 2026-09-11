@@ -18,13 +18,20 @@ export async function embeddedCodePaths(bundle) {
   return paths
 }
 
-export async function prepareEmbeddedCode(bundle) {
+export async function prepareEmbeddedCode(bundle, entitlementsPath) {
   for (const path of await embeddedCodePaths(bundle)) {
     // Unsigned archives can contain linker signatures with temporary binary
     // identifiers. Give Xcode the bundle identity before cloud distribution
     // signing so its designated requirement matches the exported identifier.
     execFileSync("codesign", ["--force", "--sign", "-", path], { stdio: "inherit" })
   }
+  // CODE_SIGNING_ALLOWED=NO skips the app's entitlements too. Export preserves
+  // capabilities from an existing signature, so attach the declared entitlements
+  // with an ad-hoc signature before Xcode replaces it with cloud distribution
+  // signing. No local signing identity or provisioning profile is required.
+  execFileSync("codesign", ["--force", "--sign", "-", "--entitlements", entitlementsPath, bundle], {
+    stdio: "inherit"
+  })
 }
 
 export async function verifyDistributionSignatures(bundle, teamId) {
