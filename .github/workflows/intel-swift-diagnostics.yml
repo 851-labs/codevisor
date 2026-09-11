@@ -1,0 +1,43 @@
+name: Intel Swift diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, X64, codevisor-macos-x64]
+    timeout-minutes: 5
+    steps:
+      - name: Collect recent Swift test crash reports
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source = Path.home() / "Library/Logs/DiagnosticReports"
+          destination = Path(os.environ["RUNNER_TEMP"]) / "intel-swift-diagnostics"
+          destination.mkdir(parents=True, exist_ok=True)
+          reports = sorted(
+              [*source.glob("swiftpm*.ips"), *source.glob("CodevisorKitPackageTests*.ips")],
+              key=lambda path: path.stat().st_mtime,
+              reverse=True,
+          )[:3]
+          for report in reports:
+              shutil.copy2(report, destination / report.name)
+          summary = "\n".join(report.name for report in reports) or "No Swift test crash reports found."
+          (destination / "reports.txt").write_text(summary + "\n")
+          print(summary)
+          PY
+      - name: Upload Swift test diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: intel-swift-diagnostics
+          path: ${{ runner.temp }}/intel-swift-diagnostics
+          if-no-files-found: error
+          retention-days: 3
