@@ -277,6 +277,7 @@ codesign --verify --deep --strict "$sparkle_framework"
 
 # Chromium contains separately signed libraries and sandboxed helper apps.
 # Re-sign inside-out with the release identity, retaining renderer JIT rights.
+node "$script_dir/macos-browser-artifact.mjs" sign-libraries "$app_path" "${identity:--}"
 while IFS= read -r library; do
   codesign "${sign_args[@]}" "$library"
 done < <(find "$app_path/Contents/Frameworks/Chromium Embedded Framework.framework" -name "*.dylib" -type f)
@@ -330,6 +331,9 @@ done < "$macho_manifest"
   | xargs -0 -n 8 -P 4 codesign "${sign_args[@]}"
 
 codesign "${sign_args[@]}" "$app_path"
+if [[ -n "$identity" ]]; then
+  node "$script_dir/macos-browser-artifact.mjs" distribution "$app_path" arm64 x86_64
+fi
 
 # Exercise the signed runtime before archiving. This catches production-only
 # signing and native-addon ABI drift that the Debug app cannot expose.
@@ -477,6 +481,9 @@ make_variant() {
   fi
   codesign "${sign_args[@]}" "$variant_app"
   codesign --verify --deep --strict "$variant_app"
+  if [[ -n "$identity" ]]; then
+    node "$script_dir/macos-browser-artifact.mjs" distribution "$variant_app" "$lipo_arch"
+  fi
 
   ditto --norsrc -c -k --keepParent "$variant_app" "$output_dir/Codevisor-macOS-$suffix.zip"
   make_dmg "$variant_app" "$output_dir/Codevisor-$suffix.dmg" "$suffix"

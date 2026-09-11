@@ -80,33 +80,10 @@ echo "Building with GhosttyKit from $ghostty_library"
 
 node "$repo_root/scripts/chromium-artifact.mjs" arm64 x86_64
 
-ghostty_link_flags=(
-  '$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/libcef_dll_wrapper.a'
-  "-force_load"
-  "$ghostty_library"
-  "-lc++"
-  "-framework" "Metal"
-  "-framework" "MetalKit"
-  "-framework" "QuartzCore"
-  "-framework" "CoreText"
-  "-framework" "CoreGraphics"
-  "-framework" "CoreVideo"
-  "-framework" "IOSurface"
-  "-framework" "IOKit"
-  "-framework" "Carbon"
-  "-framework" "AppKit"
-  "-framework" "Foundation"
-  "-framework" "CoreFoundation"
-  "-framework" "Security"
-  "-framework" "ApplicationServices"
-  "-framework" "AudioToolbox"
-  "-framework" "UniformTypeIdentifiers"
-  "-framework" "GameController"
-  "-framework" "Combine"
-)
-
+# Keep the project's linker settings, including startup-loaded browser storage.
+# Only the resolved Ghostty archive differs between local and release builds.
 xcodebuild "${xcode_args[@]}" \
-  OTHER_LDFLAGS="${ghostty_link_flags[*]}" \
+  CODEVISOR_GHOSTTY_LIBRARY="$ghostty_library" \
   SWIFT_INCLUDE_PATHS="$ghostty_slice_dir/Headers" \
   build
 
@@ -126,3 +103,5 @@ if /usr/bin/nm -u "$app_executable" | grep -F "$libcpp_hash_memory_symbol" >/dev
   echo "error: Codevisor imports libc++ __hash_memory and will not launch on macOS 26.2." >&2
   exit 1
 fi
+
+node "$script_dir/macos-browser-artifact.mjs" linkage "$app_path" arm64 x86_64
