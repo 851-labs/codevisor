@@ -424,6 +424,7 @@ const updateInfoSignature = (info: UpdateInfo): string =>
     info.channel,
     info.lastApply?.state ?? null,
     info.lastApply?.message ?? null,
+    info.lastApply?.progress ?? null,
     info.lastApply?.at ?? null
   ])
 
@@ -434,6 +435,14 @@ const updateInfoSignature = (info: UpdateInfo): string =>
 const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo => {
   const drain = routeState.restart.state()
   if (drain.state === "idle" || info.lastApply?.state === "failed") return info
+  // Once drained, the host updater owns the download/install detail. A
+  // previous attempt's report must not mask this attempt's restart drain.
+  if (
+    drain.state === "drained" &&
+    info.lastApply?.state === "installing" &&
+    Date.parse(info.lastApply.at) >= Date.parse(drain.startedAt)
+  )
+    return info
   const chats = `${drain.remaining} chat${drain.remaining === 1 ? "" : "s"}`
   return {
     ...info,

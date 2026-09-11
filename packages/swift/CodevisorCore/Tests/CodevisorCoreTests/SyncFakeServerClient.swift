@@ -17,6 +17,10 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
 
+  var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
+  var pluginPrepareError: String?
+  var applyProgressReports: [ServerUpdateApplyState] = []
+  var applyingProgressReports = false
   let lock = NSLock()
   private var _projects: [ServerProject]
   var _sessions: [ServerSession]

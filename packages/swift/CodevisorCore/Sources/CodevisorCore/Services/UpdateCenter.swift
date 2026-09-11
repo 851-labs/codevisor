@@ -117,6 +117,9 @@ public final class UpdateCenter {
   /// machine state (plugin updates; the harness trigger round-trip before
   /// lifecycle events take over).
   private var transientPhases: [String: UpdateComponent.Phase] = [:]
+  /// Older servers retain failed lifecycle reports after a fresh check.
+  /// Dismiss that exact attempt until it changes or the user retries it.
+  private var dismissedHarnessFailures: [String: ServerHarnessLifecycleState] = [:]
 
   public init(
     machines: MachineController,
@@ -224,7 +227,8 @@ public final class UpdateCenter {
         latestVersion: info.latestVersion,
         updateAvailable: info.updateAvailable,
         phase: phase,
-        statusMessage: phase == .updating ? connection.updateStatusMessage : nil
+        statusMessage: phase == .updating ? connection.updateStatusMessage : nil,
+        progress: phase == .updating ? connection.updateProgress : nil
       )
     }
   }
@@ -249,7 +253,10 @@ public final class UpdateCenter {
         let phase: UpdateComponent.Phase =
           switch lifecyclePhase {
           case "installing", "updating", "pendingUpdate": .updating
-          case "failed": .failed(harness.lifecycle?.error ?? "The update failed.")
+          case "failed":
+            transientPhases[id]
+              ?? (dismissedHarnessFailures[id] == harness.lifecycle
+                ? .idle : .failed(harness.lifecycle?.error ?? "The update failed."))
           default: transientPhases[id] ?? .idle
           }
         let statusMessage: String? =
@@ -308,6 +315,28 @@ public final class UpdateCenter {
 
   // MARK: - Refresh
 
+  private func resetFailures() -> [String] {
+    var retryMachines: [String] = []
+    updateAllNotice = nil
+    lastRefreshedAt = nil
+    transientPhases = transientPhases.filter { $0.value == .updating }
+    for (machineId, harnesses) in harnessesByMachine {
+      for harness in harnesses where harness.lifecycle?.phase == "failed" {
+        dismissedHarnessFailures["harness:\(machineId):\(harness.id)"] = harness.lifecycle
+      }
+    }
+    for connection in machines.connectionsById.values where connection.updatePhase != .updating {
+      if case .failed = connection.updatePhase, case .failed = connection.availability {
+        retryMachines.append(connection.machineId)
+      }
+      connection.updatePhase = .idle
+      connection.updateStatusMessage = nil
+      connection.updateProgress = nil
+    }
+    appUpdate.resetFailure()
+    return retryMachines
+  }
+
   /// Sweeps every reachable machine's harness and plugin inventories.
   /// `force` additionally re-checks the app and every server's release
   /// feeds (the explicit "Check for Updates" action); the plain sweep
@@ -315,6 +344,7 @@ public final class UpdateCenter {
   public func refresh(force: Bool = false) async {
     guard !isRefreshing else { return }
     isRefreshing = true
+    let retryMachines = force ? resetFailures() : []
     defer { isRefreshing = false }
     // A machine that has never been probed is unknown, not unreachable.
     // Probe those first, so the pane's first open — often seconds after
@@ -322,12 +352,15 @@ public final class UpdateCenter {
     // instead of reporting "up to date" over an empty list.
     let unprobed = machines.allMachines.map(\.id).filter { machines.connectionsById[$0]?.status == nil }
     await withTaskGroup(of: Void.self) { group in
-      for machineId in unprobed {
+      for machineId in retryMachines {
+        group.addTask { await self.machines.retryMachine(machineId) }
+      }
+      for machineId in unprobed where !retryMachines.contains(machineId) {
         group.addTask { await self.machines.refreshStatus(for: machineId) }
       }
     }
     if force {
-      await appUpdate.checkForUpdatesInBackground()
+      await appUpdate.checkForUpdates()
       await machines.refreshServerUpdates(force: true)
     }
     for machine in machines.allMachines {
@@ -383,6 +416,7 @@ public final class UpdateCenter {
     case .server:
       await machines.updateServer(machineId: component.machineId)
     case .harness:
+      dismissedHarnessFailures[component.id] = nil
       transientPhases[component.id] = .updating
       do {
         _ = try await machines.client(for: component.machineId)
@@ -423,8 +457,8 @@ public final class UpdateCenter {
   /// Harness updates are only *triggered* by their step (the install runs
   /// on the machine), so before a machine's server restarts — and before
   /// the app restarts this client — the run waits for that machine's
-  /// harness updates to settle. A failed step stops the run before the app
-  /// step: restarting the client on top of a failure would hide it.
+  /// harness updates to settle. Failed harness updates remain visible but
+  /// never prevent Codevisor from updating on that machine or this client.
   private func run(components snapshot: [UpdateComponent]) async {
     guard !isUpdatingAll, !snapshot.isEmpty else { return }
     isUpdatingAll = true
@@ -466,7 +500,7 @@ public final class UpdateCenter {
   private func firstFailure(in snapshot: [UpdateComponent]) -> UpdateComponent? {
     let ids = Set(snapshot.map(\.id))
     return components.first { component in
-      guard ids.contains(component.id), component.kind != .app else { return false }
+      guard ids.contains(component.id), component.kind != .app, component.kind != .harness else { return false }
       if case .failed = component.phase { return true }
       return false
     }

@@ -34,7 +34,7 @@ enum StartupDeadline {
   }
 }
 
-private final class StartupOutcome<Value: Sendable>: @unchecked Sendable {
+final class StartupOutcome<Value: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
   private var continuation: CheckedContinuation<Value, any Error>?
   private var result: Result<Value, any Error>?

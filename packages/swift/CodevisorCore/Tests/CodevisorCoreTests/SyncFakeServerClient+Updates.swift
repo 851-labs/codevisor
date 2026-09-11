@@ -74,7 +74,8 @@ extension SyncFakeServerClient {
   }
 
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
-    lock.withLock {
+    if let harnessUpdateHandler { return try await harnessUpdateHandler(id) }
+    return lock.withLock {
       _operationLog.append("harness.update:\(id)")
       return ServerHarnessOperationStarted(accepted: true)
     }
@@ -85,7 +86,8 @@ extension SyncFakeServerClient {
   }
 
   func preparePluginUpdate(pluginId: String) async throws -> ServerPluginUpdatePlan {
-    lock.withLock {
+    if let pluginPrepareError { throw CodevisorServerClientError.httpStatus(500, pluginPrepareError) }
+    return lock.withLock {
       _operationLog.append("plugin.prepare:\(pluginId)")
       let review = ServerPluginUpdateReview(
         version: "1.1.0",
@@ -286,6 +288,15 @@ extension SyncFakeServerClient {
     lock.withLock {
       _updateInfoChannels.append(channel)
       _updateInfoRefreshes.append(refresh)
+      if applyingProgressReports {
+        if applyProgressReports.isEmpty {
+          applyingProgressReports = false
+          lastApply = nil
+          performSimulatedRestart()
+        } else {
+          lastApply = applyProgressReports.removeFirst()
+        }
+      }
       if lastApply?.state == "draining" {
         // Still draining for a while; the last poll performs the restart
         // the accepted apply deferred.
@@ -353,7 +364,7 @@ extension SyncFakeServerClient {
           draining: true
         )
       }
-      performSimulatedRestart()
+      if applyProgressReports.isEmpty { performSimulatedRestart() } else { applyingProgressReports = true }
       return ServerUpdateApplied(
         accepted: true,
         targetVersion: targetVersion,

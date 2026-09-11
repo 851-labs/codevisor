@@ -79,7 +79,12 @@ extension MachineController {
     let updateChannel = serverUpdateChannel
     let initialVersion = connection.updateInfo?.currentVersion
     connection.updatePhase = .updating
-    defer { connection.updateStatusMessage = nil }
+    connection.updateProgress = nil
+    connection.updateStatusMessage = nil
+    defer {
+      connection.updateStatusMessage = nil
+      connection.updateProgress = nil
+    }
     // Close the gate before dispatching the update request. The server
     // may begin shutting down as soon as it handles that endpoint, before
     // the response has made the round trip back to this client.
@@ -116,6 +121,8 @@ extension MachineController {
       // deadline), so this never waits forever.
       let pollBudget = updatePollInterval * updatePollAttempts
       var deadline = updateScheduler.now() + pollBudget
+      var lastInstallProgress: Double?
+      var lastInstallMessage: String?
       while updateScheduler.now() < deadline {
         try? await updateScheduler.sleep(updatePollInterval)
         // The machine's own progress report: draining, installing (on
@@ -138,16 +145,31 @@ extension MachineController {
             resumeEventStream(for: machineId)
             return
           case "draining":
+            connection.updateProgress = nil
             connection.updateStatusMessage = lastApply.message ?? "Waiting for chats to finish…"
             deadline = max(deadline, updateScheduler.now() + pollBudget)
             continue
           case "installing":
-            connection.updateStatusMessage = lastApply.message ?? "Installing…"
+            let progress = lastApply.progress.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
+            let message = lastApply.message ?? "Installing…"
+            // A slow download is healthy while its progress advances. Repeated
+            // identical reports do not keep a stalled install alive forever.
+            if progress != lastInstallProgress || message != lastInstallMessage {
+              deadline = max(deadline, updateScheduler.now() + pollBudget)
+            }
+            lastInstallProgress = progress
+            lastInstallMessage = message
+            connection.updateProgress = progress
+            connection.updateStatusMessage = message
           default:
             break
           }
         }
-        guard let info = try? await client.info() else { continue }
+        guard let info = try? await client.info() else {
+          connection.updateProgress = nil
+          connection.updateStatusMessage = "Restarting…"
+          continue
+        }
         var converged = false
         if let targetBuild = applied.targetBuildNumber,
           let currentBuild = (try? await client.health())?.buildNumber

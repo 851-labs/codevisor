@@ -38,9 +38,9 @@ public enum CommandRunnerError: LocalizedError, Equatable {
 }
 
 public extension CommandRunner {
-  /// Runs a command with a hard deadline. Cancelling the losing task also
-  /// terminates `ProcessCommandRunner`'s child process, so a wedged system
-  /// utility cannot pin app startup indefinitely.
+  /// Runs a command with a hard deadline, even if it ignores cancellation.
+  /// Unstructured tasks let the deadline return without waiting for the
+  /// losing command; cancellation still terminates a ProcessCommandRunner child.
   func run(
     executableURL: URL,
     arguments: [String],
@@ -48,24 +48,29 @@ public extension CommandRunner {
     timeout: Duration,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) async throws -> CommandResult {
-    try await withThrowingTaskGroup(of: CommandResult.self) { group in
-      group.addTask {
-        try await run(
-          executableURL: executableURL,
-          arguments: arguments,
-          environment: environment
-        )
-      }
-      group.addTask {
+    try Task.checkCancellation()
+    let outcome = StartupOutcome<CommandResult>()
+    let worker = Task {
+      do {
+        outcome.resolve(
+          .success(
+            try await run(
+              executableURL: executableURL, arguments: arguments, environment: environment
+            )))
+      } catch { outcome.resolve(.failure(error)) }
+    }
+    let timer = Task {
+      do {
         try await sleep(timeout)
         try Task.checkCancellation()
-        throw CommandRunnerError.timedOut(executableURL.path)
-      }
-      defer { group.cancelAll() }
-      guard let result = try await group.next() else {
-        throw CancellationError()
-      }
-      return result
+        outcome.resolve(.failure(CommandRunnerError.timedOut(executableURL.path)))
+      } catch { /* The command finished first. */  }
+    }
+    defer { worker.cancel(); timer.cancel() }
+    return try await withTaskCancellationHandler {
+      try await outcome.value
+    } onCancel: {
+      outcome.resolve(.failure(CancellationError()))
     }
   }
 }
@@ -73,8 +78,15 @@ public extension CommandRunner {
 /// A `CommandRunner` backed by `Foundation.Process`.
 public struct ProcessCommandRunner: CommandRunner {
   private let onStart: @Sendable () -> Void
+  private let onExit: @Sendable () -> Void
 
-  public init(onStart: @escaping @Sendable () -> Void = {}) { self.onStart = onStart }
+  public init(
+    onStart: @escaping @Sendable () -> Void = {},
+    onExit: @escaping @Sendable () -> Void = {}
+  ) {
+    self.onStart = onStart
+    self.onExit = onExit
+  }
 
   public func run(
     executableURL: URL,
@@ -91,6 +103,17 @@ public struct ProcessCommandRunner: CommandRunner {
     process.standardError = errPipe
 
     let cancellation = ProcessCancellationController(process: process)
+    // Subscribe before launch and buffer an immediate exit, including a
+    // short-lived launchctl command that finishes before the waiter starts.
+    // This avoids a blocking wait on another thread's Foundation run loop.
+    let (exits, exitContinuation) = AsyncStream<Int32>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    process.terminationHandler = { finished in
+      cancellation.markFinished()
+      exitContinuation.yield(finished.terminationStatus)
+      exitContinuation.finish()
+      onExit()
+    }
+    defer { process.terminationHandler = nil; exitContinuation.finish() }
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
       do {
@@ -113,8 +136,8 @@ public struct ProcessCommandRunner: CommandRunner {
       // pipe buffer cannot deadlock the child.
       async let outData = readToEnd(outPipe.fileHandleForReading)
       async let errData = readToEnd(errPipe.fileHandleForReading)
-      let exitCode = await waitUntilExit(process)
-      cancellation.markFinished()
+      var iterator = exits.makeAsyncIterator()
+      guard let exitCode = await iterator.next() else { throw CancellationError() }
       let (out, err) = await (outData, errData)
       try Task.checkCancellation()
 
@@ -125,15 +148,6 @@ public struct ProcessCommandRunner: CommandRunner {
       )
     } onCancel: {
       cancellation.cancel()
-    }
-  }
-
-  private func waitUntilExit(_ process: Process) async -> Int32 {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global().async {
-        process.waitUntilExit()
-        continuation.resume(returning: process.terminationStatus)
-      }
     }
   }
 

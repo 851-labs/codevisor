@@ -30,6 +30,8 @@ public final class MachineConnection {
   /// What the in-flight update is doing right now ("Waiting for 2 chats to
   /// finish…", "Restarting…"); nil when nothing worth showing.
   public internal(set) var updateStatusMessage: String?
+  /// Fraction reported by an updater that supports measurable progress.
+  public internal(set) var updateProgress: Double?
 
   /// This machine's live shell-event subscription. Every machine holds its
   /// own; selection changes never touch another machine's stream.

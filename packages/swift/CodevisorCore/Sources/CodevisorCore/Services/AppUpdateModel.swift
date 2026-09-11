@@ -108,9 +108,16 @@ public final class AppUpdateModel {
   }
 
   public func checkForUpdates() async {
-    guard let checkHandler else { return }
+    guard !isUpdating, let checkHandler else { return }
+    reportProgress(nil)
     phase = .checking
     await checkHandler(true)
+  }
+
+  public func resetFailure() {
+    guard case let .failed(release, _) = phase else { return }
+    phase = release.map(Phase.available) ?? .idle
+    reportProgress(nil)
   }
 
   public func checkForUpdatesInBackground() async {

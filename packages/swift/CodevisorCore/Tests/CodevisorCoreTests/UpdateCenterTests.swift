@@ -10,7 +10,7 @@ import CodevisorTestSupport
 @MainActor
 @Suite("UpdateCenter")
 struct UpdateCenterTests {
-  private func makeRemote(_ id: String) -> CodevisorMachine {
+  func makeRemote(_ id: String) -> CodevisorMachine {
     CodevisorMachine(
       id: id,
       name: id,
@@ -19,7 +19,7 @@ struct UpdateCenterTests {
     )
   }
 
-  private func makeController(
+  func makeController(
     fakes: [String: SyncFakeServerClient],
     remotes: [CodevisorMachine]
   ) throws -> MachineController {
@@ -45,7 +45,7 @@ struct UpdateCenterTests {
     )
   }
 
-  private func makeHarness(updateAvailable: Bool) -> ServerHarness {
+  func makeHarness(updateAvailable: Bool) -> ServerHarness {
     ServerHarness(
       id: "claude-code",
       name: "Claude Code",
@@ -62,7 +62,7 @@ struct UpdateCenterTests {
     )
   }
 
-  private func makePluginUpdate() -> ServerPluginUpdateStatus {
+  func makePluginUpdate() -> ServerPluginUpdateStatus {
     ServerPluginUpdateStatus(
       pluginId: "notes",
       installedVersion: "1.0.0",
