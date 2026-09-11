@@ -37,7 +37,11 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     uninstallPresentationDisplayLink()
     measurementCommitTask?.cancel()
     measurementCommitTask = nil
-    pendingMeasurements.removeAll(keepingCapacity: false)
+    // Retained hosts may have reported their size just before this frame
+    // was cancelled. Keep those measurements for reattachment: an unchanged
+    // host will not report again, leaving the initial canvas hidden forever.
+    // UIKit may also omit the end-of-deceleration callback after detachment.
+    measurementCommitGate.interactionDidEnd()
     bottomJumpGate.cancel()
     deferredRowsDuringScroll = nil
     deferredActiveRowsRange = nil
@@ -59,6 +63,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   func prepareForDismantle() {
     suspendPresentation()
+    pendingMeasurements.removeAll(keepingCapacity: false)
     for host in mountedHosts.values {
       host.removeFromSuperview()
       host.detachFromParent()

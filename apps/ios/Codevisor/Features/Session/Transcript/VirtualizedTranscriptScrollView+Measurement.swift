@@ -205,7 +205,7 @@ extension VirtualizedTranscriptScrollView {
         .environment(\.transcriptInvalidateRowMeasurement) { [weak self] in
           self?.mountedHosts[key]?.requestContentMeasurement()
         }
-        .onPreferenceChange(AttachmentGeometryReadinessPreferenceKey.self) {
+        .onPreferenceChange(ContentLayoutReadinessPreferenceKey.self) {
           [weak self] unresolvedCount in
           self?.attachmentGeometryReadinessDidChange(
             unresolvedCount == 0,
@@ -259,7 +259,7 @@ extension VirtualizedTranscriptScrollView {
       return
     }
     pendingMeasurements[measurement.key] = measurement
-    guard measurementCommitGate.allowsGeometryCommit else { return }
+    guard !isDetaching, measurementCommitGate.allowsGeometryCommit else { return }
     if presentationDisplayLink != nil {
       requestDisplayFrame()
       return
@@ -278,7 +278,7 @@ extension VirtualizedTranscriptScrollView {
     // Mounted hosts remain clipped to the currently committed ledger
     // while UIKit owns post-lift momentum. This keeps rows non-overlapping
     // without replacing the deceleration animation via contentOffset.
-    guard measurementCommitGate.allowsGeometryCommit else { return }
+    guard !isDetaching, measurementCommitGate.allowsGeometryCommit else { return }
     let pending = pendingMeasurements
     pendingMeasurements.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
