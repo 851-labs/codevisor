@@ -8,6 +8,7 @@ import SwiftUI
 /// for editing instead of inserting an intermediate management sheet.
 struct IOSGoalAccessory: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  var cardStyle = ComposerCardStyle()
   @Bindable var controller: SessionController
   let goal: SessionGoal
   let glassNamespace: Namespace.ID
@@ -61,7 +62,7 @@ struct IOSGoalAccessory: View {
     }
     .buttonStyle(.plain)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      shape: cardStyle.shape,
       id: .goal,
       in: glassNamespace
     )

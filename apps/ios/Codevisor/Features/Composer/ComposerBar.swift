@@ -59,8 +59,7 @@ struct ComposerBar: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
 
-  // Match the send button's 30-point diameter and Dynamic Type scaling.
-  @ScaledMetric(relativeTo: .subheadline) private var sendButtonRadius: CGFloat = 15
+  var cardStyle = ComposerCardStyle()
 
   @State var text = ""
   /// The UIKit editor reports its UTF-16 selection so slash commands can
@@ -132,22 +131,12 @@ struct ComposerBar: View {
 
   private static let minEditorHeight: CGFloat = 30
   private static let collapsedMaxEditorHeight: CGFloat = 148
-  private static let cardPadding: CGFloat = 13
   private static let contentSpacing: CGFloat = 10
   // The picker's invisible tap area already adds 6 points below its glass.
   private static let runPickerSpacing: CGFloat = 2
   /// Chrome around the editor inside the card: paddings, toolbar row, and
   /// the spacing between them.
   private static let cardChromeHeight: CGFloat = 98
-
-  private var cardShape: ConcentricRectangle {
-    // Keep an even inset around the send button above the keyboard, while
-    // allowing the card to follow a nearby screen or sheet corner.
-    ConcentricRectangle(
-      corners: .concentric(minimum: .fixed(sendButtonRadius + Self.cardPadding)),
-      isUniform: true
-    )
-  }
 
   /// `measuredTextHeight` is the text view's own content height (insets
   /// included), reported by the UIKit editor — no mirror, no guessing.
@@ -422,9 +411,9 @@ extension ComposerBar {
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
-    .padding(Self.cardPadding)
+    .padding(ComposerCardStyle.contentPadding)
     .composerGlassSurface(
-      shape: cardShape,
+      shape: cardStyle.shape,
       id: .composer,
       in: glassNamespace
     )
@@ -432,7 +421,7 @@ extension ComposerBar {
     // browser selection stays mounted and reports progress on its
     // explicit Continue button.
     .overlay {
-      QuestionResolutionOverlay(controller: controller, shape: cardShape)
+      QuestionResolutionOverlay(controller: controller, shape: cardStyle.shape)
     }
     .disabled(controller.isResolvingQuestion)
     // The transcript fades where it slides underneath the card: this
