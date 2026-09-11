@@ -107,6 +107,7 @@ extension LocalCodevisorServerTests {
     let directory = try makeTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let client = FakeLocalServerClient(healthResults: [.failure(TestError())])
+    let clock = AdvancingLocalServerScheduler()
     var checks = 0
     var signals = 0
     let server = LocalCodevisorServer(
@@ -117,10 +118,39 @@ extension LocalCodevisorServerTests {
         checks += 1; return checks >= 3
       }
     )
+    server.startupScheduler = clock.scheduler
     #expect(await server.shutdown())
     #expect(checks == 3)
     #expect(signals == 1)
     #expect(client.healthCallCount == 0)
+    #expect(client.shutdownRequests == 1)
+    #expect(clock.elapsed == .milliseconds(800))
+  }
+
+  @Test("Shutdown stops waiting at its ownership deadline")
+  func shutdownOwnershipDeadline() async throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let client = FakeLocalServerClient(healthResults: [])
+    let clock = AdvancingLocalServerScheduler()
+    var lastProbeAt: Duration?
+    var signals = 0
+    let server = LocalCodevisorServer(
+      client: client, databasePath: directory.appendingPathComponent("db.sqlite").path,
+      logURL: directory.appendingPathComponent("server.log"),
+      staleListenerTerminator: { _ in signals += 1 },
+      shutdownProbe: {
+        lastProbeAt = clock.elapsed
+        return false
+      }
+    )
+    server.startupScheduler = clock.scheduler
+
+    #expect(await !server.shutdown())
+    #expect(client.shutdownRequests == 1)
+    #expect(signals == 1)
+    #expect(lastProbeAt == .milliseconds(9_800))
+    #expect(clock.elapsed == .seconds(10))
   }
 
   @Test("Update drain has a final deadline after requesting interruption once")

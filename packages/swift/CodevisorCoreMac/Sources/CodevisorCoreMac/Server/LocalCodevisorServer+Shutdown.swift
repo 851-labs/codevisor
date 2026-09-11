@@ -106,9 +106,12 @@ extension LocalCodevisorServer {
   /// a process we own), then force-terminates any owned process that lingers.
   @discardableResult
   public func shutdown() async -> Bool {
+    let scheduler = startupScheduler
     let owner = ServerProcessOwnership.owner(databasePath: databasePath)
     do {
-      try await StartupDeadline.run(for: .seconds(3)) { [client] in try await client.requestShutdown() }
+      try await StartupDeadline.run(for: .seconds(3), scheduler: scheduler) { [client] in
+        try await client.requestShutdown()
+      }
       lifecycleLog.note("shutdown: server acknowledged the shutdown request")
     } catch {
       lifecycleLog.note("shutdown: request not answered; checking process ownership")
@@ -119,11 +122,10 @@ extension LocalCodevisorServer {
         return false
       }
     }
-    let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(10)
-    try? await Task.sleep(for: .milliseconds(400))
+    let deadline = scheduler.now() + .seconds(10)
+    try? await scheduler.sleep(.milliseconds(400))
     var signalled = false
-    while !Task.isCancelled, clock.now < deadline {
+    while !Task.isCancelled, scheduler.now() < deadline {
       let stopped: Bool
       if let shutdownProbe {
         stopped = await shutdownProbe()
@@ -148,7 +150,7 @@ extension LocalCodevisorServer {
           await ServerProcessOwnership.terminate(owner, databasePath: databasePath)
         }
       }
-      try? await Task.sleep(for: .milliseconds(200))
+      try? await scheduler.sleep(.milliseconds(200))
     }
     lifecycleLog.error("shutdown: the old server still owns its process, port, or database lease")
     return false
