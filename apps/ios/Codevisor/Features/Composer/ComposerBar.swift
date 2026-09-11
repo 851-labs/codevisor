@@ -5,8 +5,8 @@ import PhotosUI
 import SwiftUI
 
 /// The iOS composer, matching the macOS composer's structure: the input on its
-/// own line with the toolbar row beneath it (attach, model/thinking chip,
-/// config chips, then stop/send), all inside one Liquid Glass card.
+/// own line with the toolbar row beneath it (attach, model, parameters,
+/// then stop/send), all inside one Liquid Glass card.
 ///
 /// The editor keeps its text in local state and only writes it to the
 /// controller on send (and when leaving, so drafts persist). Binding straight
@@ -575,9 +575,6 @@ extension ComposerBar {
       HStack(spacing: 10) {
         attachButton
         ModelConfigChip(controller: controller)
-        ForEach(controller.pickerOptions) { option in
-          ConfigChip(controller: controller, option: option)
-        }
         if controller.hasPlanMode, controller.isPlanModeOn {
           planModeChip
         }
