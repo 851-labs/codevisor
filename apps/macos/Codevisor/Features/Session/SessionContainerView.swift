@@ -56,9 +56,8 @@ struct SessionContainerView: View {
   /// Presentation-only state for a locally inserted split. Its destination
   /// stays blank and inert until the opening geometry reaches its final size.
   @State var openingSplit: WorkspaceSplitOpening?
-  /// The chat this container last published as focused, so `onDisappear`
-  /// releases only its own focus (see the modifier in `body`).
-  @State var publishedFocusCandidate: UUID?
+  /// Identifies this mounted container independently of its cached chat.
+  @State var focusSourceId = UUID()
   @State var isVisible = false
 
   var body: some View {
@@ -143,19 +142,15 @@ struct SessionContainerView: View {
       // combines it with window-key state and feeds the app-wide
       // attention coordinator, which marks the focused chat read.
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
-        publishedFocusCandidate = candidate
-        store.setFocusedChat(candidate, serverId: session.serverId)
+        store.setFocusedChat(
+          candidate, serverId: session.serverId, sourceId: focusSourceId,
+          workspaceId: selectedWorkspace.id, isVisible: isVisible
+        )
       }
-      // Release only the focus this container published. Navigating to
-      // another workspace mounts the new container (which publishes its
-      // chat) BEFORE this one disappears; an unconditional clear here
-      // would erase the new focus and leave that chat unread while the
-      // user is looking straight at it.
+      // The incoming container can publish before this one disappears.
       .onDisappear {
         isVisible = false
-        if let candidate = publishedFocusCandidate {
-          store.clearFocusedChat(ifCurrent: candidate)
-        }
+        store.clearFocusedChat(sourceId: focusSourceId)
       }
       .task(id: session.id) {
         splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in

@@ -59,6 +59,12 @@ const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean =>
   )
 }
 
+// Include claimed prompts: the public queue hides them before their turn
+// starts, and their durable claim survives until the provider call returns.
+const sessionHasQueuedPrompts = (sqlite: Database.Database, sessionId: string): boolean =>
+  sqlite.prepare("select 1 from prompt_queue_items where session_id = ? limit 1").get(sessionId) !==
+  undefined
+
 const bumpAttentionRevision = (sqlite: Database.Database, sessionId: string): void => {
   sqlite
     .prepare(
@@ -96,6 +102,7 @@ const reevaluatePendingFinish = (
     }
     return
   }
+  if (sessionHasQueuedPrompts(sqlite, sessionId)) return
   if (state.settle_due_at === null) {
     const dueAt = new Date(Date.parse(now) + graceMs).toISOString()
     sqlite
@@ -128,6 +135,7 @@ export const settleSessionAttention = (
       .run(sessionId)
     return { settled: false }
   }
+  if (sessionHasQueuedPrompts(sqlite, sessionId)) return { settled: false }
   const dueAt = state.settle_due_at ?? new Date(Date.parse(now) + graceMs).toISOString()
   if (state.settle_due_at === null) {
     sqlite
@@ -142,7 +150,7 @@ export const settleSessionAttention = (
 
 /// Sessions with a finish waiting to settle, for restart recovery. Startup
 /// reconciliation has already cleared stale background-task snapshots by the
-/// time recovery runs, so these settle (after their grace) rather than hang.
+/// time recovery runs. Queued prompts still hold their finish until drained.
 export const listPendingAttentionSettles = (
   sqlite: Database.Database
 ): ReadonlyArray<{ readonly sessionId: string; readonly dueAt: string | null }> =>
@@ -159,6 +167,9 @@ export const attentionSettleDeadline = (
   sqlite: Database.Database,
   sessionId: string
 ): string | undefined => {
+  // A queue-only finish retains an already-due deadline so acknowledging the
+  // last claim settles immediately. Do not schedule it while work remains.
+  if (sessionHasQueuedPrompts(sqlite, sessionId)) return undefined
   const row = sqlite
     .prepare(
       "select settle_due_at from session_attention where session_id = ? and pending_finish = 1 and turn_active = 0"
@@ -295,6 +306,14 @@ export const projectSessionAttention = (
           "update session_attention set pending_finish = 1, settle_due_at = null where session_id = ?"
         )
         .run(event.session_id)
+    } else if (sessionHasQueuedPrompts(sqlite, event.session_id)) {
+      // The whole prompt drain is one completion. No grace is needed after
+      // the final claim is acknowledged, unlike a subagent continuation.
+      sqlite
+        .prepare(
+          "update session_attention set pending_finish = 1, settle_due_at = ? where session_id = ?"
+        )
+        .run(event.created_at, event.session_id)
     } else {
       // Finished — user- and agent-initiated turns alike. A turn that ends
       // with only background shells running counts as finished: whatever the

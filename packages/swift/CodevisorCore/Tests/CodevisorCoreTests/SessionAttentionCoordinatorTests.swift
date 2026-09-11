@@ -249,6 +249,39 @@ struct SessionAttentionCoordinatorTests {
     #expect(delivery.delivered.isEmpty)
   }
 
+  @Test("A recently opened chat finishing after navigation stays unread and notifies")
+  func cachedChatFinishStaysUnread() async throws {
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/cached-chat-read"))
+    let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Cached")
+    let (model, fakeServer) = try await makeModel(sessions: [session], projects: [project])
+    let coordinator = SessionAttentionCoordinator(projectList: model)
+    let delivery = FakeNotificationDelivery()
+    coordinator.notificationDelivery = delivery
+    var focus = SessionAttentionWorkspaceFocus()
+    let workspace = UUID()
+    let source = UUID()
+    let chat = SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
+    focus.selectWorkspace(workspace)
+    focus.update(sourceId: source, workspaceId: workspace, isVisible: true, session: chat)
+    coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus.session)
+
+    focus.selectWorkspace(UUID())
+    // A cached observer fires before its outgoing view has disappeared.
+    focus.update(sourceId: source, workspaceId: workspace, isVisible: true, session: chat)
+    coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus.session)
+    var finished = session
+    finished.latestAttentionSequence = 1
+    finished.unreadCount = 1
+    finished.sidebarState = .unread
+    model.sessions = [finished]
+    model.emitAttentionTransition(old: session, new: finished, origin: .liveEvent)
+
+    #expect(model.sessions.first?.unreadCount == 1)
+    #expect(model.sessions.first?.lastSeenAttentionSequence == 0)
+    #expect(delivery.delivered.map(\.kind) == [.finished])
+    #expect(await fakeServer.snapshot().readRequests.isEmpty)
+  }
+
   @Test("Manually unreading the focused chat holds until focus cycles")
   func manualUnreadOfFocusedChatSticks() async throws {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/manual-hold"))

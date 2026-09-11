@@ -95,7 +95,7 @@ final class SessionStore {
   /// of the active split leaf. Combined with window key state below, this
   /// is what the app-wide attention coordinator treats as "focused" — the
   /// chat it marks read.
-  var focusedChatKey: SessionKey?
+  var attentionFocus = SessionAttentionWorkspaceFocus()
   /// Whether this store's window is key. A selected chat behind Settings or
   /// another Codevisor window is not the focused chat.
   var isWindowFocused = false
@@ -104,7 +104,13 @@ final class SessionStore {
   /// observable; this tells the sidebar to re-read its tab rows.
   var workspaceLayoutRevision = 0
   /// Window-local navigation ownership, updated before panes mount or unmount.
-  @ObservationIgnored var navigationWorkspaceId: UUID?
+  var navigationWorkspaceId: UUID? {
+    get { attentionFocus.workspaceId }
+    set {
+      attentionFocus.selectWorkspace(newValue)
+      publishFocus()
+    }
+  }
   @ObservationIgnored var navigationRevision = 0
   /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?

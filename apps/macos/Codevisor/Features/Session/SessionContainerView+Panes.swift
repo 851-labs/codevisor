@@ -110,6 +110,7 @@ extension SessionContainerView {
   /// leaf, when it is a chat. Reads the live group model so pane selection
   /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
+    guard isVisible, store.navigationWorkspaceId == selectedWorkspace.id else { return nil }
     let workspace = store.workspace(for: session, project: project)
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil

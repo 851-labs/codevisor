@@ -38,6 +38,7 @@ extension SessionStore {
   /// selected), so finished turns start counting as unread again.
   func clearOpenSession() {
     openSessionKey = nil
+    navigationWorkspaceId = nil
   }
 
   func setWindowFocused(_ focused: Bool) {
@@ -49,29 +50,28 @@ extension SessionStore {
   /// non-chat pane (terminal, new tab) is selected. Closing or deactivating
   /// the window publishes nil via `setWindowFocused` — resign-key always
   /// fires before a window goes away.
-  func setFocusedChat(_ sessionId: UUID?, serverId: String) {
-    focusedChatKey = sessionId.map { SessionKey(serverId: serverId, sessionId: $0) }
+  func setFocusedChat(
+    _ sessionId: UUID?, serverId: String, sourceId: UUID, workspaceId: UUID, isVisible: Bool
+  ) {
+    attentionFocus.update(
+      sourceId: sourceId,
+      workspaceId: workspaceId,
+      isVisible: isVisible,
+      session: sessionId.map { SessionAttentionFocus(serverId: serverId, sessionId: $0) }
+    )
     publishFocus()
   }
 
-  /// Clears focus only if `sessionId` still holds it. A container going
-  /// away must not clobber the focus a newly mounted container has already
-  /// published: SwiftUI mounts the incoming view (and fires its publisher)
-  /// before the outgoing view's `onDisappear` runs.
-  func clearFocusedChat(ifCurrent sessionId: UUID) {
-    guard focusedChatKey?.sessionId == sessionId else { return }
-    focusedChatKey = nil
+  /// An outgoing container releases only its own focus publication.
+  func clearFocusedChat(sourceId: UUID) {
+    attentionFocus.clear(sourceId: sourceId)
     publishFocus()
   }
 
   func publishFocus() {
     environment.attentionCoordinator.updateFocus(
       owner: ObjectIdentifier(self),
-      session: isWindowFocused
-        ? focusedChatKey.map {
-          SessionAttentionFocus(serverId: $0.serverId, sessionId: $0.sessionId)
-        }
-        : nil
+      session: isWindowFocused ? attentionFocus.session : nil
     )
   }
 

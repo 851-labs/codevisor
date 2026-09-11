@@ -4,8 +4,8 @@ import { appendAndPublish, run, swallowError, type EventFanout } from "../server
 export interface AttentionSettleScheduler {
   /// Re-arms every parked finish left behind by a previous process (or by the
   /// revision-counter migration). Runs after startup reconciliation has
-  /// already cleared stale background-task snapshots, so nothing recovered
-  /// here can still be held — each row settles once its grace elapses.
+  /// already cleared stale background-task snapshots. Queued prompts remain
+  /// held until dispatch resumes or the user removes them.
   readonly recover: () => Promise<void>
   readonly close: () => void
 }
@@ -75,6 +75,7 @@ export const makeAttentionSettleScheduler = (
       event.kind !== "session.output" &&
       event.kind !== "session.updated" &&
       event.kind !== "session.error" &&
+      event.kind !== "session.queue.updated" &&
       event.kind !== "session.attention.updated"
     ) {
       return
