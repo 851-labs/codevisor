@@ -30,7 +30,8 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
     toolbar.centeredItemIdentifiers = [address]
     window.toolbar = toolbar
     let content = NSHostingController(
-      rootView: ChromiumBrowserPaneView(model: model, isDetachedWindow: true))
+      rootView: ChromiumBrowserPaneView(model: model, isDetachedWindow: true)
+        .focusedSceneValue(\.browserPage, model))
     content.sizingOptions = []
     window.contentViewController = content
     window.setContentSize(NSSize(width: 1100, height: 800))
@@ -68,6 +69,8 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
     } else if identifier == address {
       let host = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
       host.focusAddress = { [weak model] in model?.focusAddress() }
+      host.zoom = { [weak model] in model?.zoom($0) }
+      host.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
       host.translatesAutoresizingMaskIntoConstraints = false
       NSLayoutConstraint.activate([
         host.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),

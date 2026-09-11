@@ -26,6 +26,13 @@ struct BrowserCommands: Commands {
       Button("Reload Page") { page?.reload() }
         .keyboardShortcut("r", modifiers: .command)
         .disabled(page == nil)
+      Divider()
+      ShortcutButton(.browserZoomIn) { page?.zoom(.zoomIn) }
+        .disabled(page?.canZoomIn != true)
+      ShortcutButton(.browserZoomOut) { page?.zoom(.zoomOut) }
+        .disabled(page?.canZoomOut != true)
+      ShortcutButton(.browserResetZoom) { page?.zoom(.reset) }
+        .disabled(page?.canResetZoom != true)
     }
   }
 }

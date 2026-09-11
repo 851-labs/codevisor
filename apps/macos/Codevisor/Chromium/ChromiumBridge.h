@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 @property(nonatomic, copy, nullable) BOOL (^adoptPopup)(CVChromiumView *popup, NSString *url, CVBrowserLinkDestination destination);
 @property(nonatomic, copy, nullable) void (^pageClosed)(void);
 @property(nonatomic, copy, nullable) void (^stateChanged)(NSString *url, NSString *title, BOOL loading, BOOL back, BOOL forward);
+@property(nonatomic, copy, nullable) void (^zoomChanged)(NSInteger percent, BOOL canZoomOut, BOOL canZoomIn, BOOL canReset);
 @property(nonatomic, copy, nullable) void (^browserReady)(void);
 @property(nonatomic, copy, nullable) void (^faviconChanged)(NSData * _Nullable image);
 @property(nonatomic, copy, nullable) void (^viewportScaleChanged)(CGFloat scale);
@@ -30,6 +31,7 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 - (void)sendProtocol:(NSString *)json completion:(void (^)(NSString *reply))completion;
 @property(nonatomic, readonly) BOOL browserIsReady;
 @property(nonatomic, readonly) BOOL hasOpenDevTools;
+@property(nonatomic, readonly) BOOL hasPageFocus;
 @property(nonatomic, copy, nullable) void (^loadFailed)(NSString *message);
 - (instancetype)initWithProfile:(NSString *)profile
                      proxyHost:(NSString *)host
@@ -41,6 +43,9 @@ typedef NS_ENUM(NSInteger, CVBrowserLinkDestination) {
 - (void)navigate:(NSString *)address;
 - (CGFloat)setViewportWidth:(CGFloat)width height:(CGFloat)height;
 - (void)reload;
+- (void)zoomIn;
+- (void)zoomOut;
+- (void)resetZoom;
 - (void)stop;
 - (void)goBack;
 - (void)goForward;

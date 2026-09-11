@@ -19,6 +19,11 @@ final class ChromiumBrowserModel {
   private(set) var isLoading = false
   private(set) var canGoBack = false
   private(set) var canGoForward = false
+  private(set) var zoomPercent = 100
+  private(set) var canZoomOut = false
+  private(set) var canZoomIn = false
+  private(set) var canResetZoom = false
+  private(set) var zoomPresentationRequest = 0
   private(set) var errorMessage: String?
   var addressFocusRequest = 0
   var viewport: ChromiumViewport?
@@ -119,6 +124,15 @@ final class ChromiumBrowserModel {
   }
 
   private func wireView(_ view: CVChromiumView, token: UUID, adopted: Bool = false) {
+    view.zoomChanged = { [weak self] percent, canZoomOut, canZoomIn, canReset in
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == token else { return }
+        self.zoomPercent = percent
+        self.canZoomOut = canZoomOut
+        self.canZoomIn = canZoomIn
+        self.canResetZoom = canReset
+      }
+    }
     view.openLink = { [weak self] address, destination in
       self?.onOpenLink?(address, destination.workspaceDestination, nil) ?? false
     }
@@ -275,6 +289,16 @@ final class ChromiumBrowserModel {
     if let webView { webView.reload() } else { start() }
   }
   func stop() { webView?.stop(); isLoading = false }
+  func zoom(_ command: BrowserZoomCommand) {
+    guard let webView, webView.browserIsReady else { return }
+    switch command {
+    case .zoomIn: webView.zoomIn()
+    case .zoomOut: webView.zoomOut()
+    case .reset: webView.resetZoom()
+    }
+    showZoomControls()
+  }
+  func showZoomControls() { zoomPresentationRequest += 1 }
   func setVisible(_ visible: Bool) {
     if isVisible != visible { retentionRevision += 1; BrowserPageRetention.shared.touch(self) }
     isVisible = visible
@@ -301,6 +325,10 @@ final class ChromiumBrowserModel {
     onNavigate = nil
   }
   private func resetBrowser() {
+    zoomPercent = 100
+    canZoomOut = false
+    canZoomIn = false
+    canResetZoom = false
     synchronized = false
     completeReady(.failure(ChromiumProtocolError("Browser closed")))
     readyError = nil

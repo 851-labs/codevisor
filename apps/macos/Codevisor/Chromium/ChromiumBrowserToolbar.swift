@@ -37,12 +37,16 @@ struct ChromiumBrowserToolbar: NSViewRepresentable {
   func makeNSView(context: Context) -> ChromiumToolbarHost {
     let view = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
     view.focusAddress = { [weak model] in model?.focusAddress() }
+    view.zoom = { [weak model] in model?.zoom($0) }
+    view.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
     view.sizingOptions = [.intrinsicContentSize]
     return view
   }
 
   func updateNSView(_ nsView: ChromiumToolbarHost, context: Context) {
     nsView.focusAddress = { [weak model] in model?.focusAddress() }
+    nsView.zoom = { [weak model] in model?.zoom($0) }
+    nsView.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
     nsView.rootView = ChromiumBrowserToolbarContent(model: model)
   }
 
@@ -80,12 +84,22 @@ struct ChromiumBrowserToolbarContent: View {
             }
           )
           .padding(.leading, 14)
+          if model.canResetZoom {
+            browserButton(
+              "Zoom: \(model.zoomPercent)%",
+              symbol: model.zoomPercent < 100 ? "minus.magnifyingglass" : "plus.magnifyingglass"
+            ) { model.showZoomControls() }
+          }
           browserButton(model.isLoading ? "Stop" : "Reload", symbol: model.isLoading ? "xmark" : "arrow.clockwise") {
             if model.isLoading { model.stop() } else { model.reload() }
           }
         }
         .frame(maxWidth: 720)
         .glassEffect(.regular.interactive(), in: .capsule)
+        .background {
+          ChromiumBrowserZoomPopover(
+            model: model, request: model.zoomPresentationRequest, editing: editing, loading: model.isLoading)
+        }
         browserButton("Responsive viewport", symbol: "iphone.and.ipad") {
           Task {
             if model.viewport == nil {

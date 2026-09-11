@@ -15,6 +15,7 @@
 #include <vector>
 #include <set>
 #include <optional>
+#include <cmath>
 
 @interface CVChromiumApplication : NSApplication <CefAppProtocol>
 @property(nonatomic) BOOL handlingSendEvent;
@@ -39,6 +40,7 @@ bool pumping = false;
 NSTimer *pumpTimer;
 void (^shutdownCompletion)(void);
 std::map<int, CefRefPtr<CefBrowser>> browsers;
+NSHashTable<CVChromiumView *> *zoomViews;
 std::unique_ptr<CefScopedLibraryLoader> library;
 
 void SchedulePump(int64_t delay);
@@ -179,6 +181,8 @@ class DevToolsClient;
 - (void)layoutViewport;
 - (void)createBrowser;
 - (void)publish;
+- (void)publishZoom;
+- (void)zoom:(cef_zoom_command_t)command;
 - (void)closeDevTools;
 - (void)removeDevTools;
 - (void)setDevToolsDockSide:(NSString *)side;
@@ -840,6 +844,8 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
 - (instancetype)initWithProfile:(NSString *)profile proxyHost:(NSString *)host proxyPort:(NSInteger)port
                       proxyTLS:(BOOL)tls username:(NSString *)username password:(NSString *)password address:(NSString *)address {
   if ((self = [super initWithFrame:NSMakeRect(0, 0, 800, 600)])) {
+    if (!zoomViews) zoomViews = [NSHashTable weakObjectsHashTable];
+    [zoomViews addObject:self];
     _profile = [profile copy]; _proxyHost = [host stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"[]"]]; _proxyPort = port; _proxyTLS = tls;
     _username = [username copy]; _password = [password copy]; _address = [address copy];
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -878,6 +884,10 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   _context = CefRequestContext::CreateContext(settings, new ContextHandler(self));
 }
 - (BOOL)hasOpenDevTools { return _toolsContainer != nil; }
+- (BOOL)hasPageFocus {
+  NSResponder *responder = self.window.firstResponder;
+  return [responder isKindOfClass:NSView.class] && [(NSView *)responder isDescendantOf:_pageContainer];
+}
 - (void)createBrowser {
   if (_closed || _browser || _creating || !self.window || shutdownCompletion) return;
   _creating = YES;
@@ -896,7 +906,25 @@ class BrowserClient final : public CefClient, public CefLifeSpanHandler,
   auto frame = _browser->GetMainFrame();
   if (self.stateChanged) self.stateChanged(frame ? String(frame->GetURL()) : _address,
       _client ? _client->title_ : @"Browser", _browser->IsLoading(), _browser->CanGoBack(), _browser->CanGoForward());
+  [self publishZoom];
 }
+- (void)publishZoom {
+  if (!_browser || _closed || !self.zoomChanged) return;
+  auto host = _browser->GetHost();
+  // Chromium's logarithmic zoom level uses a factor of 1.2 per level.
+  self.zoomChanged((NSInteger)std::lround(100 * std::pow(1.2, host->GetZoomLevel())),
+      host->CanZoom(CEF_ZOOM_COMMAND_OUT), host->CanZoom(CEF_ZOOM_COMMAND_IN), host->CanZoom(CEF_ZOOM_COMMAND_RESET));
+}
+- (void)zoom:(cef_zoom_command_t)command {
+  if (!_browser || _closed) return;
+  _browser->GetHost()->Zoom(command);
+  // Per-site zoom is shared by pages in the same Chromium profile. Refresh
+  // their controls too, including other visible splits and detached windows.
+  for (CVChromiumView *view in zoomViews) [view publishZoom];
+}
+- (void)zoomIn { [self zoom:CEF_ZOOM_COMMAND_IN]; }
+- (void)zoomOut { [self zoom:CEF_ZOOM_COMMAND_OUT]; }
+- (void)resetZoom { [self zoom:CEF_ZOOM_COMMAND_RESET]; }
 - (void)navigate:(NSString *)address { _address = [address copy]; if (_browser) _browser->GetMainFrame()->LoadURL(String(address)); }
 - (void)reload { if (_browser) _browser->Reload(); }
 - (void)stop { if (_browser) _browser->StopLoad(); }

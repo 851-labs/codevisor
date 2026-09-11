@@ -5,6 +5,11 @@ import { chromiumHelperName, chromiumHelperSuffixes, run } from "./chromium-arti
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const env = process.env
+const signing = env.EXPANDED_CODE_SIGN_IDENTITY || "-"
+// Match the Debug app's ad-hoc signing. Without a Team ID, hardened library
+// validation rejects the app-owned storage dylib before a helper can start.
+const runtimeOptions =
+  env.CONFIGURATION === "Debug" && signing === "-" ? [] : ["--options", "runtime"]
 const frameworks = join(env.TARGET_BUILD_DIR, env.FRAMEWORKS_FOLDER_PATH)
 const icon = join(
   env.TARGET_BUILD_DIR,
@@ -24,9 +29,8 @@ for (const suffix of chromiumHelperSuffixes) {
     [
       "--force",
       "--sign",
-      env.EXPANDED_CODE_SIGN_IDENTITY || "-",
-      "--options",
-      "runtime",
+      signing,
+      ...runtimeOptions,
       "--timestamp=none",
       ...(suffix === " (Renderer)"
         ? ["--entitlements", join(root, "apps/macos/ChromiumHelper/entitlements.plist")]
