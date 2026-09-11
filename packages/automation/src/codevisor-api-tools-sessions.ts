@@ -23,9 +23,13 @@ import {
 /// Session, terminal, and file tools.
 export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool("sessions.list", "List Codevisor sessions on this server.", "GET", "/v1/sessions"),
-  apiTool("sessions.create", "Create a Codevisor coding-agent session.", "POST", "/v1/sessions", {
-    body: CreateSessionRequest
-  }),
+  apiTool(
+    "sessions.create",
+    "Create a Codevisor coding-agent session in the background. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
+    "POST",
+    "/v1/sessions",
+    { body: CreateSessionRequest }
+  ),
   apiTool(
     "sessions.get",
     "Get a session, its current conversation, queue, and goal.",

@@ -12,8 +12,12 @@ struct ClientLayoutTests {
     )
   }
 
-  private func apply(_ action: [String: Any], to workspace: Workspace, compact: Bool = false) throws -> Workspace {
-    let data = try JSONSerialization.data(withJSONObject: ["workspaceId": workspace.id.uuidString, "action": action])
+  private func apply(
+    _ action: [String: Any], to workspace: Workspace, compact: Bool = false, focus: Bool? = nil
+  ) throws -> Workspace {
+    var body: [String: Any] = ["workspaceId": workspace.id.uuidString, "action": action]
+    if let focus { body["focus"] = focus }
+    let data = try JSONSerialization.data(withJSONObject: body)
     return try JSONDecoder().decode(ClientLayoutRequest.self, from: data).applying(to: workspace, compact: compact)
   }
 
@@ -21,7 +25,7 @@ struct ClientLayoutTests {
   func layoutLifecycle() throws {
     let original = workspace()
     let first = original.centerTabs[0].activeLeafId
-    var value = try apply(["kind": "split", "leafId": first.uuidString, "edge": "trailing"], to: original)
+    var value = try apply(["kind": "split", "leafId": first.uuidString, "edge": "trailing"], to: original, focus: true)
     let second = value.centerTabs[0].activeLeafId
     #expect(second != first)
     #expect(value.centerTree.group(id: first) == original.centerTree.group(id: first))
@@ -34,17 +38,19 @@ struct ClientLayoutTests {
     value = try apply(resize, to: value)
     #expect(value.centerTree.clientSplit(at: [])?.children.map(\.fraction) == [0.3, 0.7])
     value = try apply(
-      ["kind": "move", "leafId": second.uuidString, "targetLeafId": first.uuidString, "edge": "top"], to: value)
+      ["kind": "move", "leafId": second.uuidString, "targetLeafId": first.uuidString, "edge": "top"], to: value,
+      focus: true)
     #expect(value.centerTree.allGroups.map(\.id) == [second, first])
     #expect(Set(value.centerTree.allGroups.flatMap { $0.state.panes.map(\.id) }) == Set(panes.map(\.id)))
     #expect(throws: ClientControlError.self) { try apply(resize, to: value) }
-    value = try apply(["kind": "detach", "leafId": second.uuidString], to: value)
+    value = try apply(["kind": "detach", "leafId": second.uuidString], to: value, focus: true)
     #expect(value.centerTabs.count == 2)
     #expect(value.centerTabs[0].root == original.centerTree)
     #expect(value.selectedCenterTab?.activeLeafId == second)
-    #expect(try apply(["kind": "detach", "leafId": second.uuidString], to: value) == value)
+    #expect(try apply(["kind": "detach", "leafId": second.uuidString], to: value, focus: true) == value)
     value = try apply(
-      ["kind": "move", "leafId": second.uuidString, "targetLeafId": first.uuidString, "edge": "trailing"], to: value)
+      ["kind": "move", "leafId": second.uuidString, "targetLeafId": first.uuidString, "edge": "trailing"], to: value,
+      focus: true)
     #expect(value.centerTabs.count == 1)
     #expect(value.centerTree.allGroups.map(\.id) == [first, second])
     #expect(value.selectedCenterTab?.activeLeafId == second)
@@ -54,9 +60,9 @@ struct ClientLayoutTests {
   func nestedResize() throws {
     let original = workspace()
     let first = original.centerTabs[0].activeLeafId
-    let pair = try apply(["kind": "split", "leafId": first.uuidString, "edge": "trailing"], to: original)
+    let pair = try apply(["kind": "split", "leafId": first.uuidString, "edge": "trailing"], to: original, focus: true)
     let second = pair.centerTabs[0].activeLeafId
-    let nested = try apply(["kind": "split", "leafId": second.uuidString, "edge": "bottom"], to: pair)
+    let nested = try apply(["kind": "split", "leafId": second.uuidString, "edge": "bottom"], to: pair, focus: true)
     let third = nested.centerTabs[0].activeLeafId
     let action: [String: Any] = [
       "kind": "resize", "tabId": nested.centerTabs[0].id.uuidString, "branchPath": [1],

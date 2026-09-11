@@ -1,7 +1,7 @@
 import { endpoints } from "@codevisor/api"
 import { describe, expect, it, vi, afterEach } from "vitest"
 import { CODEVISOR_API_TOOLS } from "./codevisor-api-tools.js"
-import { makeCodevisorProvider } from "./codevisor-provider.js"
+import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
 
 describe("Codevisor native action parity", () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -112,6 +112,16 @@ describe("Codevisor native action parity", () => {
     await provider.invoke(context, "clients.open_page", { clientId: "client", body: page })
     await provider.invoke(context, "clients.layout", { clientId: "client", ...layout })
     await provider.invoke(context, "clients.window", { clientId: "client", body: window })
-    expect(bodies).toEqual([page, layout, window])
+    const backgroundTab = { workspaceId: "workspace", action: { kind: "new_tab" }, focus: false }
+    const selectedTab = { ...backgroundTab, focus: true }
+    await provider.invoke(context, "clients.layout", { clientId: "client", ...backgroundTab })
+    await provider.invoke(context, "clients.layout", { clientId: "client", ...selectedTab })
+    expect(bodies).toEqual([page, layout, window, backgroundTab, selectedTab])
+
+    const tool = codevisorTools.find((tool) => tool.name === "clients.layout")!
+    expect(tool.inputSchema.required).not.toContain("focus")
+    expect(tool.inputSchema.properties?.focus).toMatchObject({
+      description: expect.stringContaining("Defaults to false")
+    })
   })
 })

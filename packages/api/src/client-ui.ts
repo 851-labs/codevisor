@@ -33,7 +33,11 @@ export const ClientLayoutAction = Schema.Union([
 ])
 export const ClientLayoutRequest = Schema.Struct({
   workspaceId: Schema.String,
-  action: ClientLayoutAction
+  action: ClientLayoutAction,
+  focus: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Select the result of new_tab, split, move, or detach. Defaults to false: preserve the current pane and each tab's selection. Does not foreground the window."
+  })
 })
 export type ClientLayoutRequest = typeof ClientLayoutRequest.Type
 

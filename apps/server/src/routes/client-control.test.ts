@@ -48,6 +48,10 @@ describe("client control routes", () => {
             }
           }
         },
+        ...[{}, { focus: false }, { focus: true }].map((options) => ({
+          method: "layout",
+          body: { workspaceId: "workspace", action: { kind: "new_tab" }, ...options }
+        })),
         { method: "window", body: { action: "frame", x: 20, y: 30, width: 1000, height: 800 } }
       ]
       for (const { method, body } of commands) {
@@ -83,6 +87,16 @@ describe("client control routes", () => {
       })
       expect(
         await jsonRequest(server, "/v1/clients/window/navigate", { method: "POST", body: "{}" })
+      ).toMatchObject({ status: 400 })
+      expect(
+        await jsonRequest(server, "/v1/clients/window/layout", {
+          method: "POST",
+          body: JSON.stringify({
+            workspaceId: "workspace",
+            action: { kind: "new_tab" },
+            focus: "false"
+          })
+        })
       ).toMatchObject({ status: 400 })
       expect(await jsonRequest(server, "/v1/clients/window/unknown")).toMatchObject({ status: 404 })
       expect(await jsonRequest(server, "/v1/clients", { method: "POST" })).toMatchObject({

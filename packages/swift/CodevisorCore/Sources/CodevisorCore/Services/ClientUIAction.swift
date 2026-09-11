@@ -31,6 +31,8 @@ public struct ClientLayoutRequest: Codable, Sendable {
   }
   public var workspaceId: UUID
   public var action: Action
+  /// Background layout edits preserve selection unless explicitly requested.
+  public var focus: Bool?
 }
 
 public enum ClientUIAction: Sendable {

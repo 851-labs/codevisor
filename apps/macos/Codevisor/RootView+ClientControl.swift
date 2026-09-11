@@ -139,7 +139,7 @@ extension RootView {
     environment.workspaces.save(updated)
     store.reconcileMountedPaneGroups(in: updated)
     store.workspaceLayoutRevision += 1
-    store.navigationRevision &+= 1
+    if request.focus == true { store.navigationRevision &+= 1 }
     environment.workspaceSync.noteLocalMutation()
     let oldIds = Set(workspace.centerTabs.flatMap { $0.root.allGroups.flatMap { $0.state.panes.map(\.id) } })
     for pane in updated.centerTabs.flatMap({ $0.root.allGroups.flatMap(\.state.panes) }) where !oldIds.contains(pane.id)

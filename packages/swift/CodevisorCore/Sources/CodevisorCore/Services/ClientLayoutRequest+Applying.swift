@@ -57,7 +57,24 @@ extension ClientLayoutRequest {
       workspace.centerTabs[index].customTitle = trimmed.isEmpty ? nil : trimmed
     default: throw ClientControlError("Unknown layout action")
     }
+    if focus != true { preserveSelection(from: original, in: &workspace) }
     return workspace
+  }
+
+  /// Restore selection on the uncommitted copy, so background edits never
+  /// briefly select their result. Follow the active leaf if the edit moved it
+  /// into another tab; all other surviving tabs retain their own selection.
+  private func preserveSelection(from original: Workspace, in workspace: inout Workspace) {
+    for tab in original.centerTabs {
+      if let index = workspace.centerTabs.firstIndex(where: { $0.id == tab.id }),
+        workspace.centerTabs[index].root.group(id: tab.activeLeafId) != nil
+      {
+        workspace.centerTabs[index].activeLeafId = tab.activeLeafId
+      }
+    }
+    if let active = original.selectedCenterTab?.activeLeafId {
+      _ = workspace.selectDestination(.leaf(active))
+    }
   }
 
   private func source(in workspace: Workspace) throws -> (Int, UUID) {
