@@ -448,10 +448,6 @@ private struct SplitLeafHeader: View {
     }
   }
 
-  private var closeTitle: String {
-    pane?.kind == .chat && pane?.chatSessionId != nil ? "Archive" : "Close"
-  }
-
   private var actionsMenu: some View {
     Menu {
       splitMenuItem("Split Right", icon: "rectangle.righthalf.inset.filled", edge: .trailing)
@@ -474,7 +470,7 @@ private struct SplitLeafHeader: View {
       }
 
       Button(role: .destructive, action: onClose) {
-        Label(closeTitle, systemImage: closeTitle == "Archive" ? "archivebox" : "xmark")
+        Label("Close", systemImage: "xmark")
           .labelStyle(.titleAndIcon)
       }
       .shortcut(.closeSplit)
