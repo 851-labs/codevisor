@@ -78,7 +78,7 @@ struct SessionTranscriptView: View {
   /// authenticated client.
   @State var attachmentImages: AttachmentImageStore?
   /// Quick Look for a workspace file linked from any transcript row.
-  @State var linkedQuickLookURL: QuickLookURL?
+  @State var linkedQuickLookURL: URL?
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
   @State var olderHistoryPresentation = TranscriptPaginationPresentationGate()
@@ -112,11 +112,7 @@ struct SessionTranscriptView: View {
 
   var body: some View {
     chat
-      .sheet(item: $linkedQuickLookURL) { item in
-        QuickLookPreview(url: item.url)
-          .ignoresSafeArea()
-          .presentationDragIndicator(.visible)
-      }
+      .attachmentQuickLookPreview($linkedQuickLookURL)
       .acknowledgesPresentedTurnAttention(
         controller: controller,
         presentationRole: presentationRole

@@ -191,7 +191,7 @@ private struct ComposerAttachmentChip: View {
   let onRetry: () -> Void
 
   @State private var thumbnail: UIImage?
-  @State private var quickLookURL: QuickLookURL?
+  @State private var quickLookURL: URL?
 
   private var failureReason: String? {
     if case let .failed(reason) = attachment.state { return reason }
@@ -251,11 +251,7 @@ private struct ComposerAttachmentChip: View {
       guard !Task.isCancelled else { return }
       thumbnail = image
     }
-    .sheet(item: $quickLookURL) { item in
-      QuickLookPreview(url: item.url)
-        .ignoresSafeArea()
-        .presentationDragIndicator(.visible)
-    }
+    .attachmentQuickLookPreview($quickLookURL)
   }
 
   private var thumbnailView: some View {
@@ -331,7 +327,7 @@ private struct ComposerAttachmentChip: View {
     let name = attachment.name
     Task {
       guard let url = await materializeQuickLookURL(data: data, name: name) else { return }
-      quickLookURL = QuickLookURL(url: url)
+      quickLookURL = url
     }
   }
 

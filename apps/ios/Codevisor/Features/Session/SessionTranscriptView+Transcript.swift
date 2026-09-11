@@ -17,7 +17,7 @@ extension SessionTranscriptView {
       guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
         return
       }
-      linkedQuickLookURL = QuickLookURL(url: url)
+      linkedQuickLookURL = url
     }
     return true
   }
