@@ -76,18 +76,6 @@ public struct CloudAccountSections: View {
         }
       #endif
     }
-    .confirmationDialog("Delete Cloud Account?", isPresented: $showsDeleteConfirmation, titleVisibility: .visible) {
-      Button("Delete Cloud Account", role: .destructive) {
-        isDeleting = true
-        Task {
-          await cloud.deleteAccount()
-          isDeleting = false
-          errorMessage = cloud.lastError
-        }
-      }
-    } message: {
-      Text("This permanently deletes your Cloud account and disconnects all your machines. This cannot be undone.")
-    }
     .alert("Account", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
       Button("OK", role: .cancel) { errorMessage = nil }
     } message: {
@@ -139,6 +127,19 @@ public struct CloudAccountSections: View {
     }
     .foregroundStyle(.red)
     .disabled(isDeleting)
+    .alert("Delete Cloud Account?", isPresented: $showsDeleteConfirmation) {
+      Button("Delete Cloud Account", role: .destructive) {
+        isDeleting = true
+        Task {
+          await cloud.deleteAccount()
+          isDeleting = false
+          errorMessage = cloud.lastError
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This permanently deletes your Cloud account and disconnects all your machines. This cannot be undone.")
+    }
   }
 
   private var deletionExplanation: some View {

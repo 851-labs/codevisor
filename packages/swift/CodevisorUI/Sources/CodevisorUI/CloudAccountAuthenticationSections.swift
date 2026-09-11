@@ -49,10 +49,19 @@ struct CloudAccountAuthenticationSections: View {
                 .accessibilityHidden(true)
               Text(provider == .github ? "GitHub" : "Apple")
               Spacer()
-              Label("Connected", systemImage: "checkmark")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+              HStack(spacing: 6) {
+                Image(systemName: "checkmark")
+                Text("Connected")
+              }
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
             }
+            #if os(iOS)
+              // Align the native separator with the provider name, past its 20-point icon and 12-point spacing.
+              .alignmentGuide(.listRowSeparatorLeading) { _ in 32 }
+              .alignmentGuide(.listRowSeparatorTrailing) { dimensions in dimensions.width }
+            #endif
+            .accessibilityElement(children: .combine)
           }
         }
       }
