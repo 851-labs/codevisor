@@ -45,9 +45,6 @@ public final class MachineConnection {
   @ObservationIgnored var pendingRerouteTask: Task<Void, Never>?
   /// Guards one background connect at a time per machine.
   @ObservationIgnored var backgroundConnectInFlight = false
-  /// Consecutive background stream failures, for reconnect backoff. Reset
-  /// on the first event a fresh subscription delivers.
-  @ObservationIgnored var reconnectFailures = 0
   /// One startup/connection preparation per machine. This replaces the
   /// controller-wide task that made an unrelated composer default decide
   /// which machine was allowed to start.
@@ -59,6 +56,9 @@ public final class MachineConnection {
   @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
   /// Coalesces navigation-affecting events for this machine only.
   @ObservationIgnored var pendingRefreshTask: Task<Void, Never>?
+  /// Retries failed navigation snapshots even when the event socket stays open.
+  @ObservationIgnored var navigationRetryTask: Task<Void, Never>?
+  @ObservationIgnored var navigationFailures = 0
   /// A scheduled automatic re-preparation after a failed remote
   /// preparation. Streams self-heal through their own backoff loop; this
   /// is the equivalent for a machine whose preparation never got that far,
@@ -104,6 +104,7 @@ extension MachineController {
     connectionsById[machineId]?.preparationTask?.cancel()
     connectionsById[machineId]?.navigationSyncTask?.cancel()
     connectionsById[machineId]?.pendingRefreshTask?.cancel()
+    connectionsById[machineId]?.navigationRetryTask?.cancel()
     connectionsById[machineId]?.preparationRetryTask?.cancel()
     connectionsById[machineId] = nil
   }
@@ -117,6 +118,8 @@ extension MachineController {
     connection.navigationSyncTask = nil
     connection.pendingRefreshTask?.cancel()
     connection.pendingRefreshTask = nil
+    connection.navigationRetryTask?.cancel()
+    connection.navigationRetryTask = nil
     // Only THIS machine's stream stops; every other machine keeps
     // streaming through the transition.
     stopEventSync(for: machineId)
@@ -279,31 +282,8 @@ extension MachineController {
       return
     }
     markReady(for: machineId)
-    let cursor = (try? await client.latestShellEventCursor()) ?? 0
+    await synchronizeNavigationState(serverId: machineId, client: client, presentation: .background)
     guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-    // Full snapshot BEFORE the stream starts (the cursor above replays
-    // anything racing the fetch): a machine's chats and workspaces are
-    // present — and orderable in a flattened sidebar — without it ever
-    // being selected.
-    let snapshot = await projectList.refreshFromServer(serverId: machineId, client: client)
-    guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-    if case .superseded = snapshot { return }
-    await workspaceSync?.refreshFromServer(serverId: machineId, client: client)
-    guard isCurrentBackgroundConnection(connection, for: machineId) else { return }
-    guard connection.eventSyncTask == nil else { return }
-    startEventSync(serverId: machineId, client: client, since: cursor)
-    // Every machine lands its own terminal sync state — this is what
-    // makes a fleet-aggregated "synced / empty / failed" decision
-    // possible. Previously only the selected machine ever wrote one,
-    // so a broken selected machine starved the whole screen.
-    switch snapshot {
-    case .committed:
-      connection.navigationSyncState = .current
-    case let .failed(message):
-      connection.navigationSyncState = .stale(message)
-    case .superseded:
-      break
-    }
     onMachineConnected?(machineId)
   }
 

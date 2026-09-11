@@ -350,6 +350,7 @@ public final class ProjectListModel {
   /// client's event); intentionally does not call back to the server.
   @discardableResult
   public func removeSessionLocally(id: UUID, serverId: String) -> Bool {
+    invalidateSnapshotRefreshes(for: serverId)
     let previousWorkspace = workspaceAssignmentsByServer[serverId]?.removeValue(forKey: id)
     guard sessions.contains(where: { $0.serverId == serverId && $0.id == id }) else {
       return previousWorkspace != nil
@@ -364,10 +365,10 @@ public final class ProjectListModel {
 
   /// Applies a project deletion that already happened on the server.
   public func removeProjectLocally(id: UUID, serverId: String) {
+    invalidateSnapshotRefreshes(for: serverId)
     pendingServerProjectIds.remove(
       ScopedSessionID(serverId: serverId, id: id)
     )
-    guard projects.contains(where: { $0.serverId == serverId && $0.id == id }) else { return }
     let removedSessionIds = sessions.lazy
       .filter { $0.serverId == serverId && $0.projectId == id }
       .map { ScopedSessionID(serverId: serverId, id: $0.id) }

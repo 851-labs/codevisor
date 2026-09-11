@@ -289,6 +289,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Mirrors a workspace's archived flag so other devices — and the
   /// server's own cascade to the workspace's chats — see it.
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
   /// Creates a worktree with a client-supplied id so the caller can follow
   /// the server's `worktree.setup` progress events (subjectId = worktree id)

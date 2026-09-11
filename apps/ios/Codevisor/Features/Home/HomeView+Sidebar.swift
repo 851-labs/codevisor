@@ -282,7 +282,9 @@ extension HomeView {
   }
 
   func renameWorkspace(_ renamed: Workspace) {
-    environment.workspaces.save(renamed)
+    environment.workspaceSync.renameWorkspace(
+      renamed, client: environment.machines.client(for: renamed.serverId)
+    )
     bumpWorkspaceRevision()
   }
 

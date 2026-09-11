@@ -546,6 +546,7 @@ public extension CodevisorServerClienting {
   /// Workspace archive sync is best-effort for the same reason: a fake or a
   /// server predating the route leaves the local flag authoritative.
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {}
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {}
 
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
     throw CodevisorServerClientError.invalidResponse

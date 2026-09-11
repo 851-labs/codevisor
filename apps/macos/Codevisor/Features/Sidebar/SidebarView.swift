@@ -136,7 +136,9 @@ struct SidebarView: View {
           restoreRequest: $restoreRequest,
           onImport: { environment.importSessions($0.sessions, into: $0.project) },
           onRenameWorkspace: { renamed in
-            environment.workspaces.save(renamed)
+            environment.workspaceSync.renameWorkspace(
+              renamed, client: environment.machines.client(for: renamed.serverId)
+            )
             workspaceRevision += 1
           },
           onPerformRestore: { performRestore($0) }

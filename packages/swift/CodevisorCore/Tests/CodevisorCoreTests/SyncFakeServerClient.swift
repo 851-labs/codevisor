@@ -16,6 +16,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// Tests exercising composer attachments install one; the protocol
   /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
+  var workspaceSnapshotHandler: (@Sendable () async throws -> ServerWorkspaceSnapshot?)?
 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
   var pluginPrepareError: String?
@@ -101,6 +102,19 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
 
+  func latestShellEventCursor() async throws -> Int {
+    lock.withLock { nextEventId - 1 }
+  }
+
+  func finishEventStreams(throwing error: (any Error)? = nil) {
+    let targets = lock.withLock {
+      let targets = continuations
+      continuations.removeAll()
+      return targets
+    }
+    for continuation in targets { continuation.finish(throwing: error) }
+  }
+
   /// Mirrors the real server: replays the event log from `since`, then
   /// streams new events.
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
@@ -124,8 +138,12 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
   func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
   func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
-    lock.withLock {
+    let handler = lock.withLock {
       _workspaceSnapshotCallCount += 1
+      return workspaceSnapshotHandler
+    }
+    if let handler { return try await handler() }
+    return lock.withLock {
       guard let panes = _panes else { return nil }
       return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: panes)
     }
@@ -137,6 +155,13 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       }
       _workspaces.append(workspace)
       return workspace
+    }
+  }
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {
+    lock.withLock {
+      guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else { return }
+      _workspaces[index].name = name
+      _workspaces[index].hasCustomName = hasCustomName
     }
   }
   func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { lock.withLock { _panes } }

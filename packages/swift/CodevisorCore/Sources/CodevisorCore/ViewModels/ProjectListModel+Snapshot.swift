@@ -23,7 +23,7 @@ extension ProjectListModel {
     let lifetimeGeneration = recordLifetimeGeneration(for: serverId)
     do {
       let prepared = try await fetchSnapshot(serverId: serverId, client: client)
-      guard isCurrentSnapshotRefresh(generation, for: serverId),
+      guard !Task.isCancelled, isCurrentSnapshotRefresh(generation, for: serverId),
         isCurrentRecordLifetime(lifetimeGeneration, for: serverId)
       else {
         return .superseded

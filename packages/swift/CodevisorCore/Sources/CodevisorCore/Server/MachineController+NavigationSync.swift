@@ -38,15 +38,12 @@ extension MachineController {
     let connection = connection(for: serverId)
     connection.eventSyncTask?.cancel()
     connection.eventSyncTask = Task { [weak self] in
-      var cursor = max(0, initialCursor)
       do {
         for try await event in client.shellEventStream(
-          since: cursor,
+          since: max(0, initialCursor),
           handledKinds: Self.shellSyncEventKinds
         ) {
           guard let self, !Task.isCancelled else { return }
-          cursor = max(cursor, event.id)
-          connection.reconnectFailures = 0
           await self.handleSyncEvent(
             event,
             serverId: serverId,
@@ -55,23 +52,17 @@ extension MachineController {
         }
         guard !Task.isCancelled else { return }
         connection.eventSyncTask = nil
+        self?.navigationSynchronizationFailed(
+          "The navigation event stream disconnected.", serverId: serverId, client: client
+        )
       } catch {
         Log.machines.error(
           "Event sync for \(serverId, privacy: .public) failed; resubscribing: \(String(describing: error), privacy: .public)"
         )
         guard let self, !Task.isCancelled else { return }
         connection.eventSyncTask = nil
-        // Every machine owns the same serialized recovery path. One
-        // machine's stream failure never promotes it to a global
-        // selection or blocks another machine's snapshot.
-        connection.reconnectFailures += 1
-        let delay = min(60, 1 << min(connection.reconnectFailures, 6))
-        try? await Task.sleep(for: .seconds(delay))
-        guard !Task.isCancelled else { return }
-        await self.synchronizeNavigationState(
-          serverId: serverId,
-          client: client,
-          presentation: .catchUp
+        self.navigationSynchronizationFailed(
+          String(describing: error), serverId: serverId, client: client
         )
       }
     }
@@ -86,6 +77,8 @@ extension MachineController {
       connection.eventSyncTask = nil
       connection.pendingRefreshTask?.cancel()
       connection.pendingRefreshTask = nil
+      connection.navigationRetryTask?.cancel()
+      connection.navigationRetryTask = nil
       connection.navigationSyncTask?.cancel()
       connection.navigationSyncTask = nil
       connection.navigationSyncToken = nil
@@ -130,19 +123,16 @@ extension MachineController {
     case "project.deleted":
       if let id = UUID(uuidString: event.subjectId) {
         projectList.removeProjectLocally(id: id, serverId: serverId)
+        workspaceSync?.removeWorkspaces(projectId: id, serverId: serverId)
       }
     case "session.deleted":
       if let id = UUID(uuidString: event.subjectId) {
-        let membershipChanged = projectList.removeSessionLocally(
+        projectList.removeSessionLocally(
           id: id,
           serverId: serverId
         )
-        if membershipChanged {
-          await workspaceSync?.refreshFromServer(
-            serverId: serverId,
-            client: client
-          )
-        }
+        workspaceSync?.removeSessionPanes(id: id, serverId: serverId)
+        await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
       }
     case "workspace.deleted":
       if let id = UUID(uuidString: event.subjectId) {
@@ -150,7 +140,9 @@ extension MachineController {
       }
     case "session.created", "session.updated", "session.attention.updated",
       "session.archived", "session.unarchived":
-      switch await projectList.applyServerSessionEvent(event, serverId: serverId) {
+      let result = await projectList.applyServerSessionEvent(event, serverId: serverId)
+      guard !Task.isCancelled else { return }
+      switch result {
       case let .applied(workspaceMembershipChanged):
         if let session = projectList.sessions.first(where: {
           $0.serverId == serverId && $0.id.uuidString.caseInsensitiveCompare(event.subjectId) == .orderedSame
@@ -158,7 +150,7 @@ extension MachineController {
           onSessionStateChanged?(session, event.subjectRevision)
         }
         if workspaceMembershipChanged {
-          await workspaceSync?.refreshFromServer(
+          await refreshWorkspacesAfterEvent(
             serverId: serverId,
             client: client
           )
@@ -168,8 +160,12 @@ extension MachineController {
         // compatibility path, but keep it off the ordinary hot path.
         scheduleNavigationRefresh(serverId: serverId, client: client)
       }
-    case "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted":
-      await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
+    case "workspace.updated":
+      if workspaceSync?.applyServerWorkspaceEvent(event, serverId: serverId) != true {
+        await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
+      }
+    case "workspace.pane.updated", "workspace.pane.deleted":
+      await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
     case "project.created", "project.updated", "worktree.created":
       scheduleNavigationRefresh(serverId: serverId, client: client)
     case "harness.lifecycle.updated":
@@ -215,14 +211,15 @@ extension MachineController {
 
   /// Coalesces bursts of events (including the initial replay) into a single
   /// refresh from the server.
-  private func scheduleNavigationRefresh(
+  func scheduleNavigationRefresh(
     serverId: String,
     client: any CodevisorServerClienting
   ) {
+    guard !Task.isCancelled else { return }
     let connection = connection(for: serverId)
     guard connection.pendingRefreshTask == nil else { return }
     connection.pendingRefreshTask = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(300))
+      try? await self?.navigationSleep(.milliseconds(300))
       guard let self, !Task.isCancelled else { return }
       connection.pendingRefreshTask = nil
       await self.synchronizeNavigationState(
@@ -283,13 +280,18 @@ extension MachineController {
     // half-open transport hangs rather than fails, so a deadline cancels
     // it and demotes to stale — cached rows plus retry, not a spinner.
     let watchdog = Task {
-      try? await Task.sleep(for: .seconds(30))
+      try? await navigationSleep(.seconds(30))
       guard !Task.isCancelled, connection.navigationSyncToken == token
       else { return }
       task.cancel()
+      // A transport that ignores cancellation must not keep owning sync and
+      // force every retry to join the same wedged request.
+      connection.navigationSyncToken = nil
+      connection.navigationSyncTask = nil
       connection.navigationSyncState = .stale(
         "Timed out syncing with this machine."
       )
+      scheduleNavigationRetry(serverId: serverId, client: client)
     }
     await task.value
     watchdog.cancel()
@@ -329,23 +331,27 @@ extension MachineController {
     }
 
     guard !Task.isCancelled else { return }
-    let result = await projectList.refreshFromServer(serverId: serverId, client: client)
+    var result = await projectList.refreshFromServer(serverId: serverId, client: client)
     guard !Task.isCancelled else { return }
-
+    if result == .committed, let workspaceSync {
+      result = await workspaceSync.refreshFromServer(serverId: serverId, client: client)
+    }
+    guard !Task.isCancelled else { return }
+    startEventSync(serverId: serverId, client: client, since: cursor)
     switch result {
     case .committed:
-      await workspaceSync?.refreshFromServer(serverId: serverId, client: client)
-      guard !Task.isCancelled else { return }
-      startEventSync(serverId: serverId, client: client, since: cursor)
-      connection(for: serverId).navigationSyncState = .current
+      let connection = connection(for: serverId)
+      connection.navigationSyncState = .current
+      connection.navigationFailures = 0
+      connection.navigationRetryTask?.cancel()
+      connection.navigationRetryTask = nil
     case .superseded:
-      return
+      scheduleNavigationRefresh(serverId: serverId, client: client)
     case let .failed(message):
       // Keep the cache visible and continue listening from the captured
       // cursor, but do not claim it is current. A retry or the stream's
       // own recovery will run this same reconciliation path again.
-      startEventSync(serverId: serverId, client: client, since: cursor)
-      connection(for: serverId).navigationSyncState = .stale(message)
+      navigationSynchronizationFailed(message, serverId: serverId, client: client)
     }
   }
 }

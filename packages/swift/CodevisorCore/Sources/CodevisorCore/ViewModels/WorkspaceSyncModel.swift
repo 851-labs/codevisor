@@ -62,10 +62,11 @@ public final class WorkspaceSyncModel {
   }
 
   /// Older servers return nil and leave every local workspace untouched.
+  @discardableResult
   public func refreshFromServer(
     serverId: String,
     client: any CodevisorServerClienting
-  ) async {
+  ) async -> ServerNavigationRefreshResult {
     // Per-server generations: a background machine's refresh must never
     // be gated (or cancelled) by the selected machine's, and vice versa.
     refreshGenerationByServer[serverId, default: 0] &+= 1
@@ -83,13 +84,13 @@ public final class WorkspaceSyncModel {
         // older endpoints but not the atomic snapshot yet.
         async let workspaceRequest = client.listWorkspaces()
         async let paneRequest = client.listWorkspacePanes()
-        guard let legacyRecords = try await workspaceRequest else { return }
+        guard let legacyRecords = try await workspaceRequest else { return .committed }
         records = legacyRecords
         paneSnapshot = try await paneRequest
         usesCoherentSnapshot = false
       }
-      guard generation == refreshGenerationByServer[serverId]
-      else { return }
+      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
+      else { return .superseded }
       var assignments = projectList.workspaceAssignments(for: serverId)
 
       // A workspace created before server ownership existed has no
@@ -105,7 +106,7 @@ public final class WorkspaceSyncModel {
       )
       records = adoption.records
       assignments = adoption.assignments
-      guard adoption.canReconcile else { return }
+      guard adoption.canReconcile else { return .failed("Couldn't sync workspace panes.") }
 
       // Adoption writes a workspace, its pane identities, and session
       // membership after the coherent snapshot above was captured. Do
@@ -114,10 +115,12 @@ public final class WorkspaceSyncModel {
       // events arrive. Re-read the atomic snapshot so the repository
       // crosses the ownership boundary in one coherent commit.
       if adoption.didMutateServer {
-        guard generation == refreshGenerationByServer[serverId]
-        else { return }
+        guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
+        else { return .superseded }
         if usesCoherentSnapshot {
-          guard let refreshed = try await client.workspaceSnapshot() else { return }
+          guard let refreshed = try await client.workspaceSnapshot() else {
+            return .failed("Couldn't refresh workspaces after syncing panes.")
+          }
           records = refreshed.workspaces
           paneSnapshot = refreshed.panes
         } else {
@@ -125,7 +128,7 @@ public final class WorkspaceSyncModel {
           async let paneRequest = client.listWorkspacePanes()
           guard let refreshedRecords = try await workspaceRequest,
             let refreshedPanes = try await paneRequest
-          else { return }
+          else { return .failed("Couldn't refresh workspaces after syncing panes.") }
           records = refreshedRecords
           paneSnapshot = refreshedPanes
         }
@@ -152,8 +155,8 @@ public final class WorkspaceSyncModel {
       } else {
         panes = nil
       }
-      guard generation == refreshGenerationByServer[serverId]
-      else { return }
+      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
+      else { return .superseded }
       reconcile(
         records,
         paneRecords: panes,
@@ -161,10 +164,12 @@ public final class WorkspaceSyncModel {
         assignments: assignments,
         serverId: serverId
       )
+      return .committed
     } catch {
       Log.sync.error(
         "Failed to refresh workspaces from server: \(String(describing: error), privacy: .public)"
       )
+      return .failed(String(describing: error))
     }
   }
 
@@ -205,10 +210,13 @@ public final class WorkspaceSyncModel {
       !workspace.isArchived
     else { return .dismiss }
 
+    let hasAnchor = projectList.sessions.contains {
+      $0.serverId == serverId && $0.id == anchorSessionId
+    }
     // macOS may be showing a browser, terminal, or New Tab through a chat
     // route. Archiving that hidden routing chat must not replace the page
     // with a sibling chat. The archived route still owns this workspace.
-    if preservingSelectedPane,
+    if preservingSelectedPane, hasAnchor,
       repository.workspaceId(forSession: anchorSessionId) == workspaceId,
       let tab = workspace.selectedCenterTab,
       let pane = tab.root.group(id: tab.activeLeafId)?.selectedPane,
@@ -227,7 +235,7 @@ public final class WorkspaceSyncModel {
     // chat must not select some other chat's tab when the current layout
     // still has content. Pane closure already chooses the surviving split
     // (or adjacent tab); keep that selection until the user navigates.
-    if preservingSelectedPane, !active.isEmpty,
+    if preservingSelectedPane, hasAnchor, !active.isEmpty,
       repository.workspaceId(forSession: anchorSessionId) == workspaceId,
       workspace.selectedCenterTab?.root.allGroups.contains(where: { group in
         group.state.panes.contains { pane in
@@ -244,7 +252,7 @@ public final class WorkspaceSyncModel {
     // session route is the only way to mount it, so the archived anchor
     // still routed to it keeps the route. A workspace reduced to the New
     // Tab placeholder is dismissed as before.
-    if workspace.hasOpenNonChatContent,
+    if hasAnchor, workspace.hasOpenNonChatContent,
       repository.workspaceId(forSession: anchorSessionId) == workspaceId
     {
       return .keep
