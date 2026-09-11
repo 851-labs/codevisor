@@ -24,7 +24,7 @@ struct WorkspacePaneCloseRoutingTests {
       browserURL: remainingKind == .browser ? "https://example.com/" : nil)
     let remainingLeaf = UUID(), closingLeaf = UUID()
     let root = SplitNode.leaf(
-      PaneGroupState(panes: [remaining], selectedPaneId: remaining.id, isVisible: true), id: remainingLeaf
+      PaneGroupState(panes: [remaining], selectedPaneId: remaining.id), id: remainingLeaf
     ).splitting(
       groupId: remainingLeaf, edge: .trailing, newGroupId: closingLeaf,
       newGroupState: .centerInitial(sessionId: closing.id))
@@ -32,8 +32,7 @@ struct WorkspacePaneCloseRoutingTests {
     let otherTab = WorkspaceTab(root: .leaf(.centerInitial(sessionId: other.id)))
     let workspace = Workspace(
       name: "Workspace", rootDirectory: "/fixture/workspace", serverId: closing.serverId, projectId: project.id,
-      centerTabs: (hasOtherTab ? [otherTab] : []) + [selected], selectedCenterTabId: selected.id,
-      bottomGroup: PaneGroupState(), createdAt: date)
+      centerTabs: (hasOtherTab ? [otherTab] : []) + [selected], selectedCenterTabId: selected.id, createdAt: date)
     environment.workspaces.save(workspace)
 
     environment.archiveSession(closing)

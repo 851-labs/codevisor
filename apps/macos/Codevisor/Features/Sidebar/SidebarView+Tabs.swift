@@ -13,7 +13,11 @@ extension SidebarView {
   /// Every tab row's identity in sidebar order, driving reflow animations.
   var workspaceTabRowIDs: [UUID] {
     workspaceItems.flatMap { item in
-      item.workspace.centerTabs.flatMap { tab in [tab.id] + tab.root.allGroups.map(\.id) }
+      item.workspace.centerTabs.flatMap { tab -> [UUID] in
+        let groups = sidebarGroups(tab, in: item.workspace)
+        guard !groups.isEmpty else { return [] }
+        return tab.root.allGroups.count > 1 ? groups.map(\.id) : [tab.id]
+      }
     }
   }
 
@@ -24,10 +28,11 @@ extension SidebarView {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
     ForEach(workspace.centerTabs) { tab in
+      let groups = sidebarGroups(tab, in: workspace)
       // A split tab is FLATTENED into one row per pane at the tab's own
       // level (no grouping row): the active pane carries the selection.
       if tab.root.allGroups.count > 1 {
-        ForEach(tab.root.allGroups, id: \.id) { leaf in
+        ForEach(groups, id: \.id) { leaf in
           workspacePaneRow(
             leafId: leaf.id,
             state: leaf.state,
@@ -37,10 +42,20 @@ extension SidebarView {
           )
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
         }
-      } else {
+      } else if !groups.isEmpty {
         workspaceTabRow(tab, in: item, routesSelection: routesSelection)
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
+    }
+  }
+
+  private func sidebarGroups(
+    _ tab: WorkspaceTab, in workspace: Workspace
+  ) -> [(id: UUID, state: PaneGroupState)] {
+    let visibility = PaneNavigationVisibility()
+    return tab.root.allGroups.filter { group in
+      let pane = leafDescriptor(leafId: group.id, persisted: group.state, in: workspace)
+      return pane.map { visibility.includes($0) } ?? true
     }
   }
 
@@ -246,8 +261,9 @@ extension SidebarView {
     [.newChat]
       + workspaceItems.flatMap { item in
         item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
-          let groups = tab.root.allGroups
-          guard groups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
+          let groups = sidebarGroups(tab, in: item.workspace)
+          guard !groups.isEmpty else { return [] }
+          guard tab.root.allGroups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
           return groups.map { .tab(item: item, tab: tab, leaf: ($0.id, $0.state)) }
         }
       }

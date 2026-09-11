@@ -39,8 +39,7 @@ struct WorkspaceRepositoryTests {
       rootDirectory: "/tmp/example",
       serverId: "local",
       projectId: UUID(),
-      centerTabs: [tab],
-      bottomGroup: PaneGroupState()
+      centerTabs: [tab]
     )
     let sessionId = UUID()
     let promoted = PaneDescriptorState(
@@ -108,7 +107,7 @@ struct WorkspaceRepositoryTests {
     // The fresh tree is a single leaf holding the chat pane.
     #expect(workspace.centerTree.allGroups.count == 1)
     #expect(workspace.centerTree.groupId(containingChat: seed.sessionId) != nil)
-    #expect(workspace.bottomGroup.panes.isEmpty)
+    #expect(workspace.allPanes.count == 1)
   }
 
   @Test("Nested split leaf resolves its own selected chat")
@@ -141,8 +140,7 @@ struct WorkspaceRepositoryTests {
       rootDirectory: "/tmp/project",
       serverId: "local",
       projectId: UUID(),
-      centerTabs: [tab],
-      bottomGroup: .initial(sessionId: leftChat)
+      centerTabs: [tab]
     )
 
     #expect(workspace.selectedPane(inLeaf: upperLeaf)?.id == upperPane.id)
@@ -153,16 +151,18 @@ struct WorkspaceRepositoryTests {
   }
 
   @Test("Backfill migrates legacy per-session pane groups")
-  func backfillMigratesLegacyGroups() {
+  func backfillMigratesLegacyGroups() throws {
     let store = InMemoryStore()
     let legacy = DefaultPaneGroupRepository(store: store)
     let sessionId = UUID()
     var center = PaneGroupState.centerInitial(sessionId: sessionId)
     center.addTerminalPane(sessionId: sessionId)
-    legacy.save(center, sessionId: sessionId, placement: .center)
-    var bottom = PaneGroupState.initial(sessionId: sessionId)
-    bottom.addTerminalPane(sessionId: sessionId)
-    legacy.save(bottom, sessionId: sessionId, placement: .bottom)
+    var legacyTerminals = PaneGroupState.initial(sessionId: sessionId)
+    legacyTerminals.addTerminalPane(sessionId: sessionId)
+    try store.saveData(
+      JSONEncoder().encode(["\(sessionId.uuidString):center": center, sessionId.uuidString: legacyTerminals]),
+      forKey: "paneGroups"
+    )
 
     let repository = DefaultWorkspaceRepository(store: store)
     let workspace = repository.ensureWorkspace(
@@ -172,13 +172,13 @@ struct WorkspaceRepositoryTests {
     // The legacy group's selected terminal remains the visible-layout
     // tab; its hidden chat is lifted into its own top tab and learns its
     // session reference during migration.
-    #expect(workspace.centerTabs.count == 2)
+    #expect(workspace.centerTabs.count == 4)
     #expect(
       workspace.centerTabs.allSatisfy {
         $0.root.allGroups.allSatisfy { $0.state.panes.count == 1 }
       })
     #expect(workspace.chatSessionIds == [sessionId])
-    #expect(workspace.bottomGroup.panes.count == 2)
+    #expect(workspace.allPanes.suffix(2).map(\.id) == legacyTerminals.panes.map(\.id))
   }
 
   @Test("Version-1 split groups invert into layout tabs without losing panes")
@@ -199,8 +199,7 @@ struct WorkspaceRepositoryTests {
 
     let fresh = Workspace(
       name: "Legacy", rootDirectory: "/tmp", serverId: "local", projectId: UUID(),
-      centerTree: .leaf(.centerInitial(sessionId: chatSession)),
-      bottomGroup: .initial(sessionId: chatSession)
+      centerTree: .leaf(.centerInitial(sessionId: chatSession))
     )
     var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh)) as! [String: Any]
     json.removeValue(forKey: "centerTabs")
@@ -228,8 +227,7 @@ struct WorkspaceRepositoryTests {
   func emptyTopTabsRepairOnDecode() throws {
     let fresh = Workspace(
       name: "Empty", rootDirectory: "/tmp/project", serverId: "local",
-      projectId: UUID(), centerTree: .leaf(.centerInitial(sessionId: UUID())),
-      bottomGroup: .initial(sessionId: UUID())
+      projectId: UUID(), centerTree: .leaf(.centerInitial(sessionId: UUID()))
     )
     var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh)) as! [String: Any]
     json["centerTabs"] = []
@@ -292,7 +290,7 @@ struct WorkspaceRepositoryTests {
     #expect(repository.workspace(id: created.id)?.name == "My workspace")
   }
 
-  @Test("Workspace-backed group repository round-trips both placements")
+  @Test("Workspace-backed group repository round-trips its leaf")
   func workspaceGroupRepository() {
     let repository = DefaultWorkspaceRepository(store: InMemoryStore())
     let sessionId = UUID()
@@ -304,17 +302,13 @@ struct WorkspaceRepositoryTests {
       repository: repository
     )
 
-    var center = bridge.load(sessionId: sessionId, placement: .center)
+    var center = bridge.load(sessionId: sessionId)
     #expect(center?.panes.first?.kind == .chat)
     center?.panes[0].name = "Renamed Chat"
-    bridge.save(center!, sessionId: sessionId, placement: .center)
-    #expect(bridge.load(sessionId: sessionId, placement: .center)?.panes[0].name == "Renamed Chat")
+    bridge.save(center!, sessionId: sessionId)
+    #expect(bridge.load(sessionId: sessionId)?.panes[0].name == "Renamed Chat")
     #expect(repository.workspace(id: workspace.id)?.centerTree.allGroups[0].state.panes.count == 1)
 
-    var bottom = bridge.load(sessionId: sessionId, placement: .bottom)!
-    bottom.setHeight(300)
-    bridge.save(bottom, sessionId: sessionId, placement: .bottom)
-    #expect(repository.workspace(id: workspace.id)?.bottomGroup.height == 300)
   }
 
   @Test("Deleting a workspace clears its session index entries")
@@ -374,7 +368,7 @@ struct WorkspaceRepositoryTests {
       groupId: workspace.centerTree.allGroups[0].id,
       edge: .bottom,
       newGroupId: emptyId,
-      newGroupState: PaneGroupState(isVisible: true)
+      newGroupState: PaneGroupState()
     )
     DefaultWorkspaceRepository(store: store).save(workspace)
 

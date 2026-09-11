@@ -70,15 +70,16 @@ extension HomeView {
     "\(serverId)|\(id.uuidString)"
   }
 
-  /// Every pane of every center tab, then the bottom panel's — the same
-  /// flat order the workspace's tab grid shows on this device.
+  /// Navigable panes in the same order as the workspace's tab grid.
   private func sidebarRows(
     for workspace: Workspace,
     sessionsByKey: [String: ChatSession]
   ) -> [HomeSidebarTabRow] {
     var seen: Set<UUID> = []
     var rows: [HomeSidebarTabRow] = []
+    let visibility = PaneNavigationVisibility()
     func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?) {
+      guard visibility.includes(pane) else { return }
       guard seen.insert(pane.id).inserted else { return }
       let chat =
         pane.kind == .chat
@@ -106,9 +107,6 @@ extension HomeView {
           append(pane, in: isSinglePane ? tab : nil)
         }
       }
-    }
-    for pane in workspace.bottomGroup.panes {
-      append(pane, in: nil)
     }
     return rows
   }

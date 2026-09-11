@@ -72,7 +72,6 @@ extension WorkspaceSyncModel {
           projectId: projectId,
           centerTabs: source.centerTabs,
           selectedCenterTabId: source.selectedCenterTabId,
-          bottomGroup: source.bottomGroup,
           createdAt: createdAt,
           isArchived: record.isArchived,
           isServerSynced: true

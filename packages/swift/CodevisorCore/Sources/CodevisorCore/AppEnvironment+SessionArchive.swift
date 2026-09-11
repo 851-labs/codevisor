@@ -49,7 +49,7 @@ extension AppEnvironment {
     let paneIds =
       (workspace.centerTabs.flatMap { tab in
         tab.root.allGroups.flatMap(\.state.panes)
-      } + workspace.bottomGroup.panes)
+      })
       .filter { $0.kind == .chat && $0.chatSessionId == session.id }
       .map(\.id)
     let client = machines.machine(for: workspace.serverId).map { _ in

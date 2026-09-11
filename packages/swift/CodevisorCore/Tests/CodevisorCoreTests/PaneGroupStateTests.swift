@@ -6,39 +6,11 @@ import Testing
 struct PaneGroupStateTests {
   let sessionId = UUID()
 
-  @Test("Defaults are hidden at the default height with no panes")
+  @Test("Defaults have no panes or selection")
   func defaults() {
     let state = PaneGroupState()
-    #expect(!state.isVisible)
-    #expect(state.height == PaneGroupState.defaultHeight)
     #expect(state.panes.isEmpty)
     #expect(state.selectedPaneId == nil)
-  }
-
-  @Test("Toggle opens and focuses the terminal, then closes and focuses the composer")
-  func toggle() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
-    #expect(state.toggle() == .terminal)
-    #expect(state.isVisible)
-    #expect(state.toggle() == .composer)
-    #expect(!state.isVisible)
-  }
-
-  @Test("Height is clamped to the allowed range")
-  func clamping() {
-    var state = PaneGroupState()
-    state.setHeight(10_000)
-    #expect(state.height == PaneGroupState.maxHeight)
-    state.setHeight(0)
-    #expect(state.height == PaneGroupState.minHeight)
-    state.setHeight(300)
-    #expect(state.height == 300)
-  }
-
-  @Test("Initializer clamps the provided height")
-  func initClamps() {
-    #expect(PaneGroupState(height: -5).height == PaneGroupState.minHeight)
-    #expect(PaneGroupState(height: 5_000).height == PaneGroupState.maxHeight)
   }
 
   @Test("Initial state has one selected terminal pane keyed on the bare session UUID")
@@ -50,15 +22,13 @@ struct PaneGroupStateTests {
     // Migration: pane 1 must reattach to shells created before panes existed.
     #expect(state.panes[0].terminalKey == sessionId.uuidString)
     #expect(state.selectedPaneId == state.panes[0].id)
-    #expect(!state.isVisible)
   }
 
-  @Test("The first requested terminal materializes from an empty bottom group")
+  @Test("The first requested terminal materializes from an empty group")
   func lazyFirstTerminal() {
     var state = PaneGroupState()
 
     #expect(state.panes.isEmpty)
-    #expect(!state.isVisible)
 
     let added = state.addTerminalPane(sessionId: sessionId)
 
@@ -67,17 +37,15 @@ struct PaneGroupStateTests {
     #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
     #expect(state.panes == [added])
     #expect(state.selectedPaneId == added.id)
-    #expect(state.isVisible)
   }
 
-  @Test("Adding a pane names it Terminal N, selects it, opens the group, and uses a synthetic key")
+  @Test("Adding a pane names it Terminal N, selects it and uses a synthetic key")
   func addPane() {
     var state = PaneGroupState.initial(sessionId: sessionId)
     let added = state.addTerminalPane(sessionId: sessionId)
     #expect(added.name == "Terminal 2")
     #expect(state.panes.count == 2)
     #expect(state.selectedPaneId == added.id)
-    #expect(state.isVisible)
     #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
   }
 
@@ -105,9 +73,7 @@ struct PaneGroupStateTests {
     )
     var local = PaneGroupState(
       panes: [placeholder],
-      selectedPaneId: paneId,
-      isVisible: true,
-      height: 512
+      selectedPaneId: paneId
     )
     let promoted = PaneDescriptorState(
       id: paneId,
@@ -118,9 +84,7 @@ struct PaneGroupStateTests {
     )
     let incoming = PaneGroupState(
       panes: [promoted],
-      selectedPaneId: nil,
-      isVisible: false,
-      height: 120
+      selectedPaneId: nil
     )
 
     let didPromote = local.reconcilePaneDescriptors(from: incoming)
@@ -129,8 +93,6 @@ struct PaneGroupStateTests {
     #expect(local.panes[0].id == paneId)
     #expect(local.panes[0].chatSessionId == createdSessionId)
     #expect(local.selectedPaneId == paneId)
-    #expect(local.isVisible)
-    #expect(local.height == 512)
     let didRepeat = local.reconcilePaneDescriptors(from: incoming)
     #expect(!didRepeat)
   }
@@ -145,20 +107,17 @@ struct PaneGroupStateTests {
     )
     var local = PaneGroupState(
       panes: [removed, survivor],
-      selectedPaneId: removed.id,
-      isVisible: true
+      selectedPaneId: removed.id
     )
     let incoming = PaneGroupState(
       panes: [survivor],
-      selectedPaneId: survivor.id,
-      isVisible: false
+      selectedPaneId: survivor.id
     )
 
     let didRemove = local.reconcilePaneDescriptors(from: incoming)
     #expect(didRemove)
     #expect(local.panes == [survivor])
     #expect(local.selectedPaneId == survivor.id)
-    #expect(local.isVisible)
 
     local.selectedPaneId = nil
     let didRepairSelection = local.reconcilePaneDescriptors(from: incoming)
@@ -202,23 +161,19 @@ struct PaneGroupStateTests {
     #expect(state.selectedPaneId == second.id)
   }
 
-  @Test("Closing the last remaining pane hides the group and clears selection")
-  func closeLastHides() {
+  @Test("Closing the last remaining pane clears selection")
+  func closeLastClearsSelection() {
     var state = PaneGroupState.initial(sessionId: sessionId)
     state.selectPane(id: state.panes[0].id)
-    #expect(state.isVisible)
     state.closePane(id: state.panes[0].id)
     #expect(state.panes.isEmpty)
     #expect(state.selectedPaneId == nil)
-    #expect(!state.isVisible)
   }
 
-  @Test("Selecting a pane while collapsed opens the group")
-  func selectOpens() {
+  @Test("Selecting a pane ignores unknown identities")
+  func selectPane() {
     var state = PaneGroupState.initial(sessionId: sessionId)
-    #expect(!state.isVisible)
     state.selectPane(id: state.panes[0].id)
-    #expect(state.isVisible)
     // Unknown ids are ignored.
     state.selectPane(id: UUID())
     #expect(state.selectedPaneId == state.panes[0].id)

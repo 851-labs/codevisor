@@ -44,13 +44,6 @@ extension SessionStore {
     )
   }
 
-  /// Detaches and evicts the session's workspace bottom-panel model.
-  func detachBottomGroup(for session: ChatSession) {
-    guard let workspaceId = environment.workspaces.workspaceId(forSession: session.id) else { return }
-    bottomGroups[workspaceId]?.detachAll()
-    bottomGroups[workspaceId] = nil
-  }
-
   /// Detaches and evicts every cached center-leaf group of the session's
   /// workspace (backing shells survive on the server).
   func detachCenterLeaves(for session: ChatSession) {
@@ -67,7 +60,6 @@ extension SessionStore {
     controllers[key] = nil
     transcriptSurfaces.remove(serverID: key.serverId, sessionID: key.sessionId)
     ephemeralWorkspaces[session.id] = nil
-    detachBottomGroup(for: session)
     detachCenterLeaves(for: session)
     scrollStates[key] = nil
     todoExpansionStates[key] = nil

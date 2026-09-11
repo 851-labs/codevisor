@@ -38,13 +38,8 @@ extension SessionStore {
         let model = centerLeafGroups[.init(workspaceId: workspaceId, groupId: tab.activeLeafId)]
       {
         model.state.selectedPaneId = state.selectedPaneId
-        model.state.isVisible = state.isVisible
       }
       workspaceLayoutRevision += 1
-      if let bottom = bottomGroups[workspaceId] {
-        bottom.state.selectedPaneId = workspace.bottomGroup.selectedPaneId
-        bottom.state.isVisible = workspace.bottomGroup.isVisible
-      }
     }
     return true
   }

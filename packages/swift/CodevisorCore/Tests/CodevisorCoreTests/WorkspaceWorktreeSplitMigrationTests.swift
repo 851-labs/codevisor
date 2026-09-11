@@ -25,8 +25,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
       worktreeName: worktreeName,
       serverId: "local",
       projectId: projectId,
-      centerTabs: chatIds.map { WorkspaceTab(root: .leaf(chatState(sessionId: $0))) },
-      bottomGroup: .initial(sessionId: chatIds[0])
+      centerTabs: chatIds.map { WorkspaceTab(root: .leaf(chatState(sessionId: $0))) }
     )
   }
 
@@ -91,7 +90,7 @@ struct WorkspaceWorktreeSplitMigrationTests {
     #expect(split?.rootDirectory == "/wt/kiwi")
     #expect(split?.chatSessionIds == [worktreeChat])
     #expect(split?.centerTabs.first?.root.allGroups.first?.state.panes.first?.id == movedPaneId)
-    #expect(split?.bottomGroup.panes.isEmpty == true)
+    #expect(split?.allPanes.count == 1)
     // The session index routes the moved chat to its new workspace.
     #expect(repository.workspaceId(forSession: worktreeChat) == split?.id)
     #expect(repository.workspaceId(forSession: rootChat) == original.id)

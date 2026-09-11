@@ -37,6 +37,7 @@
     "swift:test": "swift test --package-path packages/swift",
     "swift:test:macos-transcript": "bun scripts/test-macos-transcript.mjs",
     "swift:test:macos-composer": "bun scripts/test-macos-composer.mjs",
+    "swift:test:ios-navigation": "bun scripts/test-ios-navigation.mjs",
     "swift:build:ios": "bun scripts/build-native.mjs ios -quiet",
     "xcode:list": "bun scripts/build-native.mjs list:macos",
     "swift:lint": "scripts/swift-lint.sh",

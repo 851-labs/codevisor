@@ -73,7 +73,6 @@ struct WorkspaceSyncRouteDispositionTests {
           serverId: "local",
           projectId: projectId,
           centerTabs: layout,
-          bottomGroup: PaneGroupState(),
           isServerSynced: true
         )
       )
@@ -102,7 +101,7 @@ struct WorkspaceSyncRouteDispositionTests {
         chatSessionId: sessionId
       )
       return WorkspaceTab(
-        root: .leaf(PaneGroupState(panes: [chat], selectedPaneId: chat.id, isVisible: true))
+        root: .leaf(PaneGroupState(panes: [chat], selectedPaneId: chat.id))
       )
     }
   }
@@ -114,7 +113,7 @@ struct WorkspaceSyncRouteDispositionTests {
       id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "shell"
     )
     let terminalTab = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id, isVisible: true))
+      root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))
     )
     let sync = await fixture.makeSync(layout: [terminalTab, fixture.chatTab])
 
@@ -141,7 +140,7 @@ struct WorkspaceSyncRouteDispositionTests {
       id: placeholderId, kind: .newTab, name: "New tab", terminalKey: placeholderId.uuidString
     )
     let placeholderTab = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [placeholder], selectedPaneId: placeholderId, isVisible: true))
+      root: .leaf(PaneGroupState(panes: [placeholder], selectedPaneId: placeholderId))
     )
     let sync = await fixture.makeSync(layout: [placeholderTab, fixture.chatTab])
 
@@ -163,7 +162,7 @@ struct WorkspaceSyncRouteDispositionTests {
       id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "shell"
     )
     let terminalTab = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id, isVisible: true))
+      root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))
     )
     let sync = await fixture.makeSync(layout: [terminalTab])
 

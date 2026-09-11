@@ -262,15 +262,47 @@ extension SessionContainerView {
   }
 
   func syncWorkspaceBackgroundTerminals() {
-    let panel = store.paneGroup(for: session, project: project)
+    var workspace = store.workspace(for: session, project: project)
+    var updated: [PaneDescriptorState] = []
+    var removed: [PaneDescriptorState] = []
     for (chatId, controller) in workspaceChatControllers {
-      panel.syncAgentTerminals(
+      let changes = workspace.syncAgentTerminals(
         controller.backgroundTasks.compactMap { task in
           task.terminalKey.map { (terminalKey: $0, name: task.description) }
         },
         owner: chatId,
         pruneEnded: controller.hasBackgroundTaskSnapshot
       )
+      updated.append(contentsOf: changes.updated)
+      removed.append(contentsOf: changes.removed)
+    }
+    guard !updated.isEmpty || !removed.isEmpty else { return }
+    // Resolve cleanup against the old layout before its leaves disappear.
+    // Constructing a TerminalPane is lazy and does not attach a surface.
+    let oldWorkspace = store.workspace(for: session, project: project)
+    let closing = removed.compactMap { pane -> (any Pane)? in
+      guard
+        let leaf = oldWorkspace.centerTabs.lazy.compactMap({
+          $0.root.groupId(containingPane: pane.id)
+        }).first
+      else { return nil }
+      return store.centerGroup(
+        leafId: leaf, workspace: oldWorkspace, session: session, project: project
+      ).pane(for: pane)
+    }
+    environment.workspaces.save(workspace)
+    environment.workspaceSync.noteLocalMutation()
+    store.reconcileMountedPaneGroups(in: workspace)
+    workspaceRevision += 1
+    let client = environment.machines.client(for: session.serverId)
+    for pane in updated {
+      environment.workspaceSync.publishPane(pane, workspaceId: workspace.id, client: client)
+    }
+    for pane in removed {
+      environment.workspaceSync.deletePane(id: pane.id, workspaceId: workspace.id, client: client)
+    }
+    Task {
+      for pane in closing { await pane.willDelete() }
     }
   }
 }

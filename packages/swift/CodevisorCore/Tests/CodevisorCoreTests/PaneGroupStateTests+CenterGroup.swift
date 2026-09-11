@@ -12,7 +12,6 @@ extension PaneGroupStateTests {
     // may CLOSE is the owning model's workspace-wide policy.
     #expect(state.panes[0].isMovable)
     #expect(state.selectedPaneId == state.panes[0].id)
-    #expect(state.isVisible)
   }
 
   @Test("Chat panes close at the group level (the anchor rule is the model's policy)")

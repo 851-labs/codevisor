@@ -62,8 +62,6 @@ public struct NativeClientContext: Codable, Sendable {
     public var paneId: UUID?
     public var sessionId: UUID?
     public var tabs: [Tab]
-    public var bottomPanes: [Pane]
-    public var bottomPaneId: UUID?
   }
   public var isActive: Bool
   public var workspaceId: UUID?
@@ -88,9 +86,7 @@ public struct NativeClientContext: Codable, Sendable {
           sessionId: pane?.kind == .chat ? pane?.chatSessionId : nil,
           tabs: workspace.centerTabs.map { tab in
             Tab(id: tab.id, panes: tab.root.allGroups.flatMap { $0.state.panes.map(Pane.init) })
-          },
-          bottomPanes: workspace.bottomGroup.panes.map(Pane.init),
-          bottomPaneId: workspace.bottomGroup.isVisible ? workspace.bottomGroup.selectedPaneId : nil
+          }
         )
       }
     )

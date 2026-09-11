@@ -1,4 +1,4 @@
-//  The pane abstraction for the session bottom pane group.
+//  The pane abstraction for workspace content.
 //
 //  A pane is a self-contained content unit (terminal today; logs, previews,
 //  ... later). Panes never see SessionController or the session UI — they

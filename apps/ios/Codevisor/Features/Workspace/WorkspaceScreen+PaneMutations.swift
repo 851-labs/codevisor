@@ -105,7 +105,7 @@ extension WorkspaceScreen {
     let shared =
       workspace.centerTabs.flatMap { tab in
         tab.root.allGroups.flatMap(\.state.panes)
-      } + workspace.bottomGroup.panes
+      }
     guard !shared.isEmpty else {
       guard !panes.panes.isEmpty else { return }
       let empty = PaneGroupState()
@@ -139,7 +139,7 @@ extension WorkspaceScreen {
     if !reconciled.contains(where: { $0.id == state.selectedPaneId }) {
       state.selectedPaneId = reconciled.first?.id
     }
-    state.isVisible = true
+
     paneState = state
     persistCompactPaneState(state)
   }

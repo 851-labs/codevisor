@@ -93,7 +93,6 @@ extension MachineControllerTests {
         serverId: "local",
         projectId: projectId,
         centerTree: .leaf(legacyState),
-        bottomGroup: PaneGroupState(),
         isServerSynced: false
       )
     )
@@ -185,7 +184,6 @@ extension MachineControllerTests {
         serverId: "local",
         projectId: projectId,
         centerTree: .leaf(chatState),
-        bottomGroup: PaneGroupState(),
         isServerSynced: false
       )
     )

@@ -14,8 +14,19 @@
 		0C0000000000000200000010 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 0C0000000000000200000009 /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0D0000000000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0C0000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0C0000000000000100000000;
+			remoteInfo = Codevisor;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		0C0000000000000000000120 /* Codevisor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codevisor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D0000000000000000000001 /* NavigationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = NavigationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -37,6 +48,11 @@
 			path = Codevisor;
 			sourceTree = "<group>";
 		};
+		0D0000000000000000000002 /* Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Tests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +66,11 @@
 				0C0000000000000200000010 /* SwiftTerm in Frameworks */,
 			);
 		};
+		0D0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -58,6 +79,7 @@
 			children = (
 				0C0000000000000000000010 /* Codevisor */,
 				0C0000000000000000000020 /* Products */,
+				0D0000000000000000000002 /* Tests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -65,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				0C0000000000000000000120 /* Codevisor.app */,
+				0D0000000000000000000001 /* NavigationTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -96,6 +119,26 @@
 			productName = Codevisor;
 			productReference = 0C0000000000000000000120 /* Codevisor.app */;
 			productType = "com.apple.product-type.application";
+		};
+		0D0000000000000000000003 /* NavigationTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D0000000000000000000004 /* Build configuration list for PBXNativeTarget "NavigationTests" */;
+			buildPhases = (
+				0D0000000000000000000005 /* Sources */,
+				0D0000000000000000000006 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0D0000000000000000000007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0D0000000000000000000002 /* Tests */,
+			);
+			name = NavigationTests;
+			productName = NavigationTests;
+			productReference = 0D0000000000000000000001 /* NavigationTests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -130,6 +173,7 @@
 			projectRoot = "";
 			targets = (
 				0C0000000000000100000000 /* Codevisor */,
+				0D0000000000000000000003 /* NavigationTests */,
 			);
 		};
 /* End PBXProject section */
@@ -148,7 +192,20 @@
 			files = (
 			);
 		};
+		0D0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0D0000000000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0C0000000000000100000000 /* Codevisor */;
+			targetProxy = 0D0000000000000000000008 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0C0000000000000011000000 /* Debug configuration for PBXProject "Codevisor" */ = {
@@ -340,6 +397,40 @@
 			};
 			name = Release;
 		};
+		0D0000000000000000000009 /* Debug configuration for PBXNativeTarget "NavigationTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODEVISOR_IOS_BUNDLE_IDENTIFIER = com.dylanplayer.codevisor.ios;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODEVISOR_IOS_BUNDLE_IDENTIFIER).navigation-tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Codevisor;
+			};
+			name = Debug;
+		};
+		0D0000000000000000000010 /* Release configuration for PBXNativeTarget "NavigationTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODEVISOR_IOS_BUNDLE_IDENTIFIER = com.dylanplayer.codevisor.ios;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODEVISOR_IOS_BUNDLE_IDENTIFIER).navigation-tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Codevisor;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -356,6 +447,14 @@
 			buildConfigurations = (
 				0C0000000000000111000000 /* Debug configuration for PBXNativeTarget "Codevisor" */,
 				0C0000000000000112000000 /* Release configuration for PBXNativeTarget "Codevisor" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		0D0000000000000000000004 /* Build configuration list for PBXNativeTarget "NavigationTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D0000000000000000000009 /* Debug configuration for PBXNativeTarget "NavigationTests" */,
+				0D0000000000000000000010 /* Release configuration for PBXNativeTarget "NavigationTests" */,
 			);
 			defaultConfigurationName = Release;
 		};

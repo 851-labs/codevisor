@@ -1,5 +1,6 @@
 #if DEBUG
   import Foundation
+  import SwiftUI
 
   /// A populated sidebar for previews and design review. Debug builds
   /// launched with `CODEVISOR_SIDEBAR_SAMPLE=1` render it in place of the
@@ -8,6 +9,25 @@
   enum HomeSidebarSampleData {
     static var isEnabled: Bool {
       ProcessInfo.processInfo.environment["CODEVISOR_SIDEBAR_SAMPLE"] == "1"
+    }
+
+    /// Stateful fixture: the production reorder callback updates the same
+    /// section input that a saved workspace order would produce.
+    struct Sidebar: View {
+      @State private var sections = HomeSidebarSampleData.sections
+
+      var body: some View {
+        HomeSidebarList(
+          sections: sections,
+          actions: HomeSidebarActions(reorder: { ids in
+            let byID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
+            sections = ids.compactMap { byID[$0] }
+          }),
+          refresh: {}
+        )
+        .accessibilityIdentifier("sample-sidebar")
+        .accessibilityValue(sections.map(\.name).joined(separator: ","))
+      }
     }
 
     private static let studio = "sample-studio"
@@ -28,7 +48,6 @@
             "Add dark mode support",
             .chat(harnessId: "codex", fallbackSymbolName: "chevron.left.forwardslash.chevron.right"), status: .unread),
           row("Terminal 1", .terminal(isAgentOwned: false)),
-          row("bun run dev", .terminal(isAgentOwned: true)),
           row("Codevisor — localhost:3000", .browser(favicon: nil)),
           row("New Tab", .newTab),
         ]

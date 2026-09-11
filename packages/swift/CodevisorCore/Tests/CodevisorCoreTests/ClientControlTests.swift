@@ -10,11 +10,11 @@ struct ClientControlTests {
     )
     let tabs = [
       WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID()))),
-      WorkspaceTab(root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true))),
+      WorkspaceTab(root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id))),
     ]
     let workspace = Workspace(
       name: "Project", rootDirectory: "/fixture", serverId: "machine", projectId: UUID(),
-      centerTabs: tabs, bottomGroup: PaneGroupState(), createdAt: Date(timeIntervalSince1970: 0)
+      centerTabs: tabs, createdAt: Date(timeIntervalSince1970: 0)
     )
     let repository = DefaultWorkspaceRepository(store: InMemoryStore())
     repository.save(workspace)

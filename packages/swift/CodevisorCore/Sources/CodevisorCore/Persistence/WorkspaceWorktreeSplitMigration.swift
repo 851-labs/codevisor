@@ -112,7 +112,7 @@ public enum WorkspaceWorktreeSplitMigration {
       return
     }
 
-    // Primary group (keeps the workspace's id, name, bottom panel,
+    // Primary group (keeps the workspace's id, name,
     // notes): the group already living at the workspace's root, else the
     // project-root group, else the first in reading order.
     let primaryIndex =
@@ -132,7 +132,7 @@ public enum WorkspaceWorktreeSplitMigration {
         var state = PaneGroupState()
         state.panes = [pane]
         state.selectedPaneId = pane.id
-        state.isVisible = true
+
         return WorkspaceTab(root: .leaf(state))
       }
       let split = Workspace(
@@ -145,7 +145,6 @@ public enum WorkspaceWorktreeSplitMigration {
         serverId: workspace.serverId,
         projectId: workspace.projectId,
         centerTabs: tabs,
-        bottomGroup: PaneGroupState(),
         createdAt: workspace.createdAt,
         isArchived: workspace.isArchived
       )

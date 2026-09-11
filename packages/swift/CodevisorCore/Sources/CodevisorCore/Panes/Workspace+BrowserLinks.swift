@@ -18,7 +18,7 @@ extension Workspace {
       let sourceLeaf = centerTabs[index].root.groupId(containingPane: sourcePaneId),
       !centerTabs.contains(where: { $0.root.groupId(containingPane: pane.id) != nil })
     else { return nil }
-    let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)
+    let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id)
     if case let .split(edge) = destination {
       let leafId = UUID()
       centerTabs[index].root = centerTabs[index].root.splitting(

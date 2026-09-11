@@ -66,10 +66,6 @@ final class SessionStore {
   /// Per-session todo-panel expansion deliberately outlives controller
   /// eviction so pinned checklists retain their disclosure state.
   @ObservationIgnored var todoExpansionStates: [SessionKey: Bool] = [:]
-  /// Bottom-panel models by WORKSPACE (the panel belongs to the
-  /// workspace, and its chats share one detail container — a per-session
-  /// key would mint duplicate models over the same persisted group).
-  @ObservationIgnored var bottomGroups: [UUID: PaneGroupModel] = [:]
   /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
   /// model per leaf that both the top bar and the split view share.
   struct CenterLeafKey: Hashable {

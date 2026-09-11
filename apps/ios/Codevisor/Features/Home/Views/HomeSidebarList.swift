@@ -42,7 +42,6 @@ struct HomeSidebarList: View {
   @State private var headerFrames: [UUID: CGRect] = [:]
   /// The list's own global frame, to place the floating header in it.
   @State private var listFrame: CGRect = .zero
-  @GestureState private var isPressing = false
   @State private var liftFeedback = 0
 
   private struct WorkspaceDrag: Equatable {
@@ -112,11 +111,6 @@ struct HomeSidebarList: View {
     }
     .sensoryFeedback(.impact(weight: .medium), trigger: liftFeedback)
     .sensoryFeedback(.selection, trigger: drag?.order)
-    // A cancelled gesture (a system interruption mid-drag) never reports
-    // `onEnded`; the press state resetting is the reliable release signal.
-    .onChange(of: isPressing) { _, pressing in
-      if !pressing { endDrag() }
-    }
     .refreshable {
       await refresh()
     }
@@ -144,7 +138,15 @@ struct HomeSidebarList: View {
       .opacity(isLifted ? 0 : drag != nil ? 0.55 : 1)
     }
     .contentShape(Rectangle())
-    .gesture(reorderGesture(for: section))
+    .gesture(
+      WorkspaceReorderGesture(
+        onBegan: { point in
+          beginDrag(section)
+          updateDrag(fingerY: point.y)
+        },
+        onChanged: { point in updateDrag(fingerY: point.y) },
+        onEnded: endDrag
+      ))
   }
 
   /// The lifted header in the list's coordinate space: pinned where it
@@ -173,24 +175,6 @@ struct HomeSidebarList: View {
       .allowsHitTesting(false)
       .transition(.identity)
     }
-  }
-
-  private func reorderGesture(for section: HomeSidebarSection) -> some Gesture {
-    LongPressGesture(minimumDuration: 0.35)
-      .sequenced(
-        before: DragGesture(minimumDistance: 0, coordinateSpace: .global)
-      )
-      .updating($isPressing) { value, pressing, _ in
-        if case .second(true, _) = value { pressing = true }
-      }
-      .onChanged { value in
-        guard case let .second(true, dragValue) = value else { return }
-        if drag == nil { beginDrag(section) }
-        if let dragValue { updateDrag(fingerY: dragValue.location.y) }
-      }
-      .onEnded { _ in
-        endDrag()
-      }
   }
 
   private func beginDrag(_ section: HomeSidebarSection) {

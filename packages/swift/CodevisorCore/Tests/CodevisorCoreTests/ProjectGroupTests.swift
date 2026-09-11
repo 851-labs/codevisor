@@ -136,7 +136,6 @@ struct ProjectGroupTests {
         serverId: project.serverId,
         projectId: project.id,
         centerTree: .leaf(PaneGroupState()),
-        bottomGroup: PaneGroupState(),
         createdAt: Date(timeIntervalSince1970: createdAt)
       )
     }

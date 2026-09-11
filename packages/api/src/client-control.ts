@@ -28,9 +28,7 @@ export const ClientWorkspaceContext = Schema.Struct({
   tabId: Schema.String,
   paneId: Schema.optional(Schema.String),
   sessionId: Schema.optional(Schema.String),
-  tabs: Schema.Array(ClientTabContext),
-  bottomPanes: Schema.Array(ClientPaneContext),
-  bottomPaneId: Schema.optional(Schema.String)
+  tabs: Schema.Array(ClientTabContext)
 })
 /// A fresh view of one native window, restricted to this server's workspaces.
 /// Omitted workspaceId means this window is on another page or machine.

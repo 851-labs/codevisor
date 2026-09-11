@@ -68,14 +68,9 @@ extension HomeView {
   }
 
   #if DEBUG
-    /// The fixture sidebar (`CODEVISOR_SIDEBAR_SAMPLE=1`): rows request
-    /// nothing, since there is no fleet behind them.
+    /// Fixture navigation with local reordering and no fleet mutations.
     var sampleSidebar: some View {
-      HomeSidebarList(
-        sections: HomeSidebarSampleData.sections,
-        actions: HomeSidebarActions(),
-        refresh: {}
-      )
+      HomeSidebarSampleData.Sidebar()
     }
   #endif
 

@@ -1,7 +1,7 @@
 //  Workspace persistence + the sessions→workspaces backfill.
 //
 //  Workspaces are the persistence root for pane layout (top tabs containing
-//  center split trees, plus the bottom panel). The backfill is incremental
+//  split trees). The backfill is incremental
 //  and idempotent: "ensure a
 //  workspace exists for this session" runs whenever a session is opened, so
 //  existing chats gain owning workspaces lazily per machine as their
@@ -61,8 +61,7 @@ public extension WorkspaceRepository {
       worktreeName: seed.worktreeName,
       serverId: seed.serverId,
       projectId: seed.projectId,
-      centerTree: .leaf(center),
-      bottomGroup: PaneGroupState()
+      centerTree: .leaf(center)
     )
   }
 }
@@ -228,28 +227,22 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     // Migrate the session's pre-workspace pane state, tagging its chat
     // pane with the session it references.
     var center =
-      legacyGroups?.load(sessionId: seed.sessionId, placement: .center)
+      legacyGroups?.load(sessionId: seed.sessionId)
       ?? .centerInitial(sessionId: seed.sessionId)
     for index in center.panes.indices where center.panes[index].kind == .chat {
       if center.panes[index].chatSessionId == nil {
         center.panes[index].chatSessionId = seed.sessionId
       }
     }
-    // A terminal is workspace content, not layout furniture. Keep the
-    // bottom placement empty until the user opens it for the first time.
-    let bottom =
-      legacyGroups?.load(sessionId: seed.sessionId, placement: .bottom)
-      ?? PaneGroupState()
-
-    let workspace = Workspace(
+    var workspace = Workspace(
       name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
       rootDirectory: seed.rootDirectory,
       worktreeName: seed.worktreeName,
       serverId: seed.serverId,
       projectId: seed.projectId,
-      centerTree: .leaf(center),
-      bottomGroup: bottom
+      centerTree: .leaf(center)
     )
+    workspace.importLegacyPanes(legacyGroups?.legacyPanes(sessionId: seed.sessionId) ?? [])
     save(workspace)
     return workspace
   }
@@ -369,13 +362,9 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
   }
 }
 
-/// Bridges a workspace's storage into the `PaneGroupRepository` interface
-/// `PaneGroupModel` speaks, so group models stay workspace-agnostic:
-/// `.bottom` maps to the workspace's bottom panel, `.center` to a specific
-/// leaf of the center tree.
+/// Persists one workspace leaf through the pane model's storage interface.
 public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
   private let workspaceId: UUID
-  /// The center leaf this repository reads/writes. Bottom ignores it.
   private let groupId: UUID?
   private let repository: any WorkspaceRepository
 
@@ -385,33 +374,22 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
     self.repository = repository
   }
 
-  public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
+  public func load(sessionId: UUID) -> PaneGroupState? {
     guard let workspace = repository.workspace(id: workspaceId) else { return nil }
-    switch placement {
-    case .bottom:
-      return workspace.bottomGroup
-    case .center:
-      guard let groupId else { return workspace.centerTree.allGroups.first?.state }
-      return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
-    }
+    guard let groupId else { return workspace.centerTree.allGroups.first?.state }
+    return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
+  public func save(_ state: PaneGroupState, sessionId: UUID) {
     guard var workspace = repository.workspace(id: workspaceId) else { return }
-    switch placement {
-    case .bottom:
-      workspace.bottomGroup = state
-    case .center:
-      let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
-      guard let targetId else { return }
-      guard
-        let tabIndex = workspace.centerTabs.firstIndex(where: {
-          $0.root.group(id: targetId) != nil
-        })
-      else { return }
-      workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
-        .updatingGroup(id: targetId) { _ in state }
-    }
+    let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
+    guard let targetId,
+      let tabIndex = workspace.centerTabs.firstIndex(where: {
+        $0.root.group(id: targetId) != nil
+      })
+    else { return }
+    workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
+      .updatingGroup(id: targetId) { _ in state }
     repository.save(workspace)
   }
 }

@@ -8,23 +8,12 @@ import ACPKit
 
 extension SessionStore {
   func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
-    let groups = Array(centerLeafGroups.values) + Array(bottomGroups.values)
+    let groups = Array(centerLeafGroups.values)
     return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model }.first
   }
 
   func localBrowserTitle(paneId: UUID) -> String? {
     localBrowserModel(paneId: paneId)?.title
-  }
-
-  /// Returns the cached bottom-panel pane group for a session's WORKSPACE,
-  /// creating it on first use. Mirrors `controller(for:project:)` so panes
-  /// (and their terminals) survive panel close + navigation away and back.
-  func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
-    let workspaceId = workspace(for: session, project: project).id
-    if let existing = bottomGroups[workspaceId] { return existing }
-    let group = makePaneGroup(for: session, project: project, placement: .bottom)
-    bottomGroups[workspaceId] = group
-    return group
   }
 
   /// The center group hosting this session's chat: THE SAME model instance
@@ -40,7 +29,7 @@ extension SessionStore {
     else {
       // Unreachable (a workspace always has a leaf); satisfies the
       // optional without a second cache.
-      return makePaneGroup(for: session, project: project, placement: .center)
+      return makePaneGroup(for: session, project: project)
     }
     return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
   }
@@ -96,7 +85,7 @@ extension SessionStore {
   ) -> PaneGroupModel {
     let key = CenterLeafKey(workspaceId: workspace.id, groupId: leafId)
     if let existing = centerLeafGroups[key] { return existing }
-    let group = makePaneGroup(for: session, project: project, placement: .center, leafId: leafId)
+    let group = makePaneGroup(for: session, project: project, leafId: leafId)
     centerLeafGroups[key] = group
     return group
   }
@@ -108,9 +97,6 @@ extension SessionStore {
   @discardableResult
   func reconcileMountedPaneGroups(in workspace: Workspace) -> Bool {
     var changed = false
-    if let bottom = bottomGroups[workspace.id] {
-      changed = bottom.reconcileExternalState(workspace.bottomGroup) || changed
-    }
 
     let centerStates = Dictionary(
       uniqueKeysWithValues: workspace.centerTabs.flatMap { tab in
@@ -135,7 +121,6 @@ extension SessionStore {
   func makePaneGroup(
     for session: ChatSession,
     project: Project,
-    placement: PaneGroupPlacement,
     leafId: UUID? = nil
   ) -> PaneGroupModel {
     let machine = environment.machines.machine(for: session.serverId) ?? CodevisorMachine.local
@@ -145,12 +130,10 @@ extension SessionStore {
     // session's chat.
     let workspace = workspace(for: session, project: project)
     let resolvedLeafId =
-      placement == .center
-      ? (leafId
-        ?? workspace.centerTabs.lazy.compactMap {
-          $0.root.groupId(containingChat: session.id)
-        }.first)
-      : nil
+      leafId
+      ?? workspace.centerTabs.lazy.compactMap {
+        $0.root.groupId(containingChat: session.id)
+      }.first
     let repository = WorkspacePaneGroupRepository(
       workspaceId: workspace.id,
       groupId: resolvedLeafId,
@@ -160,7 +143,6 @@ extension SessionStore {
     let workspaceIdForPanes = workspace.id
     let model = PaneGroupModel(
       sessionId: session.id,
-      placement: placement,
       repository: repository,
       pluginIconClient: client,
       pluginIconCacheNamespace: session.serverId,
@@ -194,15 +176,13 @@ extension SessionStore {
         )
       }
     )
-    if placement == .center {
-      model.openBrowserLink = { [weak self] source, url, destination, popup in
-        self?.openBrowserLink(
-          for: session, project: project, sourcePaneId: source, url: url, destination: destination, popup: popup
-        ) ?? false
-      }
-      model.createBrowserTab = { [weak self] url in
-        self?.createBrowserTab(for: session, project: project, url: url)
-      }
+    model.openBrowserLink = { [weak self] source, url, destination, popup in
+      self?.openBrowserLink(
+        for: session, project: project, sourcePaneId: source, url: url, destination: destination, popup: popup
+      ) ?? false
+    }
+    model.createBrowserTab = { [weak self] url in
+      self?.createBrowserTab(for: session, project: project, url: url)
     }
     model.onPaneChanged = { [weak environment] pane in
       guard let environment else { return }
@@ -220,7 +200,7 @@ extension SessionStore {
       let panes =
         liveWorkspace.centerTabs.flatMap { tab in
           tab.root.allGroups.flatMap(\.state.panes)
-        } + liveWorkspace.bottomGroup.panes
+        }
       return panes.count == 1 && panes[0].id == pane.id
     }
     model.onPaneRemoved = { [weak environment] pane, replacement in

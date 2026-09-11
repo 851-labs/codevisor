@@ -112,60 +112,6 @@ extension PaneGroupModel {
     requestSelectedPaneFocus()
   }
 
-  /// Syncs the agent's background-task snapshot into tabs: ensures a pane
-  /// exists per task terminal, never stealing selection or opening the
-  /// group — the tab appearing in the always-visible bar is the affordance.
-  /// A tab lives exactly as long as its task: when a task leaves ITS
-  /// OWNING CHAT's snapshot (the agent killed it, or it finished), its tab
-  /// goes with it. The workspace panel hosts every chat's task tabs, so
-  /// each chat syncs only its own: `owner` scopes both adds and prunes —
-  /// chat B's empty snapshot must never tear down chat A's dev server.
-  /// `pruneEnded` is false until the owner's first snapshot arrives — an
-  /// empty task list before replay means "unknown", not "everything
-  /// ended". Tabs persisted before owner scoping (nil owner) are adopted
-  /// by the first owner whose live tasks match; a remaining nil-owned
-  /// tab is left alone (it still attaches; closing it is manual).
-  func syncAgentTerminals(
-    _ tasks: [(terminalKey: String, name: String)],
-    owner: UUID,
-    pruneEnded: Bool
-  ) {
-    var changed = false
-    for task in tasks {
-      if let index = state.panes.firstIndex(where: { $0.terminalKey == task.terminalKey }) {
-        // Legacy tab for a live task: adopt it.
-        if state.panes[index].attachOnly, state.panes[index].ownerChatSessionId == nil {
-          state.panes[index].ownerChatSessionId = owner
-          changed = true
-        }
-        continue
-      }
-      state.ensureAgentTerminalPane(
-        name: task.name,
-        terminalKey: task.terminalKey,
-        ownerChatSessionId: owner
-      )
-      if let pane = state.panes.first(where: { $0.terminalKey == task.terminalKey }) {
-        onPaneChanged?(pane)
-      }
-      changed = true
-    }
-    if changed {
-      persist()
-    }
-    guard pruneEnded else { return }
-    let liveKeys = Set(tasks.map(\.terminalKey))
-    for pane in state.panes
-    where pane.attachOnly
-      && pane.ownerChatSessionId == owner
-      && !liveKeys.contains(pane.terminalKey)
-    {
-      // closePane also deletes the server-side terminal (a no-op when
-      // the kill already removed it).
-      closePane(id: pane.id)
-    }
-  }
-
   /// Whether a tab may close: the group-local state rules plus the
   /// container's workspace-wide policy (lone-placeholder dissolve). Chats
   /// close like any tab — closing archives the session while preserving
@@ -202,15 +148,6 @@ extension PaneGroupModel {
       : nil
     if replacement != nil {
       if activateRemainingPane { requestBackgroundFocus?() }
-    } else if state.panes.count == 1 {
-      // Closing the last tab also collapses the group. Suppress the
-      // removal/collapse animations: the tab's exit transition would
-      // otherwise replay in the already-collapsed bar (flicker).
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      _ = withTransaction(transaction) {
-        state.closePane(id: id)
-      }
     } else {
       state.closePane(id: id)
     }
@@ -218,15 +155,14 @@ extension PaneGroupModel {
     Task { await closing.willDelete() }
     onPaneRemoved?(descriptor, replacement)
     onPaneClosed?(descriptor)
-    if activateRemainingPane, state.isVisible, let selected = selectedPane {
+    if activateRemainingPane, let selected = selectedPane {
       selected.visibilityChanged(true)
     }
   }
 
-  /// Selects a tab; also expands the group when collapsed (tab clicks in
-  /// the always-visible bar reveal their content).
+  /// Selects a pane and requests focus after its content mounts.
   func select(id: UUID) {
-    guard state.selectedPaneId != id || !state.isVisible else { return }
+    guard state.selectedPaneId != id else { return }
     let previous = state.selectedPaneId.flatMap { live[$0] }
     state.selectPane(id: id)
     persist()
@@ -251,7 +187,7 @@ extension PaneGroupModel {
     let livePane = live.removeValue(forKey: id)
     state.removePane(id: id)
     persist()
-    if state.isVisible, let selected = selectedPane {
+    if let selected = selectedPane {
       selected.visibilityChanged(true)
     }
     return (descriptor, livePane)
@@ -265,7 +201,7 @@ extension PaneGroupModel {
     live livePane: (any Pane)?,
     at index: Int
   ) {
-    let previous = state.isVisible ? selectedPane : nil
+    let previous = selectedPane
     state.insertPane(descriptor, at: index)
     persist()
     onActivated?()

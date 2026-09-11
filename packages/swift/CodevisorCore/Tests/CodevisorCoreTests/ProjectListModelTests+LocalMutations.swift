@@ -139,7 +139,6 @@ extension ProjectListModelTests {
         serverId: serverId,
         projectId: projectId,
         centerTree: .leaf(PaneGroupState()),
-        bottomGroup: PaneGroupState(),
         createdAt: Date(timeIntervalSince1970: createdAt)
       )
     }

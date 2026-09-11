@@ -210,7 +210,7 @@ extension WorkspaceSyncModel {
         if var workspace = repository.workspace(id: workspaceId) {
           if !Self.replacePane(id: id, with: descriptor, in: &workspace) {
             let state = PaneGroupState(
-              panes: [descriptor], selectedPaneId: descriptor.id, isVisible: true
+              panes: [descriptor], selectedPaneId: descriptor.id
             )
             workspace.centerTabs.append(WorkspaceTab(root: .leaf(state)))
           }

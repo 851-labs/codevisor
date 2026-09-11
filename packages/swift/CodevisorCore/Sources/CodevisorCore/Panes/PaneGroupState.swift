@@ -1,11 +1,5 @@
 import Foundation
 
-/// Which input area should hold keyboard focus in a session screen.
-public enum SessionFocusTarget: Sendable, Equatable {
-  case composer
-  case terminal
-}
-
 /// The kinds of pane a session's pane groups can host. Future kinds (diff
 /// viewers, previews, extensions, ...) add a case here plus a factory branch
 /// in the app layer.
@@ -26,13 +20,6 @@ public enum PaneKind: String, Codable, Sendable {
   /// A read-only Markdown document on the workspace's machine.
   case document
   case browser
-}
-
-/// Which of a session's pane groups a state belongs to: the center group
-/// hosting the chat (always visible, fills the page) or the ⌘J bottom panel.
-public enum PaneGroupPlacement: String, Sendable {
-  case center
-  case bottom
 }
 
 /// The persisted identity of one pane in a session's pane group. Pure data —
@@ -56,7 +43,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   /// deletes it.
   public var chatSessionId: UUID?
   /// Agent-owned terminals only: the CHAT whose background task streams
-  /// here. The workspace's shared panel hosts every chat's task tabs, so
+  /// here. The workspace hosts every chat's task tabs, so
   /// pruning must be owner-scoped — chat B's empty snapshot must never
   /// tear down chat A's dev server.
   public var ownerChatSessionId: UUID?
@@ -123,34 +110,19 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   }
 }
 
-/// The per-session bottom pane group's UI state: the panes (tabs), which one
-/// is selected, whether the group content is open, and how tall it is. Pure
-/// value type so the tab/visibility/resize/focus rules are unit-testable
-/// without any AppKit or libghostty involvement. Codable so the pane list
-/// survives app restarts (the server keeps each pane's shell alive; stable
-/// pane keys are what let us reattach instead of orphaning PTYs).
+/// Pane identities and selection within a workspace leaf or compact tab list.
+/// Stable pane keys let terminals reattach to the same server process after
+/// layout changes and app restarts.
 public struct PaneGroupState: Codable, Sendable, Equatable {
-  /// Default content height when first opened.
-  public static let defaultHeight: CGFloat = 280
-  /// Clamp bounds for the drag-to-resize handle.
-  public static let minHeight: CGFloat = 120
-  public static let maxHeight: CGFloat = 800
-
   public var panes: [PaneDescriptorState]
   public var selectedPaneId: UUID?
-  public var isVisible: Bool
-  public var height: CGFloat
 
   public init(
     panes: [PaneDescriptorState] = [],
-    selectedPaneId: UUID? = nil,
-    isVisible: Bool = false,
-    height: CGFloat = PaneGroupState.defaultHeight
+    selectedPaneId: UUID? = nil
   ) {
     self.panes = panes
     self.selectedPaneId = selectedPaneId
-    self.isVisible = isVisible
-    self.height = Self.clampHeight(height)
   }
 
   public init(from decoder: Decoder) throws {
@@ -164,16 +136,12 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     self.init(
       panes: panes,
       // Never restore a selection that doesn't exist anymore.
-      selectedPaneId: panes.contains(where: { $0.id == selected }) ? selected : panes.first?.id,
-      isVisible: try container.decode(Bool.self, forKey: .isVisible),
-      height: try container.decode(CGFloat.self, forKey: .height)
+      selectedPaneId: panes.contains(where: { $0.id == selected }) ? selected : panes.first?.id
     )
   }
 
-  /// Legacy pre-workspace bottom-panel state. New workspaces start with an
-  /// empty bottom group and create their first terminal when the panel is
-  /// opened. This factory remains for decoding/migration tests: its bare
-  /// session key reattaches shells created before pane identities existed.
+  /// A terminal using the original bare session key, retained for importing
+  /// shells created before separate pane identities existed.
   public static func initial(sessionId: UUID) -> PaneGroupState {
     let pane = PaneDescriptorState(
       id: UUID(),
@@ -186,8 +154,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
 
   /// The state a session's center group starts with: the chat pane, bound
   /// to its session (an unbound chat pane is a DRAFT — see addChatPane),
-  /// always visible (the center group has no collapsed state — it IS the
-  /// page).
+  /// selected when the workspace first opens.
   public static func centerInitial(sessionId: UUID) -> PaneGroupState {
     let chat = PaneDescriptorState(
       id: UUID(),
@@ -196,7 +163,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       terminalKey: sessionId.uuidString,
       chatSessionId: sessionId
     )
-    return PaneGroupState(panes: [chat], selectedPaneId: chat.id, isVisible: true)
+    return PaneGroupState(panes: [chat], selectedPaneId: chat.id)
   }
 
   public var selectedPane: PaneDescriptorState? {
@@ -204,8 +171,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   }
 
   /// Adopts the pane identities/content produced by workspace sync while
-  /// retaining this client's presentation state. Selection, visibility,
-  /// and height are device-local; the incoming state is authoritative only
+  /// retaining this client's selection. The incoming state is authoritative only
   /// for which shared panes exist and what each pane renders.
   ///
   /// The existing selection survives when its pane still exists. If sync
@@ -236,22 +202,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return previousPanes != panes || previousSelection != selectedPaneId
   }
 
-  /// Toggles content visibility and returns the area that should receive
-  /// focus: opening focuses the selected pane, closing returns focus to the
-  /// composer.
-  @discardableResult
-  public mutating func toggle() -> SessionFocusTarget {
-    isVisible.toggle()
-    return isVisible ? .terminal : .composer
-  }
-
-  /// Sets the content height, clamped to `[minHeight, maxHeight]`.
-  public mutating func setHeight(_ newHeight: CGFloat) {
-    height = Self.clampHeight(newHeight)
-  }
-
   /// Appends a new terminal pane named "Terminal N" (N = highest existing
-  /// numeric suffix + 1), selects it, and opens the group. The shell spawns
+  /// numeric suffix + 1), and selects it. The shell spawns
   /// in the workspace's working directory (the anchor session's cwd).
   @discardableResult
   public mutating func addTerminalPane(sessionId: UUID) -> PaneDescriptorState {
@@ -264,14 +216,12 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     )
     panes.append(pane)
     selectedPaneId = pane.id
-    isVisible = true
     return pane
   }
 
   /// Ensures a tab exists for an agent-owned background terminal (keyed by
   /// the task's `terminalKey`). Unlike `addTerminalPane` this never steals
-  /// selection or opens the group — the tab appearing in the always-visible
-  /// bar IS the notification. Returns the existing pane when one is already
+  /// selection. Returns the existing pane when one is already
   /// attached to that terminal.
   @discardableResult
   public mutating func ensureAgentTerminalPane(
@@ -314,7 +264,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     )
     panes.append(pane)
     selectedPaneId = pane.id
-    isVisible = true
     return pane
   }
 
@@ -333,7 +282,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     )
     panes.append(pane)
     selectedPaneId = pane.id
-    isVisible = true
     return pane
   }
 
@@ -456,17 +404,16 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   }
 
   /// Inserts an existing pane (a cross-group transfer) at `index` (clamped),
-  /// selects it, and opens the group.
+  /// and selects it.
   public mutating func insertPane(_ pane: PaneDescriptorState, at index: Int) {
     guard !panes.contains(where: { $0.id == pane.id }) else { return }
     panes.insert(pane, at: min(max(index, 0), panes.count))
     selectedPaneId = pane.id
-    isVisible = true
   }
 
   /// Removes a pane (no-op when `canClosePane` forbids it). If it was
   /// selected, selection moves to its right neighbor (or the new last
-  /// pane). Closing the last pane hides the group.
+  /// pane). Closing the last pane clears selection.
   @discardableResult
   public mutating func closePane(id: UUID) -> PaneDescriptorState? {
     guard canClosePane(id: id) else { return nil }
@@ -483,7 +430,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     let removed = panes.remove(at: index)
     if panes.isEmpty {
       selectedPaneId = nil
-      isVisible = false
     } else if selectedPaneId == id {
       selectedPaneId = panes[min(index, panes.count - 1)].id
     }
@@ -505,12 +451,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     panes.insert(pane, at: target)
   }
 
-  /// Selects a pane. Selecting while collapsed also opens the group (tab
-  /// clicks in the always-visible bar should reveal their content).
+  /// Selects an existing pane, ignoring unknown identities.
   public mutating func selectPane(id: UUID) {
     guard panes.contains(where: { $0.id == id }) else { return }
     selectedPaneId = id
-    isVisible = true
   }
 
   /// "Terminal N" with N one past the highest existing "Terminal <int>"
@@ -527,7 +471,4 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return "Terminal \(highest + 1)"
   }
 
-  private static func clampHeight(_ value: CGFloat) -> CGFloat {
-    min(max(value, minHeight), maxHeight)
-  }
 }

@@ -11,7 +11,7 @@ import CodevisorUI
 struct WorkspaceSplitView: View {
   let node: SplitNode
   /// The most recently active center leaf. This remains resolved while
-  /// focus temporarily moves to the bottom panel or another window.
+  /// focus temporarily moves to another window.
   let activeLeafId: UUID?
   let groupModel: (UUID) -> PaneGroupModel
   let paneTitle: (PaneDescriptorState) -> String

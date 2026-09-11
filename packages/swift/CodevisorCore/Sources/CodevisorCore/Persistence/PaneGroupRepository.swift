@@ -1,29 +1,25 @@
 import Foundation
 
-/// Persists and retrieves each session's pane-group states (tabs, selection,
-/// visibility, height), one per placement (center group + bottom panel). Pane
+/// Persists pane identities and selection for a session or workspace leaf. Pane
 /// identity MUST survive app restarts: the codevisor server keeps one live PTY
 /// per pane key with no reaping, so stable keys are what let terminals
 /// reattach instead of orphaning shells.
 public protocol PaneGroupRepository: Sendable {
-  func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
-  func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
+  func load(sessionId: UUID) -> PaneGroupState?
+  func save(_ state: PaneGroupState, sessionId: UUID)
+  func legacyPanes(sessionId: UUID) -> [PaneDescriptorState]
   func removeAll()
 }
 
 public extension PaneGroupRepository {
+  func legacyPanes(sessionId: UUID) -> [PaneDescriptorState] { [] }
   func removeAll() {}
 }
 
-/// File/in-memory backed pane-group repository. All sessions' states live
-/// under a single "paneGroups" key as a `[storageKey: state]` map, where the
-/// bottom panel keeps the legacy bare-UUID key (states persisted before the
-/// center group existed load unchanged) and the center group appends a
-/// ":center" suffix.
-///
-/// The decoded map is cached in memory: saves fire on every tab
-/// select/toggle/height drag, and re-reading + re-decoding every session's
-/// state from disk per save was measurable main-thread work.
+/// File/in-memory storage for pre-workspace sessions and standalone groups.
+/// The older bare-session key is read only during workspace migration; active
+/// groups use the existing ":center" key. Cached decoding avoids disk reads
+/// on every selection change.
 public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
   private let store: any PersistenceStore
   private let key = "paneGroups"
@@ -34,13 +30,13 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     self.store = store
   }
 
-  public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
-    loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
+  public func load(sessionId: UUID) -> PaneGroupState? {
+    loadAll()["\(sessionId.uuidString):center"]
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
+  public func save(_ state: PaneGroupState, sessionId: UUID) {
     var all = loadAll()
-    all[Self.storageKey(sessionId: sessionId, placement: placement)] = state
+    all["\(sessionId.uuidString):center"] = state
     lock.withLock { cache = all }
     do {
       try store.saveData(JSONEncoder().encode(all), forKey: key)
@@ -61,11 +57,8 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     }
   }
 
-  private static func storageKey(sessionId: UUID, placement: PaneGroupPlacement) -> String {
-    switch placement {
-    case .bottom: sessionId.uuidString
-    case .center: "\(sessionId.uuidString):center"
-    }
+  public func legacyPanes(sessionId: UUID) -> [PaneDescriptorState] {
+    loadAll()[sessionId.uuidString]?.panes ?? []
   }
 
   private func loadAll() -> [String: PaneGroupState] {

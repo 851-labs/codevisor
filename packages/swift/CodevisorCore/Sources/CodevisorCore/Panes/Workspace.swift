@@ -1,6 +1,6 @@
 //  A workspace: the persistence root for everything in a window's content
 //  area. It owns browser-style tabs whose contents are split trees (one pane
-//  per leaf), plus the workspace-wide ⌘J bottom panel. Chats are
+//  per leaf). Chats are
 //  REFERENCES to sessions (the server owns transcripts and
 //  lifecycle); a workspace can host many, each anchored to a directory under
 //  the workspace's root.
@@ -73,8 +73,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   /// whose leaf groups contain exactly one pane.
   public var centerTabs: [WorkspaceTab]
   public var selectedCenterTabId: UUID
-  /// The ⌘J bottom panel.
-  public var bottomGroup: PaneGroupState
   public var createdAt: Date
   /// Archived workspaces leave the sidebar (their chats archive with
   /// them) but keep their layout — opening an archived chat revives the
@@ -89,7 +87,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
 
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
-    case projectId, centerTabs, selectedCenterTabId, bottomGroup, createdAt, isArchived
+    case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
     case isServerSynced
     /// Version-1 workspaces stored one tree whose leaves were tab groups.
     case centerTree
@@ -124,10 +122,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
       centerTabs = Self.migrateLegacyCenterTree(legacy)
       selectedCenterTabId = centerTabs[0].id
     }
-    bottomGroup = try container.decode(PaneGroupState.self, forKey: .bottomGroup)
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
+    try importLegacyPanes(from: decoder)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -141,7 +139,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(projectId, forKey: .projectId)
     try container.encode(centerTabs, forKey: .centerTabs)
     try container.encode(selectedCenterTabId, forKey: .selectedCenterTabId)
-    try container.encode(bottomGroup, forKey: .bottomGroup)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(isArchived, forKey: .isArchived)
     try container.encode(isServerSynced, forKey: .isServerSynced)
@@ -156,7 +153,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     serverId: String,
     projectId: UUID,
     centerTree: SplitNode,
-    bottomGroup: PaneGroupState,
     createdAt: Date = Date(),
     isArchived: Bool = false,
     isServerSynced: Bool = false
@@ -171,7 +167,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     let tabs = Self.migrateLegacyCenterTree(centerTree)
     self.centerTabs = tabs
     self.selectedCenterTabId = tabs[0].id
-    self.bottomGroup = bottomGroup
     self.createdAt = createdAt
     self.isArchived = isArchived
     self.isServerSynced = isServerSynced
@@ -187,7 +182,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     projectId: UUID,
     centerTabs: [WorkspaceTab],
     selectedCenterTabId: UUID? = nil,
-    bottomGroup: PaneGroupState,
     createdAt: Date = Date(),
     isArchived: Bool = false,
     isServerSynced: Bool = false
@@ -205,7 +199,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
       selectedCenterTabId.flatMap { candidate in
         centerTabs.contains { $0.id == candidate } ? candidate : nil
       } ?? centerTabs[0].id
-    self.bottomGroup = bottomGroup
     self.createdAt = createdAt
     self.isArchived = isArchived
     self.isServerSynced = isServerSynced
@@ -313,7 +306,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
 
     let state = PaneGroupState(
-      panes: [pane], selectedPaneId: pane.id, isVisible: true
+      panes: [pane], selectedPaneId: pane.id
     )
     let tab = WorkspaceTab(root: .leaf(state))
     centerTabs.append(tab)
@@ -342,6 +335,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     }
   }
 
+  public var allPanes: [PaneDescriptorState] {
+    centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
+  }
+
   /// Inverts the version-1 `split → tab groups` hierarchy. The selected
   /// pane from every old group keeps the visible split topology; hidden
   /// siblings become independent top tabs in deterministic reading order.
@@ -361,7 +358,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
         var single = state
         single.panes = [selected]
         single.selectedPaneId = selected.id
-        single.isVisible = true
+
         return .group(id: id, state: single)
       case let .split(orientation, children):
         return .split(
@@ -377,7 +374,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
       var state = PaneGroupState()
       state.panes = [pane]
       state.selectedPaneId = pane.id
-      state.isVisible = true
+
       return WorkspaceTab(root: .leaf(state))
     }
     return [visible] + lifted

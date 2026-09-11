@@ -43,7 +43,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
   /// Chat rows: the session they open.
   let chatSessionId: UUID?
   /// The single-pane center tab this row names, whose title can be pinned.
-  /// Nil for panes inside a split or the bottom panel, which have no title
+  /// Nil for panes inside a split, which have no title
   /// of their own.
   let renamableTabId: UUID?
 }
