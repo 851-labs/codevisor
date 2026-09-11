@@ -26,7 +26,7 @@ public struct LegacyServerJobRetirer: Sendable {
 
   private let runner: any CommandRunner
   private let userID: UInt32
-  private let sleep: @Sendable (Duration) async throws -> Void
+  private let clock: any Clock<Duration>
   private let commandTimeout: Duration
   private let lifecycleLog: ServerLifecycleLog
 
@@ -35,10 +35,10 @@ public struct LegacyServerJobRetirer: Sendable {
     userID: UInt32 = getuid(),
     commandTimeout: Duration = .seconds(5),
     lifecycleLog: ServerLifecycleLog = .default,
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    clock: any Clock<Duration> = ContinuousClock()
   ) {
     self.lifecycleLog = lifecycleLog
-    self.sleep = sleep
+    self.clock = clock
     self.runner = runner
     self.userID = userID
     self.commandTimeout = commandTimeout
@@ -56,7 +56,7 @@ public struct LegacyServerJobRetirer: Sendable {
         arguments: ["bootout", target],
         environment: nil,
         timeout: commandTimeout,
-        sleep: sleep
+        clock: clock
       )
       lifecycleLog.note("launchd: cleanup \(label) exited \(result.exitCode)")
       guard result.exitCode == 0 || Self.meansServiceWasMissing(result) else {

@@ -46,10 +46,11 @@ public extension CommandRunner {
     arguments: [String],
     environment: [String: String]?,
     timeout: Duration,
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    clock: any Clock<Duration> = ContinuousClock()
   ) async throws -> CommandResult {
     try Task.checkCancellation()
     let outcome = StartupOutcome<CommandResult>()
+    let timer = clock.commandTimeout(after: timeout, executable: executableURL.path, outcome: outcome)
     let worker = Task {
       do {
         outcome.resolve(
@@ -59,18 +60,28 @@ public extension CommandRunner {
             )))
       } catch { outcome.resolve(.failure(error)) }
     }
-    let timer = Task {
-      do {
-        try await sleep(timeout)
-        try Task.checkCancellation()
-        outcome.resolve(.failure(CommandRunnerError.timedOut(executableURL.path)))
-      } catch { /* The command finished first. */  }
-    }
     defer { worker.cancel(); timer.cancel() }
     return try await withTaskCancellationHandler {
       try await outcome.value
     } onCancel: {
       outcome.resolve(.failure(CancellationError()))
+    }
+  }
+}
+
+private extension Clock where Duration == Swift.Duration {
+  func commandTimeout(
+    after timeout: Duration, executable: String, outcome: StartupOutcome<CommandResult>
+  ) -> Task<Void, Never> {
+    let deadline = now.advanced(by: timeout)
+    return Task {
+      do {
+        // Use Clock's typed deadline operation. Calling a captured async sleep
+        // closure here corrupts the task allocator on Swift 6.3 for Intel.
+        try await sleep(until: deadline, tolerance: nil)
+        try Task.checkCancellation()
+        outcome.resolve(.failure(CommandRunnerError.timedOut(executable)))
+      } catch { /* The command finished first. */  }
     }
   }
 }
@@ -131,9 +142,8 @@ public struct ProcessCommandRunner: CommandRunner {
       try? outPipe.fileHandleForWriting.close()
       try? errPipe.fileHandleForWriting.close()
 
-      // Drain both pipes concurrently. A task group avoids async-let stack
-      // teardown bugs in older Swift toolchains. Cancellation still waits for
-      // pipe EOF and the actual exit callback before releasing the process.
+      // Drain both pipes concurrently. Keep the readers and exit callback alive
+      // through cancellation until the process has actually terminated.
       let (out, err) = await withTaskGroup(of: (Bool, Data).self) { group in
         group.addTask { (true, await readToEnd(outPipe.fileHandleForReading)) }
         group.addTask { (false, await readToEnd(errPipe.fileHandleForReading)) }

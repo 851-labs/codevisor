@@ -189,7 +189,11 @@ jobs:
           retention-days: ${{ inputs.artifact_retention_days }}
       - name: Build Intel macOS server archive
         run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
+      - name: Run Swift package tests on Intel
+        id: swift-tests
+        run: bun run swift:test
       - name: Collect recent Swift test crash reports
+        if: failure() && steps.swift-tests.conclusion == 'failure'
         shell: bash
         run: |
           python3 - <<'PY'
@@ -212,14 +216,13 @@ jobs:
           print(summary)
           PY
       - name: Upload Swift test diagnostics
+        if: failure() && steps.swift-tests.conclusion == 'failure'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: intel-swift-diagnostics
           path: ${{ runner.temp }}/intel-swift-diagnostics
           if-no-files-found: error
           retention-days: 3
-      - name: Run Swift package tests on Intel
-        run: bun run swift:test
       - name: Run native transcript regression tests on Intel
         run: bun run swift:test:macos-transcript
       - name: Upload Intel macOS server archive

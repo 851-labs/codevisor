@@ -46,7 +46,7 @@ struct LegacyServerJobRetirerTests {
       runner: HangingLaunchctlRunner(clock: clock),
       userID: 501,
       lifecycleLog: ServerLifecycleLog(fileURL: nil),
-      sleep: clock.sleep
+      clock: clock
     )
 
     let retire = Task { try await retirer.retire() }
@@ -123,7 +123,7 @@ struct ProcessCommandRunnerTests {
         arguments: ["-f", "/dev/null"],
         environment: nil,
         timeout: .seconds(5),
-        sleep: clock.sleep
+        clock: clock
       )
     }
     await started.wait()
@@ -188,6 +188,15 @@ struct LaunchctlPrintOutputTests {
 }
 
 extension ProcessCommandRunnerTests {
+  @Test("An elapsed clock deadline completes without another advance")
+  func elapsedClockDeadline() async throws {
+    let clock = TestClock()
+    let deadline = clock.now.advanced(by: .seconds(5))
+    clock.advance(by: .seconds(5))
+    try await clock.sleep(until: deadline, tolerance: nil)
+    #expect(clock.pendingCount == 0)
+  }
+
   @Test("Cancellation waits for the child to exit and releases its output readers")
   func cancelsRunningProcess() async {
     let started = TestSignal()
@@ -231,7 +240,7 @@ extension ProcessCommandRunnerTests {
     let command = Task {
       try await runner.run(
         executableURL: URL(fileURLWithPath: "/bin/launchctl"), arguments: [], environment: nil,
-        timeout: .seconds(5), sleep: clock.sleep)
+        timeout: .seconds(5), clock: clock)
     }
     await runner.started.wait()
     await clock.waitForSleep(.seconds(5))
