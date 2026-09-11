@@ -1,16 +1,13 @@
 import CodevisorCore
 import SwiftUI
 
-/// Everything that enters Home from OUTSIDE the UI — codevisor:// deeplinks
-/// and chat-notification taps — parsed and routed in one place. Chat opens
-/// go back through the owner's closures (they may switch machines first);
-/// machine adds stay behind their confirmation alerts via the bindings.
+/// Parses and routes codevisor:// deeplinks. Diagnostic chat opens go back
+/// through the owner's closures; machine adds stay behind their confirmation
+/// alerts via the bindings.
 struct HomeExternalRouting: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
   @Binding var pendingDeeplink: MachineDeeplink?
   @Binding var pendingPluginInstall: PendingPluginInstall?
-  /// Opens a chat by id, switching to its machine when needed.
-  let openSession: (UUID, String) -> Void
   /// Diagnostics builds route codevisor://diagnostic-open-session here;
   /// production passes a no-op.
   let openDiagnosticSession: (UUID) -> Void
@@ -54,17 +51,6 @@ struct HomeExternalRouting: ViewModifier {
         }
         guard let link = MachineDeeplink.parse(url) else { return }
         pendingDeeplink = link
-      }
-      // A notification tap — often for a chat on ANOTHER machine; the
-      // fleet notifies from everywhere, so routing must follow.
-      .onReceive(
-        NotificationCenter.default.publisher(for: .codevisorOpenChatNotification)
-      ) { note in
-        guard let raw = note.userInfo?["sessionId"] as? String,
-          let sessionId = UUID(uuidString: raw),
-          let serverId = note.userInfo?["serverId"] as? String
-        else { return }
-        openSession(sessionId, serverId)
       }
       .sheet(item: $pendingPluginInstall) { pending in
         let client = environment.machines.client(

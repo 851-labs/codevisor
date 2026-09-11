@@ -213,14 +213,12 @@ struct HomeView: View {
             )
           )
       }
-      // External entries — codevisor:// deeplinks and notification
-      // taps — parsed and routed in one modifier; chat opens (possibly
-      // on another machine) come back through these closures.
+      // Parse and route codevisor:// deeplinks in one modifier;
+      // diagnostic chat opens come back through these closures.
       .modifier(
         HomeExternalRouting(
           pendingDeeplink: $pendingDeeplink,
           pendingPluginInstall: $pendingPluginInstall,
-          openSession: { openNotificationSession($0, serverId: $1) },
           openDiagnosticSession: { id in
             #if DEBUG || NAVIGATION_DIAGNOSTICS
               openDiagnosticSession(id)

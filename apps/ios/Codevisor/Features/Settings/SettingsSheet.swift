@@ -3,7 +3,6 @@ import CodevisorCore
 import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
 import os
 
 enum SettingsDestination: Hashable, Identifiable {
@@ -35,7 +34,7 @@ struct SettingsSheet: View {
   var onSectionChange: ((String) -> Void)?
 
   static let clientSections = [
-    "root", "account", "machines", "updates", "general", "appearance", "notifications", "agents", "mcps", "skills",
+    "root", "account", "machines", "updates", "general", "appearance", "agents", "mcps", "skills",
     "plugins",
   ]
 
@@ -72,9 +71,6 @@ struct SettingsSheet: View {
           }
           NavigationLink(value: SettingsDestination.section("appearance")) {
             Label("Appearance", systemImage: "paintpalette")
-          }
-          NavigationLink(value: SettingsDestination.section("notifications")) {
-            Label("Notifications", systemImage: "bell")
           }
         }
         Section {
@@ -128,7 +124,6 @@ struct SettingsSheet: View {
     case "updates": UpdatesSettingsScreen()
     case "general": GeneralSettingsScreen(dismissSettings: { dismiss() })
     case "appearance": AppearanceSettingsScreen()
-    case "notifications": NotificationsSettingsScreen()
     case "agents": HarnessesSettingsScreen()
     case "mcps": McpSettingsScreen()
     case "skills": SkillsSettingsScreen()

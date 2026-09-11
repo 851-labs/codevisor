@@ -6,24 +6,6 @@ import UIKit
 /// Opening chats, workspace routing, disclosure expansion, and the
 /// no-machine / empty states.
 extension HomeView {
-  /// Agent rows always open the agent itself, never the terminal or sibling
-  /// chat that happened to be selected when the workspace was last left.
-  /// A notification tap lands here: switch to the chat's machine when
-  /// needed, then open it — same contract as the macOS handler.
-  func openNotificationSession(_ sessionId: UUID, serverId: String) {
-    // Deliberately NO machine switch: routes carry the session's server
-    // id end to end and the workspace gates on ITS machine, while
-    // flipping the selected machine here put Home's list through a
-    // catch-up loading state — a visible flicker on every tap of a chat
-    // that lives on a non-selected machine.
-    guard
-      let session = projectList.sessions.first(where: {
-        $0.serverId == serverId && $0.id == sessionId
-      })
-    else { return }
-    openChat(session)
-  }
-
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     func openDiagnosticSession(_ id: UUID) {
       guard
@@ -39,6 +21,8 @@ extension HomeView {
     }
   #endif
 
+  /// Agent rows always open the agent itself, never the terminal or sibling
+  /// chat that happened to be selected when the workspace was last left.
   func openChat(_ session: ChatSession) {
     // Existing sessions take the O(1) index path. Only a legacy session
     // without a workspace pays the synchronous one-time backfill before
