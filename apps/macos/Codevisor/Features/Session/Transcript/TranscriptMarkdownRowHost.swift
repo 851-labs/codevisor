@@ -43,18 +43,13 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     linkAction: MarkdownLinkAction?,
     knownHeight: CGFloat?
   ) {
-    var resolvedStyle = style
-    if chunk.container == .assistantWorked {
-      resolvedStyle.markdown.textForeground = style.markdown.secondaryTextForeground
-      resolvedStyle.markdown.codeForeground = style.markdown.secondaryTextForeground
-    }
     self.chunk = chunk
-    self.style = resolvedStyle
+    self.style = style
     decoration.frame = bounds
-    decoration.setContent(chunk, style: resolvedStyle)
+    decoration.setContent(chunk, style: style)
     markdownView.setContent(
       blocks: chunk.blocks,
-      theme: resolvedStyle.markdown,
+      theme: style.markdown,
       streamID: streamID,
       linkAction: linkAction
     )

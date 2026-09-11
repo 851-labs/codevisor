@@ -1,125 +1,40 @@
-import Foundation
 import Testing
 @testable import CodevisorCore
 
-@Suite("Tool group disclosure state machine")
+@Suite("Tool group disclosure")
+@MainActor
 struct ToolGroupDisclosureTests {
-  private let active = ToolGroupDisclosureContext(
-    hasUnsettledCall: true,
-    followsLatestWork: false
-  )
-  private let inactive = ToolGroupDisclosureContext(
-    hasUnsettledCall: false,
-    followsLatestWork: false
-  )
-
-  @Test("Nested live work stays expanded after settling")
-  func nestedActivityIsSticky() {
-    let initial = ToolGroupDisclosureReducer.initialState(
-      policy: .remainExpandedAfterActivity,
-      context: active
-    )
-    #expect(initial == .forcedExpanded)
-
-    let settled = ToolGroupDisclosureReducer.contextChanged(
-      state: initial,
-      policy: .remainExpandedAfterActivity,
-      previous: active,
-      current: inactive
-    )
-    #expect(settled == .expanded)
+  @Test("Tool groups start collapsed and can be opened and closed manually")
+  func manualDisclosure() {
+    let disclosure = TranscriptDisclosureStore().toolGroupDisclosure(id: "group")
+    #expect(!disclosure.isExpanded)
+    disclosure.userToggled()
+    #expect(disclosure.isExpanded)
+    disclosure.userToggled()
+    #expect(!disclosure.isExpanded)
   }
 
-  @Test("A live call cannot be hidden by a user toggle")
-  func liveCallOwnsVisibility() {
-    let state = ToolGroupDisclosureReducer.userToggled(
-      state: .forcedExpanded,
-      context: active
-    )
-    #expect(state == .forcedExpanded)
-  }
-
-  @Test("A settled nested group remains manually collapsible")
-  func settledNestedGroupCanBeCollapsed() {
-    let collapsed = ToolGroupDisclosureReducer.userToggled(
-      state: .expanded,
-      context: inactive
-    )
-    #expect(collapsed == .collapsed)
-  }
-
-  @Test("New activity reopens a collapsed group and leaves it open")
-  func newActivityReopensGroup() {
-    let forced = ToolGroupDisclosureReducer.contextChanged(
-      state: .collapsed,
-      policy: .remainExpandedAfterActivity,
-      previous: inactive,
-      current: active
-    )
-    #expect(forced == .forcedExpanded)
-
-    let settled = ToolGroupDisclosureReducer.contextChanged(
-      state: forced,
-      policy: .remainExpandedAfterActivity,
-      previous: active,
-      current: inactive
-    )
-    #expect(settled == .expanded)
-  }
-
-  @Test("Top-level follow-latest expansion remains transient")
-  func topLevelFollowLatestRemainsTransient() {
-    let trailing = ToolGroupDisclosureContext(
-      hasUnsettledCall: false,
-      followsLatestWork: true
-    )
-    let initial = ToolGroupDisclosureReducer.initialState(
-      policy: .followLatestWork,
-      context: trailing
-    )
-    #expect(initial == .followingLatestWork)
-
-    let movedOn = ToolGroupDisclosureReducer.contextChanged(
-      state: initial,
-      policy: .followLatestWork,
-      previous: trailing,
-      current: inactive
-    )
-    #expect(movedOn == .collapsed)
-  }
-
-  @Test("Manual top-level expansion is not an automatic close target")
-  func manualExpansionSurvivesUnrelatedContextChanges() {
-    let trailing = ToolGroupDisclosureContext(
-      hasUnsettledCall: false,
-      followsLatestWork: true
-    )
-    let movedOn = ToolGroupDisclosureReducer.contextChanged(
-      state: .expanded,
-      policy: .followLatestWork,
-      previous: trailing,
-      current: inactive
-    )
-    #expect(movedOn == .expanded)
-  }
-
-  @Test("Session store retains one disclosure object per stable group id")
-  @MainActor
+  @Test("Session store retains each group's choice across remounts")
   func disclosureIdentitySurvivesRemount() {
     let store = TranscriptDisclosureStore()
-    let first = store.toolGroupDisclosure(
-      id: "group",
-      policy: .remainExpandedAfterActivity,
-      initialContext: active
-    )
-    first.reconcile(inactive)
+    let first = store.toolGroupDisclosure(id: "group")
+    first.userToggled()
 
-    let remounted = store.toolGroupDisclosure(
-      id: "group",
-      policy: .remainExpandedAfterActivity,
-      initialContext: inactive
-    )
+    let remounted = store.toolGroupDisclosure(id: "group")
     #expect(first === remounted)
-    #expect(remounted.state == .expanded)
+    #expect(remounted.isExpanded)
+    #expect(!store.toolGroupDisclosure(id: "another-group").isExpanded)
+
+    remounted.userToggled()
+    #expect(!store.toolGroupDisclosure(id: "group").isExpanded)
+  }
+
+  @Test("Group choices are scoped to their session")
+  func sessionsAreIndependent() {
+    let first = TranscriptDisclosureStore()
+    first.toolGroupDisclosure(id: "group").userToggled()
+    let second = TranscriptDisclosureStore()
+    #expect(!second.toolGroupDisclosure(id: "group").isExpanded)
+    #expect(first.workedSectionRevision == 0)
   }
 }

@@ -5,22 +5,18 @@ import CodevisorCore
 public struct ToolGroupView: View {
   let group: ToolCallGroup
   var isTurnActive: Bool = false
-  var followsLatestWork: Bool = false
-  var automaticDisclosurePolicy: ToolGroupAutomaticDisclosurePolicy = .followLatestWork
 
   public init(
     group: ToolCallGroup,
-    isTurnActive: Bool = false,
-    followsLatestWork: Bool = false,
-    automaticDisclosurePolicy: ToolGroupAutomaticDisclosurePolicy = .followLatestWork
+    isTurnActive: Bool = false
   ) {
     self.group = group
     self.isTurnActive = isTurnActive
-    self.followsLatestWork = followsLatestWork
-    self.automaticDisclosurePolicy = automaticDisclosurePolicy
   }
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptPerformAnchoredDisclosureChange) private var performAnchoredDisclosureChange
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @State private var totalsCache = DiffTotalsCache()
 
   private static var iconFont: Font {
     #if os(iOS)
@@ -50,21 +46,16 @@ public struct ToolGroupView: View {
   }
 
   private var store: TranscriptDisclosureStore { disclosureStore ?? .previews }
-  private var disclosureContext: ToolGroupDisclosureContext {
-    ToolGroupDisclosureContext(
-      hasUnsettledCall: group.hasUnsettledCall,
-      followsLatestWork: followsLatestWork
-    )
-  }
 
   public var body: some View {
-    let context = disclosureContext
-    let disclosure = store.toolGroupDisclosure(
-      id: group.id,
-      policy: automaticDisclosurePolicy,
-      initialContext: context
-    )
+    let disclosure = store.toolGroupDisclosure(id: group.id)
     let isExpanded = disclosure.isExpanded
+    let header = ToolGroupHeaderPresentation(
+      group: group,
+      isExpanded: isExpanded,
+      isTurnActive: isTurnActive,
+      totalsCache: totalsCache
+    )
 
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: Self.headerSpacing) {
@@ -77,14 +68,16 @@ public struct ToolGroupView: View {
           .font(Self.iconFont)
           .foregroundStyle(.secondary)
           .frame(width: Self.iconColumnWidth)
-        Text(ToolCallSummary.describe(group.calls))
+        Text(header.title)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+          .truncationMode(.tail)
           .foregroundStyle(.secondary)
+          .shimmering(header.isShimmering)
         TranscriptDisclosureChevron(expanded: isExpanded)
         Spacer(minLength: 0)
       }
       .contentShape(Rectangle())
       .onTapGesture {
-        guard disclosure.isUserToggleEnabled else { return }
         let change = { disclosure.userToggled() }
         performAnchoredDisclosureChange?(change) ?? change()
       }
@@ -99,11 +92,22 @@ public struct ToolGroupView: View {
         .padding(.top, 8)
       }
     }
-    // The session-owned state machine is the only authority for expansion.
-    // Reconciliation is idempotent and O(1); group activity was accumulated
-    // while the transcript was already being grouped.
-    .onChange(of: context, initial: true) { _, current in
-      disclosure.reconcile(current)
+  }
+}
+
+/// Collapsed live groups expose the latest call; opening or finishing the
+/// group restores its summary. The same activity bit controls the shimmer.
+struct ToolGroupHeaderPresentation {
+  let title: String
+  let isShimmering: Bool
+
+  @MainActor
+  init(group: ToolCallGroup, isExpanded: Bool, isTurnActive: Bool, totalsCache: DiffTotalsCache) {
+    isShimmering = !isExpanded && isTurnActive && group.hasUnsettledCall
+    if isShimmering, let latestCall = group.calls.last {
+      title = latestCall.displayTitle(diffTotals: totalsCache.totals(for: latestCall))
+    } else {
+      title = ToolCallSummary.describe(group.calls)
     }
   }
 }

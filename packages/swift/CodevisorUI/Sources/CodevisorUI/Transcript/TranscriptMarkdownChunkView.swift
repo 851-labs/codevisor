@@ -5,7 +5,6 @@ import TranscriptKit
 /// Shared renderer for a projected Markdown row on macOS and iOS.
 public struct TranscriptMarkdownChunkView: View {
   private let chunk: TranscriptMarkdownChunk
-  @Environment(\.markdownTheme) private var markdownTheme
 
   public init(chunk: TranscriptMarkdownChunk) {
     self.chunk = chunk
@@ -46,14 +45,5 @@ public struct TranscriptMarkdownChunkView: View {
         )
       }
     }
-    .environment(\.markdownTheme, resolvedMarkdownTheme)
-  }
-
-  private var resolvedMarkdownTheme: MarkdownTheme {
-    guard chunk.container == .assistantWorked else { return markdownTheme }
-    var resolved = markdownTheme
-    resolved.textForeground = markdownTheme.secondaryTextForeground
-    resolved.codeForeground = markdownTheme.secondaryTextForeground
-    return resolved
   }
 }

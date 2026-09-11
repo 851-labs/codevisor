@@ -126,50 +126,6 @@ extension AssistantTurn {
     return items
   }
 
-  /// Tool-call ids not yet followed by prose or a compaction marker — the
-  /// calls whose groups follow-the-work auto-expansion keeps open. One
-  /// reverse scan that stops at the first blocking entry; probing each
-  /// group with `isTrailingToolGroup` instead made the active turn's item
-  /// list O(groups × entries) on every streaming flush. Semantics are
-  /// identical: an id is in this set exactly when `isTrailingToolGroup`
-  /// returns true for it.
-  public var trailingToolCallIds: Set<String> {
-    var ids: Set<String> = []
-    for entry in entries.reversed() {
-      switch entry {
-      case let .tool(call):
-        ids.insert(call.toolCallId)
-      case let .text(_, markdown):
-        if !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return ids }
-      case .contextCompaction:
-        return ids
-      }
-    }
-    return ids
-  }
-
-  /// True while the tool group ending in `toolCallId` is still the tail of
-  /// the streamed transcript — no text has followed it yet. Drives the
-  /// group's auto-expansion: open while the model is working through it,
-  /// collapsed once it moves on to prose.
-  public func isTrailingToolGroup(lastToolCallId toolCallId: String) -> Bool {
-    guard
-      let index = entries.lastIndex(where: {
-        if case let .tool(call) = $0 { return call.toolCallId == toolCallId }
-        return false
-      })
-    else { return false }
-    return !entries[entries.index(after: index)...].contains { entry in
-      switch entry {
-      case let .text(_, markdown):
-        !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      case .contextCompaction:
-        true
-      case .tool:
-        false
-      }
-    }
-  }
 }
 
 /// Summarizes a group of tool calls into a one-line description and an icon,

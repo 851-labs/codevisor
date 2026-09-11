@@ -27,9 +27,6 @@ struct TranscriptItemsView: View {
   private static let maxNestingDepth = 3
 
   var body: some View {
-    // One reverse scan per body evaluation; probing per group made this
-    // O(groups × entries) on every streaming flush.
-    let trailingToolCallIds = depth == 0 && isTurnActive ? turn.trailingToolCallIds : []
     ForEach(items) { item in
       switch item {
       case let .text(entryID, markdown):
@@ -39,7 +36,7 @@ struct TranscriptItemsView: View {
         StreamingMarkdownView(
           markdown,
           isComplete: !isTurnActive,
-          foregroundColor: theme.textSecondary,
+          foregroundColor: theme.textPrimary,
           streamID: streamID(for: entryID),
           animationPresentation: animationPresentation,
           animationEnabled: animationEnabled
@@ -47,12 +44,7 @@ struct TranscriptItemsView: View {
       case let .toolGroup(group):
         ToolGroupView(
           group: group,
-          isTurnActive: isTurnActive,
-          followsLatestWork: depth == 0 && isTurnActive
-            && (group.calls.last.map { trailingToolCallIds.contains($0.toolCallId) } ?? false),
-          automaticDisclosurePolicy: depth == 0
-            ? .followLatestWork
-            : .remainExpandedAfterActivity
+          isTurnActive: isTurnActive
         )
       case let .contextCompaction(_, status):
         switch status {
