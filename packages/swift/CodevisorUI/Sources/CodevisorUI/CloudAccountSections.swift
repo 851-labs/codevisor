@@ -8,8 +8,6 @@ public struct CloudAccountSections: View {
   private let configureServer: () -> Void
   @State private var isSigningIn = false
   @State private var isDeleting = false
-  @State private var showsDeleteConfirmation = false
-  @State private var errorMessage: String?
 
   public init(
     cloud: CloudAccountController,
@@ -67,19 +65,8 @@ public struct CloudAccountSections: View {
         .disabled(isSigningIn || isDeleting)
       }
       #if os(iOS)
-        if cloud.state.isSignedIn {
-          Section {
-            deleteAccountButton
-          } footer: {
-            deletionExplanation
-          }
-        }
+        CloudAccountDeletionSection(cloud: cloud, isDeleting: $isDeleting)
       #endif
-    }
-    .alert("Account", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-      Button("OK", role: .cancel) { errorMessage = nil }
-    } message: {
-      Text(errorMessage ?? "")
     }
   }
 
@@ -106,7 +93,7 @@ public struct CloudAccountSections: View {
       #if os(macOS)
         HStack(spacing: 8) {
           signOutButton
-          deleteAccountButton
+          CloudAccountDeletionButton(cloud: cloud, isDeleting: $isDeleting)
           Spacer()
         }
         .buttonStyle(.bordered)
@@ -119,32 +106,5 @@ public struct CloudAccountSections: View {
   private var signOutButton: some View {
     Button("Sign Out") { cloud.signOut() }
       .disabled(isDeleting)
-  }
-
-  private var deleteAccountButton: some View {
-    Button(isDeleting ? "Deleting Account…" : "Delete Cloud Account", role: .destructive) {
-      showsDeleteConfirmation = true
-    }
-    .foregroundStyle(.red)
-    .disabled(isDeleting)
-    .alert("Delete Cloud Account?", isPresented: $showsDeleteConfirmation) {
-      Button("Delete Cloud Account", role: .destructive) {
-        isDeleting = true
-        Task {
-          await cloud.deleteAccount()
-          isDeleting = false
-          errorMessage = cloud.lastError
-        }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("This permanently deletes your Cloud account and disconnects all your machines. This cannot be undone.")
-    }
-  }
-
-  private var deletionExplanation: some View {
-    Text(
-      "Permanently delete your Cloud account and disconnect its machines. Files and chats on your machines are kept."
-    )
   }
 }
