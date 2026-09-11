@@ -118,7 +118,6 @@ struct CloudAccountAuthenticationSections: View {
           Task { await cloud.signInWithDevelopmentAccount() }
         }
       }
-      if isSigningIn { ProgressView() }
     }
     .padding(.vertical, 4)
     .disabled(isSigningIn)
