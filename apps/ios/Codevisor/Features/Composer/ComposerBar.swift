@@ -92,7 +92,6 @@ struct ComposerBar: View {
   @State var isPickingFiles = false
   @State var isCapturingPhoto = false
   @State var managedProject: Project?
-  @State var showsProjectPicker = false
   @State var showsMachineSettings = false
   /// Only the latest queued target selection starts preparing the draft.
   @State var runTargetSelectionRevision = 0
@@ -235,12 +234,6 @@ struct ComposerBar: View {
     // back from zero) still morphs the glass out of/into the composer.
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
-    .sheet(isPresented: $showsProjectPicker) {
-      RunTargetProjectPickerSheet(
-        currentProject: controller.project,
-        onSelected: { selectTargetProject($0) }
-      )
-    }
     .sheet(isPresented: $showsMachineSettings) {
       SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }

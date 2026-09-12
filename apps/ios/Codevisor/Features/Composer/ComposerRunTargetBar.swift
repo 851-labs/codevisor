@@ -9,15 +9,14 @@ struct ComposerRunTargetBar: View {
   let machines: [CodevisorMachine]
   let selectedServerId: String
   let readyMachineIds: Set<String>
-  let projectName: String
-  let isPlaceholder: Bool
-  let isGitRepository: Bool
+  let project: Project
   let wantsNewWorktree: Bool
   let onMachine: (CodevisorMachine) -> Void
-  let onProject: () -> Void
+  let onProject: (Project) -> Void
   let onLocation: (Bool) -> Void
   let onManageMachines: () -> Void
   let onManageProject: () -> Void
+  let onArchiveProject: (Project) -> Void
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .footnote) private var minimumMachineWidth = 88.0
@@ -45,24 +44,27 @@ struct ComposerRunTargetBar: View {
           .layoutValue(key: RunTargetPickerRoleKey.self, value: .machine)
         pickerDivider
       }
-      Button(action: onProject) {
+      ComposerProjectMenu(
+        currentProject: project,
+        onSelected: onProject,
+        onArchiveProject: onArchiveProject
+      ) {
         chipLabel(
           projectName,
           symbol: isPlaceholder ? EntitySystemSymbol.projectList : EntitySystemSymbol.project
         )
       }
-      .contextMenu {
-        if !isPlaceholder {
-          Button("Manage Project…", systemImage: "gearshape", action: onManageProject)
-        }
-      }
+      .id(project.serverId)
       .accessibilityLabel("Project")
       .accessibilityValue(projectName)
       .accessibilityIdentifier("newChat.projectPicker")
       .layoutValue(key: RunTargetPickerRoleKey.self, value: .project)
-      if isGitRepository {
+      if !isPlaceholder && project.isGitRepository {
         pickerDivider
         Menu {
+          Section {
+            Button("Manage Project…", systemImage: "gearshape", action: onManageProject)
+          }
           Picker(
             "Run location",
             selection: Binding(get: { wantsNewWorktree }, set: onLocation)
@@ -70,7 +72,6 @@ struct ComposerRunTargetBar: View {
             Label("Project directory", systemImage: "folder.fill").tag(false)
             Label("New worktree", systemImage: "arrow.triangle.branch").tag(true)
           }
-          Button("Manage Project…", systemImage: "gearshape", action: onManageProject)
         } label: {
           ViewThatFits(in: .horizontal) {
             chipLabel(
@@ -82,6 +83,7 @@ struct ComposerRunTargetBar: View {
           }
         }
         .menuIndicator(.hidden)
+        .menuOrder(.fixed)
         .accessibilityLabel("Run location")
         .accessibilityValue(wantsNewWorktree ? "New worktree" : "Project directory")
         .accessibilityIdentifier("newChat.locationPicker")
@@ -97,6 +99,14 @@ struct ComposerRunTargetBar: View {
 
   private var locationSymbol: String {
     wantsNewWorktree ? "arrow.triangle.branch" : "folder.fill"
+  }
+
+  private var isPlaceholder: Bool {
+    project.isRunTargetPlaceholder || project.isScratch
+  }
+
+  private var projectName: String {
+    isPlaceholder ? "No project" : project.name
   }
 
   private var pickerDivider: some View {
