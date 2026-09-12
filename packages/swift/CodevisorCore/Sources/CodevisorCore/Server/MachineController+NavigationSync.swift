@@ -218,8 +218,9 @@ extension MachineController {
     guard !Task.isCancelled else { return }
     let connection = connection(for: serverId)
     guard connection.pendingRefreshTask == nil else { return }
+    let clock = navigationClock
     connection.pendingRefreshTask = Task { [weak self] in
-      try? await self?.navigationSleep(.milliseconds(300))
+      try? await clock.sleep(for: .milliseconds(300))
       guard let self, !Task.isCancelled else { return }
       connection.pendingRefreshTask = nil
       await self.synchronizeNavigationState(
@@ -279,8 +280,11 @@ extension MachineController {
     // The spinner must never outlive the wait: a catch-up wedged on a
     // half-open transport hangs rather than fails, so a deadline cancels
     // it and demotes to stale — cached rows plus retry, not a spinner.
+    let clock = navigationClock
     let watchdog = Task {
-      try? await navigationSleep(.seconds(30))
+      // A captured async sleep closure corrupts the task allocator in the
+      // native SwiftPM test runner. Keep the timer on Clock's typed API.
+      try? await clock.sleep(for: .seconds(30))
       guard !Task.isCancelled, connection.navigationSyncToken == token
       else { return }
       task.cancel()

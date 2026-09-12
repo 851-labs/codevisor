@@ -11,7 +11,7 @@ struct NavigationEventRecoveryTests {
   @Test("Failed workspace snapshots stay stale and retry with backoff without another event")
   func workspaceSnapshotRecovery() async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     defer { fixture.controller.stopEventSync() }
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
 
@@ -60,7 +60,7 @@ struct NavigationEventRecoveryTests {
     ])
   func eventRefreshRecovery(kind: String) async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     defer { fixture.controller.stopEventSync() }
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     let handled = TestSignal()
@@ -99,7 +99,7 @@ struct NavigationEventRecoveryTests {
   @Test("Ended and failed shell streams reconnect through navigation recovery", arguments: [false, true])
   func endedStreamRecovers(fails: Bool) async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     defer { fixture.controller.stopEventSync() }
     let snapshot = archivedSnapshot(fixture)
     fixture.fake.workspaceSnapshotHandler = { snapshot }
@@ -128,7 +128,7 @@ struct NavigationEventRecoveryTests {
   @Test("Removing a machine cancels its scheduled navigation recovery")
   func removedMachineDoesNotRetry() async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
     defer { fixture.controller.stopEventSync() }
     await fixture.controller.synchronizeNavigationState(
@@ -146,7 +146,7 @@ struct NavigationEventRecoveryTests {
   @Test("A timed-out snapshot cannot hold retries or overwrite their result")
   func stalledSnapshotLosesOwnership() async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     let started = TestSignal()
     let release = TestSignal()
     let stale = ServerWorkspaceSnapshot(

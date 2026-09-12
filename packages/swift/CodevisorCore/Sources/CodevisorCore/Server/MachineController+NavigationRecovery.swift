@@ -32,9 +32,9 @@ extension MachineController {
     guard connection.navigationRetryTask == nil else { return }
     connection.navigationFailures += 1
     let delay = Duration.seconds(min(60, 1 << min(connection.navigationFailures, 6)))
-    let sleep = navigationSleep
+    let clock = navigationClock
     connection.navigationRetryTask = Task { [weak self] in
-      try? await sleep(delay)
+      try? await clock.sleep(for: delay)
       guard let self, !Task.isCancelled,
         self.connectionsById[serverId] === connection
       else { return }

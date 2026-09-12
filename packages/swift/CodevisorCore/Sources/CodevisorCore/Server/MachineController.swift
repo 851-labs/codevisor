@@ -141,7 +141,7 @@ public final class MachineController {
   let preparationSleep: @Sendable (Duration) async throws -> Void
   let preparationRetryBaseDelay: Duration
   /// Shared scheduler for navigation debounce, timeout, and retry deadlines.
-  let navigationSleep: @Sendable (Duration) async throws -> Void
+  let navigationClock: any Clock<Duration>
   @ObservationIgnored private var credentialReadFailures: Set<String> = []
   /// Invoked when a `harness.lifecycle.updated` event arrives for a machine
   /// — the AppEnvironment bridges it to its harness-catalog revision so
@@ -192,7 +192,7 @@ public final class MachineController {
     updateScheduler: ServerUpdateScheduler = .continuous,
     preparationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     preparationRetryBaseDelay: Duration = .seconds(1),
-    navigationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    navigationClock: any Clock<Duration> = ContinuousClock()
   ) {
     let requestGate = ServerRequestGate()
     self.store = store
@@ -215,7 +215,7 @@ public final class MachineController {
     self.updateScheduler = updateScheduler
     self.preparationSleep = preparationSleep
     self.preparationRetryBaseDelay = preparationRetryBaseDelay
-    self.navigationSleep = navigationSleep
+    self.navigationClock = navigationClock
     if let data = store.loadData(forKey: "machines") {
       do {
         registry = try JSONDecoder().decode(MachineRegistry.self, from: data).normalized()

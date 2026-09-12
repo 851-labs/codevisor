@@ -72,7 +72,7 @@ struct NavigationDeletionEventTests {
     arguments: [PaneKind.chat, .browser, .terminal])
   func sessionDeletionPrunesPanesBeforeRefresh(selectedKind: PaneKind) async throws {
     let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationSleep: clock.sleep)
+    let fixture = WorkspaceEventFixture(navigationClock: clock)
     if selectedKind != .chat {
       var workspace = fixture.workspace
       let pane = PaneDescriptorState(id: UUID(), kind: selectedKind, name: "Page", terminalKey: "page")

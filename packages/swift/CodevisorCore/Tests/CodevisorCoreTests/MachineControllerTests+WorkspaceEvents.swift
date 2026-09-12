@@ -136,7 +136,7 @@ struct WorkspaceEventFixture {
   let sync: WorkspaceSyncModel
   let controller: MachineController
 
-  init(navigationSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+  init(navigationClock: any Clock<Duration> = ContinuousClock()) {
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -163,7 +163,7 @@ struct WorkspaceEventFixture {
     let client = fake
     controller = MachineController(
       store: InMemoryStore(), projectList: projectList, workspaceSync: sync,
-      clientFactory: { _ in client }, navigationSleep: navigationSleep
+      clientFactory: { _ in client }, navigationClock: navigationClock
     )
   }
 
