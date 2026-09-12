@@ -150,7 +150,8 @@ extension WorkspaceScreen {
         serverId: session.serverId,
         projectId: project.id,
         rootDirectory: session.cwd ?? project.folderURL.path,
-        worktreeName: session.worktreeName
+        worktreeName: session.worktreeName,
+        assignedWorkspaceId: environment.projectList.workspaceAssignments(for: session.serverId)[session.id]
       ),
       legacyGroups: environment.paneGroups
     )

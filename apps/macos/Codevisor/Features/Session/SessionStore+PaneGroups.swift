@@ -43,7 +43,8 @@ extension SessionStore {
       serverId: session.serverId,
       projectId: project.id,
       rootDirectory: session.cwd ?? project.folderURL.path,
-      worktreeName: session.worktreeName
+      worktreeName: session.worktreeName,
+      assignedWorkspaceId: environment.projectList.workspaceAssignments(for: session.serverId)[session.id]
     )
     // A chat that is no longer active and has NO persisted workspace must
     // not mint one: archiving a scratch chat deletes its workspace (index

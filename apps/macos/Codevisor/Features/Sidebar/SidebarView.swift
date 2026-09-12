@@ -162,7 +162,10 @@ struct SidebarView: View {
           isLoadingMoreArchived = false
         }
       }
-      .onChange(of: Set(activeSessionItems.map(\.id))) { _, _ in
+      // Keyed on assignments as well as ids: a chat created elsewhere can
+      // arrive before the server's workspace membership does, and the
+      // backfill must run again once it lands to re-home the chat.
+      .onChange(of: sessionWorkspaceAssignments) { _, _ in
         ensureSessionWorkspaces()
       }
       // Persist the initial order and incorporate new workspaces once, so

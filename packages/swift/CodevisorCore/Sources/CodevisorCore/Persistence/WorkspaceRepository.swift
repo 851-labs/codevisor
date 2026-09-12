@@ -82,6 +82,12 @@ public struct WorkspaceSessionSeed: Sendable {
   /// The session's git worktree, when it lives in one. Stamped onto the
   /// workspace so future sessions inherit it.
   public let worktreeName: String?
+  /// The workspace the server says owns this session, when known. A chat
+  /// created elsewhere (another client, an agent, the API) arrives with its
+  /// membership already decided; honoring it here keeps the chat in that
+  /// workspace instead of minting a sibling at the same directory. Nil for
+  /// unassigned sessions and for servers that predate workspace ownership.
+  public let assignedWorkspaceId: UUID?
 
   public init(
     sessionId: UUID,
@@ -89,7 +95,8 @@ public struct WorkspaceSessionSeed: Sendable {
     serverId: String,
     projectId: UUID,
     rootDirectory: String?,
-    worktreeName: String? = nil
+    worktreeName: String? = nil,
+    assignedWorkspaceId: UUID? = nil
   ) {
     self.sessionId = sessionId
     self.initialName = initialName
@@ -97,6 +104,7 @@ public struct WorkspaceSessionSeed: Sendable {
     self.projectId = projectId
     self.rootDirectory = rootDirectory
     self.worktreeName = worktreeName
+    self.assignedWorkspaceId = assignedWorkspaceId
   }
 }
 
@@ -209,11 +217,21 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
   /// A nil root fills in once the session's directory resolves. Automatic
   /// names deliberately do not follow chat titles: project/worktree context
   /// owns the workspace name.
+  ///
+  /// Resolution order: the local index (a chat keeps the workspace it lives
+  /// in), then the server's assignment (join that workspace, or mint under
+  /// its identity so the next snapshot converges on it), then a fresh
+  /// workspace. A chat that this client minted a workspace for before the
+  /// server's assignment was known is re-homed once the assignment names a
+  /// different local workspace.
   public func ensureWorkspace(
     for seed: WorkspaceSessionSeed,
     legacyGroups: (any PaneGroupRepository)?
   ) -> Workspace {
     if let id = workspaceId(forSession: seed.sessionId), var existing = workspace(id: id) {
+      if let rehomed = rehomeMintedWorkspace(existing, for: seed) {
+        return rehomed
+      }
       var changed = false
       if existing.rootDirectory == nil, let root = seed.rootDirectory {
         existing.rootDirectory = root
@@ -222,6 +240,17 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
       }
       if changed { save(existing) }
       return existing
+    }
+
+    if var assigned = assignedWorkspace(for: seed) {
+      // The chat already belongs to a workspace this client knows. Add it
+      // as a tab without stealing selection: the user may be working in
+      // that workspace right now, and the sidebar route selects the tab
+      // when they open the chat.
+      let center = PaneGroupState.centerInitial(sessionId: seed.sessionId)
+      assigned.centerTabs.append(WorkspaceTab(root: .leaf(center)))
+      save(assigned)
+      return assigned
     }
 
     // Migrate the session's pre-workspace pane state, tagging its chat
@@ -234,7 +263,16 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         center.panes[index].chatSessionId = seed.sessionId
       }
     }
+    // An assignment to a workspace this client has not seen yet (the
+    // server created both in one go) mints under the server's identity,
+    // so the snapshot that follows adopts this record instead of finding
+    // a stranger at the same directory. An archived local record with
+    // that id is stale membership; it is not revived here.
+    let mintedId = seed.assignedWorkspaceId.flatMap { id in
+      workspace(id: id) == nil ? id : nil
+    }
     var workspace = Workspace(
+      id: mintedId ?? UUID(),
       name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
       rootDirectory: seed.rootDirectory,
       worktreeName: seed.worktreeName,
@@ -245,6 +283,38 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     workspace.importLegacyPanes(legacyGroups?.legacyPanes(sessionId: seed.sessionId) ?? [])
     save(workspace)
     return workspace
+  }
+
+  /// The server-assigned workspace when it is a live local record on the
+  /// same machine. Archived records and other machines' workspaces never
+  /// host a chat through an assignment.
+  private func assignedWorkspace(for seed: WorkspaceSessionSeed) -> Workspace? {
+    guard let id = seed.assignedWorkspaceId,
+      let candidate = workspace(id: id),
+      candidate.serverId == seed.serverId,
+      !candidate.isArchived
+    else { return nil }
+    return candidate
+  }
+
+  /// Moves a client-minted workspace's layout into the server-assigned
+  /// workspace and retires the minted record. Only a workspace the server
+  /// never confirmed, whose sole chat is this session, qualifies: anything
+  /// the server knows about, or that hosts other chats, is reconciled by
+  /// the sync model against the authoritative snapshot instead.
+  private func rehomeMintedWorkspace(
+    _ minted: Workspace,
+    for seed: WorkspaceSessionSeed
+  ) -> Workspace? {
+    guard !minted.isServerSynced,
+      minted.chatSessionIds == [seed.sessionId],
+      var target = assignedWorkspace(for: seed),
+      target.id != minted.id
+    else { return nil }
+    target.centerTabs.append(contentsOf: minted.centerTabs)
+    delete(id: minted.id)
+    save(target)
+    return target
   }
 
   public func hasPerformedMigration(_ key: String) -> Bool {

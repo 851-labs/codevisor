@@ -57,7 +57,8 @@ extension HomeView {
         serverId: session.serverId,
         projectId: session.projectId,
         rootDirectory: session.cwd ?? project?.folderURL.path,
-        worktreeName: session.worktreeName
+        worktreeName: session.worktreeName,
+        assignedWorkspaceId: projectList.workspaceAssignments(for: session.serverId)[session.id]
       ),
       legacyGroups: environment.paneGroups
     )
