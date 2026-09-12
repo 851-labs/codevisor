@@ -108,6 +108,7 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
 /// The small REST surface the app needs from a Codevisor Cloud instance.
 /// Abstracted so the account controller is testable with a fake.
 public protocol CloudAccountClienting: Sendable {
+  func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data
   /// `GET /.well-known/codevisor` — the discovery/validation document.
   func discover() async throws -> CloudInstanceInfo
   /// Exchanges the browser handoff's one-time token for a session bearer

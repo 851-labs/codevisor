@@ -10,6 +10,8 @@ import { devLoginPage, devicePage, homePage, loginPage } from "./pages/pages.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
+import { pluginModeration } from "./plugin-moderation.js"
+import { notifyPluginReports } from "./plugin-reports.js"
 
 // Note: the Worker entry module may only export handlers/DO classes — plain
 // value re-exports (strings, constants) crash workerd at startup.
@@ -43,6 +45,7 @@ const connectionUserId = async (env: CloudEnv, request: Request): Promise<string
 }
 
 const app = new Hono<HonoEnv>()
+app.route("/", pluginModeration)
 
 // -- Discovery & liveness ----------------------------------------------------
 
@@ -276,6 +279,7 @@ const worker = {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: CloudEnv, ctx: ExecutionContext): void => {
     ctx.waitUntil(refreshPluginIndex(env))
+    ctx.waitUntil(notifyPluginReports(env))
   }
 } satisfies ExportedHandler<CloudEnv>
 

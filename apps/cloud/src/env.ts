@@ -19,6 +19,9 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID"> {
   /// Bearer token authorizing POST /plugins/refresh on deployed instances.
   /// Absent (and outside dev auth) the route does not exist.
   PLUGINS_REFRESH_TOKEN?: string
+  PLUGIN_REPORT_SLACK_WEBHOOK?: string
+  /** Test seam for report notifications; never configured in production. */
+  PLUGIN_REPORT_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   /// Test seam: fetch used for all GitHub traffic by the plugin indexer, so
   /// tests never touch the network. Never set on a deployed instance.
   GITHUB_FETCH?: (input: string, init?: RequestInit) => Promise<Response>

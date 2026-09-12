@@ -25,6 +25,15 @@ struct PluginsSettingsScreen: View {
         machineList
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        NavigationLink {
+          PluginBlockedPublishersView()
+        } label: {
+          Label("Blocked Publishers", systemImage: "hand.raised")
+        }
+      }
+    }
   }
 
   private var machineList: some View {
@@ -161,7 +170,6 @@ private struct PluginMachineScreen: View {
         case .install(let initialSource):
           PluginInstallSheet(
             initialSource: initialSource,
-            machineName: session.machine.name,
             discover: { try await session.discover(source: $0) },
             onInstall: { source in
               try await mutate {
@@ -173,7 +181,7 @@ private struct PluginMachineScreen: View {
         case .browse:
           PluginRegistryBrowseSheet(
             fetchRegistry: { try await session.fetchRegistry() },
-            installedIds: session.installedIds,
+            installedPlugins: session.installedPlugins,
             onInstall: { session.showInstall(source: $0.repo) }
           )
         }
@@ -181,6 +189,8 @@ private struct PluginMachineScreen: View {
         PluginUpdateSheet(
           plan: plan,
           onApply: {
+            try await environment.pluginAccess.requireEligible(
+              pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
             _ = try await mutate {
               try await client.applyPluginUpdate(
                 pluginId: plan.pluginId,
@@ -204,7 +214,8 @@ private struct PluginMachineScreen: View {
         guard let plugin = pluginPendingRestore else { return }
         Task {
           _ = try? await mutate {
-            try await client.restorePlugin(pluginId: plugin.id)
+            try await environment.pluginAccess.requireEligible(pluginId: plugin.id, ageRating: plugin.ageRating)
+            _ = try await client.restorePlugin(pluginId: plugin.id)
           }
           pluginPendingRestore = nil
           await reload()
@@ -219,12 +230,51 @@ private struct PluginMachineScreen: View {
   }
 
   private func open(_ page: PluginSettingsSession.Page) {
-    guard let session = PluginSettingsSession(machines: environment.machines, machineId: machine.id, page: page)
+    guard
+      let session = PluginSettingsSession(
+        machines: environment.machines, machineId: machine.id, page: page, catalog: environment.pluginAccess.catalog)
     else { return }
     activeSheet = .session(session)
   }
 
   private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
+    NavigationLink {
+      PluginDetailScreen(plugin: plugin)
+    } label: {
+      pluginLabel(plugin)
+    }
+    .contextMenu {
+      pluginActions(plugin)
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if updates[plugin.id]?.state == .available {
+        Button {
+          prepareUpdate(plugin)
+        } label: {
+          Label("Update", systemImage: "arrow.down.circle")
+        }
+        .tint(.blue)
+      }
+      // Only managed installs may be uninstalled — a linked dev
+      // plugin's directory belongs to its author.
+      if plugin.source == "managed" {
+        Button(role: .destructive) {
+          uninstall(plugin)
+        } label: {
+          Label("Uninstall", systemImage: "trash")
+        }
+      }
+      if plugin.isEnabled {
+        Button {
+          restart(plugin)
+        } label: {
+          Label("Restart", systemImage: "arrow.clockwise")
+        }
+      }
+    }
+  }
+
+  private func pluginLabel(_ plugin: ServerPluginSummary) -> some View {
     HStack(spacing: 12) {
       PluginIconView(
         pluginId: plugin.id,
@@ -261,39 +311,13 @@ private struct PluginMachineScreen: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(accessibilityLabel(for: plugin))
-    .contextMenu {
-      pluginActions(plugin)
-    }
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      if updates[plugin.id]?.state == .available {
-        Button {
-          prepareUpdate(plugin)
-        } label: {
-          Label("Update", systemImage: "arrow.down.circle")
-        }
-        .tint(.blue)
-      }
-      // Only managed installs may be uninstalled — a linked dev
-      // plugin's directory belongs to its author.
-      if plugin.source == "managed" {
-        Button(role: .destructive) {
-          uninstall(plugin)
-        } label: {
-          Label("Uninstall", systemImage: "trash")
-        }
-      }
-      if plugin.isEnabled {
-        Button {
-          restart(plugin)
-        } label: {
-          Label("Restart", systemImage: "arrow.clockwise")
-        }
-      }
+    .padding(.trailing, 32)
+    .overlay(alignment: .trailing) {
+      PluginSafetyButton(pluginId: plugin.id, name: plugin.name)
     }
   }
 
-  /// The per-plugin actions, shared by the row's ellipsis menu and its
-  /// long-press context menu so both surfaces always agree.
+  /// Runtime actions remain available from the row’s context menu.
   @ViewBuilder
   private func pluginActions(_ plugin: ServerPluginSummary) -> some View {
     if updates[plugin.id]?.state == .available {

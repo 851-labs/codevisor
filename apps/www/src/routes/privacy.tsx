@@ -165,6 +165,25 @@ const sections = [
     body: (
       <>
         <p>
+          When you install a plugin through the app, we record your permission for that individual
+          plugin in your Cloud account so it applies across your devices. The record includes its
+          identifier, a hash identifying its source, the notice version, and the time you agreed. We
+          keep an account-only index with its name, description, version, age rating, pane titles,
+          and tool descriptions, including for unlisted plugins you approve. The consent record does
+          not contain your workspace files, local paths, or repository credentials. We also store
+          publishers you block so your iOS devices respect that choice.
+        </p>
+        <p>
+          Plugin reports include your account identifier, the plugin’s identifier and name, your
+          selected reason, any details you enter, and the report time. We store reports in our Cloud
+          database and notify our team through Slack with the report identifier, plugin, reason, and
+          details. Avoid including secrets or sensitive personal information. We use these records
+          to investigate abuse, enforce our terms, and maintain safety. Account deletion removes
+          consent and publisher-block records and removes your account link from retained reports.
+          Reports and related Slack notifications may be retained as needed for investigations,
+          repeat-abuse prevention, legal obligations, and resolving disputes.
+        </p>
+        <p>
           Plugins run on your connected computer and can display a pane inside Codevisor or add
           agent tools. Their panes receive workspace context, including the working directory and
           pane identifiers. Installing a plugin runs its declared commands on that computer.

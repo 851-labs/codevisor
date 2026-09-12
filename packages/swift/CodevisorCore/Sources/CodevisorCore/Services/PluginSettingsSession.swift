@@ -14,8 +14,10 @@ public final class PluginSettingsSession: Identifiable {
   public let machine: CodevisorMachine
   public nonisolated var id: String { machine.id }
   public private(set) var page: Page
-  public private(set) var installedIds: Set<String> = []
+  public private(set) var installedPlugins: [ServerPluginSummary] = []
+  public var installedIds: Set<String> { Set(installedPlugins.map(\.id)) }
   private let machines: MachineController
+  private let catalog: PluginCatalogClient
 
   /// Use the actual roster. Client-only platforms have no local machine,
   /// even while their legacy selected machine id is still "local".
@@ -29,11 +31,15 @@ public final class PluginSettingsSession: Identifiable {
     }
   }
 
-  public init?(machines: MachineController, machineId: String, page: Page) {
+  public init?(
+    machines: MachineController, machineId: String, page: Page,
+    catalog: PluginCatalogClient = PluginCatalogClient()
+  ) {
     guard let machine = Self.availableMachines(in: machines).first(where: { $0.id == machineId }) else {
       return nil
     }
     self.machines = machines
+    self.catalog = catalog
     self.machine = machine
     self.page = page
   }
@@ -43,11 +49,11 @@ public final class PluginSettingsSession: Identifiable {
   }
 
   public func fetchRegistry() async throws -> ServerPluginRegistryIndex {
-    let registry = try await client.fetchPluginRegistry(query: nil)
+    let registry = try await catalog.index()
     // Installed markers are supplementary; a failure to load them should
     // not turn a successfully loaded registry into an unavailable screen.
     if let plugins = try? await client.listPlugins() {
-      installedIds = Set(plugins.map(\.id))
+      installedPlugins = plugins
     }
     return registry
   }

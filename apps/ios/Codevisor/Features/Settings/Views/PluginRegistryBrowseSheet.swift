@@ -3,16 +3,19 @@ import CodevisorUI
 import SwiftUI
 
 /// Browse the public plugin registry: a searchable list of GitHub-indexed
-/// plugins served through this machine (`GET /v1/plugins/registry`). The list
+/// plugins served by Codevisor. The list
 /// stays scannable — artwork, name, one-line description, Install — and
 /// tapping a row pushes the full story (panes, tools, repo facts). Purely
 /// discovery — Install hands the entry's repo to the existing install sheet,
 /// so consent (verbatim commands + declared tools) is unchanged. The iOS
 /// twin of macOS's PluginRegistryBrowseSheet.
 struct PluginRegistryBrowseSheet: View {
+  @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   let fetchRegistry: () async throws -> ServerPluginRegistryIndex
-  let installedIds: Set<String>
+  let installedPlugins: [ServerPluginSummary]
+
+  private var installedIds: Set<String> { Set(installedPlugins.map(\.id)) }
   let onInstall: (ServerPluginRegistryEntry) -> Void
 
   @State private var entries: [ServerPluginRegistryEntry]?
@@ -34,17 +37,14 @@ struct PluginRegistryBrowseSheet: View {
           }
         }
         .navigationDestination(for: ServerPluginRegistryEntry.self) { entry in
-          PluginRegistryDetailScreen(
-            entry: entry,
-            isInstalled: PluginRegistryBrowsing.isInstalled(
-              entry,
-              installedIds: installedIds
-            ),
-            onInstall: { onInstall(entry) }
-          )
+          if let plugin = installedPlugins.first(where: { $0.id == entry.id }) {
+            PluginDetailScreen(plugin: plugin)
+          } else {
+            PluginDetailScreen(entry: entry, onInstall: { onInstall(entry) })
+          }
         }
     }
-    .task { await load() }
+    .task(id: environment.pluginAccess.revision) { await load() }
   }
 
   @ViewBuilder
@@ -108,6 +108,7 @@ struct PluginRegistryBrowseSheet: View {
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        PluginSafetyButton(pluginId: entry.id, name: entry.name)
         if PluginRegistryBrowsing.isInstalled(entry, installedIds: installedIds) {
           Text("Installed")
             .font(.footnote)
@@ -127,95 +128,15 @@ struct PluginRegistryBrowseSheet: View {
   private func load() async {
     errorMessage = nil
     do {
-      entries = try await fetchRegistry().entries
+      let registry = try await fetchRegistry()
+      let (policy, preferences) = try await environment.pluginAccess.snapshot()
+      entries = registry.entries.filter {
+        policy.restriction(pluginId: $0.id, ageRating: $0.ageRating, blockedPublishers: preferences.blockedPublishers)
+          == nil
+      }
       errorMessage = nil
     } catch {
       errorMessage = ErrorReporter.userFacingMessage(for: error)
     }
-  }
-}
-
-/// Everything the list row leaves out, shown before any commitment: what the
-/// plugin adds (panes, agent tools) and the GitHub facts that anchor it to a
-/// real owner (repo, stars, last push). Install goes through the same
-/// discover→consent flow as everywhere else. The iOS twin of macOS's
-/// PluginRegistryDetailView.
-private struct PluginRegistryDetailScreen: View {
-  let entry: ServerPluginRegistryEntry
-  let isInstalled: Bool
-  let onInstall: () -> Void
-
-  var body: some View {
-    List {
-      Section {
-        HStack(spacing: 14) {
-          PluginRegistryAvatarView(urlString: entry.ownerAvatarUrl, size: 52)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(entry.name)
-              .font(.headline)
-            Text("by \(PluginRegistryBrowsing.owner(of: entry))")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          if isInstalled {
-            Text("Installed")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          } else {
-            Button("Install") { onInstall() }
-              .font(.callout.weight(.medium))
-              .buttonStyle(.borderedProminent)
-              .buttonBorderShape(.capsule)
-          }
-        }
-        if let description = entry.description, !description.isEmpty {
-          Text(description)
-            .foregroundStyle(.secondary)
-        }
-      }
-      if let tools = entry.tools, !tools.isEmpty {
-        Section("Agent Tools") {
-          ForEach(tools) { tool in
-            VStack(alignment: .leading, spacing: 2) {
-              Text(tool.name)
-                .font(.callout.monospaced())
-              Text(tool.description)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-      }
-      Section("Information") {
-        // Pane titles as plain text: pane artwork is served by the
-        // plugin's own server, which isn't running pre-install.
-        if !entry.panes.isEmpty {
-          LabeledContent(
-            "Panes",
-            value: entry.panes.map(\.title).joined(separator: ", ")
-          )
-        }
-        LabeledContent("Version", value: entry.version)
-        LabeledContent("Stars", value: PluginRegistryBrowsing.starsText(for: entry))
-        if let updated = PluginRegistryBrowsing.updatedText(for: entry) {
-          LabeledContent("Updated", value: updated)
-        }
-        if let url = URL(string: "https://github.com/\(entry.repo)") {
-          Link(destination: url) {
-            LabeledContent("GitHub") {
-              HStack(spacing: 4) {
-                Text(entry.repo)
-                Image(systemName: "arrow.up.right")
-                  .font(.caption2)
-              }
-            }
-          }
-          .foregroundStyle(.primary)
-        }
-      }
-    }
-    .navigationTitle(entry.name)
-    .navigationBarTitleDisplayMode(.inline)
   }
 }

@@ -5,6 +5,19 @@ import Testing
 
 @Suite("PluginInstallDeeplink")
 struct PluginInstallDeeplinkTests {
+  @Test("Universal links accept only Codevisor HTTPS plugin pages")
+  func universalLinks() {
+    for host in ["codevisor.dev", "www.codevisor.dev"] {
+      #expect(PluginInstallDeeplink.pluginID(from: URL(string: "https://\(host)/plugins/acme.notes")!) == "acme.notes")
+    }
+    for raw in [
+      "http://codevisor.dev/plugins/acme.notes", "https://evil.example/plugins/acme.notes",
+      "https://codevisor.dev/plugins/acme.notes/extra", "https://codevisor.dev/plugins/../terms",
+      "https://user@codevisor.dev/plugins/acme.notes",
+    ] {
+      #expect(PluginInstallDeeplink.pluginID(from: URL(string: raw)!) == nil)
+    }
+  }
   @Test("Parses an install-plugin link with a GitHub repo")
   func parsesRepoLink() {
     let url = URL(string: "codevisor://install-plugin?repo=octocat/notes-pane")!

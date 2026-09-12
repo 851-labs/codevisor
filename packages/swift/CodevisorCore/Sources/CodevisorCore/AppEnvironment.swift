@@ -21,6 +21,7 @@ public final class AppEnvironment {
   public let theme: ThemeManager
   public let machines: MachineController
   public let cloud: CloudAccountController
+  public let pluginAccess: PluginAccessController
   public let localServer: (any LocalServerControlling)?
   public let appUpdate: AppUpdateModel
   /// The fleet-wide update fold (app + servers + harnesses + plugins
@@ -139,6 +140,12 @@ public final class AppEnvironment {
     self.cloud = CloudAccountController(
       credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
     )
+    self.pluginAccess = PluginAccessController(cloud: cloud, store: machineStore)
+    #if os(iOS)
+      updateCenter.reviewPluginUpdate = { [pluginAccess] _, plan in
+        try await pluginAccess.requireEligible(pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
+      }
+    #endif
     // Cloud machines are first-class members of the machine list: the
     // controller reads presence (and relay transports) from the account.
     machines.cloudProvider = cloud
@@ -155,6 +162,7 @@ public final class AppEnvironment {
       self?.machines.handleCloudAccountSignedOut()
     }
     cloud.onMachinesRefreshed = { [weak self] in
+      if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
       self?.machines.pruneDeadCloudRecords()
     }

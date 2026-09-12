@@ -22,6 +22,7 @@ import {
 } from "./plugin-store.js"
 import { makePluginSupervisor, type PluginSupervisorConfig } from "./plugin-supervisor.js"
 import { makePluginUpdates } from "./plugin-updates.js"
+import { summarizePlugin } from "./plugin-summary.js"
 import type {
   PluginsManager,
   PluginsManagerConfig,
@@ -116,22 +117,12 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     ...(config.updatePlanTtlMs === undefined ? {} : { planTtlMs: config.updatePlanTtlMs })
   })
 
-  const summarize = (plugin: InstalledPlugin): PluginSummary => ({
-    canRestore: installer.canRestore(plugin.id),
-    enabled: isEnabled(plugin.id),
-    id: plugin.id,
-    name: plugin.manifest.name,
-    panes: plugin.manifest.panes,
-    path: plugin.path,
-    source: plugin.source,
-    state: supervisor.state(plugin.id),
-    version: plugin.manifest.version,
-    ...(plugin.manifest.description === undefined
-      ? {}
-      : { description: plugin.manifest.description }),
-    ...(plugin.manifest.iconPath === undefined ? {} : { iconPath: plugin.manifest.iconPath }),
-    ...(plugin.manifest.tools === undefined ? {} : { tools: plugin.manifest.tools })
-  })
+  const summarize = (plugin: InstalledPlugin): PluginSummary =>
+    summarizePlugin(plugin, {
+      canRestore: installer.canRestore(plugin.id),
+      enabled: isEnabled(plugin.id),
+      state: supervisor.state(plugin.id)
+    })
 
   /// Fans a supervisor state transition out to subscribers as a full summary.
   /// The transition can arrive asynchronously (for example, after a crash), so the

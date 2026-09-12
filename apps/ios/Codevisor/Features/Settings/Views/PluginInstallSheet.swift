@@ -9,9 +9,9 @@ import SwiftUI
 /// private) because the codevisor://install-plugin deeplink presents it
 /// straight from Home, outside any settings navigation.
 struct PluginInstallSheet: View {
+  @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   var initialSource: String?
-  var machineName: String? = nil
   let discover: (String) async throws -> ServerPluginRemoteDiscovery
   let onInstall: (String) async throws -> Void
 
@@ -19,15 +19,13 @@ struct PluginInstallSheet: View {
   @State private var discovery: ServerPluginRemoteDiscovery?
   @State private var isWorking = false
   @State private var errorMessage: String?
+  @State private var canInstall = false
+  @State private var isRegistered = false
+  @State private var confirmUnlisted = false
 
   var body: some View {
     NavigationStack {
       Form {
-        if let machineName {
-          Section {
-            LabeledContent("Machine", value: machineName)
-          }
-        }
         // The source field only exists while typing one — once a
         // plugin is found, the consent stage shows the plugin itself
         // (Back returns here to edit).
@@ -50,7 +48,7 @@ struct PluginInstallSheet: View {
         if let discovery {
           discoverySections(discovery)
         }
-        if let errorMessage {
+        if let errorMessage, discovery == nil {
           Section {
             Text(errorMessage).foregroundStyle(.red)
           }
@@ -84,13 +82,34 @@ struct PluginInstallSheet: View {
             .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
           } else {
             Button("Install") {
-              Task { await runInstall() }
+              if isRegistered { Task { await runInstall() } } else { confirmUnlisted = true }
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            .disabled(!canInstall)
           }
+        }
+      }
+      .safeAreaInset(edge: .bottom) {
+        if let discovery {
+          VStack(alignment: .leading, spacing: 12) {
+            if let errorMessage {
+              Text(errorMessage).font(.footnote).foregroundStyle(.red)
+            }
+            PluginConsentNotice(name: discovery.name)
+          }
+          .padding()
+          .background(.bar)
         }
       }
     }
     .interactiveDismissDisabled(isWorking)
+    .confirmationDialog("Unlisted plugin", isPresented: $confirmUnlisted, titleVisibility: .visible) {
+      Button("Install Anyway") { Task { await runInstall() } }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This plugin isn’t in the Codevisor registry. Only install it if you trust its source.")
+    }
     .task {
       if let initialSource, discovery == nil {
         source = initialSource
@@ -178,10 +197,13 @@ struct PluginInstallSheet: View {
   }
 
   private func find() async {
+    canInstall = false
     isWorking = true
     defer { isWorking = false }
     do {
       discovery = try await discover(source.trimmingCharacters(in: .whitespaces))
+      if let discovery { isRegistered = try await environment.pluginAccess.review(discovery) }
+      canInstall = true
       errorMessage = nil
     } catch {
       errorMessage = ErrorReporter.userFacingMessage(for: error)
@@ -192,6 +214,10 @@ struct PluginInstallSheet: View {
     isWorking = true
     defer { isWorking = false }
     do {
+      guard let discovery else { return }
+      _ = try await environment.pluginAccess.review(discovery)
+      try await environment.pluginAccess.recordConsent(
+        pluginId: discovery.id, consentKey: discovery.consentKey, metadata: PluginConsentMetadata(discovery))
       try await onInstall(source.trimmingCharacters(in: .whitespaces))
       dismiss()
     } catch {

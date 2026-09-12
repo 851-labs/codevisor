@@ -93,6 +93,7 @@ public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class UpdateCenter {
+  @ObservationIgnored public var reviewPluginUpdate: (@MainActor (String, ServerPluginUpdatePlan) async throws -> Void)?
   private let machines: MachineController
   private let appUpdate: AppUpdateModel
   /// Durable home of the update-all session, so a run interrupted by the
@@ -431,6 +432,7 @@ public final class UpdateCenter {
       do {
         let client = machines.client(for: component.machineId)
         let plan = try await client.preparePluginUpdate(pluginId: component.subjectId)
+        try await reviewPluginUpdate?(component.machineId, plan)
         _ = try await client.applyPluginUpdate(
           pluginId: component.subjectId,
           planId: plan.planId

@@ -107,6 +107,7 @@ extension WorkspaceScreen {
         workspaceId: resolvedWorkspace?.id,
         cwd: workspaceCwd,
         client: machines.client(for: serverId),
+        access: environment.pluginAccess,
         resolveBaseURL: { [weak machines] in
           await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
         },

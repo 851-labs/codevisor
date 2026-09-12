@@ -223,10 +223,12 @@ public final class WebPaneController: NSObject {
     #if DEBUG
       webView.isInspectable = true
     #endif
-    configuration.userContentController.add(
-      WebPaneMessageProxy(controller: self),
-      name: Self.bridgeMessageName
-    )
+    #if os(macOS)
+      configuration.userContentController.add(
+        WebPaneMessageProxy(controller: self),
+        name: Self.bridgeMessageName
+      )
+    #endif
     applyBackground()
     installUserScripts()
   }

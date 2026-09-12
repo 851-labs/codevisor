@@ -131,6 +131,7 @@ struct PluginRegistryBrowseSheet: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      PluginSafetyButton(pluginId: entry.id, name: entry.name)
       if PluginRegistryBrowsing.isInstalled(entry, installedIds: installedIds) {
         installedChip
       } else {
@@ -199,6 +200,7 @@ private struct PluginRegistryDetailView: View {
               .foregroundStyle(.secondary)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
+          PluginSafetyButton(pluginId: entry.id, name: entry.name)
           if isInstalled {
             Text("Installed")
               .font(.callout)
@@ -238,6 +240,7 @@ private struct PluginRegistryDetailView: View {
           )
         }
         LabeledContent("Version", value: entry.version)
+        if let age = entry.ageRating { LabeledContent("Age Rating", value: "\(age)+") }
         LabeledContent("Stars", value: PluginRegistryBrowsing.starsText(for: entry))
         if let updated = PluginRegistryBrowsing.updatedText(for: entry) {
           LabeledContent("Updated", value: updated)

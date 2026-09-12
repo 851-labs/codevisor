@@ -322,6 +322,7 @@ describe("prepared plugin update plans", () => {
     })
     const plugin = installed({ id: "acme.plugin", repo: "acme/plugin", version: "1.0.0" })
     const nextManifest = manifest("acme.plugin", "2.0.0", {
+      ageRating: 18,
       panes: [
         { path: "/main/", title: "New", type: "main" },
         { path: "/new/", title: "New", type: "new" }
@@ -370,6 +371,7 @@ describe("prepared plugin update plans", () => {
       toolChanges: { added: ["new"], changed: ["shared"], removed: ["gone"] }
     })
     expect(plan.current.requirements).toEqual({ executables: [{ name: "node" }] })
+    expect(plan.candidate.ageRating).toBe(18)
     expect(plan.candidate.requirements).toBeUndefined()
   })
 

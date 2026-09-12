@@ -240,6 +240,7 @@ struct PluginMachinePane: View {
           .truncationMode(.middle)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      PluginSafetyButton(pluginId: plugin.id, name: plugin.name)
       Menu {
         if updates[plugin.id]?.state == .available {
           Button("Update…") { prepareUpdate(plugin) }

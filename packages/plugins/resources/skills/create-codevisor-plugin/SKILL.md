@@ -36,6 +36,7 @@ remote). You can scaffold, install, and show a working pane in under a minute.
   "name": "My Plugin",
   "description": "One line about what it does",
   "version": "0.1.0",
+  "ageRating": 4,
   "iconPath": "/assets/icon.svg",
   "panes": [{ "type": "main", "title": "My Plugin", "path": "/panes/main/" }],
   "run": { "command": "node server.js" },
@@ -122,7 +123,9 @@ http
   do not add a top bar solely for branding. Start with the useful content. Add
   an in-pane toolbar only for content-specific context or actions (such as
   tabs, filters, breadcrumbs, or status); use `window.codevisor.setTitle()` to
-  change the title in the native chrome.
+  change the title in the native chrome on macOS. On iOS it sets the document
+  title only; plugins have no native message bridge, and `openUrl()` uses
+  standard HTTP(S) web links.
 - **Keep ALL state in your plugin server** — in memory for ephemera, under
   `$CODEVISOR_PLUGIN_DATA_DIR` for anything durable (never in the plugin
   folder). The same pane renders on multiple devices at once (Mac, iPhone,
@@ -263,3 +266,11 @@ repo; the registry indexes it within ~15 minutes. The manifest must sit at
 the repo root and its id namespace must equal the repo owner, or the entry
 is rejected (rejections and reasons appear in the index's `rejected` list).
 Untag the repo to delist it.
+
+Publishing to the registry agrees to the [plugin publisher terms](https://codevisor.dev/terms#plugins).
+Set `ageRating` honestly to 4, 9, 13, 16, or 18 using Apple’s age-rating criteria.
+iOS accepts ratings up to 16; a missing or higher rating prevents opening there.
+Codevisor may restrict a plugin or publisher on iOS after review. Mac execution is unaffected.
+Keep content, metadata, and data practices accurate, and moderate user-generated content.
+The native install screens explain the plugin’s access and record consent.
+There is no separate consent prompt when viewing or opening an installed plugin.
