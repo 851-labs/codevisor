@@ -49,15 +49,44 @@ struct ServerRequestGateTests {
     try await gate.waitUntilReady(for: "unmanaged")
   }
 
+  @Test("An already-ready machine cancels its continuous-clock deadline")
+  func readyCancelsContinuousDeadline() async throws {
+    let gate = ServerRequestGate()
+    try await gate.waitUntilReady(for: "unmanaged", timeout: .seconds(30))
+  }
+
   @Test("A readiness wait times out instead of hanging forever")
   func timeoutReleasesWaiter() async {
     let clock = TestClock()
-    let gate = ServerRequestGate(sleep: { try await clock.sleep(for: $0) })
+    let gate = ServerRequestGate(clock: clock)
     gate.beginWaiting(for: "stuck")
     let request = Task { try await gate.waitUntilReady(for: "stuck", timeout: .seconds(30)) }
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
     await #expect(throws: ServerRequestGateError.self) { try await request.value }
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test("Readiness and cancellation release the pending deadline", arguments: [false, true])
+  func releasesDeadline(cancelled: Bool) async throws {
+    let clock = TestClock()
+    let waiting = TestSignal()
+    let gate = ServerRequestGate(clock: clock, onWait: { waiting.signal() })
+    gate.beginWaiting(for: "local")
+    let request = Task { try await gate.waitUntilReady(for: "local", timeout: .seconds(30)) }
+    defer { request.cancel() }
+    await waiting.wait()
+    await clock.waitForSleep(.seconds(30))
+    #expect(clock.pendingCount == 1)
+
+    if cancelled {
+      request.cancel()
+      await #expect(throws: CancellationError.self) { try await request.value }
+    } else {
+      gate.markReady(for: "local")
+      try await request.value
+    }
+    #expect(clock.pendingCount == 0)
   }
 }
 
