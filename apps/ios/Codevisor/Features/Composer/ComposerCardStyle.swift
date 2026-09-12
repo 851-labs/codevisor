@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Keeps the composer and goal card equally rounded at every text size.
+/// Keeps the composer, goal, and queue cards equally rounded at every text size.
 struct ComposerCardStyle: DynamicProperty {
   static let contentPadding: CGFloat = 13
 
