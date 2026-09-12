@@ -269,7 +269,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     // a stranger at the same directory. An archived local record with
     // that id is stale membership; it is not revived here.
     let mintedId = seed.assignedWorkspaceId.flatMap { id in
-      workspace(id: id) == nil ? id : nil
+      self.workspace(id: id) == nil ? id : nil
     }
     var workspace = Workspace(
       id: mintedId ?? UUID(),

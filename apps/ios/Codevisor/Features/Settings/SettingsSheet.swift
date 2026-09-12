@@ -57,38 +57,38 @@ struct SettingsSheet: View {
       List {
         Section {
           NavigationLink(value: SettingsDestination.section("account")) {
-            Label("Account", systemImage: "person.crop.circle")
+            settingsLabel("Account", systemImage: "person.crop.circle")
           }
           NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
-            Label("Machines", systemImage: "desktopcomputer")
+            settingsLabel("Machines", systemImage: "desktopcomputer")
           }
         }
         Section {
           NavigationLink(value: SettingsDestination.section("updates")) {
             // badge(0) hides itself — the ambient signal simply
             // is not there when everything is current.
-            Label("Updates", systemImage: "arrow.down.circle")
+            settingsLabel("Updates", systemImage: "arrow.down.circle")
               .badge(environment.updateCenter.availableCount)
           }
           NavigationLink(value: SettingsDestination.section("general")) {
-            Label("Privacy & Data", systemImage: "hand.raised")
+            settingsLabel("Privacy & Data", systemImage: "hand.raised")
           }
           NavigationLink(value: SettingsDestination.section("appearance")) {
-            Label("Appearance", systemImage: "paintpalette")
+            settingsLabel("Appearance", systemImage: "paintpalette")
           }
         }
         Section {
           NavigationLink(value: SettingsDestination.section("agents")) {
-            Label("Harnesses", systemImage: "brain")
+            settingsLabel("Harnesses", systemImage: "brain")
           }
           NavigationLink(value: SettingsDestination.section("mcps")) {
-            Label("MCPs", systemImage: "puzzlepiece.extension")
+            settingsLabel("MCPs", systemImage: "puzzlepiece.extension")
           }
           NavigationLink(value: SettingsDestination.section("skills")) {
-            Label("Skills", systemImage: "book.closed")
+            settingsLabel("Skills", systemImage: "book.closed")
           }
           NavigationLink(value: SettingsDestination.section("plugins")) {
-            Label("Plugins", systemImage: "puzzlepiece")
+            settingsLabel("Plugins", systemImage: "puzzlepiece")
           }
         }
         Section {
@@ -165,14 +165,19 @@ struct SettingsSheet: View {
     .presentationDragIndicator(.visible)
   }
 
-  private func externalLinkLabel(_ title: String, systemImage: String) -> some View {
+  private func settingsLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+    Label {
+      Text(title)
+        .foregroundStyle(.primary)
+    } icon: {
+      Image(systemName: systemImage)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  private func externalLinkLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
     HStack {
-      Label {
-        Text(title)
-          .foregroundStyle(.primary)
-      } icon: {
-        Image(systemName: systemImage)
-      }
+      settingsLabel(title, systemImage: systemImage)
       Spacer()
       Image(systemName: "arrow.up.right")
         .font(.footnote.weight(.semibold))
