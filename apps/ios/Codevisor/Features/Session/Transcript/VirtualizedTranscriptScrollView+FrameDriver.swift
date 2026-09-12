@@ -177,7 +177,11 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   var allowsMeasurementCommit: Bool {
-    measurementCommitGate.allowsGeometryCommit
+    let firstVisible = firstVisibleRowForMeasurementCommit
+    return pendingMeasurements.keys.contains { key in
+      guard let index = virtualLayout.indexByKey[key] else { return false }
+      return measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible)
+    }
   }
 
   func finishPresentationFrame() {

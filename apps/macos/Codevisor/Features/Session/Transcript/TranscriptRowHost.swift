@@ -135,10 +135,9 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     } else {
       contentController.resetReportedHeight()
     }
-    // Install the exact-height contract before replacing the SwiftUI root
-    // so a synchronous hosting-controller layout cannot race through the
-    // expensive intrinsic-size path for an already measured settled row.
-    contentController.rootView = rootView
+    // Install the cached frame before replacing the root. Its placed-content
+    // observer verifies the height without a separate intrinsic-size probe.
+    contentController.installRootView(rootView)
     if knownHeight == nil {
       contentController.invalidateContentSize(forceReport: true)
     }

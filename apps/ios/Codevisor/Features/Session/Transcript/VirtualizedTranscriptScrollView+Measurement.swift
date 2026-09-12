@@ -167,6 +167,10 @@ extension VirtualizedTranscriptScrollView {
 
       if !initialPositionApplied {
         applyPendingInitialPositionIfPossible()
+      } else if changedHeights != nil, !measurementCommitGate.allowsGeometryCommit {
+        // These corrections only affect the visible row and rows below it.
+        // Their frames and masks can grow without changing contentOffset,
+        // which would cancel UIKit's current deceleration animation.
       } else if let anchor = disclosureViewportAnchor {
         setViewportTop(anchor.viewportTop)
       } else if let resolvedDistance = plan.resolvedDistanceFromBottom(
@@ -259,7 +263,7 @@ extension VirtualizedTranscriptScrollView {
       return
     }
     pendingMeasurements[measurement.key] = measurement
-    guard !isDetaching, measurementCommitGate.allowsGeometryCommit else { return }
+    guard !isDetaching else { return }
     if presentationDisplayLink != nil {
       requestDisplayFrame()
       return
@@ -275,10 +279,8 @@ extension VirtualizedTranscriptScrollView {
   func commitPendingMeasurements() {
     measurementCommitTask?.cancel()
     measurementCommitTask = nil
-    // Mounted hosts remain clipped to the currently committed ledger
-    // while UIKit owns post-lift momentum. This keeps rows non-overlapping
-    // without replacing the deceleration animation via contentOffset.
-    guard !isDetaching, measurementCommitGate.allowsGeometryCommit else { return }
+    guard !isDetaching else { return }
+    let firstVisible = firstVisibleRowForMeasurementCommit
     let pending = pendingMeasurements
     pendingMeasurements.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
@@ -286,6 +288,11 @@ extension VirtualizedTranscriptScrollView {
       guard accepts(measurement), mountedHosts[key]?.isAttachmentGeometryReady == true,
         measurements.needsCommit(measurement.height, for: key)
       else { continue }
+      guard let index = virtualLayout.indexByKey[key] else { continue }
+      guard measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible) else {
+        pendingMeasurements[key] = measurement
+        continue
+      }
       if storeMeasuredHeight(measurement.height, for: key) {
         committedHeights[key] = measurement.height
       }
@@ -297,6 +304,13 @@ extension VirtualizedTranscriptScrollView {
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     startPendingSendAnimationIfPossible()
+  }
+
+  var firstVisibleRowForMeasurementCommit: Int? {
+    guard !measurementCommitGate.allowsGeometryCommit else { return nil }
+    return virtualLayout.visibleRange(
+      distanceFromBottom: currentDistanceFromBottom(), viewportHeight: viewportHeight, overscanCount: 0
+    ).first
   }
 
   func accepts(_ measurement: TranscriptRowMeasurement) -> Bool {

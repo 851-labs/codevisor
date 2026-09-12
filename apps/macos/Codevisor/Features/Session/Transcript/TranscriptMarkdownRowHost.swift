@@ -53,11 +53,12 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       streamID: streamID,
       linkAction: linkAction
     )
-    measuredWidth = knownHeight == nil ? -1 : max(1, bounds.width)
+    measuredWidth = max(1, bounds.width)
     reportedHeight = knownHeight
-    presentationReady = knownHeight != nil
-    layoutMarkdown(usingKnownHeight: knownHeight)
-    if knownHeight == nil { measureAndLayout() }
+    // A retained native layout can answer from its own content/width cache.
+    // A newly created renderer must establish its actual geometry, even if
+    // the ledger carries a height from a previous SwiftUI/TextKit surface.
+    measureAndLayout()
   }
 
   override func prepareForMountedRow() {
