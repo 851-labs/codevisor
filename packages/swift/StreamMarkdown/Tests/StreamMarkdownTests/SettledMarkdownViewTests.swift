@@ -68,6 +68,34 @@ struct SettledMarkdownViewTests {
     #expect(narrow > wide)
   }
 
+  @Test("Source-wrapped documents use the available native text width")
+  func sourceWrappedDocumentReflows() {
+    let paragraph = """
+      Put on the user's hat: run the change, exercise the affected workflow, and
+      report what you observed. Inspired by Shopify's practice of manually trying
+      changes during PR review, this skill adapts that approach to Codevisor
+      development. A build or passing automated tests alone cannot establish that
+      the user workflow works.
+      """
+    func document(_ paragraph: String) -> SettledMarkdownView {
+      let view = SettledMarkdownView()
+      view.setContent(
+        blocks: MarkdownParser().parse("---\n\n# Tophat\n\n\(paragraph)"),
+        theme: .default,
+        streamID: "source-wrapped-document",
+        linkAction: nil
+      )
+      return view
+    }
+    let wrapped = document(paragraph)
+    let unwrapped = document(paragraph.replacingOccurrences(of: "\n", with: " "))
+
+    for width: CGFloat in [220, 860] {
+      #expect(wrapped.contentHeight(forWidth: width) == unwrapped.contentHeight(forWidth: width))
+    }
+    #expect(wrapped.contentHeight(forWidth: 220) > wrapped.contentHeight(forWidth: 860))
+  }
+
   @Test("Settled selection clears when focus leaves the surface")
   func selectionClearsOnResign() {
     let view = MarkdownTextKit2View()

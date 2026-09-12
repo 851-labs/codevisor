@@ -4,6 +4,25 @@ import Testing
 
 @Suite("InlineMarkdown")
 struct InlineMarkdownTests {
+  @Test("Source-wrapped prose flows through soft breaks", arguments: ["\n", "\r\n"])
+  func softBreaksFlowAsSpaces(newline: String) {
+    let attributed = InlineMarkdown.attributedString(from: "First **wrapped\(newline)line** continues.")
+
+    #expect(String(attributed.characters) == "First wrapped line continues.")
+    let emphasized = attributed.runs.filter {
+      $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+    }
+    #expect(emphasized.map { String(attributed[$0.range].characters) }.joined() == "wrapped line")
+  }
+
+  @Test("Explicit Markdown hard breaks remain line breaks", arguments: ["  \n", "\\\n"])
+  func hardBreaksStayNewlines(separator: String) {
+    let attributed = InlineMarkdown.attributedString(from: "First line\(separator)Second line")
+
+    #expect(String(attributed.characters) == "First line\nSecond line")
+    #expect(attributed.runs.contains { $0.inlinePresentationIntent?.contains(.lineBreak) == true })
+  }
+
   @Test("Renders bold emphasis as a strong run")
   func bold() {
     let attributed = InlineMarkdown.attributedString(from: "This is **bold** text")

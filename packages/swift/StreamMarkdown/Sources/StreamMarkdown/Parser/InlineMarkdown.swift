@@ -48,7 +48,9 @@ public enum InlineMarkdown {
         if let url = safeURL(source) { renderedAlt.link = url }
         result += renderedAlt
       case .softBreak:
-        result += attributed("\n", intent: intent.union(.softBreak))
+        // Source wrapping must not constrain the rendered paragraph width.
+        // Native text views treat a literal newline as a forced line break.
+        result += attributed(" ", intent: intent)
       case .hardBreak:
         result += attributed("\n", intent: intent.union(.lineBreak))
       }
