@@ -393,10 +393,10 @@ const sections = [
             separately for information already received.
           </li>
           <li>
-            On iOS, review AI data sharing or choose Withdraw AI consent in Settings → Privacy &amp;
-            Data. Withdrawing returns that device to the consent screen, where you must agree again
-            to continue. It does not stop tasks already running on connected computers or delete
-            information a provider has already received.
+            On iOS, choose Settings → Privacy &amp; Data → Withdraw AI Consent. Confirming clears
+            Codevisor data from this device, signs you out, and restarts onboarding. It keeps your
+            Cloud account and data on connected computers. It does not stop tasks already running on
+            those computers or delete data already received by providers.
           </li>
           <li>
             Choose Settings → Account → Delete Cloud Account to delete your Cloud account and
@@ -405,7 +405,7 @@ const sections = [
             remain.
           </li>
           <li>
-            On iOS, choose Settings → Privacy &amp; Data → Delete All Data to reset that device’s
+            On iOS, choose Settings → Privacy &amp; Data → Delete Device Data to reset that device’s
             Codevisor state, saved connections, and sign-in. This does not delete your Cloud account
             or data on connected computers. Browser profiles, plugins, and agent tools can keep
             separate data that needs to be removed through their own controls.
