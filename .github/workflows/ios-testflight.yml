@@ -49,6 +49,8 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
       - name: Select full Xcode
         shell: bash
         run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
