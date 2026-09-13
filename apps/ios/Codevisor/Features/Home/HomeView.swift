@@ -8,9 +8,7 @@ import UIKit
 /// settings at the top left, sidebar options at the top right, and a fixed
 /// compose button at the bottom trailing edge.
 struct HomeView: View {
-  static let settingsTransitionID = "home-settings"
   static let newChatTransitionID = "home-new-chat"
-  @Namespace var settingsTransition
   @Namespace var newChatTransition
 
   @Environment(AppEnvironment.self) var environment
@@ -151,7 +149,6 @@ struct HomeView: View {
         // no machine switcher — selection follows the chat you open, and
         // machines are managed in Settings.
         ToolbarItem(placement: .topBarLeading) { settingsButton }
-          .matchedTransitionSource(id: Self.settingsTransitionID, in: settingsTransition)
         if !failedSyncMachines.isEmpty {
           ToolbarItem(placement: .topBarLeading) {
             machineConnectionWarningButton
@@ -195,7 +192,6 @@ struct HomeView: View {
         destination in
         SettingsSheet(initialDestination: destination, onSectionChange: { clientSettingsSection = $0 })
           .id(destination.id)
-          .navigationTransition(.zoom(sourceID: Self.settingsTransitionID, in: settingsTransition))
       }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
         presentedSettingsDestination = .root
