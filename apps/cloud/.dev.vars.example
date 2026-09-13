@@ -17,3 +17,9 @@
 # ports and the built-in development account.
 GITHUB_CLIENT_ID=your-client-id
 GITHUB_CLIENT_SECRET=your-client-secret
+
+# Optional: email/password signup, verification codes, and password reset.
+# Use a sending-only Resend key restricted to your verified sender domain.
+# Put these in .env.local so the dev runner does not pass the key as a CLI argument.
+# RESEND_API_KEY=your-resend-sending-key
+# AUTH_EMAIL_FROM=Codevisor <noreply@auth.codevisor.dev>

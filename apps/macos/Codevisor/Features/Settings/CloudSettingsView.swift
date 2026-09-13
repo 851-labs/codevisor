@@ -7,16 +7,19 @@ struct CloudSettingsView: View {
   @Environment(\.theme) private var theme
   @State private var showsServer = false
   @State private var showsConnections = false
+  @State private var showsEmailSignIn = false
 
   var body: some View {
     Form {
       CloudAccountSections(
         cloud: environment.cloud,
         manageConnections: { showsConnections = true },
-        configureServer: { showsServer = true }
+        configureServer: { showsServer = true },
+        signInWithEmail: { showsEmailSignIn = true }
       )
     }
     .settingsPaneFormStyle(theme)
+    .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
     .sheet(isPresented: $showsServer) {
       NavigationStack {
         CloudServerSettings(cloud: environment.cloud)

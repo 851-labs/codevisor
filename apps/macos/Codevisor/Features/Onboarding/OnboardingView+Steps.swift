@@ -173,6 +173,10 @@ extension OnboardingView {
             if environment.cloud.supportsAppleSignIn {
               CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
             }
+            if environment.cloud.supportsEmailSignIn {
+              CloudEmailSignInButton { showsEmailSignIn = true }
+                .disabled(isSigningInToCloud)
+            }
             if environment.cloud.developmentAccountAvailable {
               CloudSignInProviderButton(
                 title: "Use Development Account",

@@ -22,6 +22,7 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var removeError: (any Error)?
   var deleteError: (any Error)?
   var providers: Set<CloudSignInProvider> = [.github]
+  var emailRequest: (@Sendable (CloudEmailAuthRequest) async throws -> String?)?
   var appleToken = "native-token"
   var appleStart: (@Sendable () async throws -> CloudAppleChallenge)?
   var appleComplete: (@Sendable () async throws -> String)?
@@ -67,6 +68,11 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String {
     if let complete = lock.withLock({ appleComplete }) { return try await complete() }
     return lock.withLock { appleToken }
+  }
+
+  func emailAuthentication(_ request: CloudEmailAuthRequest) async throws -> String? {
+    guard let handler = lock.withLock({ emailRequest }) else { throw CloudAccountClientError.invalidResponse }
+    return try await handler(request)
   }
 
   func deleteAccount(token: String) async throws {

@@ -15,6 +15,9 @@ export default defineConfig(async () => {
             // The checked-in wrangler.jsonc carries production values; tests
             // run as a dev-auth instance.
             DEV_AUTH: "1",
+            // Never use a developer's real mail credentials. Email auth tests
+            // supply their own key and an in-process delivery stub.
+            RESEND_API_KEY: "",
             PUBLIC_BASE_URL: "http://localhost:8787",
             INSTANCE_NAME: "Codevisor Cloud (test)"
           }

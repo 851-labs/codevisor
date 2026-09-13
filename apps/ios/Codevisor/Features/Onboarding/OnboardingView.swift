@@ -123,6 +123,7 @@ private struct ConnectMachineStep: View {
   @State private var cloudSignIn = CloudAuthenticationCoordinator()
   @State private var isSigningInToCloud = false
   @State private var showsSettings = false
+  @State private var showsEmailSignIn = false
   /// The signed-in branch holds a bare spinner until the account's machine
   /// list has actually been fetched once — rendering the add-machine
   /// instructions (or anything else) off an empty-because-unfetched list
@@ -132,7 +133,7 @@ private struct ConnectMachineStep: View {
   private var cloud: CloudAccountController { environment.cloud }
 
   var body: some View {
-    Group {
+    ZStack {
       switch cloud.state {
       case .signedOut:
         signedOutContent
@@ -167,6 +168,7 @@ private struct ConnectMachineStep: View {
       }
     }
     .sheet(isPresented: $showsSettings) { SettingsSheet() }
+    .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: cloud) }
     .onChange(of: cloud.state.isSignedIn) { _, _ in
       hasCompletedFirstMachinesCheck = false
     }
@@ -209,6 +211,11 @@ private struct ConnectMachineStep: View {
 
         if cloud.supportsAppleSignIn {
           CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
+            .disabled(isSigningInToCloud)
+        }
+
+        if cloud.supportsEmailSignIn {
+          CloudEmailSignInButton { showsEmailSignIn = true }
             .disabled(isSigningInToCloud)
         }
 

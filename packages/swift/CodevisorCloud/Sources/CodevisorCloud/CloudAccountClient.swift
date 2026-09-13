@@ -82,6 +82,8 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
   case missingToken
   case recentSignInRequired
   case authenticationFailed(String)
+  case emailNotVerified
+  case emailDeliveryFailed
 
   public var errorDescription: String? {
     switch self {
@@ -99,6 +101,10 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
       "Sign-in didn't complete: the server didn't return a session token."
     case let .authenticationFailed(message):
       message
+    case .emailNotVerified:
+      "Verify your email to finish creating your account."
+    case .emailDeliveryFailed:
+      "Couldn't send your code. Please try again."
     case .recentSignInRequired:
       "Sign out and sign in again before deleting your Cloud account."
     }
@@ -108,6 +114,7 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
 /// The small REST surface the app needs from a Codevisor Cloud instance.
 /// Abstracted so the account controller is testable with a fake.
 public protocol CloudAccountClienting: Sendable {
+  func emailAuthentication(_ request: CloudEmailAuthRequest) async throws -> String?
   func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data
   /// `GET /.well-known/codevisor` — the discovery/validation document.
   func discover() async throws -> CloudInstanceInfo
@@ -134,7 +141,7 @@ public protocol CloudAccountClienting: Sendable {
 /// Minimal URLSession JSON client for one cloud instance.
 public final class CloudAccountClient: CloudAccountClienting, Sendable {
   private let baseURL: URL
-  private let urlSession: URLSession
+  private let send: @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
   /// Cookie-free by default: this client authenticates with bearer tokens
   /// only. A shared URLSession would store the session cookie that
@@ -151,7 +158,12 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
 
   public init(baseURL: URL, urlSession: URLSession = CloudAccountClient.makeCookieFreeSession()) {
     self.baseURL = baseURL
-    self.urlSession = urlSession
+    self.send = { try await urlSession.data(for: $0) }
+  }
+
+  init(baseURL: URL, send: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse)) {
+    self.baseURL = baseURL
+    self.send = send
   }
 
   public func discover() async throws -> CloudInstanceInfo {
@@ -301,12 +313,18 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
       request.httpBody = body
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
-    let (data, response) = try await urlSession.data(for: request)
+    let (data, response) = try await send(request)
     guard let httpResponse = response as? HTTPURLResponse else {
       throw CloudAccountClientError.invalidResponse
     }
     guard (200..<300).contains(httpResponse.statusCode) else {
       struct ErrorBody: Decodable { let code: String?; let message: String? }
+      if path.hasPrefix("/api/auth/"),
+        let error = Self.emailAuthError(
+          code: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code, status: httpResponse.statusCode)
+      {
+        throw error
+      }
       if (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code == "SESSION_EXPIRED" {
         throw CloudAccountClientError.recentSignInRequired
       }

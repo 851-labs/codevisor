@@ -29,6 +29,20 @@
       "when": 1789166054861,
       "tag": "0003_plugin_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789178711977,
+      "tag": "0004_email_auth_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789178803583,
+      "tag": "0005_unique_auth_codes",
+      "breakpoints": true
     }
   ]
 }

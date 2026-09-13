@@ -90,6 +90,12 @@ const sections = [
           maintain your account and revoke Apple authorization when you delete it.
         </p>
         <p>
+          If you create an account with email and password, we store your email address and a
+          password hash. We use short-lived, single-use codes to verify your email and reset your
+          password. Resend processes your email address and these messages to deliver the codes; we
+          do not send your password to Resend.
+        </p>
+        <p>
           Cloud stores registered-machine names and identifiers, operating system and app version,
           public encryption keys, connection status, and last-seen times. Authentication and
           operational records can include IP addresses, browser or device information, timestamps,
@@ -282,6 +288,11 @@ const sections = [
             GitHub
           </a>{" "}
           process sign-in requests when you choose those providers.
+        </p>
+        <p>
+          <a href="https://resend.com/legal/privacy-policy">Resend</a> delivers account verification
+          and password reset emails. These emails are transactional and are not used to subscribe
+          you to marketing messages.
         </p>
         <p>
           Service providers processing personal information on our behalf must protect it

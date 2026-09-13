@@ -93,8 +93,15 @@ export const verification = sqliteTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull()
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)]
+  (table) => [uniqueIndex("verification_identifier_idx").on(table.identifier)]
 )
+
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull()
+})
 
 export const deviceCode = sqliteTable("device_code", {
   id: text("id").primaryKey(),

@@ -60,6 +60,7 @@ struct OnboardingView: View {
 
   @State var cloudAuthentication = CloudAuthenticationCoordinator()
   @State var isSigningInToCloud = false
+  @State var showsEmailSignIn = false
   @State var step: Step
   /// Which way the current step change is travelling, so the slide matches.
   @State var isNavigatingBack = false
@@ -148,6 +149,7 @@ struct OnboardingView: View {
     .sheet(item: $authenticationHarness) { harness in
       HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
     }
+    .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
     .sheet(isPresented: $showingGitClone) {
       GitCloneSheet(
         client: environment.machines.client(for: CodevisorMachine.local.id),

@@ -3,6 +3,7 @@ import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
 import { hasAppleAuth } from "./apple-auth.js"
+import { hasEmailAuth } from "./email-auth.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
@@ -58,6 +59,7 @@ app.get("/.well-known/codevisor", (c) =>
     authProviders: [
       ...(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET ? ["github"] : []),
       ...(hasAppleAuth(c.env) ? ["apple"] : []),
+      ...(hasEmailAuth(c.env) ? ["email"] : []),
       ...(isDevAuthEnabled(c.env) ? ["dev"] : [])
     ]
   })
@@ -74,7 +76,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.ra
 /// cookie (browser path, so /device approval works in dev).
 app.post("/dev/login", async (c) => {
   if (!isDevAuthEnabled(c.env)) return c.notFound()
-  const auth = createAuth(c.env)
+  const auth = createAuth({ ...c.env, RESEND_API_KEY: "" })
   await auth.api.signUpEmail({ body: { ...DEV_USER } }).catch(() => undefined) // already exists
   const { headers, response } = await auth.api.signInEmail({
     body: { email: DEV_USER.email, password: DEV_USER.password },

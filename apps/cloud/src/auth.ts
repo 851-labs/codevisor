@@ -6,11 +6,12 @@ import { oneTimeToken } from "better-auth/plugins/one-time-token"
 import { drizzle } from "drizzle-orm/d1"
 import { appleOptions, hasAppleAuth, revokeAppleAuthorization } from "./apple-auth.js"
 import { nativeAppleAuth } from "./apple-native.js"
+import { emailAuthPlugin, hasEmailAuth } from "./email-auth.js"
 import * as schema from "./db/schema.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 
 /// Client ids accepted by the device-authorization flow. Machines are the only
-/// device-flow consumer today; apps use the browser + one-time-token handoff.
+/// device-flow consumer today; native apps use email, Apple, or the browser OAuth handoff.
 export const MACHINE_CLIENT_ID = "codevisor-machine"
 
 /// D1 bindings only exist per-request, so auth must be built per request (and
@@ -46,7 +47,7 @@ export const createAuth = (env: CloudEnv) => {
     },
     // Unlinking Apple would discard the token needed for account deletion.
     // This release supports connecting providers and deleting the whole account.
-    disabledPaths: ["/unlink-account"],
+    disabledPaths: ["/unlink-account", "/sign-in/email-otp"],
     user: {
       deleteUser: {
         enabled: true,
@@ -70,11 +71,20 @@ export const createAuth = (env: CloudEnv) => {
         }
       }
     },
-    /// Dev-only credential login (see /dev/login route); never enabled unless
-    /// the instance explicitly opted in via the DEV_AUTH var.
-    emailAndPassword: { enabled: devAuth },
-    rateLimit: { storage: "database" },
+    emailAndPassword: {
+      enabled: hasEmailAuth(env) || devAuth,
+      requireEmailVerification: hasEmailAuth(env),
+      revokeSessionsOnPasswordReset: true
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: false,
+      autoSignInAfterVerification: true
+    },
+    rateLimit: { enabled: !devAuth, storage: "database" },
+    advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [
+      ...(hasEmailAuth(env) ? [emailAuthPlugin(env)] : []),
       nativeAppleAuth(env),
       /// Native apps hold tokens, not cookies: session token arrives in the
       /// `set-auth-token` header and is sent back as `Authorization: Bearer`.

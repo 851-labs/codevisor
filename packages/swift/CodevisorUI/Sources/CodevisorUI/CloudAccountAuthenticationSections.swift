@@ -5,6 +5,7 @@ struct CloudAccountAuthenticationSections: View {
   let cloud: CloudAccountController
   var link = false
   @Binding var isSigningIn: Bool
+  var signInWithEmail: () -> Void = {}
   @State private var authentication = CloudAuthenticationCoordinator()
   @State private var isLoadingProviders = true
   @State private var errorMessage: String?
@@ -47,7 +48,7 @@ struct CloudAccountAuthenticationSections: View {
               providerIcon(provider)
                 .frame(width: 20, height: 20)
                 .accessibilityHidden(true)
-              Text(provider == .github ? "GitHub" : "Apple")
+              Text(provider.displayName)
               Spacer()
               HStack(spacing: 6) {
                 Image(systemName: "checkmark")
@@ -98,6 +99,8 @@ struct CloudAccountAuthenticationSections: View {
   private func providerIcon(_ provider: CloudSignInProvider) -> some View {
     if provider == .github {
       Image("GitHubMark").renderingMode(.template).resizable().scaledToFit()
+    } else if provider == .email {
+      Image(systemName: "envelope").font(.system(size: 20))
     } else {
       Image(systemName: "apple.logo").font(.system(size: 20))
     }
@@ -112,6 +115,9 @@ struct CloudAccountAuthenticationSections: View {
       }
       if cloud.supportsAppleSignIn && (!link || cloud.linkedProviders?.contains(.apple) == false) {
         CloudAppleSignInButton { start(.apple) }
+      }
+      if !link && cloud.supportsEmailSignIn {
+        CloudEmailSignInButton(action: signInWithEmail)
       }
       if !link && cloud.developmentAccountAvailable {
         CloudSignInProviderButton(title: "Use Development Account", icon: .system("hammer")) {

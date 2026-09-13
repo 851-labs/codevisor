@@ -43,7 +43,7 @@ extension CloudAccountController {
     try await completeAuthentication(token: token, context: context)
   }
 
-  private func completeAuthentication(token: String, context: CloudAuthenticationContext) async throws {
+  func completeAuthentication(token: String, context: CloudAuthenticationContext) async throws {
     guard isCurrent(context), !Task.isCancelled else { throw CancellationError() }
     if context.link {
       guard token == context.token else { throw CloudAccountClientError.invalidResponse }

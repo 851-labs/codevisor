@@ -12,6 +12,10 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID"> {
   APPLE_KEY_ID?: string
   /// PKCS#8 .p8 key stored only as a Worker secret.
   APPLE_PRIVATE_KEY?: string
+  RESEND_API_KEY?: string
+  AUTH_EMAIL_FROM?: string
+  /** Test seam for transactional mail; never configured in production. */
+  AUTH_EMAIL_FETCH?: (input: string, init?: RequestInit) => Promise<Response>
   /// GitHub API token for the plugin-index poller (public-repo read access is
   /// enough). Optional: without it the search runs unauthenticated and hits
   /// GitHub's much lower anonymous rate limit.

@@ -6,24 +6,27 @@ public struct CloudAccountSections: View {
   private let cloud: CloudAccountController
   private let manageConnections: () -> Void
   private let configureServer: () -> Void
+  private let signInWithEmail: () -> Void
   @State private var isSigningIn = false
   @State private var isDeleting = false
 
   public init(
     cloud: CloudAccountController,
     manageConnections: @escaping () -> Void,
-    configureServer: @escaping () -> Void
+    configureServer: @escaping () -> Void,
+    signInWithEmail: @escaping () -> Void
   ) {
     self.cloud = cloud
     self.manageConnections = manageConnections
     self.configureServer = configureServer
+    self.signInWithEmail = signInWithEmail
   }
 
   public var body: some View {
     Group {
       switch cloud.state {
       case .signedOut:
-        CloudAccountAuthenticationSections(cloud: cloud, isSigningIn: $isSigningIn)
+        CloudAccountAuthenticationSections(cloud: cloud, isSigningIn: $isSigningIn, signInWithEmail: signInWithEmail)
       case .validating:
         Section {
           HStack(spacing: 12) {
