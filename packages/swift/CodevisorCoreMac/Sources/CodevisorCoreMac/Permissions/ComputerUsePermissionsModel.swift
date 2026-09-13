@@ -4,11 +4,11 @@ import CoreGraphics
 import Foundation
 import Observation
 
-/// The System Settings privacy panes Codevisor's Computer Use permissions
-/// live in. These are the same deep links the ChatGPT desktop app uses.
+/// The System Settings privacy panes used by Codevisor's permission requests.
 public enum SystemSettingsPane: String, Sendable {
   case accessibility = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
   case screenRecording = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+  case fullDiskAccess = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 
   public var url: URL? { URL(string: rawValue) }
 }

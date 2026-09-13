@@ -1,6 +1,6 @@
 ---
 name: tophat
-description: Run a development change and test it through realistic user workflows. Use when asked to tophat, manually verify a feature or fix, smoke-test a branch or PR, or check that an implemented change actually works in the app.
+description: Run development changes through realistic user workflows after every change and before ending each development turn, including small UI and copy edits. Also use when asked to tophat, manually verify a feature or fix, or smoke-test a branch or PR.
 ---
 
 # Tophat
@@ -10,6 +10,25 @@ report what you observed. Inspired by Shopify's practice of manually trying
 changes during PR review, this skill adapts that approach to Codevisor
 development. A build or passing automated tests alone cannot establish that
 the user workflow works.
+
+## Required cadence
+
+- Tophat after every development change and before ending each turn working
+  on that change, including follow-up requests and small UI, styling, copy,
+  or configuration edits. Do not wait for the user to ask again.
+- Exercise the final state in the running app or actual runtime. A build,
+  automated tests, source inspection, or an earlier turn's tophat does not
+  replace this turn's workflow verification.
+- After a further edit or fix, update the running build when needed and
+  rerun the affected scenario plus relevant nearby checks before reporting
+  completion. Reuse a build only when it contains the final changes.
+- Scale the scenarios to the change. For a copy or styling edit, navigate
+  to the affected screen, inspect the text and layout, and exercise the
+  relevant interaction or navigation path. Small scope is a reason for a
+  focused tophat, not a reason to skip it.
+- Include the observed result and concise evidence in the final response.
+  If the workflow cannot be exercised, report the specific blocker and
+  continue other useful checks; never describe it as passed.
 
 ## Identify the change
 

@@ -25,16 +25,17 @@ extension OnboardingView {
 
   /// Continue unlocks when both Computer Use permissions are granted;
   /// "Set Up Later" skips and turns Computer Use off until the user
-  /// re-enters setup from the Computer Use toggle in Settings.
+  /// re-enters setup from the Computer Use toggle in Settings. Full Disk
+  /// Access is optional and managed in System Settings.
   private var permissionsStep: some View {
     VStack(spacing: 20) {
       stepHeader(
         symbol: "lock.shield",
-        title: "Allow Computer Use",
-        subtitle: "Codevisor uses these to operate apps when you ask."
+        title: "Allow access",
+        subtitle: "Let Codevisor operate apps and work with protected files when you ask."
       )
 
-      ComputerUsePermissionRowsView(model: permissions)
+      ComputerUsePermissionRowsView(model: permissions, includesFullDiskAccess: true)
     }
     .frame(maxWidth: .infinity)
   }
