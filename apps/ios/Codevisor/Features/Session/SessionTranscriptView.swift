@@ -229,6 +229,7 @@ struct SessionTranscriptView: View {
 
   var isLoadingTranscriptContent: Bool {
     (isPreparingTranscript && projectedRows.isEmpty)
+      || (!showsWatermark && !presentationSurface.hasPresentedContent)
       || (controller.isLoadingInitialHistory
         && controller.settledConversation.isEmpty
         && !controller.hasActiveItem)

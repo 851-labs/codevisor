@@ -10,6 +10,11 @@ import UIKit
 final class TranscriptViewController: UIViewController {
   private let transcriptScrollView = VirtualizedTranscriptScrollView()
 
+  var onInitialPresentationReady: (() -> Void)? {
+    get { transcriptScrollView.onInitialPresentationReady }
+    set { transcriptScrollView.onInitialPresentationReady = newValue }
+  }
+
   override func loadView() {
     let root = UIView()
     root.backgroundColor = .clear

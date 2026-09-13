@@ -76,6 +76,42 @@ struct TranscriptContentLayoutTests {
     #expect(heights.count == reports)
   }
 
+  @Test("A row reports its placed layout when its native width catches up")
+  func nativeWidthCatchesUpAfterContentLayout() throws {
+    let content = Content()
+    let controller = TranscriptContentHostingController(rootView: AnyView(ContentView(content: content)))
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+    let parent = UIViewController()
+    window.rootViewController = parent
+    window.isHidden = false
+    parent.addChild(controller)
+    parent.view.addSubview(controller.view)
+    controller.didMove(toParent: parent)
+    defer {
+      controller.willMove(toParent: nil)
+      controller.view.removeFromSuperview()
+      controller.removeFromParent()
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+
+    // SwiftUI already has the row's document width, while UIKit still has
+    // its previous bounds. The fixed content geometry will not change when
+    // the enclosing native layout subsequently applies that same width.
+    controller.view.frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+    var heights: [CGFloat] = []
+    controller.onLaidOutHeightChange = { heights.append($0) }
+    controller.view.layoutIfNeeded()
+    #expect(heights.isEmpty)
+
+    controller.view.frame.size.width = content.width
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+    let height = try #require(heights.last)
+    try expectTextFits(controller, height: height, text: content.text)
+    #expect(heights.count == 1)
+  }
+
   @Test("Visible height corrections during momentum preserve the native scroll offset")
   func measurementsDuringDeceleration() throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 500))

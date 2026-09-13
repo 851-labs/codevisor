@@ -238,7 +238,14 @@ extension VirtualizedTranscriptScrollView {
       viewportHeight > 0
     else { return }
 
-    let requiredKeys = virtualLayout.keys(in: plannedMountedRange())
+    // Preparing the offscreen runway improves the first swipe, but unfinished
+    // content there must not keep an already measured viewport invisible.
+    let requiredKeys = virtualLayout.keys(
+      in: virtualLayout.visibleRange(
+        distanceFromBottom: currentDistanceFromBottom(),
+        viewportHeight: viewportHeight,
+        overscanCount: 0
+      ))
     let mountedKeys = Set(mountedHosts.keys)
     guard requiredKeys.isSubset(of: mountedKeys) else {
       // Resolving estimates can change which rows intersect the initial
@@ -270,6 +277,7 @@ extension VirtualizedTranscriptScrollView {
       canvasView.accessibilityElementsHidden = false
     }
     isScrollEnabled = true
+    onInitialPresentationReady?()
   }
 
   func checkForHistoryPrefetch(force: Bool = false) {
