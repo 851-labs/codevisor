@@ -13,6 +13,11 @@ updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
 Store publication is a separate, explicit workflow and must not run as part of
 an app release.
 
+Public iOS TestFlight publication uses the separate, manually triggered
+`Publish iOS TestFlight` workflow. Do not dispatch it as part of a normal
+macOS/server release; submit an iOS beta only when requested.
+See [TestFlight release setup](../../../docs/testflight-releases.md).
+
 Do not create, move, or push a version tag manually. The workflow owns the tag.
 
 ## Prepare

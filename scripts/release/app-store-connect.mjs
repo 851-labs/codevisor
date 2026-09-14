@@ -157,7 +157,7 @@ export async function internalGroup(client, appId, name) {
   return created.data
 }
 
-async function assignInternalBuild(
+export async function assignBuildToGroup(
   client,
   build,
   group,
@@ -245,6 +245,6 @@ export async function deliverInternalBuild(client, build, upload, options = {}) 
   if (!(await findBuild(client, build))) await upload()
   const processed = await waitForBuild(client, build, options)
   const group = await internalGroup(client, build.appId, options.groupName ?? "Alpha")
-  await assignInternalBuild(client, processed, group, options)
+  await assignBuildToGroup(client, processed, group, options)
   return { build: processed, group }
 }
