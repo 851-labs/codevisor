@@ -5,6 +5,16 @@ import Foundation
 extension ComputerUseBridge {
   func handle(_ message: [String: Any]) throws -> [String: Any] {
     let type = message["type"] as? String
+    if type == "screenSharing" {
+      guard let request = message["request"] as? [String: Any] else {
+        throw BridgeError("Missing screen-sharing request.")
+      }
+      let data = try screenSharing.request(JSONSerialization.data(withJSONObject: request))
+      guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw BridgeError("Invalid screen-sharing response.")
+      }
+      return response
+    }
     let sessionID = message["sessionId"] as? String ?? ""
     let agentLabel = message["agentLabel"] as? String
     if type == "closeSession" {

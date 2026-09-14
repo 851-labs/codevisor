@@ -39,6 +39,8 @@ const ambientAllowlist = new Set([
   "CODEVISOR_PLUGINS_ROOT",
   "CODEVISOR_GHOSTTY_ARTIFACTS_ROOT",
   "CODEVISOR_GHOSTTY_ARTIFACT_ORIGIN",
+  // Explicit, default-off native diagnostic; the app validates the value.
+  "CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE",
   "CODEVISOR_IOS_SIMULATOR",
   "CODEVISOR_VERSION",
   "HERDMAN_VERSION"

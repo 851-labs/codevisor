@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "6f37672d358475cd17544121a12494da454d85fb",
+  "depotToolsRevision": "7ef1747912ba653ac4f9a273d8a135abe978e914",
+  "packageVersion": "152.0.0",
+  "packageRevision": "1d04692697cb642bfebf6ad2dd99fe52649c3d6d",
+  "publishedSHA256": "115cb9944248a3302c0c8af17462e2576a28ccc7adef9f6a1fe66ee75d9e1cc8",
+  "xcodeVersion": "26.5",
+  "pythonVersion": "3.12.14",
+  "gnArguments": [
+    "is_debug=false",
+    "rtc_libvpx_build_vp9=true",
+    "is_component_build=false",
+    "rtc_include_tests=false",
+    "rtc_enable_objc_symbol_export=true",
+    "enable_stripping=true",
+    "enable_dsyms=true",
+    "use_lld=true",
+    "rtc_ios_use_opengl_rendering=true",
+    "rtc_system_openh264=true",
+    "rtc_use_h265=true"
+  ]
+}

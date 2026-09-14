@@ -476,6 +476,8 @@ struct RootView: View {
     switch selection {
     case let .session(serverId, sessionId):
       sessionDetail(store, serverId: serverId, sessionId: sessionId)
+    case let .workspace(serverId, workspaceId):
+      workspaceDetail(store, serverId: serverId, workspaceId: workspaceId)
     case let .newChat(target):
       newChat(store, target: target)
     case .none:
@@ -498,10 +500,9 @@ struct RootView: View {
     {
       let controller = store.controller(for: session, project: project)
       SessionContainerView(
-        session: session,
+        mount: .chat(session, controller),
         project: project,
         store: store,
-        controller: controller,
         onFocusedChatChanged: { chatId in
           self.selection = .session(serverId: serverId, id: chatId)
         }
@@ -520,6 +521,42 @@ struct RootView: View {
         "Chat Unavailable",
         systemImage: "bubble.left.and.exclamationmark.bubble.right",
         description: Text("This chat is no longer available on its machine.")
+      )
+    }
+  }
+
+  /// A workspace shown without a chat: the same container, mounted on the
+  /// workspace itself. Its panes, splits, toolbar and New Tab page are the
+  /// shared ones; nothing here creates a session, a worktree or an agent.
+  @ViewBuilder
+  private func workspaceDetail(
+    _ store: SessionStore,
+    serverId: String,
+    workspaceId: UUID
+  ) -> some View {
+    if let workspace = environment.workspaces.workspace(id: workspaceId),
+      workspace.serverId == serverId,
+      let project = environment.projectList.projects.first(where: {
+        $0.serverId == serverId && $0.id == workspace.projectId
+      })
+    {
+      SessionContainerView(
+        mount: .workspace(workspace),
+        project: project,
+        store: store,
+        // The moment a chat exists in this workspace (New Tab → New Chat), the
+        // selection moves to it: the container remounts as `.chat`, which is
+        // what upgrades the cached leaf group and restores chat affordances.
+        onFocusedChatChanged: { chatId in
+          self.selection = .session(serverId: serverId, id: chatId)
+        }
+      )
+      .id("\(serverId):\(workspaceId.uuidString)")
+    } else {
+      ContentUnavailableView(
+        "Workspace Unavailable",
+        systemImage: "rectangle.on.rectangle.slash",
+        description: Text("This workspace is no longer available on its machine.")
       )
     }
   }
@@ -544,6 +581,10 @@ struct RootView: View {
 /// Identifies the current sidebar selection.
 enum SidebarSelection: Hashable {
   case session(serverId: String, id: UUID)
+  /// A workspace shown on its own. Workspaces own their layout and server
+  /// identity independently of any chat, so one that has never hosted a chat
+  /// is still somewhere the user can be.
+  case workspace(serverId: String, id: UUID)
   case newChat(NewChatTarget?)
 }
 

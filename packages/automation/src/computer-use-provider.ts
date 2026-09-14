@@ -146,8 +146,27 @@ const connectMacHelper = async (dataDir: string): Promise<HelperClient> => {
       socket.once("error", onClose)
     }
   )
-  await client.request({ type: "authenticate", token })
-  return client
+  try {
+    await client.request({ type: "authenticate", token })
+    return client
+  } catch (cause) {
+    await client.close()
+    throw cause
+  }
+}
+
+// A dedicated native service message, not an agent tool invocation. The server
+// supplies the validated request and authenticates this private socket.
+export const requestMacScreenSharing = async (
+  dataDir: string,
+  request: Readonly<Record<string, unknown>>
+): Promise<unknown> => {
+  const client = await connectMacHelper(dataDir)
+  try {
+    return await client.request({ type: "screenSharing", request })
+  } finally {
+    await client.close()
+  }
 }
 
 export const linuxComputerUseHelperPath = (

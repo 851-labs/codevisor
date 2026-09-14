@@ -6,7 +6,7 @@ extension SessionContainerView {
   /// change and its focus callback. A stale split must never own browser commands.
   private var activeToolbarGroup: PaneGroupModel? {
     let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else { return nil }
     return configuredCenterModel(leafId: leafId)
   }
@@ -28,24 +28,24 @@ extension SessionContainerView {
       get: {
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
         if descriptor.kind == .browser { return "" }
-        let workspace = store.workspace(for: session, project: project)
+        let workspace = selectedWorkspace
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in
         guard activePaneDescriptor?.kind != .browser else { return }
-        let workspace = store.workspace(for: session, project: project)
+        let workspace = selectedWorkspace
         renameCenterTab(workspace.selectedCenterTabId, to: title)
       }
     )
   }
 
   var activePaneSubtitle: String {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     let candidates: [String?] = [
       workspace.name,
       project.name,
       workspace.worktreeName,
-      environment.machines.fleetMachineName(for: session.serverId),
+      environment.machines.fleetMachineName(for: workspace.serverId),
     ]
     var parts: [String] = []
     for candidate in candidates {

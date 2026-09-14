@@ -20,18 +20,22 @@ struct TerminalLaunchDescriptor: Equatable {
   let command: String
 
   static func make(
-    session: ChatSession,
+    session: ChatSession?,
     project: Project,
     machine: CodevisorMachine,
     terminalKey: String,
-    attachOnly: Bool = false
+    attachOnly: Bool = false,
+    workspaceRootDirectory: String? = nil
   ) -> TerminalLaunchDescriptor {
     // The session's cwd IS the workspace's one working directory
     // (worktree sessions open in the worktree), else the project
-    // folder. The proxy passes the folder along via --cwd.
-    let sessionFolder =
-      session.cwd.map(URL.init(fileURLWithPath:))
-      ?? project.folderURL
+    // folder. The proxy passes the folder along via --cwd. Without a session
+    // the workspace's own directory takes that place.
+    let sessionFolder = URL(
+      fileURLWithPath: PaneWorkingDirectory.resolve(
+        anchor: session.map { .session(cwd: $0.cwd) } ?? .workspace,
+        workspaceRootDirectory: workspaceRootDirectory,
+        projectFolderPath: project.folderURL.path))
     return TerminalLaunchDescriptor(
       terminalKey: terminalKey,
       attachOnly: attachOnly,

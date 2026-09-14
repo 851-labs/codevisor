@@ -1,0 +1,78 @@
+import Foundation
+
+public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifiable {
+  public let id: String
+  public let name: String
+  public let width: Int
+  public let height: Int
+  public init(id: String, name: String, width: Int, height: Int) {
+    self.id = id; self.name = name; self.width = width; self.height = height
+  }
+}
+
+/// Ephemeral signaling only. Never persist this request or SDP in pane metadata.
+public struct ServerScreenSharingRequest: Codable, Sendable {
+  public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop }
+  public let version: Int
+  public let operation: Operation
+  public let workspaceId: UUID
+  public let paneId: UUID
+  public let viewerId: UUID
+  public var displayId: String?
+  public var offer: String?
+
+  public init(
+    operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
+    displayId: String? = nil, offer: String? = nil
+  ) {
+    version = 1; self.operation = operation; self.workspaceId = workspaceId
+    self.paneId = paneId; self.viewerId = viewerId; self.displayId = displayId; self.offer = offer
+  }
+}
+
+public struct ServerScreenSharingReply: Codable, Sendable {
+  public let version: Int
+  public var status: String
+  public var message: String?
+  public var displays: [ServerScreenSharingDisplay]
+  public var answer: String?
+  public var connectivity: ServerScreenSharingConnectivity?
+
+  public init(
+    status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,
+    connectivity: ServerScreenSharingConnectivity? = nil
+  ) {
+    version = 1; self.status = status; self.message = message; self.displays = displays; self.answer = answer
+    self.connectivity = connectivity
+  }
+}
+
+public struct ServerScreenSharingConnectivity: Codable, Sendable {
+  public struct Server: Codable, Sendable {
+    public let urls: [String]
+    public let username: String
+    public let credential: String
+    public init(urls: [String], username: String = "", credential: String = "") {
+      self.urls = urls; self.username = username; self.credential = credential
+    }
+  }
+  public let servers: [Server]
+  public let relayOnly: Bool
+  public let expiresAt: Int
+  public init(servers: [Server], relayOnly: Bool, expiresAt: Int) {
+    self.servers = servers; self.relayOnly = relayOnly; self.expiresAt = expiresAt
+  }
+}
+
+extension CodevisorServerClient {
+  public func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+    try await send("/v1/screen-sharing", method: "POST", body: request)
+  }
+}
+
+public extension CodevisorServerClienting {
+  func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
+    throw CodevisorServerClientError.httpStatus(
+      501, "Screen Sharing requires an updated Codevisor app on the host Mac.")
+  }
+}

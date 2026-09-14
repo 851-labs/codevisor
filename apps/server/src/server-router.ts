@@ -1,3 +1,4 @@
+import { routeScreenSharing } from "./routes/screen-sharing.js"
 import { routeBrowserState } from "./routes/browser-state.js"
 import { routeTranscriptStress } from "./routes/transcript-stress.js"
 import { applyAfterDrain } from "./apply-after-drain.js"
@@ -153,6 +154,8 @@ export const handleRequest = async (
 
     if (await routeTranscriptStress(services, fanout, routeState, request, response, url)) return
 
+    if (await routeScreenSharing(services, config, request, response, url)) return
+
     if (await routeBrowserState(services, request, response, url)) return
 
     if (request.method === "POST" && url.pathname === "/v1/browser/proxy-session") {
@@ -200,6 +203,7 @@ export const handleRequest = async (
           "browser-proxy-v1",
           "browser-http-proxy-v1",
           "browser-state-v1",
+          ...(config.screenSharing === undefined ? [] : ["screen-sharing-v1"]),
           "canonical-chat-v1",
           "session-event-stream-v1",
           "transcript-pagination-v1",

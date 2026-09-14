@@ -385,7 +385,10 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
     self.repository = repository
   }
 
-  public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
+  /// The session key is deliberately unused: this repository is keyed by
+  /// workspace and leaf, so a workspace with no chat persists exactly like one
+  /// that has several.
+  public func load(sessionId: UUID?, placement: PaneGroupPlacement) -> PaneGroupState? {
     guard let workspace = repository.workspace(id: workspaceId) else { return nil }
     switch placement {
     case .bottom:
@@ -396,7 +399,7 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
     }
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
+  public func save(_ state: PaneGroupState, sessionId: UUID?, placement: PaneGroupPlacement) {
     guard var workspace = repository.workspace(id: workspaceId) else { return }
     switch placement {
     case .bottom:

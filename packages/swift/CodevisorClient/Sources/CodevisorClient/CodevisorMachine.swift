@@ -32,6 +32,20 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
 
   public var isLocal: Bool { id == Self.local.id }
 
+  /// A machine whose record cannot be resolved right now. The identity is the
+  /// real server id, so nothing is mistaken for another machine, and the
+  /// address is a reserved name that can never resolve: panes report
+  /// unavailable instead of silently addressing a different machine — in
+  /// particular this one, which `CodevisorMachine.local` would do.
+  public static func unresolved(id: String) -> CodevisorMachine {
+    CodevisorMachine(
+      id: id, name: id, baseURL: URL(string: "http://unresolved.invalid")!, kind: "unresolved")
+  }
+
+  /// True for the placeholder above: its server is not reachable and its panes
+  /// must not act as though they own local resources.
+  public var isUnresolved: Bool { kind == "unresolved" }
+
   /// True for machines reached through the Codevisor Cloud relay (their ids
   /// are `cloud:<deviceId>`; they are synthesized from cloud presence, not
   /// stored in the registry).

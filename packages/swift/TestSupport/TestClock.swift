@@ -22,6 +22,9 @@ public final class TestClock: @unchecked Sendable {
 
   public var pendingCount: Int { lock.withLock { pending.count } }
 
+  /// How many sleeps of exactly `duration` were ever requested (pending or resolved).
+  public func requestCount(_ duration: Duration) -> Int { lock.withLock { requests.filter { $0 == duration }.count } }
+
   public func sleep(for duration: Duration) async throws {
     try Task.checkCancellation()
     if duration <= .zero { return }

@@ -63,12 +63,18 @@ extension SidebarView {
     )
   }
 
-  /// Whether the sidebar's selected chat lives in this workspace.
+  /// Whether the sidebar's selection is showing this workspace: its selected
+  /// chat lives here, or the workspace itself is selected (it has no chat).
   func routesSelectedSession(_ workspace: Workspace) -> Bool {
-    guard case let .session(serverId, sessionId) = selection,
-      serverId == workspace.serverId
-    else { return false }
-    return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
+    switch selection {
+    case let .session(serverId, sessionId):
+      guard serverId == workspace.serverId else { return false }
+      return environment.workspaces.workspaceId(forSession: sessionId) == workspace.id
+    case let .workspace(serverId, id):
+      return serverId == workspace.serverId && id == workspace.id
+    case .newChat, .none:
+      return false
+    }
   }
 
   /// Archives the WORKSPACE (not just a chat): the record is flagged, its

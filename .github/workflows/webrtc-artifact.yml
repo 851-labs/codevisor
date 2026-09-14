@@ -1,0 +1,42 @@
+name: Native WebRTC Artifact
+
+# Manual until the source build and generated notices have been reviewed.
+# This job uploads a candidate; it does not publish or change SwiftPM pins.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-webrtc-artifact
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Read pinned tools
+        id: tools
+        run: |
+          node -e 'const p=JSON.parse(require("fs").readFileSync("scripts/webrtc-build.lock.json")); console.log("python="+p.pythonVersion); console.log("xcode="+p.xcodeVersion)' >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ steps.tools.outputs.python }}
+      - name: Build frameworks and dependency notices
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_${{ steps.tools.outputs.xcode }}.app/Contents/Developer
+        run: node scripts/build-webrtc.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-webrtc-candidate
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            tmp/webrtc-source/*/artifacts/WebRTC.xcframework.zip
+            tmp/webrtc-source/*/artifacts/manifest.json
+            tmp/webrtc-source/*/artifacts/revisions.txt
+            tmp/webrtc-source/*/artifacts/*-gn-args.txt
+            tmp/webrtc-source/*/artifacts/notices-*/LICENSE.md

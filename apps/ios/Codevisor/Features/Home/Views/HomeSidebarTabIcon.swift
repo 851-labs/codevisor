@@ -48,6 +48,8 @@ struct HomeSidebarTabIcon: View {
         } else {
           symbol("puzzlepiece.extension")
         }
+      case .screenSharing:
+        symbol("display")
       case .document:
         symbol("doc.richtext")
       case .newTab:
@@ -71,6 +73,7 @@ extension HomeSidebarTabRow.Icon {
     case let .terminal(isAgentOwned): isAgentOwned ? "Agent terminal" : "Terminal"
     case .browser: "Browser"
     case .plugin: "Plugin"
+    case .screenSharing: "Screen Sharing"
     case .document: "Document"
     case .newTab: "New Tab"
     }

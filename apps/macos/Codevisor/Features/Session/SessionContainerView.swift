@@ -2,15 +2,36 @@ import SwiftUI
 import CodevisorCore
 import CodevisorUI
 
-/// Hosts an already-resolved session controller below the native toolbar
-/// (which follows the active pane).
+/// Hosts one workspace below the native toolbar (which follows the active
+/// pane): either a resolved chat session and its controller, or the workspace
+/// alone when it has never hosted a chat.
 struct SessionContainerView: View {
-  let session: ChatSession
+  /// What this container is mounted on. A workspace owns its layout, server
+  /// identity and pane persistence with or without a chat; the chat case adds
+  /// the anchor session and its controller. There is no third state, so no
+  /// call site has to invent a session to show a workspace.
+  enum Mount {
+    /// Resolved synchronously with the navigation selection so the destination
+    /// shell never waits for this view's asynchronous setup task to run.
+    case chat(ChatSession, SessionController)
+    /// The mount-time snapshot; the live record is re-read from the repository.
+    case workspace(Workspace)
+  }
+
+  let mount: Mount
   let project: Project
   let store: SessionStore
-  /// Resolved synchronously with the navigation selection so the destination
-  /// shell never waits for this view's asynchronous setup task to run.
-  let controller: SessionController
+
+  /// The anchor chat, when there is one. Chat focus, read and open reporting,
+  /// and anything keyed by a session identity, all go through this.
+  var session: ChatSession? {
+    if case let .chat(session, _) = mount { return session }
+    return nil
+  }
+  var controller: SessionController? {
+    if case let .chat(_, controller) = mount { return controller }
+    return nil
+  }
   /// Fired when the user's focus lands in a DIFFERENT chat of this
   /// workspace (composer/transcript click, chat tab) — the sidebar
   /// selection follows, keeping its tab rows in sync with focus.
@@ -40,9 +61,24 @@ struct SessionContainerView: View {
     }
   }
 
+  /// Re-runs the container's setup task when the mounted thing changes.
+  var mountIdentity: UUID {
+    switch mount {
+    case let .chat(session, _): return session.id
+    case let .workspace(snapshot): return snapshot.id
+    }
+  }
+
   var selectedWorkspace: Workspace {
     let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
-    return store.workspace(for: session, project: project)
+    switch mount {
+    case let .chat(session, _):
+      return store.workspace(for: session, project: project)
+    case let .workspace(snapshot):
+      // The repository owns the live record; the snapshot covers the window
+      // between a remote deletion and the selection moving away.
+      return environment.workspaces.workspace(id: snapshot.id) ?? snapshot
+    }
   }
 
   var activeLeafId: UUID? {
@@ -80,11 +116,11 @@ struct SessionContainerView: View {
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(
-          workspaceId: store.workspace(for: session, project: project).id,
+          workspaceId: selectedWorkspace.id,
           newTab: addCenterTab,
           closeSplit: closeActiveLeaf,
           closeTab: {
-            let workspace = store.workspace(for: session, project: project)
+            let workspace = selectedWorkspace
             closeCenterTab(workspace.selectedCenterTabId)
           },
           reopenClosedPane: reopenClosedPane,
@@ -114,7 +150,7 @@ struct SessionContainerView: View {
       // Navigation itself has already committed before view construction.
       .onChange(of: store.centerTabRequest, initial: true) { _, request in
         guard let request, store.centerTabRequest == request,
-          request.workspaceId == store.workspace(for: session, project: project).id
+          request.workspaceId == selectedWorkspace.id
         else { return }
         store.centerTabRequest = nil
         performCenterTabRequest(request)
@@ -144,7 +180,10 @@ struct SessionContainerView: View {
       // attention coordinator, which marks the focused chat read.
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
         publishedFocusCandidate = candidate
-        store.setFocusedChat(candidate, serverId: session.serverId)
+        // Focus/read reporting is per server; the candidate is nil unless an
+        // actual chat pane faces the user, so a chatless workspace publishes
+        // "no chat focused" rather than a fabricated one.
+        store.setFocusedChat(candidate, serverId: selectedWorkspace.serverId)
       }
       // Release only the focus this container published. Navigating to
       // another workspace mounts the new container (which publishes its
@@ -157,7 +196,7 @@ struct SessionContainerView: View {
           store.clearFocusedChat(ifCurrent: candidate)
         }
       }
-      .task(id: session.id) {
+      .task(id: mountIdentity) {
         splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in
           canMoveSplitLeaf(
             sourceLeafId,
@@ -180,20 +219,22 @@ struct SessionContainerView: View {
         sessionFocus.onChatComposerFocused = { chatId in
           guard isVisible,
             store.navigationWorkspaceId == selectedWorkspace.id,
-            store.workspace(for: session, project: project).centerTree.groupId(containingChat: chatId) != nil
+            selectedWorkspace.centerTree.groupId(containingChat: chatId) != nil
           else { return }
-          if let leaf = store.workspace(for: session, project: project)
-            .centerTree.groupId(containingChat: chatId),
+          if let leaf = selectedWorkspace.centerTree.groupId(containingChat: chatId),
             leaf != activeLeafId
           {
             activateLeaf(leaf)
           }
           rememberWorkspaceDefaults(from: chatId)
-          if chatId != session.id {
+          if chatId != session?.id {
             onFocusedChatChanged?(chatId)
           }
         }
-        store.markOpened(session.id, serverId: session.serverId)
+        // Opening is a chat event: a workspace mount has nothing to mark read.
+        if let session {
+          store.markOpened(session.id, serverId: session.serverId)
+        }
       }
   }
 
@@ -212,7 +253,7 @@ struct SessionContainerView: View {
         focus: sessionFocus,
         onWorkspaceCommand: handleWorkspaceCommand,
         centerTree: liveCenterTree ?? workspace.centerTree,
-        primaryLeafId: workspace.centerTree.groupId(containingChat: session.id),
+        primaryLeafId: session.flatMap { workspace.centerTree.groupId(containingChat: $0.id) },
         activeLeafId: activeLeafId,
         centerLeafModel: { leafId in configuredCenterModel(leafId: leafId) },
         centerPaneTitle: paneTitle,

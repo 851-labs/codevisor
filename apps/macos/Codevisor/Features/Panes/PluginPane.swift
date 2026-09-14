@@ -56,7 +56,10 @@ final class PluginPane: Pane, Identifiable {
   /// The workspace's one working directory (the anchor session's cwd, else
   /// the project folder) — same resolution the terminal pane uses.
   private var workingDirectory: String {
-    context.session.cwd ?? context.project.folderURL.path
+    PaneWorkingDirectory.resolve(
+      anchor: context.session.map { .session(cwd: $0.cwd) } ?? .workspace,
+      workspaceRootDirectory: context.workspaceRootDirectory,
+      projectFolderPath: context.project.folderURL.path)
   }
 
   private var client: any CodevisorServerClienting {

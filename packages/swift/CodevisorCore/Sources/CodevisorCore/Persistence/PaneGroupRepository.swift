@@ -5,9 +5,13 @@ import Foundation
 /// identity MUST survive app restarts: the codevisor server keeps one live PTY
 /// per pane key with no reaping, so stable keys are what let terminals
 /// reattach instead of orphaning shells.
+/// `sessionId` is the SESSION-SCOPED key. It is nil for a group whose identity
+/// comes from its workspace instead of a chat (a workspace that has never
+/// hosted one). Session-keyed stores have no key to use then and decline;
+/// workspace-keyed stores ignore the parameter entirely.
 public protocol PaneGroupRepository: Sendable {
-  func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState?
-  func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement)
+  func load(sessionId: UUID?, placement: PaneGroupPlacement) -> PaneGroupState?
+  func save(_ state: PaneGroupState, sessionId: UUID?, placement: PaneGroupPlacement)
   func removeAll()
 }
 
@@ -34,11 +38,17 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     self.store = store
   }
 
-  public func load(sessionId: UUID, placement: PaneGroupPlacement) -> PaneGroupState? {
-    loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
+  public func load(sessionId: UUID?, placement: PaneGroupPlacement) -> PaneGroupState? {
+    // No session key, no legacy entry: this store only ever held per-session
+    // states, and inventing a key here would collide with a real session's.
+    guard let sessionId else { return nil }
+    return loadAll()[Self.storageKey(sessionId: sessionId, placement: placement)]
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID, placement: PaneGroupPlacement) {
+  public func save(_ state: PaneGroupState, sessionId: UUID?, placement: PaneGroupPlacement) {
+    // Same reason as `load`: without a session key there is no entry this
+    // store owns, and a substitute key would masquerade as a session.
+    guard let sessionId else { return }
     var all = loadAll()
     all[Self.storageKey(sessionId: sessionId, placement: placement)] = state
     lock.withLock { cache = all }

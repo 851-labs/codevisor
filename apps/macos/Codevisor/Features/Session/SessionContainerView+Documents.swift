@@ -9,10 +9,10 @@ extension SessionContainerView {
   /// Document identity belongs to the workspace's machine and canonical
   /// path. Clicking the same document again selects its existing tab/split.
   func openMarkdownDocument(_ target: String) -> Bool {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     guard
       let path = MarkdownDocumentPath.resolve(
-        target, relativeTo: workspace.rootDirectory ?? session.cwd ?? project.folderURL.path),
+        target, relativeTo: workspace.rootDirectory ?? session?.cwd ?? project.folderURL.path),
       MarkdownDocumentPath.isMarkdown(path)
     else { return false }
 

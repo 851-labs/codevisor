@@ -59,3 +59,11 @@ struct MarkdownDocumentFailure {
     }
   }
 }
+
+/// Raised when a document pane has no chat session to fetch through.
+public struct MarkdownDocumentUnavailable: LocalizedError {
+  public init() {}
+  public var errorDescription: String? {
+    "This document needs a chat in this workspace before it can be opened."
+  }
+}

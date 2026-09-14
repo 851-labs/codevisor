@@ -7,12 +7,19 @@ import Foundation
 import Observation
 import SwiftUI
 import CodevisorCore
+import CodevisorCoreMac
 import CodevisorUI
 
 @MainActor
 @Observable
 final class PaneGroupModel: Identifiable {
-  let sessionId: UUID
+  /// The chat session this group belongs to, or nil when the group's identity
+  /// comes from its workspace instead (a workspace that has never hosted a
+  /// chat). Nothing substitutes another id here: a nil session means features
+  /// that need a real session identity are unavailable, not renamed. It becomes
+  /// non-nil exactly once, through `adoptSession`, when a real chat appears in
+  /// this leaf.
+  private(set) var sessionId: UUID?
   /// A center leaf or the persisted group of background-task terminals.
   let placement: PaneGroupPlacement
   var state: PaneGroupState
@@ -25,7 +32,9 @@ final class PaneGroupModel: Identifiable {
 
   @ObservationIgnored var live: [UUID: any Pane] = [:]
   @ObservationIgnored private let repository: any PaneGroupRepository
-  @ObservationIgnored private let makeContext: (PaneDescriptorState) -> PaneContext
+  /// Rebuilt by `adoptSession` so panes created after a chat appears get the
+  /// chat-anchored context instead of the workspace-only one.
+  @ObservationIgnored private var makeContext: (PaneDescriptorState) -> PaneContext
   @ObservationIgnored let pluginIconClient: (any CodevisorServerClienting)?
   @ObservationIgnored let pluginIconCacheNamespace: String
   /// Set by the workspace container: moves keyboard focus to the composer (used
@@ -89,7 +98,7 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
 
   init(
-    sessionId: UUID,
+    sessionId: UUID?,
     placement: PaneGroupPlacement = .bottom,
     repository: any PaneGroupRepository,
     pluginIconClient: (any CodevisorServerClienting)? = nil,
@@ -110,7 +119,9 @@ final class PaneGroupModel: Identifiable {
       let initial: PaneGroupState =
         switch placement {
         case .bottom: PaneGroupState()
-        case .center: .centerInitial(sessionId: sessionId)
+        case .center:
+          sessionId.map { PaneGroupState.centerInitial(sessionId: $0) }
+            ?? .centerInitialWithoutChat()
         }
       self.state = initial
       repository.save(initial, sessionId: sessionId, placement: placement)
@@ -118,11 +129,33 @@ final class PaneGroupModel: Identifiable {
     ChromiumAutomationBridge.shared.addGroup(self)
   }
 
+  /// Binds this group to the chat that now exists in its workspace. Groups are
+  /// cached per workspace+leaf, so the model the user created a chat in is the
+  /// same object that later hosts it: without this it would keep a nil identity
+  /// and leave terminals, browser automation and file-backed panes unavailable
+  /// forever. Live panes are preserved; only those whose content depended on
+  /// the missing session are dropped so they rebuild against the real one.
+  /// Adoption happens once — an existing identity is never re-pointed.
+  func adoptSession(
+    _ sessionId: UUID,
+    makeContext: @escaping (PaneDescriptorState) -> PaneContext
+  ) {
+    guard self.sessionId == nil else { return }
+    self.sessionId = sessionId
+    self.makeContext = makeContext
+    for pane in state.panes where pane.kind == .document {
+      discardLivePane(id: pane.id)
+    }
+  }
+
   func canHostBrowserAutomation(sessionId requested: String) -> Bool {
     guard placement == .center, createBrowserTab != nil, let descriptor = state.panes.first,
       makeContext(descriptor).machine.isLocal
     else { return false }
-    return sessionId.uuidString.lowercased() == requested.lowercased()
+    // Both sides compare ACTUAL session identities: a group without one simply
+    // never matches on its own id, and can still host automation for a real
+    // chat pane living inside it.
+    return sessionId?.uuidString.lowercased() == requested.lowercased()
       || state.panes.contains { $0.chatSessionId?.uuidString.lowercased() == requested.lowercased() }
   }
 
@@ -143,6 +176,10 @@ final class PaneGroupModel: Identifiable {
       let browser = BrowserPane(context: makeContext(descriptor), descriptor: descriptor)
       wireBrowser(browser)
       pane = browser
+    case .screenSharing:
+      let sharing = ScreenSharingPane(context: makeContext(descriptor), descriptor: descriptor)
+      wireScreenSharing(sharing)
+      pane = sharing
     case .document:
       let document = MarkdownDocumentPane(context: makeContext(descriptor), descriptor: descriptor)
       document.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
@@ -173,6 +210,19 @@ final class PaneGroupModel: Identifiable {
     }
     live[descriptor.id] = pane
     return pane
+  }
+
+  func wireScreenSharing(_ sharing: ScreenSharingPane) {
+    sharing.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
+    sharing.onPreferencesChanged = { [weak self, weak sharing] preferences in
+      guard let self, let sharing,
+        let index = self.state.panes.firstIndex(where: { $0.id == sharing.id }),
+        self.state.panes[index].screenSharing != preferences
+      else { return }
+      self.state.panes[index].screenSharing = preferences
+      self.persist()
+      self.onPaneChanged?(self.state.panes[index])
+    }
   }
 
   func wireBrowser(_ browser: BrowserPane) {
@@ -219,7 +269,7 @@ final class PaneGroupModel: Identifiable {
           self.pendingNewTabFocus = paneId
           self.requestBackgroundFocus?()
         }
-      case .terminal, .plugin, .document, .browser:
+      case .terminal, .plugin, .document, .browser, .screenSharing:
         break
       }
     }
@@ -313,6 +363,8 @@ final class PaneGroupModel: Identifiable {
       if Self.requiresNewLivePane(previous: previous, next: next) {
         discardLivePane(id: id)
         invalidatedLiveIds.insert(id)
+      } else if let sharing = live[id] as? ScreenSharingPane {
+        sharing.model?.applyPreferences(next.screenSharing ?? .init())
       }
     }
 
@@ -403,6 +455,8 @@ final class PaneGroupModel: Identifiable {
       // re-pointed at another plugin/pane type needs a fresh webview.
       return previous.pluginId != next.pluginId
         || previous.pluginPaneType != next.pluginPaneType
+    case (.screenSharing, .screenSharing):
+      return false
     case (.browser, .browser):
       return false
     case (.document, .document):

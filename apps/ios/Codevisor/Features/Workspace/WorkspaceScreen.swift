@@ -222,7 +222,7 @@ struct WorkspaceScreen: View {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document:
+    case .terminal, .plugin, .document, .screenSharing:
       return pane.name
     }
   }

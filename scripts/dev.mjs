@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 import {
   applyCloudDevMigrations,
   prepareCloudSession,
@@ -47,11 +48,13 @@ import { runXcodebuild } from "./xcodebuild.mjs"
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const arguments_ = process.argv.slice(2)
 const { wantsContainers, containerEnginePreference } = parseDevelopmentRunnerArguments(arguments_, {
-  allowedArguments: ["--no-ios"]
+  allowedArguments: ["--no-ios", "--reuse-macos-build"]
 })
+const reuseMacOSBuild = requestsMacOSBuildReuse(arguments_)
 // Both apps by default — `dev` means the whole rig. `--no-ios` backs the
 // dev:macos script; it is plumbing, not a user-facing option (the public
-// surface is dev / dev:macos / dev:ios plus the container flags).
+// surface is dev / dev:macos / dev:ios plus the container flags; dev:macos
+// also permits explicit reuse of its already-built, signed application).
 const includesIOS = !arguments_.includes("--no-ios")
 // Containerized dev remotes are the default: real Linux machines make
 // cross-machine sync honest. --no-containers opts out; a missing engine
@@ -83,6 +86,17 @@ const {
   wwwPort
 } = instance
 const { capture, run } = makeCommandRunner(repoRoot)
+// Fail before claiming a runner or starting services. Do not silently
+// rebuild an app whose ad-hoc identity was just granted OS permissions.
+if (reuseMacOSBuild) {
+  await verifyReusableMacOSApp({
+    appBundle,
+    bundleIdentifier: macOSBundleIdentifier,
+    executableName: appName,
+    capture,
+    run
+  })
+}
 const { cloudExtraVariables, cloudPersistPath, cloudPort, cloudUrl } =
   await resolveCloudDevInstance({
     environment: process.env,
@@ -153,33 +167,37 @@ const cloud = spawnCloudDev({
   worktreeName
 })
 
-const generatedIconDirectory = await createDevelopmentAppIcon(repoRoot, developmentIconColor)
-const developmentSigningArguments = await resolveDevelopmentSigningArguments(capture)
-try {
-  await runXcodebuild(
-    repoRoot,
-    "macos",
-    [
-      "-project",
-      "apps/macos/Codevisor.xcodeproj",
-      "-scheme",
-      "Codevisor",
-      "-configuration",
-      "Debug",
-      `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
-      `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
-      `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${macOSBundleIdentifier}`,
-      `CODEVISOR_URL_SCHEME=${urlScheme}`,
-      "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
-      "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
-      "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
-      ...developmentSigningArguments,
-      "build"
-    ],
-    { environment: process.env, layout }
-  )
-} finally {
-  await rm(generatedIconDirectory, { recursive: true, force: true })
+if (!reuseMacOSBuild) {
+  const generatedIconDirectory = await createDevelopmentAppIcon(repoRoot, developmentIconColor)
+  const developmentSigningArguments = await resolveDevelopmentSigningArguments(capture)
+  try {
+    await runXcodebuild(
+      repoRoot,
+      "macos",
+      [
+        "-project",
+        "apps/macos/Codevisor.xcodeproj",
+        "-scheme",
+        "Codevisor",
+        "-configuration",
+        "Debug",
+        `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,
+        `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
+        `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${macOSBundleIdentifier}`,
+        `CODEVISOR_URL_SCHEME=${urlScheme}`,
+        "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+        "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
+        "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+        ...developmentSigningArguments,
+        "build"
+      ],
+      { environment: process.env, layout }
+    )
+  } finally {
+    await rm(generatedIconDirectory, { recursive: true, force: true })
+  }
+} else {
+  console.log("Reusing the existing signed macOS app; native source changes are not built.")
 }
 let iosTarget
 if (includesIOS) {

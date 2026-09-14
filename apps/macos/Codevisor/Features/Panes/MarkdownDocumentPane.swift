@@ -14,11 +14,18 @@ final class MarkdownDocumentPane: Pane {
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     self.id = descriptor.id
-    self.document = MarkdownDocumentModel(
-      path: descriptor.documentPath ?? "",
-      sessionId: context.sessionId,
-      client: context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
-    )
+    let path = descriptor.documentPath ?? ""
+    // Reading a file goes through a chat session's file API. A pane group
+    // without one reports the document as unavailable rather than fetching
+    // under some other session's identity.
+    self.document =
+      context.sessionId.map { sessionId in
+        MarkdownDocumentModel(
+          path: path,
+          sessionId: sessionId,
+          client: context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
+        )
+      } ?? MarkdownDocumentModel(unavailablePath: path)
   }
 
   func makeView() -> AnyView {

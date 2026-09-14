@@ -125,6 +125,7 @@ struct SidebarWorkspaceTabRow: View {
     case .plugin: "puzzlepiece.extension"
     case .document: "doc.richtext"
     case .browser: "globe"
+    case .screenSharing: "display"
     }
   }
 

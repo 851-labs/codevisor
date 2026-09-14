@@ -13,7 +13,7 @@ extension SessionContainerView {
     if descriptor.kind == .chat, descriptor.chatSessionId == nil { return }
     // The hook fires before the tab is pruned, so its position is still
     // readable here.
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: { $0.root.group(id: leafId) != nil })
     else { return }
@@ -34,7 +34,7 @@ extension SessionContainerView {
   /// server shell); a plugin pane reloads. Entries whose chat no longer
   /// exists are skipped in favor of the next one.
   func reopenClosedPane() {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     while let record = store.popClosedPane(workspaceId: workspace.id) {
       // A chat reopened meanwhile (from the archive) already has a pane:
       // go to it rather than open a duplicate.
@@ -43,7 +43,7 @@ extension SessionContainerView {
         workspace.tabId(containingChat: chatId) != nil
       {
         store.selectDestination(.chat(chatId), in: workspace.id)
-        if chatId != session.id { onFocusedChatChanged?(chatId) }
+        if chatId != session?.id { onFocusedChatChanged?(chatId) }
         return
       }
       guard let pane = restoredDescriptor(for: record.descriptor) else { continue }
@@ -57,7 +57,7 @@ extension SessionContainerView {
       environment.workspaces.save(workspace)
       store.selectDestination(.tab(tab.id), in: workspace.id)
       publishPane(pane, workspaceId: workspace.id)
-      if pane.kind == .chat, let chatId = pane.chatSessionId, chatId != session.id {
+      if pane.kind == .chat, let chatId = pane.chatSessionId, chatId != session?.id {
         // The sidebar follows the already selected chat tab.
         onFocusedChatChanged?(chatId)
       }
@@ -75,7 +75,7 @@ extension SessionContainerView {
     case .chat:
       guard let chatId = closed.chatSessionId,
         let chat = environment.projectList.sessions.first(where: {
-          $0.serverId == session.serverId && $0.id == chatId
+          $0.serverId == selectedWorkspace.serverId && $0.id == chatId
         })
       else { return nil }
       if chat.isArchived {
@@ -86,6 +86,10 @@ extension SessionContainerView {
         terminalKey: paneId.uuidString, chatSessionId: chatId
       )
     case .terminal:
+      // The terminal key namespaces the server's PTY per session; a workspace
+      // with no chat cannot name one, so its terminal panes stay closed rather
+      // than reopening under a substituted namespace.
+      guard let session else { return nil }
       return PaneDescriptorState(
         id: paneId, kind: .terminal, name: closed.name,
         terminalKey: "\(session.id.uuidString):\(paneId.uuidString)"
@@ -100,6 +104,10 @@ extension SessionContainerView {
       return PaneDescriptorState(
         id: paneId, kind: .browser, name: closed.name,
         terminalKey: paneId.uuidString, browserURL: closed.browserURL)
+    case .screenSharing:
+      return PaneDescriptorState(
+        id: paneId, kind: .screenSharing, name: closed.name,
+        terminalKey: paneId.uuidString, screenSharing: closed.screenSharing)
     case .document:
       return PaneDescriptorState(
         id: paneId, kind: .document, name: closed.name,

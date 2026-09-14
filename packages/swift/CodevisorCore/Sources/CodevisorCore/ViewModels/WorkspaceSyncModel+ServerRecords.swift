@@ -61,6 +61,13 @@ extension WorkspaceSyncModel {
       if let data = try? JSONEncoder().encode(BrowserPaneMetadata(url: pane.browserURL)) {
         metadata = String(data: data, encoding: .utf8)
       }
+    case .screenSharing:
+      paneType = "screen-sharing"
+      resourceKind = nil
+      resourceId = nil
+      if let data = try? JSONEncoder().encode(pane.screenSharing ?? ScreenSharingPanePreferences()) {
+        metadata = String(data: data, encoding: .utf8)
+      }
     case .document:
       paneType = "markdown"
       resourceKind = "file"
@@ -112,6 +119,14 @@ extension WorkspaceSyncModel {
     // forward-compatible; renderer support is a client capability.
     guard record.providerId == "codevisor" else { return nil }
     switch record.paneType {
+    case "screen-sharing":
+      guard let data = record.metadata?.data(using: .utf8),
+        let preferences = try? JSONDecoder().decode(ScreenSharingPanePreferences.self, from: data),
+        preferences.schemaVersion == 1
+      else { return nil }
+      return PaneDescriptorState(
+        id: id, kind: .screenSharing, name: record.title,
+        terminalKey: id.uuidString, screenSharing: preferences)
     case "browser":
       let value = record.metadata.flatMap { $0.data(using: .utf8) }
         .flatMap { try? JSONDecoder().decode(BrowserPaneMetadata.self, from: $0) }
