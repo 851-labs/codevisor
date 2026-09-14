@@ -19,7 +19,8 @@ export const appBundlePath = (binaryPath: string): string | undefined => {
 export const METHOD_PREFERENCE: ReadonlyArray<HarnessInstallMethodSpec["kind"]> = [
   "brew",
   "curl",
-  "npm"
+  "npm",
+  "uv"
 ]
 
 export const installCommand = (spec: HarnessInstallMethodSpec): string => {
@@ -27,7 +28,9 @@ export const installCommand = (spec: HarnessInstallMethodSpec): string => {
     case "brew":
       return `brew install ${spec.cask === true ? "--cask " : ""}${spec.formula ?? ""}`.trim()
     case "npm":
-      return `npm install -g ${spec.packageName ?? ""}`.trim()
+      return `npm install -g ${spec.ignoreScripts === true ? "--ignore-scripts " : ""}${[spec.packageName, ...(spec.additionalPackages ?? [])].filter(Boolean).join(" ")}`.trim()
+    case "uv":
+      return `uv tool install ${spec.packageName ?? ""}${spec.python === undefined ? "" : ` --python ${spec.python}`}`.trim()
     case "curl":
       return spec.command ?? ""
   }
@@ -40,15 +43,22 @@ export const upgradeCommand = (spec: HarnessInstallMethodSpec): string => {
     case "brew":
       return `brew upgrade ${spec.cask === true ? "--cask " : ""}${spec.formula ?? ""}`.trim()
     case "npm":
-      return `npm install -g ${spec.packageName ?? ""}@latest`.trim()
+      return `npm install -g ${spec.ignoreScripts === true ? "--ignore-scripts " : ""}${[
+        spec.packageName,
+        ...(spec.additionalPackages ?? [])
+      ]
+        .filter(Boolean)
+        .map((name) => `${name}@latest`)
+        .join(" ")}`.trim()
+    case "uv":
+      return `uv tool upgrade ${spec.packageName ?? ""}`.trim()
     case "curl":
       return spec.command ?? ""
   }
 }
 
 /// A method is runnable when its prerequisite tool exists on the PATH.
-export const methodPrerequisite = (kind: HarnessInstallMethodSpec["kind"]): string =>
-  kind === "brew" ? "brew" : kind === "npm" ? "npm" : "curl"
+export const methodPrerequisite = (kind: HarnessInstallMethodSpec["kind"]): string => kind
 
 export const defaultSpawnShell = (command: string, env: NodeJS.ProcessEnv): LifecycleProcess => {
   const shell = env.SHELL !== undefined && env.SHELL !== "" ? env.SHELL : "/bin/sh"

@@ -128,3 +128,6 @@
 [submodule ".repos/cef"]
 	path = .repos/cef
 	url = https://github.com/chromiumembedded/cef.git
+[submodule ".repos/acp-registry"]
+	path = .repos/acp-registry
+	url = https://github.com/agentclientprotocol/registry.git

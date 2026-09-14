@@ -3,6 +3,7 @@ import {
   checkBrewLatest,
   checkGithubLatest,
   checkNpmLatest,
+  checkPypiLatest,
   detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
@@ -62,6 +63,24 @@ describe("isNewerVersion", () => {
 })
 
 describe("latest-version checkers", () => {
+  it("reads PyPI versions and ignores unavailable or malformed packages", async () => {
+    const fetchImpl = fetchStub({
+      "https://pypi.org/pypi/mistral-vibe/json": { info: { version: "2.24.1" } },
+      "https://pypi.org/pypi/empty/json": { info: {} }
+    })
+    await expect(checkPypiLatest("mistral-vibe", fetchImpl)).resolves.toEqual({
+      channel: "stable",
+      latestVersion: "2.24.1"
+    })
+    await expect(checkPypiLatest("missing", fetchImpl)).resolves.toEqual({})
+    await expect(checkPypiLatest("empty", fetchImpl)).resolves.toEqual({})
+    await expect(
+      checkPypiLatest("offline", async () => {
+        throw new Error("offline")
+      })
+    ).resolves.toEqual({})
+  })
+
   it("reads npm dist-tags", async () => {
     const fetchImpl = fetchStub({
       "https://registry.npmjs.org/@openai/codex": { "dist-tags": { latest: "0.99.0" } }
@@ -131,6 +150,15 @@ describe("latest-version checkers", () => {
 
 describe("detectInstallOrigin", () => {
   const home = "/Users/dev"
+
+  it("recognizes uv tool environments before the generic home-directory origin", () => {
+    expect(
+      detectInstallOrigin("/Users/dev/.local/bin/vibe-acp", {
+        home,
+        realpath: () => "/Users/dev/.local/share/uv/tools/mistral-vibe/bin/vibe-acp"
+      })
+    ).toBe("uv")
+  })
 
   it("classifies npm globals behind brew-node symlinks as npm, not brew", () => {
     // /opt/homebrew/bin/<cli> is a symlink into homebrew's node_modules when

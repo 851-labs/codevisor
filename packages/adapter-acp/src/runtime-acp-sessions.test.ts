@@ -67,7 +67,7 @@ describe("@codevisor/agent-runtime", () => {
 
     expect(sessionId).toBe("agent-pi-1")
     expect(connector.requests[0]).toMatchObject({
-      args: ["-y", "pi-acp@0.0.31"],
+      args: ["-y", "pi-acp@0.0.33"],
       command: "/bin/npx",
       cwd: "/tmp/pi-project",
       harnessId: "pi"

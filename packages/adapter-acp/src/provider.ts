@@ -28,12 +28,20 @@ interface ResolvedLaunch {
   readonly args: ReadonlyArray<string>
 }
 
+const missingRequiredBinary = (
+  definition: HarnessDefinition,
+  environment: ProviderEnvironment
+): string | undefined =>
+  definition.requiredBinaries?.find(
+    (binary) => !environment.executableExists(binary, environment.env)
+  )
+
 const resolveLaunch = (
   definition: HarnessDefinition,
   environment: ProviderEnvironment
 ): ResolvedLaunch | undefined => {
   const launch = definition.launch
-  if (launch === undefined) {
+  if (launch === undefined || missingRequiredBinary(definition, environment) !== undefined) {
     return undefined
   }
   if (
@@ -77,6 +85,8 @@ const unavailableReadiness = (
   if (!installed) {
     return { detail: "CLI not found on PATH", state: "unavailable" }
   }
+  const missing = missingRequiredBinary(definition, environment)
+  if (missing !== undefined) return { detail: `Requires ${missing}`, state: "unavailable" }
   /* v8 ignore next 3 -- installed executable catalog entries are ready before unavailableReadiness is called. */
   if (definition.launch?.kind === "npx") {
     return { detail: "Requires npx", state: "unavailable" }

@@ -104,17 +104,23 @@ export type HarnessLaunch =
 /// How an installed harness binary got onto the machine, detected from its
 /// resolved path (brew prefix, node_modules, .app bundle, …). Update behavior
 /// is keyed off this so we never fight the installer that owns the binary.
-export type InstallOrigin = "npm" | "brew" | "curl" | "appBundle" | "standalone" | "unknown"
+export type InstallOrigin = "npm" | "brew" | "curl" | "uv" | "appBundle" | "standalone" | "unknown"
 
 /// One way to install a harness CLI. `kind` doubles as the method id in the
 /// API. Exactly one of the payload fields applies per kind.
 export interface HarnessInstallMethodSpec {
-  readonly kind: "brew" | "npm" | "curl"
+  readonly kind: "brew" | "npm" | "curl" | "uv"
   /// brew formula (or cask when `cask` is true), e.g. "block-goose-cli".
   readonly formula?: string
   readonly cask?: boolean
   /// npm package installed globally, e.g. "@openai/codex".
   readonly packageName?: string
+  /// Additional npm packages required by an adapter.
+  readonly additionalPackages?: ReadonlyArray<string>
+  /// Optional Python version for uv to provision.
+  readonly python?: string
+  /// Skip npm dependency lifecycle scripts when supported by the vendor.
+  readonly ignoreScripts?: boolean
   /// curl: the vendor's full install command, shown verbatim to the user
   /// before running (e.g. `curl -fsSL https://claude.ai/install.sh | bash`).
   readonly command?: string
@@ -130,6 +136,7 @@ export type UpdateCheckSpec =
       readonly formula?: string
     }
   | { readonly kind: "github"; readonly repo: string }
+  | { readonly kind: "pypi"; readonly packageName: string }
   | {
       readonly kind: "sparkle"
       readonly appcastUrl: string
@@ -210,6 +217,8 @@ export interface HarnessDefinition {
   readonly name: string
   readonly symbolName: string
   readonly detectBinaries: ReadonlyArray<string>
+  /// Extra executables required by an ACP adapter, in addition to its own binary.
+  readonly requiredBinaries?: ReadonlyArray<string>
   /// Absolute paths probed when no detect binary is on PATH — CLIs bundled
   /// inside desktop apps (a leading `~/` expands via env.HOME). Lets users
   /// who installed the app but never the CLI still run the harness.

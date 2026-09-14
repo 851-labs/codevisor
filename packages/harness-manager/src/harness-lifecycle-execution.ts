@@ -46,6 +46,7 @@ export const makeHarnessOperationRunner = (
     now,
     operationTimeoutMs,
     operations,
+    platform,
     resolveEnv,
     setOperation,
     spawnShell
@@ -59,11 +60,14 @@ export const makeHarnessOperationRunner = (
     if (specs.length === 0) return []
     const env = await resolveEnv()
     const methods = specs.map((spec) => ({
-      available: locateExecutableOnPath(methodPrerequisite(spec.kind), env) !== undefined,
+      available:
+        !(spec.kind === "brew" && spec.cask === true && platform !== "darwin") &&
+        locateExecutableOnPath(methodPrerequisite(spec.kind), env) !== undefined,
       command: installCommand(spec),
       id: spec.kind,
       kind: spec.kind,
-      label: spec.kind === "brew" ? "Homebrew" : spec.kind === "npm" ? "npm" : "Installer script",
+      label:
+        spec.kind === "brew" ? "Homebrew" : spec.kind === "curl" ? "Installer script" : spec.kind,
       recommended: false,
       spec
     }))

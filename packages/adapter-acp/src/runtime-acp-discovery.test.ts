@@ -14,6 +14,23 @@ describe("@codevisor/agent-runtime", () => {
     expect(directlyCapable.some((harness) => harness.launch?.kind === "npx")).toBe(false)
   })
 
+  it("requires an adapter's underlying CLI before reporting it ready", async () => {
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: (name) => name === "amp-acp" || name === "autohand-acp",
+      locateExecutable: () => undefined
+    })
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.find((h) => h.id === "amp")?.readiness).toEqual({
+      state: "unavailable",
+      detail: "Requires amp"
+    })
+    expect(harnesses.find((h) => h.id === "autohand")?.readiness).toEqual({
+      state: "unavailable",
+      detail: "Requires autohand"
+    })
+  })
+
   it("discovers ready local executables and unavailable harnesses", async () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
