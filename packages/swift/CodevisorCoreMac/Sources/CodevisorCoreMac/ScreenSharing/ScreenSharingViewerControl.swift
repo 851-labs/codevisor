@@ -10,6 +10,7 @@ public final class ScreenSharingViewerControl {
   public private(set) var available = false
   public private(set) var message: String?
   @ObservationIgnored var onActiveChanged: ((Bool) -> Void)?
+  @ObservationIgnored var onReleased: (() -> Void)?
   @ObservationIgnored private let send: (ScreenSharingControlMessage) -> Bool
   @ObservationIgnored private let now: () -> TimeInterval
   @ObservationIgnored private var requestID: UUID?
@@ -44,6 +45,7 @@ public final class ScreenSharingViewerControl {
     let oldLease = lease
     requestID = nil; lease = nil; state = .viewing; message = reason
     onActiveChanged?(false)
+    onReleased?()
     if let oldLease { _ = send(.release(lease: oldLease)) }
   }
 

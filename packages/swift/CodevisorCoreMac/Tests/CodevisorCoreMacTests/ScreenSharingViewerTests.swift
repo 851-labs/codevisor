@@ -16,11 +16,13 @@ struct ScreenSharingViewerTests {
     peer.deliversVideo = false
     peer.channelAvailableOnAccept = channelFirst
     let model = makeModel(transport, clock: clock) { peer }
+    #expect(model.interactionMode == .control)
     model.setVisible(true)
     await awaitObserved { model.phase == .ready }
     model.connect()
     await clock.waitForSleep(.seconds(8))
     #expect(model.phase == .connecting)
+    #expect(model.interactionMode == .control)
     #expect(peer.controlMessages.isEmpty)
     peer.onReady?()
     #expect(model.phase == .viewing)
@@ -36,6 +38,7 @@ struct ScreenSharingViewerTests {
     peer.control.receive(.grant(request: request, lease: lease))
     #expect(model.control?.state == .controlling)
     peer.control.release()
+    #expect(model.interactionMode == .view)
     peer.onReady?()
     model.setFitToWindow(false)
     peer.control.setAvailable(true)
@@ -45,13 +48,101 @@ struct ScreenSharingViewerTests {
     #expect(clock.pendingCount == 0)
   }
 
-  @Test func networkRecoveryUsesFreshMediaAndTheSameSessionAndRequestsFreshControl() async throws {
+  @Test(arguments: [ScreenSharingViewerModel.InteractionMode.view, .control])
+  func connectingHonorsTheLatestModeAndSizeChoice(mode: ScreenSharingViewerModel.InteractionMode) async {
+    let transport = SharingTransport(blockFirstStart: true)
+    let clock = TestClock()
+    let peer = SharingPeer()
+    let model = makeModel(transport, clock: clock) { peer }
+    model.setInteractionMode(.view)
+    #expect(model.interactionMode == .view && model.control == nil)
+    model.setVisible(true)
+    await awaitObserved { model.phase == .ready }
+    model.connect()
+    await transport.started.wait()
+    #expect(model.phase == .connecting)
+    model.setInteractionMode(.control)
+    model.setInteractionMode(mode)
+    model.setFitToWindow(false)
+    #expect(model.interactionMode == mode)
+    #expect(peer.controlMessages.isEmpty)
+    transport.releaseFirstStart.signal()
+    await clock.waitForSleep(.seconds(8))
+    #expect(model.phase == .viewing)
+    #expect(model.interactionMode == mode)
+    #expect(peer.control.state == (mode == .control ? .requesting : .viewing))
+    #expect(peer.controlMessages.count == (mode == .control ? 1 : 0))
+    #expect(!peer.fitToWindow)
+    await model.close()
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test func choosingViewCancelsControlWaitingForTheChannel() async {
+    let transport = SharingTransport()
+    let clock = TestClock()
+    let peer = SharingPeer()
+    peer.channelAvailableOnAccept = false
+    let model = makeModel(transport, clock: clock) { peer }
+    model.setVisible(true)
+    await awaitObserved { model.phase == .ready }
+    model.connect()
+    await clock.waitForSleep(.seconds(8))
+    #expect(model.phase == .viewing && model.interactionMode == .control)
+    #expect(peer.controlMessages.isEmpty)
+    model.setInteractionMode(.view)
+    peer.control.setAvailable(true)
+    #expect(model.interactionMode == .view)
+    #expect(peer.controlMessages.isEmpty)
+    model.setInteractionMode(.control)
+    #expect(peer.control.state == .requesting)
+    #expect(peer.controlMessages.count == 1)
+    await model.close()
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test(arguments: [true, false])
+  func deniedOrRevokedControlReturnsTheModeToView(grantFirst: Bool) async throws {
+    let transport = SharingTransport()
+    let clock = TestClock()
+    let peer = SharingPeer()
+    let model = makeModel(transport, clock: clock) { peer }
+    model.setVisible(true)
+    await awaitObserved { model.phase == .ready }
+    model.connect()
+    await clock.waitForSleep(.seconds(8))
+    guard case .request(let request)? = peer.controlMessages.first else {
+      Issue.record("Missing control request"); await model.close(); return
+    }
+    if grantFirst {
+      let lease = UUID()
+      peer.control.receive(.grant(request: request, lease: lease))
+      #expect(model.interactionMode == .control && peer.control.state == .controlling)
+      peer.control.receive(.revoked(lease: lease, reason: "Host ended control"))
+    } else {
+      peer.control.receive(.denied(request: request, reason: "Host denied control"))
+    }
+    #expect(model.interactionMode == .view && peer.control.state == .viewing)
+    let sent = peer.controlMessages
+    model.setFitToWindow(false)
+    peer.onReady?()
+    #expect(model.interactionMode == .view && peer.controlMessages == sent)
+    await model.close()
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test(arguments: [ScreenSharingViewerModel.InteractionMode.view, .control])
+  func networkRecoveryUsesFreshMediaAndTheSameSessionAndPreservesMode(
+    mode: ScreenSharingViewerModel.InteractionMode
+  )
+    async throws
+  {
     let transport = SharingTransport()
     let clock = TestClock()
     var peers: [SharingPeer] = []
     let model = makeModel(transport, clock: clock) {
       let peer = SharingPeer(); peers.append(peer); return peer
     }
+    model.setInteractionMode(mode)
     model.setVisible(true)
     await awaitObserved { model.phase == .ready }
     model.connect()
@@ -72,9 +163,11 @@ struct ScreenSharingViewerTests {
     #expect(requests.filter { $0.operation == .stop }.isEmpty)
     #expect(requests.filter { $0.operation == .capabilities && $0.viewerId == start.viewerId }.count == 2)
     #expect(first.control.state == .viewing)
-    #expect(peers[1].control.state == .requesting)
-    #expect(first.controlMessages.count == 1 && peers[1].controlMessages.count == 1)
-    #expect(first.controlMessages != peers[1].controlMessages)
+    #expect(model.interactionMode == mode)
+    #expect(peers[1].control.state == (mode == .control ? .requesting : .viewing))
+    let count = mode == .control ? 1 : 0
+    #expect(first.controlMessages.count == count && peers[1].controlMessages.count == count)
+    if mode == .control { #expect(first.controlMessages != peers[1].controlMessages) }
     await model.close()
     #expect(peers.allSatisfy { $0.closed })
     #expect(clock.pendingCount == 0)

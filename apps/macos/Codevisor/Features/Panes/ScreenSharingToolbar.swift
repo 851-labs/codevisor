@@ -10,7 +10,7 @@ struct ScreenSharingToolbar: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-      HStack(spacing: 8) { controlActions }
+      controlActions
     }
     ToolbarItem(id: "screenSharing.size", placement: .primaryAction) {
       Picker("Size", selection: Binding(get: { model.preferences.fitToWindow }, set: { model.setFitToWindow($0) })) {
@@ -19,44 +19,34 @@ struct ScreenSharingToolbar: ToolbarContent {
       }
       .labelsHidden().frame(width: 110)
     }
-    if let clipboard = model.clipboard {
-      ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
-        Menu {
-          Button("Send Clipboard to Mac") { clipboard.sendLocalText() }
-          Button("Get Clipboard from Mac") { clipboard.getRemoteText() }
-        } label: {
-          Image(systemName: "doc.on.clipboard")
+    ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
+      Menu {
+        Group {
+          Button("Send Clipboard to Mac") { model.clipboard?.sendLocalText() }
+          Button("Get Clipboard from Mac") { model.clipboard?.getRemoteText() }
         }
-        .accessibilityLabel("Clipboard")
-        .help("Transfer plain text between clipboards")
-        .disabled(!clipboard.available || clipboard.busy)
+        .disabled(model.clipboard?.available != true || model.clipboard?.busy == true)
+      } label: {
+        Image(systemName: "doc.on.clipboard")
       }
+      .accessibilityLabel("Clipboard")
+      .help("Transfer plain text between clipboards")
     }
     ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
       ScreenSharingDetailsButton(model: model).id(ObjectIdentifier(model))
     }
   }
 
-  @ViewBuilder private var controlActions: some View {
-    if model.phase == .viewing, let control = model.control {
-      Picker(
-        "Interaction mode",
-        selection: Binding(
-          get: { control.state != .viewing },
-          set: { if $0 { control.request() } else { control.release() } })
-      ) {
-        Text("View").tag(false)
-        Text("Control").tag(true)
-      }
-      .pickerStyle(.segmented).labelsHidden().fixedSize()
-      .disabled(!control.available)
-      .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
-      if control.state == .requesting {
-        ProgressView().controlSize(.mini).accessibilityLabel("Requesting control")
-      }
-    } else {
-      Text("View").foregroundStyle(.secondary)
+  private var controlActions: some View {
+    Picker(
+      "Interaction mode",
+      selection: Binding(get: { model.interactionMode }, set: { model.setInteractionMode($0) })
+    ) {
+      Text("View").tag(ScreenSharingViewerModel.InteractionMode.view)
+      Text("Control").tag(ScreenSharingViewerModel.InteractionMode.control)
     }
+    .pickerStyle(.segmented).labelsHidden().fixedSize()
+    .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
   }
 
 }
@@ -93,6 +83,13 @@ private struct ScreenSharingDetailsButton: View {
           LabeledContent("Decode p95", value: String(format: "%.2f ms", decode))
         }
         Text(diagnostics.decoder).font(.caption).foregroundStyle(.secondary)
+      }
+      .font(.callout)
+    } else {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Connection Details").font(.headline)
+        Text(model.message ?? "Connection details will appear when the screen share is ready.")
+          .foregroundStyle(.secondary)
       }
       .font(.callout)
     }

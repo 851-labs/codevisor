@@ -7,7 +7,9 @@ import Observation
 @Observable
 public final class ScreenSharingViewerModel {
   public enum Phase: Equatable { case idle, loading, ready, connecting, reconnecting, viewing, suspended, failed }
+  public enum InteractionMode: Hashable, Sendable { case view, control }
   public private(set) var phase: Phase = .idle
+  public private(set) var interactionMode: InteractionMode = .control
   public private(set) var message: String?
   public private(set) var displays: [ServerScreenSharingDisplay] = []
   public private(set) var selectedDisplayId: String?
@@ -24,7 +26,7 @@ public final class ScreenSharingViewerModel {
   @ObservationIgnored private let makePeer: (ServerScreenSharingConnectivity?) throws -> any ScreenSharingViewingPeer
   @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored private var task: Task<Void, Never>?
-  @ObservationIgnored private var endpoint: (any ScreenSharingViewingPeer)?
+  private var endpoint: (any ScreenSharingViewingPeer)?
   @ObservationIgnored private var generation = 0
   @ObservationIgnored private var visible = false
   @ObservationIgnored private var wantsConnection = false
@@ -99,6 +101,14 @@ public final class ScreenSharingViewerModel {
     onPreferencesChanged?(preferences)
   }
 
+  /// Keep the user's choice while connecting; send the request only after video
+  /// and the control channel are ready.
+  public func setInteractionMode(_ mode: InteractionMode) {
+    interactionMode = mode
+    guard phase == .viewing else { return }
+    if mode == .control { control?.requestWhenAvailable() } else { control?.release() }
+  }
+
   /// Apply a registry update without replacing the live surface or echoing
   /// the write. A display change from another client requires a new Connect.
   public func applyPreferences(_ preferences: ScreenSharingPanePreferences) {
@@ -170,12 +180,16 @@ public final class ScreenSharingViewerModel {
       peer = created; endpoint = created; videoView = created.view
       created.fit(preferences.fitToWindow)
       created.onFocusChanged = { [weak self] in self?.onFocusChanged?($0) }
+      created.control.onReleased = { [weak self] in
+        guard let self, self.isCurrent(generation), self.phase == .viewing else { return }
+        self.interactionMode = .view
+      }
       phase = restarts == 0 ? .connecting : .reconnecting
       created.onReady = { [weak self] in
         guard let self, self.isCurrent(generation), [.connecting, .reconnecting].contains(self.phase) else { return }
         self.phase = .viewing
         self.message = nil
-        self.control?.requestWhenAvailable()
+        if self.interactionMode == .control { self.control?.requestWhenAvailable() }
       }
       created.onConnectionChanged = { [weak self] state in
         guard let self, self.isCurrent(generation), ["failed", "disconnected", "closed"].contains(state) else { return }
