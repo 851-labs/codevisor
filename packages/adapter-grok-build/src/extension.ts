@@ -25,11 +25,10 @@ import {
 import {
   acpConfigOptionIds,
   acpReasoningEffortConfigId,
-  acpModelConfigOption,
-  acpReasoningEffortConfigOption,
   applyAcpModelSelection,
   applyAcpReasoningEffortSelection,
   extractAcpModelState,
+  mergeAcpModelConfigOptions,
   usesAcpModelSelectionExtension,
   type AcpModelState
 } from "./model-selection.js"
@@ -38,27 +37,12 @@ import { GrokStreamNormalizer } from "./stream.js"
 const withGrokMetadata = (
   metadata: AgentSessionMetadata,
   modelState: AcpModelState | undefined
-): AgentSessionMetadata => {
-  const configOptions = [...metadata.configOptions]
-  if (modelState !== undefined) {
-    if (!configOptions.some((option) => option.category === "model")) {
-      configOptions.push(acpModelConfigOption(modelState))
-    }
-    const reasoning = acpReasoningEffortConfigOption(modelState)
-    if (
-      reasoning !== undefined &&
-      !configOptions.some((option) => option.id === acpReasoningEffortConfigId)
-    ) {
-      configOptions.push(reasoning)
-    }
-  }
-  return {
-    ...metadata,
-    configOptions,
-    modes: metadata.modes ?? grokModeState,
-    supportsGoals: true
-  }
-}
+): AgentSessionMetadata => ({
+  ...metadata,
+  configOptions: mergeAcpModelConfigOptions(metadata.configOptions, modelState),
+  modes: metadata.modes ?? grokModeState,
+  supportsGoals: true
+})
 
 const emitAll = (
   emit: (event: RuntimeEvent) => void,

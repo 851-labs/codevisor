@@ -7,6 +7,7 @@ import {
   applyAcpModelSelection,
   applyAcpReasoningEffortSelection,
   extractAcpModelState,
+  mergeAcpModelConfigOptions,
   usesAcpModelSelectionExtension
 } from "./index.js"
 
@@ -260,5 +261,60 @@ describe("Grok Build model-selection extension", () => {
     )
     expect(values).toEqual(["minimal", "low", "medium", "high", "xhigh"])
     expect(acpReasoningEffortConfigOption(state!)?.currentValue).toBe("medium")
+  })
+
+  it("replaces Grok's native verbose reasoning_effort option with the concise picker", () => {
+    const state = extractAcpModelState({
+      models: {
+        currentModelId: "grok-4.6",
+        availableModels: [
+          {
+            modelId: "grok-4.6",
+            name: "Grok 4.6",
+            _meta: {
+              supportsReasoningEffort: true,
+              reasoningEffort: "high",
+              reasoningEfforts: [
+                { value: "xhigh", label: "Extra High Effort" },
+                { value: "high", label: "High Effort" },
+                { value: "medium", label: "Medium Effort" },
+                { value: "low", label: "Low Effort" }
+              ]
+            }
+          }
+        ]
+      }
+    })
+    const merged = mergeAcpModelConfigOptions(
+      [
+        {
+          category: "model",
+          currentValue: "grok-4.6",
+          id: "model",
+          name: "Model",
+          options: [{ name: "Grok 4.6", value: "grok-4.6" }]
+        },
+        {
+          category: "thought_level",
+          currentValue: "high",
+          id: "reasoning_effort",
+          name: "Reasoning Effort",
+          options: [
+            { name: "Extra High Effort", value: "xhigh" },
+            { name: "High Effort", value: "high" },
+            { name: "Medium Effort", value: "medium" },
+            { name: "Low Effort", value: "low" }
+          ]
+        }
+      ],
+      state
+    )
+    expect(merged.map((option) => [option.id, option.name])).toEqual([
+      ["model", "Model"],
+      ["reasoning_effort", "Reasoning"]
+    ])
+    expect(
+      merged[1]?.options.map((option) => ("group" in option ? option.group : option.name))
+    ).toEqual(["Extra High", "High", "Medium", "Low"])
   })
 })

@@ -119,17 +119,20 @@ describe("@codevisor/agent-runtime", () => {
     ).toBeUndefined()
   })
 
-  it("removes redundant prefixes from ACP reasoning choices only", () => {
+  it("removes redundant prefixes and effort suffixes from ACP reasoning choices only", () => {
     const options = normalizeAcpConfigOptions([
       {
         category: "thought_level",
-        currentValue: "low",
-        id: "thinking_level",
-        name: "Thinking",
+        currentValue: "high",
+        id: "reasoning_effort",
+        name: "Reasoning Effort",
         options: [
           { name: "Thinking: off", value: "off" },
           { name: "Thinking: low", value: "low" },
-          { name: "Reasoning: high", value: "high" }
+          { name: "Reasoning: high", value: "high" },
+          { name: "High Effort", value: "high_effort" },
+          { name: "Extra High Effort", value: "xhigh" },
+          { name: "Effort", value: "default" }
         ],
         type: "select"
       },
@@ -143,7 +146,15 @@ describe("@codevisor/agent-runtime", () => {
       }
     ] as never)
 
-    expect(options[0]?.options.map((option) => option.name)).toEqual(["off", "low", "high"])
+    expect(options[0]?.name).toBe("Reasoning")
+    expect(options[0]?.options.map((option) => option.name)).toEqual([
+      "off",
+      "low",
+      "high",
+      "High",
+      "Extra High",
+      "Effort"
+    ])
     expect(options[1]?.options.map((option) => option.name)).toEqual(["Thinking: model"])
   })
 
