@@ -26,6 +26,7 @@
       let id: NodeID
       let title: String?
       let items: [CatalogItem]
+      var isFooter = false
     }
 
     @MainActor
@@ -42,13 +43,13 @@
 
       init(_ entries: [Entry], locale: Locale = .current) {
         var sections: [CatalogSection] = []
-        func visit(_ entries: [Entry], path: [AnyHashable], title: String?) {
+        func visit(_ entries: [Entry], path: [AnyHashable], title: String?, isFooter: Bool = false) {
           var run: [CatalogItem] = []
           var runIndex = 0
           func flush() {
             guard !run.isEmpty else { return }
             let id = NodeID.section(path + [AnyHashable(RunID(index: runIndex))])
-            sections.append(CatalogSection(id: id, title: title, items: run))
+            sections.append(CatalogSection(id: id, title: title, items: run, isFooter: isFooter))
             run.removeAll(keepingCapacity: true)
             runIndex += 1
           }
@@ -62,7 +63,10 @@
                   searchTerms: terms, normalizedTerms: terms.map { Filter.normalized($0, locale: locale) }))
             case let .section(id, title, children):
               flush()
-              visit(children, path: path + [id], title: title)
+              visit(children, path: path + [id], title: title, isFooter: isFooter)
+            case let .footer(id, children):
+              flush()
+              visit(children, path: path + [id], title: nil, isFooter: true)
             }
           }
           flush()
@@ -87,6 +91,7 @@
         guard !query.isEmpty else { return unfiltered }
         let normalizedQuery = Filter.normalized(query, locale: locale)
         let matching = sections.compactMap { section -> CatalogSection? in
+          if section.isFooter { return section }
           let items = section.items.filter { item in
             zip(item.normalizedTerms, item.searchTerms).contains {
               filter.matchesPrepared($0.0, original: $0.1, query: normalizedQuery, originalQuery: query)
@@ -98,7 +103,7 @@
       }
 
       private static func snapshot(_ matching: [CatalogSection]) -> Snapshot {
-        let favorites = matching.flatMap(\.items).enumerated()
+        let favorites = matching.filter { !$0.isFooter }.flatMap(\.items).enumerated()
           .filter { $0.element.definition.favoriteOrder != nil }
           .sorted {
             let lhs = $0.element.definition.favoriteOrder ?? 0
@@ -108,6 +113,7 @@
         guard !favorites.isEmpty else { return Snapshot(sections: matching) }
         let favoriteIDs = Set(favorites.map(\.id))
         let regular = matching.compactMap { section -> CatalogSection? in
+          if section.isFooter { return section }
           let items = section.items.filter { !favoriteIDs.contains($0.id) }
           return items.isEmpty ? nil : CatalogSection(id: section.id, title: section.title, items: items)
         }
@@ -128,13 +134,25 @@
       let eligibleIDs: [NodeID]
       let byID: [NodeID: CatalogItem]
       let rows: [PresentationRow]
+      let resultItems: [CatalogItem]
+      let footerSections: [CatalogSection]
+      let footerItems: [CatalogItem]
+      let footerRows: [PresentationRow]
 
       init(sections: [CatalogSection] = []) {
-        self.sections = sections
-        items = sections.flatMap(\.items)
+        self.sections = sections.filter { !$0.isFooter }
+        footerSections = sections.filter(\.isFooter)
+        resultItems = self.sections.flatMap(\.items)
+        footerItems = footerSections.flatMap(\.items)
+        items = resultItems + footerItems
         eligibleIDs = items.filter { !$0.definition.isDisabled }.map(\.id)
         byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        rows = sections.enumerated().flatMap { index, section -> [PresentationRow] in
+        rows = Self.rows(for: self.sections)
+        footerRows = Self.rows(for: footerSections)
+      }
+
+      private static func rows(for sections: [CatalogSection]) -> [PresentationRow] {
+        sections.enumerated().flatMap { index, section -> [PresentationRow] in
           var rows: [PresentationRow] = []
           let box = NodeIDBox(value: AnyHashable(section.id))
           if index > 0 { rows.append(.init(id: .separator(box), kind: .separator)) }
@@ -148,8 +166,16 @@
         max(
           metrics.emptyListHeight,
           metrics.listHeight(
-            itemCount: items.count, groupLabelCount: sections.filter { $0.title != nil }.count,
+            itemCount: resultItems.count, groupLabelCount: sections.filter { $0.title != nil }.count,
             dividerCount: dividers ? max(sections.count - 1, 0) : 0))
+      }
+
+      func footerHeight(metrics: Metrics, dividers: Bool) -> CGFloat {
+        guard !footerItems.isEmpty else { return 0 }
+        return 1
+          + metrics.listHeight(
+            itemCount: footerItems.count, groupLabelCount: footerSections.filter { $0.title != nil }.count,
+            dividerCount: dividers ? max(footerSections.count - 1, 0) : 0)
       }
     }
 

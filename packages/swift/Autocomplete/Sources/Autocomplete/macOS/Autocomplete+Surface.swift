@@ -69,6 +69,7 @@
       @State private var prepared = PreparedCatalog()
       @State private var measurements = Measurements()
       @State private var coordinateSpace = UUID()
+      @State private var footerCoordinateSpace = UUID()
       @State private var isScrolling = false
       @State private var inputFocus = InputFocus()
       @FocusState private var focusedRow: FocusTarget?
@@ -83,11 +84,13 @@
         let full = catalog.unfiltered
         let results = prepared.results(
           catalog: catalog, query: search.wrappedValue, filter: configuration.filter, locale: locale)
-        let snapshot = configuration.loading == .ready ? results : Snapshot()
+        let snapshot = configuration.loading == .ready ? results : Snapshot(sections: results.footerSections)
         let metrics = metrics
         let heightSource = configuration.sizing == .stable ? full : snapshot
+        let footerHeight = snapshot.footerHeight(metrics: metrics, dividers: configuration.showsSectionDividers)
         let maximum = max(
-          0, metrics.maximumHeight - metrics.inputTopInset - metrics.inputHeight - metrics.inputBottomInset)
+          0,
+          metrics.maximumHeight - metrics.inputTopInset - metrics.inputHeight - metrics.inputBottomInset - footerHeight)
         let listHeight = min(
           maximum, heightSource.listHeight(metrics: metrics, dividers: configuration.showsSectionDividers))
         VStack(spacing: 0) {
@@ -107,6 +110,17 @@
           .padding(.top, metrics.inputTopInset)
           .padding(.bottom, metrics.inputBottomInset)
           resultsList(snapshot, catalog: catalog, height: listHeight, metrics: metrics)
+          if !snapshot.footerItems.isEmpty {
+            Rectangle().fill(.separator).frame(height: 1).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+              rows(
+                snapshot.footerRows, catalog: catalog, metrics: metrics, footer: true,
+                lastID: snapshot.footerItems.last?.id, height: footerHeight - 1)
+            }
+            .padding(.horizontal, metrics.listHorizontalInset)
+            .padding(.vertical, metrics.listVerticalInset)
+            .coordinateSpace(name: footerCoordinateSpace)
+          }
         }
         .autocompleteStyle(
           Style(metrics: metrics, itemHighlight: style.itemHighlight, usesMiniScroller: style.usesMiniScroller)
@@ -171,48 +185,14 @@
         ScrollViewReader { proxy in
           ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-              if snapshot.items.isEmpty {
+              if snapshot.resultItems.isEmpty {
                 status
                   .frame(maxWidth: .infinity)
                   .frame(height: max(0, height - 2 * metrics.listVerticalInset))
               }
-              ForEach(snapshot.rows) { row in
-                switch row.kind {
-                case let .heading(title):
-                  Text(title)
-                    .font(metrics.groupLabelFont)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(height: metrics.groupLabelLineHeight)
-                    .padding(
-                      .leading,
-                      metrics.textLeading(
-                        showsCheckmarks: catalog.showsCheckmarks,
-                        showsIcons: catalog.showsIcons) - metrics.listHorizontalInset
-                    )
-                    .padding(.top, metrics.groupLabelTopInset)
-                    .padding(.bottom, metrics.groupLabelBottomInset)
-                    .accessibilityAddTraits(.isHeader)
-                case .separator:
-                  if configuration.showsSectionDividers {
-                    Rectangle().fill(.separator).frame(height: 1)
-                      .padding(.horizontal, metrics.itemHorizontalInset)
-                      .padding(.leading, catalog.showsCheckmarks ? metrics.checkColumnAdvance : 0)
-                      .frame(height: metrics.dividerHeight)
-                      .accessibilityHidden(true)
-                  }
-                case let .item(item):
-                  ItemRow(
-                    item: item, host: host, focus: $focusedRow,
-                    showsChecks: catalog.showsCheckmarks, showsIcons: catalog.showsIcons,
-                    isScrolling: isScrolling,
-                    bottomEdge: BottomEdge(
-                      isLast: item.id == snapshot.items.last?.id, height: height,
-                      inset: metrics.listVerticalInset, coordinateSpace: coordinateSpace)
-                  )
-                  .id(item.id)
-                }
-              }
+              rows(
+                snapshot.rows, catalog: catalog, metrics: metrics, footer: false,
+                lastID: snapshot.footerItems.isEmpty ? snapshot.resultItems.last?.id : nil, height: height)
             }
             .padding(.horizontal, metrics.listHorizontalInset)
             .padding(.vertical, metrics.listVerticalInset)
@@ -223,15 +203,58 @@
           .onChange(of: host.highlight.highlighted) { _, target in
             guard let target, host.highlight.source == .keyboard else { return }
             if let focusedRow, focusedRow.itemID != target { self.focusedRow = .item(target) }
-            proxy.scrollTo(target)
+            if snapshot.resultItems.contains(where: { $0.id == target }) { proxy.scrollTo(target) }
             host.announce()
           }
           .accessibilityElement(children: .contain)
           .accessibilityLabel(configuration.searchLabel ?? configuration.prompt)
-          .accessibilityValue(Strings.resultCount(snapshot.items.count))
+          .accessibilityValue(Strings.resultCount(snapshot.resultItems.count))
         }
         .frame(height: height)
         .coordinateSpace(name: coordinateSpace)
+      }
+
+      private func rows(
+        _ rows: [PresentationRow], catalog: Catalog, metrics: Metrics,
+        footer: Bool, lastID: NodeID?, height: CGFloat
+      ) -> some View {
+        ForEach(rows) { row in
+          switch row.kind {
+          case let .heading(title):
+            Text(title)
+              .font(metrics.groupLabelFont)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .frame(height: metrics.groupLabelLineHeight)
+              .padding(
+                .leading,
+                metrics.textLeading(
+                  showsCheckmarks: catalog.showsCheckmarks,
+                  showsIcons: catalog.showsIcons) - metrics.listHorizontalInset
+              )
+              .padding(.top, metrics.groupLabelTopInset)
+              .padding(.bottom, metrics.groupLabelBottomInset)
+              .accessibilityAddTraits(.isHeader)
+          case .separator:
+            if configuration.showsSectionDividers {
+              Rectangle().fill(.separator).frame(height: 1)
+                .padding(.horizontal, metrics.itemHorizontalInset)
+                .padding(.leading, catalog.showsCheckmarks ? metrics.checkColumnAdvance : 0)
+                .frame(height: metrics.dividerHeight)
+                .accessibilityHidden(true)
+            }
+          case let .item(item):
+            ItemRow(
+              item: item, host: host, focus: $focusedRow,
+              showsChecks: catalog.showsCheckmarks, showsIcons: catalog.showsIcons,
+              isScrolling: !footer && isScrolling,
+              bottomEdge: BottomEdge(
+                isLast: item.id == lastID, height: height,
+                inset: metrics.listVerticalInset, coordinateSpace: footer ? footerCoordinateSpace : coordinateSpace)
+            )
+            .id(item.id)
+          }
+        }
       }
 
       @ViewBuilder private var status: some View {

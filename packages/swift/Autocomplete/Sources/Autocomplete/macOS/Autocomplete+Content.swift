@@ -58,6 +58,7 @@
       indirect enum Kind {
         case item(ItemDefinition)
         case section(AnyHashable, String?, [Entry])
+        case footer(AnyHashable, [Entry])
       }
       let kind: Kind
 
@@ -69,6 +70,8 @@
           return Entry(kind: .item(item))
         case let .section(id, title, children):
           return Entry(kind: .section(id, title, children.map { $0.disabling(true) }))
+        case let .footer(id, children):
+          return Entry(kind: .footer(id, children.map { $0.disabling(true) }))
         }
       }
     }

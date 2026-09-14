@@ -34,7 +34,7 @@ Autocomplete.Menu {
   .favorites($favoriteProjectIDs)
   .labelsHidden()
 
-  Autocomplete.Section(id: "actions") {
+  Autocomplete.Footer(id: "actions") {
     Autocomplete.Action("New Project…", systemImage: "folder.badge.plus", action: createProject)
       .keyboardShortcut("n", modifiers: [.command, .shift])
   }
@@ -47,7 +47,7 @@ Favorites store values in the order they were starred. Missing values remain in 
 
 A highlighted choice can be favorited or unfavorited with **Shift-Command-F**, by pressing Tab to focus its star and then Space or Return, through its context menu, or using its named accessibility action. Secondary actions never select a choice or dismiss the menu. Custom `SecondaryAction` arrays support additional controls and local shortcuts.
 
-Commands and choices share the same search collection; action-only results never coexist with an unrelated empty-state message. Section labels are searchable and disappear with their last matching item.
+Commands and choices in the result list share the same search collection. Use `Footer(id:)` for management actions that stay pinned below the results and visible during search, including no-match, loading, and error states. Footer actions follow the results in keyboard navigation and use the same activation and dismissal behavior. Section labels are searchable and disappear with their last matching item.
 
 ## Inline use and focus
 
@@ -100,7 +100,7 @@ The previous path rebuilt full and filtered results and measured width each time
 
 ## Migration from the original API
 
-Replace `Root`/`Input`/`List`/`Item` compositions and `Menu(sections:)` with `Menu` or `Suggestions`, `Picker`/`Choice`, and `Action`/`Section`. Delete caller-owned filtering, highlight state, row-count sizing, and manual `isSelected`/assignment pairs. Management footers become ordinary action sections. The former `Results`, `Option`, and presentation primitives are removed; there is one result and activation path.
+Replace `Root`/`Input`/`List`/`Item` compositions and `Menu(sections:)` with `Menu` or `Suggestions`, `Picker`/`Choice`, and `Action`/`Section`. Delete caller-owned filtering, highlight state, row-count sizing, and manual `isSelected`/assignment pairs. Use `Footer` for management actions pinned below the scrolling results. The former `Results`, `Option`, and presentation primitives are removed; there is one result and activation path.
 
 The macOS composer, model picker, new-tab page, and PixelBook examples use this API. PixelBook includes disabled choices, focus handoff, multiple selections, loading/error states, favorites/reordering, RTL, larger fonts, and catalogs up to 10,000 rows.
 

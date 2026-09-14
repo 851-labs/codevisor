@@ -54,7 +54,7 @@ private extension ModelConfigMenu {
         }
         .favorites($favoriteModelIDs)
       }
-      Autocomplete.Section(id: "actions") {
+      Autocomplete.Footer(id: "actions") {
         Autocomplete.Action("Manage Harnesses…", action: showHarnessSettings)
           .help("Open Harness Settings")
       }
@@ -64,7 +64,7 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search models")
     .autocompleteEmptyMessage("No matching models")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .composerKeyboardButton(shape: .chip) { isPresented.toggle() }
+    .composerKeyboardButton(shape: .chip, isPresenting: isPresented) { isPresented.toggle() }
     .fixedSize(horizontal: false, vertical: true)
     .disabled(isSwitchingHarness)
     .help("Choose model")
@@ -104,7 +104,7 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search model parameters")
     .autocompleteEmptyMessage("No matching parameters")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .composerKeyboardButton(shape: .chip) { isParametersPresented.toggle() }
+    .composerKeyboardButton(shape: .chip, isPresenting: isParametersPresented) { isParametersPresented.toggle() }
     .fixedSize()
     .disabled(isLoadingSettings)
     .help("Model parameters")
