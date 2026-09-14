@@ -54,7 +54,7 @@ function fixture(overrides = {}) {
   })
   const client = async (path, options = {}) => {
     const method = options.method ?? "GET"
-    requests.push({ path, method, body: options.body })
+    requests.push({ path, method, body: options.body, query: options.query })
     if (path === "builds") {
       if (options.query["filter[betaGroups]"]) {
         assert.equal(options.query["filter[id]"], "build")
@@ -82,18 +82,32 @@ function fixture(overrides = {}) {
     if (path === "apps/app/betaAppLocalizations") return { data: state.localizations }
     if (path === "betaGroups" && method === "GET") {
       assert.equal(options.query["filter[app]"], "app")
-      assert.equal(options.query["filter[name]"], "Public Beta")
-      return { data: state.group ? [state.group] : [] }
+      return {
+        data: [state.group, state.legacyGroup].filter(
+          (group) => group?.attributes.name === options.query["filter[name]"]
+        )
+      }
     }
     if (path === "betaGroups" && method === "POST") {
       assert.deepEqual(options.body.data.attributes, {
-        name: "Public Beta",
+        name: "Beta",
         isInternalGroup: false,
         hasAccessToAllBuilds: false,
         publicLinkEnabled: false
       })
       assert.deepEqual(options.body.data.relationships.app.data, { type: "apps", id: "app" })
       state.group = { id: "public", type: "betaGroups", attributes: options.body.data.attributes }
+      return { data: state.group }
+    }
+    if (path === "betaGroups/public" && method === "PATCH") {
+      assert.deepEqual(options.body.data, {
+        type: "betaGroups",
+        id: "public",
+        attributes: { name: "Beta" }
+      })
+      const existing = state.group ?? state.legacyGroup
+      state.group = { ...existing, attributes: { ...existing.attributes, name: "Beta" } }
+      state.legacyGroup = undefined
       return { data: state.group }
     }
     if (path === "betaGroups/public/relationships/builds") {
@@ -193,7 +207,7 @@ test("preflight reads the live setup without writing metadata, assigning groups,
   const f = fixture()
   assert.deepEqual(await f.run({ checkOnly: true }), {
     buildId: "build",
-    groupName: "Public Beta",
+    groupName: "Beta",
     status: "checked",
     groupExists: false
   })
@@ -204,7 +218,7 @@ test("existing public invitations and tester settings are preserved", async () =
   const group = {
     id: "public",
     attributes: {
-      name: "Public Beta",
+      name: "Beta",
       isInternalGroup: false,
       publicLinkEnabled: true,
       publicLink: "https://testflight.apple.com/join/example",
@@ -218,6 +232,66 @@ test("existing public invitations and tester settings are preserved", async () =
     f.writes().some(({ path }) => path === "betaGroups" || path === "betaGroups/public"),
     false
   )
+})
+
+test("the former default group is renamed in place without republishing its active build", async () => {
+  const legacyGroup = {
+    id: "public",
+    type: "betaGroups",
+    attributes: {
+      name: "Public Beta",
+      isInternalGroup: false,
+      publicLinkEnabled: true,
+      publicLink: "https://testflight.apple.com/join/existing",
+      publicLinkLimit: 100
+    },
+    relationships: { betaTesters: { data: [{ type: "betaTesters", id: "tester" }] } }
+  }
+  const f = fixture({
+    legacyGroup,
+    assigned: true,
+    autoNotify: true,
+    externalState: "IN_BETA_TESTING",
+    localization: { id: "localization", attributes: { whatsNew: notes } }
+  })
+  assert.equal((await f.run({ checkOnly: true })).groupExists, true)
+  assert.deepEqual(f.writes(), [])
+  assert.equal(f.state.legacyGroup, legacyGroup)
+  const result = await f.run()
+  assert.equal(result.status, "testing")
+  assert.equal(result.groupName, "Beta")
+  assert.equal(result.renamedGroupFrom, "Public Beta")
+  assert.equal(result.publicLink, legacyGroup.attributes.publicLink)
+  assert.deepEqual(f.state.group, {
+    ...legacyGroup,
+    attributes: { ...legacyGroup.attributes, name: "Beta" }
+  })
+  assert.deepEqual(
+    f.writes().map(({ method, path }) => [method, path]),
+    [["PATCH", "betaGroups/public"]]
+  )
+  f.requests.length = 0
+  assert.equal((await f.run()).renamedGroupFrom, undefined)
+  assert.deepEqual(f.writes(), [])
+})
+
+test("an existing or custom external group takes precedence over the former default", async () => {
+  for (const name of ["Beta", "Early Access"]) {
+    const group = { id: "public", attributes: { name, isInternalGroup: false } }
+    const legacyGroup = { id: "old", attributes: { name: "Public Beta", isInternalGroup: false } }
+    const f = fixture({ group, legacyGroup })
+    assert.equal((await f.run({ groupName: name })).groupName, name)
+    assert.equal(f.state.group, group)
+    assert.equal(f.state.legacyGroup, legacyGroup)
+    assert.equal(
+      f.requests.some(({ query }) => query?.["filter[name]"] === "Public Beta"),
+      false
+    )
+    assert.equal(
+      f.writes().some(({ path }) => path.startsWith("betaGroups/") && !path.endsWith("/builds")),
+      false
+    )
+  }
 })
 
 test("already approved builds start testing and retries do not notify testers again", async () => {
@@ -290,7 +364,18 @@ test("invalid or incomplete release setup fails before any mutations", async () 
       { localizations: [{ attributes: { locale: "en-US", description: "Beta" } }] },
       /feedback email/
     ],
-    [{ group: { attributes: { isInternalGroup: true } } }, /must be external/]
+    [{ group: { attributes: { name: "Beta", isInternalGroup: true } } }, /must be external/],
+    [
+      { legacyGroup: { attributes: { name: "Public Beta", isInternalGroup: true } } },
+      /must be external/
+    ],
+    [
+      {
+        group: { attributes: { name: "Public Beta", isInternalGroup: false } },
+        legacyGroup: { attributes: { name: "Public Beta", isInternalGroup: false } }
+      },
+      /Multiple TestFlight groups/
+    ]
   ]) {
     const f = fixture(overrides)
     await assert.rejects(f.run(), message)

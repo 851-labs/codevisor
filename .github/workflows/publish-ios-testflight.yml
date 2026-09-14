@@ -1,10 +1,10 @@
-name: Publish iOS TestFlight
+name: Publish Beta
 
 on:
   workflow_dispatch:
     inputs:
       alpha_run_id:
-        description: Successful Alpha workflow run ID to promote to public TestFlight.
+        description: Successful Build Alpha run ID whose iOS build will be submitted for TestFlight review.
         required: true
         type: string
       check_only:
@@ -57,7 +57,7 @@ jobs:
           VERSION: ${{ steps.alpha.outputs.version }}
           CODEVISOR_BUILD_NUMBER: ${{ steps.alpha.outputs.build }}
           CODEVISOR_SOURCE_REVISION: ${{ steps.alpha.outputs.source_sha }}
-          CODEVISOR_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.IOS_TESTFLIGHT_EXTERNAL_GROUP || 'Public Beta' }}
+          CODEVISOR_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.IOS_TESTFLIGHT_EXTERNAL_GROUP || 'Beta' }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}

@@ -108,12 +108,12 @@ export function assertAlphaUpload(environment) {
 export function assertManualPromotion(environment) {
   if (
     environment.GITHUB_ACTIONS !== "true" ||
-    environment.GITHUB_WORKFLOW !== "Publish iOS TestFlight" ||
+    environment.GITHUB_WORKFLOW !== "Publish Beta" ||
     environment.GITHUB_REF !== "refs/heads/main" ||
     environment.GITHUB_EVENT_NAME !== "workflow_dispatch"
   ) {
     throw new Error(
-      "Public TestFlight promotion requires the manual Publish iOS TestFlight workflow on main."
+      "Public TestFlight promotion requires the manual Publish Beta workflow on main."
     )
   }
 }

@@ -39,7 +39,7 @@ const result = await promoteTestFlightBuild(
   client,
   { ...configuration, appId: app.id },
   {
-    groupName: process.env.CODEVISOR_TESTFLIGHT_EXTERNAL_GROUP || "Public Beta",
+    groupName: process.env.CODEVISOR_TESTFLIGHT_EXTERNAL_GROUP || "Beta",
     locale: app.attributes.primaryLocale || "en-US",
     notes,
     checkOnly
@@ -57,6 +57,9 @@ const summary = [
   `iOS TestFlight ${version} (${configuration.buildNumber})`,
   status,
   `Group: ${result.groupName}`,
+  ...(result.renamedGroupFrom
+    ? [`Renamed existing group: ${result.renamedGroupFrom} → ${result.groupName}`]
+    : []),
   `Source: ${configuration.sourceRevision}`,
   appURL,
   ...(result.publicLink ? [`Public invitation: ${result.publicLink}`] : []),

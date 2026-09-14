@@ -1,4 +1,4 @@
-name: Release
+name: Publish Stable
 
 on:
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be numeric semver." >&2; exit 1; }
           source_sha="$(git rev-parse HEAD)"
           main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          [[ "$source_sha" == "$main_sha" ]] || { echo "Release must run at current main." >&2; exit 1; }
+          [[ "$source_sha" == "$main_sha" ]] || { echo "Publish Stable must run at current main." >&2; exit 1; }
           tag="v$version"
           existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
           if [[ -z "$existing_tag_sha" ]]; then

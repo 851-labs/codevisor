@@ -1,4 +1,4 @@
-name: iOS TestFlight
+name: Build iOS (Reusable)
 
 on:
   workflow_call:

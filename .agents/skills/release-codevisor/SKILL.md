@@ -5,16 +5,16 @@ description: Promote the successful Alpha artifact set at current Codevisor main
 
 # Release Codevisor
 
-Stable is a promotion, never a rebuild. The `Alpha` workflow creates the only
+Stable is a promotion, never a rebuild. The `Build Alpha` workflow creates the only
 signed and notarized app/server artifact set for a commit. `Publish Alpha`
-publishes those bytes to the Alpha Sparkle channel. `Release` attaches the same
+publishes those bytes to the Alpha Sparkle channel. `Publish Stable` attaches the same
 bytes to the Stable tag, advances the Stable Sparkle and Linux manifests,
 updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
 Store publication is a separate, explicit workflow and must not run as part of
 an app release.
 
 Public iOS TestFlight publication uses the separate, manually triggered
-`Publish iOS TestFlight` workflow. Do not dispatch it as part of a normal
+`Publish Beta` workflow. Do not dispatch it as part of a normal
 macOS/server release; submit an iOS beta only when requested.
 See [TestFlight release setup](../../../docs/testflight-releases.md).
 
@@ -60,7 +60,7 @@ git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
 gh workflow run release.yml --ref main -f version=VERSION
 ```
 
-Monitor the resulting `Release` workflow through completion.
+Monitor the resulting `Publish Stable` workflow through completion.
 
 ## Verify
 

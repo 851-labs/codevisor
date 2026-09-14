@@ -107,7 +107,7 @@ test("temporary API key is private and removed even when signing fails", async (
 test("public TestFlight requires its own manual workflow and permits an older selected Alpha", () => {
   const trusted = {
     GITHUB_ACTIONS: "true",
-    GITHUB_WORKFLOW: "Publish iOS TestFlight",
+    GITHUB_WORKFLOW: "Publish Beta",
     GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_SHA: "b".repeat(40),
@@ -116,16 +116,14 @@ test("public TestFlight requires its own manual workflow and permits an older se
   assert.doesNotThrow(() => assertManualPromotion(trusted))
   for (const override of [
     { GITHUB_ACTIONS: "false" },
-    { GITHUB_WORKFLOW: "Alpha" },
-    { GITHUB_WORKFLOW: "Release" },
+    { GITHUB_WORKFLOW: "Build Alpha" },
+    { GITHUB_WORKFLOW: "Publish Stable" },
+    { GITHUB_WORKFLOW: "Publish iOS TestFlight" },
     { GITHUB_EVENT_NAME: "push" },
     { GITHUB_EVENT_NAME: "workflow_run" },
     { GITHUB_REF: "refs/heads/feature" }
   ])
-    assert.throws(
-      () => assertManualPromotion({ ...trusted, ...override }),
-      /manual Publish iOS TestFlight/
-    )
+    assert.throws(() => assertManualPromotion({ ...trusted, ...override }), /manual Publish Beta/)
 })
 
 test("manual selection verifies the Alpha run and its exact provenance independently of current main", () => {

@@ -130,13 +130,7 @@ async function ensureSubmission(client, buildId, existing) {
 export async function promoteTestFlightBuild(
   client,
   configuration,
-  {
-    groupName = "Public Beta",
-    locale = "en-US",
-    notes,
-    checkOnly = false,
-    ...assignmentOptions
-  } = {}
+  { groupName = "Beta", locale = "en-US", notes, checkOnly = false, ...assignmentOptions } = {}
 ) {
   if (!groupName.trim()) throw new Error("An external TestFlight group name is required.")
   if (!notes?.trim() || notes.length > 4000)
@@ -155,11 +149,33 @@ export async function promoteTestFlightBuild(
   requireReviewable(build, existingSubmission)
   if (groups.data.length > 1) throw new Error(`Multiple TestFlight groups are named ${groupName}.`)
   let group = groups.data[0]
+  // Keep the existing group's identity when adopting the shorter default name.
+  if (!group && groupName === "Beta") {
+    const previous = await client("betaGroups", {
+      query: { "filter[app]": configuration.appId, "filter[name]": "Public Beta" }
+    })
+    if (previous.data.length > 1)
+      throw new Error("Multiple TestFlight groups are named Public Beta.")
+    group = previous.data[0]
+  }
   if (group && group.attributes.isInternalGroup !== false)
     throw new Error(`TestFlight group ${groupName} must be external.`)
   if (checkOnly)
     return { buildId: build.id, groupName, status: "checked", groupExists: Boolean(group) }
 
+  const renamedGroupFrom =
+    groupName === "Beta" && group?.attributes.name === "Public Beta"
+      ? group.attributes.name
+      : undefined
+  if (renamedGroupFrom) {
+    const { data } = await client(`betaGroups/${group.id}`, {
+      method: "PATCH",
+      body: {
+        data: { type: "betaGroups", id: group.id, attributes: { name: groupName } }
+      }
+    })
+    group = data
+  }
   await saveNotes(client, build.id, locale, notes)
   if (!build.betaDetail.attributes.autoNotifyEnabled)
     await client(`buildBetaDetails/${build.betaDetail.id}`, {
@@ -195,7 +211,12 @@ export async function promoteTestFlightBuild(
   const current = await findBuild(client, configuration)
   let submission = await submissionForBuild(client, build.id)
   const state = requireReviewable(current, submission)
-  const result = { buildId: build.id, groupName, publicLink: group.attributes.publicLink ?? null }
+  const result = {
+    buildId: build.id,
+    groupName,
+    publicLink: group.attributes.publicLink ?? null,
+    ...(renamedGroupFrom ? { renamedGroupFrom } : {})
+  }
   if (state === "IN_BETA_TESTING") return { ...result, status: "testing" }
   if (externalReady.has(state)) {
     await client("buildBetaNotifications", {
