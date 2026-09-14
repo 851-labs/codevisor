@@ -8,7 +8,9 @@
   final class NativeMarkdownTableBlockView: NativeMarkdownContentView {
     private let tableView: TableTextView
     private let bleedContainer: TableBleedContainer
-    private let model: TableModel
+    private var model: TableModel
+    private let images = MarkdownTableImages()
+    private var imageTask: Task<Void, Never>?
     private let renderMemo = MarkdownTableRenderMemo()
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
@@ -18,7 +20,8 @@
       alignments: [ColumnAlignment],
       rows: [[MarkdownText]],
       theme: MarkdownTheme,
-      linkAction: MarkdownLinkAction?
+      linkAction: MarkdownLinkAction?,
+      imageLoader: MarkdownImageLoader = .remote
     ) {
       model = TableModel(
         headers: headers,
@@ -61,11 +64,29 @@
       tableView.update(model: model, renderMemo: renderMemo)
       bleedContainer.scrollView.setBorderColor(NSColor(theme.tableBorderColor))
       addSubview(bleedContainer)
+      images.onChange = { [weak self] in self?.updateImages() }
+      let sources = Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources))
+      if !sources.isEmpty {
+        let images = images
+        imageTask = Task { await images.load(sources: sources, using: imageLoader) }
+      }
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
       fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit { imageTask?.cancel() }
+
+    private func updateImages() {
+      model = TableModel(
+        headers: model.headers, alignments: model.alignments, rows: model.rows,
+        theme: model.theme, images: images.resources)
+      tableView.update(model: model, renderMemo: renderMemo)
+      measuredWidth = -1
+      needsLayout = true
+      onContentChange?()
     }
 
     override func linkActionDidChange() {

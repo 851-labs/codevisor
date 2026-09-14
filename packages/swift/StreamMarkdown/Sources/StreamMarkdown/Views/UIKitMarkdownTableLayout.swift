@@ -25,7 +25,7 @@
 
     init(
       headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]],
-      theme: MarkdownTheme, width: CGFloat
+      theme: MarkdownTheme, width: CGFloat, images: [String: MarkdownImageResource] = [:]
     ) throws {
       let count = max(headers.count, rows.map(\.count).max() ?? 0)
       let padding = MarkdownTableMetrics.horizontalPadding * 2
@@ -49,7 +49,7 @@
           if let cached = preparedCells[key] {
             cell = cached
           } else {
-            let text = Self.attributedText(key, theme: theme)
+            let text = Self.attributedText(key, theme: theme, images: images)
             cell = PreparedCell(
               text: text, naturalWidth: max(1, ceil(text.size().width)), minimumWidth: Self.minimumWidth(text)
             )
@@ -75,6 +75,7 @@
         var height: CGFloat = 1
         for (column, key) in rowKeys.enumerated() {
           let contentWidth = max(1, widths[column] - padding)
+          cells[row][column] = MarkdownImageAttachment.fitting(cells[row][column], width: contentWidth)
           let measured: CGFloat
           if let cached = heightsByWidth[contentWidth]?[key] {
             measured = cached
@@ -97,10 +98,15 @@
       geometry = MarkdownTableGeometry(columnWidths: widths, rowHeights: heights)
     }
 
-    private static func attributedText(_ key: CellKey, theme: MarkdownTheme) -> NSAttributedString {
+    private static func attributedText(
+      _ key: CellKey, theme: MarkdownTheme, images: [String: MarkdownImageResource]
+    ) -> NSAttributedString {
       let text = NSMutableAttributedString(
-        attributedString: MarkdownTextRunRenderer.attributedString(
-          for: [.paragraph(key.text)], theme: theme, foregroundColor: theme.textForeground
+        attributedString: MarkdownTextRunRenderer.inlineAttributed(
+          key.text, baseFont: MarkdownTextRunRenderer.bodyFont, theme: theme,
+          foreground: UIColor(theme.textForeground),
+          chipBackground: MarkdownNativeChipBackground(
+            color: UIColor(theme.inlineCodeBackground), cornerRadius: theme.inlineCodeCornerRadius), images: images
         ))
       let range = NSRange(location: 0, length: text.length)
       text.enumerateAttribute(.paragraphStyle, in: range) { value, range, _ in
@@ -134,7 +140,9 @@
       while start < source.endIndex {
         if source[start].isWhitespace { start = source.index(after: start); continue }
         let end = source[start...].firstIndex(where: \.isWhitespace) ?? source.endIndex
-        width = max(width, text.attributedSubstring(from: NSRange(start..<end, in: source)).size().width)
+        width = max(
+          width,
+          MarkdownImageAttachment.minimumWidth(of: text.attributedSubstring(from: NSRange(start..<end, in: source))))
         start = end
       }
       return ceil(width)

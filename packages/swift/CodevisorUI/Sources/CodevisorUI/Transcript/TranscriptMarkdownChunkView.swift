@@ -5,6 +5,7 @@ import TranscriptKit
 /// Shared renderer for a projected Markdown row on macOS and iOS.
 public struct TranscriptMarkdownChunkView: View {
   private let chunk: TranscriptMarkdownChunk
+  @Environment(\.attachmentImages) private var attachmentImages
 
   public init(chunk: TranscriptMarkdownChunk) {
     self.chunk = chunk
@@ -45,5 +46,6 @@ public struct TranscriptMarkdownChunkView: View {
         )
       }
     }
+    .environment(\.markdownImageLoader, attachmentImages?.markdownImageLoader ?? .remote)
   }
 }

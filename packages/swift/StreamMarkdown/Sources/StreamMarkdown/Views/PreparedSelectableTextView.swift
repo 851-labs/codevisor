@@ -76,8 +76,11 @@
     }
 
     #if canImport(AppKit)
-      init(headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]], theme: MarkdownTheme) {
-        content = .table(headers: headers, alignments: alignments, rows: rows, theme: theme)
+      init(
+        headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]], theme: MarkdownTheme,
+        images: [String: MarkdownImageResource] = [:]
+      ) {
+        content = .table(headers: headers, alignments: alignments, rows: rows, theme: theme, images: images)
       }
     #endif
 
@@ -90,7 +93,7 @@
       Group {
         if let prepared {
           #if canImport(AppKit)
-            if case let .table(_, _, _, theme) = content {
+            if case let .table(_, _, _, theme, _) = content {
               PreparedTableNativeView(layout: prepared, borderColor: theme.tableBorderColor)
             } else if wrapsText {
               PreparedNativeTextView(layout: prepared)

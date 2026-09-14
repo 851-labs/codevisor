@@ -12,3 +12,8 @@ also vendored from the same commit because MD4C deliberately delegates HTML5
 named-entity decoding to its host. To upgrade, replace all four files from the
 same upstream commit, update this record, and run the parser, streaming,
 rendering tests and release-mode parser benchmark before landing the change.
+
+Codevisor extends `MD_BLOCK_TABLE_DETAIL` with half-open UTF-8 source offsets
+(`source_beg`, `source_end`), populated in `md_process_leaf_block`. Preserve
+this patch when upgrading. Attachment extraction uses these parser-owned
+boundaries to leave complete tables intact, including nested tables.

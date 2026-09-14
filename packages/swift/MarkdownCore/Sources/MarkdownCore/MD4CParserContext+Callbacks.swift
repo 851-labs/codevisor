@@ -79,6 +79,9 @@ extension MD4CParserContext {
           )
         )
       case MD_BLOCK_TABLE:
+        if let value = detail?.assumingMemoryBound(to: MD_BLOCK_TABLE_DETAIL.self).pointee {
+          context.tableByteRanges.append(Int(value.source_beg)..<Int(value.source_end))
+        }
         context.blockStack.append(.table(headerRows: [], bodyRows: []))
       case MD_BLOCK_THEAD:
         context.tableSections.append(.header)

@@ -4,6 +4,7 @@ struct MarkdownParseResult {
   let blocks: [MarkdownBlock]
   var reusableBlockCount = 0
   var reparseStart = 0
+  var tableByteRanges: [Range<Int>] = []
 }
 
 /// Reuses complete top-level blocks while an append changes the document's

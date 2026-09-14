@@ -29,6 +29,9 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     installVerticalClipMask()
     addSubview(decoration)
     addSubview(markdownView)
+    markdownView.onContentHeightChange = { [weak self] in
+      self?.requestContentMeasurement()
+    }
   }
 
   @available(*, unavailable)
@@ -41,6 +44,7 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     streamID: String,
     style: TranscriptMarkdownRowStyle,
     linkAction: MarkdownLinkAction?,
+    imageLoader: MarkdownImageLoader = .remote,
     knownHeight: CGFloat?
   ) {
     self.chunk = chunk
@@ -51,7 +55,8 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
       blocks: chunk.blocks,
       theme: style.markdown,
       streamID: streamID,
-      linkAction: linkAction
+      linkAction: linkAction,
+      imageLoader: imageLoader
     )
     measuredWidth = max(1, bounds.width)
     reportedHeight = knownHeight

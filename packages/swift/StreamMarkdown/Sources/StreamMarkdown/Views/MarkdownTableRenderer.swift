@@ -57,11 +57,12 @@
     static func prepare(
       headers: [MarkdownText],
       rows: [[MarkdownText]],
-      theme: MarkdownTheme
+      theme: MarkdownTheme,
+      images: [String: MarkdownImageResource] = [:]
     ) -> PreparedTable {
       prepare(headers: headers, rows: rows, theme: theme) {
         markdown, isHeader, theme in
-        prepareResolvedCell(markdown, isHeader: isHeader, theme: theme)
+        prepareResolvedCell(markdown, isHeader: isHeader, theme: theme, images: images)
       }
     }
 
@@ -109,9 +110,10 @@
     static func prepareResolvedCell(
       _ markdown: MarkdownText,
       isHeader: Bool,
-      theme: MarkdownTheme
+      theme: MarkdownTheme,
+      images: [String: MarkdownImageResource] = [:]
     ) -> PreparedCell {
-      let attributed = inlineAttributed(markdown, isHeader: isHeader, theme: theme)
+      let attributed = inlineAttributed(markdown, isHeader: isHeader, theme: theme, images: images)
       let naturalWidth = max(1, ceil(attributed.size().width))
       return PreparedCell(
         attributedString: attributed,
@@ -151,7 +153,7 @@
           index = string.index(after: index)
         }
         let fragment = attributed.attributedSubstring(from: NSRange(start..<index, in: string))
-        widest = max(widest, fragment.size().width)
+        widest = max(widest, MarkdownImageAttachment.minimumWidth(of: fragment))
       }
       return ceil(widest)
     }
@@ -253,7 +255,7 @@
         paragraph.alignment = nsAlignment(alignment)
 
         let cell = NSMutableAttributedString(
-          attributedString: cells[column].attributedString
+          attributedString: MarkdownImageAttachment.fitting(cells[column].attributedString, width: columnWidths[column])
         )
         // Each table cell must be its own paragraph.
         cell.append(NSAttributedString(string: "\n"))
@@ -268,7 +270,7 @@
     /// styles the theme uses by default (the host never overrides the markdown
     /// fonts); colors come from the theme.
     private static func inlineAttributed(
-      _ markdown: MarkdownText, isHeader: Bool, theme: MarkdownTheme
+      _ markdown: MarkdownText, isHeader: Bool, theme: MarkdownTheme, images: [String: MarkdownImageResource]
     ) -> NSAttributedString {
       let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
       let baseFont = NSFont.systemFont(ofSize: bodySize, weight: isHeader ? .semibold : .regular)
@@ -277,7 +279,7 @@
       )
       let codeBackground = NSColor(theme.inlineCodeBackground)
 
-      let parsed = InlineMarkdown.attributedString(from: markdown)
+      let parsed = InlineMarkdown.tableAttributedString(from: markdown)
       let output = NSMutableAttributedString()
       for run in parsed.runs {
         let substring = String(parsed[run.range].characters)
@@ -307,7 +309,12 @@
           }
           attributes[.foregroundColor] = NSColor.linkColor
         }
-        output.append(NSAttributedString(string: substring, attributes: attributes))
+        if let reference = run[MarkdownImageReferenceAttribute.self] {
+          output.append(
+            MarkdownImageAttachment.content(reference, resource: images[reference.source], attributes: attributes))
+        } else {
+          output.append(NSAttributedString(string: substring, attributes: attributes))
+        }
       }
       return output
     }

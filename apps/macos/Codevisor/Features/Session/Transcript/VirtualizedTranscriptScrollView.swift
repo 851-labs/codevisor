@@ -99,6 +99,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var remainingMountsThisFrame = 2
   var remainingRunwayPreparationsThisFrame = 1
   var rowContent: ((TranscriptVirtualRow) -> AnyView)?
+  var markdownImageLoader: MarkdownImageLoader = .remote
   var openMarkdownLink: (@MainActor (URL) -> Bool)?
   /// One action object for every native Markdown host, forwarding to the
   /// current callback so parked and cached hosts never hold a stale handler.
