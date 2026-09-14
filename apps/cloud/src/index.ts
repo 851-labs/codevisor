@@ -7,7 +7,9 @@ import { hasEmailAuth } from "./email-auth.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
-import { devLoginPage, devicePage, homePage, loginPage } from "./pages/pages.js"
+import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
+import { loginPage } from "./pages/login.js"
+import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
@@ -98,18 +100,15 @@ app.get("/login/:provider", async (c) => {
   if (provider !== "github" && provider !== "apple") return c.notFound()
   const redirect = c.req.query("redirect") ?? "/auth/handoff"
   // Relative paths only: this must never become an open redirect.
-  if (
-    !redirect.startsWith("/") ||
-    redirect.startsWith("//") ||
-    redirect.includes("\\") ||
-    [...redirect].some((character) => character.charCodeAt(0) <= 32)
-  ) {
+  if (!validAuthRedirect(redirect)) {
     return c.json({ error: "invalid redirect" }, 400)
   }
   const scheme = nativeScheme(
     new URL(redirect, c.env.PUBLIC_BASE_URL).searchParams.get("app") ?? undefined
   )
-  const errorCallbackURL = scheme ? `/auth/handoff?app=${scheme}&error=sign_in_failed` : "/login"
+  const errorCallbackURL = scheme
+    ? `/auth/handoff?app=${scheme}&error=sign_in_failed`
+    : `${loginURL(redirect)}&error=sign_in_failed`
   if (
     provider === "apple"
       ? !hasAppleAuth(c.env)

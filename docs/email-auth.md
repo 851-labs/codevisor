@@ -4,6 +4,14 @@ The iOS and macOS onboarding and Account settings offer native email/password
 forms when Cloud advertises `email` in `/.well-known/codevisor`. No browser is
 needed for signup, sign-in, verification, or password reset.
 
+The Cloud `/login` page offers the same email/password flow when email is
+configured, alongside the available Apple and GitHub sign-in options. Web signup
+requires the same six-digit verification code. Sign-in resumes unfinished
+verification, and password recovery uses a separate code before returning to
+sign-in. Resending and delivery errors are handled in the form. Browser sessions
+use cookies; passwords and codes are never placed in URLs or browser storage.
+The original destination, including a machine approval code, survives each step.
+
 ## Configuration
 
 Verify `auth.codevisor.dev` in Resend and create a sending-only API key scoped to
