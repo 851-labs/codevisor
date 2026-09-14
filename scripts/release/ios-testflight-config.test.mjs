@@ -40,17 +40,18 @@ test("release configuration requires CI signing inputs and keeps the build ident
   )
 })
 
-test("export options require local output restricted to internal TestFlight", () => {
+test("export options keep local output eligible for external TestFlight and the App Store", () => {
   const options = exportOptions("TEAM123456")
+  assert.equal(options.method, "app-store-connect")
   assert.equal(options.destination, "export")
-  assert.equal(options.testFlightInternalTestingOnly, true)
+  assert.equal(options.testFlightInternalTestingOnly, false)
   assert.equal(options.manageAppVersionAndBuildNumber, false)
 })
 
 test("publishing rejects a substituted artifact or a different Alpha source", () => {
   const configuration = testFlightConfiguration("1.2.3", environment)
   const { privateKey: _privateKey, keyId: _keyId, issuerId: _issuerId, ...identity } = configuration
-  const record = { ...identity, ipaSHA256: "expected", internalOnly: true }
+  const record = { ...identity, ipaSHA256: "expected", internalOnly: false }
   assert.doesNotThrow(() => verifyBuildRecord(record, configuration, "expected"))
   assert.throws(() => verifyBuildRecord(record, configuration, "changed"), /checksum/)
   assert.throws(
@@ -62,10 +63,11 @@ test("publishing rejects a substituted artifact or a different Alpha source", ()
     () => verifyBuildRecord({ ...record, teamId: "OTHERTEAM1" }, configuration, "expected"),
     /teamId/
   )
-  assert.throws(
-    () => verifyBuildRecord({ ...record, internalOnly: false }, configuration, "expected"),
-    /internal-only/
-  )
+  for (const internalOnly of [true, undefined])
+    assert.throws(
+      () => verifyBuildRecord({ ...record, internalOnly }, configuration, "expected"),
+      /App Store eligibility/
+    )
 })
 
 test("upload guard permits exact main CI runs and rejects local, PR, and mismatched source runs", () => {

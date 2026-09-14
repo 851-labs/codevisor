@@ -109,8 +109,8 @@ export async function waitForBuild(
     if (state === "VALID") {
       if (candidate.attributes.expired)
         throw new Error("The matching TestFlight build has expired.")
-      if (candidate.attributes.buildAudienceType !== "INTERNAL_ONLY") {
-        throw new Error("Refusing to distribute a build that is not marked INTERNAL_ONLY.")
+      if (candidate.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE") {
+        throw new Error("Expected an APP_STORE_ELIGIBLE build for later release promotion.")
       }
       if (
         ["PROCESSING_EXCEPTION", "EXPIRED", "MISSING_EXPORT_COMPLIANCE"].includes(internalState)

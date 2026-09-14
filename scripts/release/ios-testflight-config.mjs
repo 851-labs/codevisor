@@ -46,7 +46,8 @@ export function exportOptions(teamId) {
     destination: "export",
     teamID: teamId,
     signingStyle: "automatic",
-    testFlightInternalTestingOnly: true,
+    // Alpha distribution stays internal; the same build can later be promoted.
+    testFlightInternalTestingOnly: false,
     manageAppVersionAndBuildNumber: false,
     uploadSymbols: true
   }
@@ -88,8 +89,8 @@ export function verifyBuildRecord(record, configuration, ipaSHA256) {
     if (record[key] !== configuration[key])
       throw new Error(`iOS artifact ${key} does not match this Alpha run.`)
   }
-  if (record.ipaSHA256 !== ipaSHA256 || record.internalOnly !== true) {
-    throw new Error("iOS artifact checksum or internal-only declaration is invalid.")
+  if (record.ipaSHA256 !== ipaSHA256 || record.internalOnly !== false) {
+    throw new Error("iOS artifact checksum or App Store eligibility declaration is invalid.")
   }
 }
 

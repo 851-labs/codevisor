@@ -110,10 +110,10 @@ if (
 }
 const actualOptions = plist(join(exported, "ExportOptions.plist"))
 if (
-  actualOptions.testFlightInternalTestingOnly !== true ||
+  actualOptions.testFlightInternalTestingOnly !== false ||
   actualOptions.destination !== "export"
 ) {
-  throw new Error("Expected a local, internal-only TestFlight export.")
+  throw new Error("Expected a local TestFlight export eligible for App Store distribution.")
 }
 
 await writeFile(
@@ -126,7 +126,7 @@ await writeFile(
       version: configuration.version,
       buildNumber: configuration.buildNumber,
       sourceRevision: configuration.sourceRevision,
-      internalOnly: true,
+      internalOnly: false,
       ipaSHA256: await fileSHA256(ipa)
     },
     null,
@@ -142,5 +142,5 @@ execFileSync("ditto", [
 ])
 await rm(verification, { recursive: true, force: true })
 console.log(
-  `Prepared internal TestFlight ${configuration.version} (${configuration.buildNumber}): ${ipa}`
+  `Prepared App Store eligible TestFlight ${configuration.version} (${configuration.buildNumber}): ${ipa}`
 )
