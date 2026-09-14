@@ -81,6 +81,9 @@ export function LegalPage({
             className="flex flex-wrap justify-center gap-x-5 gap-y-3"
             aria-label="Legal and contact"
           >
+            <a href="/support" className="transition-colors hover:text-text">
+              Support
+            </a>
             <a href="/terms" className="transition-colors hover:text-text">
               Terms of Service
             </a>
