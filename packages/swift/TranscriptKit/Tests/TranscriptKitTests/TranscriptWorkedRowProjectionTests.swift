@@ -5,6 +5,57 @@ import CodevisorProtocol
 @testable import TranscriptKit
 
 struct TranscriptWorkedRowProjectionTests {
+  @Test(arguments: [ContextCompactionStatus.started, .failed])
+  func invisibleCompactionDoesNotAddSpaceBeforeActivity(status: ContextCompactionStatus) {
+    var message = AssistantMessage(
+      turn: AssistantTurn(
+        entries: [
+          .text(id: "commentary", markdown: "Checking the code."),
+          .tool(ToolCall(toolCallId: "read", title: "Read source", status: .completed)),
+        ],
+        isGenerating: true,
+        textPhases: ["commentary": .commentary]
+      )
+    )
+    let waitingRows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+    message.turn.entries.append(.contextCompaction(id: "compact", status: status))
+    let compactionRows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+
+    #expect(compactionRows.map(\.id) == waitingRows.map(\.id))
+    #expect(compactionRows.map(\.estimatedHeight) == waitingRows.map(\.estimatedHeight))
+    #expect(compactionRows.map(\.spacingAfter) == waitingRows.map(\.spacingAfter))
+    #expect(compactionRows.last?.id == .activeChrome(message.id, .activity))
+  }
+
+  @Test func compactionBeforeAnyContentDoesNotCreateAnEmptyWorkedSection() {
+    let message = AssistantMessage(
+      turn: AssistantTurn(
+        entries: [.contextCompaction(id: "compact", status: .started)],
+        isGenerating: true
+      )
+    )
+    let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+
+    #expect(rows.map(\.id) == [.activeChrome(message.id, .activity)])
+  }
+
+  @Test func completedCompactionKeepsItsInlineHistoryRow() {
+    let message = AssistantMessage(
+      turn: AssistantTurn(
+        entries: [.contextCompaction(id: "compact", status: .completed)],
+        isGenerating: true
+      )
+    )
+    let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
+
+    #expect(
+      rows.map(\.id) == [
+        .activeWorkedHeader(message.id, .planning),
+        .activeWorkedItem(message.id, .planning, itemID: "wcompaction:compact"),
+        .activeChrome(message.id, .activity),
+      ])
+  }
+
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {
     let messageID = UUID()
     let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")

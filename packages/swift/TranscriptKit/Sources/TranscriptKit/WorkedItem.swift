@@ -119,7 +119,11 @@ extension AssistantTurn {
         groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
       case let .contextCompaction(id, status):
         flush()
-        items.append(.contextCompaction(id: id, status: status))
+        // Only completion has inline content. Invisible lifecycle rows still
+        // reserve height and spacing in the native transcript virtualizers.
+        if status == .completed {
+          items.append(.contextCompaction(id: id, status: status))
+        }
       }
     }
     flush()
