@@ -76,7 +76,7 @@ export function LegalPage({
 
       <footer className="border-t border-hairline px-6 py-8">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 text-xs text-muted sm:flex-row">
-          <span>© {new Date().getFullYear()} 851 Inc.</span>
+          <span>© {new Date().getFullYear()} Codevisor LLC</span>
           <nav
             className="flex flex-wrap justify-center gap-x-5 gap-y-3"
             aria-label="Legal and contact"

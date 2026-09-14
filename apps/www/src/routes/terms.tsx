@@ -23,10 +23,10 @@ const sections = [
     body: (
       <>
         <p>
-          These Terms of Service are between you and 851 Inc. (“Codevisor,” “we,” or “us”). They
-          govern Codevisor Cloud, our website, and the services we provide through our desktop and
-          iOS apps and optional browser extension (the “Services”). Software licenses are addressed
-          separately below.
+          These Terms of Service are between you and Codevisor LLC (“Codevisor,” “we,” or “us”).
+          They govern Codevisor Cloud, our website, and the services we provide through our desktop
+          and iOS apps and optional browser extension (the “Services”). Software licenses are
+          addressed separately below.
         </p>
         <p>
           By selecting a button that states you agree to these terms, or otherwise expressly
@@ -37,8 +37,8 @@ const sections = [
           that organization.
         </p>
         <p>
-          These terms cover services operated by 851 Inc. If you use a Cloud server operated by
-          someone else, that operator’s terms apply to its service. These terms do not restrict
+          These terms cover services operated by Codevisor LLC. If you use a Cloud server operated
+          by someone else, that operator’s terms apply to its service. These terms do not restrict
           rights granted by the separate software licenses described below.
         </p>
       </>
@@ -263,8 +263,8 @@ const sections = [
           app-license matter, the Standard EULA controls, including its open-source exceptions.
         </p>
         <p>
-          This service agreement is with 851 Inc., not Apple. Direct questions about Codevisor and
-          requests for support to <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
+          This service agreement is with Codevisor LLC, not Apple. Direct questions about Codevisor
+          and requests for support to <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
           Nothing here changes Apple’s obligations under applicable law or its agreements with you.
         </p>
       </>
@@ -338,7 +338,7 @@ const sections = [
     body: (
       <>
         <p>
-          To the extent permitted by law, 851 Inc. will not be liable for indirect, incidental,
+          To the extent permitted by law, Codevisor LLC will not be liable for indirect, incidental,
           special, or consequential losses, including lost profits, lost business opportunities, or
           loss of data, arising from the Services. Our total liability for claims arising from these
           terms or the Services will not exceed the greater of US $100 or the amount you paid us for
@@ -386,7 +386,7 @@ const sections = [
     title: "Contact",
     body: (
       <p>
-        Codevisor is operated by 851 Inc. For questions about these terms, support, account
+        Codevisor is operated by Codevisor LLC. For questions about these terms, support, account
         concerns, or legal notices, email{" "}
         <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>.
       </p>

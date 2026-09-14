@@ -23,8 +23,8 @@ const sections = [
     body: (
       <>
         <p>
-          Codevisor is operated by 851 Inc. (“Codevisor,” “we,” or “us”). This policy covers our
-          desktop and iOS apps, Codevisor Cloud, website, and optional Chrome extension. It also
+          Codevisor is operated by Codevisor LLC (“Codevisor,” “we,” or “us”). This policy covers
+          our desktop and iOS apps, Codevisor Cloud, website, and optional Chrome extension. It also
           explains how using AI providers, browser features, and plugins can share information with
           other services. Contact us at <a href="mailto:hello@codevisor.dev">hello@codevisor.dev</a>
           .
