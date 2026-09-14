@@ -417,6 +417,8 @@ public final class AppEnvironment {
   public static func preview(
     seedProjects: [Project] = AppEnvironment.sampleProjects,
     seedSessions: [ChatSession] = AppEnvironment.sampleSessions,
+    seedMachines: [CodevisorMachine] = [],
+    seedCapabilities: [ServerHarnessCapability] = [],
     hasOnboarded: Bool = true
   ) -> AppEnvironment {
     let store = InMemoryStore()
@@ -425,6 +427,12 @@ public final class AppEnvironment {
     projectRepository.save(seedProjects)
     sessionRepository.save(seedSessions)
     let settings = AppSettingsModel(store: InMemoryStore())
+    let machineStore = InMemoryStore()
+    if !seedMachines.isEmpty {
+      try? machineStore.saveData(
+        JSONEncoder().encode(MachineRegistry(remoteMachines: seedMachines)), forKey: "machines"
+      )
+    }
     if hasOnboarded {
       settings.completeOnboarding(importExternalSessions: false)
       settings.setShareCrashReports(false)
@@ -434,12 +442,12 @@ public final class AppEnvironment {
       sessionRepository: sessionRepository,
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: settings,
-      machineStore: InMemoryStore(),
+      machineStore: machineStore,
       harnessService: PreviewHarnessService(),
       // Hermetic: the default factory builds a real HTTP client against
       // the Debug dev port, so previews/tests would sync their sample
       // projects into a live dev server's database.
-      machineClientFactory: { _ in PreviewServerClient() }
+      machineClientFactory: { _ in PreviewServerClient(harnessCapabilities: seedCapabilities) }
     )
   }
 

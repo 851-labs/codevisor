@@ -147,6 +147,8 @@ public extension SessionModel {
 /// stream never yields and every write throws or drops, so nothing can reach
 /// a real server.
 struct PreviewServerClient: CodevisorServerClienting {
+  var harnessCapabilities: [ServerHarnessCapability] = []
+
   func health() async throws -> ServerHealth {
     ServerHealth(ok: true, version: "0.0.0", database: "ready")
   }
@@ -156,8 +158,10 @@ struct PreviewServerClient: CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   func issuePairingToken() async throws -> ServerPairingToken { throw CodevisorServerClientError.invalidResponse }
-  func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
-  func listHarnesses() async throws -> [ServerHarness] { [] }
+  func capabilities(cwd: String) async throws -> ServerCapabilities {
+    ServerCapabilities(harnesses: harnessCapabilities)
+  }
+  func listHarnesses() async throws -> [ServerHarness] { harnessCapabilities.map(\.harness) }
   func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
     throw CodevisorServerClientError.invalidResponse
   }

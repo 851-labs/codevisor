@@ -14,7 +14,9 @@
     /// Stateful fixture: the production reorder callback updates the same
     /// section input that a saved workspace order would produce.
     struct Sidebar: View {
-      @State private var sections = HomeSidebarSampleData.sections
+      @State private var sections =
+        AppStoreScreenshotData.isEnabled
+        ? AppStoreScreenshotData.sections : HomeSidebarSampleData.sections
 
       var body: some View {
         HomeSidebarList(
