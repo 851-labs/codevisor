@@ -107,8 +107,10 @@ struct AttachmentThumbnailView: View {
   private var imageThumb: some View {
     let size = thumbnailSize
     return ZStack {
-      RoundedRectangle(cornerRadius: 8)
-        .fill(theme.bubbleBackground)
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .fill(theme.bubbleBackground)
+      }
       if let image {
         Image(uiImage: image)
           .resizable()
@@ -120,14 +122,18 @@ struct AttachmentThumbnailView: View {
     }
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(.separator, lineWidth: 1)
-    )
+    .overlay {
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .strokeBorder(.separator, lineWidth: 1)
+      }
+    }
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { preview() }
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
-    .accessibilityAddTraits(.isButton)
+    .accessibilityAddTraits([.isImage, .isButton])
+    .attachmentImageContextMenu(file: file, image: image)
   }
 
   private var thumbnailSize: CGSize {

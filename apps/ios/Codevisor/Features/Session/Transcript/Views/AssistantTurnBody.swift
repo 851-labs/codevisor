@@ -181,9 +181,12 @@ struct AssistantTurnBody: View {
     ) { file, label in
       VStack(alignment: .leading, spacing: 4) {
         AttachmentThumbnailView(file: file, inline: true)
-        Text(label)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .accessibilityLabel(label)
+        if file.kind != .image {
+          Text(label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
     }
   }
