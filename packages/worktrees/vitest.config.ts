@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    // Each worker launches Git processes alongside other package test suites.
+    maxWorkers: 2,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
