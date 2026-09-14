@@ -5,14 +5,6 @@ import ACPKit
 import CodevisorUI
 import UniformTypeIdentifiers
 
-extension EnvironmentValues {
-  /// True while THIS app is installing its own update and about to restart.
-  /// Injected at the root; the composer reads it to lock its submit action.
-  /// A remote machine's server update does not set it: that server drains
-  /// and holds its own prompts.
-  @Entry var isAppUpdateInProgress: Bool = false
-}
-
 /// The chat composer card: a multiline input (Return sends, Shift+Return adds a
 /// newline) with an inline toolbar holding the combined model dropdown
 /// (models grouped by harness plus every model-owned setting), active modes,
@@ -71,6 +63,20 @@ struct ComposerCard: View {
   private var paletteHeight: CGFloat {
     if isLoadingSlashCommands, slashMenuContentHeight == 0 { return 40 }
     return min(slashMenuContentHeight, Self.slashMenuMaxHeight)
+  }
+
+  init(
+    controller: SessionController,
+    onTextViewReady: ((SubmittingTextView) -> Void)? = nil,
+    focus: TerminalFocusController? = nil,
+    focusChatId: UUID? = nil,
+    glassNamespace: Namespace.ID? = nil
+  ) {
+    self.controller = controller
+    self.onTextViewReady = onTextViewReady
+    self.focus = focus
+    self.focusChatId = focusChatId
+    self.glassNamespace = glassNamespace
   }
 
   var body: some View {
@@ -614,17 +620,3 @@ private extension ComposerCard {
     }
   }
 }
-
-#if DEBUG
-  #Preview("Empty state composer") {
-    ComposerCard(controller: .preview())
-      .padding()
-      .frame(width: 640)
-  }
-
-  #Preview("Connected composer") {
-    ComposerCard(controller: .preview(model: .preview()))
-      .padding()
-      .frame(width: 640)
-  }
-#endif

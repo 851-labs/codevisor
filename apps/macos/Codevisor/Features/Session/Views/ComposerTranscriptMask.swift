@@ -9,6 +9,11 @@ struct ComposerTranscriptMask: View {
   let composerSize: CGSize
   let bottomInset: CGFloat
 
+  init(composerSize: CGSize, bottomInset: CGFloat) {
+    self.composerSize = composerSize
+    self.bottomInset = bottomInset
+  }
+
   var body: some View {
     GeometryReader { geometry in
       Color.white
