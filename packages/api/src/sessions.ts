@@ -312,6 +312,9 @@ export const UpdateSessionRequest = Schema.Struct({
   agentSessionId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
+  /// Native snapshot sync may fill a placeholder, but only Rename owns the title.
+  /// Omitted preserves the legacy PATCH behavior for older clients.
+  titleIntent: Schema.optional(Schema.Literals(["fallback", "rename"])),
   worktreeName: Schema.optional(Schema.String),
   /// Move the session to another project before its agent starts. Used when a
   /// scratch workspace locks in its real project on the first send; the server

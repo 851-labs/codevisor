@@ -39,9 +39,12 @@ const refreshCodexSessionTitle = async (session: CodexSession): Promise<void> =>
       threadId: session.threadId
     })
     const thread = isRecord(response) && isRecord(response.thread) ? response.thread : undefined
+    session.titleGenerator?.observeName(thread?.name)
     await emitCodexSessionTitle(
       session,
-      thread === undefined ? undefined : codexThreadTitle(thread)
+      typeof thread?.name === "string" && thread.name.trim().length > 0
+        ? thread.name.trim()
+        : undefined
     )
   } catch {
     // Older app-servers may not expose thread names. The first-prompt title
@@ -54,6 +57,7 @@ export const handleNotification = (
   method: string,
   params: unknown
 ): void => {
+  if (session.titleGenerator?.handleNotification(method, params)) return
   const payload = isRecord(params) ? params : {}
   // Every notification is thread-scoped. Collab subagents run as separate
   // threads on the same connection: their items nest under the spawnAgent
@@ -111,6 +115,7 @@ export const handleNotification = (
       break
     }
     case "thread/name/updated": {
+      session.titleGenerator?.observeName(payload.threadName)
       const title = typeof payload.threadName === "string" ? payload.threadName.trim() : undefined
       if (title === undefined || title.length === 0) {
         void refreshCodexSessionTitle(session)
@@ -178,7 +183,12 @@ export const handleNotification = (
             subjectId: session.key
           })
         )
-        .then(() => pending?.resolve({ stopReason }))
+        .then(() => {
+          pending?.resolve({ stopReason })
+          if (pending !== undefined && status === "completed" && terminalError === undefined) {
+            void session.titleGenerator?.onTurnCompleted()
+          }
+        })
       break
     }
     case "item/agentMessage/delta": {

@@ -121,6 +121,7 @@ struct UpdateSessionBody: Encodable {
   var agentSessionId: String?
   var isArchived: Bool
   var title: String
+  var titleIntent = "fallback"
   /// Sessions created EAGERLY (before their worktree exists) get the
   /// worktree onto the server record through this PATCH — POST
   /// /v1/sessions is create-or-return, so a later create can't. The
@@ -143,6 +144,11 @@ struct UpdateSessionBody: Encodable {
     harnessId = session.harnessId.isEmpty ? nil : session.harnessId
     harnessAccountId = session.harnessAccountId
   }
+}
+
+struct RenameSessionBody: Encodable {
+  var title: String
+  var titleIntent = "rename"
 }
 
 private struct MarkSessionReadBody: Encodable {
@@ -273,6 +279,16 @@ extension CodevisorServerClient {
 
   public func updateSession(_ session: ChatSession) async throws -> ServerSession {
     try await updateSession(session, workspaceId: nil)
+  }
+
+  public func renameSession(_ session: ChatSession) async throws -> ServerSession {
+    // A draft can be renamed before its asynchronous create has reached the server.
+    _ = try await upsertSession(session)
+    return try await send(
+      "/v1/sessions/\(session.id.uuidString)",
+      method: "PATCH",
+      body: RenameSessionBody(title: session.title)
+    )
   }
 
   private func updateSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession {

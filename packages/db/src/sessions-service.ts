@@ -199,8 +199,16 @@ export const makeSessionsService = (
         sqlite
           .prepare(
             `update sessions set
-              title = ?,
+              title = case
+                when ? = 'fallback' then case
+                  when title_is_user_set = 0 and title in ('New Chat', 'New Session') then ?
+                  else title
+                end
+                else ?
+              end,
               title_is_user_set = case
+                when ? = 'fallback' then title_is_user_set
+                when ? = 'rename' and ? is not null then 1
                 when ? is not null and ? <> title then 1
                 else title_is_user_set
               end,
@@ -217,7 +225,12 @@ export const makeSessionsService = (
              where id = ?`
           )
           .run(
+            request.titleIntent ?? null,
             request.title ?? current.title,
+            request.title ?? current.title,
+            request.titleIntent ?? null,
+            request.titleIntent ?? null,
+            request.title ?? null,
             request.title ?? null,
             request.title ?? null,
             (request.isArchived ?? current.isArchived) ? 1 : 0,

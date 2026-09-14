@@ -140,6 +140,10 @@ public extension CodevisorServerClienting {
     try await upsertSession(session)
   }
 
+  func renameSession(_ session: ChatSession) async throws -> ServerSession {
+    try await upsertSession(session)
+  }
+
   /// Compatibility fallback for test doubles and servers without the
   /// plugins feature: no plugins, and no pane tokens. The HTTP client
   /// overrides both with the real requests.

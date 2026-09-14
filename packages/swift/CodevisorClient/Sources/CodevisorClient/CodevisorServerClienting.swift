@@ -344,6 +344,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func upsertSession(_ session: ChatSession) async throws -> ServerSession
   func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession
   func updateSession(_ session: ChatSession) async throws -> ServerSession
+  func renameSession(_ session: ChatSession) async throws -> ServerSession
   func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession?
   func markSessionUnread(id: UUID) async throws -> ServerSession?
   func clearSessionPlanApproval(id: UUID) async throws

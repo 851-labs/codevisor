@@ -334,7 +334,7 @@ public final class ProjectListModel {
     else { return }
     sessions[index].title = title
     persistSessions()
-    syncSession(sessions[index])
+    syncSession(sessions[index], isRename: true)
   }
 
   public func deleteSession(_ session: ChatSession) {
