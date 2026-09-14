@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "apps/www/**"
+      - "scripts/release/install.test.mjs"
       - "packages/api/**"
       - "bun.lock"
       - ".github/workflows/deploy-www.yml"
@@ -30,6 +31,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - name: Verify installer
+        run: |
+          sh -n apps/www/public/install.sh
+          node --test scripts/release/install.test.mjs
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck

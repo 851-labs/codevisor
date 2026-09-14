@@ -9,7 +9,7 @@
 #          Codevisor app on your Mac can connect to this machine.
 #
 # Options (environment variables):
-#   CODEVISOR_VERSION      install a specific version instead of the latest
+#   CODEVISOR_VERSION      install a specific version instead of the latest stable
 #   CODEVISOR_INSTALL_DIR  Linux server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
 #   CODEVISOR_BIN_DIR      CLI symlink dir            (default: ~/.local/bin; /usr/local/bin as root on Linux)
 #   CODEVISOR_PORT         Linux server port          (default: 49361)
@@ -21,7 +21,7 @@
 set -eu
 
 RELEASE_REPOSITORY="851-labs/codevisor"
-RELEASE_API="https://api.github.com/repos/$RELEASE_REPOSITORY/releases/latest"
+STABLE_MANIFEST_URL="https://updates.codevisor.dev/server/stable.json"
 RELEASE_DOWNLOAD_BASE="https://github.com/$RELEASE_REPOSITORY/releases/download"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
@@ -30,7 +30,7 @@ fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 
-fetch() { curl -fsSL "$1"; }
+fetch() { curl -fsSL "$@"; }
 # Progress bars only when a human is watching; CI logs stay clean.
 download() {
   if [ -t 1 ]; then
@@ -46,9 +46,15 @@ resolve_version() {
     printf '%s' "${requested_version#v}"
     return
   fi
-  release=$(fetch "$RELEASE_API") || fail "could not fetch the latest GitHub release"
-  version=$(printf '%s' "$release" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p')
-  [ -n "$version" ] || fail "could not parse version from GitHub release"
+  # GitHub's "latest" pointer is frozen at the updater migration release.
+  # Resolve the same stable version as the server updater, then download its
+  # versioned assets. Never fall back to that older GitHub pointer.
+  release=$(fetch -H 'Cache-Control: no-cache' "$STABLE_MANIFEST_URL") ||
+    fail "could not fetch the latest stable release from $STABLE_MANIFEST_URL; retry or set CODEVISOR_VERSION"
+  # The manifest has one version field. Accept only a complete stable version,
+  # whether the JSON is formatted or compact, without requiring jq or Node.
+  version=$(printf '%s' "$release" | tr '\n' ' ' | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"v\{0,1\}\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
+  [ -n "$version" ] || fail "could not parse a stable version from $STABLE_MANIFEST_URL; retry or set CODEVISOR_VERSION"
   printf '%s' "$version"
 }
 

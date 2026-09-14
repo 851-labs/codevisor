@@ -10,6 +10,16 @@ icon: Download
 curl -fsSL https://www.codevisor.dev/install.sh | sh
 ```
 
+Each run resolves the latest stable version from the same release feed used by the server updater.
+If the feed cannot be fetched or does not contain a valid stable version, installation stops with
+an error. The installer does not fall back to an older release.
+
+To install a specific release, set `CODEVISOR_VERSION` on the shell running the installer:
+
+```bash
+curl -fsSL https://www.codevisor.dev/install.sh | CODEVISOR_VERSION=0.1.99 sh
+```
+
 On Linux, the installer downloads the matching `linux-x64` or `linux-arm64` archive, verifies its
 SHA-256 checksum when `sha256sum` is available, and links `codevisor`, `codevisor-server`, and
 `codevisor-terminal-proxy` into a bin directory.
@@ -37,7 +47,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ## Without systemd
 
 ```bash
-CODEVISOR_NO_SERVICE=1 curl -fsSL https://www.codevisor.dev/install.sh | sh
+curl -fsSL https://www.codevisor.dev/install.sh | CODEVISOR_NO_SERVICE=1 sh
 codevisor start
 ```
 
