@@ -20,7 +20,7 @@ const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)
 if (options.help) {
   console.log(
-    "Usage: bun run screenshots:ios [--device all|iphone|ipad] [--output directory] [--runtime 'iOS 27.0']"
+    "Usage: bun run screenshots:ios [--device all|iphone] [--output directory] [--runtime 'iOS 27.0']"
   )
   process.exit(0)
 }
@@ -128,7 +128,7 @@ try {
       ownedSimulator,
       "override",
       "--time",
-      // iPad also shows the date. Keep 9:41 in the host/simulator's local zone.
+      // Keep 9:41 in the host/simulator's local zone.
       new Date(2026, 8, 14, 9, 41).toISOString(),
       "--dataNetwork",
       "wifi",

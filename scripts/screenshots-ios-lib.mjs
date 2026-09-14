@@ -7,18 +7,12 @@ export const devices = {
     type: "com.apple.CoreSimulator.SimDeviceType.iPhone-13-Pro-Max",
     width: 1284,
     height: 2778
-  },
-  ipad: {
-    name: "iPad Pro 13-inch (M5)",
-    type: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB",
-    width: 2064,
-    height: 2752
   }
 }
 
 export function parseOptions(args, root) {
   const options = {
-    device: "all",
+    device: "iphone",
     output: resolve(root, "tmp/screenshots/ios"),
     runtime: undefined
   }
@@ -32,7 +26,7 @@ export function parseOptions(args, root) {
     options[flag.slice(2)] = flag === "--output" ? resolve(root, value) : value
   }
   if (!["all", ...Object.keys(devices)].includes(options.device)) {
-    throw new Error("--device must be all, iphone, or ipad")
+    throw new Error("--device must be all or iphone (iPad support is disabled)")
   }
   return options
 }

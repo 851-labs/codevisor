@@ -11,23 +11,31 @@ import {
 
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
   assert.equal(parseOptions([], "/checkout").output, "/checkout/tmp/screenshots/ios")
+  assert.equal(parseOptions([], "/checkout").device, "iphone")
+  assert.equal(parseOptions(["--device", "all"], "/checkout").device, "all")
   assert.deepEqual(
     parseOptions(
-      ["--device", "ipad", "--output", "captures", "--runtime", "iOS 27.0"],
+      ["--device", "iphone", "--output", "captures", "--runtime", "iOS 27.0"],
       "/checkout"
     ),
     {
-      device: "ipad",
+      device: "iphone",
       output: "/checkout/captures",
       runtime: "iOS 27.0"
     }
   )
-  for (const args of [["--device", "mac"], ["--output"], ["--device", "--output"], ["--upload"]]) {
+  for (const args of [
+    ["--device", "ipad"],
+    ["--device", "mac"],
+    ["--output"],
+    ["--device", "--output"],
+    ["--upload"]
+  ]) {
     assert.throws(() => parseOptions(args, "/checkout"))
   }
 })
 
-test("runtime selection requires both requested devices and ignores unavailable runtimes", () => {
+test("runtime selection requires supported devices and ignores unavailable runtimes", () => {
   const runtime = (version, supported = Object.values(devices), isAvailable = true) => ({
     name: `iOS ${version}`,
     identifier: `com.apple.CoreSimulator.SimRuntime.iOS-${version.replaceAll(".", "-")}`,
@@ -38,12 +46,12 @@ test("runtime selection requires both requested devices and ignores unavailable 
   const candidates = [
     runtime("26.2"),
     runtime("26.10"),
-    runtime("27.0", [devices.iphone]),
+    runtime("27.0", []),
     runtime("28.0", undefined, false)
   ]
   assert.equal(selectRuntime(candidates, Object.values(devices)).version, "26.10")
-  assert.equal(selectRuntime(candidates, [devices.iphone]).version, "27.0")
   assert.equal(selectRuntime(candidates, Object.values(devices), "iOS 26.2").version, "26.2")
+  assert.throws(() => selectRuntime(candidates, Object.values(devices), "iOS 27.0"))
   assert.throws(() => selectRuntime(candidates, Object.values(devices), "iOS 28.0"))
 })
 
@@ -92,11 +100,10 @@ test("export requires the exact dimensions for each App Store screenshot slot", 
     bytes.writeUInt32BE(device.width, 16)
     bytes.writeUInt32BE(device.height, 20)
     assert.deepEqual(pngDimensions(bytes, device), { width: device.width, height: device.height })
-    const otherDevice = device === devices.iphone ? devices.ipad : devices.iphone
-    assert.throws(() => pngDimensions(bytes, otherDevice))
   }
   // The former 6.9-inch captures are not accepted in the 6.5-inch slot.
   for (const [width, height] of [
+    [2064, 2752],
     [1320, 2868],
     [2778, 1284],
     [400, 800]
