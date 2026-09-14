@@ -24,6 +24,10 @@ struct GeneralSettingsScreen: View {
         }
         .foregroundStyle(.red)
         .accessibilityIdentifier("privacy.withdrawAIConsent")
+      } footer: {
+        Text(
+          "Revokes consent to share data with AI providers, clears this device's Codevisor data, and signs you out."
+        )
       }
       Section {
         Button("Delete Device Data", role: .destructive) {
