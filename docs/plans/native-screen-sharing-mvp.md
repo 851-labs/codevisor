@@ -9,7 +9,7 @@ The intended MVP is one Codevisor Mac viewing and controlling an existing displa
 - ScreenCaptureKit capture, VideoToolbox H.264 encode/decode, encrypted WebRTC media and Metal rendering.
 - Authenticated workspace/pane signaling and a searchable display chooser matching New Tab.
 - Native toolbar with the machine name and display resolution, a persistent View/Control segment, Fit/Actual Size, clipboard and connection diagnostics. Closing the tab ends the session.
-- Control is requested once when each connection becomes ready. Local menus and other focused controls suspend input forwarding and release held input without changing the selected mode. Ctrl-Option-Escape releases control explicitly.
+- New panes start in Control mode. The View/Control selector remains interactive while connecting, and the latest choice applies when video and the control channel are ready. Reconnecting preserves that choice. Local menus and other focused controls suspend input forwarding and release held input without changing the selected mode. Ctrl-Option-Escape releases control explicitly.
 - While the video has focus in Control mode, system shortcuts such as Command-Space and Command-Q are forwarded to the host; bounded plain-text clipboard transfer is also available.
 - Chatless workspace navigation through the shared pane container, including conversion from New Tab and sidebar title updates.
 - Bounded media ownership, terminal renderer stop and owner-scoped cancellation of pending host starts.
@@ -20,9 +20,21 @@ The intended MVP is one Codevisor Mac viewing and controlling an existing displa
 
 Actual-app checks on September 14 established remote video and control, including opening Spotlight, typing, and quitting the remote Calculator with Command-Q while the local viewer stayed connected. These checks used the pre-integration development build. A clean two-Mac acceptance run on the integrated source remains required; these checks are not a performance benchmark.
 
-The final host stop-ordering source passed 167 CoreMac tests and serial macOS/iOS native builds on September 13, 2026. The sidebar and host-ordering fixes were compiled in isolated build outputs but have not yet been exercised in a newly launched two-Mac session. These are historical results, not acceptance evidence for the integrated branch. The September 14 integration adopts main's center-only workspace layout and focus-source ownership, and preserves chatless workspace behavior. Current build and full-check results are recorded in the PR.
+Commit `dbdbcaea` passed the normal pre-commit hook in a clean validation worktree, without exclusions: the full JavaScript check chain, Swift formatting/lint, 2,119 Swift package tests, 30 macOS transcript tests, 11 macOS composer tests, the iOS build, and 8 iOS transcript tests. The macOS development app built successfully. The September 14 integration adopts main's center-only workspace layout and focus-source ownership, and preserves chatless workspace behavior.
+
+Actual-app checks with the final viewer established that the complete toolbar stays interactive during connection, View/Control choices survive connection and menu interactions, and switching modes no longer shows a spinner. Those checks used the earlier host build. The isolated host was subsequently rebuilt from the matching final source; all 2,864 staged source files were verified and the app passed strict signature verification. The fresh acceptance attempt reached the host Screen Recording permission error. The remaining two-Mac workflows and sustained-use check are pending reauthorization of this rebuilt development app; earlier results do not replace that acceptance pass.
 
 The local measurement archives contain raw session and machine-specific evidence and are intentionally excluded from this public checkpoint. Historical measurement links in the implementation notes refer to those local archives. No credentials, raw signaling, desktop captures or runner logs are required to build the feature.
+
+## Dependency and distribution review
+
+The pinned stasel WebRTC 152.0.0 archive was downloaded again on September 14. Its SHA256 matches `scripts/webrtc-build.lock.json` and the SwiftPM checksum: `115cb9944248a3302c0c8af17462e2576a28ccc7adef9f6a1fe66ee75d9e1cc8`. All 387 regular files and 10 symlink targets match the resolved artifact. The XCFramework provides macOS arm64/x86_64, iOS device and simulator slices, and Mac Catalyst slices.
+
+The built macOS app includes the WebRTC license and privacy manifest. The app and its embedded WebRTC framework pass strict signature verification. The release script signs embedded frameworks before signing and verifying the enclosing app; Developer ID signing and notarization of this final revision have not been executed.
+
+The archive contains the main WebRTC license but no aggregate third-party notices. The pinned source build and graph-derived notice audit remain open. The recipe requires Xcode 26.5 and Python 3.12.14. The available Macs have Xcode 27 beta and 26.6; an isolated Python 3.12.14 installation is now prepared. The recipe correctly refuses the unmatched Xcode before fetching sources. No toolchain pin was relaxed and no replacement dependency was promoted.
+
+Pushing to `main` automatically starts the Alpha build and publication workflow, so the dependency/distribution gate cannot be deferred to a later manual release. The PR currently has no completed GitHub build/test workflow; its correctness check is skipped while in draft. The full-check result above is local verification, not a CI result.
 
 ## Before MVP acceptance
 

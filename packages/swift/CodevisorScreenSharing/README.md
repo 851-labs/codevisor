@@ -6,7 +6,7 @@ The working path is ScreenCaptureKit (or a synthetic motion source) → native W
 
 ## Native workspace pane
 
-Run `bun run dev:macos`. In a workspace hosted by a Mac, open New Tab → Screen Sharing, select a display and Connect. The host must run this version of the native app and allow Screen Recording. The native viewer supports Fit and Actual Size. iOS preserves the pane and shows an unavailable state until its viewer milestone.
+Run `bun run dev:macos`. In a workspace hosted by a Mac, open New Tab → Screen Sharing and select a display from the searchable chooser to connect. The host must run this version of the native app and allow Screen Recording. The native toolbar shows the machine name and resolution, View/Control, Fit/Actual Size, clipboard and connection details. Closing the tab ends the session. iOS preserves the pane and shows an unavailable state until its viewer milestone.
 
 The viewer sends a receive-only offer through the existing machine-authenticated, relay-aware client to `POST /v1/screen-sharing`. The server validates the active workspace and native pane, then forwards the request over Codevisor’s authenticated Unix bridge to the app’s native host service. SDP stays transient; only the stable display UUID and fit preference enter pane metadata. Synced size preferences update the existing native surface; a display change from another client requires a fresh Connect. Websites are rejected even on loopback.
 
@@ -16,7 +16,7 @@ The current host scales to fit 1920×1080, preserving aspect ratio, at up to 60 
 
 ## Native control
 
-After video connects, choose **Control** to send mouse, keyboard and app shortcuts to the selected Mac display. The host also needs Accessibility permission (called Device Control and Data Access in macOS 27). Control is explicit for every new connection. **Control–Option–Escape** always returns to viewing; Stop Control, clicking outside the video, losing keyboard/window focus, hiding the pane, disconnecting and the host’s Stop Sharing action also release it. The host indicator changes to “Controlled”.
+New panes start in **Control** mode and request control when video and the data channel are ready. The selector stays interactive while connecting; choosing **View** cancels that pending request. The selected mode survives menu interactions and reconnection. The host also needs Accessibility permission (called Device Control and Data Access in macOS 27). **Control–Option–Escape** returns to View. Clicking outside the video or losing keyboard/window focus suspends input forwarding and releases held input without changing the selected mode. Hiding or closing the pane, disconnecting, and the host’s Stop Sharing action tear down the connection and its control lease. The host indicator changes to “Controlled” while a control lease is active.
 
 A fresh host-issued control lease binds input to the current authenticated WebRTC peer and selected display. One-second heartbeats renew a separate three-second control deadline, checked every 250 ms. Expiry, permission loss, malformed messages and channel closure revoke the lease and release tracked keys/buttons. Delayed grants are released after viewer cancellation; input from an expired lease cannot revive control. No control lease, input or key content enters pane metadata or logs.
 
@@ -24,7 +24,7 @@ The native ordered data channel carries key/button transitions, scroll deltas an
 
 The native surface maps through Fit/Actual Size letterboxing, scroll-document position and backing-pixel scale. The host maps normalized coordinates into Quartz display bounds, including negative origins. It uses public CGEvents from a private event source, with no automation delays or app activation. Tagged injected events are excluded from capture by a viewer on the same Mac. Fractional trackpad deltas accumulate before conversion to integer pixels.
 
-Physical Mac key codes use the host’s keyboard layout and input method. OS-reserved shortcuts may remain local. Basic physical typing, modifiers, repeat, mouse buttons, dragging and scrolling are implemented; automatic clipboard synchronization, a local cursor overlay and dedicated Unicode composition UI remain follow-up work. Explicit plain-text clipboard transfer is available from the toolbar. The protocol has a bounded, separate text-insertion message exercised by the diagnostic sink. Rotated/external-display mapping, non-US layouts, IME behavior and real interactions on a second Mac still need hardware validation.
+Physical Mac key codes use the host’s keyboard layout and input method. With viewer Accessibility permission, a focused video surface in Control mode forwards system shortcuts such as Command-Space and Command-Q. Basic physical typing, modifiers, repeat, mouse buttons, dragging and scrolling are implemented; automatic clipboard synchronization, a local cursor overlay and dedicated Unicode composition UI remain follow-up work. Explicit plain-text clipboard transfer is available from the toolbar. The protocol has a bounded, separate text-insertion message exercised by the diagnostic sink. Rotated/external-display mapping, non-US layouts, IME behavior and the complete final-source two-Mac acceptance checklist still need hardware validation.
 
 ## Clipboard, cursor and connection details
 
