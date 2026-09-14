@@ -131,3 +131,6 @@
 [submodule ".repos/WebRTC"]
 	path = .repos/WebRTC
 	url = https://github.com/stasel/WebRTC.git
+[submodule ".repos/acp-registry"]
+	path = .repos/acp-registry
+	url = https://github.com/agentclientprotocol/registry.git

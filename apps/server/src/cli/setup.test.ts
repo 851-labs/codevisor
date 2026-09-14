@@ -267,15 +267,12 @@ describe("codevisor setup", () => {
   it("skips the cloud prompt when the machine is already connected", async () => {
     const world = makeWorld({
       exec: { "tailscale status --json": tailscaleStatus({ dnsName: "box.tail.net." }) },
-      http: { [health]: [ok], [pairing]: [tokenResponse] },
-      files: {
-        "/home/user/.codevisor/data/cloud.json": JSON.stringify({
-          serverUrl: "https://cloud.example",
-          deviceId: "d",
-          publicKey: "p",
-          secretKey: "s",
-          apiKey: "k"
-        })
+      http: {
+        [health]: [ok],
+        [pairing]: [tokenResponse],
+        "GET http://127.0.0.1:49361/v1/cloud": [
+          { status: 200, body: { deviceId: "d", state: "connected" } }
+        ]
       }
     })
     expect(await setupCommand(world.deps, { cloudLogin: () => Promise.resolve(0) })).toBe(0)

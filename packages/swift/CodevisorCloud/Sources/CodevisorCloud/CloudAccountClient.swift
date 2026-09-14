@@ -80,6 +80,10 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
   case httpStatus(Int)
   case notACloudInstance
   case missingToken
+  case recentSignInRequired
+  case authenticationFailed(String)
+  case emailNotVerified
+  case emailDeliveryFailed
 
   public var errorDescription: String? {
     switch self {
@@ -95,6 +99,14 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
       "That server doesn't look like a Codevisor Cloud instance. Check the URL and try again."
     case .missingToken:
       "Sign-in didn't complete: the server didn't return a session token."
+    case let .authenticationFailed(message):
+      message
+    case .emailNotVerified:
+      "Verify your email to finish creating your account."
+    case .emailDeliveryFailed:
+      "Couldn't send your code. Please try again."
+    case .recentSignInRequired:
+      "Sign out and sign in again before deleting your Cloud account."
     }
   }
 }
@@ -102,11 +114,18 @@ public enum CloudAccountClientError: Error, Equatable, Sendable, LocalizedError 
 /// The small REST surface the app needs from a Codevisor Cloud instance.
 /// Abstracted so the account controller is testable with a fake.
 public protocol CloudAccountClienting: Sendable {
+  func emailAuthentication(_ request: CloudEmailAuthRequest) async throws -> String?
+  func pluginRequest(path: String, method: String, body: Data?, token: String?) async throws -> Data
   /// `GET /.well-known/codevisor` — the discovery/validation document.
   func discover() async throws -> CloudInstanceInfo
   /// Exchanges the browser handoff's one-time token for a session bearer
   /// token (`POST /api/auth/one-time-token/verify`).
   func verifyOneTimeToken(_ ott: String) async throws -> String
+  func generateOneTimeToken(token: String) async throws -> String
+  func linkedProviders(token: String) async throws -> Set<CloudSignInProvider>
+  func startAppleSignIn(link: Bool, token: String?) async throws -> CloudAppleChallenge
+  func completeAppleSignIn(_ credential: CloudAppleCredential, token: String?) async throws -> String
+  func deleteAccount(token: String) async throws
   /// Dev-only: a real session for the cloud's seeded development user.
   /// The instance advertises the capability via `authProviders: ["dev"]`;
   /// elsewhere the route does not exist.
@@ -122,7 +141,7 @@ public protocol CloudAccountClienting: Sendable {
 /// Minimal URLSession JSON client for one cloud instance.
 public final class CloudAccountClient: CloudAccountClienting, Sendable {
   private let baseURL: URL
-  private let urlSession: URLSession
+  private let send: @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
   /// Cookie-free by default: this client authenticates with bearer tokens
   /// only. A shared URLSession would store the session cookie that
@@ -139,7 +158,12 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
 
   public init(baseURL: URL, urlSession: URLSession = CloudAccountClient.makeCookieFreeSession()) {
     self.baseURL = baseURL
-    self.urlSession = urlSession
+    self.send = { try await urlSession.data(for: $0) }
+  }
+
+  init(baseURL: URL, send: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse)) {
+    self.baseURL = baseURL
+    self.send = send
   }
 
   public func discover() async throws -> CloudInstanceInfo {
@@ -167,9 +191,22 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
     return try Self.sessionToken(fromHeader: response, body: data)
   }
 
+  public func generateOneTimeToken(token: String) async throws -> String {
+    let (data, _) = try await perform("/api/auth/one-time-token/generate", token: token)
+    struct TokenBody: Decodable { let token: String }
+    guard let body = try? JSONDecoder().decode(TokenBody.self, from: data), !body.token.isEmpty else {
+      throw CloudAccountClientError.missingToken
+    }
+    return body.token
+  }
+
+  public func deleteAccount(token: String) async throws {
+    _ = try await perform("/api/auth/delete-user", method: "POST", body: Data("{}".utf8), token: token)
+  }
+
   /// The bearer plugin returns the session token in a response header;
   /// older instances put a `token` field in the body.
-  private static func sessionToken(
+  static func sessionToken(
     fromHeader response: HTTPURLResponse, body data: Data
   ) throws
     -> String
@@ -260,7 +297,7 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
   }
 
   @discardableResult
-  private func perform(
+  func perform(
     _ path: String,
     method: String = "GET",
     body: Data? = nil,
@@ -276,11 +313,27 @@ public final class CloudAccountClient: CloudAccountClienting, Sendable {
       request.httpBody = body
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
-    let (data, response) = try await urlSession.data(for: request)
+    let (data, response) = try await send(request)
     guard let httpResponse = response as? HTTPURLResponse else {
       throw CloudAccountClientError.invalidResponse
     }
     guard (200..<300).contains(httpResponse.statusCode) else {
+      struct ErrorBody: Decodable { let code: String?; let message: String? }
+      if path.hasPrefix("/api/auth/"),
+        let error = Self.emailAuthError(
+          code: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code, status: httpResponse.statusCode)
+      {
+        throw error
+      }
+      if (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code == "SESSION_EXPIRED" {
+        throw CloudAccountClientError.recentSignInRequired
+      }
+      if path.hasPrefix("/api/auth/apple/native/"),
+        let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.message,
+        !message.isEmpty, message.count <= 300
+      {
+        throw CloudAccountClientError.authenticationFailed(message)
+      }
       throw CloudAccountClientError.httpStatus(httpResponse.statusCode)
     }
     return (data, httpResponse)

@@ -1,4 +1,4 @@
-name: Release
+name: Publish Stable
 
 on:
   workflow_dispatch:
@@ -30,7 +30,6 @@ jobs:
       alpha_run_id: ${{ steps.release.outputs.alpha_run_id }}
       build: ${{ steps.release.outputs.build }}
       ghostty_stamp: ${{ steps.release.outputs.ghostty_stamp }}
-      first_bridge: ${{ steps.bridge.outputs.first }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -49,7 +48,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be numeric semver." >&2; exit 1; }
           source_sha="$(git rev-parse HEAD)"
           main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          [[ "$source_sha" == "$main_sha" ]] || { echo "Release must run at current main." >&2; exit 1; }
+          [[ "$source_sha" == "$main_sha" ]] || { echo "Publish Stable must run at current main." >&2; exit 1; }
           tag="v$version"
           existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
           if [[ -z "$existing_tag_sha" ]]; then
@@ -123,15 +122,6 @@ jobs:
           echo "alpha_run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "ghostty_stamp=$ghostty_stamp" >> "$GITHUB_OUTPUT"
-      - name: Detect one-time Sparkle bridge
-        id: bridge
-        run: |
-          if curl --fail --silent --show-error --head \
-            https://updates.codevisor.dev/migration/sparkle-bridge.json >/dev/null 2>&1; then
-            echo "first=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "first=true" >> "$GITHUB_OUTPUT"
-          fi
 
   build-browser-extension:
     needs: metadata
@@ -182,7 +172,6 @@ jobs:
       - name: Publish exact Alpha bytes as Stable
         env:
           GH_TOKEN: ${{ github.token }}
-          FIRST_BRIDGE: ${{ needs.metadata.outputs.first_bridge }}
         run: |
           if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
             current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
@@ -194,17 +183,14 @@ jobs:
           fi
           shopt -s nullglob
           artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)
-          latest_flag="--latest=false"
-          [[ "$FIRST_BRIDGE" == true ]] && latest_flag="--latest"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${artifacts[@]}" --clobber
-            edit_flags=()
-            [[ "$FIRST_BRIDGE" == true ]] && edit_flags+=(--latest)
             gh release edit "$TAG" --title "$TAG" \
-              --notes-file dist/release/RELEASE_NOTES.md "${edit_flags[@]}"
+              --notes-file dist/release/RELEASE_NOTES.md
           else
+            # Advance Latest only after feed publication and verification succeed.
             gh release create "$TAG" "${artifacts[@]}" \
-              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md "$latest_flag"
+              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
           fi
       - name: Publish Stable Sparkle and Linux feeds
         env:
@@ -215,15 +201,6 @@ jobs:
         run: |
           scripts/release/publish-update-artifacts.sh \
             stable "$VERSION" "$TAG" "$BUILD_NUMBER" dist/release dist/release/RELEASE_NOTES.md
-          if [[ "${{ needs.metadata.outputs.first_bridge }}" == true ]]; then
-            marker="$(mktemp)"
-            jq -n --arg version "$VERSION" --arg tag "$TAG" \
-              '{version: $version, tag: $tag, frozen: true}' > "$marker"
-            aws s3 cp "$marker" "s3://$R2_BUCKET/migration/sparkle-bridge.json" \
-              --endpoint-url "$R2_S3_API_ENDPOINT" \
-              --content-type application/json \
-              --cache-control "public, max-age=31536000, immutable"
-          fi
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -259,3 +236,13 @@ jobs:
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
             node scripts/release/verify-appcast.mjs "$feed" "$BUILD_NUMBER" stable
           done
+      - name: Mark verified Stable release as Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "$TAG" --latest=true
+          latest_tag="$(gh api "repos/$REPOSITORY/releases/latest" --jq .tag_name)"
+          [[ "$latest_tag" == "$TAG" ]] || {
+            echo "GitHub Latest reports $latest_tag, expected $TAG." >&2
+            exit 1
+          }

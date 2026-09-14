@@ -34,6 +34,7 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     return { runtimeState: "reusable" as const }
   }),
   close: adapterPromise("close", async () => {
+    session.titleGenerator?.close()
     // Deliberate closes skip the client's onClose handlers (no spurious
     // session.error), so the in-flight cleanup that handler performed
     // happens here instead.
@@ -45,6 +46,7 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
   }),
   prompt: (input) =>
     adapterPromise("prompt", async () => {
+      session.titleGenerator?.rememberPrompt(normalizePromptInput(input).text)
       const pending = new Promise<{ stopReason: string }>((resolve) => {
         session.pendingPrompt = { resolve }
       })

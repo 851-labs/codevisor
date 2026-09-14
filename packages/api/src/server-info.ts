@@ -84,6 +84,7 @@ export type TailnetPeersResponse = typeof TailnetPeersResponse.Type
 /// Lets a remote client show live progress and fail fast with the real
 /// error instead of timing out against a machine that silently gave up.
 export const UpdateApplyState = Schema.Struct({
+  progress: Schema.optional(Schema.Number),
   state: Schema.Literals(["draining", "installing", "failed"]),
   message: Schema.optional(Schema.String),
   targetVersion: Schema.optional(Schema.String),

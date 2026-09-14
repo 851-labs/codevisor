@@ -37,8 +37,7 @@ struct WorkspaceReadAcknowledgementTests {
       serverId: "local",
       projectId: UUID(),
       centerTabs: [selectedTab, backgroundTab],
-      selectedCenterTabId: selectedTab.id,
-      bottomGroup: PaneGroupState()
+      selectedCenterTabId: selectedTab.id
     )
 
     // Nil active leaf falls back to the selected tab's persisted one.
@@ -67,8 +66,7 @@ struct WorkspaceReadAcknowledgementTests {
       root: .leaf(
         PaneGroupState(
           panes: [terminalPane],
-          selectedPaneId: terminalPane.id,
-          isVisible: true
+          selectedPaneId: terminalPane.id
         ),
         id: leafId
       ),
@@ -80,8 +78,7 @@ struct WorkspaceReadAcknowledgementTests {
       serverId: "local",
       projectId: UUID(),
       centerTabs: [tab],
-      selectedCenterTabId: tab.id,
-      bottomGroup: PaneGroupState()
+      selectedCenterTabId: tab.id
     )
     #expect(workspace.focusedChatId(activeLeafId: leafId) == nil)
   }
@@ -96,8 +93,7 @@ struct WorkspaceReadAcknowledgementTests {
     )
     return PaneGroupState(
       panes: [pane],
-      selectedPaneId: pane.id,
-      isVisible: true
+      selectedPaneId: pane.id
     )
   }
 }

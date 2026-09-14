@@ -84,8 +84,7 @@ struct WorkspaceClosingTests {
   private func makeWorkspace(tabs: [WorkspaceTab], selected: UUID) -> Workspace {
     Workspace(
       name: "Sidebar tests", rootDirectory: "/sidebar-tests", serverId: "local",
-      projectId: UUID(), centerTabs: tabs, selectedCenterTabId: selected,
-      bottomGroup: PaneGroupState(), createdAt: Date(timeIntervalSince1970: 0)
+      projectId: UUID(), centerTabs: tabs, selectedCenterTabId: selected, createdAt: Date(timeIntervalSince1970: 0)
     )
   }
 }

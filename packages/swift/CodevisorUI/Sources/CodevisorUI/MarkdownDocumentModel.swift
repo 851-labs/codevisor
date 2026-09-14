@@ -14,6 +14,7 @@ public final class MarkdownDocumentModel {
   }
 
   public let path: String
+  let imageLoader: MarkdownImageLoader
   private(set) var content: Content?
   private(set) var failure: MarkdownDocumentFailure?
   private(set) var showsLoadingProgress = false
@@ -25,7 +26,26 @@ public final class MarkdownDocumentModel {
   @ObservationIgnored private var generation = 0
 
   public convenience init(path: String, sessionId: UUID, client: any CodevisorServerClienting) {
-    self.init(path: path, fetch: { try await client.fileData(sessionId: sessionId, path: path) })
+    let images = AttachmentImageStore(
+      namespace: "document:\(sessionId):\(path)",
+      fetch: { source in
+        switch source {
+        case let .attachment(fileId): return try await client.fileData(id: fileId)
+        case let .serverPath(target):
+          guard
+            let resolved = MarkdownDocumentPath.resolve(
+              target, relativeTo: (path as NSString).deletingLastPathComponent)
+          else { throw URLError(.badURL) }
+          return try await client.fileData(sessionId: sessionId, path: resolved)
+        }
+      },
+      version: { _ in nil }
+    )
+    // Retain the document's loader/store together, independently of view mounts.
+    let loader = MarkdownImageLoader(id: images.namespace) { source in
+      await images.markdownImageLoader.image(for: source)
+    }
+    self.init(path: path, fetch: { try await client.fileData(sessionId: sessionId, path: path) }, imageLoader: loader)
   }
 
   /// A document with no chat session to read files through — a pane group whose
@@ -39,11 +59,13 @@ public final class MarkdownDocumentModel {
   init(
     path: String,
     fetch: @escaping @Sendable () async throws -> Data,
+    imageLoader: MarkdownImageLoader = .remote,
     waitForProgress: @escaping @Sendable () async throws -> Void = {
       try await Task.sleep(for: .milliseconds(800))
     }
   ) {
     self.path = path
+    self.imageLoader = imageLoader
     self.fetch = fetch
     self.waitForProgress = waitForProgress
   }

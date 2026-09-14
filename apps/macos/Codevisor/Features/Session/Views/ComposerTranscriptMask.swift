@@ -1,55 +1,54 @@
 import SwiftUI
-import CodevisorCore
-import ACPKit
-import CodevisorUI
-import StreamMarkdown
-import TranscriptKit
 
 /// Fades transcript pixels beneath the floating composer's top edge, then
 /// removes them beneath the rest of the card and its bottom margin.
 struct ComposerTranscriptMask: View {
   private static let fadeHeight: CGFloat = 28
+  private var cardStyle = ComposerCardStyle()
 
   let composerSize: CGSize
   let bottomInset: CGFloat
 
+  init(composerSize: CGSize, bottomInset: CGFloat) {
+    self.composerSize = composerSize
+    self.bottomInset = bottomInset
+  }
+
   var body: some View {
-    Canvas { context, size in
-      var visibleArea = Path()
-      visibleArea.addRect(CGRect(origin: .zero, size: size))
+    GeometryReader { geometry in
+      Color.white
+        .overlay(alignment: .bottom) {
+          if composerSize.width > 0, composerSize.height > 0 {
+            let holeWidth = min(composerSize.width, geometry.size.width)
+            let holeHeight = composerSize.height + bottomInset
 
-      if composerSize.width > 0, composerSize.height > 0 {
-        let holeWidth = min(composerSize.width, size.width)
-        let holeHeight = min(composerSize.height + bottomInset, size.height)
-        let holeRect = CGRect(
-          x: (size.width - holeWidth) / 2,
-          y: size.height - holeHeight,
-          width: holeWidth,
-          height: holeHeight
-        )
-        let holeShape = UnevenRoundedRectangle(
-          topLeadingRadius: ComposerCard.cornerRadius,
-          topTrailingRadius: ComposerCard.cornerRadius
-        )
-        let holePath = holeShape.path(in: holeRect)
-        visibleArea.addPath(holePath)
+            ZStack(alignment: .bottom) {
+              // Render the shape in the composer's position so SwiftUI can
+              // resolve its concentric corners from the same container.
+              cardStyle.shape
+                .frame(height: composerSize.height)
+                .padding(.bottom, bottomInset)
 
-        let fadeEndY = holeRect.minY + min(Self.fadeHeight, holeRect.height)
-        context.fill(
-          holePath,
-          with: .linearGradient(
-            Gradient(colors: [.white, .clear]),
-            startPoint: CGPoint(x: holeRect.midX, y: holeRect.minY),
-            endPoint: CGPoint(x: holeRect.midX, y: fadeEndY)
-          )
-        )
-      }
-
-      context.fill(
-        visibleArea,
-        with: .color(.white),
-        style: FillStyle(eoFill: true)
-      )
+              // Continue the cutout through the bottom corners and margin.
+              Rectangle()
+                .frame(height: composerSize.height / 2 + bottomInset)
+            }
+            .foregroundStyle(.white)
+            .frame(width: holeWidth, height: holeHeight)
+            .mask {
+              LinearGradient(
+                stops: [
+                  .init(color: .clear, location: 0),
+                  .init(color: .white, location: min(Self.fadeHeight / holeHeight, 1)),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+              )
+            }
+            .blendMode(.destinationOut)
+          }
+        }
+        .compositingGroup()
     }
     .accessibilityHidden(true)
     .allowsHitTesting(false)

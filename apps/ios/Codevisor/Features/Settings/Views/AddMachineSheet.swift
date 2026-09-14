@@ -3,7 +3,6 @@ import CodevisorCore
 import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
 import os
 
 /// Manual pairing: address + token, validated against the server before the

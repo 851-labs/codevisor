@@ -5,8 +5,8 @@ import PhotosUI
 import SwiftUI
 
 /// The iOS composer, matching the macOS composer's structure: the input on its
-/// own line with the toolbar row beneath it (attach, model/thinking chip,
-/// config chips, then stop/send), all inside one Liquid Glass card.
+/// own line with the toolbar row beneath it (attach, model, parameters,
+/// then stop/send), all inside one Liquid Glass card.
 ///
 /// The editor keeps its text in local state and only writes it to the
 /// controller on send (and when leaving, so drafts persist). Binding straight
@@ -59,6 +59,8 @@ struct ComposerBar: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
 
+  var cardStyle = ComposerCardStyle()
+
   @State var text = ""
   /// The UIKit editor reports its UTF-16 selection so slash commands can
   /// replace the token at the caret without disturbing the rest of a draft.
@@ -72,6 +74,8 @@ struct ComposerBar: View {
   /// Measured height of the run-picker chip row (new-chat page only), so
   /// an expanded card stops below it instead of shoving it under the bar.
   @State private var runPickersHeight: CGFloat = 0
+  /// Attachments share the card's height budget with the editor.
+  @State private var attachmentStripHeight: CGFloat = 0
   /// Live drag offset. GestureState resets itself when the gesture ends or is
   /// cancelled, so the height can't be left stale by a race, and dragging
   /// doesn't write view state on every frame.
@@ -88,7 +92,6 @@ struct ComposerBar: View {
   @State var isPickingFiles = false
   @State var isCapturingPhoto = false
   @State var managedProject: Project?
-  @State var showsProjectPicker = false
   @State var showsMachineSettings = false
   /// Only the latest queued target selection starts preparing the draft.
   @State var runTargetSelectionRevision = 0
@@ -127,11 +130,12 @@ struct ComposerBar: View {
 
   private static let minEditorHeight: CGFloat = 30
   private static let collapsedMaxEditorHeight: CGFloat = 148
+  private static let contentSpacing: CGFloat = 10
   // The picker's invisible tap area already adds 6 points below its glass.
   private static let runPickerSpacing: CGFloat = 2
   /// Chrome around the editor inside the card: paddings, toolbar row, and
   /// the spacing between them.
-  private static let cardChromeHeight: CGFloat = 96
+  private static let cardChromeHeight: CGFloat = 98
 
   /// `measuredTextHeight` is the text view's own content height (insets
   /// included), reported by the UIKit editor — no mirror, no guessing.
@@ -145,9 +149,13 @@ struct ComposerBar: View {
     // the top rather than growing the stack past `maxHeight`.
     let pickersOverhead = showsRunPickers ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
+    // Without this reservation, expanding a draft with attachments makes
+    // the card outgrow its host, which reports ever-larger available heights.
+    let attachmentOverhead =
+      controller.composerAttachments.isEmpty ? 0 : attachmentStripHeight + Self.contentSpacing
     return max(
       Self.collapsedMaxEditorHeight,
-      maxHeight - Self.cardChromeHeight - pickersOverhead - noticeOverhead
+      maxHeight - Self.cardChromeHeight - pickersOverhead - noticeOverhead - attachmentOverhead
     )
   }
 
@@ -226,12 +234,6 @@ struct ComposerBar: View {
     // back from zero) still morphs the glass out of/into the composer.
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
-    .sheet(isPresented: $showsProjectPicker) {
-      RunTargetProjectPickerSheet(
-        currentProject: controller.project,
-        onSelected: { selectTargetProject($0) }
-      )
-    }
     .sheet(isPresented: $showsMachineSettings) {
       SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }
@@ -402,10 +404,9 @@ extension ComposerBar {
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 12)
+    .padding(ComposerCardStyle.contentPadding)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.composerCornerRadius,
+      shape: cardStyle.shape,
       id: .composer,
       in: glassNamespace
     )
@@ -413,7 +414,7 @@ extension ComposerBar {
     // browser selection stays mounted and reports progress on its
     // explicit Continue button.
     .overlay {
-      QuestionResolutionOverlay(controller: controller)
+      QuestionResolutionOverlay(controller: controller, shape: cardStyle.shape)
     }
     .disabled(controller.isResolvingQuestion)
     // The transcript fades where it slides underneath the card: this
@@ -456,9 +457,14 @@ extension ComposerBar {
   }
 
   private var composerContent: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Self.contentSpacing) {
       if !controller.composerAttachments.isEmpty {
         ComposerAttachmentStrip(controller: controller)
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: { height in
+            attachmentStripHeight = height
+          }
       }
 
       ZStack(alignment: .topLeading) {
@@ -551,9 +557,6 @@ extension ComposerBar {
       HStack(spacing: 10) {
         attachButton
         ModelConfigChip(controller: controller)
-        ForEach(controller.pickerOptions) { option in
-          ConfigChip(controller: controller, option: option)
-        }
         if controller.hasPlanMode, controller.isPlanModeOn {
           planModeChip
         }

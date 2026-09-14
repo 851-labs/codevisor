@@ -3,17 +3,19 @@ import CodevisorCore
 import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
 import os
 
 enum SettingsDestination: Hashable, Identifiable {
   case root
+  case section(String)
   case machines(focusedMachineID: String?)
 
   var id: String {
     switch self {
     case .root:
       "root"
+    case .section(let section):
+      section
     case let .machines(machineID):
       "machines:\(machineID ?? "all")"
     }
@@ -28,13 +30,30 @@ enum SettingsDestination: Hashable, Identifiable {
 struct SettingsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.openURL) private var openURL
   @State private var path: [SettingsDestination]
+  @State private var showsEmailFallback = false
+  var onSectionChange: ((String) -> Void)?
 
-  init(initialDestination: SettingsDestination = .root) {
+  private static let supportEmail = "hello@codevisor.dev"
+
+  private var appVersion: String {
+    let version = AppUpdateModel.bundleVersion()
+    guard let buildNumber = AppUpdateModel.bundleBuildNumber() else { return version }
+    return "\(version) (\(buildNumber))"
+  }
+
+  static let clientSections = [
+    "root", "account", "machines", "updates", "general", "appearance", "agents", "mcps", "skills",
+    "plugins",
+  ]
+
+  init(initialDestination: SettingsDestination = .root, onSectionChange: ((String) -> Void)? = nil) {
+    self.onSectionChange = onSectionChange
     switch initialDestination {
     case .root:
       _path = State(initialValue: [])
-    case .machines:
+    case .machines, .section:
       _path = State(initialValue: [initialDestination])
     }
   }
@@ -43,61 +62,75 @@ struct SettingsSheet: View {
     NavigationStack(path: $path) {
       List {
         Section {
-          NavigationLink {
-            CloudAccountScreen()
-          } label: {
-            Label("Account", systemImage: "person.crop.circle")
+          NavigationLink(value: SettingsDestination.section("account")) {
+            settingsLabel("Account", systemImage: "person.crop.circle")
           }
           NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
-            Label("Machines", systemImage: "desktopcomputer")
+            settingsLabel("Machines", systemImage: "desktopcomputer")
           }
         }
         Section {
-          NavigationLink {
-            UpdatesSettingsScreen()
-          } label: {
+          NavigationLink(value: SettingsDestination.section("updates")) {
             // badge(0) hides itself — the ambient signal simply
             // is not there when everything is current.
-            Label("Updates", systemImage: "arrow.down.circle")
+            settingsLabel("Updates", systemImage: "arrow.down.circle")
               .badge(environment.updateCenter.availableCount)
           }
-          NavigationLink {
-            GeneralSettingsScreen(dismissSettings: { dismiss() })
-          } label: {
-            Label("Privacy & Data", systemImage: "hand.raised")
+          NavigationLink(value: SettingsDestination.section("general")) {
+            settingsLabel("Privacy & Data", systemImage: "hand.raised")
           }
-          NavigationLink {
-            AppearanceSettingsScreen()
-          } label: {
-            Label("Appearance", systemImage: "paintpalette")
-          }
-          NavigationLink {
-            NotificationsSettingsScreen()
-          } label: {
-            Label("Notifications", systemImage: "bell")
+          NavigationLink(value: SettingsDestination.section("appearance")) {
+            settingsLabel("Appearance", systemImage: "paintpalette")
           }
         }
         Section {
-          NavigationLink {
-            HarnessesSettingsScreen()
-          } label: {
-            Label("Harnesses", systemImage: "brain")
+          NavigationLink(value: SettingsDestination.section("agents")) {
+            settingsLabel("Harnesses", systemImage: "brain")
           }
-          NavigationLink {
-            McpSettingsScreen()
-          } label: {
-            Label("MCPs", systemImage: "puzzlepiece.extension")
+          NavigationLink(value: SettingsDestination.section("mcps")) {
+            settingsLabel("MCPs", systemImage: "puzzlepiece.extension")
           }
-          NavigationLink {
-            SkillsSettingsScreen()
-          } label: {
-            Label("Skills", systemImage: "book.closed")
+          NavigationLink(value: SettingsDestination.section("skills")) {
+            settingsLabel("Skills", systemImage: "book.closed")
           }
-          NavigationLink {
-            PluginsSettingsScreen()
-          } label: {
-            Label("Plugins", systemImage: "puzzlepiece")
+          NavigationLink(value: SettingsDestination.section("plugins")) {
+            settingsLabel("Plugins", systemImage: "puzzlepiece")
           }
+        }
+        Section {
+          Button {
+            openURL(URL(string: "mailto:\(Self.supportEmail)?subject=Codevisor%20iOS%20Support")!) {
+              accepted in
+              showsEmailFallback = !accepted
+            }
+          } label: {
+            externalLinkLabel("Contact Support", systemImage: "envelope")
+          }
+          .accessibilityIdentifier("settings.contactSupport")
+          .accessibilityHint("Opens your email app")
+          .contextMenu {
+            Button("Copy Email Address", systemImage: "doc.on.doc") {
+              UIPasteboard.general.string = Self.supportEmail
+            }
+          }
+          Link(destination: URL(string: "https://www.codevisor.dev/terms")!) {
+            externalLinkLabel("Terms of Use", systemImage: "doc.text")
+          }
+          .accessibilityIdentifier("settings.termsOfUse")
+          .accessibilityHint("Opens in your browser")
+          Link(destination: AIDataSharingConsent.privacyPolicyURL) {
+            externalLinkLabel("Privacy Policy", systemImage: "hand.raised")
+          }
+          .accessibilityIdentifier("settings.privacyPolicy")
+          .accessibilityHint("Opens in your browser")
+        } footer: {
+          Text(appVersion)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .accessibilityIdentifier("settings.appVersion")
         }
       }
       .navigationTitle("Settings")
@@ -111,11 +144,67 @@ struct SettingsSheet: View {
         switch destination {
         case .root:
           EmptyView()
+        case .section(let section):
+          clientSection(section)
         case let .machines(focusedMachineID):
           MachinesSettingsScreen(focusedMachineID: focusedMachineID)
         }
       }
     }
+    .alert("Can’t Open Email", isPresented: $showsEmailFallback) {
+      Button("Copy Email Address") {
+        UIPasteboard.general.string = Self.supportEmail
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Email us at \(Self.supportEmail). Copy the address to use it in your preferred email app.")
+    }
+    .onChange(of: path, initial: true) { _, path in
+      let section: String
+      switch path.last {
+      case .section(let value): section = value
+      case .machines: section = "machines"
+      default: section = "root"
+      }
+      onSectionChange?(section)
+    }
     .presentationDragIndicator(.visible)
   }
+
+  private func settingsLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+    Label {
+      Text(title)
+        .foregroundStyle(.primary)
+    } icon: {
+      Image(systemName: systemImage)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  private func externalLinkLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+    HStack {
+      settingsLabel(title, systemImage: systemImage)
+      Spacer()
+      Image(systemName: "arrow.up.right")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
+    }
+  }
+
+  @ViewBuilder
+  private func clientSection(_ section: String) -> some View {
+    switch section {
+    case "account": CloudAccountScreen()
+    case "updates": UpdatesSettingsScreen()
+    case "general": GeneralSettingsScreen(dismissSettings: { dismiss() })
+    case "appearance": AppearanceSettingsScreen()
+    case "agents": HarnessesSettingsScreen()
+    case "mcps": McpSettingsScreen()
+    case "skills": SkillsSettingsScreen()
+    case "plugins": PluginsSettingsScreen()
+    default: EmptyView()
+    }
+  }
+
 }

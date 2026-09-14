@@ -1,4 +1,5 @@
 import Foundation
+import MarkdownCore
 
 public enum AssistantMarkdownSegment: Sendable, Equatable {
   case markdown(String)
@@ -296,6 +297,13 @@ public func assistantMarkdownSegments(
   var offset = markdown.startIndex
   let fullRange = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
   let codeRanges = markdownCodeRanges(markdown)
+  let parsed = markdown.contains("|") ? MarkdownParser().parseWithTableRanges(markdown) : nil
+  // Reference-style images have no inline destination for the regex to match.
+  // Count them as referenced as well so they never acquire a duplicate preview.
+  for target in parsed?.blocks.flatMap(\.imageSources) ?? [] where target.hasPrefix(attachmentOrigin) {
+    let id = String(target.dropFirst(attachmentOrigin.count).prefix(while: { $0 != "?" }))
+    if byID[id] != nil { referenced.insert(id) }
+  }
 
   for match in assistantLinkExpression.matches(in: markdown, range: fullRange) {
     guard !markdownCharacterIsEscaped(at: match.range.location, in: markdown as NSString),
@@ -318,6 +326,11 @@ public func assistantMarkdownSegments(
     } else if includeServerPaths, isImage, let path = markdownLocalFilePath(target) {
       file = PreviewFile(serverPath: path)
     } else {
+      continue
+    }
+    // Keep the full table in one Markdown segment. Rendering owns its images;
+    // extracting one here would orphan the remaining cells and pipe delimiters.
+    if parsed?.tableRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) == true {
       continue
     }
     if offset < matchRange.lowerBound {

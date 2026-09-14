@@ -74,6 +74,12 @@ final class TranscriptRowHost: UIView {
     didSet { updateVerticalClipMask() }
   }
 
+  override var frame: CGRect {
+    // UIKit can update bounds internally without invoking our bounds setter.
+    // The committed row frame and its mask must change in the same transaction.
+    didSet { updateVerticalClipMask() }
+  }
+
   private func updateVerticalClipMask() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)

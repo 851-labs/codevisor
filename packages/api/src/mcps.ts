@@ -3,7 +3,7 @@ import { Schema } from "effect"
 export const McpTransport = Schema.Literals(["http", "stdio"])
 export type McpTransport = typeof McpTransport.Type
 
-export const McpServerKind = Schema.Literals(["managed", "browserUse", "computerUse"])
+export const McpServerKind = Schema.Literals(["managed", "browserUse", "computerUse", "codevisor"])
 export type McpServerKind = typeof McpServerKind.Type
 
 export const McpAuthType = Schema.Literals(["none", "bearer", "oauth"])
@@ -245,3 +245,14 @@ export const SetNativeMcpEnabledRequest = Schema.Struct({
   enabled: Schema.Boolean
 })
 export type SetNativeMcpEnabledRequest = typeof SetNativeMcpEnabledRequest.Type
+
+export const SetMachineMcpEnabledRequest = Schema.Struct({ enabled: Schema.Boolean })
+export type SetMachineMcpEnabledRequest = typeof SetMachineMcpEnabledRequest.Type
+
+export const MachineMcpState = Schema.Struct({
+  machineId: Schema.String,
+  server: McpServer,
+  disabledHere: Schema.Boolean,
+  enabled: Schema.Boolean
+})
+export type MachineMcpState = typeof MachineMcpState.Type

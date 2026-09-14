@@ -1,0 +1,73 @@
+name: Publish Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpha_run_id:
+        description: Successful Build Alpha run ID whose iOS build will be submitted for TestFlight review.
+        required: true
+        type: string
+      check_only:
+        description: Check the selected build and App Store Connect setup without submitting.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ios-public-testflight-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.x"
+      - name: Verify the selected Alpha run
+        id: alpha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALPHA_RUN_ID: ${{ inputs.alpha_run_id }}
+        run: node scripts/release/prepare-ios-testflight.mjs "$ALPHA_RUN_ID" dist/ios-testflight
+      - name: Download the selected Alpha iOS artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALPHA_RUN_ID: ${{ inputs.alpha_run_id }}
+        run: gh run download "$ALPHA_RUN_ID" --name codevisor-ios --dir dist/ios-testflight
+      - name: Generate TestFlight release notes
+        env:
+          VERSION: ${{ steps.alpha.outputs.version }}
+          SOURCE_SHA: ${{ steps.alpha.outputs.source_sha }}
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --channel alpha --version "$VERSION" --commit "$SOURCE_SHA" \
+            --output dist/ios-testflight/RELEASE_NOTES.md
+      - name: Check or submit the uploaded build
+        env:
+          VERSION: ${{ steps.alpha.outputs.version }}
+          CODEVISOR_BUILD_NUMBER: ${{ steps.alpha.outputs.build }}
+          CODEVISOR_SOURCE_REVISION: ${{ steps.alpha.outputs.source_sha }}
+          CODEVISOR_TESTFLIGHT_EXTERNAL_GROUP: ${{ vars.IOS_TESTFLIGHT_EXTERNAL_GROUP || 'Beta' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          CHECK_ONLY: ${{ inputs.check_only }}
+        shell: bash
+        run: |
+          arguments=()
+          if [[ "$CHECK_ONLY" == true ]]; then
+            arguments+=(--check)
+          fi
+          node scripts/release/promote-ios-testflight.mjs "$VERSION" \
+            dist/ios-testflight dist/ios-testflight/RELEASE_NOTES.md "${arguments[@]}"

@@ -1,5 +1,13 @@
 import { relations, sql } from "drizzle-orm"
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  uniqueIndex,
+  primaryKey,
+  check
+} from "drizzle-orm/sqlite-core"
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -64,7 +72,10 @@ export const account = sqliteTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull()
   },
-  (table) => [index("account_userId_idx").on(table.userId)]
+  (table) => [
+    index("account_userId_idx").on(table.userId),
+    uniqueIndex("account_provider_identity_idx").on(table.providerId, table.accountId)
+  ]
 )
 
 export const verification = sqliteTable(
@@ -82,8 +93,15 @@ export const verification = sqliteTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull()
   },
-  (table) => [index("verification_identifier_idx").on(table.identifier)]
+  (table) => [uniqueIndex("verification_identifier_idx").on(table.identifier)]
 )
+
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull()
+})
 
 export const deviceCode = sqliteTable("device_code", {
   id: text("id").primaryKey(),
@@ -151,3 +169,73 @@ export const accountRelations = relations(account, ({ one }) => ({
     references: [user.id]
   })
 }))
+
+export const pluginReports = sqliteTable(
+  "plugin_reports",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    pluginId: text("plugin_id").notNull(),
+    pluginName: text("plugin_name").notNull(),
+    reason: text("reason").notNull(),
+    details: text("details").notNull().default(""),
+    createdAt: integer("created_at").notNull(),
+    notifiedAt: integer("notified_at")
+  },
+  (table) => [
+    index("plugin_reports_pending").on(table.notifiedAt, table.createdAt),
+    index("plugin_reports_user_time").on(table.userId, table.createdAt)
+  ]
+)
+
+export const pluginBlocks = sqliteTable(
+  "plugin_blocks",
+  {
+    targetKind: text("target_kind").notNull(),
+    target: text("target").notNull(),
+    reason: text("reason").notNull().default("This plugin is unavailable on iOS."),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`)
+  },
+  (table) => [
+    primaryKey({ columns: [table.targetKind, table.target] }),
+    check("plugin_blocks_kind", sql`${table.targetKind} IN ('plugin', 'publisher')`)
+  ]
+)
+
+export const pluginAgeRatings = sqliteTable(
+  "plugin_age_ratings",
+  {
+    pluginId: text("plugin_id").primaryKey(),
+    minimumAge: integer("minimum_age").notNull()
+  },
+  (table) => [check("plugin_age_values", sql`${table.minimumAge} IN (4, 9, 13, 16, 18)`)]
+)
+
+export const pluginPublisherBlocks = sqliteTable(
+  "plugin_publisher_blocks",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    publisher: text("publisher").notNull(),
+    createdAt: integer("created_at").notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.publisher] })]
+)
+
+export const pluginConsents = sqliteTable(
+  "plugin_consents",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    pluginId: text("plugin_id").notNull(),
+    consentKey: text("consent_key").notNull(),
+    noticeVersion: integer("notice_version").notNull(),
+    metadata: text("metadata").notNull().default("{}"),
+    createdAt: integer("created_at").notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.pluginId, table.consentKey] })]
+)

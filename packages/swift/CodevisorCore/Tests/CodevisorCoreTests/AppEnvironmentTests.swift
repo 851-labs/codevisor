@@ -42,6 +42,27 @@ struct AppEnvironmentTests {
     #expect(all.contains { !$0.isReady })
   }
 
+  @Test("Preview model selection survives a capabilities refresh")
+  func previewCapabilitiesRefresh() async {
+    let capability = ServerHarnessCapability(
+      harness: SessionController.previewHarnesses[0], modes: nil,
+      configOptions: [
+        SessionConfigOption(
+          id: "model", name: "Model", category: "model", currentValue: "demo",
+          options: [SessionConfigSelectOption(value: "demo", name: "Demo model")])
+      ])
+    let environment = AppEnvironment.preview(seedCapabilities: [capability])
+    let serverId = environment.defaultComposerServerId
+    let controller = SessionController(
+      project: .runTargetPlaceholder(serverId: serverId), configCache: environment.configCache,
+      serverClient: environment.machines.client(for: serverId))
+    await controller.prepare()
+    #expect(controller.modelOption?.currentName == "Demo model")
+    controller.invalidateHarnessCapabilities()
+    await controller.prepare()
+    #expect(controller.modelOption?.currentName == "Demo model")
+  }
+
   @Test("Harness catalog invalidation is isolated per machine")
   func harnessCatalogInvalidation() {
     let environment = AppEnvironment.preview()

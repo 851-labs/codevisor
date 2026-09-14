@@ -81,11 +81,14 @@ export async function launchIOSDevelopmentApp({
 }) {
   const { simulator, bundleIdentifier, appBundle } = target
   await run(repoRoot, environment, "xcrun", ["simctl", "install", simulator.udid, appBundle])
-  spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], {
-    env: environment,
-    stdio: "ignore"
-  })
-  await delay(500)
+  // A slow termination must finish before launch, or it can kill the new app.
+  // A nonzero exit is expected when this is the first launch on the device.
+  await waitForExit(
+    spawn("xcrun", ["simctl", "terminate", simulator.udid, bundleIdentifier], {
+      env: environment,
+      stdio: "ignore"
+    })
+  )
 
   // Match CodevisorAppVariant's development-launch contract so simulator icon
   // relaunches retain the shared remote and cloud coordinates.
@@ -261,8 +264,4 @@ function waitForExit(child) {
 
 function describeExit({ code, signal }) {
   return signal === null ? `code ${code ?? 1}` : `signal ${signal}`
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }

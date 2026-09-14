@@ -133,7 +133,7 @@ struct SessionScreen: View {
     let session = ChatSession(projectId: project.id, title: "Preview")
     return PaneGroupModel(
       sessionId: session.id,
-      placement: .center,
+
       repository: DefaultPaneGroupRepository(store: InMemoryStore()),
       makeContext: { descriptor in
         PaneContext(

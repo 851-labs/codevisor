@@ -10,12 +10,12 @@ struct WorkspaceBrowserLinksTests {
       id: id, kind: .browser, name: name, terminalKey: id.uuidString, browserURL: "https://example.com/")
   }
   private func tab(_ pane: PaneDescriptorState) -> WorkspaceTab {
-    WorkspaceTab(root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)))
+    WorkspaceTab(root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id)))
   }
   private func workspace(_ tabs: [WorkspaceTab]) -> Workspace {
     Workspace(
       name: "Links", rootDirectory: nil, serverId: "local", projectId: UUID(), centerTabs: tabs,
-      selectedCenterTabId: tabs.last?.id, bottomGroup: PaneGroupState(), createdAt: Date(timeIntervalSince1970: 0))
+      selectedCenterTabId: tabs.last?.id, createdAt: Date(timeIntervalSince1970: 0))
   }
 
   @Test(arguments: [BrowserLinkDestination.backgroundTab, .foregroundTab, .window])

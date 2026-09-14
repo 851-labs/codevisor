@@ -32,7 +32,7 @@ extension SessionContainerView {
       id: id, kind: .document, name: (path as NSString).lastPathComponent,
       terminalKey: id.uuidString, documentPath: path
     )
-    let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)
+    let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id)
     let tab = WorkspaceTab(root: .leaf(state))
     workspace.centerTabs.append(tab)
     environment.workspaces.save(workspace)

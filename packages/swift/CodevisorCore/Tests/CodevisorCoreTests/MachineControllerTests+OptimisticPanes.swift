@@ -92,10 +92,9 @@ extension MachineControllerTests {
         projectId: projectId,
         centerTree: .leaf(
           PaneGroupState(
-            panes: [placeholder], selectedPaneId: paneId, isVisible: true
+            panes: [placeholder], selectedPaneId: paneId
           )
         ),
-        bottomGroup: PaneGroupState(),
         isServerSynced: true
       )
     )
@@ -202,16 +201,15 @@ extension MachineControllerTests {
       centerTabs: [
         WorkspaceTab(
           root: .leaf(
-            PaneGroupState(panes: [first], selectedPaneId: firstId, isVisible: true)
+            PaneGroupState(panes: [first], selectedPaneId: firstId)
           )
         ),
         WorkspaceTab(
           root: .leaf(
-            PaneGroupState(panes: [second], selectedPaneId: secondId, isVisible: true)
+            PaneGroupState(panes: [second], selectedPaneId: secondId)
           )
         ),
       ],
-      bottomGroup: PaneGroupState(),
       isServerSynced: true
     )
     let sync = WorkspaceSyncModel(repository: repository, projectList: projectList)
@@ -296,9 +294,8 @@ extension MachineControllerTests {
         serverId: "local",
         projectId: projectId,
         centerTree: .leaf(
-          PaneGroupState(panes: [pane], selectedPaneId: paneId, isVisible: true)
+          PaneGroupState(panes: [pane], selectedPaneId: paneId)
         ),
-        bottomGroup: PaneGroupState(),
         isServerSynced: true
       )
     )

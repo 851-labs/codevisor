@@ -227,7 +227,7 @@ final class NewChatPromotionSurface {
       self.container.layoutIfNeeded()
     }
     let finish = { [weak self] in
-      backgrounds.forEach { $0.completePromotion() }
+      backgrounds.forEach { $0.finishPromotionAnimation() }
       self?.container.layer.cornerRadius = 0
       IOSNavigationDiagnostics.record("newChat.promotionSurface.expanded")
       self?.onExpanded?()
@@ -263,16 +263,5 @@ final class NewChatPromotionSurface {
     container.removeFromSuperview()
     sourceWindow = nil
     onExpanded = nil
-  }
-}
-
-extension UIView {
-  /// Depth-first search of the subview tree.
-  func firstDescendant(where predicate: (UIView) -> Bool) -> UIView? {
-    for subview in subviews {
-      if predicate(subview) { return subview }
-      if let match = subview.firstDescendant(where: predicate) { return match }
-    }
-    return nil
   }
 }

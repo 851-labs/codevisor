@@ -1,38 +1,10 @@
 import type { HarnessDefinition } from "./types.js"
 
-function executableHarness(
-  id: string,
-  name: string,
-  symbolName: string,
-  detectBinaries: ReadonlyArray<string>,
-  command: string,
-  args: ReadonlyArray<string> = [],
-  /// Lifecycle metadata (installMethods/update) and other optional
-  /// definition fields that don't fit the positional shorthand.
-  extra: Partial<
-    Pick<
-      HarnessDefinition,
-      | "installMethods"
-      | "update"
-      | "installHint"
-      | "fallbackPaths"
-      | "nativeMcp"
-      | "skills"
-      | "provider"
-    >
-  > = {}
-): HarnessDefinition {
-  return {
-    detectBinaries,
-    id,
-    launch: { args, command, kind: "executable" },
-    name,
-    provider: "acp",
-    symbolName,
-    ...extra
-  }
-}
+import { executableHarness } from "./harness-catalog-support.js"
+import { additionalAcpHarnesses } from "./harness-catalog-acp.js"
 
+// Install commands and ACP launch arguments audited against upstream on 2026-09-13.
+// Sources, registry revision, and exclusions: docs/harness-catalog-audit.md.
 export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   // Claude Code is driven directly through the Agent SDK against the user's
   // own `claude` binary — no npx adapter, no Node requirement.
@@ -101,9 +73,10 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
       "~/Applications/Codex.app/Contents/Resources/codex"
     ],
     id: "codex",
-    installHint: "npm install -g @openai/codex",
+    installHint: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
     installMethods: [
       { cask: true, formula: "codex", kind: "brew" },
+      { command: "curl -fsSL https://chatgpt.com/codex/install.sh | sh", kind: "curl" },
       { kind: "npm", packageName: "@openai/codex" }
     ],
     name: "Codex",
@@ -155,8 +128,11 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     detectBinaries: ["pi"],
     id: "pi",
     installHint: "npm install -g @earendil-works/pi-coding-agent",
-    installMethods: [{ kind: "npm", packageName: "@earendil-works/pi-coding-agent" }],
-    launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.31" },
+    installMethods: [
+      { command: "curl -fsSL https://pi.dev/install.sh | sh", kind: "curl" },
+      { kind: "npm", packageName: "@earendil-works/pi-coding-agent", ignoreScripts: true }
+    ],
+    launch: { args: [], kind: "npx", packageName: "pi-acp@0.0.33" },
     name: "Pi",
     provider: "acp",
     symbolName: "function",
@@ -202,7 +178,8 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   executableHarness("opencode", "OpenCode", "curlybraces", ["opencode"], "opencode", ["acp"], {
     installMethods: [
       { command: "curl -fsSL https://opencode.ai/install | bash", kind: "curl" },
-      { kind: "npm", packageName: "opencode-ai" }
+      { kind: "npm", packageName: "opencode-ai" },
+      { formula: "anomalyco/tap/opencode", kind: "brew" }
     ],
     // OpenCode has a real per-server `enabled` flag — the one JSON harness
     // where a native disable toggle is honest. XDG_CONFIG_HOME is honored by
@@ -229,7 +206,14 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     }
   }),
   executableHarness("goose", "goose", "bird", ["goose"], "goose", ["acp"], {
-    installMethods: [{ formula: "block-goose-cli", kind: "brew" }],
+    installMethods: [
+      { formula: "block-goose-cli", kind: "brew" },
+      {
+        command:
+          "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash",
+        kind: "curl"
+      }
+    ],
     // Read-only in v1: comment-preserving YAML edits aren't wired up yet, and
     // goose configs commonly carry hand-written comments.
     nativeMcp: {
@@ -269,11 +253,12 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     provider: "cursor",
     symbolName: "cursorarrow.rays"
   },
-  // Amp's harness runs through the separate `amp-acp` adapter binary, not the
-  // `amp` CLI itself — no verified install/update channel for the adapter yet.
-  // amp/auggie: nativeMcp omitted — their MCP config formats are unverified;
-  // adding them later is a pure catalog-data change.
+  // Amp's adapter requires the separately installed Amp CLI. Keep detection
+  // on the adapter; the complete npm install brings in both executables.
   executableHarness("amp", "Amp", "bolt", ["amp-acp"], "amp-acp", [], {
+    installHint: "npm install -g amp-acp @ampcode/cli",
+    requiredBinaries: ["amp"],
+    installMethods: [{ kind: "npm", packageName: "amp-acp", additionalPackages: ["@ampcode/cli"] }],
     skills: { globalDir: "~/.config/agents/skills" }
   }),
   executableHarness("auggie", "Auggie CLI", "a.square", ["auggie"], "auggie", ["--acp"], {
@@ -322,7 +307,11 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "copilot",
     ["--acp"],
     {
-      installMethods: [{ kind: "npm", packageName: "@github/copilot" }],
+      installMethods: [
+        { kind: "npm", packageName: "@github/copilot" },
+        { kind: "brew", formula: "copilot-cli" },
+        { kind: "curl", command: "curl -fsSL https://gh.io/copilot-install | bash" }
+      ],
       nativeMcp: {
         format: "json",
         key: "mcpServers",
@@ -334,6 +323,7 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
         // `copilot update` exists but is closed source; failures surface
         // gracefully as a failed lifecycle state.
         sources: [
+          { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
           {
             apply: { args: ["update"], kind: "selfUpdate" },
             check: { kind: "npm", packageName: "@github/copilot" },
@@ -351,11 +341,20 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "qwen",
     ["--acp", "--experimental-skills"],
     {
-      installMethods: [{ kind: "npm", packageName: "@qwen-code/qwen-code" }],
+      installMethods: [
+        { kind: "npm", packageName: "@qwen-code/qwen-code" },
+        { kind: "brew", formula: "qwen-code" },
+        {
+          kind: "curl",
+          command:
+            "curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash"
+        }
+      ],
       skills: { globalDir: "~/.qwen/skills" },
       update: {
-        // No self-update command — reinstall via npm.
+        // Reinstall through the owner of the detected binary.
         sources: [
+          { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
           {
             apply: { kind: "reinstall" },
             check: { kind: "npm", packageName: "@qwen-code/qwen-code" },
@@ -367,8 +366,23 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
   ),
   executableHarness("kimi", "Kimi CLI", "k.square", ["kimi"], "kimi", ["acp"], {
     installMethods: [
-      { command: "curl -LsSf https://code.kimi.com/install.sh | bash", kind: "curl" }
-    ]
+      {
+        command: "curl -LsSf https://code.kimi.com/install.sh | KIMI_CLI_FORCE_OLD=1 bash",
+        kind: "curl"
+      },
+      { kind: "brew", formula: "kimi-cli" },
+      { kind: "uv", packageName: "kimi-cli", python: "3.13" }
+    ],
+    update: {
+      sources: [
+        { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
+        {
+          when: "uv",
+          check: { kind: "pypi", packageName: "kimi-cli" },
+          apply: { kind: "reinstall" }
+        }
+      ]
+    }
   }),
   executableHarness(
     "factory-droid",
@@ -378,9 +392,14 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     "droid",
     ["exec", "--output-format", "acp-daemon"],
     {
-      installMethods: [{ command: "curl -fsSL https://app.factory.ai/cli | sh", kind: "curl" }],
+      installMethods: [
+        { command: "curl -fsSL https://app.factory.ai/cli | sh", kind: "curl" },
+        { kind: "brew", formula: "droid", cask: true },
+        { kind: "npm", packageName: "droid" }
+      ],
       update: {
         sources: [
+          { when: "brew", check: { kind: "brew" }, apply: { kind: "reinstall" } },
           // Droid's npm builds have auto-update disabled at build time
           // (deliberately pinned) — reinstall is the vendor-blessed path.
           {
@@ -402,11 +421,18 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
     installMethods: [{ command: "curl -fsSL https://cli.devin.ai/install.sh | bash", kind: "curl" }]
   }),
   executableHarness("grok-build", "Grok Build", "x.square", ["grok"], "grok", ["agent", "stdio"], {
-    installMethods: [{ command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" }],
+    installMethods: [
+      { command: "curl -fsSL https://x.ai/cli/install.sh | bash", kind: "curl" },
+      { kind: "npm", packageName: "@xai-official/grok" }
+    ],
     provider: "grok-build"
   }),
   executableHarness("kilo", "Kilo", "shippingbox", ["kilo"], "kilo", ["acp"], {
-    installMethods: [{ kind: "npm", packageName: "@kilocode/cli" }],
+    installMethods: [
+      { kind: "npm", packageName: "@kilocode/cli" },
+      { kind: "curl", command: "curl -fsSL https://kilo.ai/cli/install | bash" },
+      { kind: "brew", formula: "Kilo-Org/tap/kilo" }
+    ],
     update: {
       // `kilo upgrade` detects curl/npm/yarn/pnpm/bun/brew itself.
       sources: [
@@ -417,5 +443,6 @@ export const harnessCatalog: ReadonlyArray<HarnessDefinition> = [
         }
       ]
     }
-  })
+  }),
+  ...additionalAcpHarnesses
 ]

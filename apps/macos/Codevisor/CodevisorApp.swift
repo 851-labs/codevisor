@@ -225,15 +225,17 @@ private struct ClientDataStartupFailureView: View {
 /// The top-level split view: collapsible sidebar plus the active session or the
 /// new-chat page.
 struct RootView: View {
-  @Environment(AppEnvironment.self) private var environment
+  @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) private var theme
-  @Environment(\.controlActiveState) private var controlActiveState
-  @State private var selection: SidebarSelection?
-  @ClientPreference("sidebar.collapsed", default: false) private var sidebarCollapsed
-  @State private var store: SessionStore?
+  @Environment(\.controlActiveState) var controlActiveState
+  @Environment(\.openSettings) var openClientSettings
+  @State var clientWindow = ClientWindowControl()
+  @State var selection: SidebarSelection?
+  @ClientPreference("sidebar.collapsed", default: false) var sidebarCollapsed
+  @State var store: SessionStore?
   @State private var requiresInitialNewChatProjectResolution = false
   @State private var quickLook = QuickLookController()
-  @State private var panelLayout = AdaptivePanelLayout()
+  @State var panelLayout = AdaptivePanelLayout()
 
   var body: some View {
     Group {
@@ -254,6 +256,13 @@ struct RootView: View {
       }
     }
     .environment(panelLayout)
+    .modifier(
+      ClientControlModifier(
+        name: Host.current().localizedName ?? "Codevisor Mac", platform: "macos",
+        context: clientControlContext, navigate: navigateClient, control: controlClient
+      )
+    )
+    .background(ClientWindowReader(control: clientWindow).frame(width: 0, height: 0))
     .environment(\.quickLook, quickLook)
     .quickLookPreview(
       Binding(
@@ -609,44 +618,4 @@ struct NewChatTarget: Hashable {
   RootView()
     .environment(AppEnvironment.preview())
     .frame(width: 1100, height: 720)
-}
-
-/// codevisor://cloud-auth?ott=… deeplink handling: completes a cloud sign-in
-/// that came back through the default browser (the in-app
-/// ASWebAuthenticationSession path never leaves the app) and routes to the
-/// Account settings tab so the result is visible.
-private struct CloudAuthDeeplinkHandling: ViewModifier {
-  @Environment(AppEnvironment.self) private var environment
-  @Environment(\.openSettings) private var openSettings
-
-  func body(content: Content) -> some View {
-    content
-      // No confirmation gate: the one-time token proves a sign-in this
-      // user just performed, is single-use, and expires in minutes.
-      .onOpenURL { url in
-        guard let deeplink = CloudAuthDeeplink.parse(url) else { return }
-        Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
-        SettingsRouter.shared.showMachines()
-        openSettings()
-      }
-  }
-}
-
-/// codevisor://install-plugin deeplink handling: routes to the selected
-/// machine's Plugins settings page with the linked repo staged as a pending
-/// install. Never auto-installs — the plugins pane opens the standard
-/// discover→consent sheet, so the verbatim commands are always shown before
-/// anything runs.
-private struct PluginInstallDeeplinkHandling: ViewModifier {
-  @Environment(\.openSettings) private var openSettings
-
-  func body(content: Content) -> some View {
-    content
-      .onOpenURL { url in
-        guard let deeplink = PluginInstallDeeplink.parse(url) else { return }
-        SettingsRouter.shared.pendingPluginInstallSource = deeplink.repo
-        SettingsRouter.shared.showPlugins()
-        openSettings()
-      }
-  }
 }

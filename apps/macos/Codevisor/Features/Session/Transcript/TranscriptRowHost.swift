@@ -56,11 +56,12 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     }
     contentController.onLayoutCompleted = { [weak self] in
       guard let self, self.hasStableContentGeometry else { return }
-      if self.needsStableConstraintPass {
-        self.needsStableConstraintPass = false
+      if abs(self.contentHost.bounds.height - self.contentHeightConstraint.constant) > 0.5 {
         self.needsLayout = true
+        self.contentHost.needsLayout = true
         return
       }
+      self.needsStableConstraintPass = false
       let becameReady = !self.presentationReady
       self.presentationReady = true
       self.canSkipContentLayout = true
@@ -135,10 +136,9 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     } else {
       contentController.resetReportedHeight()
     }
-    // Install the exact-height contract before replacing the SwiftUI root
-    // so a synchronous hosting-controller layout cannot race through the
-    // expensive intrinsic-size path for an already measured settled row.
-    contentController.rootView = rootView
+    // Install the cached frame before replacing the root. Its placed-content
+    // observer verifies the height without a separate intrinsic-size probe.
+    contentController.installRootView(rootView)
     if knownHeight == nil {
       contentController.invalidateContentSize(forceReport: true)
     }
@@ -207,6 +207,12 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
     presentationReady = false
     canSkipContentLayout = false
     needsStableConstraintPass = true
+    // SwiftUI can report placed geometry after viewDidLayout, including
+    // an unchanged height that causes no constraint or ledger update.
+    // Explicitly schedule the native pass that confirms the content frame
+    // and wakes presentation consumers; no later model update is required.
+    needsLayout = true
+    contentHost.needsLayout = true
     onHeightChange?(height)
   }
 }

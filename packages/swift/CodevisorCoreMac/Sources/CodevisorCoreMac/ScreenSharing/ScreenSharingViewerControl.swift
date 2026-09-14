@@ -16,6 +16,7 @@ public final class ScreenSharingViewerControl {
   @ObservationIgnored private var deadline: TimeInterval = 0
   @ObservationIgnored private var lease: UUID?
   @ObservationIgnored private var sequence: UInt64 = 0
+  @ObservationIgnored private var requestPendingAvailability = false
 
   init(
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
@@ -24,12 +25,22 @@ public final class ScreenSharingViewerControl {
 
   public func request() {
     guard available, state == .viewing else { return }
+    requestPendingAvailability = false
     let id = UUID()
     requestID = id; deadline = now() + 3; state = .requesting; message = nil
     if !send(.request(id: id)) { release(reason: "The control channel is unavailable.") }
   }
 
+  /// Opening a connection requests control once, after video is ready. The
+  /// channel may open later; an explicit release cancels this pending request.
+  func requestWhenAvailable() {
+    guard state == .viewing else { return }
+    requestPendingAvailability = true
+    if available { request() }
+  }
+
   public func release(reason: String? = nil) {
+    requestPendingAvailability = false
     let oldLease = lease
     requestID = nil; lease = nil; state = .viewing; message = reason
     onActiveChanged?(false)
@@ -38,11 +49,13 @@ public final class ScreenSharingViewerControl {
 
   func setAvailable(_ available: Bool) {
     let previouslyAvailable = self.available
+    guard available != previouslyAvailable else { return }
     self.available = available
     if !available {
       release(reason: previouslyAvailable ? "Control is unavailable on this connection." : nil)
     } else if !previouslyAvailable {
       message = nil
+      if requestPendingAvailability { request() }
     }
   }
 

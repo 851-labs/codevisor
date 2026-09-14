@@ -60,9 +60,9 @@ export type HarnessAuth = typeof HarnessAuth.Type
 /// One way Codevisor can install a harness CLI on the server's machine,
 /// resolved against what's actually available there (brew/npm present, OS).
 export const HarnessInstallMethod = Schema.Struct({
-  /// Stable method id, currently the kind ("brew" | "npm" | "curl").
+  /// Stable method id, currently the kind ("brew" | "npm" | "curl" | "uv").
   id: Schema.String,
-  kind: Schema.Literals(["brew", "npm", "curl"]),
+  kind: Schema.Literals(["brew", "npm", "curl", "uv"]),
   /// Human label for pickers, e.g. "Homebrew".
   label: Schema.String,
   /// The exact shell command that would run — shown verbatim in the confirm

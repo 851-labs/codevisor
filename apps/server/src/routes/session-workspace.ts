@@ -54,7 +54,8 @@ const createServerSession = async (
     payload.workspaceId,
     project,
     payload.worktreeName ?? project.name,
-    cwd
+    cwd,
+    payload.sidebarOrderHead
   )
   // The session id is generated up front so the standing event sink can bind
   // to it before the agent session exists.
@@ -159,7 +160,8 @@ export const applySessionUpdate = async (
       payload.workspaceId,
       project,
       payload.worktreeName ?? before.worktreeName ?? project.name,
-      before.cwd
+      before.cwd,
+      payload.sidebarOrderHead
     )
   }
   let session = await run(services.db.updateSession(sessionId, payload))
@@ -216,7 +218,8 @@ const ensureSessionWorkspace = async (
   workspaceId: string | undefined,
   project: Project,
   workspaceName: string,
-  rootDirectory: string | undefined
+  rootDirectory: string | undefined,
+  sidebarOrderHead?: string
 ): Promise<void> => {
   if (workspaceId === undefined) return
   const canonical = workspaceId.toLowerCase()
@@ -234,6 +237,7 @@ const ensureSessionWorkspace = async (
   }
   const workspace = await run(
     services.db.upsertWorkspace({
+      ...(sidebarOrderHead === undefined ? {} : { sidebarOrderHead }),
       id: canonical,
       projectId: project.id,
       name: workspaceName,

@@ -41,21 +41,6 @@ public final class ScreenSharingPeer {
   /// Receiver-only diagnostic frame-delivery audit (nil = disabled); closed with the peer.
   public let frameDeliveryAudit: ScreenSharingFrameDeliveryAudit?
 
-  /// Pins the process trial selection and publishes what is ACTUALLY installed. Separated from `init` so the
-  /// ordering contract (trials pinned strictly before any RTC object exists) can be exercised over a controlled
-  /// factory boundary in tests without a fake initializer ever reaching a real factory.
-  @discardableResult
-  static func bootstrapTrials(
-    _ trials: ScreenSharingFieldTrials = .process, publishingInto metrics: ScreenSharingMetrics
-  ) -> ScreenSharingFieldTrials.Selection {
-    let installed = trials.ensureInstalled()
-    // Published from the ACTUAL installed map, never from a caller's request: absence stays absence.
-    if let playout = installed.playoutExperimentLabel { metrics.label("playoutExperiment", playout) }
-    // Provenance of the FIRST installer, which after semantic idempotence need not name this caller's profile.
-    metrics.label("fieldTrialProvenance", installed.name)
-    return installed
-  }
-
   public init(
     sending: Bool, configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
     connectivity: ScreenSharingICEConfiguration? = nil, useLowLatencyRateControl: Bool = true,
@@ -390,47 +375,7 @@ public final class ScreenSharingPeer {
   public func statistics() async -> [String: String] {
     await withCheckedContinuation { continuation in
       connection.statistics { report in
-        var result: [String: String] = [:]
-        let fields = [
-          "framesEncoded", "framesDecoded", "framesDropped", "framesPerSecond", "bytesSent", "bytesReceived",
-          "packetsLost", "jitter", "currentRoundTripTime", "availableOutgoingBitrate", "encoderImplementation",
-          "decoderImplementation", "mimeType", "protocol", "relayProtocol", "candidateType", "state", "nominated",
-          "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay", "jitterBufferEmittedCount",
-          "totalDecodeTime", "totalProcessingDelay", "totalEncodeTime", "totalPacketSendDelay", "packetsSent",
-          "packetsReceived", "framesReceived", "keyFramesDecoded", "nackCount", "pliCount", "firCount",
-          "freezeCount", "totalFreezesDuration", "retransmittedPacketsSent", "qualityLimitationReason",
-          "networkType", "retransmittedPacketsReceived", "retransmittedBytesReceived", "rtxSsrc",
-          "retransmittedBytesSent", "headerBytesSent", "headerBytesReceived", "fecPacketsReceived",
-        ]
-        let selectedIDs = Set(
-          report.statistics.values.filter { $0.type == "transport" }
-            .compactMap { $0.values["selectedCandidatePairId"] as? String })
-        let selectedPairs = report.statistics.values.filter {
-          guard $0.type == "candidate-pair" else { return false }
-          if !selectedIDs.isEmpty { return selectedIDs.contains($0.id) }
-          return ($0.values["nominated"] as? NSNumber)?.boolValue == true
-            && ($0.values["state"] as? String) == "succeeded"
-        }
-        let candidateIDs = Set(
-          selectedPairs.flatMap {
-            [$0.values["localCandidateId"] as? String, $0.values["remoteCandidateId"] as? String].compactMap { $0 }
-          })
-        for statistic in report.statistics.values {
-          if statistic.type == "candidate-pair", !selectedPairs.contains(where: { $0.id == statistic.id }) { continue }
-          if ["local-candidate", "remote-candidate"].contains(statistic.type), !candidateIDs.contains(statistic.id) {
-            continue
-          }
-          guard
-            ["outbound-rtp", "inbound-rtp", "candidate-pair", "codec", "local-candidate", "remote-candidate"]
-              .contains(statistic.type)
-          else { continue }
-          for field in fields {
-            if let value = statistic.values[field] {
-              result["\(statistic.type).\(statistic.id).\(field)"] = value.description
-            }
-          }
-        }
-        continuation.resume(returning: result)
+        continuation.resume(returning: ScreenSharingPeerStatistics.values(report))
       }
     }
   }
@@ -515,72 +460,5 @@ public final class ScreenSharingPeer {
     let continuation = gathering
     gathering = nil
     continuation?.resume(throwing: error)
-  }
-}
-
-private final class ScreenSharingPeerRenderer: NSObject, RTCVideoRenderer, @unchecked Sendable {
-  private let lock = NSLock()
-  private var active = true
-  let mailbox: ScreenSharingFrameMailbox
-  let metrics: ScreenSharingMetrics
-  private let audit: ScreenSharingFrameDeliveryAudit?
-  init(mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, audit: ScreenSharingFrameDeliveryAudit? = nil)
-  {
-    self.mailbox = mailbox; self.metrics = metrics; self.audit = audit
-  }
-  func setSize(_ size: CGSize) {}
-  func stop() {
-    lock.withLock {
-      active = false; mailbox.clear()
-    }
-  }
-  func renderFrame(_ frame: RTCVideoFrame?) {
-    lock.withLock {
-      guard active, let frame, let native = frame.buffer as? RTCCVPixelBuffer, frame.rotation == ._0 else { return }
-      metrics.increment("receivedFrames")
-      metrics.event("receiverCallbackInterval", atNanoseconds: ScreenSharingMetrics.nowNs)
-      // Audit identity crosses WebRTC's native-buffer bridge as the buffer attachment (nil when the audit is off).
-      var identity: ScreenSharingFrameDeliveryAudit.Identity?
-      if let audit {
-        identity = ScreenSharingFrameDeliveryAudit.readIdentity(from: native.pixelBuffer)
-        audit.record(.rtcRendererCallback, identity, rtpTimestamp: UInt32(bitPattern: frame.timeStamp))
-      }
-      let replaced = mailbox.put(
-        ScreenSharingVideoFrame(
-          pixelBuffer: native.pixelBuffer, timestampNs: frame.timeStampNs,
-          rtpTimestamp: UInt32(bitPattern: frame.timeStamp), receivedAtSeconds: CACurrentMediaTime(),
-          deliveryAuditIdentity: identity))
-      if let audit, let replaced {
-        audit.record(.mailboxReplaced, replaced.deliveryAuditIdentity, rtpTimestamp: replaced.rtpTimestamp)
-      }
-    }
-  }
-}
-
-/// Delegate callbacks originate on WebRTC threads. Hooks are installed before
-/// negotiation and only hop to the main actor; their storage is then immutable.
-private final class ScreenSharingPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unchecked Sendable {
-  var onGathered: (@Sendable () -> Void)?
-  var onConnection: (@Sendable (String) -> Void)?
-  var onVideoTrack: (@Sendable (RTCVideoTrack) -> Void)?
-  func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
-  func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-    if newState == .complete { onGathered?() }
-  }
-  func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-  func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) { dataChannel.close() }
-  func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
-    let names = ["new", "connecting", "connected", "disconnected", "failed", "closed"]
-    onConnection?(names[min(max(0, newState.rawValue), names.count - 1)])
-  }
-  func peerConnection(
-    _ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]
-  ) {
-    if let track = rtpReceiver.track as? RTCVideoTrack { onVideoTrack?(track) }
   }
 }

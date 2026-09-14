@@ -2,12 +2,19 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
 import { createAuth } from "./auth.js"
+import { hasAppleAuth } from "./apple-auth.js"
+import { hasEmailAuth } from "./email-auth.js"
+import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
-import { devLoginPage, devicePage, handoffPage, homePage, loginPage } from "./pages/pages.js"
+import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
+import { loginPage } from "./pages/login.js"
+import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
+import { pluginModeration } from "./plugin-moderation.js"
+import { notifyPluginReports } from "./plugin-reports.js"
 
 // Note: the Worker entry module may only export handlers/DO classes — plain
 // value re-exports (strings, constants) crash workerd at startup.
@@ -41,6 +48,7 @@ const connectionUserId = async (env: CloudEnv, request: Request): Promise<string
 }
 
 const app = new Hono<HonoEnv>()
+app.route("/", pluginModeration)
 
 // -- Discovery & liveness ----------------------------------------------------
 
@@ -51,7 +59,9 @@ app.get("/.well-known/codevisor", (c) =>
     version: CLOUD_VERSION,
     protocols: [CLOUD_PROTOCOL_VERSION],
     authProviders: [
-      ...(c.env.GITHUB_CLIENT_ID !== undefined ? ["github"] : []),
+      ...(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET ? ["github"] : []),
+      ...(hasAppleAuth(c.env) ? ["apple"] : []),
+      ...(hasEmailAuth(c.env) ? ["email"] : []),
       ...(isDevAuthEnabled(c.env) ? ["dev"] : [])
     ]
   })
@@ -68,7 +78,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.ra
 /// cookie (browser path, so /device approval works in dev).
 app.post("/dev/login", async (c) => {
   if (!isDevAuthEnabled(c.env)) return c.notFound()
-  const auth = createAuth(c.env)
+  const auth = createAuth({ ...c.env, RESEND_API_KEY: "" })
   await auth.api.signUpEmail({ body: { ...DEV_USER } }).catch(() => undefined) // already exists
   const { headers, response } = await auth.api.signInEmail({
     body: { email: DEV_USER.email, password: DEV_USER.password },
@@ -80,34 +90,50 @@ app.post("/dev/login", async (c) => {
   return out
 })
 
-/// One-click GitHub sign-in for native apps: starts the social flow
-/// server-side and 302s straight to GitHub's consent page — no interstitial.
+/// One-click sign-in for native apps: starts the social flow
+/// server-side and redirects to the provider's consent page.
 /// Must be a server redirect (not an app-side POST) because Better Auth's
 /// PKCE/state cookies have to land in the browser session that will hit the
-/// OAuth callback. Falls back to the /login page when GitHub isn't configured.
-app.get("/login/github", async (c) => {
+/// OAuth callback. Falls back to /login when the provider isn't configured.
+app.get("/login/:provider", async (c) => {
+  const provider = c.req.param("provider")
+  if (provider !== "github" && provider !== "apple") return c.notFound()
   const redirect = c.req.query("redirect") ?? "/auth/handoff"
   // Relative paths only: this must never become an open redirect.
-  if (!redirect.startsWith("/") || redirect.startsWith("//")) {
+  if (!validAuthRedirect(redirect)) {
     return c.json({ error: "invalid redirect" }, 400)
   }
-  if (c.env.GITHUB_CLIENT_ID === undefined) {
-    return c.redirect(`/login?redirect=${encodeURIComponent(redirect)}`)
+  const scheme = nativeScheme(
+    new URL(redirect, c.env.PUBLIC_BASE_URL).searchParams.get("app") ?? undefined
+  )
+  const errorCallbackURL = scheme
+    ? `/auth/handoff?app=${scheme}&error=sign_in_failed`
+    : `${loginURL(redirect)}&error=sign_in_failed`
+  if (
+    provider === "apple"
+      ? !hasAppleAuth(c.env)
+      : !c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET
+  ) {
+    return c.redirect(scheme ? errorCallbackURL : `/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const auth = createAuth(c.env)
   const { headers, response } = await auth.api.signInSocial({
-    body: { provider: "github", callbackURL: redirect },
+    body: { provider, callbackURL: redirect, errorCallbackURL },
     headers: c.req.raw.headers,
     returnHeaders: true
   })
   if (response.url === undefined) {
-    return c.redirect(`/login?redirect=${encodeURIComponent(redirect)}`)
+    return c.redirect(scheme ? errorCallbackURL : `/login?redirect=${encodeURIComponent(redirect)}`)
   }
   const out = c.redirect(response.url)
   // Carry Better Auth's state/PKCE cookies into the browser session.
   for (const cookie of headers.getSetCookie()) out.headers.append("set-cookie", cookie)
   return out
 })
+
+app.get("/auth/connect/:provider", connectAccount)
+app.get("/account", nativeHandoff)
+app.get("/auth/error", nativeHandoff)
 
 // -- Machine registry (session-authenticated REST for apps) -------------------
 
@@ -244,7 +270,7 @@ app.get("/", (c) => homePage(c))
 app.get("/login", (c) => loginPage(c))
 app.get("/dev-login", (c) => devLoginPage(c))
 app.get("/device", async (c) => devicePage(c))
-app.get("/auth/handoff", async (c) => handoffPage(c))
+app.get("/auth/handoff", nativeHandoff)
 
 // -- Worker entry ---------------------------------------------------------------
 
@@ -254,6 +280,7 @@ const worker = {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: CloudEnv, ctx: ExecutionContext): void => {
     ctx.waitUntil(refreshPluginIndex(env))
+    ctx.waitUntil(notifyPluginReports(env))
   }
 } satisfies ExportedHandler<CloudEnv>
 

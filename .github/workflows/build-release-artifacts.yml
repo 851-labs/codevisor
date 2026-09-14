@@ -1,4 +1,4 @@
-name: Build release artifacts
+name: Build Artifacts (Reusable)
 
 on:
   workflow_call:
@@ -159,6 +159,8 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
       - name: Select full Xcode
         shell: bash
         run: |
@@ -190,7 +192,39 @@ jobs:
       - name: Build Intel macOS server archive
         run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
       - name: Run Swift package tests on Intel
+        id: swift-tests
         run: bun run swift:test
+      - name: Collect recent Swift test crash reports
+        if: failure() && steps.swift-tests.conclusion == 'failure'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source = Path.home() / "Library/Logs/DiagnosticReports"
+          destination = Path(os.environ["RUNNER_TEMP"]) / "intel-swift-diagnostics"
+          destination.mkdir(parents=True, exist_ok=True)
+          reports = sorted(
+              [*source.glob("swiftpm*.ips"), *source.glob("CodevisorKitPackageTests*.ips")],
+              key=lambda path: path.stat().st_mtime,
+              reverse=True,
+          )[:3]
+          for report in reports:
+              shutil.copy2(report, destination / report.name)
+          summary = "\n".join(report.name for report in reports) or "No Swift test crash reports found."
+          (destination / "reports.txt").write_text(summary + "\n")
+          print(summary)
+          PY
+      - name: Upload Swift test diagnostics
+        if: failure() && steps.swift-tests.conclusion == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: intel-swift-diagnostics
+          path: ${{ runner.temp }}/intel-swift-diagnostics
+          if-no-files-found: error
+          retention-days: 3
       - name: Run native transcript regression tests on Intel
         run: bun run swift:test:macos-transcript
       - name: Upload Intel macOS server archive
@@ -220,6 +254,8 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
       - name: Select full Xcode
         shell: bash
         run: |

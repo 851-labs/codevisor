@@ -56,6 +56,7 @@ const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
 const review = (manifest: PluginManifest, platform: string): PluginUpdateReview => ({
+  ...(manifest.ageRating === undefined ? {} : { ageRating: manifest.ageRating }),
   panes: manifest.panes,
   runCommand: displayPluginCommand(pluginRunCommand(manifest)),
   setupCommands: pluginSetupCommands(manifest, platform).map(displayPluginCommand),

@@ -4,7 +4,6 @@ import SwiftUI
 /// the composer. Keeping the material and geometry here prevents pinned
 /// controls from drifting back to opaque, independently styled cards.
 public enum ComposerGlassStyle {
-  public static let composerCornerRadius: CGFloat = 16
   public static let accessoryCornerRadius: CGFloat = 12
   public static let clusterSpacing: CGFloat = 8
 }
@@ -29,9 +28,23 @@ extension View {
     in namespace: Namespace.ID? = nil,
     transition: GlassEffectTransition = .matchedGeometry
   ) -> some View {
+    composerGlassSurface(
+      shape: RoundedRectangle(cornerRadius: cornerRadius),
+      id: id,
+      in: namespace,
+      transition: transition
+    )
+  }
+
+  public func composerGlassSurface<S: Shape>(
+    shape: S,
+    id: ComposerGlassElement? = nil,
+    in namespace: Namespace.ID? = nil,
+    transition: GlassEffectTransition = .matchedGeometry
+  ) -> some View {
     modifier(
       ComposerGlassSurfaceModifier(
-        cornerRadius: cornerRadius,
+        shape: shape,
         id: id,
         namespace: namespace,
         transition: transition
@@ -40,8 +53,8 @@ extension View {
   }
 }
 
-private struct ComposerGlassSurfaceModifier: ViewModifier {
-  let cornerRadius: CGFloat
+private struct ComposerGlassSurfaceModifier<S: Shape>: ViewModifier {
+  let shape: S
   let id: ComposerGlassElement?
   let namespace: Namespace.ID?
   let transition: GlassEffectTransition
@@ -52,7 +65,7 @@ private struct ComposerGlassSurfaceModifier: ViewModifier {
       content
         .glassEffect(
           .regular,
-          in: RoundedRectangle(cornerRadius: cornerRadius)
+          in: shape
         )
         // The project defaults declarations to MainActor. Passing the
         // raw String gives this nonisolated API a standard-library
@@ -63,7 +76,7 @@ private struct ComposerGlassSurfaceModifier: ViewModifier {
       content
         .glassEffect(
           .regular,
-          in: RoundedRectangle(cornerRadius: cornerRadius)
+          in: shape
         )
     }
   }

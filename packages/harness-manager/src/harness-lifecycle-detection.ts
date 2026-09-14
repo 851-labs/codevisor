@@ -8,6 +8,7 @@ import {
   checkBrewLatest,
   checkGithubLatest,
   checkNpmLatest,
+  checkPypiLatest,
   detectBrewPackage,
   detectInstallOrigin,
   isNewerVersion,
@@ -65,6 +66,8 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     switch (source.check.kind) {
       case "npm":
         return checkNpmLatest(source.check.packageName, source.check.distTag ?? "latest", fetchImpl)
+      case "pypi":
+        return checkPypiLatest(source.check.packageName, fetchImpl)
       case "brew": {
         const formula =
           source.check.formula ??

@@ -29,6 +29,8 @@ export const pluginEntryKey = (id: string): string => `${ENTRY_KEY_PREFIX}${id}`
 /// a real owner. This is the Phase 1 shape; Phase 2 mirrors it into
 /// packages/api as the server-passthrough wire type.
 export interface PluginIndexEntry {
+  url?: string
+  ageRating?: number
   id: string
   name: string
   version: string
@@ -213,6 +215,8 @@ const toEntry = (
   commit,
   id: manifest.id,
   name: manifest.name,
+  url: `https://www.codevisor.dev/plugins/${manifest.id}`,
+  ...(manifest.ageRating === undefined ? {} : { ageRating: manifest.ageRating }),
   version: manifest.version,
   protocolVersion: manifest.protocolVersion,
   ...(manifest.description !== undefined ? { description: manifest.description } : {}),

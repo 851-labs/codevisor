@@ -66,10 +66,6 @@ final class SessionStore {
   /// Per-session todo-panel expansion deliberately outlives controller
   /// eviction so pinned checklists retain their disclosure state.
   @ObservationIgnored var todoExpansionStates: [SessionKey: Bool] = [:]
-  /// Bottom-panel models by WORKSPACE (the panel belongs to the
-  /// workspace, and its chats share one detail container — a per-session
-  /// key would mint duplicate models over the same persisted group).
-  @ObservationIgnored var bottomGroups: [UUID: PaneGroupModel] = [:]
   /// Center-tree leaf groups, keyed by (workspace, leaf group) — the ONE
   /// model per leaf that both the top bar and the split view share.
   struct CenterLeafKey: Hashable {
@@ -99,7 +95,7 @@ final class SessionStore {
   /// of the active split leaf. Combined with window key state below, this
   /// is what the app-wide attention coordinator treats as "focused" — the
   /// chat it marks read.
-  var focusedChatKey: SessionKey?
+  var attentionFocus = SessionAttentionWorkspaceFocus()
   /// Whether this store's window is key. A selected chat behind Settings or
   /// another Codevisor window is not the focused chat.
   var isWindowFocused = false
@@ -108,7 +104,13 @@ final class SessionStore {
   /// observable; this tells the sidebar to re-read its tab rows.
   var workspaceLayoutRevision = 0
   /// Window-local navigation ownership, updated before panes mount or unmount.
-  @ObservationIgnored var navigationWorkspaceId: UUID?
+  var navigationWorkspaceId: UUID? {
+    get { attentionFocus.workspaceId }
+    set {
+      attentionFocus.selectWorkspace(newValue)
+      publishFocus()
+    }
+  }
   @ObservationIgnored var navigationRevision = 0
   /// A structural sidebar command consumed by the owning container.
   var centerTabRequest: CenterTabRequest?

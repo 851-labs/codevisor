@@ -420,7 +420,7 @@ private nonisolated func previewAspectRatio(for size: CGSize) -> CGFloat? {
 #elseif canImport(UIKit)
   /// Decodes images directly, renders the first page of a PDF, and asks
   /// AVFoundation for an early frame of a video.
-  private nonisolated func attachmentPreviewImage(
+  public nonisolated func attachmentPreviewImage(
     data: Data,
     name: String,
     mimeType: String,

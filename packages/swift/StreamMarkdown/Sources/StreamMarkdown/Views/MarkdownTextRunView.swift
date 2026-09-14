@@ -225,9 +225,13 @@
       baseFont: MarkdownNativeFont,
       theme: MarkdownTheme,
       foreground: MarkdownNativeColor,
-      chipBackground: MarkdownNativeChipBackground
+      chipBackground: MarkdownNativeChipBackground,
+      images: [String: MarkdownImageResource]? = nil
     ) -> NSAttributedString {
-      let parsed = InlineMarkdown.attributedString(from: markdown, theme: theme)
+      let parsed =
+        images == nil
+        ? InlineMarkdown.attributedString(from: markdown, theme: theme)
+        : InlineMarkdown.styleInlineCode(in: InlineMarkdown.tableAttributedString(from: markdown), theme: theme)
       let output = NSMutableAttributedString()
       let codeFont = MarkdownNativeTypography.codeFont
 
@@ -260,7 +264,12 @@
         if isCode {
           attributes[.streamMarkdownRoundedBackground] = chipBackground
         }
-        output.append(NSAttributedString(string: substring, attributes: attributes))
+        if let reference = run[MarkdownImageReferenceAttribute.self] {
+          output.append(
+            MarkdownImageAttachment.content(reference, resource: images?[reference.source], attributes: attributes))
+        } else {
+          output.append(NSAttributedString(string: substring, attributes: attributes))
+        }
       }
       return output
     }

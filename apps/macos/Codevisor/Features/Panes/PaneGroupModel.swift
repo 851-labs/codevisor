@@ -1,8 +1,9 @@
 //  The live pane group for one chat session: owns the persisted PaneGroupState
-//  (tabs/selection/visibility/height), lazily instantiates live Pane objects
+//  (panes and selection), lazily instantiates live Pane objects
 //  from their descriptors, fires the pane lifecycle hooks, and persists every
 //  state mutation.
 
+import Autocomplete
 import Foundation
 import Observation
 import SwiftUI
@@ -20,8 +21,6 @@ final class PaneGroupModel: Identifiable {
   /// non-nil exactly once, through `adoptSession`, when a real chat appears in
   /// this leaf.
   private(set) var sessionId: UUID?
-  /// A center leaf or the persisted group of background-task terminals.
-  let placement: PaneGroupPlacement
   var state: PaneGroupState
   /// Builds a chat pane's content from its LIVE descriptor (drafts render
   /// the new-chat composer; established chats their session's ChatScreen).
@@ -38,8 +37,7 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored let pluginIconClient: (any CodevisorServerClienting)?
   @ObservationIgnored let pluginIconCacheNamespace: String
   /// Set by the workspace container: moves keyboard focus to the composer (used
-  /// when closing the last tab collapses the group, and as the chat pane's
-  /// focus target).
+  /// as the chat pane's focus target).
   @ObservationIgnored var requestComposerFocus: (() -> Void)?
   /// Set by the workspace container: clears focus from another pane without
   /// inventing an input target for content that has none (currently the
@@ -82,7 +80,7 @@ final class PaneGroupModel: Identifiable {
   /// Whether this group may dissolve out of the workspace (i.e. other
   /// groups exist). Gates closing a LONE New Tab placeholder — its close
   /// IS a dissolve, and in the workspace's last group it would just
-  /// respawn. Nil (previews, bottom panel) means no.
+  /// respawn. Nil (previews) means no.
   @ObservationIgnored var canDissolve: (() -> Bool)?
   /// Fired whenever the user acts IN this group (tab click, pane focus,
   /// new tab, adopted drop) — the container tracks the workspace's ACTIVE
@@ -93,38 +91,30 @@ final class PaneGroupModel: Identifiable {
   @ObservationIgnored let deferredFocus = DeferredPaneFocus()
   @ObservationIgnored var presentedPaneIDs: Set<UUID> = []
   /// Center leaves hand workspace-level tab/split commands to their
-  /// container. Returning true means the command was consumed. This is
-  /// ignored for bottom-panel models so their shortcuts always remain local.
+  /// container. Returning true means the command was consumed.
   @ObservationIgnored var workspaceCommandHandler: ((PaneGroupCommand) -> Bool)?
 
   init(
     sessionId: UUID?,
-    placement: PaneGroupPlacement = .bottom,
     repository: any PaneGroupRepository,
     pluginIconClient: (any CodevisorServerClienting)? = nil,
     pluginIconCacheNamespace: String = "preview",
     makeContext: @escaping (PaneDescriptorState) -> PaneContext
   ) {
     self.sessionId = sessionId
-    self.placement = placement
     self.repository = repository
     self.pluginIconClient = pluginIconClient
     self.pluginIconCacheNamespace = pluginIconCacheNamespace
     self.makeContext = makeContext
-    if let stored = repository.load(sessionId: sessionId, placement: placement) {
+    if let stored = repository.load(sessionId: sessionId) {
       self.state = stored
     } else {
-      // Persist immediately so both placements have repository state.
-      // Background-task groups start empty; synchronization supplies terminals.
-      let initial: PaneGroupState =
-        switch placement {
-        case .bottom: PaneGroupState()
-        case .center:
-          sessionId.map { PaneGroupState.centerInitial(sessionId: $0) }
-            ?? .centerInitialWithoutChat()
-        }
+      // Persist the initial pane identity before mounting its content.
+      let initial =
+        sessionId.map { PaneGroupState.centerInitial(sessionId: $0) }
+        ?? .centerInitialWithoutChat()
       self.state = initial
-      repository.save(initial, sessionId: sessionId, placement: placement)
+      repository.save(initial, sessionId: sessionId)
     }
     ChromiumAutomationBridge.shared.addGroup(self)
   }
@@ -149,7 +139,7 @@ final class PaneGroupModel: Identifiable {
   }
 
   func canHostBrowserAutomation(sessionId requested: String) -> Bool {
-    guard placement == .center, createBrowserTab != nil, let descriptor = state.panes.first,
+    guard createBrowserTab != nil, let descriptor = state.panes.first,
       makeContext(descriptor).machine.isLocal
     else { return false }
     // Both sides compare ACTUAL session identities: a group without one simply
@@ -213,7 +203,17 @@ final class PaneGroupModel: Identifiable {
   }
 
   func wireScreenSharing(_ sharing: ScreenSharingPane) {
-    sharing.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
+    sharing.onFocus = { [weak self, weak sharing] in
+      guard let self, let sharing, self.canFocusSelectedPane, self.state.selectedPaneId == sharing.id else { return }
+      if sharing.showsDisplayPicker {
+        sharing.displaySearchFocus.focus { [weak self, weak sharing] in
+          guard let self, let sharing else { return false }
+          return self.canFocusSelectedPane && self.state.selectedPaneId == sharing.id && sharing.showsDisplayPicker
+        }
+      } else {
+        self.requestBackgroundFocus?()
+      }
+    }
     sharing.onPreferencesChanged = { [weak self, weak sharing] preferences in
       guard let self, let sharing,
         let index = self.state.panes.firstIndex(where: { $0.id == sharing.id }),
@@ -287,22 +287,13 @@ final class PaneGroupModel: Identifiable {
   }
 
   /// Keyboard shortcuts forwarded from a focused pane. Center leaves first
-  /// offer them to the workspace container; bottom-panel groups retain
-  /// local tab selection and terminal creation behavior.
+  /// offer them to the workspace container before handling them locally.
   func handleCommand(_ command: PaneGroupCommand) {
-    if placement == .center, workspaceCommandHandler?(command) == true { return }
+    if workspaceCommandHandler?(command) == true { return }
     switch command {
     case .newTab:
-      // ⌘T opens the "New tab" page (Chrome semantics — pick what the
-      // tab becomes there); the bottom panel keeps spawning terminals
-      // directly, since terminals are all it hosts.
-      if placement == .bottom {
-        addTerminalPane()
-        requestSelectedPaneFocus()
-      } else {
-        addNewTabPane()
-        requestSelectedPaneFocus()
-      }
+      addNewTabPane()
+      requestSelectedPaneFocus()
     case .nextTab, .previousTab:
       let panes = state.panes
       guard panes.count > 1,
@@ -325,7 +316,7 @@ final class PaneGroupModel: Identifiable {
       let wasLastTab = state.panes.count == 1
       closePane(id: selected.id)
       if wasLastTab {
-        // The group collapsed with the tab; hand focus back.
+        // The leaf is now empty; hand focus back.
         requestComposerFocus?()
       } else {
         requestSelectedPaneFocus()
@@ -368,7 +359,7 @@ final class PaneGroupModel: Identifiable {
       }
     }
 
-    let previousSelectedId = state.isVisible ? state.selectedPaneId : nil
+    let previousSelectedId = state.selectedPaneId
     state = reconciled
     if let previousSelectedId,
       previousSelectedId != state.selectedPaneId,
@@ -376,9 +367,8 @@ final class PaneGroupModel: Identifiable {
     {
       previous.visibilityChanged(false)
     }
-    if state.isVisible,
-      previousSelectedId != state.selectedPaneId
-        || state.selectedPaneId.map({ invalidatedLiveIds.contains($0) }) == true
+    if previousSelectedId != state.selectedPaneId
+      || state.selectedPaneId.map({ invalidatedLiveIds.contains($0) }) == true
     {
       selectedPane?.visibilityChanged(true)
     }
@@ -386,7 +376,7 @@ final class PaneGroupModel: Identifiable {
   }
 
   var canFocusSelectedPane: Bool {
-    state.isVisible && (isFocusCurrent?() ?? true)
+    isFocusCurrent?() ?? true
   }
 
   /// Focus is an effect of navigation, never another selection command.
@@ -428,7 +418,7 @@ final class PaneGroupModel: Identifiable {
   }
 
   func persist() {
-    repository.save(state, sessionId: sessionId, placement: placement)
+    repository.save(state, sessionId: sessionId)
   }
 
   func discardLivePane(id: UUID) {

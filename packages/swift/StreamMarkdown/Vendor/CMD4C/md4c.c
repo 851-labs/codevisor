@@ -4832,6 +4832,8 @@ md_process_leaf_block(MD_CTX* ctx, const MD_BLOCK* block)
             det.table.col_count = block->data;
             det.table.head_row_count = 1;
             det.table.body_row_count = block->n_lines - 2;
+            det.table.source_beg = ((const MD_LINE*)(block + 1))[0].beg;
+            det.table.source_end = ((const MD_LINE*)(block + 1))[block->n_lines - 1].end;
             break;
 
         default:

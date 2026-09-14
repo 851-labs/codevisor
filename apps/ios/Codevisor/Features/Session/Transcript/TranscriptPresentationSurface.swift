@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorUI
+import Observation
 import StreamMarkdown
 import TranscriptKit
 import UIKit
@@ -7,13 +8,15 @@ import UIKit
 /// Owns the native row window independently of a SwiftUI navigation lifetime.
 /// The container controller can go away while these measured views remain.
 @MainActor
+@Observable
 final class TranscriptPresentationSurface {
   let textAnimationVisibility = StreamingTextAnimationVisibility(initiallyVisible: false)
   let textAnimationRegistry = StreamingTextAnimationRegistry()
   let disclosure = TranscriptDisclosureStore()
-  private weak var sessionController: SessionController?
-  private var retainedController: TranscriptViewController?
-  private var visibilityOwners: Set<UUID> = []
+  private(set) var hasPresentedContent = false
+  @ObservationIgnored private weak var sessionController: SessionController?
+  @ObservationIgnored private var retainedController: TranscriptViewController?
+  @ObservationIgnored private var visibilityOwners: Set<UUID> = []
 
   init(controller: SessionController) {
     sessionController = controller
@@ -31,6 +34,14 @@ final class TranscriptPresentationSurface {
     if let retainedController { return retainedController }
     let controller = TranscriptViewController()
     retainedController = controller
+    controller.onInitialPresentationReady = { [weak self, weak controller] in
+      // UIKit can reveal from inside a SwiftUI update. Publish the loading
+      // state after that transaction, and ignore a discarded surface's work.
+      Task { @MainActor [weak self, weak controller] in
+        guard let self, let controller, self.retainedController === controller else { return }
+        self.hasPresentedContent = true
+      }
+    }
     return controller
   }
 
@@ -51,6 +62,7 @@ final class TranscriptPresentationSurface {
     guard !isAttached else { return }
     retainedController?.prepareForDismantle()
     retainedController = nil
+    hasPresentedContent = false
     textAnimationVisibility.disappear()
   }
 }

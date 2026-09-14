@@ -153,12 +153,15 @@ public enum ServerUpdateChannel: String, Equatable, Sendable {
 /// session (Sparkle running headless because a remote client asked that
 /// machine to update). Mirrors `UpdateInfo.lastApply` on the wire.
 public struct ServerUpdateApplyState: Decodable, Equatable, Sendable {
+  public var progress: Double?
   public var state: String
   public var message: String?
   public var targetVersion: String?
   public var at: String
 
-  public init(state: String, message: String? = nil, targetVersion: String? = nil, at: String) {
+  public init(state: String, message: String? = nil, targetVersion: String? = nil, progress: Double? = nil, at: String)
+  {
+    self.progress = progress
     self.state = state
     self.message = message
     self.targetVersion = targetVersion

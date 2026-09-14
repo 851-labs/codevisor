@@ -204,7 +204,7 @@ private final class SettledDiffTotalsCache {
 /// Memoizes `ToolCall.diffTotals` for the last-seen content. Streamed
 /// `diffStats` are a cheap sum and pass straight through; the content-diff
 /// fallback (a Myers diff over the whole file's old/new text) recomputes
-/// only when the change key — status plus each diff block's text lengths —
+/// only when the change key — call id, status, and each diff block's text lengths —
 /// moves, which tracks streamed edits (they grow the text) and settlement.
 ///
 /// This cheap length-based key stays the first level: it costs no full-content
@@ -212,7 +212,7 @@ private final class SettledDiffTotalsCache {
 /// still short-circuits here. Only on a miss do we hash full content to consult
 /// the process-level cache, which is what survives unmount/remount.
 @MainActor
-private final class DiffTotalsCache {
+final class DiffTotalsCache {
   private var key: Int?
   private var value: LineDiff.Totals?
 
@@ -221,6 +221,7 @@ private final class DiffTotalsCache {
       return call.diffTotals
     }
     var hasher = Hasher()
+    hasher.combine(call.toolCallId)
     hasher.combine(call.status)
     for block in call.content ?? [] {
       if case let .diff(_, oldText, newText) = block {

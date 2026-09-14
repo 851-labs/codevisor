@@ -9,8 +9,31 @@ introducing copy-on-write copies through forwarding accessors.
 The controller commits each frame in this order: accept pending model changes,
 mount the required rows, commit eligible measurements, advance text reveals,
 then finish native presentation work. Requests raised during that work survive
-for the next frame. UIKit still defers measurement commits during momentum;
-AppKit still owns its host retirement, selection, and send animation.
+for the next frame. During UIKit momentum, visible rows and rows below them
+can commit measured heights without changing the scroll offset. Corrections
+above the first visible row wait until momentum ends so the reading anchor can
+be compensated. AppKit owns its host retirement, selection, and send animation.
+
+SwiftUI row hosts observe the natural size of the placed content through
+`TranscriptContentLayoutObserver`. Native layout callbacks no longer probe
+`sizeThatFits` or wait for scheduler yields to guess when SwiftUI has reconciled
+an update. Root generations reject obsolete callbacks, and an explicit request
+revision lets readiness changes re-report an unchanged size. Cached heights
+position a row immediately; the placed layout confirms or corrects them.
+Unchanged geometry produces no further height reports. The settled AppKit
+renderer similarly verifies ledger heights using its retained native layout.
+UIKit updates each row's clipping mask in the same frame assignment as its
+committed height, including frame changes that bypass the bounds setter.
+
+The clipping regressions exercise an AppKit row that retained a 16-point height
+after its text grew to 384 points, and a UIKit row whose frame grew from 180 to
+260 points while its mask stayed at 180. Both now update correctly. Tests also
+cover cached heights, reflow, unchanged-layout report counts, and momentum
+corrections that preserve the native scroll offset. A focused macOS debug
+benchmark on September 12, 2026 alternated four runs of 200 text updates and
+500 unchanged layouts per implementation. Mean text-update time was 0.362 ms
+before and 0.365 ms after; unchanged layouts averaged about 0.004 ms in both.
+These are hosting-controller CPU measurements, not device scrolling frame times.
 
 The shared Markdown text-run renderer produces the attributed strings for prose,
 headings, lists, nested lists, and compatible quotes on both platforms. Small

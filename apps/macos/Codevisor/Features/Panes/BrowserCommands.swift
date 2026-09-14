@@ -16,7 +16,7 @@ struct BrowserCommands: Commands {
   @FocusedValue(\.browserPage) private var page
 
   var body: some Commands {
-    CommandGroup(after: .toolbar) {
+    CommandMenu("Browser") {
       Button("Open Location") { page?.focusAddress() }
         .keyboardShortcut("l", modifiers: .command)
         .disabled(page == nil)
@@ -26,6 +26,16 @@ struct BrowserCommands: Commands {
       Button("Reload Page") { page?.reload() }
         .keyboardShortcut("r", modifiers: .command)
         .disabled(page == nil)
+      Button("Reload Page Ignoring Cache") { page?.reload(ignoringCache: true) }
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+        .disabled(page == nil)
+      Divider()
+      ShortcutButton(.browserZoomIn) { page?.zoom(.zoomIn) }
+        .disabled(page?.canZoomIn != true)
+      ShortcutButton(.browserZoomOut) { page?.zoom(.zoomOut) }
+        .disabled(page?.canZoomOut != true)
+      ShortcutButton(.browserResetZoom) { page?.zoom(.reset) }
+        .disabled(page?.canResetZoom != true)
     }
   }
 }

@@ -106,8 +106,8 @@ extension NewChatView {
       }
       .favorites($favoriteMachineIDs)
       .labelsHidden()
-      Autocomplete.Section(id: "actions") {
-        Autocomplete.Action("Manage Machines…", systemImage: "gearshape") {
+      Autocomplete.Footer(id: "actions") {
+        Autocomplete.Action("Manage Machines…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showMachines()
           openSettings()
         }
@@ -163,8 +163,8 @@ extension NewChatView {
       }
       .favorites(favorites)
       .labelsHidden()
-      Autocomplete.Section(id: "actions") {
-        Autocomplete.Action("Manage projects…", systemImage: "gearshape") {
+      Autocomplete.Footer(id: "actions") {
+        Autocomplete.Action("Manage projects…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showProjects(machineId: selected.serverId)
           openSettings()
         }
@@ -200,8 +200,8 @@ extension NewChatView {
         Autocomplete.Choice(option.title, value: option.newWorktree, systemImage: option.symbol)
       }
       .labelsHidden()
-      Autocomplete.Section(id: "actions") {
-        Autocomplete.Action("Manage Project…", systemImage: "gearshape") {
+      Autocomplete.Footer(id: "actions") {
+        Autocomplete.Action("Manage Project…", systemImage: "gearshape.fill") {
           SettingsRouter.shared.showProject(liveProject(for: controller))
           openSettings()
         }

@@ -11,6 +11,7 @@ import {
 } from "@codevisor/automation"
 import {
   BUILTIN_MCP_SERVERS,
+  type BuiltinMcpId,
   initializeAutomationProvider,
   managedAutomationSkills,
   unavailableBrowserProvider,
@@ -100,10 +101,11 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const extensionFlowSupported = config.serverKind !== "remote"
   const browserSetupBroker = makeBrowserSetupBroker(config.db, browserProvider)
   const builtinProviderState = (
-    id: "browser" | "computer",
+    id: BuiltinMcpId,
     enabled: boolean
   ): { readonly connectionState: McpConnectionState; readonly detail?: string } => {
     if (!enabled) return { connectionState: "disconnected" }
+    if (id === "codevisor") return { connectionState: "connected" }
     if (id === "browser") {
       const status = browserProvider.status()
       if (status.backend !== "missing") return { connectionState: "connected" }
@@ -343,7 +345,6 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     changeListeners,
     closeConnection,
     codeExecutor,
-    codevisorProvider,
     computerProvider,
     config,
     connectionLocks,

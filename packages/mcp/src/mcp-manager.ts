@@ -26,7 +26,6 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
       automationProviders: core.automationProviders,
       browserSetupBroker: core.browserSetupBroker,
       codeExecutor: core.codeExecutor,
-      codevisorProvider: core.codevisorProvider,
       config,
       connectUpstream,
       gateways: core.gateways,

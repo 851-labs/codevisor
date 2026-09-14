@@ -40,18 +40,18 @@ body:has(.marketing-shell) {
   color-scheme: dark;
 }
 
-.privacy-copy a {
+.legal-copy a {
   color: var(--color-text);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--color-text) 35%, transparent);
   text-underline-offset: 3px;
 }
 
-.privacy-copy a:hover {
+.legal-copy a:hover {
   text-decoration-color: var(--color-text);
 }
 
-.privacy-copy ul {
+.legal-copy ul {
   display: grid;
   gap: 0.6rem;
   padding-left: 1.25rem;

@@ -122,6 +122,8 @@ describe("@codevisor/db", () => {
       })
     )
     expect(created).toEqual({
+      sidebarPosition: expect.stringMatching(/^[0-9a-f]+$/),
+      sidebarOrderRevision: 1,
       id: "workspace-1",
       serverId: "machine-a",
       projectId: project.id,

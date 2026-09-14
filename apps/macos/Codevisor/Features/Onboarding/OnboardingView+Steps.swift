@@ -25,16 +25,17 @@ extension OnboardingView {
 
   /// Continue unlocks when both Computer Use permissions are granted;
   /// "Set Up Later" skips and turns Computer Use off until the user
-  /// re-enters setup from the Computer Use toggle in Settings.
+  /// re-enters setup from the Computer Use toggle in Settings. Full Disk
+  /// Access is optional and managed in System Settings.
   private var permissionsStep: some View {
     VStack(spacing: 20) {
       stepHeader(
         symbol: "lock.shield",
-        title: "Allow Computer Use",
-        subtitle: "Codevisor uses these to operate apps when you ask."
+        title: "Allow access",
+        subtitle: "Let Codevisor operate apps and work with protected files when you ask."
       )
 
-      ComputerUsePermissionRowsView(model: permissions)
+      ComputerUsePermissionRowsView(model: permissions, includesFullDiskAccess: true)
     }
     .frame(maxWidth: .infinity)
   }
@@ -163,22 +164,27 @@ extension OnboardingView {
       Group {
         switch environment.cloud.state {
         case .signedOut:
-          VStack(spacing: 10) {
+          VStack(spacing: 12) {
             if environment.cloud.supportsGitHubSignIn {
               CloudSignInProviderButton(
                 title: "Sign in with GitHub",
                 icon: .asset("GitHubMark")
               ) { startCloudSignIn() }
-              .controlSize(.large)
+            }
+            if environment.cloud.supportsAppleSignIn {
+              CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
+            }
+            if environment.cloud.supportsEmailSignIn {
+              CloudEmailSignInButton { showsEmailSignIn = true }
+                .disabled(isSigningInToCloud)
             }
             if environment.cloud.developmentAccountAvailable {
               CloudSignInProviderButton(
                 title: "Use Development Account",
-                icon: .system("person.crop.circle.dashed")
+                icon: .system("hammer")
               ) {
                 Task { await environment.cloud.signInWithDevelopmentAccount() }
               }
-              .controlSize(.large)
             }
             if let lastError = environment.cloud.lastError {
               Text(lastError)
@@ -187,6 +193,7 @@ extension OnboardingView {
                 .fixedSize(horizontal: false, vertical: true)
             }
           }
+          .frame(width: 320)
         case .validating:
           HStack(spacing: 8) {
             ProgressView().controlSize(.small)
@@ -231,21 +238,13 @@ extension OnboardingView {
     .frame(maxWidth: .infinity)
   }
 
-  /// The URL scheme this build registered (codevisor-dev for development
-  /// builds), read from Info.plist so it always matches what the browser
-  /// can actually call back to. Mirrors CloudSettingsView.
-  private var cloudCallbackScheme: String {
-    let registered = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
-      .compactMap { ($0["CFBundleURLSchemes"] as? [String])?.first }
-      .first { $0.hasPrefix("codevisor") }
-    return registered ?? (CodevisorAppVariant.isDevelopment ? "codevisor-dev" : "codevisor")
-  }
-
-  /// Opens the sign-in URL in the user's default browser; the handoff page
-  /// bounces back via the cloud-auth deeplink handled in ContentView.
-  private func startCloudSignIn() {
-    environment.cloud.lastError = nil
-    NSWorkspace.shared.open(environment.cloud.signInURL(scheme: cloudCallbackScheme))
+  private func startCloudSignIn(provider: CloudSignInProvider = .github) {
+    guard !isSigningInToCloud else { return }
+    isSigningInToCloud = true
+    Task {
+      await cloudAuthentication.signIn(provider: provider, cloud: environment.cloud)
+      isSigningInToCloud = false
+    }
   }
 
   // MARK: - Step header

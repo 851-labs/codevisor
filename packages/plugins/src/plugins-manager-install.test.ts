@@ -18,6 +18,7 @@ const makeFixture = (manifest: Record<string, unknown>): string => {
 
 const freshManifest = {
   ...exampleManifest,
+  ageRating: 9,
   iconPath: "/assets/icon.svg",
   id: "owner.fresh",
   name: "Fresh"
@@ -60,6 +61,9 @@ describe("manager install pipeline", () => {
     const imported = await manager.importRemote({ source: fixture })
     expect(imported.id).toBe("owner.fresh")
     expect(imported.source).toBe("managed")
+    expect(imported.ageRating).toBe(9)
+    expect(discovered.ageRating).toBe(9)
+    expect(imported.consentKey).toBe(discovered.consentKey)
     expect(imported.state).toBe("running")
     expect(events.some((event) => event.subjectId === "owner.fresh")).toBe(true)
     expect(existsSync(join(root, "owner.fresh"))).toBe(true)

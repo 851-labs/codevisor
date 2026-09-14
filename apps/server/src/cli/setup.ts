@@ -13,7 +13,7 @@ import {
   type CliDeps,
   type CommandOptions
 } from "./support.js"
-import { readCloudCredentials } from "./cloud-auth.js"
+import { readCloudRegistration } from "./cloud-control.js"
 
 export interface SelectChoice<A> {
   readonly title: string
@@ -139,8 +139,8 @@ const chooseHost = async (
 }
 
 export interface SetupOptions extends CommandOptions {
-  /// Runs the cloud device-code login (and restarts the server so it joins
-  /// the hub). Wired by cli.ts; when absent — tests, programmatic use — the
+  /// Runs the cloud device-code login and verifies the server's relay
+  /// connection. Wired by cli.ts; when absent — tests, programmatic use — the
   /// connect choice is skipped and setup goes straight to direct pairing.
   readonly cloudLogin?: () => Promise<number>
 }
@@ -167,7 +167,10 @@ export const setupCommand = async (
   // already signed in (or a run without the login wiring) goes straight to
   // direct pairing. A failed sign-in falls back to direct pairing so setup
   // never ends empty-handed.
-  if (options.cloudLogin !== undefined && readCloudCredentials(deps) === undefined) {
+  if (
+    options.cloudLogin !== undefined &&
+    (await readCloudRegistration(deps, port))?.deviceId === undefined
+  ) {
     const choice = await deps.prompts.select<"cloud" | "direct">(
       "How do you want to connect this machine to your Codevisor apps?",
       [

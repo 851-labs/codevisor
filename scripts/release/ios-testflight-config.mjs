@@ -46,7 +46,8 @@ export function exportOptions(teamId) {
     destination: "export",
     teamID: teamId,
     signingStyle: "automatic",
-    testFlightInternalTestingOnly: true,
+    // Alpha distribution stays internal; the same build can later be promoted.
+    testFlightInternalTestingOnly: false,
     manageAppVersionAndBuildNumber: false,
     uploadSymbols: true
   }
@@ -88,8 +89,8 @@ export function verifyBuildRecord(record, configuration, ipaSHA256) {
     if (record[key] !== configuration[key])
       throw new Error(`iOS artifact ${key} does not match this Alpha run.`)
   }
-  if (record.ipaSHA256 !== ipaSHA256 || record.internalOnly !== true) {
-    throw new Error("iOS artifact checksum or internal-only declaration is invalid.")
+  if (record.ipaSHA256 !== ipaSHA256 || record.internalOnly !== false) {
+    throw new Error("iOS artifact checksum or App Store eligibility declaration is invalid.")
   }
 }
 
@@ -101,5 +102,46 @@ export function assertAlphaUpload(environment) {
     environment.CODEVISOR_SOURCE_REVISION !== environment.GITHUB_SHA
   ) {
     throw new Error("TestFlight uploads require a trusted Alpha CI run for the exact main commit.")
+  }
+}
+
+export function assertManualPromotion(environment) {
+  if (
+    environment.GITHUB_ACTIONS !== "true" ||
+    environment.GITHUB_WORKFLOW !== "Publish Beta" ||
+    environment.GITHUB_REF !== "refs/heads/main" ||
+    environment.GITHUB_EVENT_NAME !== "workflow_dispatch"
+  ) {
+    throw new Error(
+      "Public TestFlight promotion requires the manual Publish Beta workflow on main."
+    )
+  }
+}
+
+export function verifyAlphaProvenance(run, provenance, repository, runId) {
+  if (
+    String(run.id) !== runId ||
+    run.repository?.full_name !== repository ||
+    run.head_repository?.full_name !== repository ||
+    run.path !== ".github/workflows/release-candidate.yml" ||
+    run.head_branch !== "main" ||
+    !["push", "workflow_dispatch"].includes(run.event) ||
+    run.status !== "completed" ||
+    run.conclusion !== "success"
+  )
+    throw new Error("Select a successful Alpha workflow run from this repository's main branch.")
+  if (
+    provenance.channel !== "alpha" ||
+    !/^\d+\.\d+\.\d+$/.test(provenance.version ?? "") ||
+    !/^[1-9]\d*$/.test(String(provenance.build_number)) ||
+    String(provenance.build_number) !== String(run.run_number) ||
+    !/^[0-9a-f]{40}$/.test(provenance.source_sha ?? "") ||
+    provenance.source_sha !== run.head_sha
+  )
+    throw new Error("The Alpha provenance does not match the selected workflow run.")
+  return {
+    version: provenance.version,
+    build: String(provenance.build_number),
+    source_sha: provenance.source_sha
   }
 }

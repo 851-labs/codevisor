@@ -92,16 +92,15 @@ struct SessionContainerView: View {
   /// Presentation-only state for a locally inserted split. Its destination
   /// stays blank and inert until the opening geometry reaches its final size.
   @State var openingSplit: WorkspaceSplitOpening?
-  /// The chat this container last published as focused, so `onDisappear`
-  /// releases only its own focus (see the modifier in `body`).
-  @State var publishedFocusCandidate: UUID?
+  /// Identifies this mounted container independently of its cached chat.
+  @State var focusSourceId = UUID()
   @State var isVisible = false
 
   var body: some View {
     contentColumn
       .navigationTitle(activePaneTitle)
-      .navigationSubtitle(activePaneDescriptor?.kind == .chat ? activePaneSubtitle : "")
-      .toolbar(removing: activePaneDescriptor?.kind == .browser ? .title : nil)
+      .navigationSubtitle(activePaneSubtitle)
+      .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
       .toolbar {
         if let browser = activeBrowserModel {
           ChromiumBrowserNavigationControls(model: browser)
@@ -110,6 +109,8 @@ struct SessionContainerView: View {
               .id(browser.paneId)
           }
           .sharedBackgroundVisibility(.hidden)
+        } else if let pane = activeScreenSharingPane, let model = pane.model {
+          ScreenSharingToolbar(model: model)
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
@@ -179,22 +180,15 @@ struct SessionContainerView: View {
       // combines it with window-key state and feeds the app-wide
       // attention coordinator, which marks the focused chat read.
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
-        publishedFocusCandidate = candidate
-        // Focus/read reporting is per server; the candidate is nil unless an
-        // actual chat pane faces the user, so a chatless workspace publishes
-        // "no chat focused" rather than a fabricated one.
-        store.setFocusedChat(candidate, serverId: selectedWorkspace.serverId)
+        store.setFocusedChat(
+          candidate, serverId: selectedWorkspace.serverId, sourceId: focusSourceId,
+          workspaceId: selectedWorkspace.id, isVisible: isVisible
+        )
       }
-      // Release only the focus this container published. Navigating to
-      // another workspace mounts the new container (which publishes its
-      // chat) BEFORE this one disappears; an unconditional clear here
-      // would erase the new focus and leave that chat unread while the
-      // user is looking straight at it.
+      // The incoming container can publish before this one disappears.
       .onDisappear {
         isVisible = false
-        if let candidate = publishedFocusCandidate {
-          store.clearFocusedChat(ifCurrent: candidate)
-        }
+        store.clearFocusedChat(sourceId: focusSourceId)
       }
       .task(id: mountIdentity) {
         splitDragCoordinator.canResolve = { sourceLeafId, resolution, canvasSize in

@@ -3,87 +3,24 @@ import CodevisorCore
 import CodevisorCoreMac
 import SwiftUI
 
-struct ScreenSharingToolbar: View {
+/// Window toolbar controls borrow the selected pane's model; the pane owns
+/// the connection and control state across toolbar and menu updates.
+struct ScreenSharingToolbar: ToolbarContent {
   let model: ScreenSharingViewerModel
-  let machineName: String
-  @State private var showDiagnostics = false
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 12) {
-          display; Spacer(minLength: 8); controls
-        }
-        VStack(alignment: .leading, spacing: 8) {
-          display
-          controls
-        }
-      }
-      if model.control?.state == .controlling {
-        Text("⌃⌥Esc releases control").font(.caption).foregroundStyle(.secondary)
-      }
+  var body: some ToolbarContent {
+    ToolbarItem(id: "screenSharing.mode", placement: .principal) {
+      HStack(spacing: 8) { controlActions }
     }
-    .controlSize(.small).padding(.horizontal, 12).padding(.vertical, 8)
-  }
-
-  private var display: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "display")
-      if !model.displays.isEmpty {
-        Picker("Display", selection: Binding(get: { model.selectedDisplayId ?? "" }, set: { model.selectDisplay($0) }))
-        {
-          if model.selectedDisplayId == nil { Text("Choose a display").tag("") }
-          ForEach(model.displays) { display in
-            Text("\(display.name) · \(display.width) × \(display.height)").tag(display.id)
-          }
-        }
-        .labelsHidden().frame(idealWidth: 300, maxWidth: 300)
-      } else {
-        Text(machineName).lineLimit(1)
-      }
-    }
-  }
-
-  private var controls: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: 12) {
-        controlActions; videoActions
-      }
-      VStack(alignment: .leading, spacing: 8) {
-        HStack {
-          controlActions; Spacer(minLength: 0)
-        }
-        HStack {
-          videoActions; Spacer(minLength: 0)
-        }
-      }
-    }
-  }
-
-  @ViewBuilder private var controlActions: some View {
-    if model.phase == .viewing, let control = model.control {
-      if control.state == .controlling {
-        Button("Stop Control") { control.release() }
-      } else if control.state == .requesting {
-        Button("Cancel Control") { control.release() }
-      } else {
-        Text("View Only").foregroundStyle(.secondary)
-        Button("Control") { control.request() }.disabled(!control.available)
-          .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
-      }
-    } else {
-      Text("View Only").foregroundStyle(.secondary)
-    }
-  }
-
-  @ViewBuilder private var videoActions: some View {
-    if model.phase == .viewing || model.phase == .connecting || model.phase == .reconnecting {
+    ToolbarItem(id: "screenSharing.size", placement: .primaryAction) {
       Picker("Size", selection: Binding(get: { model.preferences.fitToWindow }, set: { model.setFitToWindow($0) })) {
         Text("Fit").tag(true)
         Text("Actual Size").tag(false)
       }
       .labelsHidden().frame(width: 110)
-      if let clipboard = model.clipboard {
+    }
+    if let clipboard = model.clipboard {
+      ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
         Menu {
           Button("Send Clipboard to Mac") { clipboard.sendLocalText() }
           Button("Get Clipboard from Mac") { clipboard.getRemoteText() }
@@ -94,18 +31,49 @@ struct ScreenSharingToolbar: View {
         .help("Transfer plain text between clipboards")
         .disabled(!clipboard.available || clipboard.busy)
       }
-      Button {
-        showDiagnostics.toggle()
-      } label: {
-        Image(systemName: "info.circle")
-      }
-      .accessibilityLabel("Connection Details")
-      .popover(isPresented: $showDiagnostics) { details.padding(16).frame(width: 280) }
-      Button("Disconnect") { model.disconnect() }
-    } else {
-      Button("Connect") { model.connect() }
-        .disabled(model.selectedDisplayId == nil || model.phase == .loading)
     }
+    ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
+      ScreenSharingDetailsButton(model: model).id(ObjectIdentifier(model))
+    }
+  }
+
+  @ViewBuilder private var controlActions: some View {
+    if model.phase == .viewing, let control = model.control {
+      Picker(
+        "Interaction mode",
+        selection: Binding(
+          get: { control.state != .viewing },
+          set: { if $0 { control.request() } else { control.release() } })
+      ) {
+        Text("View").tag(false)
+        Text("Control").tag(true)
+      }
+      .pickerStyle(.segmented).labelsHidden().fixedSize()
+      .disabled(!control.available)
+      .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
+      if control.state == .requesting {
+        ProgressView().controlSize(.mini).accessibilityLabel("Requesting control")
+      }
+    } else {
+      Text("View").foregroundStyle(.secondary)
+    }
+  }
+
+}
+
+private struct ScreenSharingDetailsButton: View {
+  let model: ScreenSharingViewerModel
+  @State private var showDiagnostics = false
+
+  var body: some View {
+    Button {
+      showDiagnostics.toggle()
+    } label: {
+      Image(systemName: "info.circle")
+    }
+    .accessibilityLabel("Connection Details")
+    .help("Connection Details")
+    .popover(isPresented: $showDiagnostics) { details.padding(16).frame(width: 280) }
   }
 
   @ViewBuilder private var details: some View {

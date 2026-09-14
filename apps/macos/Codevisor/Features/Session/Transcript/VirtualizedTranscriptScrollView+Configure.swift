@@ -56,6 +56,7 @@ extension VirtualizedTranscriptScrollView {
       installPresentationFrameDriver()
     }
     self.rowContent = newRowContent
+    markdownImageLoader = callbacks.markdownImageLoader ?? .remote
     openMarkdownLink = callbacks.openMarkdownLink
     self.onViewportChange = onViewportChange
     self.onBottomStateChange = onBottomStateChange

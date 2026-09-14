@@ -5,7 +5,6 @@ import SwiftUI
 extension ComposerBar {
   var runTargetControls: some View {
     let machine = environment.machines.machine(for: controller.project.serverId)
-    let isPlaceholder = controller.project.isRunTargetPlaceholder || controller.project.isScratch
     return ComposerRunTargetBar(
       machineName: environment.machines.allMachines.count > 1 ? (machine?.name ?? "Machine") : nil,
       machineSymbol: machine.map(EntitySystemSymbol.machine) ?? EntitySystemSymbol.machine(.local),
@@ -16,15 +15,14 @@ extension ComposerBar {
           .filter { environment.machines.availability(for: $0.id) == .ready }
           .map(\.id)
       ),
-      projectName: isPlaceholder ? "No project" : liveProject.name,
-      isPlaceholder: isPlaceholder,
-      isGitRepository: !isPlaceholder && liveProject.isGitRepository,
+      project: liveProject,
       wantsNewWorktree: controller.wantsNewWorktree,
       onMachine: selectTargetMachine,
-      onProject: { showsProjectPicker = true },
+      onProject: { selectTargetProject($0) },
       onLocation: selectRunLocation,
       onManageMachines: { showsMachineSettings = true },
-      onManageProject: { managedProject = liveProject }
+      onManageProject: { managedProject = liveProject },
+      onArchiveProject: archiveManagedProject
     )
     // Keep 44-point controls while drawing a slimmer pill behind them.
     .padding(.vertical, -6)
@@ -124,8 +122,9 @@ extension ComposerBar {
   }
 
   func archiveManagedProject(_ project: Project) {
-    controller.project.isArchived = true
     environment.projectList.archive(project)
+    guard controller.project.serverId == project.serverId, controller.project.id == project.id else { return }
+    controller.project.isArchived = true
     selectTargetProject(.runTargetPlaceholder(serverId: project.serverId))
   }
 }

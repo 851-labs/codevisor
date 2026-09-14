@@ -1,4 +1,4 @@
-/// The freshness of the selected machine's cached navigation projection.
+/// The freshness of one machine's cached navigation projection.
 /// Connectivity and synchronization are deliberately separate: a server can
 /// answer health checks while its projects, sessions, and workspaces are still
 /// being reconciled.
@@ -17,7 +17,7 @@ enum NavigationSyncPresentation: Equatable, Sendable {
   case catchUp
 }
 
-/// Whether an authoritative project/session snapshot actually reached the
+/// Whether an authoritative project/session or workspace snapshot reached the
 /// client cache. Callers use this to distinguish a completed reconciliation
 /// from cached data that merely remained visible after a failed request.
 public enum ServerNavigationRefreshResult: Sendable, Equatable {

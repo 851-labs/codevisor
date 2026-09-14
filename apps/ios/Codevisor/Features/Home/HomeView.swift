@@ -13,11 +13,12 @@ struct HomeView: View {
 
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.scenePhase) var scenePhase
 
-  @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
-  var manualWorkspaceOrder
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
+  @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
+  private var aiDataSharingConsentVersion
   @State var onboardingStart = OnboardingView.Step.welcome
   // Bootstrap adds the dev machine a beat after first render; the grace
   // period keeps onboarding from flashing over an already-paired install.
@@ -25,6 +26,8 @@ struct HomeView: View {
   /// First-launch budget: with nothing cached the spinner is allowed,
   /// but it may never outlive the wait — after this it becomes retry.
   @State var initialSyncDeadlineExpired = false
+  @State var clientSettingsSection = "root"
+  @State var clientPresentationCompletion = ClientPresentationCompletion()
   @State var presentedSettingsDestination: SettingsDestination?
   @State private var pendingHarnessSignIn: HarnessSignInRequest?
   @State var newChatFlow: NewChatFlow?
@@ -58,6 +61,15 @@ struct HomeView: View {
   var machines: MachineController { environment.machines }
   var projectList: ProjectListModel { environment.projectList }
 
+  var clientBlockingPresentation: String? {
+    if showsOnboarding.wrappedValue { return "onboarding" }
+    if pendingHarnessSignIn != nil { return "harness_sign_in" }
+    if pendingPluginInstall != nil { return "plugin_install" }
+    if pendingDeeplink != nil || deeplinkError != nil { return "machine_connection" }
+    if renamingWorkspace != nil || renamingTab != nil { return "rename" }
+    return nil
+  }
+
   private var hasRemoteMachines: Bool {
     machines.allMachines.contains { !$0.isLocal }
   }
@@ -77,21 +89,26 @@ struct HomeView: View {
     !anyMachineSynced && failedSyncMachines.isEmpty && hasRemoteMachines
   }
 
-  /// Onboarding presents itself whenever no machine is paired. There is no
-  /// in-flow skip (the app is useless without a machine); the dismissed
-  /// flag only records programmatic closes — e.g. pairing while the cover
-  /// is up — and the empty state re-arms it.
+  /// Consent is required even for an existing installation with paired machines.
+  /// After consent, onboarding stays open until a machine is paired; the empty
+  /// state can reopen it later.
   private var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
-        readyForOnboarding && !onboardingDismissed && !hasRemoteMachines && !showsSampleSidebar
+        readyForOnboarding && !showsSampleSidebar && presentedSettingsDestination == nil
+          && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
       },
-      set: { if !$0 { onboardingDismissed = true } }
+      set: { if !$0 && hasAIDataSharingConsent { onboardingDismissed = true } }
     )
+  }
+
+  private var hasAIDataSharingConsent: Bool {
+    aiDataSharingConsentVersion == AIDataSharingConsent.currentVersion
   }
 
   private var showsNewChatButton: Bool {
     if showsSampleSidebar { return true }
+    guard hasAIDataSharingConsent else { return false }
     return hasRemoteMachines && !(sidebarSections.isEmpty && !anyMachineSynced)
   }
 
@@ -169,8 +186,10 @@ struct HomeView: View {
           onRenameTab: { renameSidebarTab($0, to: $1) }
         )
       )
-      .sheet(item: $presentedSettingsDestination) { destination in
-        SettingsSheet(initialDestination: destination)
+      .sheet(item: $presentedSettingsDestination, onDismiss: { clientPresentationCompletion.complete("settings") }) {
+        destination in
+        SettingsSheet(initialDestination: destination, onSectionChange: { clientSettingsSection = $0 })
+          .id(destination.id)
       }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
         presentedSettingsDestination = .root
@@ -187,7 +206,8 @@ struct HomeView: View {
       .fullScreenCover(isPresented: showsOnboarding) {
         onboardingStart = .welcome
       } content: {
-        OnboardingView(start: onboardingStart)
+        OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
+          .interactiveDismissDisabled(!hasAIDataSharingConsent)
           // The QR flow lands here: alerts must present over the
           // cover, so it carries its own copy of the deeplink
           // alerts, active while it is the visible context.
@@ -199,14 +219,12 @@ struct HomeView: View {
             )
           )
       }
-      // External entries — codevisor:// deeplinks and notification
-      // taps — parsed and routed in one modifier; chat opens (possibly
-      // on another machine) come back through these closures.
+      // Parse and route codevisor:// deeplinks in one modifier;
+      // diagnostic chat opens come back through these closures.
       .modifier(
         HomeExternalRouting(
           pendingDeeplink: $pendingDeeplink,
           pendingPluginInstall: $pendingPluginInstall,
-          openSession: { openNotificationSession($0, serverId: $1) },
           openDiagnosticSession: { id in
             #if DEBUG || NAVIGATION_DIAGNOSTICS
               openDiagnosticSession(id)
@@ -235,6 +253,12 @@ struct HomeView: View {
         #endif
       }
     }
+    .modifier(
+      ClientControlModifier(
+        name: UIDevice.current.name, platform: "ios",
+        context: clientControlContext, navigate: navigateClient, control: controlClient
+      )
+    )
   }
 
   #if DEBUG || NAVIGATION_DIAGNOSTICS

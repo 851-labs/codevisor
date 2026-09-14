@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorCore
+import CodevisorScreenSharing
 import CodevisorTestSupport
 import Foundation
 import Testing
@@ -7,7 +8,44 @@ import Testing
 
 @MainActor
 struct ScreenSharingViewerTests {
-  @Test func networkRecoveryUsesFreshMediaAndTheSameLeaseWithoutReacquiringControl() async throws {
+  @Test(arguments: [true, false])
+  func openingRequestsControlAfterVideoAndChannelAreReady(channelFirst: Bool) async {
+    let transport = SharingTransport()
+    let clock = TestClock()
+    let peer = SharingPeer()
+    peer.deliversVideo = false
+    peer.channelAvailableOnAccept = channelFirst
+    let model = makeModel(transport, clock: clock) { peer }
+    model.setVisible(true)
+    await awaitObserved { model.phase == .ready }
+    model.connect()
+    await clock.waitForSleep(.seconds(8))
+    #expect(model.phase == .connecting)
+    #expect(peer.controlMessages.isEmpty)
+    peer.onReady?()
+    #expect(model.phase == .viewing)
+    if !channelFirst {
+      #expect(peer.controlMessages.isEmpty)
+      peer.control.setAvailable(true)
+    }
+    #expect(peer.controlMessages.count == 1)
+    guard case .request(let request)? = peer.controlMessages.first else {
+      Issue.record("Missing automatic control request"); await model.close(); return
+    }
+    let lease = UUID()
+    peer.control.receive(.grant(request: request, lease: lease))
+    #expect(model.control?.state == .controlling)
+    peer.control.release()
+    peer.onReady?()
+    model.setFitToWindow(false)
+    peer.control.setAvailable(true)
+    #expect(peer.control.state == .viewing)
+    #expect(peer.controlMessages == [.request(id: request), .release(lease: lease)])
+    await model.close()
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test func networkRecoveryUsesFreshMediaAndTheSameSessionAndRequestsFreshControl() async throws {
     let transport = SharingTransport()
     let clock = TestClock()
     var peers: [SharingPeer] = []
@@ -33,7 +71,10 @@ struct ScreenSharingViewerTests {
     #expect(requests.filter { $0.operation == .start }.count == 1)
     #expect(requests.filter { $0.operation == .stop }.isEmpty)
     #expect(requests.filter { $0.operation == .capabilities && $0.viewerId == start.viewerId }.count == 2)
-    #expect(peers[1].control.state == .viewing)
+    #expect(first.control.state == .viewing)
+    #expect(peers[1].control.state == .requesting)
+    #expect(first.controlMessages.count == 1 && peers[1].controlMessages.count == 1)
+    #expect(first.controlMessages != peers[1].controlMessages)
     await model.close()
     #expect(peers.allSatisfy { $0.closed })
     #expect(clock.pendingCount == 0)
@@ -220,20 +261,29 @@ struct ScreenSharingViewerTests {
 @MainActor
 private final class SharingPeer: ScreenSharingViewingPeer {
   let view = NSView()
-  let control = ScreenSharingViewerControl(send: { _ in true })
+  var controlMessages: [ScreenSharingControlMessage] = []
+  lazy var control = ScreenSharingViewerControl(
+    now: { 0 },
+    send: { [weak self] in
+      self?.controlMessages.append($0); return true
+    })
   var clipboard: ScreenSharingViewerClipboard? { nil }
   let diagnostics = ScreenSharingViewerDiagnostics()
   var failure: String?
   var deliversVideo = true
+  var channelAvailableOnAccept = true
   var onReady: (() -> Void)?
   var onConnectionChanged: ((String) -> Void)?
   var onFocusChanged: ((Bool) -> Void)?
   var closed = false
   var fitToWindow = true
   func offer() async throws -> String { "fixture offer" }
-  func accept(_ answer: String) async throws { if deliversVideo { onReady?() } }
+  func accept(_ answer: String) async throws {
+    control.setAvailable(channelAvailableOnAccept)
+    if deliversVideo { onReady?() }
+  }
   func fit(_ enabled: Bool) { fitToWindow = enabled }
-  func close() { closed = true; onReady = nil; onConnectionChanged = nil }
+  func close() { closed = true; control.release(); onReady = nil; onConnectionChanged = nil }
 }
 
 private actor SharingTransport: ServerRequestTransport {

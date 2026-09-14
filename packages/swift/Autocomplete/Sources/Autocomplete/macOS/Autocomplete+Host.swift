@@ -179,7 +179,7 @@
         announcement?.cancel()
         guard let field = inputField else { return }
         var parts: [String] = []
-        if includeCount { parts.append(Strings.resultCount(snapshot.items.count)) }
+        if includeCount { parts.append(Strings.resultCount(snapshot.resultItems.count)) }
         if let id = highlight.highlighted, let item = snapshot.byID[id],
           let index = snapshot.items.firstIndex(where: { $0.id == id })
         {

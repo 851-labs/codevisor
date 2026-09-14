@@ -28,6 +28,12 @@
         result.setAttributes(
           output, range: NSRange(location: sourceRange.location - range.location, length: sourceRange.length))
       }
+      source.enumerateAttribute(.streamMarkdownImageAlt, in: range, options: .reverse) { value, sourceRange, _ in
+        if let alt = value as? String {
+          result.replaceCharacters(
+            in: NSRange(location: sourceRange.location - range.location, length: sourceRange.length), with: alt)
+        }
+      }
       return result
     }
   }

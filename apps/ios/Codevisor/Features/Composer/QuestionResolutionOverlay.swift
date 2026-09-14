@@ -7,10 +7,11 @@ import SwiftUI
 /// keeps its card visible and reports progress on its explicit Continue action.
 struct QuestionResolutionOverlay: View {
   @Bindable var controller: SessionController
+  let shape: ConcentricRectangle
 
   var body: some View {
     if shouldShow {
-      RoundedRectangle(cornerRadius: ComposerGlassStyle.composerCornerRadius)
+      shape
         .fill(Color(.systemGroupedBackground).opacity(0.72))
         .overlay {
           HStack(spacing: 8) {

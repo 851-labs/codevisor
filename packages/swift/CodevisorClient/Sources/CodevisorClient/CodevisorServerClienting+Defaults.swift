@@ -140,6 +140,10 @@ public extension CodevisorServerClienting {
     try await upsertSession(session)
   }
 
+  func renameSession(_ session: ChatSession) async throws -> ServerSession {
+    try await upsertSession(session)
+  }
+
   /// Compatibility fallback for test doubles and servers without the
   /// plugins feature: no plugins, and no pane tokens. The HTTP client
   /// overrides both with the real requests.
@@ -430,9 +434,6 @@ public extension CodevisorServerClienting {
   func listNativeMcps() async throws -> ServerNativeMcpScan {
     ServerNativeMcpScan(candidates: [], harnesses: [])
   }
-  func listSkills() async throws -> ServerSkillsScan {
-    ServerSkillsScan(canonicalDir: "", global: [], harnesses: [])
-  }
   func importNativeMcps(identities: [String]) async throws -> ServerNativeMcpImportResult {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -444,30 +445,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
   func setNativeMcpEnabled(harnessId: String, serverName: String, enabled: Bool) async throws -> ServerNativeMcpScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func importSkill(path: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate] {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan {
     throw CodevisorServerClientError.invalidResponse
   }
 
@@ -573,6 +550,10 @@ public extension CodevisorServerClienting {
   /// Workspace archive sync is best-effort for the same reason: a fake or a
   /// server predating the route leaves the local flag authoritative.
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws {}
+  func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
+    throw CodevisorServerClientError.httpStatus(405, "Workspace ordering is unavailable on this server.")
+  }
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {}
 
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
     throw CodevisorServerClientError.invalidResponse

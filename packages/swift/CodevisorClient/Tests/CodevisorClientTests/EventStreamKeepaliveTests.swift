@@ -201,6 +201,7 @@ struct EventStreamKeepaliveTests {
     let consumer = Task { () throws -> [Int] in
       var ids: [Int] = []
       for try await event in client.sessionEventStream(id: UUID(), since: 3) {
+        #expect(event.payload["state"]?.stringValue != "catchingUp")
         if event.kind != "client.synchronization" { ids.append(event.id) }
       }
       return ids
@@ -240,6 +241,42 @@ private final class LockedBox<Value>: @unchecked Sendable {
 }
 
 extension EventStreamKeepaliveTests {
+  @Test("Old-server traffic confirms connection before its first heartbeat", arguments: [false, true])
+  func trafficConfirmsConnection(afterFailure: Bool) async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let received = LockedBox<[String]>([])
+    let delivered = TestSignal()
+    let consumer = Task {
+      for try await event in client.sessionEventStream(id: UUID(), since: 3) {
+        received.mutate { $0.append(event.payload["state"]?.stringValue ?? event.kind) }
+        if event.kind == "session.output" { delivered.signal() }
+      }
+    }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    if afterFailure {
+      transport.socket(0)!.fail()
+      await transport.connected.wait(for: 2)
+    }
+    let socket = transport.socket(afterFailure ? 1 : 0)!
+    socket.push(envelope(kind: "session.output", id: 4))
+    await delivered.wait()
+    #expect(received.value == (afterFailure ? ["reconnecting"] : []) + ["catchingUp", "session.output"])
+
+    // Seeing traffic does not weaken durable-tail verification. A later
+    // checkpoint exposing a missing event must still fail the stream.
+    socket.push(envelope(kind: "keepalive", id: 5))
+    switch await consumer.result {
+    case .success: Issue.record("Missing tail was silently accepted")
+    case let .failure(error):
+      let gap = error as? CodevisorServerClient.EventStreamGapError
+      #expect(gap?.expected == 4)
+      #expect(gap?.received == 5)
+    }
+    #expect(!received.value.contains("caughtUp"))
+  }
+
   @Test("A checkpoint beyond received events cannot declare the transcript caught up")
   func checkpointDetectsMissingTail() async {
     let transport = ScriptedEventTransport()

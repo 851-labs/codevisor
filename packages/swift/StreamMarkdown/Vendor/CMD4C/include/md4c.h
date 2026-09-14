@@ -273,6 +273,9 @@ typedef struct MD_BLOCK_TABLE_DETAIL {
     unsigned col_count;         /* Count of columns in the table. */
     unsigned head_row_count;    /* Count of rows in the table header (currently always 1) */
     unsigned body_row_count;    /* Count of rows in the table body */
+    /* Codevisor extension: half-open UTF-8 source offsets, including table syntax. */
+    MD_OFFSET source_beg;
+    MD_OFFSET source_end;
 } MD_BLOCK_TABLE_DETAIL;
 
 /* Detailed info for MD_BLOCK_TH and MD_BLOCK_TD. */

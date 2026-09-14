@@ -8,14 +8,14 @@ struct WorkspaceNavigationTests {
       id: UUID(), kind: kind, name: "Destination", terminalKey: "fixture", chatSessionId: chatId
     )
     return WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true))
+      root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id))
     )
   }
 
   private func workspace(_ tabs: [WorkspaceTab]) -> Workspace {
     Workspace(
       name: "Navigation", rootDirectory: "/navigation-tests", serverId: "machine", projectId: UUID(),
-      centerTabs: tabs, bottomGroup: PaneGroupState(), createdAt: Date(timeIntervalSince1970: 0)
+      centerTabs: tabs, createdAt: Date(timeIntervalSince1970: 0)
     )
   }
 
@@ -73,7 +73,7 @@ struct WorkspaceNavigationTests {
     )
     let browser = PaneDescriptorState(id: UUID(), kind: .browser, name: "Browser", terminalKey: "browser")
     let destination = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [chat, browser], selectedPaneId: browser.id, isVisible: false))
+      root: .leaf(PaneGroupState(panes: [chat, browser], selectedPaneId: browser.id))
     )
     var workspace = workspace([tab(.plugin), destination])
 
@@ -81,7 +81,6 @@ struct WorkspaceNavigationTests {
     #expect(workspace.selectedCenterTabId == destination.id)
     let state = try #require(workspace.centerTree.group(id: destination.activeLeafId))
     #expect(state.selectedPaneId == chat.id)
-    #expect(state.isVisible)
   }
 
   @Test("Rapid navigation leaves the latest destination selected")
@@ -118,7 +117,7 @@ struct WorkspaceNavigationTests {
     let oldPane = PaneDescriptorState(id: UUID(), kind: .chat, name: "Old", terminalKey: "old")
     let target = PaneDescriptorState(id: UUID(), kind: kind, name: "Target", terminalKey: "target")
     let destination = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [oldPane, target], selectedPaneId: oldPane.id, isVisible: false))
+      root: .leaf(PaneGroupState(panes: [oldPane, target], selectedPaneId: oldPane.id))
     )
     var workspace = workspace([tab(.browser), destination])
 
@@ -127,7 +126,6 @@ struct WorkspaceNavigationTests {
     #expect(workspace.selectedCenterTabId == destination.id)
     let state = try #require(workspace.centerTree.group(id: destination.activeLeafId))
     #expect(state.selectedPaneId == target.id)
-    #expect(state.isVisible)
   }
 
   @Test("A divider preview cannot display the previous tab after navigation")

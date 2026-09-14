@@ -11,6 +11,7 @@ final class NewChatFlow: Identifiable {
   let id = UUID()
   var composerFocusRequest: UUID? = UUID()
   var sessionId: UUID?
+  var requestedServerId: String?
   var phase = NewChatPromotionPhase.composing
   var isWorkspaceReady = false
   var didPushCanonicalRoute = false

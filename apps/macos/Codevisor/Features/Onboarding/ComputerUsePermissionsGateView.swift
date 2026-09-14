@@ -4,12 +4,13 @@ import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
 
-/// The Computer Use permissions checklist: one row per system permission the
-/// app requests, with live status. Status probes are cheap and non-prompting,
-/// so the view polls once a second and re-checks on window activation — the
-/// row flips to Granted almost instantly after a System Settings round trip.
+/// The Computer Use permissions checklist, optionally including onboarding's
+/// Full Disk Access request. Computer Use probes are cheap and non-prompting,
+/// so those statuses refresh once a second and on window activation.
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
+  /// Onboarding also offers optional file access, independent of Computer Use.
+  var includesFullDiskAccess = false
   /// Embedded rows sit inside an existing container (a settings form row)
   /// and skip the standalone card chrome.
   var embedded = false
@@ -61,6 +62,10 @@ struct ComputerUsePermissionRowsView: View {
         granted: model.isScreenRecordingGranted
       ) {
         model.requestScreenRecording()
+      }
+      if includesFullDiskAccess {
+        Divider()
+        FullDiskAccessPermissionRow()
       }
     }
   }

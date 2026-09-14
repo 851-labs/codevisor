@@ -16,13 +16,14 @@ export interface ShellEnvOptions {
   readonly base?: NodeJS.ProcessEnv
   /// Platform override for tests; defaults to `process.platform`.
   readonly platform?: NodeJS.Platform
-  /// Home directory used to expand fallback dirs; defaults to `os.homedir()`.
+  /// Fallback when HOME is missing or empty; defaults to the OS home directory.
   readonly homedir?: string
   /// Shell runner returning stdout; defaults to an `execFile` wrapper.
   readonly runShell?: (
     shell: string,
     args: ReadonlyArray<string>,
-    timeoutMs: number
+    timeoutMs: number,
+    env: NodeJS.ProcessEnv
   ) => Promise<string>
   /// Probe timeout; bounds pathological shell rc files. Default 5000ms.
   readonly timeoutMs?: number
@@ -113,10 +114,11 @@ const userShellFromPasswd = (): string | undefined => {
 export const runShellCommand = (
   shell: string,
   args: ReadonlyArray<string>,
-  timeoutMs: number
+  timeoutMs: number,
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<string> =>
   new Promise<string>((resolve, reject) => {
-    execFile(shell, [...args], { timeout: timeoutMs }, (error, stdout) => {
+    execFile(shell, [...args], { env, timeout: timeoutMs }, (error, stdout) => {
       if (error === null) {
         resolve(stdout)
       } else {
@@ -172,7 +174,7 @@ const chooseShell = (
   return undefined
 }
 
-/// Returns `base` with PATH replaced by the merged login-shell PATH:
+/// Restores a missing HOME and merges the login-shell PATH into `base`:
 /// probed dirs first (user's own ordering wins), then the base PATH, then the
 /// fallback dirs and the newest nvm bin. Any probe failure — spawn error,
 /// timeout, empty output, no PATH line, no usable shell — degrades to base +
@@ -185,7 +187,11 @@ export const resolveShellEnv = async (
   if (platform === "win32") {
     return base
   }
-  const home = options.homedir ?? osHomedir()
+  // Service processes can inherit no HOME. Export it before probing so shell
+  // startup files and installer children agree on the user's home directory.
+  // os.homedir() can itself be empty when the process exports HOME="".
+  const home = base.HOME || options.homedir || osHomedir() || userInfo().homedir
+  const env = { ...base, HOME: home }
   const runShell = options.runShell ?? runShellCommand
   const timeoutMs = options.timeoutMs ?? 5000
   const shell = chooseShell(
@@ -198,14 +204,14 @@ export const resolveShellEnv = async (
   if (shell !== undefined) {
     try {
       // -i -l so the user's rc/profile files run — that's where PATH lives.
-      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs)
+      const output = await runShell(shell, ["-ilc", "/usr/bin/env"], timeoutMs, env)
       probed = splitPath(pathFromEnvOutput(output))
     } catch {
       // Degrade to base + fallback directories below.
     }
   }
   return {
-    ...base,
+    ...env,
     PATH: mergedPath([
       probed,
       splitPath(base.PATH),

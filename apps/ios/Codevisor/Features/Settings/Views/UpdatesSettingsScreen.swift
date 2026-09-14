@@ -77,14 +77,10 @@ struct UpdatesSettingsScreen: View {
 
   private func row(for component: UpdateComponent) -> some View {
     HStack(spacing: 10) {
-      if component.kind == .app || component.kind == .server {
-        Image("CodevisorMark")
-          .resizable()
-          .scaledToFit()
-          .foregroundStyle(.secondary)
-          .frame(width: 15, height: 15)
-          .accessibilityHidden(true)
-      }
+      icon(for: component)
+        .foregroundStyle(.secondary)
+        .frame(width: 20)
+        .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
         Text(component.detailText)
@@ -95,6 +91,21 @@ struct UpdatesSettingsScreen: View {
       }
       Spacer(minLength: 8)
       trailing(for: component)
+    }
+  }
+
+  @ViewBuilder
+  private func icon(for component: UpdateComponent) -> some View {
+    switch component.kind {
+    case .app, .server:
+      Image("CodevisorMark")
+        .resizable()
+        .scaledToFit()
+        .frame(width: 15, height: 15)
+    case .harness:
+      HarnessIconView(harnessId: component.subjectId, fallbackSymbolName: "brain", size: 15)
+    case .plugin:
+      Image(systemName: "puzzlepiece.extension")
     }
   }
 

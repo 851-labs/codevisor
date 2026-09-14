@@ -135,17 +135,13 @@ extension CodevisorServerClient {
             // when a replay starts but its final checkpoint is lost.
             var expectsKeepalives = false
             var receivedFirstFrame = false
-            var recovering = failures > 0
+            var needsConnectionConfirmation = scoped
             while !Task.isCancelled {
               let deadline: Duration? =
                 !receivedFirstFrame && scoped
                 ? Self.eventOpenDeadline : (scoped || expectsKeepalives ? Self.eventReceiveDeadline : nil)
               let message = try await receiveEventMessage(socket, deadline: deadline)
               receivedFirstFrame = true
-              if recovering, scoped {
-                continuation.yield(.synchronization(.catchingUp, cursor: cursor))
-                recovering = false
-              }
               guard let data = Self.data(from: message) else { continue }
               if let handledKinds {
                 let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
@@ -171,6 +167,7 @@ extension CodevisorServerClient {
                   if cursor < ServerSessionTransport.liveOnlyEventCursor, event.id != cursor {
                     throw EventStreamGapError(expected: cursor, received: event.id)
                   }
+                  needsConnectionConfirmation = false
                   continuation.yield(.synchronization(.caughtUp, cursor: cursor))
                 }
                 continue
@@ -180,6 +177,14 @@ extension CodevisorServerClient {
                 if event.subjectRevision != nil, event.id != cursor + 1 {
                   throw EventStreamGapError(expected: cursor + 1, received: event.id)
                 }
+              }
+              // Valid replay/live traffic proves the connection is working,
+              // even on older servers whose first heartbeat is 25s away.
+              // Keep this distinct from caughtUp: only a checkpoint can
+              // certify that the durable tail has arrived without gaps.
+              if needsConnectionConfirmation {
+                continuation.yield(.synchronization(.catchingUp, cursor: cursor))
+                needsConnectionConfirmation = false
               }
               // A live-only sentinel cursor means "no real cursor
               // yet". Once the first event arrives, retain its real

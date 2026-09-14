@@ -175,6 +175,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Skills in the canonical ~/.agents/skills store plus each harness's own
   /// skills directory.
   func listSkills() async throws -> ServerSkillsScan
+  /// Read or replace SKILL.md on this machine, preserving supporting files.
+  func skillContent(directoryName: String) async throws -> String
+  func updateSkill(directoryName: String, content: String) async throws -> ServerSkillsScan
   /// Create a skill in the canonical store — from a template, or from
   /// pasted SKILL.md content.
   func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan
@@ -287,6 +290,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Mirrors a workspace's archived flag so other devices — and the
   /// server's own cascade to the workspace's chats — see it.
   func setWorkspaceArchived(id: UUID, isArchived: Bool) async throws
+  func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree
   /// Creates a worktree with a client-supplied id so the caller can follow
   /// the server's `worktree.setup` progress events (subjectId = worktree id)
@@ -341,6 +346,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func upsertSession(_ session: ChatSession) async throws -> ServerSession
   func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession
   func updateSession(_ session: ChatSession) async throws -> ServerSession
+  func renameSession(_ session: ChatSession) async throws -> ServerSession
   func markSessionRead(id: UUID, throughSequence: Int) async throws -> ServerSession?
   func markSessionUnread(id: UUID) async throws -> ServerSession?
   func clearSessionPlanApproval(id: UUID) async throws

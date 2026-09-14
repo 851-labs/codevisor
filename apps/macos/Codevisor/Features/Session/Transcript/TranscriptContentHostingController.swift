@@ -1,91 +1,60 @@
 import AppKit
+import CodevisorUI
 import SwiftUI
 
 final class TranscriptContentHostingController: NSHostingController<AnyView> {
   var onLaidOutHeightChange: ((CGFloat) -> Void)?
   var onLayoutCompleted: (() -> Void)?
+  private let layoutObserver = TranscriptContentLayoutObserver()
   private var lastReportedHeight: CGFloat = 0
-  private var pendingMeasurementTask: Task<Void, Never>?
-  private var usesKnownContentHeight = false
-  private var needsHeightMeasurement = true
-  private var lastMeasuredWidth: CGFloat = 0
+
+  override init(rootView: AnyView) {
+    super.init(rootView: AnyView(EmptyView()))
+    layoutObserver.onLayout = { [weak self] size in
+      self?.reportLayout(size)
+    }
+    installRootView(rootView)
+  }
+
+  @available(*, unavailable)
+  required init?(coder _: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
 
   override func viewDidLayout() {
     super.viewDidLayout()
-    measureAndReportHeightIfNeeded()
     onLayoutCompleted?()
   }
 
-  deinit {
-    pendingMeasurementTask?.cancel()
+  func installRootView(_ content: AnyView) {
+    rootView = layoutObserver.install(content)
   }
 
-  private func measureAndReportHeightIfNeeded() {
-    guard !usesKnownContentHeight else { return }
-    // Never measure against the placeholder width. A row's content width
-    // starts at 1pt (see `TranscriptRowHost.contentWidthConstraint`) and
-    // only becomes real once the host has been positioned and laid out; a
-    // TextKit pass at 1pt wraps a message to one line fragment PER
-    // CHARACTER, which is pure waste — the result is meaningless and is
-    // always superseded. Skipping is safe: `TranscriptRowHost.layout()`
-    // re-invalidates whenever the width actually changes, so the real
-    // measurement still arrives.
-    let width = view.bounds.width
-    guard width > 1 else { return }
-    guard needsHeightMeasurement || abs(lastMeasuredWidth - width) > 0.5 else { return }
-    let proposedSize = CGSize(
-      width: width,
-      height: .greatestFiniteMagnitude
-    )
-    let measuredHeight = sizeThatFits(in: proposedSize).height
-    needsHeightMeasurement = false
-    lastMeasuredWidth = width
-    let height = max(1, measuredHeight.rounded(.up))
+  private func reportLayout(_ size: CGSize) {
+    guard abs(size.width - view.bounds.width) <= 0.5 else { return }
+    let height = max(1, size.height.rounded(.up))
     guard abs(lastReportedHeight - height) > 0.5 else { return }
     lastReportedHeight = height
     onLaidOutHeightChange?(height)
   }
 
   func invalidateContentSize(forceReport: Bool = false) {
-    usesKnownContentHeight = false
-    needsHeightMeasurement = true
-    if forceReport {
-      lastReportedHeight = 0
-    }
+    if forceReport { lastReportedHeight = 0 }
+    layoutObserver.invalidate()
     view.invalidateIntrinsicContentSize()
     view.needsLayout = true
     view.superview?.needsLayout = true
-    // SwiftUI observation can update content entirely inside this hosting
-    // controller without causing AppKit to lay the explicitly-sized outer
-    // wrapper out again. Measure after SwiftUI commits that update so the
-    // virtualizer never keeps positioning later rows from a stale height.
-    guard pendingMeasurementTask == nil else { return }
-    pendingMeasurementTask = Task { @MainActor [weak self] in
-      await Task.yield()
-      guard let self, !Task.isCancelled else { return }
-      self.pendingMeasurementTask = nil
-      self.view.layoutSubtreeIfNeeded()
-      self.measureAndReportHeightIfNeeded()
-    }
   }
 
   func resetReportedHeight() {
-    usesKnownContentHeight = false
-    needsHeightMeasurement = true
-    lastMeasuredWidth = 0
     lastReportedHeight = 0
+    layoutObserver.invalidate()
   }
 
-  /// Accepts a revision- and width-checked height from the transcript cache.
-  /// SwiftUI still lays the content out for display, but the outer hosting
-  /// controller no longer asks the complete subtree to determine the same
-  /// intrinsic height a second time during that layout pass.
+  /// Reuse the cached frame without a second sizing pass. The first placed
+  /// layout still verifies that height, and subsequent geometry changes
+  /// always report even when they occur inside an unchanged SwiftUI root.
   func useKnownContentHeight(_ height: CGFloat) {
-    pendingMeasurementTask?.cancel()
-    pendingMeasurementTask = nil
     lastReportedHeight = height
-    usesKnownContentHeight = true
-    needsHeightMeasurement = false
-    lastMeasuredWidth = view.bounds.width
   }
 }

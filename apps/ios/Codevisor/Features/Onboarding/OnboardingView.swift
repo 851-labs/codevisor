@@ -2,7 +2,7 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// First-launch onboarding: a welcome page, then a cloud-first "connect"
+/// First-launch onboarding: welcome, AI data-sharing consent, then a cloud-first "connect"
 /// page. The connect step is state-driven off `environment.cloud`:
 /// signed out leads with Codevisor Cloud sign-in, signed-in-with-no-machines
 /// shows install-and-login instructions (the machine logs itself into the
@@ -28,7 +28,7 @@ struct OnboardingView: View {
     NavigationStack {
       switch start {
       case .welcome: WelcomeStep()
-      case .connect: ConnectMachineStep()
+      case .connect: ConsentAndConnectStep()
       }
     }
   }
@@ -68,13 +68,24 @@ private struct WelcomeStep: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(.systemBackground))
     .safeAreaInset(edge: .bottom) {
-      NavigationLink {
-        ConnectMachineStep()
-      } label: {
-        Text("Get Started")
+      VStack(spacing: 12) {
+        NavigationLink {
+          ConsentAndConnectStep()
+        } label: {
+          Text("Continue")
+        }
+        .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
+        .accessibilityIdentifier("onboarding.continue")
+
+        Text(
+          "By continuing, you agree to our [Terms of Service](https://www.codevisor.dev/terms) and acknowledge our [Privacy Policy](https://www.codevisor.dev/privacy)."
+        )
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .tint(.accentColor)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
       }
-      .buttonStyle(OnboardingFilledButtonStyle(background: .accentColor, foreground: .white))
-      .accessibilityLabel("Get Started")
       .padding(.horizontal, 20)
       .padding(.top, 8)
       .padding(.bottom, 12)
@@ -85,14 +96,34 @@ private struct WelcomeStep: View {
 
 // MARK: - Connect
 
+/// Pairing and restored machines never imply permission to share data with AI providers.
+private struct ConsentAndConnectStep: View {
+  @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)
+  private var consentVersion
+
+  var body: some View {
+    Group {
+      if consentVersion == AIDataSharingConsent.currentVersion {
+        ConnectMachineStep()
+      } else {
+        AIDataSharingConsentScreen {
+          consentVersion = AIDataSharingConsent.currentVersion
+        }
+      }
+    }
+  }
+}
+
 /// The cloud-first connect page. Sign-in is the primary path; the manual QR /
 /// tailnet / add-machine flow lives one tap away behind "Set up a machine
 /// manually" so it never crowds the initial screen.
 private struct ConnectMachineStep: View {
   @Environment(AppEnvironment.self) private var environment
 
-  @State private var cloudSignIn = CloudSignInCoordinator()
+  @State private var cloudSignIn = CloudAuthenticationCoordinator()
   @State private var isSigningInToCloud = false
+  @State private var showsSettings = false
+  @State private var showsEmailSignIn = false
   /// The signed-in branch holds a bare spinner until the account's machine
   /// list has actually been fetched once — rendering the add-machine
   /// instructions (or anything else) off an empty-because-unfetched list
@@ -102,7 +133,7 @@ private struct ConnectMachineStep: View {
   private var cloud: CloudAccountController { environment.cloud }
 
   var body: some View {
-    Group {
+    ZStack {
       switch cloud.state {
       case .signedOut:
         signedOutContent
@@ -130,6 +161,17 @@ private struct ConnectMachineStep: View {
     }
     .background(Color(.systemBackground))
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Settings", systemImage: "gearshape") { showsSettings = true }
+          .accessibilityIdentifier("onboarding.settings")
+      }
+    }
+    .sheet(isPresented: $showsSettings) { SettingsSheet() }
+    .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: cloud) }
+    .onChange(of: cloud.state.isSignedIn) { _, _ in
+      hasCompletedFirstMachinesCheck = false
+    }
   }
 
   // MARK: Signed out (primary path)
@@ -160,34 +202,30 @@ private struct ConnectMachineStep: View {
         }
 
         if cloud.supportsGitHubSignIn {
-          Button(action: startCloudSignIn) {
-            Label {
-              Text("Sign in with GitHub")
-            } icon: {
-              gitHubMark
-            }
-          }
-          .buttonStyle(
-            OnboardingFilledButtonStyle(
-              background: Color(.label),
-              foreground: Color(.systemBackground)
-            )
-          )
+          CloudSignInProviderButton(
+            title: "Sign in with GitHub",
+            icon: .asset("GitHubMark")
+          ) { startCloudSignIn() }
           .disabled(isSigningInToCloud)
-          .accessibilityLabel("Sign in with GitHub")
+        }
+
+        if cloud.supportsAppleSignIn {
+          CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
+            .disabled(isSigningInToCloud)
+        }
+
+        if cloud.supportsEmailSignIn {
+          CloudEmailSignInButton { showsEmailSignIn = true }
+            .disabled(isSigningInToCloud)
         }
 
         if cloud.developmentAccountAvailable {
-          Button {
+          CloudSignInProviderButton(
+            title: "Use Development Account",
+            icon: .system("hammer")
+          ) {
             Task { await cloud.signInWithDevelopmentAccount() }
-          } label: {
-            Label {
-              Text("Use Development Account")
-            } icon: {
-              Image(systemName: "hammer")
-            }
           }
-          .buttonStyle(OnboardingOutlineButtonStyle())
           .disabled(isSigningInToCloud)
         }
 
@@ -288,14 +326,6 @@ private struct ConnectMachineStep: View {
     .padding(.horizontal, 24)
   }
 
-  private var gitHubMark: some View {
-    Image("GitHubMark")
-      .renderingMode(.template)
-      .resizable()
-      .scaledToFit()
-      .frame(width: 20, height: 20)
-  }
-
   private var secondaryManualLink: some View {
     NavigationLink {
       ManualSetupView()
@@ -334,19 +364,11 @@ private struct ConnectMachineStep: View {
 
   // MARK: Cloud sign-in
 
-  private func startCloudSignIn() {
-    let scheme = CloudSignInCoordinator.callbackScheme
+  private func startCloudSignIn(provider: CloudSignInProvider = .github) {
     isSigningInToCloud = true
-    environment.cloud.lastError = nil
-    cloudSignIn.start(
-      url: environment.cloud.signInURL(scheme: scheme),
-      callbackScheme: scheme
-    ) { callbackURL in
+    Task {
+      await cloudSignIn.signIn(provider: provider, cloud: environment.cloud)
       isSigningInToCloud = false
-      guard let callbackURL,
-        let deeplink = CloudAuthDeeplink.parse(callbackURL)
-      else { return }
-      Task { await environment.cloud.completeSignIn(ott: deeplink.ott) }
     }
   }
 }
@@ -354,10 +376,8 @@ private struct ConnectMachineStep: View {
 // MARK: - Onboarding button styles
 
 /// A full-width, large filled button shared by the onboarding CTAs so the
-/// "Get Started" and "Sign in with GitHub" actions line up pixel-for-pixel.
-/// Colours are passed in so the same style renders both the accent primary
-/// and the classic label-on-background OAuth look.
-private struct OnboardingFilledButtonStyle: ButtonStyle {
+/// welcome and the later onboarding actions align consistently.
+struct OnboardingFilledButtonStyle: ButtonStyle {
   var background: Color
   var foreground: Color
   var showsProgress = false
@@ -379,26 +399,6 @@ private struct OnboardingFilledButtonStyle: ButtonStyle {
       in: RoundedRectangle(cornerRadius: 14, style: .continuous)
     )
     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-  }
-}
-
-/// A full-width, large outlined secondary button — a clean tinted outline,
-/// never a filled gray blob.
-private struct OnboardingOutlineButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.body.weight(.semibold))
-      .foregroundStyle(.tint)
-      .frame(maxWidth: .infinity, minHeight: 50)
-      .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(Color.accentColor.opacity(configuration.isPressed ? 0.12 : 0))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .strokeBorder(Color(.separator), lineWidth: 1)
-      )
-      .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 

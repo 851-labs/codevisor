@@ -10,8 +10,33 @@ import TranscriptKit
 @Suite("Native send readiness", .serialized)
 @MainActor
 struct TranscriptSendReadinessTests {
-  @Test("An unchanged waiting height wakes the pending flight after host layout")
-  func unchangedHeightStartsFlight() throws {
+  @Test("A late unchanged height completes readiness without another model update")
+  func lateUnchangedHeightCompletesReadiness() throws {
+    _ = NSApplication.shared
+    let host = TranscriptRowHost(frame: NSRect(x: 0, y: 0, width: 320, height: 15))
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.contentView = host
+    defer { window.contentView = nil }
+    host.syncContentWidth()
+    host.installRootView(AnyView(Color.clear.frame(height: 15)), knownHeight: 15)
+    host.prepareForImmediatePresentation()
+    #expect(host.isPresentationReady)
+
+    let controller = try #require(host.subviews.first?.nextResponder as? TranscriptContentHostingController)
+    var readinessNotifications = 0
+    host.onPresentationReady = { readinessNotifications += 1 }
+    // A placed-geometry report can arrive after the native layout callback.
+    // Its height is already in the ledger, so no measurement commit or
+    // model update will request an extra transcript layout.
+    controller.onLaidOutHeightChange?(15)
+    host.layoutSubtreeIfNeeded()
+
+    #expect(host.isPresentationReady)
+    #expect(readinessNotifications == 1)
+  }
+
+  @Test("An unchanged waiting height wakes the pending flight after host layout", arguments: [false, true])
+  func unchangedHeightStartsFlight(lateHeightReport: Bool) throws {
     _ = NSApplication.shared
     let view = VirtualizedTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
     let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -46,10 +71,8 @@ struct TranscriptSendReadinessTests {
       view.measurements.setExact(row.layoutKey == activity.layoutKey ? 15 : row.estimatedHeight, for: row.layoutKey)
     }
     view.rebuildDocumentGeometry()
-    for _ in 0..<3 {
-      for host in view.mountedHosts.values { host.prepareForImmediatePresentation() }
-      view.commitPendingMeasurements()
-    }
+    for host in view.mountedHosts.values { host.prepareForImmediatePresentation() }
+    view.commitPendingMeasurements()
     view.scrollToBottom()
 
     let link = view.displayLink(target: view, selector: #selector(view.presentationDisplayLinkDidFire(_:)))
@@ -63,12 +86,20 @@ struct TranscriptSendReadinessTests {
     view.synchronizeSendAssistantVisibility()
 
     let host = try #require(view.mountedHosts[activity.layoutKey] as? TranscriptRowHost)
-    host.installRootView(AnyView(Color.clear.frame(height: 15)), knownHeight: nil)
+    if !lateHeightReport {
+      host.installRootView(AnyView(Color.clear.frame(height: 15)), knownHeight: nil)
+    }
     view.displayFrameRequested = false
     link.isPaused = true
     // Flush only the host. A scroll-view layout or model update would mask
     // the missing wakeup that caused the hold to expire in the recording.
-    for _ in 0..<3 { host.prepareForImmediatePresentation() }
+    if lateHeightReport {
+      let controller = try #require(host.subviews.first?.nextResponder as? TranscriptContentHostingController)
+      controller.onLaidOutHeightChange?(15)
+      host.layoutSubtreeIfNeeded()
+    } else {
+      host.prepareForImmediatePresentation()
+    }
     #expect(host.isPresentationReady)
     #expect(view.pendingMeasuredHeights.isEmpty)
     #expect(view.activeSendAnimationRequest == nil)

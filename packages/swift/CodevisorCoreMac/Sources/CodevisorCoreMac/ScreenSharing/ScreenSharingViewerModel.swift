@@ -175,6 +175,7 @@ public final class ScreenSharingViewerModel {
         guard let self, self.isCurrent(generation), [.connecting, .reconnecting].contains(self.phase) else { return }
         self.phase = .viewing
         self.message = nil
+        self.control?.requestWhenAvailable()
       }
       created.onConnectionChanged = { [weak self] state in
         guard let self, self.isCurrent(generation), ["failed", "disconnected", "closed"].contains(state) else { return }

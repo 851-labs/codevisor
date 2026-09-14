@@ -1,7 +1,6 @@
 import TranscriptKit
 import CodevisorCore
 import CodevisorUI
-import QuickLook
 import SwiftUI
 import StreamMarkdown
 
@@ -44,7 +43,7 @@ struct AttachmentThumbnailView: View {
 
   @State private var image: UIImage?
   @State private var geometry = AttachmentPreviewGeometryState()
-  @State private var quickLookURL: QuickLookURL?
+  @State private var quickLookURL: URL?
 
   init(attachment: Attachment, inline: Bool = false) {
     file = PreviewFile(attachment: attachment)
@@ -102,18 +101,16 @@ struct AttachmentThumbnailView: View {
       key: AttachmentGeometryReadinessPreferenceKey.self,
       value: inline && file.hasVisualPreview && !geometry.isResolved ? 1 : 0
     )
-    .sheet(item: $quickLookURL) { item in
-      QuickLookPreview(url: item.url)
-        .ignoresSafeArea()
-        .presentationDragIndicator(.visible)
-    }
+    .attachmentQuickLookPreview($quickLookURL)
   }
 
   private var imageThumb: some View {
     let size = thumbnailSize
     return ZStack {
-      RoundedRectangle(cornerRadius: 8)
-        .fill(theme.bubbleBackground)
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .fill(theme.bubbleBackground)
+      }
       if let image {
         Image(uiImage: image)
           .resizable()
@@ -125,14 +122,18 @@ struct AttachmentThumbnailView: View {
     }
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(.separator, lineWidth: 1)
-    )
+    .overlay {
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .strokeBorder(.separator, lineWidth: 1)
+      }
+    }
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture { preview() }
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
-    .accessibilityAddTraits(.isButton)
+    .accessibilityAddTraits([.isImage, .isButton])
+    .attachmentImageContextMenu(file: file, image: image)
   }
 
   private var thumbnailSize: CGSize {
@@ -200,7 +201,7 @@ struct AttachmentThumbnailView: View {
       guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
         return
       }
-      quickLookURL = QuickLookURL(url: url)
+      quickLookURL = url
     }
   }
 }
@@ -260,46 +261,4 @@ func materializeQuickLookURL(data: Data, name: String) async -> URL? {
     }
   }.value
   return written ? url : nil
-}
-
-struct QuickLookURL: Identifiable {
-  let url: URL
-  var id: String { url.path }
-}
-
-/// QLPreviewController wrapper: images, PDFs, and videos all preview (with
-/// video playback) without per-type code. Wrapped in a navigation controller
-/// so Quick Look's native Done and share chrome appears in the sheet.
-struct QuickLookPreview: UIViewControllerRepresentable {
-  let url: URL
-  @Environment(\.dismiss) private var dismiss
-
-  func makeUIViewController(context: Context) -> UINavigationController {
-    let controller = QLPreviewController()
-    controller.dataSource = context.coordinator
-    let dismiss = self.dismiss
-    controller.navigationItem.leftBarButtonItem = UIBarButtonItem(
-      systemItem: .close,
-      primaryAction: UIAction { _ in dismiss() }
-    )
-    return UINavigationController(rootViewController: controller)
-  }
-
-  func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
-
-  func makeCoordinator() -> Coordinator { Coordinator(url: url) }
-
-  final class Coordinator: NSObject, QLPreviewControllerDataSource {
-    private let url: URL
-
-    init(url: URL) { self.url = url }
-
-    nonisolated func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
-
-    nonisolated func previewController(
-      _ controller: QLPreviewController, previewItemAt index: Int
-    ) -> QLPreviewItem {
-      url as NSURL
-    }
-  }
 }

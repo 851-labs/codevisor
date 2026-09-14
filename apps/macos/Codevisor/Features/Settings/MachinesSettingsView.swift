@@ -92,7 +92,6 @@ struct MachinesSettingsView: View {
       }
       // The cloud account (sign-in, self-hosted server) as its own
       // "Cloud" section.
-      CloudSettingsView()
       if discovery.isAvailable && !discovery.discovered.isEmpty {
         Section {
           ForEach(discovery.discovered) { machine in

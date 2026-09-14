@@ -8,9 +8,9 @@
 # saved from the default branch, however, are visible to ALL refs, so this
 # workflow builds and saves the cache from main and release runs restore it.
 #
-# The main-push Alpha workflow owns normal cache writes; this schedule only keeps
+# The main-push Build Alpha workflow owns normal cache writes; this schedule only keeps
 # them alive during quiet weeks.
-name: macOS Build Caches
+name: Maintain macOS Build Caches
 
 on:
   schedule:
@@ -33,6 +33,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
       - name: Select full Xcode
         shell: bash
         run: |

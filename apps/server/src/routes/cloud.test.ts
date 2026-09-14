@@ -31,20 +31,22 @@ describe("cloud routes", () => {
     ).toBe(501)
     expect((await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })).status).toBe(501)
     expect((await jsonRequest(server, "/v1/cloud/unknown", { method: "GET" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/unknown", { method: "GET" })).status).toBe(404)
   })
 
   it("drives the machine's cloud registration through live cloud control", async () => {
     const { services } = await makeServices("server-cloud-live")
     let bridgeDeviceId: string | undefined
-    let lastConnect: { serverUrl: string; sessionToken: string } | undefined
+    let lastConnect: { serverUrl: string; sessionToken: string; options?: unknown } | undefined
     let failWith: unknown
     const cloud = {
       deviceId: () => bridgeDeviceId,
       state: () => (bridgeDeviceId === undefined ? undefined : "connected"),
+      serverUrl: () => (bridgeDeviceId === undefined ? undefined : "https://cloud.example"),
       managedBy: () => (bridgeDeviceId === undefined ? undefined : ("app" as const)),
-      connect: (serverUrl: string, sessionToken: string) => {
+      connect: (serverUrl: string, sessionToken: string, options?: unknown) => {
         if (failWith !== undefined) return Promise.reject(failWith)
-        lastConnect = { serverUrl, sessionToken }
+        lastConnect = { serverUrl, sessionToken, options }
         bridgeDeviceId = "device-live"
         return Promise.resolve(bridgeDeviceId)
       },
@@ -81,11 +83,16 @@ describe("cloud routes", () => {
       body: JSON.stringify({ serverUrl: "https://cloud.example", sessionToken: "session-1" })
     })
     expect(connected).toEqual({ status: 200, body: { deviceId: "device-live" } })
-    expect(lastConnect).toEqual({ serverUrl: "https://cloud.example", sessionToken: "session-1" })
+    expect(lastConnect).toEqual({
+      serverUrl: "https://cloud.example",
+      sessionToken: "session-1",
+      options: {}
+    })
     expect((await jsonRequest(server, "/v1/cloud")).body).toEqual({
       connected: true,
       deviceId: "device-live",
       state: "connected",
+      serverUrl: "https://cloud.example",
       managedBy: "app"
     })
     expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
@@ -109,6 +116,44 @@ describe("cloud routes", () => {
     expect(failedBare.status).toBe(502)
     expect(failedBare.body).toMatchObject({ error: expect.stringContaining("socket hangup") })
     failWith = undefined
+
+    for (const extra of [
+      { managedBy: "invalid" },
+      { machineName: 7 },
+      { machineName: " " },
+      { machineName: "x".repeat(121) }
+    ]) {
+      expect(
+        (
+          await jsonRequest(server, "/v1/cloud/connect", {
+            method: "POST",
+            body: JSON.stringify({
+              serverUrl: "https://cloud.example",
+              sessionToken: "session",
+              ...extra
+            })
+          })
+        ).status
+      ).toBe(400)
+    }
+    expect(
+      (
+        await jsonRequest(server, "/v1/cloud/connect", {
+          method: "POST",
+          body: JSON.stringify({
+            serverUrl: "https://cloud.example",
+            sessionToken: "session-cli",
+            managedBy: "external",
+            machineName: " CLI machine "
+          })
+        })
+      ).status
+    ).toBe(200)
+    expect(lastConnect).toEqual({
+      serverUrl: "https://cloud.example",
+      sessionToken: "session-cli",
+      options: { managedBy: "external", machineName: "CLI machine" }
+    })
 
     // Disconnect forgets the registration everywhere.
     expect((await jsonRequest(server, "/v1/cloud/disconnect", { method: "POST" })).status).toBe(200)

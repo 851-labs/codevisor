@@ -74,6 +74,16 @@ export const normalizeModeState = (state: AcpSessionModeState): SessionModeState
   })
 })
 
+/// Thought-level pickers should read like Codex/Claude: "Reasoning" with
+/// "High", not "Reasoning Effort" with "High Effort". Agents often send both
+/// a "Thinking:"/"Reasoning:" prefix and a trailing "Effort" suffix.
+const conciseThoughtLevelName = (name: string, category: string | null | undefined): string => {
+  if (category !== "thought_level") return name
+  const withoutPrefix = name.replace(/^(?:Thinking|Reasoning):\s*/i, "").trim()
+  const withoutEffort = withoutPrefix.replace(/\s+effort$/i, "").trim()
+  return withoutEffort === "" ? name : withoutEffort
+}
+
 export const normalizeAcpConfigOptions = (
   options: ReadonlyArray<AcpSessionConfigOption>
 ): ReadonlyArray<SessionConfigOption> =>
@@ -84,7 +94,7 @@ export const normalizeAcpConfigOptions = (
     return [
       {
         id: option.id,
-        name: option.name,
+        name: conciseThoughtLevelName(option.name, option.category),
         ...(option.description === undefined || option.description === null
           ? {}
           : { description: option.description }),
@@ -119,10 +129,7 @@ const normalizeSelectOption = (
   category: string | null | undefined
 ): SessionConfigSelectOption => ({
   value: option.value,
-  name:
-    category === "thought_level"
-      ? option.name.replace(/^(?:Thinking|Reasoning):\s*/i, "")
-      : option.name,
+  name: conciseThoughtLevelName(option.name, category),
   ...(option.description === undefined || option.description === null
     ? {}
     : { description: option.description })

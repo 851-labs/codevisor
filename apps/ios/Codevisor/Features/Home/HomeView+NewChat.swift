@@ -6,9 +6,10 @@ import UIKit
 /// The New Chat sheet, its first-send promotion into a real workspace
 /// route, and the canonical workspace destination.
 extension HomeView {
-  func presentNewChat() {
+  func presentNewChat(serverId: String? = nil) {
     newChatSheetPath = NavigationPath()
     let flow = NewChatFlow()
+    flow.requestedServerId = serverId
     newChatFlow = flow
     presentedNewChatFlow = flow
   }
@@ -305,6 +306,7 @@ extension HomeView {
         NavigationStack(path: $newChatSheetPath) {
           WorkspaceScreen(
             sessionId: nil,
+            serverId: liveFlow.requestedServerId,
             isNewChatPresentation: true,
             isPromotingNewChat: liveFlow.hasStartedExpansion,
             initialComposerFocusRequest: liveFlow.composerFocusRequest,
@@ -367,6 +369,7 @@ extension HomeView {
   }
 
   func handleNewChatSheetDismissed() {
+    defer { clientPresentationCompletion.complete("new_chat") }
     guard let flow = newChatFlow else {
       resetNewChatPresentation()
       return

@@ -10,6 +10,8 @@
     let alignments: [ColumnAlignment]
     let rows: [[MarkdownText]]
     @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownImageLoader) private var imageLoader
+    @State private var images = MarkdownTableImages()
     @Environment(\.markdownTableBleed) private var bleed
     @Environment(\.streamMarkdownTextLayoutWidth) private var rowWidth
     @Environment(\.markdownLinkAction) private var linkAction
@@ -27,6 +29,7 @@
       let width: CGFloat
       let dynamicTypeSize: DynamicTypeSize
       let dark: Bool
+      let images: [String: MarkdownImageResource]
     }
 
     private struct Request: Sendable {
@@ -39,7 +42,7 @@
       try request.traits.perform {
         try UIKitMarkdownTableLayout(
           headers: request.key.headers, alignments: request.key.alignments, rows: request.key.rows,
-          theme: request.theme, width: request.key.width
+          theme: request.theme, width: request.key.width, images: request.key.images
         )
       }
     }
@@ -48,7 +51,7 @@
       let key = RequestKey(
         headers: headers, alignments: alignments, rows: rows, theme: theme.renderFingerprint,
         width: rowWidth.flatMap { $0 > 1 ? $0 : nil } ?? measuredWidth,
-        dynamicTypeSize: dynamicTypeSize, dark: colorScheme == .dark
+        dynamicTypeSize: dynamicTypeSize, dark: colorScheme == .dark, images: images.resources
       )
       NativeVirtualizedTableView(layout: prepared, theme: theme, bleed: bleed, linkAction: linkAction)
         .frame(height: prepared?.geometry.size.height ?? CGFloat(rows.count + 1) * 44)
@@ -73,6 +76,13 @@
               assertionFailure("Unexpected table preparation failure: \(error)")
             }
           }
+        }
+        .task(
+          id: MarkdownTableImages.Request(
+            sources: Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources)), loaderID: imageLoader.id
+          )
+        ) {
+          await images.load(sources: Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources)), using: imageLoader)
         }
         .onDisappear { worker.cancel() }
 
@@ -294,6 +304,7 @@
           cell.frame = frame.offsetBy(dx: 0, dy: -visibleOriginY)
           if contentChanged || cell.textStorage.length == 0 {
             cell.setContent(tableLayout.cells[row][column])
+            cell.accessibilityLabel = MarkdownImageAttachment.plainText(tableLayout.cells[row][column])
             _ = cell.contentHeight(forWidth: frame.width)
           }
         }

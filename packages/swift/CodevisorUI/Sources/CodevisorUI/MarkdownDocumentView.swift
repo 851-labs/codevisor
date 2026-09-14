@@ -50,6 +50,7 @@ public struct MarkdownDocumentView: View {
             .padding(32)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .environment(\.markdownImageLoader, document.imageLoader)
         .markdownLinkHandler { url in openLink?(url) ?? false }
         .environment(
           \.markdownTheme,
@@ -91,18 +92,23 @@ public struct MarkdownDocumentView: View {
     let documentID: String
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownLinkAction) private var linkAction
+    @Environment(\.markdownImageLoader) private var imageLoader
+    @State private var imageRevision = 0
 
     func makeNSView(context: Context) -> SettledMarkdownView {
       SettledMarkdownView()
     }
 
     func updateNSView(_ view: SettledMarkdownView, context: Context) {
-      view.setContent(blocks: blocks, theme: theme, streamID: documentID, linkAction: linkAction)
+      view.onContentHeightChange = { imageRevision += 1 }
+      view.setContent(
+        blocks: blocks, theme: theme, streamID: documentID, linkAction: linkAction, imageLoader: imageLoader)
     }
 
     func sizeThatFits(
       _ proposal: ProposedViewSize, nsView: SettledMarkdownView, context: Context
     ) -> CGSize? {
+      let _ = imageRevision
       let width = max(1, proposal.width ?? 860)
       return CGSize(width: width, height: ceil(nsView.contentHeight(forWidth: width)))
     }

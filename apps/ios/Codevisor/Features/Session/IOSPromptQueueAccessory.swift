@@ -5,6 +5,7 @@ import SwiftUI
 /// A compact, touch-sized summary above the composer. Queue management lives
 /// in a sheet so editing and deletion never depend on tiny inline controls.
 struct IOSPromptQueueAccessory: View {
+  var cardStyle = ComposerCardStyle()
   @Bindable var controller: SessionController
   let glassNamespace: Namespace.ID
   @Binding var isPresentingQueue: Bool
@@ -47,7 +48,7 @@ struct IOSPromptQueueAccessory: View {
     }
     .buttonStyle(.plain)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      shape: cardStyle.shape,
       id: .queue,
       in: glassNamespace
     )

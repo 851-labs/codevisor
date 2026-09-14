@@ -191,7 +191,7 @@ private struct ComposerAttachmentChip: View {
   let onRetry: () -> Void
 
   @State private var thumbnail: UIImage?
-  @State private var quickLookURL: QuickLookURL?
+  @State private var quickLookURL: URL?
 
   private var failureReason: String? {
     if case let .failed(reason) = attachment.state { return reason }
@@ -231,17 +231,27 @@ private struct ComposerAttachmentChip: View {
       }
     }
     .task(id: attachment.localData.count) {
-      guard attachment.hasVisualPreview, thumbnail == nil else { return }
+      guard attachment.hasVisualPreview, !attachment.localData.isEmpty, thumbnail == nil else {
+        return
+      }
       let data = attachment.localData
-      thumbnail = await Task.detached(priority: .userInitiated) {
-        UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 320, height: 320))
+      let name = attachment.name
+      let mimeType = attachment.mimeType
+      let isVideo = attachment.isVideo
+      let isPDF = attachment.isPDF
+      let image = await Task.detached(priority: .userInitiated) {
+        await attachmentPreviewImage(
+          data: data,
+          name: name,
+          mimeType: mimeType,
+          isVideo: isVideo,
+          isPDF: isPDF
+        )
       }.value
+      guard !Task.isCancelled else { return }
+      thumbnail = image
     }
-    .sheet(item: $quickLookURL) { item in
-      QuickLookPreview(url: item.url)
-        .ignoresSafeArea()
-        .presentationDragIndicator(.visible)
-    }
+    .attachmentQuickLookPreview($quickLookURL)
   }
 
   private var thumbnailView: some View {
@@ -317,7 +327,7 @@ private struct ComposerAttachmentChip: View {
     let name = attachment.name
     Task {
       guard let url = await materializeQuickLookURL(data: data, name: name) else { return }
-      quickLookURL = QuickLookURL(url: url)
+      quickLookURL = url
     }
   }
 

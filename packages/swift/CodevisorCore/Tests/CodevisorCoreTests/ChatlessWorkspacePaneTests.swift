@@ -16,8 +16,7 @@ struct ChatlessWorkspacePaneTests {
       rootDirectory: "/tmp/project",
       serverId: "stage3v",
       projectId: UUID(),
-      centerTree: centerTree,
-      bottomGroup: PaneGroupState()
+      centerTree: centerTree
     )
   }
 
@@ -28,7 +27,8 @@ struct ChatlessWorkspacePaneTests {
     #expect(state.panes[0].kind == .newTab)
     #expect(state.panes[0].chatSessionId == nil)
     #expect(state.selectedPaneId == state.panes[0].id)
-    #expect(state.isVisible)
+    let space = workspace(centerTree: .leaf(state))
+    #expect(space.selectedCenterTab?.root.allGroups.first?.state == state)
     // The placeholder keys on its own pane id, never on a session.
     #expect(state.panes[0].terminalKey == state.panes[0].id.uuidString)
   }
@@ -43,14 +43,14 @@ struct ChatlessWorkspacePaneTests {
       workspaceId: space.id, groupId: leafId, repository: repository)
 
     // Loading with no session key still finds the workspace's own leaf state.
-    let loaded = bridge.load(sessionId: nil, placement: .center)
+    let loaded = bridge.load(sessionId: nil)
     #expect(loaded?.panes.first?.kind == .newTab)
 
     var updated = try! #require(loaded)
     updated.addNewTabPane()
-    bridge.save(updated, sessionId: nil, placement: .center)
+    bridge.save(updated, sessionId: nil)
 
-    let reloaded = bridge.load(sessionId: nil, placement: .center)
+    let reloaded = bridge.load(sessionId: nil)
     #expect(reloaded?.panes.count == 2)
     space = try! #require(repository.workspace(id: space.id))
     #expect(space.centerTree.group(id: leafId)?.panes.count == 2)
@@ -63,13 +63,13 @@ struct ChatlessWorkspacePaneTests {
 
     // Saving without a key is a no-op rather than a substitute key that could
     // collide with a real session's legacy entry.
-    legacy.save(state, sessionId: nil, placement: .center)
-    #expect(legacy.load(sessionId: nil, placement: .center) == nil)
+    legacy.save(state, sessionId: nil)
+    #expect(legacy.load(sessionId: nil) == nil)
 
     let session = UUID()
-    legacy.save(state, sessionId: session, placement: .center)
-    #expect(legacy.load(sessionId: session, placement: .center) == state)
-    #expect(legacy.load(sessionId: nil, placement: .center) == nil)
+    legacy.save(state, sessionId: session)
+    #expect(legacy.load(sessionId: session) == state)
+    #expect(legacy.load(sessionId: nil) == nil)
   }
 
   @Test func convertingAPlaceholderWithoutASessionRefusesOnlyTheTerminal() {

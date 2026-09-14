@@ -199,6 +199,7 @@ describe("refreshPluginIndex", () => {
       commit: "a".repeat(40),
       id: "octocat.notes",
       name: "Notes",
+      url: "https://www.codevisor.dev/plugins/octocat.notes",
       version: "1.2.0",
       description: "A notes pane",
       panes: [{ type: "notes", title: "Notes", path: "/notes/" }],

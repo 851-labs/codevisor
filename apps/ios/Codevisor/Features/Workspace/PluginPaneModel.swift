@@ -40,6 +40,7 @@ final class PluginPaneModel: Identifiable {
   @ObservationIgnored private let workspaceId: UUID?
   @ObservationIgnored private let cwd: String
   @ObservationIgnored private let client: any CodevisorServerClienting
+  @ObservationIgnored private let access: PluginAccessController
   /// The machine's effective HTTP origin: direct machines answer their
   /// baseURL, relay machines start the loopback bridge on demand
   /// (MachineController.effectiveHTTPBaseURL).
@@ -65,6 +66,7 @@ final class PluginPaneModel: Identifiable {
     workspaceId: UUID?,
     cwd: String,
     client: any CodevisorServerClienting,
+    access: PluginAccessController,
     resolveBaseURL: @escaping @MainActor () async -> URL?,
     recoverConnection: @escaping @MainActor () async -> URL?
   ) {
@@ -75,6 +77,7 @@ final class PluginPaneModel: Identifiable {
     self.workspaceId = workspaceId
     self.cwd = cwd
     self.client = client
+    self.access = access
     self.resolveBaseURL = resolveBaseURL
     self.recoverConnection = recoverConnection
   }
@@ -150,6 +153,19 @@ final class PluginPaneModel: Identifiable {
     controller?.applyTheme(theme)
   }
 
+  func revalidateAccess() async {
+    do {
+      guard let plugin = try await client.listPlugins().first(where: { $0.id == pluginId }) else {
+        throw PluginAccessError("This plugin is no longer installed.")
+      }
+      try await access.requireAccess(to: plugin)
+    } catch {
+      guard !Task.isCancelled else { return }
+      teardown()
+      phase = .failed(ErrorReporter.userFacingMessage(for: error))
+    }
+  }
+
   private func load(theme: WebPaneThemeTokens, updateRevision: UInt64, recovering: Bool = false) {
     lastTheme = theme
     if !recovering { connectionRecovery.reset(); connectionFailure = false }
@@ -164,6 +180,11 @@ final class PluginPaneModel: Identifiable {
     loadTask = Task { [weak self] in
       guard let self else { return }
       do {
+        guard let plugin = try await self.client.listPlugins().first(where: { $0.id == self.pluginId }) else {
+          throw PluginAccessError("This plugin is no longer installed.")
+        }
+        try await self.access.requireAccess(to: plugin)
+        guard !Task.isCancelled else { return }
         let response = try await self.client.issuePluginPaneToken(
           pluginId: self.pluginId,
           paneId: self.id.uuidString.lowercased(),
@@ -193,6 +214,7 @@ final class PluginPaneModel: Identifiable {
         controller.load(url)
       } catch {
         guard !Task.isCancelled, !isTaskCancellation(error) else { return }
+        controller.stopLoading()
         Log.plugins.error(
           "plugin pane token failed for \(self.pluginId, privacy: .public): \(String(describing: error), privacy: .public)"
         )

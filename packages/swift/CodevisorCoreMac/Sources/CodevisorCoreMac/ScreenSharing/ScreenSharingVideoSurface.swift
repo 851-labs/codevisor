@@ -4,7 +4,7 @@ import CodevisorScreenSharing
 import OSLog
 
 @MainActor
-final class ScreenSharingVideoSurface: NSView {
+final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget {
   var onFocusChanged: ((Bool) -> Void)?
   let metal: ScreenSharingMetalView
   lazy var input = ScreenSharingInputSurface(view: self)
@@ -56,13 +56,12 @@ final class ScreenSharingVideoSurface: NSView {
   override var acceptsFirstResponder: Bool { true }
   override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
-    if accepted { onFocusChanged?(true) }
+    if accepted { input.resume(); onFocusChanged?(true) }
     return accepted
   }
   override func resignFirstResponder() -> Bool {
-    if input.active { input.onRelease?() }
     let accepted = super.resignFirstResponder()
-    if accepted { onFocusChanged?(false) }
+    if accepted { input.suspend(); onFocusChanged?(false) }
     return accepted
   }
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -189,14 +188,16 @@ final class NativeScreenSharingViewingPeer: ScreenSharingViewingPeer {
     control.onActiveChanged = { [weak self] active in
       guard let self else { return }
       if active {
-        if !self.surface.input.begin() { self.control.release(reason: "Focus this window and request control again.") }
+        if !self.surface.input.begin() { self.control.release(reason: self.surface.input.failureMessage) }
       } else {
         self.surface.input.end()
       }
     }
     surface.onFocusChanged = { [weak self] in self?.onFocusChanged?($0) }
     surface.input.onInput = { [weak control] in control?.input($0) }
-    surface.input.onRelease = { [weak control] in control?.release() }
+    surface.input.onRelease = { [weak control, weak input = surface.input] in
+      control?.release(reason: input?.failureMessage)
+    }
     controlTask = Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }

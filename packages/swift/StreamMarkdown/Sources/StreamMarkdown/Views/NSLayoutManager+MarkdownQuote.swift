@@ -1,44 +1,46 @@
-#if canImport(UIKit) && !canImport(AppKit)
+#if canImport(AppKit)
+  import AppKit
+#elseif canImport(UIKit)
   import UIKit
+#endif
 
+#if canImport(AppKit) || canImport(UIKit)
   extension NSLayoutManager {
     func drawMarkdownQuoteBars(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
       guard let textStorage, glyphsToShow.length > 0 else { return }
-      let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-      textStorage.enumerateAttribute(
-        .streamMarkdownQuoteDecoration,
-        in: characters,
-        options: []
-      ) { value, characterRange, _ in
-        guard let decoration = value as? TextKitQuoteDecoration else { return }
-        let glyphRange = self.glyphRange(
-          forCharacterRange: characterRange,
-          actualCharacterRange: nil
-        )
-        let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
-        guard visibleGlyphs.length > 0 else { return }
+      #if canImport(AppKit)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+      #else
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+      #endif
 
-        self.enumerateLineFragments(forGlyphRange: visibleGlyphs) {
-          lineRect, _, _, lineGlyphRange, _ in
-          guard NSIntersectionRange(visibleGlyphs, lineGlyphRange).length > 0 else {
-            return
-          }
-          guard let context = UIGraphicsGetCurrentContext() else { return }
-          for offset in decoration.barOffsets {
-            TextKitQuoteBarPainter.fill(
-              CGRect(
-                x: origin.x + offset,
-                y: origin.y + lineRect.minY,
-                width: decoration.barWidth,
-                height: lineRect.height
-              ),
-              color: decoration.color,
-              in: context
-            )
-          }
+      // A paragraph and its spacing/newline can carry distinct decoration
+      // instances on the same line. Enumerating attribute runs first paints
+      // that line twice, darkening its translucent border. Quotes decorate
+      // whole lines, so visit each line once and use its starting decoration.
+      enumerateLineFragments(forGlyphRange: glyphsToShow) {
+        lineRect, _, _, lineGlyphRange, _ in
+        guard lineGlyphRange.length > 0 else { return }
+        let character = self.characterIndexForGlyph(at: lineGlyphRange.location)
+        guard character < textStorage.length,
+          let decoration = textStorage.attribute(
+            .streamMarkdownQuoteDecoration, at: character, effectiveRange: nil
+          ) as? TextKitQuoteDecoration
+        else { return }
+
+        for offset in decoration.barOffsets {
+          TextKitQuoteBarPainter.fill(
+            CGRect(
+              x: origin.x + offset,
+              y: origin.y + lineRect.minY,
+              width: decoration.barWidth,
+              height: lineRect.height
+            ),
+            color: decoration.color,
+            in: context
+          )
         }
       }
     }
-
   }
 #endif

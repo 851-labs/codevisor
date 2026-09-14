@@ -21,6 +21,7 @@ public final class AppEnvironment {
   public let theme: ThemeManager
   public let machines: MachineController
   public let cloud: CloudAccountController
+  public let pluginAccess: PluginAccessController
   public let localServer: (any LocalServerControlling)?
   public let appUpdate: AppUpdateModel
   /// The fleet-wide update fold (app + servers + harnesses + plugins
@@ -139,6 +140,12 @@ public final class AppEnvironment {
     self.cloud = CloudAccountController(
       credentialStore: cloudCredentialStore ?? InMemoryCloudCredentialStore()
     )
+    self.pluginAccess = PluginAccessController(cloud: cloud, store: machineStore)
+    #if os(iOS)
+      updateCenter.reviewPluginUpdate = { [pluginAccess] _, plan in
+        try await pluginAccess.requireEligible(pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
+      }
+    #endif
     // Cloud machines are first-class members of the machine list: the
     // controller reads presence (and relay transports) from the account.
     machines.cloudProvider = cloud
@@ -155,6 +162,7 @@ public final class AppEnvironment {
       self?.machines.handleCloudAccountSignedOut()
     }
     cloud.onMachinesRefreshed = { [weak self] in
+      if let access = self?.pluginAccess { Task { try? await access.syncConsent() } }
       self?.machines.reconcileCloudSelection()
       self?.machines.pruneDeadCloudRecords()
     }
@@ -409,6 +417,8 @@ public final class AppEnvironment {
   public static func preview(
     seedProjects: [Project] = AppEnvironment.sampleProjects,
     seedSessions: [ChatSession] = AppEnvironment.sampleSessions,
+    seedMachines: [CodevisorMachine] = [],
+    seedCapabilities: [ServerHarnessCapability] = [],
     hasOnboarded: Bool = true
   ) -> AppEnvironment {
     let store = InMemoryStore()
@@ -417,6 +427,12 @@ public final class AppEnvironment {
     projectRepository.save(seedProjects)
     sessionRepository.save(seedSessions)
     let settings = AppSettingsModel(store: InMemoryStore())
+    let machineStore = InMemoryStore()
+    if !seedMachines.isEmpty {
+      try? machineStore.saveData(
+        JSONEncoder().encode(MachineRegistry(remoteMachines: seedMachines)), forKey: "machines"
+      )
+    }
     if hasOnboarded {
       settings.completeOnboarding(importExternalSessions: false)
       settings.setShareCrashReports(false)
@@ -426,12 +442,12 @@ public final class AppEnvironment {
       sessionRepository: sessionRepository,
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: settings,
-      machineStore: InMemoryStore(),
+      machineStore: machineStore,
       harnessService: PreviewHarnessService(),
       // Hermetic: the default factory builds a real HTTP client against
       // the Debug dev port, so previews/tests would sync their sample
       // projects into a live dev server's database.
-      machineClientFactory: { _ in PreviewServerClient() }
+      machineClientFactory: { _ in PreviewServerClient(harnessCapabilities: seedCapabilities) }
     )
   }
 

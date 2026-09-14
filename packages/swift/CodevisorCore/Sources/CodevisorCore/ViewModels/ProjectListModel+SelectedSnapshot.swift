@@ -26,7 +26,7 @@ extension ProjectListModel {
       // the stale response. The newly selected machine triggers its own
       // refresh, and this one would merge (and persist) another
       // machine's projects into the wrong sidebar.
-      guard serverId == selectedServerId,
+      guard !Task.isCancelled, serverId == selectedServerId,
         isCurrentSnapshotRefresh(generation, for: serverId),
         isCurrentRecordLifetime(lifetimeGeneration, for: serverId)
       else { return .superseded }
@@ -57,10 +57,12 @@ extension ProjectListModel {
       let update = await ServerNavigationSnapshotBuilder.sessionUpdate(
         from: event,
         serverId: serverId
-      ), isCurrentRecordLifetime(lifetimeGeneration, for: serverId)
+      ), !Task.isCancelled, isCurrentRecordLifetime(lifetimeGeneration, for: serverId)
     else {
       return .requiresFullRefresh
     }
+
+    invalidateSnapshotRefreshes(for: serverId)
 
     let session = update.session
     let scopedId = ScopedSessionID(serverId: serverId, id: session.id)

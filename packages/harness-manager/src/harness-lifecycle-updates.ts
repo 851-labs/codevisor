@@ -99,7 +99,7 @@ export const makeHarnessUpdateGate = (
             ? (definition.installMethods ?? []).find(
                 (candidate) =>
                   candidate.kind ===
-                  (origin === "brew" ? "brew" : origin === "curl" ? "curl" : "npm")
+                  (origin === "brew" || origin === "curl" || origin === "uv" ? origin : "npm")
               )
             : { cask: detectedBrew.cask, formula: detectedBrew.formula, kind: "brew" }
         if (spec === undefined)

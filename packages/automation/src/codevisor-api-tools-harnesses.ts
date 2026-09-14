@@ -1,14 +1,18 @@
 import {
   AnswerOpenCodeAuthRequest,
+  AnswerHarnessAuthRequest,
+  ApplyPluginUpdateRequest,
   AnswerPiAuthRequest,
   CreateHarnessAccountRequest,
   CustomHarnessSpec,
   DiscoverRemotePluginRequest,
   ImportRemotePluginRequest,
+  LinkPluginRequest,
   PluginPaneTokenRequest,
   StartHarnessLoginRequest,
   StartOpenCodeAuthRequest,
   StartPiAuthRequest,
+  SetPluginEnabledRequest,
   UpdateHarnessAccountRequest,
   UpdateHarnessRequest
 } from "@codevisor/api"
@@ -23,6 +27,51 @@ import {
 /// Plugin and harness tools, including account and provider authentication.
 export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool("skills.delete", "Delete a global skill.", "DELETE", "/v1/skills/:name"),
+  apiTool(
+    "plugins.get",
+    "Inspect one installed plugin and its runtime state.",
+    "GET",
+    "/v1/plugins/:pluginId"
+  ),
+  apiTool(
+    "plugins.updates",
+    "Check installed plugins for available updates.",
+    "GET",
+    "/v1/plugins/updates"
+  ),
+  apiTool(
+    "plugins.link",
+    "Link a local development plugin directory on this server machine.",
+    "POST",
+    "/v1/plugins/link",
+    { body: LinkPluginRequest }
+  ),
+  apiTool(
+    "plugins.restore",
+    "Restore a managed plugin to its known-good backup after a failed update.",
+    "POST",
+    "/v1/plugins/:pluginId/restore"
+  ),
+  apiTool(
+    "plugins.set_enabled",
+    "Enable or disable a plugin on this server.",
+    "POST",
+    "/v1/plugins/:pluginId/set-enabled",
+    { body: SetPluginEnabledRequest }
+  ),
+  apiTool(
+    "plugins.update_prepare",
+    "Prepare a plugin update and inspect its changes before applying the returned plan.",
+    "POST",
+    "/v1/plugins/:pluginId/update/prepare"
+  ),
+  apiTool(
+    "plugins.update_apply",
+    "Apply a previously prepared plugin update by planId.",
+    "POST",
+    "/v1/plugins/:pluginId/update/apply",
+    { body: ApplyPluginUpdateRequest }
+  ),
   apiTool(
     "plugins.list",
     "List installed Codevisor plugins with their panes, declared agent tools, and runtime state.",
@@ -251,6 +300,13 @@ export const codevisorHarnessApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "Cancel a harness-account login flow.",
     "DELETE",
     "/v1/harnesses/:id/accounts/:accountId/login/:flowId"
+  ),
+  apiTool(
+    "harnesses.accounts_login_answer",
+    "Submit the answer to an interactive harness-account login flow.",
+    "POST",
+    "/v1/harnesses/:id/accounts/:accountId/login/:flowId/answer",
+    { body: AnswerHarnessAuthRequest }
   ),
   apiTool(
     "harnesses.accounts_logout",

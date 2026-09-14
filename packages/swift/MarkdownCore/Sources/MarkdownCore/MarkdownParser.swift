@@ -11,6 +11,19 @@ public struct MarkdownParser: Sendable {
     parseDocument(markdown).blocks
   }
 
+  /// Table boundaries come from MD4C, including headers and empty cells.
+  /// The UTF-16 ranges can be used with Foundation's Markdown link matches.
+  public func parseWithTableRanges(_ markdown: String) -> (blocks: [MarkdownBlock], tableRanges: [NSRange]) {
+    let result = parseDocument(markdown)
+    let utf8 = markdown.utf8
+    let ranges = result.tableByteRanges.map { range in
+      let start = utf8.index(utf8.startIndex, offsetBy: range.lowerBound)
+      let end = utf8.index(utf8.startIndex, offsetBy: range.upperBound)
+      return NSRange(start..<end, in: markdown)
+    }
+    return (result.blocks, ranges)
+  }
+
   func parseDocument(_ markdown: String) -> MarkdownParseResult {
     guard !markdown.isEmpty else { return MarkdownParseResult(blocks: []) }
     guard markdown.utf8.count <= Int(UInt32.max) else {
@@ -61,7 +74,8 @@ public struct MarkdownParser: Sendable {
     return MarkdownParseResult(
       blocks: context.blocks,
       reusableBlockCount: context.reusableBlockCount,
-      reparseStart: context.reparseStart
+      reparseStart: context.reparseStart,
+      tableByteRanges: context.tableByteRanges
     )
   }
 
@@ -131,6 +145,7 @@ final class MD4CParserContext {
   var blockStack: [BlockState] = []
   var inlineStack: [InlineState] = []
   var tableSections: [TableSection] = []
+  var tableByteRanges: [Range<Int>] = []
   // Valid only during md_parse; no borrowed pointers escape the parser.
   var sourceBytes: UnsafeBufferPointer<UInt8>?
   var pendingSourceBlockOrdinal: Int?

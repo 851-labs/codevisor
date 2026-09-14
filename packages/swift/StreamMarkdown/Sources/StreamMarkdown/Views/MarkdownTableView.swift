@@ -31,6 +31,8 @@
     let rows: [[MarkdownText]]
 
     @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownImageLoader) private var imageLoader
+    @State private var images = MarkdownTableImages()
     /// Shares rendered widths between SwiftUI's measurement path and the
     /// displayed AppKit view. Without this memo, a table was independently
     /// constructed once by `sizeThatFits` and again by `TableTextView.layout`.
@@ -45,18 +47,26 @@
     }
 
     var body: some View {
-      if usesPreparedLayout {
-        PreparedSelectableTextView(headers: headers, alignments: alignments, rows: rows, theme: theme)
-      } else {
-        SelectableTextTableView(
-          model: TableModel(
-            headers: headers,
-            alignments: alignments,
-            rows: rows,
-            theme: theme
-          ),
-          renderMemo: renderMemo
-        )
+      let sources = Set((headers + rows.flatMap { $0 }).flatMap(\.imageSources))
+      Group {
+        if usesPreparedLayout {
+          PreparedSelectableTextView(
+            headers: headers, alignments: alignments, rows: rows, theme: theme, images: images.resources)
+        } else {
+          SelectableTextTableView(
+            model: TableModel(
+              headers: headers,
+              alignments: alignments,
+              rows: rows,
+              theme: theme,
+              images: images.resources
+            ),
+            renderMemo: renderMemo
+          )
+        }
+      }
+      .task(id: MarkdownTableImages.Request(sources: sources, loaderID: imageLoader.id)) {
+        await images.load(sources: sources, using: imageLoader)
       }
     }
   }
@@ -69,23 +79,27 @@
     let alignments: [ColumnAlignment]
     let rows: [[MarkdownText]]
     let theme: MarkdownTheme
+    let images: [String: MarkdownImageResource]
     let contentKey: MarkdownTableRenderCache.ContentKey
 
     init(
       headers: [MarkdownText],
       alignments: [ColumnAlignment],
       rows: [[MarkdownText]],
-      theme: MarkdownTheme
+      theme: MarkdownTheme,
+      images: [String: MarkdownImageResource] = [:]
     ) {
       self.headers = headers
       self.alignments = alignments
       self.rows = rows
       self.theme = theme
+      self.images = images
       contentKey = MarkdownTableRenderCache.ContentKey(
         headers: headers,
         alignments: alignments,
         rows: rows,
-        themeFingerprint: theme.renderFingerprint
+        themeFingerprint: theme.renderFingerprint,
+        images: images
       )
     }
 
@@ -268,18 +282,21 @@
       let alignments: [ColumnAlignment]
       let rows: [[MarkdownText]]
       let themeFingerprint: Int
+      let images: [String: MarkdownImageResource]
       private let digest: Int
 
       init(
         headers: [MarkdownText],
         alignments: [ColumnAlignment],
         rows: [[MarkdownText]],
-        themeFingerprint: Int
+        themeFingerprint: Int,
+        images: [String: MarkdownImageResource] = [:]
       ) {
         self.headers = headers
         self.alignments = alignments
         self.rows = rows
         self.themeFingerprint = themeFingerprint
+        self.images = images
 
         var hasher = Hasher()
         hasher.combine(headers)
@@ -293,6 +310,7 @@
         }
         hasher.combine(rows)
         hasher.combine(themeFingerprint)
+        hasher.combine(images)
         digest = hasher.finalize()
       }
 
@@ -302,7 +320,8 @@
             && lhs.themeFingerprint == rhs.themeFingerprint
             && lhs.headers == rhs.headers
             && lhs.alignments == rhs.alignments
-            && lhs.rows == rhs.rows)
+            && lhs.rows == rhs.rows
+            && lhs.images == rhs.images)
       }
 
       func hash(into hasher: inout Hasher) {
@@ -322,6 +341,7 @@
       let markdown: MarkdownText
       let isHeader: Bool
       let themeFingerprint: Int
+      let images: [String: MarkdownImageResource]
     }
 
     private final class PreparedEntry {
@@ -477,7 +497,8 @@
           markdown,
           isHeader: isHeader,
           theme: theme,
-          themeFingerprint: themeFingerprint
+          themeFingerprint: themeFingerprint,
+          images: model.images
         )
       }
       preparationCount += 1
@@ -491,12 +512,14 @@
       _ markdown: MarkdownText,
       isHeader: Bool,
       theme: MarkdownTheme,
-      themeFingerprint: Int
+      themeFingerprint: Int,
+      images: [String: MarkdownImageResource]
     ) -> MarkdownTableRenderer.PreparedCell {
       let key = CellKey(
         markdown: markdown,
         isHeader: isHeader,
-        themeFingerprint: themeFingerprint
+        themeFingerprint: themeFingerprint,
+        images: images.filter { markdown.imageSources.contains($0.key) }
       )
       if let cached = cellEntries[key] {
         return cached.cell
@@ -505,7 +528,8 @@
       let cell = MarkdownTableRenderer.prepareResolvedCell(
         markdown,
         isHeader: isHeader,
-        theme: theme
+        theme: theme,
+        images: images
       )
       cellPreparationCount += 1
       let entry = CellEntry(cell: cell)

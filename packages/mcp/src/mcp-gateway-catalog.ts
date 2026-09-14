@@ -11,7 +11,6 @@ export interface CatalogServer {
 
 export interface GatewayCatalogDeps {
   readonly automationProviders: Map<string, AutomationToolProvider>
-  readonly codevisorProvider: AutomationToolProvider
   readonly config: McpManagerConfig
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
   /// Machine-local suppression (the per-machine disable overlay). The
@@ -33,19 +32,17 @@ export const executeToolDescription = (inventory: string): string =>
 /// exist (MCP servers, automation providers, plugin tools), how they are
 /// advertised (the inventory string), and how paths resolve to definitions.
 export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
-  const { automationProviders, codevisorProvider, config, connectUpstream, isSuppressed } = deps
+  const { automationProviders, config, connectUpstream, isSuppressed } = deps
 
   const listPluginTools = (): Promise<ReadonlyArray<Tool>> =>
     pluginToolDefinitions(config.pluginTools)
 
   const integrationInventory = async (projectId?: string, sessionId?: string): Promise<string> => {
-    const names = [
-      "Codevisor",
-      ...(await run(config.db.resolveMcpServers(projectId, sessionId)))
-        .filter((server) => server.enabled && !isSuppressed(server.name))
-        .map((server) => server.name.trim())
-        .filter((name) => name.length > 0)
-    ].sort((left, right) => left.localeCompare(right))
+    const names = (await run(config.db.resolveMcpServers(projectId, sessionId)))
+      .filter((server) => server.enabled && !isSuppressed(server.name))
+      .map((server) => server.name.trim())
+      .filter((name) => name.length > 0)
+      .sort((left, right) => left.localeCompare(right))
     const pluginTools = await listPluginTools()
     const lines =
       names.length === 0
@@ -76,10 +73,6 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       })
     )
     return [
-      ...codevisorProvider.tools.map((tool) => ({
-        server: { id: "codevisor", name: "Codevisor" },
-        tool
-      })),
       ...(await listPluginTools()).map((tool) => ({ server: PLUGIN_CATALOG_SERVER, tool })),
       ...results.flatMap((result) =>
         result.status === "fulfilled"
@@ -94,7 +87,6 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
     projectId?: string,
     sessionId?: string
   ): Promise<boolean> =>
-    serverId === "codevisor" ||
     (await run(config.db.resolveMcpServers(projectId, sessionId))).some(
       (candidate) => candidate.id === serverId && candidate.enabled && !isSuppressed(candidate.name)
     )

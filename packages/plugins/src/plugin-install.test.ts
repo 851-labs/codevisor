@@ -97,6 +97,7 @@ describe("discoverRemote", () => {
     const discovered = await installer.discoverRemote({ source: fixture })
     expect(discovered).toEqual({
       alreadyInstalled: false,
+      consentKey: expect.stringMatching(/^[a-f0-9]{64}$/),
       description: "Example plugin",
       id: "owner.example",
       installCommand: "bun install",

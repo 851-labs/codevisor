@@ -11,6 +11,7 @@ struct PluginPaneView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.scenePhase) private var scenePhase
   let model: PluginPaneModel
   /// `codevisor.setTitle`: rename the pane's tab (persisted + published).
   let onRename: (String) -> Void
@@ -45,6 +46,16 @@ struct PluginPaneView: View {
     .task(id: model.id) {
       model.onTitleChange = onRename
       model.loadIfNeeded(theme: tokens, updateRevision: revision)
+      while !Task.isCancelled {
+        do { try await Task.sleep(for: .seconds(60)) } catch { return }
+        await model.revalidateAccess()
+      }
+    }
+    .task(id: environment.pluginAccess.revision) {
+      model.retry(theme: tokens, updateRevision: revision)
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { model.retry(theme: tokens, updateRevision: revision) }
     }
     .onChange(of: revision) { _, moved in
       // Failed panes retry through the same path automatically.

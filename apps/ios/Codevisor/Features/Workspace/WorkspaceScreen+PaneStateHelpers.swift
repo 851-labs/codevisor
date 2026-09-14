@@ -21,7 +21,7 @@ extension WorkspaceScreen {
         })
       {
         let groupState = PaneGroupState(
-          panes: [pane], selectedPaneId: pane.id, isVisible: true
+          panes: [pane], selectedPaneId: pane.id
         )
         return WorkspaceTab(
           id: oldTab.id,
@@ -33,7 +33,7 @@ extension WorkspaceScreen {
       return WorkspaceTab(
         root: .leaf(
           PaneGroupState(
-            panes: [pane], selectedPaneId: pane.id, isVisible: true
+            panes: [pane], selectedPaneId: pane.id
           )
         )
       )
@@ -47,17 +47,13 @@ extension WorkspaceScreen {
           $0.root.groupId(containingPane: selectedPaneId) != nil
         }?.id
       } ?? workspace.centerTabs[0].id
-    // The compact client has one placement surface. A pane imported from
-    // macOS's bottom area is a normal iOS tab; its identity remains shared
-    // even though this device chooses a different layout.
-    workspace.bottomGroup = PaneGroupState()
   }
 
   static func compactPaneState(from workspace: Workspace) -> PaneGroupState {
     let candidates =
       workspace.centerTabs.flatMap { tab in
         tab.root.allGroups.flatMap(\.state.panes)
-      } + workspace.bottomGroup.panes
+      }
     var seen = Set<UUID>()
     let shared = candidates.filter { seen.insert($0.id).inserted }
     let selected = workspace.selectedCenterTab.flatMap { tab in
@@ -66,8 +62,7 @@ extension WorkspaceScreen {
     return PaneGroupState(
       panes: shared,
       selectedPaneId: shared.contains(where: { $0.id == selected })
-        ? selected : shared.first?.id,
-      isVisible: true
+        ? selected : shared.first?.id
     )
   }
 

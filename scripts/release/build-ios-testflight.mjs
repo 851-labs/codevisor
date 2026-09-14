@@ -48,7 +48,10 @@ await runXcodebuild(repoRoot, "ios", [
   "-quiet",
   "archive"
 ])
-await prepareEmbeddedCode(join(archive, "Products/Applications/Codevisor.app"))
+await prepareEmbeddedCode(
+  join(archive, "Products/Applications/Codevisor.app"),
+  join(repoRoot, "apps/ios/Codevisor/Codevisor.entitlements")
+)
 
 const optionsPath = join(output, "ExportOptions.plist")
 execFileSync("plutil", ["-convert", "xml1", "-o", optionsPath, "-"], {
@@ -98,6 +101,7 @@ const entitlements = summary.entitlements
 if (
   entitlements["get-task-allow"] !== false ||
   entitlements["beta-reports-active"] !== true ||
+  !entitlements["com.apple.developer.applesignin"]?.includes("Default") ||
   entitlements["application-identifier"] !== `${configuration.teamId}.${configuration.bundleId}`
 ) {
   throw new Error(
@@ -106,10 +110,10 @@ if (
 }
 const actualOptions = plist(join(exported, "ExportOptions.plist"))
 if (
-  actualOptions.testFlightInternalTestingOnly !== true ||
+  actualOptions.testFlightInternalTestingOnly !== false ||
   actualOptions.destination !== "export"
 ) {
-  throw new Error("Expected a local, internal-only TestFlight export.")
+  throw new Error("Expected a local TestFlight export eligible for App Store distribution.")
 }
 
 await writeFile(
@@ -122,7 +126,7 @@ await writeFile(
       version: configuration.version,
       buildNumber: configuration.buildNumber,
       sourceRevision: configuration.sourceRevision,
-      internalOnly: true,
+      internalOnly: false,
       ipaSHA256: await fileSHA256(ipa)
     },
     null,
@@ -138,5 +142,5 @@ execFileSync("ditto", [
 ])
 await rm(verification, { recursive: true, force: true })
 console.log(
-  `Prepared internal TestFlight ${configuration.version} (${configuration.buildNumber}): ${ipa}`
+  `Prepared App Store eligible TestFlight ${configuration.version} (${configuration.buildNumber}): ${ipa}`
 )

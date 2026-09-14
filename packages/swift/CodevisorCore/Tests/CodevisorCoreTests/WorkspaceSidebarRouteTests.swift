@@ -17,7 +17,7 @@ struct WorkspaceSidebarRouteTests {
     )
     let page = PaneDescriptorState(id: UUID(), kind: kind, name: "Page", terminalKey: "page")
     let pageTab = WorkspaceTab(
-      root: .leaf(PaneGroupState(panes: [page], selectedPaneId: page.id, isVisible: true))
+      root: .leaf(PaneGroupState(panes: [page], selectedPaneId: page.id))
     )
     let workspace = Workspace(
       name: "Workspace", rootDirectory: "/sidebar-tests", serverId: closing.serverId,
@@ -27,7 +27,7 @@ struct WorkspaceSidebarRouteTests {
         WorkspaceTab(root: .leaf(.centerInitial(sessionId: sibling.id))),
         pageTab,
       ],
-      selectedCenterTabId: pageTab.id, bottomGroup: PaneGroupState(),
+      selectedCenterTabId: pageTab.id,
       createdAt: Date(timeIntervalSince1970: 0)
     )
     environment.workspaces.save(workspace)

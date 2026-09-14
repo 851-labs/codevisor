@@ -44,14 +44,14 @@ public final class ServerRequestGate: @unchecked Sendable {
   private var states: [String: State] = [:]
   private var waiters: [String: [UUID: CheckedContinuation<Void, any Error>]] = [:]
 
-  private let sleep: @Sendable (Duration) async throws -> Void
+  private let clock: any Clock<Duration>
   private let onWait: @Sendable () -> Void
 
   public init(
-    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    clock: any Clock<Duration> = ContinuousClock(),
     onWait: @escaping @Sendable () -> Void = {}
   ) {
-    self.sleep = sleep
+    self.clock = clock
     self.onWait = onWait
   }
 
@@ -117,12 +117,21 @@ public final class ServerRequestGate: @unchecked Sendable {
   }
 
   public func waitUntilReady(for machineId: String, timeout: Duration) async throws {
+    try await clock.waitUntilReady(for: machineId, gate: self, timeout: timeout)
+  }
+}
+
+private extension Clock where Duration == Swift.Duration {
+  func waitUntilReady(for machineId: String, gate: ServerRequestGate, timeout: Duration) async throws {
+    let deadline = now.advanced(by: timeout)
     try await withThrowingTaskGroup(of: Void.self) { group in
       group.addTask {
-        try await self.waitUntilReady(for: machineId)
+        try await gate.waitUntilReady(for: machineId)
       }
       group.addTask {
-        try await self.sleep(timeout)
+        // Keep the deadline typed across the child task, as CommandRunner does.
+        // Captured async sleep closures can corrupt Swift's task allocator.
+        try await sleep(until: deadline, tolerance: nil)
         throw ServerRequestGateError(
           message: "Timed out waiting for the server to become ready."
         )

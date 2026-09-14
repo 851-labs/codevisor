@@ -13,7 +13,11 @@ extension SidebarView {
   /// Every tab row's identity in sidebar order, driving reflow animations.
   var workspaceTabRowIDs: [UUID] {
     workspaceItems.flatMap { item in
-      item.workspace.centerTabs.flatMap { tab in [tab.id] + tab.root.allGroups.map(\.id) }
+      item.workspace.centerTabs.flatMap { tab -> [UUID] in
+        let groups = sidebarGroups(tab, in: item.workspace)
+        guard !groups.isEmpty else { return [] }
+        return tab.root.allGroups.count > 1 ? groups.map(\.id) : [tab.id]
+      }
     }
   }
 
@@ -24,10 +28,11 @@ extension SidebarView {
     let workspace = item.workspace
     let routesSelection = routesSelectedSession(workspace)
     ForEach(workspace.centerTabs) { tab in
+      let groups = sidebarGroups(tab, in: workspace)
       // A split tab is FLATTENED into one row per pane at the tab's own
       // level (no grouping row): the active pane carries the selection.
       if tab.root.allGroups.count > 1 {
-        ForEach(tab.root.allGroups, id: \.id) { leaf in
+        ForEach(groups, id: \.id) { leaf in
           workspacePaneRow(
             leafId: leaf.id,
             state: leaf.state,
@@ -37,10 +42,20 @@ extension SidebarView {
           )
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
         }
-      } else {
+      } else if !groups.isEmpty {
         workspaceTabRow(tab, in: item, routesSelection: routesSelection)
           .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
       }
+    }
+  }
+
+  private func sidebarGroups(
+    _ tab: WorkspaceTab, in workspace: Workspace
+  ) -> [(id: UUID, state: PaneGroupState)] {
+    let visibility = PaneNavigationVisibility()
+    return tab.root.allGroups.filter { group in
+      let pane = leafDescriptor(leafId: group.id, persisted: group.state, in: workspace)
+      return pane.map { visibility.includes($0) } ?? true
     }
   }
 
@@ -71,7 +86,14 @@ extension SidebarView {
       titleFont: itemTitleFont,
       onActivate: { activateLeaf(leafId, state: state, in: item) },
       onClose: { requestTabAction(.closeLeaf(leafId), in: item) },
-      closeTitle: "Close Pane"
+      onRename: chatSession.map { session in
+        {
+          tabRenameTitle = session.title
+          renamingTab = SidebarTabRenameRequest(
+            workspaceId: workspace.id, tabId: tab.id, chatSessionId: session.id
+          )
+        }
+      }
     )
   }
 
@@ -234,13 +256,21 @@ extension SidebarView {
     }
   }
 
-  /// A rename is a plain layout write (no pane machinery), so the sidebar
-  /// applies it directly.
+  /// Tab renames pin a layout title; split chat rows rename their session.
   func renameTab(_ request: SidebarTabRenameRequest, to title: String) {
     guard var workspace = environment.workspaces.workspace(id: request.workspaceId),
       let index = workspace.centerTabs.firstIndex(where: { $0.id == request.tabId })
     else { return }
     let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let chatSessionId = request.chatSessionId {
+      guard !trimmed.isEmpty,
+        let session = list.sessions.first(where: {
+          $0.serverId == workspace.serverId && $0.id == chatSessionId
+        })
+      else { return }
+      list.renameSession(session, to: trimmed)
+      return
+    }
     let normalized = trimmed.isEmpty ? nil : trimmed
     guard workspace.centerTabs[index].customTitle != normalized else { return }
     workspace.centerTabs[index].customTitle = normalized
@@ -262,8 +292,9 @@ extension SidebarView {
     [.newChat]
       + workspaceItems.flatMap { item in
         item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
-          let groups = tab.root.allGroups
-          guard groups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
+          let groups = sidebarGroups(tab, in: item.workspace)
+          guard !groups.isEmpty else { return [] }
+          guard tab.root.allGroups.count > 1 else { return [.tab(item: item, tab: tab, leaf: nil)] }
           return groups.map { .tab(item: item, tab: tab, leaf: ($0.id, $0.state)) }
         }
       }
@@ -306,10 +337,11 @@ extension SidebarView {
 
 }
 
-/// The tab a rename alert is editing.
+/// The tab or split chat a rename alert is editing.
 struct SidebarTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
+  var chatSessionId: UUID? = nil
   var id: UUID { tabId }
 }
 
@@ -322,7 +354,7 @@ struct SidebarTabRenameAlert: ViewModifier {
   func body(content: Content) -> some View {
     content
       .alert(
-        "Rename Tab",
+        request?.chatSessionId != nil ? "Rename Chat" : "Rename Tab",
         isPresented: Binding(
           get: { request != nil },
           set: { if !$0 { request = nil } }

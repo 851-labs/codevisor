@@ -36,7 +36,7 @@ struct McpServerDetailSheet: View {
       .padding(.top, 18)
       Form {
         Section("Connection") {
-          if server.kind == "browserUse" || server.kind == "computerUse" {
+          if server.isBuiltIn {
             LabeledContent("Provider", value: "Codevisor built-in")
           } else {
             LabeledContent("Transport", value: server.transport == "http" ? "HTTP" : "Local command")

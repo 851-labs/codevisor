@@ -91,6 +91,7 @@ export const appendAndPublish = async (
     kind === "session.output" ||
     kind === "session.updated" ||
     kind === "session.error" ||
+    kind === "session.queue.updated" ||
     kind === "session.authRequired"
   const before = affectsAttention ? await run(db.getSessionSummary(subjectId)) : undefined
   const event = await run(db.appendEvent(kind, subjectId, payload))

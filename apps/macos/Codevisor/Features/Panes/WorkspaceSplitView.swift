@@ -11,7 +11,7 @@ import CodevisorUI
 struct WorkspaceSplitView: View {
   let node: SplitNode
   /// The most recently active center leaf. This remains resolved while
-  /// focus temporarily moves to the bottom panel or another window.
+  /// focus temporarily moves to another window.
   let activeLeafId: UUID?
   let groupModel: (UUID) -> PaneGroupModel
   let paneTitle: (PaneDescriptorState) -> String
@@ -449,10 +449,6 @@ private struct SplitLeafHeader: View {
     }
   }
 
-  private var closeTitle: String {
-    pane?.kind == .chat && pane?.chatSessionId != nil ? "Archive" : "Close"
-  }
-
   private var actionsMenu: some View {
     Menu {
       splitMenuItem("Split Right", icon: "rectangle.righthalf.inset.filled", edge: .trailing)
@@ -471,11 +467,11 @@ private struct SplitLeafHeader: View {
       }
 
       if let session = chatSession {
-        unreadToggleButton(session)
+        ChatSessionUnreadMenuItem(session: session, store: sessionStore)
       }
 
       Button(role: .destructive, action: onClose) {
-        Label(closeTitle, systemImage: closeTitle == "Archive" ? "archivebox" : "xmark")
+        Label("Close", systemImage: "xmark")
           .labelStyle(.titleAndIcon)
       }
       .shortcut(.closeSplit)
@@ -491,32 +487,6 @@ private struct SplitLeafHeader: View {
     .fixedSize()
     .help("Pane actions")
     .accessibilityLabel("Pane actions")
-  }
-
-  /// Flips between marking the pane's chat unread and clearing an existing
-  /// unread badge, so the menu never offers the state the chat is already in.
-  @ViewBuilder
-  private func unreadToggleButton(_ session: ChatSession) -> some View {
-    if isUnread(session) {
-      Button {
-        sessionStore?.markRead(session)
-      } label: {
-        Label("Mark as read", systemImage: "message")
-          .labelStyle(.titleAndIcon)
-      }
-    } else {
-      Button {
-        sessionStore?.markUnread(session)
-      } label: {
-        Label("Mark as unread", systemImage: "message.badge")
-          .labelStyle(.titleAndIcon)
-      }
-    }
-  }
-
-  private func isUnread(_ session: ChatSession) -> Bool {
-    guard let sessionStore else { return false }
-    return sessionStore.unreadCount(session) > 0 || sessionStore.hasUnreadError(session)
   }
 
   private func splitMenuItem(_ name: String, icon: String, edge: SplitEdge) -> some View {

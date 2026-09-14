@@ -72,7 +72,6 @@ extension WorkspaceSyncModel {
           projectId: projectId,
           centerTabs: source.centerTabs,
           selectedCenterTabId: source.selectedCenterTabId,
-          bottomGroup: source.bottomGroup,
           createdAt: createdAt,
           isArchived: record.isArchived,
           isServerSynced: true
@@ -90,17 +89,8 @@ extension WorkspaceSyncModel {
         )
       }
 
-      // A native-only custom name predating workspace sync must not be
-      // erased by the server's generated project/worktree default.
-      // Once the server carries an explicit name, it is authoritative.
-      if !workspace.hasCustomName || record.hasCustomName {
-        workspace.name = record.name
-        workspace.hasCustomName = record.hasCustomName
-      }
-      workspace.rootDirectory = record.rootDirectory ?? workspace.rootDirectory
+      Self.applyMetadata(record, to: &workspace)
       workspace.worktreeName = workspace.worktreeName ?? worktreeName
-      workspace.isArchived = record.isArchived
-      workspace.isServerSynced = true
 
       if let paneRecords {
         var paneProtection = protectedLocalPaneIds
@@ -125,7 +115,7 @@ extension WorkspaceSyncModel {
       }
 
       if existing != workspace || migrationSource != nil {
-        repository.save(workspace)
+        repository.saveWithSidebarOrder(workspace)
         changed = true
       }
       if let source = migrationSource, source.id != id {

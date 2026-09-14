@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   APP_UPDATE_CHANNEL_FILE,
   APP_UPDATE_STATUS_FILE,
@@ -95,8 +95,27 @@ describe("app-hosted update files", () => {
     })
 
     it("reads a fresh report against the real clock by default", () => {
-      writeStatus({ state: "installing", at: new Date().toISOString() })
-      expect(readAppUpdateApplyState(dataDir)?.state).toBe("installing")
+      vi.useFakeTimers({ toFake: ["Date"] })
+      try {
+        vi.setSystemTime(new Date(at))
+        writeStatus({ state: "installing", at })
+        expect(readAppUpdateApplyState(dataDir)?.state).toBe("installing")
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it.each([
+      [0.42, 0.42],
+      [-1, 0],
+      [2, 1],
+      ["42%", undefined],
+      [null, undefined]
+    ])("reads and bounds progress %s", (progress, expected) => {
+      writeStatus({ state: "installing", message: "Downloading…", progress, at })
+      expect(readAppUpdateApplyState(dataDir, now)?.progress).toBe(expected)
+      writeStatus({ state: "failed", progress, at })
+      expect(readAppUpdateApplyState(dataDir, now)?.progress).toBeUndefined()
     })
 
     it("ignores stale reports left behind by an interrupted session", () => {

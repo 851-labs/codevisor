@@ -45,6 +45,9 @@ public struct ServerPluginToolDescriptor: Codable, Hashable, Identifiable, Senda
 
 /// A plugin installed on a machine (mirrors `PluginSummary` in packages/api).
 public struct ServerPluginSummary: Codable, Equatable, Identifiable, Sendable {
+  public var ageRating: Int?
+  public var consentKey: String?
+  public var sourceRepo: String?
   /// Absent on older servers, where installed plugins were always enabled.
   public var enabled: Bool?
   /// Whether the server retains a verified pre-update backup.
@@ -163,6 +166,7 @@ public struct ServerPluginUpdateStatus: Codable, Equatable, Identifiable, Sendab
 
 /// Commands and capabilities on one side of a prepared update.
 public struct ServerPluginUpdateReview: Codable, Equatable, Sendable {
+  public var ageRating: Int?
   public var version: String
   public var setupCommands: [String]
   public var runCommand: String
@@ -241,6 +245,9 @@ public struct ServerPluginUpdatePlan: Codable, Equatable, Identifiable, Sendable
 /// command strings — the consent UI shows exactly these before anything runs
 /// on the user's machine.
 public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
+  public var ageRating: Int?
+  public var consentKey: String?
+  public var sourceRepo: String?
   public var id: String
   public var name: String
   public var version: String
@@ -283,6 +290,7 @@ public struct ServerPluginRemoteDiscovery: Codable, Equatable, Sendable {
 /// packages/api): manifest metadata renderable without running anything, plus
 /// the GitHub facts (repo, stars, push time) that anchor it to a real owner.
 public struct ServerPluginRegistryEntry: Codable, Hashable, Identifiable, Sendable {
+  public var ageRating: Int?
   /// Owner-namespaced plugin id, lowercase `owner.name`.
   public var id: String
   public var name: String

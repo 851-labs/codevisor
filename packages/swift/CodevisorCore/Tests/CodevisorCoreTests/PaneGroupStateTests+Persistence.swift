@@ -21,7 +21,7 @@ extension PaneGroupStateTests {
     #expect(decoded.selectedPaneId == second.id)
   }
 
-  @Test("Agent terminal panes are keyed, deduped, and never steal selection or open the group")
+  @Test("Agent terminal panes are keyed, deduped, and never steal selection")
   func agentTerminalPanes() {
     var state = PaneGroupState.initial(sessionId: sessionId)
     let selectedBefore = state.selectedPaneId
@@ -32,7 +32,6 @@ extension PaneGroupStateTests {
     #expect(pane.name == "npm run dev")
     #expect(state.panes.count == 2)
     #expect(state.selectedPaneId == selectedBefore)
-    #expect(state.isVisible == false)
 
     // Re-ensuring the same terminal key returns the existing pane.
     let again = state.ensureAgentTerminalPane(name: "renamed", terminalKey: key)
@@ -44,7 +43,6 @@ extension PaneGroupStateTests {
     var empty = PaneGroupState()
     let first = empty.ensureAgentTerminalPane(name: "dev", terminalKey: key)
     #expect(empty.selectedPaneId == first.id)
-    #expect(empty.isVisible == false)
   }
 
   @Test("Descriptors persisted before attachOnly existed decode as user shells")
@@ -97,11 +95,10 @@ extension PaneGroupStateTests {
     #expect(decoded.panes.first { $0.id == pane.id }?.ownerChatSessionId == owner)
   }
 
-  @Test("Codable round-trip preserves panes, selection, visibility, and height")
+  @Test("Codable round-trip preserves panes and selection")
   func codableRoundTrip() throws {
     var state = PaneGroupState.initial(sessionId: sessionId)
     state.addTerminalPane(sessionId: sessionId)
-    state.setHeight(420)
     let decoded = try JSONDecoder().decode(
       PaneGroupState.self,
       from: JSONEncoder().encode(state)
@@ -124,24 +121,26 @@ extension PaneGroupStateTests {
   func repository() {
     let repo = DefaultPaneGroupRepository(store: InMemoryStore())
     let otherSession = UUID()
-    #expect(repo.load(sessionId: sessionId, placement: .bottom) == nil)
+    #expect(repo.load(sessionId: sessionId) == nil)
     var state = PaneGroupState.initial(sessionId: sessionId)
     state.addTerminalPane(sessionId: sessionId)
-    repo.save(state, sessionId: sessionId, placement: .bottom)
-    repo.save(.initial(sessionId: otherSession), sessionId: otherSession, placement: .bottom)
-    #expect(repo.load(sessionId: sessionId, placement: .bottom) == state)
-    #expect(repo.load(sessionId: otherSession, placement: .bottom)?.panes.count == 1)
+    repo.save(state, sessionId: sessionId)
+    repo.save(.initial(sessionId: otherSession), sessionId: otherSession)
+    #expect(repo.load(sessionId: sessionId) == state)
+    #expect(repo.load(sessionId: otherSession)?.panes.count == 1)
   }
 
-  @Test("Repository stores the center group separately from the bottom panel")
-  func repositoryPlacements() {
-    let repo = DefaultPaneGroupRepository(store: InMemoryStore())
-    let bottom = PaneGroupState.initial(sessionId: sessionId)
+  @Test("Legacy session panes remain available for migration after active group saves")
+  func repositoryLegacyPanes() throws {
+    let store = InMemoryStore()
+    let legacy = PaneGroupState.initial(sessionId: sessionId)
+    try store.saveData(JSONEncoder().encode([sessionId.uuidString: legacy]), forKey: "paneGroups")
+    let repo = DefaultPaneGroupRepository(store: store)
     let center = PaneGroupState.centerInitial(sessionId: sessionId)
-    repo.save(bottom, sessionId: sessionId, placement: .bottom)
-    #expect(repo.load(sessionId: sessionId, placement: .center) == nil)
-    repo.save(center, sessionId: sessionId, placement: .center)
-    #expect(repo.load(sessionId: sessionId, placement: .bottom) == bottom)
-    #expect(repo.load(sessionId: sessionId, placement: .center) == center)
+    #expect(repo.load(sessionId: sessionId) == nil)
+    #expect(repo.legacyPanes(sessionId: sessionId) == legacy.panes)
+    repo.save(center, sessionId: sessionId)
+    #expect(repo.legacyPanes(sessionId: sessionId) == legacy.panes)
+    #expect(repo.load(sessionId: sessionId) == center)
   }
 }

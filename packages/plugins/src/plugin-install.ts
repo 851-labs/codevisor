@@ -8,7 +8,7 @@ import type {
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
-import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
+import { displayPluginCommand, pluginSetupCommands } from "./plugin-command.js"
 import { makePluginCandidatePreparer } from "./plugin-candidate.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, type PluginInstallSourceReceipt } from "./plugin-receipt.js"
@@ -28,6 +28,7 @@ import type {
 } from "./plugin-supervisor.js"
 import { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
 import { PluginsError } from "./plugins-error.js"
+import { describePlugin } from "./plugin-discovery.js"
 import { makePluginTransactionEngine } from "./plugin-transaction.js"
 import type {
   PreparedPluginUpdate,
@@ -310,31 +311,12 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       const staged = await stage(request.source)
       try {
         const { manifest } = staged
-        const runCommand = pluginRunCommand(manifest)
-        const setupCommands = pluginSetupCommands(manifest, platform)
-        return {
-          alreadyInstalled: installedWithId(manifest.id) !== undefined,
-          id: manifest.id,
-          name: manifest.name,
-          panes: manifest.panes,
-          runCommand: displayPluginCommand(runCommand),
-          version: manifest.version,
-          ...(manifest.description === undefined ? {} : { description: manifest.description }),
-          ...(manifest.iconPath === undefined ? {} : { iconPath: manifest.iconPath }),
-          ...(setupCommands.length === 0
-            ? {}
-            : { installCommand: setupCommands.map(displayPluginCommand).join(" && ") }),
-          ...(manifest.protocolVersion === 1 || manifest.setup === undefined
-            ? {}
-            : { setupCommands: manifest.setup }),
-          ...(manifest.protocolVersion === 1 || manifest.minCodevisorVersion === undefined
-            ? {}
-            : { minCodevisorVersion: manifest.minCodevisorVersion }),
-          ...(manifest.protocolVersion === 1 || manifest.requirements === undefined
-            ? {}
-            : { requirements: manifest.requirements }),
-          ...(manifest.tools === undefined ? {} : { tools: manifest.tools })
-        }
+        return describePlugin(
+          manifest,
+          staged.source,
+          platform,
+          installedWithId(manifest.id) !== undefined
+        )
       } finally {
         await staged.cleanup()
       }

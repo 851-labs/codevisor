@@ -1,3 +1,4 @@
+import type { UpdateApplyState } from "@codevisor/api"
 import { observableFixture } from "./changes-test-support.js"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -19,7 +20,10 @@ import {
 /// and the next boot brings them back and dispatches the held prompts.
 
 const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
-  const state = observableFixture({ applyCalls: 0 })
+  const state = observableFixture({
+    applyCalls: 0,
+    lastApply: undefined as UpdateApplyState | undefined
+  })
   const updater: CodevisorServerUpdater = {
     apply: async () => {
       state.applyCalls += 1
@@ -33,7 +37,8 @@ const makeUpdater = (behaviour: { applyFails?: boolean } = {}) => {
       latestVersion: "0.2.0",
       latestBuildNumber: 200,
       migrationState: "idle" as const,
-      updateAvailable: true
+      updateAvailable: true,
+      ...(state.lastApply === undefined ? {} : { lastApply: state.lastApply })
     })
   }
   return { state, updater }
@@ -73,6 +78,33 @@ const gateEvents = async (
     .map((event) => event.payload as { harnessId: string; state: string })
 
 describe("restart drain", () => {
+  it("preserves fresh host progress after draining and rejects stale progress", async () => {
+    const { services } = await makeServices("server-progress")
+    const { state, updater } = makeUpdater()
+    const server = await startWithApp(services, undefined, { updater })
+    runningServers.push(server)
+    await jsonRequest(server, "/v1/update/apply", { method: "POST" })
+    await waitFor(() => state.applyCalls === 1)
+    const drain = (await jsonRequest(server, "/v1/restart/drain")).body as { startedAt: string }
+    state.lastApply = {
+      state: "installing",
+      message: "Downloading…",
+      progress: 0.42,
+      at: drain.startedAt
+    }
+    expect((await jsonRequest(server, "/v1/update")).body).toMatchObject({
+      lastApply: state.lastApply
+    })
+    state.lastApply = { ...state.lastApply, progress: 0.75 }
+    expect((await jsonRequest(server, "/v1/update")).body).toMatchObject({
+      lastApply: state.lastApply
+    })
+    state.lastApply = { ...state.lastApply, at: "2000-01-01T00:00:00.000Z" }
+    const stale = (await jsonRequest(server, "/v1/update")).body as { lastApply: UpdateApplyState }
+    expect(stale.lastApply.message).toBe("Restarting to install the update")
+    expect(stale.lastApply.progress).toBeUndefined()
+  })
+
   it("waits for live turns, holds new prompts, snapshots, and resumes after the restart", async () => {
     const { agents, services } = await makeServices("server-a")
     const snapshotPath = join(mkdtempSync(join(tmpdir(), "codevisor-drain-snap-")), "resume.json")

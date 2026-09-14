@@ -16,10 +16,8 @@ extension HomeView {
 
   var machineConnectionWarningButton: some View {
     Button(action: openFailedMachineSettings) {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(.orange)
+      Image(systemName: "exclamationmark.icloud")
     }
-    .tint(.orange)
     .accessibilityLabel("Machine connection issues")
     .accessibilityHint("Opens Machines settings")
   }

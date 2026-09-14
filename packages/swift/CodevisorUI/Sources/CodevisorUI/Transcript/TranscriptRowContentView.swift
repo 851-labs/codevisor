@@ -126,9 +126,12 @@ public struct TranscriptRowContentView: View {
     case let .assistantAttachment(attachment):
       VStack(alignment: .leading, spacing: 4) {
         leaves.attachmentThumbnail(attachment.file)
-        Text(attachment.label)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .accessibilityLabel(attachment.label)
+        if attachment.file.kind != .image {
+          Text(attachment.label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
     case let .active(item):
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)

@@ -14,8 +14,10 @@
       let blocks: [MarkdownBlock]
       let themeFingerprint: Int
       let streamID: String
+      let imageLoaderID: String
     }
 
+    public var onContentHeightChange: (() -> Void)?
     private var contentKey: ContentKey?
     private var contentViews: [NativeMarkdownContentView] = []
     private var blockSpacing: CGFloat = 0
@@ -37,13 +39,15 @@
       blocks: [MarkdownBlock],
       theme: MarkdownTheme,
       streamID: String,
-      linkAction: MarkdownLinkAction?
+      linkAction: MarkdownLinkAction?,
+      imageLoader: MarkdownImageLoader = .remote
     ) {
       precondition(!blocks.isEmpty, "Settled Markdown requires at least one block")
       let key = ContentKey(
         blocks: blocks,
         themeFingerprint: theme.renderFingerprint,
-        streamID: streamID
+        streamID: streamID,
+        imageLoaderID: imageLoader.id
       )
       guard key != contentKey else {
         contentViews.forEach { $0.linkAction = linkAction }
@@ -55,9 +59,19 @@
         blocks: blocks,
         theme: theme,
         streamID: streamID,
-        linkAction: linkAction
+        linkAction: linkAction,
+        imageLoader: imageLoader
       )
-      contentViews.forEach(addSubview)
+      contentViews.forEach { view in
+        view.onContentChange = { [weak self] in
+          guard let self else { return }
+          measuredWidth = -1
+          needsLayout = true
+          invalidateIntrinsicContentSize()
+          onContentHeightChange?()
+        }
+        addSubview(view)
+      }
       contentKey = key
       blockSpacing = theme.blockSpacing
       measuredWidth = -1
@@ -123,7 +137,8 @@
       blocks: [MarkdownBlock],
       theme: MarkdownTheme,
       streamID: String,
-      linkAction: MarkdownLinkAction?
+      linkAction: MarkdownLinkAction?,
+      imageLoader: MarkdownImageLoader
     ) -> [NativeMarkdownContentView] {
       if MarkdownTextRunRenderer.canRenderAsTextRun(blocks) {
         return [
@@ -167,7 +182,8 @@
             alignments: alignments,
             rows: rows,
             theme: theme,
-            linkAction: linkAction
+            linkAction: linkAction,
+            imageLoader: imageLoader
           )
         case .thematicBreak:
           return NativeMarkdownSeparatorView(color: NSColor(theme.tableBorderColor))
@@ -178,6 +194,7 @@
 
   @MainActor
   class NativeMarkdownContentView: NSView {
+    var onContentChange: (() -> Void)?
     var linkAction: MarkdownLinkAction? {
       didSet { linkActionDidChange() }
     }

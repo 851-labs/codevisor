@@ -33,6 +33,7 @@ public enum AppUpdateHandoff {
   }
 
   private struct Status: Encodable {
+    let progress: Double?
     let state: String
     let message: String?
     let targetVersion: String?
@@ -46,14 +47,18 @@ public enum AppUpdateHandoff {
     state: String,
     message: String? = nil,
     targetVersion: String? = nil,
+    progress: Double? = nil,
     at date: Date = Date(),
     to url: URL = defaultStatusURL()
   ) {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let status = Status(
+      progress: progress.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil },
       state: state,
       message: message,
       targetVersion: targetVersion,
-      at: ISO8601DateFormatter().string(from: date)
+      at: formatter.string(from: date)
     )
     guard let payload = try? JSONEncoder().encode(status) else { return }
     try? payload.write(to: url, options: .atomic)

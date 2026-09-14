@@ -46,8 +46,8 @@ struct ComposerMachineMenu: UIViewRepresentable {
     preferences.maximumNumberOfTitleLines = 1
     managementMenu.displayPreferences = preferences
     button.menu = UIMenu(children: [
-      UIMenu(options: [.displayInline, .singleSelection], children: choices),
       managementMenu,
+      UIMenu(options: [.displayInline, .singleSelection], children: choices),
     ])
   }
 }

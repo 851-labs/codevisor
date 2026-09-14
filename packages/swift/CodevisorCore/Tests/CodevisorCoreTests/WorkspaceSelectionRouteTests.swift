@@ -16,8 +16,7 @@ struct WorkspaceSelectionRouteTests {
       rootDirectory: "/tmp/project",
       serverId: serverId,
       projectId: UUID(),
-      centerTree: .leaf(PaneGroupState()),
-      bottomGroup: PaneGroupState()
+      centerTree: .leaf(PaneGroupState())
     )
   }
 

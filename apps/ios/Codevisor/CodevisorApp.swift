@@ -22,49 +22,62 @@ struct CodevisorApp: App {
 
   var body: some Scene {
     WindowGroup {
-      if let environment {
-        if shouldWaitForCloudRestore(environment: environment) {
-          // A cloud-only machine list is unknown until the persisted
-          // account session has been validated and its first machine
-          // snapshot arrives. Keep the honest startup state mounted
-          // instead of briefly claiming no machine is connected.
-          CodevisorStartupSplashView()
-            .preferredColorScheme(colorScheme(for: environment))
-            .task { await environment.cloud.bootstrap() }
+      #if DEBUG
+        if AppStoreScreenshotData.isEnabled {
+          AppStoreScreenshotRoot()
         } else {
-          HomeView()
-            // Order matters: ThemedRoot reads AppEnvironment, so the
-            // environment injection must wrap it (i.e. come after).
-            .modifier(ThemedRoot())
-            .environment(environment)
-            .preferredColorScheme(colorScheme(for: environment))
-            .task { await bootstrap(environment: environment) }
-            .onChange(of: scenePhase, initial: true) { _, phase in
-              // Read = focus: a backgrounded app must not mark
-              // the open chat read while finishes land.
-              environment.attentionCoordinator.setApplicationActive(
-                phase == .active
-              )
-              guard phase == .active, hasCompletedBootstrap else { return }
-              Task { await recoverAfterForeground(environment: environment) }
-            }
-            .onChange(of: networkPath.recoveryToken) { _, _ in
-              guard scenePhase == .active, hasCompletedBootstrap else { return }
-              Task { await recoverAfterForeground(environment: environment) }
-            }
-          // `codevisor://add-machine` deeplinks are handled inside
-          // HomeView, which owns the confirmation alerts and can present
-          // them over the onboarding cover.
+          applicationContent
         }
-      } else if let startupError {
-        ClientDataStartupFailureView(
-          message: startupError,
-          retry: retryStartup
-        )
-      } else {
+      #else
+        applicationContent
+      #endif
+    }
+  }
+
+  @ViewBuilder
+  private var applicationContent: some View {
+    if let environment {
+      if shouldWaitForCloudRestore(environment: environment) {
+        // A cloud-only machine list is unknown until the persisted
+        // account session has been validated and its first machine
+        // snapshot arrives. Keep the honest startup state mounted
+        // instead of briefly claiming no machine is connected.
         CodevisorStartupSplashView()
-          .task { await startEnvironmentIfNeeded() }
+          .preferredColorScheme(colorScheme(for: environment))
+          .task { await environment.cloud.bootstrap() }
+      } else {
+        HomeView()
+          // Order matters: ThemedRoot reads AppEnvironment, so the
+          // environment injection must wrap it (i.e. come after).
+          .modifier(ThemedRoot())
+          .environment(environment)
+          .preferredColorScheme(colorScheme(for: environment))
+          .task { await bootstrap(environment: environment) }
+          .onChange(of: scenePhase, initial: true) { _, phase in
+            // Read = focus: a backgrounded app must not mark
+            // the open chat read while finishes land.
+            environment.attentionCoordinator.setApplicationActive(
+              phase == .active
+            )
+            guard phase == .active, hasCompletedBootstrap else { return }
+            Task { await recoverAfterForeground(environment: environment) }
+          }
+          .onChange(of: networkPath.recoveryToken) { _, _ in
+            guard scenePhase == .active, hasCompletedBootstrap else { return }
+            Task { await recoverAfterForeground(environment: environment) }
+          }
+        // `codevisor://add-machine` deeplinks are handled inside
+        // HomeView, which owns the confirmation alerts and can present
+        // them over the onboarding cover.
       }
+    } else if let startupError {
+      ClientDataStartupFailureView(
+        message: startupError,
+        retry: retryStartup
+      )
+    } else {
+      CodevisorStartupSplashView()
+        .task { await startEnvironmentIfNeeded() }
     }
   }
 
@@ -134,12 +147,6 @@ struct CodevisorApp: App {
   }
 
   private func bootstrap(environment: AppEnvironment) async {
-    // Every machine's stream is connected in the background, so the
-    // attention coordinator can notify for agents finishing anywhere;
-    // this wires the iOS delivery (banners in-app, system notifications
-    // outside the focused chat).
-    ChatNotificationManager.shared.configure(settings: environment.settings)
-    environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
     environment.onMachineRouteChanged = { [weak environment] machineId in
       guard let environment else { return }
       ChatControllerCache.shared.rerouteControllers(on: machineId, environment: environment)

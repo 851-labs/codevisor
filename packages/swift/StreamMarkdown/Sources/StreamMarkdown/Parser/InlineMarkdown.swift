@@ -22,9 +22,14 @@ public enum InlineMarkdown {
     styleInlineCode(in: attributedString(from: text), theme: theme)
   }
 
+  static func tableAttributedString(from text: MarkdownText) -> AttributedString {
+    render(text.spans, intent: [], rendersImages: true)
+  }
+
   private static func render(
     _ spans: [MarkdownSpan],
-    intent: InlinePresentationIntent
+    intent: InlinePresentationIntent,
+    rendersImages: Bool = false
   ) -> AttributedString {
     var result = AttributedString()
     for span in spans {
@@ -32,23 +37,30 @@ public enum InlineMarkdown {
       case let .text(text):
         result += attributed(text, intent: intent)
       case let .emphasis(children):
-        result += render(children, intent: intent.union(.emphasized))
+        result += render(children, intent: intent.union(.emphasized), rendersImages: rendersImages)
       case let .strong(children):
-        result += render(children, intent: intent.union(.stronglyEmphasized))
+        result += render(children, intent: intent.union(.stronglyEmphasized), rendersImages: rendersImages)
       case let .strikethrough(children):
-        result += render(children, intent: intent.union(.strikethrough))
+        result += render(children, intent: intent.union(.strikethrough), rendersImages: rendersImages)
       case let .code(code):
         result += attributed(code, intent: intent.union(.code))
       case let .link(children, destination, _):
-        var linked = render(children, intent: intent)
+        var linked = render(children, intent: intent, rendersImages: rendersImages)
         if let url = safeURL(destination) { linked.link = url }
         result += linked
       case let .image(alt, source, _):
-        var renderedAlt = render(alt, intent: intent)
+        var renderedAlt = rendersImages ? AttributedString("\u{FFFC}") : render(alt, intent: intent)
+        if rendersImages {
+          renderedAlt[MarkdownImageReferenceAttribute.self] = MarkdownImageReference(
+            source: source, alt: alt.map(\.plainText).joined()
+          )
+        }
         if let url = safeURL(source) { renderedAlt.link = url }
         result += renderedAlt
       case .softBreak:
-        result += attributed("\n", intent: intent.union(.softBreak))
+        // Source wrapping must not constrain the rendered paragraph width.
+        // Native text views treat a literal newline as a forced line break.
+        result += attributed(" ", intent: intent)
       case .hardBreak:
         result += attributed("\n", intent: intent.union(.lineBreak))
       }

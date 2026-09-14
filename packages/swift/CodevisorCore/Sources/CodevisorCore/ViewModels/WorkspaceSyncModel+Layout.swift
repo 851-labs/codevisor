@@ -25,7 +25,7 @@ extension WorkspaceSyncModel {
         continue
       }
       let state = PaneGroupState(
-        panes: [descriptor], selectedPaneId: descriptor.id, isVisible: true
+        panes: [descriptor], selectedPaneId: descriptor.id
       )
       workspace.centerTabs.append(WorkspaceTab(root: .leaf(state)))
     }
@@ -51,7 +51,7 @@ extension WorkspaceSyncModel {
   static func allPanes(in workspace: Workspace) -> [PaneDescriptorState] {
     workspace.centerTabs.flatMap { tab in
       tab.root.allGroups.flatMap(\.state.panes)
-    } + workspace.bottomGroup.panes
+    }
   }
 
   static func resourceKey(_ pane: PaneDescriptorState) -> String? {
@@ -109,14 +109,6 @@ extension WorkspaceSyncModel {
         return true
       }
     }
-    if let paneIndex = workspace.bottomGroup.panes.firstIndex(where: matches) {
-      let oldId = workspace.bottomGroup.panes[paneIndex].id
-      workspace.bottomGroup.panes[paneIndex] = pane
-      if workspace.bottomGroup.selectedPaneId == oldId {
-        workspace.bottomGroup.selectedPaneId = pane.id
-      }
-      return true
-    }
     return false
   }
 
@@ -138,7 +130,6 @@ extension WorkspaceSyncModel {
         workspace.centerTabs.remove(at: tabIndex)
       }
     }
-    if workspace.bottomGroup.removePane(id: id) != nil { removed = true }
     return removed
   }
 
@@ -195,7 +186,6 @@ extension WorkspaceSyncModel {
       serverId: serverId,
       projectId: projectId,
       centerTabs: tabs,
-      bottomGroup: PaneGroupState(),
       createdAt: createdAt,
       isArchived: record.isArchived,
       isServerSynced: true

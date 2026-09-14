@@ -7,6 +7,7 @@ import type {
 } from "@codevisor/agent-runtime"
 import type { CodexClient } from "./client.js"
 import type { CodexCommandKiller } from "./process-kill.js"
+import type { CodexTitleGenerator } from "./title-generation.js"
 
 export interface CodexModel {
   readonly value: string
@@ -57,6 +58,7 @@ export interface CodexSession {
   pendingPrompt: { resolve: (value: { stopReason: string }) => void } | undefined
   interruptRequested: boolean
   lastHarnessTitle: string | undefined
+  titleGenerator?: CodexTitleGenerator
   currentModel: string
   currentEffort: string | undefined
   /// Undefined until the user picks a speed — the model's default tier applies.

@@ -14,6 +14,19 @@ public struct PluginInstallDeeplink: Equatable, Sendable {
     self.repo = repo
   }
 
+  /// Universal links resolve their repository from registry metadata, never from URL input.
+  public static func pluginID(from url: URL) -> String? {
+    guard url.scheme?.lowercased() == "https",
+      ["codevisor.dev", "www.codevisor.dev"].contains(url.host()?.lowercased() ?? ""),
+      url.user == nil, url.password == nil, url.port == nil
+    else { return nil }
+    let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
+    guard parts.count == 2, parts[0] == "plugins" else { return nil }
+    let id = String(parts[1])
+    guard id.range(of: "^[a-z0-9-]+\\.[a-z0-9-]+$", options: .regularExpression) != nil else { return nil }
+    return id
+  }
+
   /// Accepts the whole Codevisor scheme family (production, dev, and
   /// per-instance dev schemes) so a build handles any link routed to it.
   public static func parse(_ url: URL) -> PluginInstallDeeplink? {

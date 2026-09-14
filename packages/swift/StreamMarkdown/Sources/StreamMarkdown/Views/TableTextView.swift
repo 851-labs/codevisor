@@ -49,6 +49,10 @@
       updateLinkHover(at: nil)
       textStorage?.setAttributedString(string)
       builtWidth = bounds.width
+      // A loaded image can replace a short placeholder and move cell borders.
+      // Redraw the whole transparent view so retained pixels from the old table
+      // do not survive TextKit's narrower glyph invalidation until scrolling.
+      needsDisplay = true
     }
 
     override func transcriptPlainText(in range: NSRange) -> String {
@@ -87,7 +91,6 @@
     static func tsv(from storage: NSAttributedString, in range: NSRange) -> String? {
       guard range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
 
-      let nsString = storage.string as NSString
       var grid: [Int: [Int: String]] = [:]
       var sawCell = false
       let strip = CharacterSet(charactersIn: "\u{202F}").union(.newlines)
@@ -97,7 +100,8 @@
           let block = style.textBlocks.first as? NSTextTableBlock
         else { return }
         sawCell = true
-        let text = nsString.substring(with: subRange).trimmingCharacters(in: strip)
+        let text = MarkdownImageAttachment.plainText(storage.attributedSubstring(from: subRange)).trimmingCharacters(
+          in: strip)
         grid[block.startingRow, default: [:]][block.startingColumn, default: ""] += text
       }
       guard sawCell else { return nil }

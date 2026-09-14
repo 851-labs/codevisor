@@ -4,6 +4,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { adaptDirectSocket } from "./net-direct.js"
+import type { ClientControlBroker } from "../infra/client-control.js"
 import type { Socket } from "node:net"
 import { WebSocket, type WebSocketServer } from "ws"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
@@ -51,7 +52,8 @@ export const handleUpgrade = async (
   request: IncomingMessage,
   socket: Socket,
   head: Buffer,
-  webSocketServer: WebSocketServer
+  webSocketServer: WebSocketServer,
+  clientControl?: ClientControlBroker
 ): Promise<void> => {
   try {
     const url = parseRequestUrl(request)
@@ -95,6 +97,13 @@ export const handleUpgrade = async (
       return
     }
     await authorize(services.db, config, request)
+    const clientId = matchRoute(url.pathname, "/v1/clients/:id/socket")
+    if (request.method === "GET" && clientId !== undefined && clientControl !== undefined) {
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        clientControl.attach(clientId, webSocket)
+      })
+      return
+    }
     if (request.method === "GET" && url.pathname === "/v1/events/socket") {
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
         void attachEventSocket(

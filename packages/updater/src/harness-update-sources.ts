@@ -120,6 +120,24 @@ export const checkNpmLatest = async (
   }
 }
 
+export const checkPypiLatest = async (
+  packageName: string,
+  fetchImpl: FetchLike = fetch
+): Promise<LatestVersionResult> => {
+  try {
+    const document = (await fetchJson(
+      fetchImpl,
+      `https://pypi.org/pypi/${encodeURIComponent(packageName)}/json`
+    )) as { readonly info?: { readonly version?: string } }
+    const version = document.info?.version
+    return typeof version === "string" && version.length > 0
+      ? { channel: "stable", latestVersion: version }
+      : none
+  } catch {
+    return none
+  }
+}
+
 export const checkBrewLatest = async (
   formula: string,
   fetchImpl: FetchLike = fetch
@@ -186,6 +204,7 @@ export const detectInstallOrigin = (
   } catch {
     real = binaryPath
   }
+  if (/\/uv\/tools\/[^/]+\//.test(real)) return "uv"
   if (real.includes("/node_modules/")) return "npm"
   if (real.includes("/Cellar/") || real.includes("/Caskroom/") || real.includes("/homebrew/")) {
     return "brew"

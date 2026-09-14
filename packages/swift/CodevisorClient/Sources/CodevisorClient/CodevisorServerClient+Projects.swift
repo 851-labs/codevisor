@@ -130,6 +130,8 @@ public struct ServerProject: Decodable, Equatable, Sendable {
 /// Server-owned workspace identity and navigation metadata. Pane identity is
 /// fetched separately; only each device's tab/split layout remains local.
 public struct ServerWorkspace: Decodable, Equatable, Sendable {
+  public var sidebarPosition: String?
+  public var sidebarOrderRevision: Int?
   public var id: String
   public var serverId: String
   public var projectId: String
@@ -151,8 +153,12 @@ public struct ServerWorkspace: Decodable, Equatable, Sendable {
     isArchived: Bool,
     archivedAt: String? = nil,
     createdAt: String,
-    updatedAt: String? = nil
+    updatedAt: String? = nil,
+    sidebarPosition: String? = nil,
+    sidebarOrderRevision: Int? = nil
   ) {
+    self.sidebarPosition = sidebarPosition
+    self.sidebarOrderRevision = sidebarOrderRevision
     self.id = id
     self.serverId = serverId
     self.projectId = projectId
@@ -331,6 +337,7 @@ private struct MoveSessionBody: Encodable {
 }
 
 private struct UpsertWorkspaceBody: Encodable {
+  var sidebarOrderHead: String?
   var id: String
   var projectId: String
   var name: String
@@ -340,6 +347,7 @@ private struct UpsertWorkspaceBody: Encodable {
   var createdAt: String
 
   init(_ workspace: ServerWorkspace) {
+    sidebarOrderHead = WorkspaceOrderClock.shared.head
     id = workspace.id
     projectId = workspace.projectId
     name = workspace.name

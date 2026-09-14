@@ -14,8 +14,7 @@ struct ConvertedPaneTitleTests {
       rootDirectory: "/tmp/project",
       serverId: "stage3v",
       projectId: UUID(),
-      centerTree: centerTree,
-      bottomGroup: PaneGroupState()
+      centerTree: centerTree
     )
   }
 
@@ -31,16 +30,16 @@ struct ConvertedPaneTitleTests {
     let bridge = WorkspacePaneGroupRepository(
       workspaceId: space.id, groupId: leafId, repository: repository)
 
-    var state = try #require(bridge.load(sessionId: nil, placement: .center))
+    var state = try #require(bridge.load(sessionId: nil))
     #expect(state.selectedPane?.name == "New tab")
 
     let conversion = state.convertNewTabPane(id: placeholder.id, to: .screenSharing, sessionId: nil)
     let converted = try #require(conversion)
-    bridge.save(state, sessionId: nil, placement: .center)
+    bridge.save(state, sessionId: nil)
 
     // Same slot, new identity-free name: what a re-read of the record yields.
     #expect(converted.id == placeholder.id)
-    let reloaded = try #require(bridge.load(sessionId: nil, placement: .center))
+    let reloaded = try #require(bridge.load(sessionId: nil))
     #expect(reloaded.selectedPane?.id == placeholder.id)
     #expect(reloaded.selectedPane?.kind == .screenSharing)
     #expect(reloaded.selectedPane?.name == "Screen Sharing")

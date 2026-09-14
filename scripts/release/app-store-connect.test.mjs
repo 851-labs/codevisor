@@ -23,7 +23,7 @@ const build = { appId: "app", version: "1.2.3", buildNumber: "42" }
 const validBuild = {
   id: "build",
   type: "builds",
-  attributes: { processingState: "VALID", buildAudienceType: "INTERNAL_ONLY", expired: false },
+  attributes: { processingState: "VALID", buildAudienceType: "APP_STORE_ELIGIBLE", expired: false },
   relationships: { buildBetaDetail: { data: { type: "buildBetaDetails", id: "detail" } } }
 }
 const group = {
@@ -199,11 +199,12 @@ test("readiness timeout reports a valid build's missing beta detail", async () =
   )
 })
 
-test("processing fails promptly on rejected, external-eligible, or expired builds", async () => {
+test("processing fails promptly on rejected, internal-only, unknown-audience, or expired builds", async () => {
   for (const [attributes, message] of [
     [{ processingState: "FAILED" }, /Apple rejected/],
     [{ processingState: "INVALID" }, /Apple rejected/],
-    [{ processingState: "VALID", buildAudienceType: "APP_STORE_ELIGIBLE" }, /INTERNAL_ONLY/],
+    [{ processingState: "VALID", buildAudienceType: "INTERNAL_ONLY" }, /APP_STORE_ELIGIBLE/],
+    [{ processingState: "VALID" }, /APP_STORE_ELIGIBLE/],
     [{ processingState: "VALID", expired: true }, /expired/]
   ]) {
     await assert.rejects(
@@ -238,7 +239,7 @@ test("processing timeout is bounded without real timers", async () => {
   assert.equal(sleeps, 2)
 })
 
-test("delivery uploads once, creates an internal group, and assigns the processed build", async () => {
+test("delivery uploads an App Store eligible build once and assigns only an internal group", async () => {
   const operations = []
   let uploaded = false
   let assigned = false

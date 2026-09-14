@@ -15,8 +15,8 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   static let topPadding: CGFloat = 12
   static let horizontalPadding: CGFloat = 16
   static let maxRowWidth: CGFloat = 832
-  /// Initial presentation waits for exact geometry across this much content
-  /// on both sides of the viewport. The already-mounted runway makes the
+  /// Initial layout prepares this much content on both sides of the viewport
+  /// without holding first display for offscreen work. The mounted runway makes the
   /// first fast swipe consume prepared TextKit/SwiftUI rows rather than
   /// synchronously constructing them under the user's finger.
   static let initialRunwayViewportCount: CGFloat = 1.5
@@ -180,6 +180,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var onFollowStateChange: ((Bool) -> Void)?
   var onNearTop: (() -> Bool)?
   var onOlderHistoryPresented: ((UInt64) -> Void)?
+  var onInitialPresentationReady: (() -> Void)?
   var applicationObserver: NSObjectProtocol?
 
   var isNativeScrollInteractionActive: Bool {

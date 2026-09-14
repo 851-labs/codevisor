@@ -1,4 +1,5 @@
 import CodevisorUI
+import StreamMarkdown
 import SwiftUI
 import UIKit
 
@@ -62,7 +63,7 @@ final class UserSendMorphCoordinator {
     guard let window, !text.isEmpty, !sourceFrame.isEmpty else { return }
     let view = UserSendMorphView(text: text, bubbleColor: bubbleColor, textColor: textColor)
     // The editor draws its text 4 pt below its top and flush left; the
-    // bubble pads 8 pt / 12 pt. Start the proxy so its label lands on the
+    // bubble pads 8 pt / 12 pt. Start the proxy so its text lands on the
     // editor's glyphs.
     view.frame = sourceFrame.insetBy(dx: -UserSendMorphView.insets.left, dy: -4)
     // A bubble from the first frame: the editor's placeholder reappears
@@ -76,7 +77,7 @@ final class UserSendMorphCoordinator {
     self.session = session
     owner = nil
     // A send that never produces a flight (failure, reduce motion) must
-    // not leave a floating label behind.
+    // not leave floating text behind.
     let watchdog = DispatchWorkItem { [weak self] in
       guard let self, owner == nil else { return }
       removeProxy()
@@ -167,21 +168,29 @@ final class UserSendMorphCoordinator {
 final class UserSendMorphView: UIView {
   static let insets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
   let bubbleColor: UIColor
-  private let label = UILabel()
+  private let textView: SelectableTextKitView
 
   init(text: String, bubbleColor: UIColor, textColor: UIColor) {
     self.bubbleColor = bubbleColor
+    // Share the transcript's TextKit renderer, including its zero text
+    // insets. UILabel can wrap and position the same body font differently,
+    // making words jump when the proxy gives way to the selectable row.
+    textView = SelectableTextKitView(
+      attributedText: NSAttributedString(
+        string: text,
+        attributes: [
+          .font: UIFont.preferredFont(forTextStyle: .body),
+          .foregroundColor: textColor,
+        ]
+      )
+    )
     super.init(frame: .zero)
+    textView.textContainer.widthTracksTextView = false
     isUserInteractionEnabled = false
     accessibilityElementsHidden = true
     layer.cornerRadius = 14
     layer.cornerCurve = .continuous
-    label.text = text
-    label.font = .preferredFont(forTextStyle: .body)
-    label.adjustsFontForContentSizeCategory = true
-    label.textColor = textColor
-    label.numberOfLines = 0
-    addSubview(label)
+    addSubview(textView)
   }
 
   @available(*, unavailable)
@@ -189,7 +198,13 @@ final class UserSendMorphView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    label.frame = bounds.inset(by: Self.insets)
+    textView.frame = bounds.inset(by: Self.insets)
+    // UITextView defers width tracking during an animated bounds change.
+    // Lay out the glyphs at the model width now, so landing cannot reveal
+    // different wrapping when the transcript replaces this presentation.
+    textView.textContainer.size = textView.bounds.size
+    textView.layoutManager.ensureLayout(for: textView.textContainer)
+    textView.layoutIfNeeded()
   }
 }
 

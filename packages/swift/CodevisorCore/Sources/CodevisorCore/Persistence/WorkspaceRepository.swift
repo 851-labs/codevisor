@@ -1,7 +1,7 @@
 //  Workspace persistence + the sessions→workspaces backfill.
 //
 //  Workspaces are the persistence root for pane layout (top tabs containing
-//  center split trees, plus the bottom panel). The backfill is incremental
+//  split trees). The backfill is incremental
 //  and idempotent: "ensure a
 //  workspace exists for this session" runs whenever a session is opened, so
 //  existing chats gain owning workspaces lazily per machine as their
@@ -16,7 +16,10 @@ public protocol WorkspaceRepository: Sendable {
   func workspace(id: UUID) -> Workspace?
   /// The workspace owning the chat pane for this session, if any.
   func workspaceId(forSession sessionId: UUID) -> UUID?
+  /// Layout writes preserve the current shared and pending order.
   func save(_ workspace: Workspace)
+  /// Reserved for authoritative metadata and explicit ordering mutations.
+  func saveWithSidebarOrder(_ workspace: Workspace)
   /// Replaces an automatic workspace name, preserving names explicitly set
   /// by the user.
   func setAutomaticName(_ name: String, forWorkspace workspaceId: UUID)
@@ -61,8 +64,7 @@ public extension WorkspaceRepository {
       worktreeName: seed.worktreeName,
       serverId: seed.serverId,
       projectId: seed.projectId,
-      centerTree: .leaf(center),
-      bottomGroup: PaneGroupState()
+      centerTree: .leaf(center)
     )
   }
 }
@@ -83,6 +85,12 @@ public struct WorkspaceSessionSeed: Sendable {
   /// The session's git worktree, when it lives in one. Stamped onto the
   /// workspace so future sessions inherit it.
   public let worktreeName: String?
+  /// The workspace the server says owns this session, when known. A chat
+  /// created elsewhere (another client, an agent, the API) arrives with its
+  /// membership already decided; honoring it here keeps the chat in that
+  /// workspace instead of minting a sibling at the same directory. Nil for
+  /// unassigned sessions and for servers that predate workspace ownership.
+  public let assignedWorkspaceId: UUID?
 
   public init(
     sessionId: UUID,
@@ -90,7 +98,8 @@ public struct WorkspaceSessionSeed: Sendable {
     serverId: String,
     projectId: UUID,
     rootDirectory: String?,
-    worktreeName: String? = nil
+    worktreeName: String? = nil,
+    assignedWorkspaceId: UUID? = nil
   ) {
     self.sessionId = sessionId
     self.initialName = initialName
@@ -98,6 +107,7 @@ public struct WorkspaceSessionSeed: Sendable {
     self.projectId = projectId
     self.rootDirectory = rootDirectory
     self.worktreeName = worktreeName
+    self.assignedWorkspaceId = assignedWorkspaceId
   }
 }
 
@@ -156,7 +166,9 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
   }
 
   public func loadAll() -> [Workspace] {
-    payload().workspaces
+    let workspaces = payload().workspaces
+    WorkspaceOrderClock.shared.observe(workspaces.map(\.effectiveSidebarPosition).min())
+    return workspaces
   }
 
   public func workspace(id: UUID) -> Workspace? {
@@ -167,8 +179,17 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     payload().sessionIndex[sessionId]
   }
 
-  public func save(_ workspace: Workspace) {
+  public func save(_ workspace: Workspace) { save(workspace, preservingSidebarOrder: true) }
+
+  public func saveWithSidebarOrder(_ workspace: Workspace) { save(workspace, preservingSidebarOrder: false) }
+
+  private func save(_ workspace: Workspace, preservingSidebarOrder: Bool) {
+    var workspace = workspace
     var payload = payload()
+    if preservingSidebarOrder, let stored = payload.workspaces.first(where: { $0.id == workspace.id }) {
+      workspace.copySidebarOrder(from: stored)
+    }
+    WorkspaceOrderClock.shared.observe(workspace.sidebarPosition)
     if let index = payload.workspaces.firstIndex(where: { $0.id == workspace.id }) {
       payload.workspaces[index] = workspace
     } else {
@@ -210,11 +231,21 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
   /// A nil root fills in once the session's directory resolves. Automatic
   /// names deliberately do not follow chat titles: project/worktree context
   /// owns the workspace name.
+  ///
+  /// Resolution order: the local index (a chat keeps the workspace it lives
+  /// in), then the server's assignment (join that workspace, or mint under
+  /// its identity so the next snapshot converges on it), then a fresh
+  /// workspace. A chat that this client minted a workspace for before the
+  /// server's assignment was known is re-homed once the assignment names a
+  /// different local workspace.
   public func ensureWorkspace(
     for seed: WorkspaceSessionSeed,
     legacyGroups: (any PaneGroupRepository)?
   ) -> Workspace {
     if let id = workspaceId(forSession: seed.sessionId), var existing = workspace(id: id) {
+      if let rehomed = rehomeMintedWorkspace(existing, for: seed) {
+        return rehomed
+      }
       var changed = false
       if existing.rootDirectory == nil, let root = seed.rootDirectory {
         existing.rootDirectory = root
@@ -225,33 +256,79 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
       return existing
     }
 
+    if var assigned = assignedWorkspace(for: seed) {
+      // The chat already belongs to a workspace this client knows. Add it
+      // as a tab without stealing selection: the user may be working in
+      // that workspace right now, and the sidebar route selects the tab
+      // when they open the chat.
+      let center = PaneGroupState.centerInitial(sessionId: seed.sessionId)
+      assigned.centerTabs.append(WorkspaceTab(root: .leaf(center)))
+      save(assigned)
+      return assigned
+    }
+
     // Migrate the session's pre-workspace pane state, tagging its chat
     // pane with the session it references.
     var center =
-      legacyGroups?.load(sessionId: seed.sessionId, placement: .center)
+      legacyGroups?.load(sessionId: seed.sessionId)
       ?? .centerInitial(sessionId: seed.sessionId)
     for index in center.panes.indices where center.panes[index].kind == .chat {
       if center.panes[index].chatSessionId == nil {
         center.panes[index].chatSessionId = seed.sessionId
       }
     }
-    // A terminal is workspace content, not layout furniture. Keep the
-    // bottom placement empty until the user opens it for the first time.
-    let bottom =
-      legacyGroups?.load(sessionId: seed.sessionId, placement: .bottom)
-      ?? PaneGroupState()
-
-    let workspace = Workspace(
+    // An assignment to a workspace this client has not seen yet (the
+    // server created both in one go) mints under the server's identity,
+    // so the snapshot that follows adopts this record instead of finding
+    // a stranger at the same directory. An archived local record with
+    // that id is stale membership; it is not revived here.
+    let mintedId = seed.assignedWorkspaceId.flatMap { id in
+      self.workspace(id: id) == nil ? id : nil
+    }
+    var workspace = Workspace(
+      id: mintedId ?? UUID(),
       name: seed.initialName.isEmpty ? "Workspace" : seed.initialName,
       rootDirectory: seed.rootDirectory,
       worktreeName: seed.worktreeName,
       serverId: seed.serverId,
       projectId: seed.projectId,
-      centerTree: .leaf(center),
-      bottomGroup: bottom
+      centerTree: .leaf(center)
     )
+    workspace.importLegacyPanes(legacyGroups?.legacyPanes(sessionId: seed.sessionId) ?? [])
     save(workspace)
     return workspace
+  }
+
+  /// The server-assigned workspace when it is a live local record on the
+  /// same machine. Archived records and other machines' workspaces never
+  /// host a chat through an assignment.
+  private func assignedWorkspace(for seed: WorkspaceSessionSeed) -> Workspace? {
+    guard let id = seed.assignedWorkspaceId,
+      let candidate = workspace(id: id),
+      candidate.serverId == seed.serverId,
+      !candidate.isArchived
+    else { return nil }
+    return candidate
+  }
+
+  /// Moves a client-minted workspace's layout into the server-assigned
+  /// workspace and retires the minted record. Only a workspace the server
+  /// never confirmed, whose sole chat is this session, qualifies: anything
+  /// the server knows about, or that hosts other chats, is reconciled by
+  /// the sync model against the authoritative snapshot instead.
+  private func rehomeMintedWorkspace(
+    _ minted: Workspace,
+    for seed: WorkspaceSessionSeed
+  ) -> Workspace? {
+    guard !minted.isServerSynced,
+      minted.chatSessionIds == [seed.sessionId],
+      var target = assignedWorkspace(for: seed),
+      target.id != minted.id
+    else { return nil }
+    target.centerTabs.append(contentsOf: minted.centerTabs)
+    delete(id: minted.id)
+    save(target)
+    return target
   }
 
   public func hasPerformedMigration(_ key: String) -> Bool {
@@ -369,13 +446,9 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
   }
 }
 
-/// Bridges a workspace's storage into the `PaneGroupRepository` interface
-/// `PaneGroupModel` speaks, so group models stay workspace-agnostic:
-/// `.bottom` maps to the workspace's bottom panel, `.center` to a specific
-/// leaf of the center tree.
+/// Persists one workspace leaf through the pane model's storage interface.
 public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
   private let workspaceId: UUID
-  /// The center leaf this repository reads/writes. Bottom ignores it.
   private let groupId: UUID?
   private let repository: any WorkspaceRepository
 
@@ -388,33 +461,22 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
   /// The session key is deliberately unused: this repository is keyed by
   /// workspace and leaf, so a workspace with no chat persists exactly like one
   /// that has several.
-  public func load(sessionId: UUID?, placement: PaneGroupPlacement) -> PaneGroupState? {
+  public func load(sessionId: UUID?) -> PaneGroupState? {
     guard let workspace = repository.workspace(id: workspaceId) else { return nil }
-    switch placement {
-    case .bottom:
-      return workspace.bottomGroup
-    case .center:
-      guard let groupId else { return workspace.centerTree.allGroups.first?.state }
-      return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
-    }
+    guard let groupId else { return workspace.centerTree.allGroups.first?.state }
+    return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID?, placement: PaneGroupPlacement) {
+  public func save(_ state: PaneGroupState, sessionId: UUID?) {
     guard var workspace = repository.workspace(id: workspaceId) else { return }
-    switch placement {
-    case .bottom:
-      workspace.bottomGroup = state
-    case .center:
-      let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
-      guard let targetId else { return }
-      guard
-        let tabIndex = workspace.centerTabs.firstIndex(where: {
-          $0.root.group(id: targetId) != nil
-        })
-      else { return }
-      workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
-        .updatingGroup(id: targetId) { _ in state }
-    }
+    let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
+    guard let targetId,
+      let tabIndex = workspace.centerTabs.firstIndex(where: {
+        $0.root.group(id: targetId) != nil
+      })
+    else { return }
+    workspace.centerTabs[tabIndex].root = workspace.centerTabs[tabIndex].root
+      .updatingGroup(id: targetId) { _ in state }
     repository.save(workspace)
   }
 }

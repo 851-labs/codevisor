@@ -5,13 +5,21 @@ description: Promote the successful Alpha artifact set at current Codevisor main
 
 # Release Codevisor
 
-Stable is a promotion, never a rebuild. The `Alpha` workflow creates the only
+Stable is a promotion, never a rebuild. The `Build Alpha` workflow creates the only
 signed and notarized app/server artifact set for a commit. `Publish Alpha`
-publishes those bytes to the Alpha Sparkle channel. `Release` attaches the same
+publishes those bytes to the Alpha Sparkle channel. `Publish Stable` attaches the same
 bytes to the Stable tag, advances the Stable Sparkle and Linux manifests,
 updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
 Store publication is a separate, explicit workflow and must not run as part of
 an app release.
+
+After publication verification passes, `Publish Stable` marks the release as
+GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
+
+Public iOS TestFlight publication uses the separate, manually triggered
+`Publish Beta` workflow. Do not dispatch it as part of a normal
+macOS/server release; submit an iOS beta only when requested.
+See [TestFlight release setup](../../../docs/testflight-releases.md).
 
 Do not create, move, or push a version tag manually. The workflow owns the tag.
 
@@ -55,7 +63,7 @@ git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
 gh workflow run release.yml --ref main -f version=VERSION
 ```
 
-Monitor the resulting `Release` workflow through completion.
+Monitor the resulting `Publish Stable` workflow through completion.
 
 ## Verify
 
@@ -74,8 +82,8 @@ Verify all of the following before reporting success:
 - The versioned Chrome extension ZIP and checksum are attached to the Stable
   release. Do not dispatch `Publish Chrome Extension` unless the user explicitly
   says the store listing is ready and asks to publish it.
-- The first Sparkle migration release is GitHub `latest`; later Stable
-  releases do not move that bridge pointer.
+- GitHub `latest` points to the promoted Stable release, and both architecture
+  download URLs under `releases/latest/download` resolve to that release.
 
 If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha,
 and dispatch the next unused version. If it fails after tagging, repair the

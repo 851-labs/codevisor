@@ -1,38 +1,45 @@
 import Foundation
 
-/// Persisted workspace ranks, including archived or temporarily offline rows.
-public struct WorkspaceSidebarOrder {
-  public let ids: [UUID]
+/// The exact request is durable so a lost response can be retried before a
+/// newer local drag is sent, without confusing our own commit with a conflict.
+public struct WorkspaceOrderAttempt: Codable, Sendable, Equatable {
+  public var position: String
+  public var expectedRevision: Int
+}
 
-  public init(_ ids: [UUID]) {
+extension Workspace {
+  mutating func copySidebarOrder(from stored: Workspace) {
+    sidebarPosition = stored.sidebarPosition
+    sidebarOrderRevision = stored.sidebarOrderRevision
+    pendingSidebarPosition = stored.pendingSidebarPosition
+    pendingSidebarOrderRevision = stored.pendingSidebarOrderRevision
+    sidebarOrderAttempt = stored.sidebarOrderAttempt
+  }
+
+  public var effectiveSidebarPosition: String {
+    pendingSidebarPosition ?? sidebarPosition.flatMap { WorkspacePosition.isValid($0) ? $0 : nil }
+      ?? WorkspacePosition.initial(createdAt: createdAt, id: id)
+  }
+}
+
+/// One shared comparator for every client's visible subset. Hidden workspaces
+/// retain their keys; reordering never republishes a list of other identities.
+public enum WorkspaceSidebarOrder {
+  public static func precedes(_ left: Workspace, _ right: Workspace) -> Bool {
+    if left.effectiveSidebarPosition != right.effectiveSidebarPosition {
+      return left.effectiveSidebarPosition < right.effectiveSidebarPosition
+    }
+    if left.serverId != right.serverId { return left.serverId < right.serverId }
+    return left.id.uuidString < right.id.uuidString
+  }
+
+  public static func position(for id: UUID, in visibleIDs: [UUID], workspaces: [Workspace]) -> String? {
+    let byID = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     var seen: Set<UUID> = []
-    self.ids = ids.filter { seen.insert($0).inserted }
-  }
-
-  /// New workspaces enter at the top in the caller's initial order.
-  public func including(_ visibleIDs: [UUID]) -> WorkspaceSidebarOrder {
-    let saved = Set(ids)
-    return WorkspaceSidebarOrder(visibleIDs.filter { !saved.contains($0) } + ids)
-  }
-
-  public func applying(to visibleIDs: [UUID]) -> [UUID] {
-    let visible = Set(visibleIDs)
-    return including(visibleIDs).ids.filter { visible.contains($0) }
-  }
-
-  /// Move within the visible list while preserving hidden rows' saved slots.
-  public func moving(_ source: UUID, to destination: UUID, visibleIDs: [UUID]) -> WorkspaceSidebarOrder {
-    var reordered = applying(to: visibleIDs)
-    guard source != destination,
-      let sourceIndex = reordered.firstIndex(of: source),
-      let destinationIndex = reordered.firstIndex(of: destination)
-    else { return self }
-    let moved = reordered.remove(at: sourceIndex)
-    reordered.insert(moved, at: destinationIndex)
-    let visible = Set(reordered)
-    var remaining = reordered.makeIterator()
-    return WorkspaceSidebarOrder(
-      including(visibleIDs).ids.map { visible.contains($0) ? remaining.next() ?? $0 : $0 }
-    )
+    let ids = visibleIDs.filter { byID[$0] != nil && seen.insert($0).inserted }
+    guard let index = ids.firstIndex(of: id) else { return nil }
+    let lower = index > 0 ? byID[ids[index - 1]]?.effectiveSidebarPosition : nil
+    let upper = index + 1 < ids.count ? byID[ids[index + 1]]?.effectiveSidebarPosition : nil
+    return WorkspacePosition.between(lower, upper, id: id)
   }
 }

@@ -3,8 +3,10 @@ import {
   CreateProjectRequest,
   CreateScratchProjectRequest,
   CreateWorktreeRequest,
+  PromoteWorkspacePaneToChatRequest,
   UpdateBrowserUseConfigurationRequest,
   UpdateProjectRequest,
+  UpdateWorkspacePaneRequest,
   UpdateWorkspaceRequest,
   UpsertWorkspacePaneRequest,
   UpsertWorkspaceRequest
@@ -178,6 +180,45 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     }
   ),
   apiTool("workspaces.list", "List durable pane-workspace identities.", "GET", "/v1/workspaces"),
+  apiTool(
+    "workspaces.snapshot",
+    "Read a coherent snapshot of workspaces and their panes.",
+    "GET",
+    "/v1/workspace-snapshot"
+  ),
+  apiTool(
+    "workspaces.panes_list",
+    "List durable panes across workspaces. Layout and focus are client-specific; use clients.context for those.",
+    "GET",
+    "/v1/workspace-panes"
+  ),
+  apiTool(
+    "workspaces.pane_upsert",
+    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType new-tab, chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<pluginId> and a paneType from plugins.list. Use clients.navigate to select the synchronized pane in a particular client.",
+    "PUT",
+    "/v1/workspaces/:workspaceId/panes/:paneId",
+    { body: UpsertWorkspacePaneRequest }
+  ),
+  apiTool(
+    "workspaces.pane_update",
+    "Update pane content or title without replacing the entire record.",
+    "PATCH",
+    "/v1/workspaces/:workspaceId/panes/:paneId",
+    { body: UpdateWorkspacePaneRequest }
+  ),
+  apiTool(
+    "workspaces.pane_promote_chat",
+    "Convert an existing New Tab pane into a chat, preserving its pane identity and workspace membership.",
+    "POST",
+    "/v1/workspaces/:workspaceId/panes/:paneId/promote-chat",
+    { body: PromoteWorkspacePaneToChatRequest }
+  ),
+  apiTool(
+    "workspaces.pane_close",
+    "Close a shared pane. Closing the final pane preserves its identity as a New Tab. This affects every client; it does not delete the chat session.",
+    "POST",
+    "/v1/workspaces/:workspaceId/panes/:paneId/close"
+  ),
   apiTool(
     "workspaces.upsert",
     "Create or fully replace a workspace identity by id.",

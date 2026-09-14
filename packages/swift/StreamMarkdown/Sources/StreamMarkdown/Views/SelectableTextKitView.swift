@@ -58,7 +58,7 @@
     var animationTime = CACurrentMediaTime()
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-      drawQuoteBars(forGlyphRange: glyphsToShow, at: origin)
+      drawMarkdownQuoteBars(forGlyphRange: glyphsToShow, at: origin)
       drawRoundedBackgrounds(forGlyphRange: glyphsToShow, at: origin)
       super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
@@ -144,43 +144,6 @@
       }
     }
 
-    private func drawQuoteBars(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-      guard let textStorage, glyphsToShow.length > 0 else { return }
-      let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-      textStorage.enumerateAttribute(
-        .streamMarkdownQuoteDecoration,
-        in: characters,
-        options: []
-      ) { value, characterRange, _ in
-        guard let decoration = value as? TextKitQuoteDecoration else { return }
-        let glyphRange = self.glyphRange(
-          forCharacterRange: characterRange,
-          actualCharacterRange: nil
-        )
-        let visibleGlyphs = NSIntersectionRange(glyphRange, glyphsToShow)
-        guard visibleGlyphs.length > 0 else { return }
-
-        self.enumerateLineFragments(forGlyphRange: visibleGlyphs) {
-          lineRect, _, _, lineGlyphRange, _ in
-          guard NSIntersectionRange(visibleGlyphs, lineGlyphRange).length > 0 else {
-            return
-          }
-          guard let context = NSGraphicsContext.current?.cgContext else { return }
-          for offset in decoration.barOffsets {
-            TextKitQuoteBarPainter.fill(
-              NSRect(
-                x: origin.x + offset,
-                y: origin.y + lineRect.minY,
-                width: decoration.barWidth,
-                height: lineRect.height
-              ),
-              color: decoration.color,
-              in: context
-            )
-          }
-        }
-      }
-    }
   }
 
   /// The displayed selectable view. It owns an explicit TextKit 1 stack so the

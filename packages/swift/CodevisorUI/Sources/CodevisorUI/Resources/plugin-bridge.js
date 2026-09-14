@@ -32,9 +32,15 @@
       };
     },
     openUrl: function (url) {
-      post("openUrl", url);
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.codevisorBridge) {
+        post("openUrl", url);
+      } else {
+        var target = new URL(String(url), window.location.href);
+        if (target.protocol === "https:" || target.protocol === "http:") window.open(target.href, "_blank", "noopener");
+      }
     },
     setTitle: function (title) {
+      document.title = String(title);
       post("setTitle", title);
     }
   });

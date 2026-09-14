@@ -62,7 +62,6 @@ export interface McpGatewayDeps {
   readonly automationProviders: Map<string, AutomationToolProvider>
   readonly browserSetupBroker: BrowserSetupBroker
   readonly codeExecutor: CodeExecutor
-  readonly codevisorProvider: AutomationToolProvider
   readonly config: McpManagerConfig
   readonly connectUpstream: (id: string) => Promise<UpstreamConnection>
   readonly gateways: Map<string, GatewayRuntime>
@@ -119,7 +118,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     automationProviders,
     browserSetupBroker,
     codeExecutor,
-    codevisorProvider,
     config,
     connectUpstream,
     gateways,
@@ -135,7 +133,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     searchCatalog
   } = makeGatewayCatalog({
     automationProviders,
-    codevisorProvider,
     config,
     connectUpstream,
     isSuppressed
@@ -372,10 +369,10 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
                       : {}
                   )
                 }
-                const installed = serverId === "codevisor" ? undefined : await record(serverId)
+                const installed = await record(serverId)
                 const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
-                if (installed?.enabled === false || !allowed) {
-                  throw new Error(`${installed?.name ?? "Codevisor"} is disabled for this session`)
+                if (!installed.enabled || !allowed) {
+                  throw new Error(`${installed.name} is disabled for this session`)
                 }
                 const toolArgs =
                   typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}

@@ -6,77 +6,62 @@ import os
 
 // MARK: - Plugins
 
-/// The Plugins screen: a machine list that pushes each machine's plugins —
-/// install, update, restart, and uninstall act on that machine.
+/// Open the only machine's plugins directly, or offer a machine list.
+/// Every plugin action stays scoped to the displayed machine.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var activeSheet: PluginsRootSheet?
 
-  private enum PluginsRootSheet: Identifiable {
-    case install(initialSource: String?)
-    case browse
-    var id: String {
-      switch self {
-      case .install: "install"
-      case .browse: "browse"
+  private var availableMachines: [CodevisorMachine] {
+    PluginSettingsSession.availableMachines(in: environment.machines)
+  }
+
+  var body: some View {
+    let machines = environment.machines.allMachines
+    Group {
+      if machines.count == 1, let only = machines.first {
+        PluginMachineScreen(machine: only, title: "Plugins")
+          .id(only.id)
+      } else {
+        machineList
+      }
+    }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        NavigationLink {
+          PluginBlockedPublishersView()
+        } label: {
+          Label("Blocked Publishers", systemImage: "hand.raised")
+        }
       }
     }
   }
 
-  /// Fleet-level installs land on the local machine; registry plugins
-  /// sync out from there.
-  private var localClient: any CodevisorServerClienting {
-    environment.machines.client(for: CodevisorMachine.local.id)
-  }
-
-  var body: some View {
+  private var machineList: some View {
     List {
-      MachineListSection(badge: badge) { machine in
-        PluginMachineRows(machine: machine)
+      Section {
+        ForEach(environment.machines.allMachines) { machine in
+          NavigationLink {
+            PluginMachineScreen(machine: machine, title: machine.name)
+          } label: {
+            HStack {
+              Text(machine.name)
+              Spacer(minLength: 12)
+              badge(machine).view
+                .font(.footnote)
+            }
+          }
+        }
+      }
+      if availableMachines.isEmpty {
+        ContentUnavailableView {
+          Label("No Connected Machines", systemImage: "desktopcomputer")
+        } description: {
+          Text("Connect a machine to browse and install plugins.")
+        }
       }
     }
     .navigationTitle("Plugins")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          activeSheet = .browse
-        } label: {
-          Label("Browse Plugins", systemImage: "magnifyingglass")
-        }
-      }
-      ToolbarItem(placement: .topBarTrailing) {
-        Button {
-          activeSheet = .install(initialSource: nil)
-        } label: {
-          Label("Install Plugin", systemImage: "plus")
-        }
-      }
-    }
-    .sheet(item: $activeSheet) { sheet in
-      switch sheet {
-      case .install(let initialSource):
-        PluginInstallSheet(
-          initialSource: initialSource,
-          discover: { source in
-            try await localClient.discoverRemotePlugin(source: source)
-          },
-          onInstall: { source in
-            _ = try await localClient.importRemotePlugin(source: source)
-          }
-        )
-      case .browse:
-        PluginRegistryBrowseSheet(
-          fetchRegistry: { try await localClient.fetchPluginRegistry(query: nil) },
-          installedIds: [],
-          onInstall: { entry in
-            // The registry only discovers; installing goes
-            // through the consent flow with the entry's repo.
-            activeSheet = .install(initialSource: entry.repo)
-          }
-        )
-      }
-    }
   }
 
   private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
@@ -94,15 +79,20 @@ struct PluginsSettingsScreen: View {
 
 /// One machine's plugins: runtime-state chips, update/restore/uninstall,
 /// and the browse/install sheets — all scoped to that machine.
-private struct PluginMachineRows: View {
+private struct PluginMachineScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
+  let title: String
 
   private var client: any CodevisorServerClienting {
     environment.machines.client(for: machine.id)
   }
 
   private var serverId: String { machine.id }
+
+  private var isMachineAvailable: Bool {
+    PluginSettingsSession.availableMachines(in: environment.machines).contains { $0.id == machine.id }
+  }
 
   @State private var plugins: [ServerPluginSummary]?
   @State private var updates: [String: ServerPluginUpdateStatus] = [:]
@@ -116,20 +106,18 @@ private struct PluginMachineRows: View {
   /// One sheet slot for both flows, so "Install" inside the browse sheet
   /// can swap straight into the install sheet's discover→consent stages.
   private enum PluginsSheet: Identifiable {
-    case install(initialSource: String?)
-    case browse
+    case session(PluginSettingsSession)
     case update(ServerPluginUpdatePlan)
     var id: String {
       switch self {
-      case .install: "install"
-      case .browse: "browse"
+      case .session(let session): "session:\(session.id)"
       case .update(let plan): "update:\(plan.planId)"
       }
     }
   }
 
   var body: some View {
-    Group {
+    List {
       if let actionError {
         Label(actionError, systemImage: "exclamationmark.triangle")
           .font(.callout)
@@ -152,6 +140,22 @@ private struct PluginMachineRows: View {
         }
       }
     }
+    .navigationTitle(title)
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Browse Plugins", systemImage: "magnifyingglass") {
+          open(.browse)
+        }
+        .disabled(isMutating || !isMachineAvailable)
+      }
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Add Plugin", systemImage: "plus") {
+          open(.install(initialSource: nil))
+        }
+        .disabled(isMutating || !isMachineAvailable)
+      }
+    }
     .disabled(isMutating)
     .task(id: serverId) { await reload() }
     // plugin.state.updated events (start, crash, restart, and list
@@ -161,34 +165,32 @@ private struct PluginMachineRows: View {
     }
     .sheet(item: $activeSheet) { sheet in
       switch sheet {
-      case .install(let initialSource):
-        PluginInstallSheet(
-          initialSource: initialSource,
-          discover: { source in
-            try await client.discoverRemotePlugin(source: source)
-          },
-          onInstall: { source in
-            _ = try await mutate {
-              try await client.importRemotePlugin(source: source)
+      case .session(let session):
+        switch session.page {
+        case .install(let initialSource):
+          PluginInstallSheet(
+            initialSource: initialSource,
+            discover: { try await session.discover(source: $0) },
+            onInstall: { source in
+              try await mutate {
+                try await session.install(source: source)
+              }
+              await reload()
             }
-            await reload()
-          }
-        )
-      case .browse:
-        PluginRegistryBrowseSheet(
-          fetchRegistry: { try await client.fetchPluginRegistry(query: nil) },
-          installedIds: Set((plugins ?? []).map(\.id)),
-          onInstall: { entry in
-            // The registry only discovers; installing goes
-            // through the existing consent flow with the entry's
-            // repo as the source.
-            activeSheet = .install(initialSource: entry.repo)
-          }
-        )
+          )
+        case .browse:
+          PluginRegistryBrowseSheet(
+            fetchRegistry: { try await session.fetchRegistry() },
+            installedPlugins: session.installedPlugins,
+            onInstall: { session.showInstall(source: $0.repo) }
+          )
+        }
       case .update(let plan):
         PluginUpdateSheet(
           plan: plan,
           onApply: {
+            try await environment.pluginAccess.requireEligible(
+              pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
             _ = try await mutate {
               try await client.applyPluginUpdate(
                 pluginId: plan.pluginId,
@@ -212,7 +214,8 @@ private struct PluginMachineRows: View {
         guard let plugin = pluginPendingRestore else { return }
         Task {
           _ = try? await mutate {
-            try await client.restorePlugin(pluginId: plugin.id)
+            try await environment.pluginAccess.requireEligible(pluginId: plugin.id, ageRating: plugin.ageRating)
+            _ = try await client.restorePlugin(pluginId: plugin.id)
           }
           pluginPendingRestore = nil
           await reload()
@@ -226,7 +229,52 @@ private struct PluginMachineRows: View {
     }
   }
 
+  private func open(_ page: PluginSettingsSession.Page) {
+    guard
+      let session = PluginSettingsSession(
+        machines: environment.machines, machineId: machine.id, page: page, catalog: environment.pluginAccess.catalog)
+    else { return }
+    activeSheet = .session(session)
+  }
+
   private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
+    NavigationLink {
+      PluginDetailScreen(plugin: plugin)
+    } label: {
+      pluginLabel(plugin)
+    }
+    .contextMenu {
+      pluginActions(plugin)
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if updates[plugin.id]?.state == .available {
+        Button {
+          prepareUpdate(plugin)
+        } label: {
+          Label("Update", systemImage: "arrow.down.circle")
+        }
+        .tint(.blue)
+      }
+      // Only managed installs may be uninstalled — a linked dev
+      // plugin's directory belongs to its author.
+      if plugin.source == "managed" {
+        Button(role: .destructive) {
+          uninstall(plugin)
+        } label: {
+          Label("Uninstall", systemImage: "trash")
+        }
+      }
+      if plugin.isEnabled {
+        Button {
+          restart(plugin)
+        } label: {
+          Label("Restart", systemImage: "arrow.clockwise")
+        }
+      }
+    }
+  }
+
+  private func pluginLabel(_ plugin: ServerPluginSummary) -> some View {
     HStack(spacing: 12) {
       PluginIconView(
         pluginId: plugin.id,
@@ -263,39 +311,13 @@ private struct PluginMachineRows: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(accessibilityLabel(for: plugin))
-    .contextMenu {
-      pluginActions(plugin)
-    }
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      if updates[plugin.id]?.state == .available {
-        Button {
-          prepareUpdate(plugin)
-        } label: {
-          Label("Update", systemImage: "arrow.down.circle")
-        }
-        .tint(.blue)
-      }
-      // Only managed installs may be uninstalled — a linked dev
-      // plugin's directory belongs to its author.
-      if plugin.source == "managed" {
-        Button(role: .destructive) {
-          uninstall(plugin)
-        } label: {
-          Label("Uninstall", systemImage: "trash")
-        }
-      }
-      if plugin.isEnabled {
-        Button {
-          restart(plugin)
-        } label: {
-          Label("Restart", systemImage: "arrow.clockwise")
-        }
-      }
+    .padding(.trailing, 32)
+    .overlay(alignment: .trailing) {
+      PluginSafetyButton(pluginId: plugin.id, name: plugin.name)
     }
   }
 
-  /// The per-plugin actions, shared by the row's ellipsis menu and its
-  /// long-press context menu so both surfaces always agree.
+  /// Runtime actions remain available from the row’s context menu.
   @ViewBuilder
   private func pluginActions(_ plugin: ServerPluginSummary) -> some View {
     if updates[plugin.id]?.state == .available {
@@ -307,7 +329,7 @@ private struct PluginMachineRows: View {
     }
     if updates[plugin.id]?.state == .sourceUnknown {
       Button {
-        activeSheet = .install(initialSource: nil)
+        open(.install(initialSource: nil))
       } label: {
         Label("Reinstall to Enable Updates…", systemImage: "arrow.clockwise.circle")
       }

@@ -36,7 +36,7 @@ extension Workspace {
     let panes =
       centerTabs.flatMap { tab in
         tab.root.allGroups.flatMap(\.state.panes)
-      } + bottomGroup.panes
+      }
     if panes.count == 1, panes[0].id == id {
       let replacement = PaneDescriptorState(
         id: id,
@@ -70,12 +70,7 @@ extension Workspace {
         return true
       }
     }
-    guard let index = bottomGroup.panes.firstIndex(where: { $0.id == id }) else {
-      return false
-    }
-    bottomGroup.panes[index] = pane
-    if bottomGroup.selectedPaneId == id { bottomGroup.selectedPaneId = pane.id }
-    return true
+    return false
   }
 
   private mutating func removePane(id: UUID) -> Bool {
@@ -95,7 +90,6 @@ extension Workspace {
         centerTabs.remove(at: tabIndex)
       }
     }
-    if bottomGroup.removePane(id: id) != nil { removed = true }
     return removed
   }
 

@@ -4,10 +4,9 @@ import {
   authLoginCommand,
   authLogoutCommand,
   authStatusCommand,
-  cloudCredentialsPath,
-  DEFAULT_CLOUD_URL,
-  readCloudCredentials
+  DEFAULT_CLOUD_URL
 } from "./cloud-auth.js"
+import type { CloudRegistration } from "./cloud-control.js"
 import type { CliDeps, ExecResult } from "./support.js"
 
 const failure: ExecResult = { code: 1, stdout: "", stderr: "" }
@@ -17,19 +16,43 @@ interface World {
   logs: string[]
   errors: string[]
   files: Map<string, string>
+  httpCalls: Array<{ url: string; body?: unknown }>
 }
 
 const makeWorld = (
-  options: { files?: Record<string, string>; env?: Record<string, string> } = {}
+  options: {
+    registration?: CloudRegistration
+    files?: Record<string, string>
+    env?: Record<string, string>
+  } = {}
 ): World => {
   const logs: string[] = []
   const errors: string[] = []
   const files = new Map<string, string>(Object.entries(options.files ?? {}))
+  let registration: CloudRegistration = options.registration ?? {}
+  const httpCalls: Array<{ url: string; body?: unknown }> = []
   const deps: CliDeps = {
     exec: () => Promise.resolve(failure),
     execInteractive: () => Promise.resolve(0),
     spawnDetachedServer: () => Promise.resolve(4242),
-    fetchJson: () => Promise.resolve(undefined),
+    fetchJson: async (url, init) => {
+      httpCalls.push({ url, body: init?.body })
+      if (url.endsWith("/v1/cloud/connect")) {
+        registration = {
+          deviceId: "device-1",
+          serverUrl: "https://cloud.example",
+          state: "connected",
+          managedBy: "external"
+        }
+        return { status: 200, body: { deviceId: registration.deviceId } }
+      }
+      if (url.endsWith("/v1/cloud/disconnect")) {
+        registration = {}
+        return { status: 200, body: { ok: true } }
+      }
+      if (url.endsWith("/v1/cloud")) return { status: 200, body: registration }
+      return undefined
+    },
     readTextFile: (path) => files.get(path),
     writeTextFile: (path, contents) => void files.set(path, contents),
     removeFile: (path) => void files.delete(path),
@@ -44,19 +67,13 @@ const makeWorld = (
     log: (line) => void logs.push(line),
     error: (line) => void errors.push(line)
   }
-  return { deps, logs, errors, files }
+  return { deps, logs, errors, files, httpCalls }
 }
 
-const credentials = {
+const connectedRegistration: CloudRegistration = {
   serverUrl: "https://cloud.example",
   deviceId: "device-1",
-  publicKey: "pub",
-  secretKey: "sec",
-  apiKey: "key"
-}
-
-const credentialFiles = {
-  "/home/user/.codevisor/data/cloud.json": JSON.stringify(credentials)
+  state: "connected"
 }
 
 const jsonResponse = (body: unknown, status = 200): Response =>
@@ -93,25 +110,29 @@ const grantBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
-describe("readCloudCredentials", () => {
-  it("parses valid credentials and rejects everything else", () => {
-    expect(readCloudCredentials(makeWorld({ files: credentialFiles }).deps)).toEqual(credentials)
-    expect(readCloudCredentials(makeWorld().deps)).toBeUndefined()
-    expect(
-      readCloudCredentials(
-        makeWorld({ files: { "/home/user/.codevisor/data/cloud.json": "not json" } }).deps
-      )
-    ).toBeUndefined()
-    expect(
-      readCloudCredentials(
-        makeWorld({ files: { "/home/user/.codevisor/data/cloud.json": '{"serverUrl":"x"}' } }).deps
-      )
-    ).toBeUndefined()
-  })
-})
-
 describe("authLoginCommand", () => {
-  it("connects after approval and persists credentials", async () => {
+  it("reports server provisioning failures without announcing success", async () => {
+    for (const response of [
+      undefined,
+      { status: 502, body: { error: "credential rejected" } },
+      { status: 200, body: {} }
+    ]) {
+      const world = makeWorld()
+      const deps: CliDeps = {
+        ...world.deps,
+        fetchJson: (url, init) =>
+          url.endsWith("/connect") ? Promise.resolve(response) : world.deps.fetchJson(url, init)
+      }
+      expect(await authLoginCommand(deps, { fetchImpl: loginScript() })).toBe(1)
+      expect(world.errors.join("\n")).toContain("Cloud login failed")
+      expect(world.logs.join("\n")).not.toContain("✓ Connected")
+      expect(world.files.size).toBe(0)
+    }
+    const existing = makeWorld({ registration: { deviceId: "device-1", state: "connected" } })
+    expect(await authLoginCommand(existing.deps)).toBe(0)
+    expect(existing.logs.join("\n")).toContain("already connected to Codevisor Cloud")
+  })
+  it("connects through the server after approval without writing CLI credentials", async () => {
     const world = makeWorld({ env: { HOSTNAME: "dev-vps" } })
     const fetchImpl = scriptedFetch({
       "/.well-known/codevisor": [jsonResponse(instanceBody)],
@@ -119,8 +140,7 @@ describe("authLoginCommand", () => {
       "/api/auth/device/token": [
         jsonResponse({ error: "authorization_pending" }, 400),
         jsonResponse({ access_token: "session" })
-      ],
-      "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })]
+      ]
     })
     const code = await authLoginCommand(world.deps, {
       server: "https://cloud.example/",
@@ -129,12 +149,16 @@ describe("authLoginCommand", () => {
     expect(code).toBe(0)
     expect(world.logs.join("\n")).toContain("AB12-CD34")
     expect(world.logs.join("\n")).toContain("Connected as dev-vps")
-    const stored = JSON.parse(world.files.get(cloudCredentialsPath(world.deps))!) as {
-      serverUrl: string
-      apiKey: string
-    }
-    expect(stored.serverUrl).toBe("https://cloud.example")
-    expect(stored.apiKey).toBe("api-key")
+    expect(world.httpCalls.find((call) => call.url.endsWith("/connect"))).toEqual({
+      url: "http://127.0.0.1:49361/v1/cloud/connect",
+      body: {
+        serverUrl: "https://cloud.example",
+        sessionToken: "session",
+        machineName: "dev-vps",
+        managedBy: "external"
+      }
+    })
+    expect(world.files.size).toBe(0)
   })
 
   it("uses the fallback verification uri, machine name option, and slow-down backoff", async () => {
@@ -145,8 +169,7 @@ describe("authLoginCommand", () => {
       "/api/auth/device/token": [
         jsonResponse({ error: "slow_down" }, 400),
         jsonResponse({ access_token: "session" })
-      ],
-      "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })]
+      ]
     })
     const code = await authLoginCommand(world.deps, {
       server: "https://cloud.example",
@@ -163,8 +186,7 @@ describe("authLoginCommand", () => {
     const fetchImpl = scriptedFetch({
       "/.well-known/codevisor": [jsonResponse(instanceBody)],
       "/api/auth/device/code": [jsonResponse(grantBody())],
-      "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
-      "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })]
+      "/api/auth/device/token": [jsonResponse({ access_token: "session" })]
     })
     expect(await authLoginCommand(world.deps, { server: "https://cloud.example", fetchImpl })).toBe(
       0
@@ -204,7 +226,7 @@ describe("authLoginCommand", () => {
   })
 
   it("refuses when already connected, and surfaces failures", async () => {
-    const connected = makeWorld({ files: credentialFiles })
+    const connected = makeWorld({ registration: connectedRegistration })
     expect(await authLoginCommand(connected.deps)).toBe(0)
     expect(connected.logs.join("\n")).toContain("already connected")
 
@@ -254,36 +276,44 @@ describe("authLoginCommand", () => {
 })
 
 describe("authStatusCommand", () => {
-  it("reports disconnected, connected, and unreachable states", async () => {
+  it("reports the server's live registration and relay state", async () => {
     const disconnected = makeWorld()
     expect(await authStatusCommand(disconnected.deps)).toBe(0)
     expect(disconnected.logs.join("\n")).toContain("not connected")
-
-    const connected = makeWorld({ files: credentialFiles })
-    expect(
-      await authStatusCommand(connected.deps, {
-        fetchImpl: scriptedFetch({ "/.well-known/codevisor": [jsonResponse(instanceBody)] })
+    const connected = makeWorld({ registration: connectedRegistration })
+    expect(await authStatusCommand(connected.deps, { port: 54321 })).toBe(0)
+    expect(connected.logs.join("\n")).toContain("relay:     connected")
+    expect(connected.httpCalls[0]?.url).toContain(":54321/")
+    for (const state of ["reconnecting", "revoked", "unsupported-protocol", undefined]) {
+      const world = makeWorld({
+        registration: { deviceId: "device-1", ...(state === undefined ? {} : { state }) }
       })
-    ).toBe(0)
-    expect(connected.logs.join("\n")).toContain("Test Cloud (v0.1.0)")
-    expect(connected.logs.join("\n")).toContain("device-1")
+      expect(await authStatusCommand(world.deps)).toBe(1)
+      expect(world.logs[0]).toContain("Registered with")
+      expect(world.logs.join("\n")).toContain(state ?? "unknown")
+    }
+  })
 
-    const unreachable = makeWorld({ files: credentialFiles })
+  it("does not claim that a stranded credential file means the server is connected", async () => {
+    const world = makeWorld({
+      files: { "/home/user/.codevisor/data/cloud.json": "old credential" }
+    })
+    expect(await authStatusCommand({ ...world.deps, fetchJson: async () => undefined })).toBe(1)
+    expect(world.errors.join("\n")).toContain("not running")
+    expect(world.logs).toEqual([])
     expect(
-      await authStatusCommand(unreachable.deps, {
-        fetchImpl: () => Promise.reject(new Error("down"))
-      })
-    ).toBe(0)
-    expect(unreachable.logs.join("\n")).toContain("unreachable")
+      await authStatusCommand({ ...world.deps, fetchJson: async () => ({ status: 404, body: {} }) })
+    ).toBe(1)
+    expect(world.errors.join("\n")).toContain("Update the server")
   })
 })
 
 describe("default fetch", () => {
-  it("falls back to globalThis.fetch when none is injected", async () => {
-    const world = makeWorld({ files: credentialFiles })
-    vi.stubGlobal("fetch", () => Promise.resolve(jsonResponse(instanceBody)))
+  it("uses globalThis.fetch for the device approval flow", async () => {
+    const world = makeWorld()
+    vi.stubGlobal("fetch", loginScript())
     try {
-      expect(await authStatusCommand(world.deps)).toBe(0)
+      expect(await authLoginCommand(world.deps)).toBe(0)
       expect(world.logs.join("\n")).toContain("Test Cloud")
     } finally {
       vi.unstubAllGlobals()
@@ -292,15 +322,30 @@ describe("default fetch", () => {
 })
 
 describe("authLogoutCommand", () => {
-  it("removes stored credentials and handles the disconnected case", async () => {
-    const connected = makeWorld({ files: credentialFiles })
-    expect(await authLogoutCommand(connected.deps)).toBe(0)
-    expect(connected.files.has(cloudCredentialsPath(connected.deps))).toBe(false)
-    expect(connected.logs.join("\n")).toContain("Disconnected")
+  it("disconnects through the server and leaves unrelated CLI files alone", async () => {
+    const world = makeWorld({
+      registration: connectedRegistration,
+      files: { "/elsewhere/cloud.json": "another server" }
+    })
+    expect(await authLogoutCommand(world.deps, { port: 54321 })).toBe(0)
+    expect(world.httpCalls.at(-1)?.url).toBe("http://127.0.0.1:54321/v1/cloud/disconnect")
+    expect(world.files.size).toBe(1)
+    expect(world.logs.join("\n")).toContain("Disconnected")
+    expect(await authLogoutCommand(world.deps)).toBe(0)
+    expect(world.logs.at(-1)).toContain("not connected")
+  })
 
-    const disconnected = makeWorld()
-    expect(await authLogoutCommand(disconnected.deps)).toBe(0)
-    expect(disconnected.logs.join("\n")).toContain("not connected")
+  it("reports a failure to disconnect", async () => {
+    const world = makeWorld({ registration: { deviceId: "device-1" } })
+    const deps = {
+      ...world.deps,
+      fetchJson: async (url: string) =>
+        url.endsWith("/disconnect") ? undefined : world.deps.fetchJson(url)
+    }
+    expect(await authLogoutCommand(deps)).toBe(1)
+    expect(world.errors.join("\n")).toContain("could not remove")
+    expect(await authLogoutCommand(world.deps)).toBe(0)
+    expect(world.logs.join("\n")).toContain("Codevisor Cloud")
   })
 })
 
@@ -309,7 +354,6 @@ const loginScript = (machinesResponse?: Response) =>
     "/.well-known/codevisor": [jsonResponse(instanceBody)],
     "/api/auth/device/code": [jsonResponse(grantBody())],
     "/api/auth/device/token": [jsonResponse({ access_token: "session" })],
-    "/api/auth/api-key/create": [jsonResponse({ key: "api-key" })],
     "/api/machines": [
       machinesResponse ??
         jsonResponse({ machines: [{ deviceId: "dev-0", name: "Original", online: true }] })
@@ -323,6 +367,7 @@ describe("auth login sync choice", () => {
     const deps: CliDeps = {
       ...world.deps,
       fetchJson: (url, init) => {
+        if (!url.endsWith("/v1/sync-participation")) return world.deps.fetchJson(url, init)
         calls.push({ url, body: init?.body })
         return Promise.resolve({ status: 200, body: { enabled: false } })
       }
@@ -354,7 +399,6 @@ describe("auth login sync choice", () => {
     expect(prompted).toBe(false)
     expect(world.logs.join("\n")).toContain("codevisor sync off")
 
-    // The hint mirrors an explicit opt-in the same way.
     const optIn = makeWorld()
     expect(
       await authLoginCommand(optIn.deps, {
@@ -370,7 +414,10 @@ describe("auth login sync choice", () => {
     const world = makeWorld()
     const deps: CliDeps = {
       ...world.deps,
-      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: true } })
+      fetchJson: (url, init) =>
+        url.endsWith("/v1/sync-participation")
+          ? Promise.resolve({ status: 200, body: { enabled: true } })
+          : world.deps.fetchJson(url, init)
     }
     const code = await authLoginCommand(deps, {
       server: "https://cloud.example",
@@ -397,7 +444,6 @@ describe("auth login fleet awareness", () => {
     expect(code).toBe(0)
     expect(prompted).toBe(false)
     expect(world.logs.join("\n")).toContain("first machine on your account")
-    // The server default (participating) is left alone: no local apply.
     expect(world.logs.join("\n")).not.toContain("Config sync is")
   })
 
@@ -405,7 +451,10 @@ describe("auth login fleet awareness", () => {
     const world = makeWorld()
     const deps: CliDeps = {
       ...world.deps,
-      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: true } })
+      fetchJson: (url, init) =>
+        url.endsWith("/v1/sync-participation")
+          ? Promise.resolve({ status: 200, body: { enabled: true } })
+          : world.deps.fetchJson(url, init)
     }
     const code = await authLoginCommand(deps, {
       server: "https://cloud.example",
@@ -428,7 +477,10 @@ describe("auth login fleet awareness", () => {
     const world = makeWorld()
     const deps: CliDeps = {
       ...world.deps,
-      fetchJson: () => Promise.resolve({ status: 200, body: { enabled: false } })
+      fetchJson: (url, init) =>
+        url.endsWith("/v1/sync-participation")
+          ? Promise.resolve({ status: 200, body: { enabled: false } })
+          : world.deps.fetchJson(url, init)
     }
     let prompted = false
     const code = await authLoginCommand(deps, {

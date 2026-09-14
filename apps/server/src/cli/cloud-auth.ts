@@ -2,15 +2,19 @@ import {
   CloudApiError,
   discoverInstance,
   pollDeviceToken,
-  provisionMachine,
   listAccountMachines,
   requestDeviceCode,
   type AccountMachineSummary,
-  type FetchLike,
-  type MachineCredentials
+  type FetchLike
 } from "@codevisor/cloud-client"
 import { applySyncParticipation } from "./sync.js"
-import type { CliDeps } from "./support.js"
+import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
+import {
+  cloudUrl,
+  ensureCloudServer,
+  readCloudRegistration,
+  waitForCloudConnection
+} from "./cloud-control.js"
 
 /// `codevisor auth …` — connect this machine to a Codevisor Cloud account via
 /// the RFC 8628 device flow, so it appears in the user's apps automatically.
@@ -18,29 +22,7 @@ import type { CliDeps } from "./support.js"
 
 export const DEFAULT_CLOUD_URL = "https://cloud.codevisor.dev"
 
-export const cloudCredentialsPath = (deps: CliDeps): string => `${deps.dataDir}/cloud.json`
-
-export const readCloudCredentials = (deps: CliDeps): MachineCredentials | undefined => {
-  const raw = deps.readTextFile(cloudCredentialsPath(deps))
-  if (raw === undefined) return undefined
-  try {
-    const parsed = JSON.parse(raw) as Partial<MachineCredentials>
-    if (
-      typeof parsed.serverUrl === "string" &&
-      typeof parsed.deviceId === "string" &&
-      typeof parsed.publicKey === "string" &&
-      typeof parsed.secretKey === "string" &&
-      typeof parsed.apiKey === "string"
-    ) {
-      return parsed as MachineCredentials
-    }
-    return undefined
-  } catch {
-    return undefined
-  }
-}
-
-export interface CloudAuthOptions {
+export interface CloudAuthOptions extends CommandOptions {
   /// Base URL of the cloud instance (self-hosted or dev); defaults to the
   /// hosted instance, overridable via CODEVISOR_CLOUD_URL.
   readonly server?: string
@@ -55,8 +37,7 @@ export interface CloudAuthOptions {
 
 /// The onboarding opt-in: after connecting to a cloud account, record
 /// whether this machine joins config sync. The flag lives in the local
-/// server's database, so it survives the restart that follows login; when
-/// the server is not running yet, point at `codevisor sync` instead.
+/// server's database, so it survives subsequent restarts.
 ///
 /// Fleet awareness: the account's machine list (fetched during login)
 /// decides whether asking even makes sense. The FIRST machine has nothing
@@ -84,11 +65,11 @@ const applyLoginSyncChoice = async (
     }
     wanted = await options.promptSyncConfig()
   }
-  if (await applySyncParticipation(deps, wanted)) {
+  if (await applySyncParticipation(deps, wanted, options.port)) {
     deps.log(`Config sync is ${wanted ? "on" : "off"} for this machine.`)
     return
   }
-  deps.log(`The server isn't running yet; apply it with: codevisor sync ${wanted ? "on" : "off"}`)
+  deps.log(`Could not apply config sync; retry with: codevisor sync ${wanted ? "on" : "off"}`)
 }
 
 const resolveServer = (deps: CliDeps, options: CloudAuthOptions): string =>
@@ -101,15 +82,17 @@ export const authLoginCommand = async (
   deps: CliDeps,
   options: CloudAuthOptions = {}
 ): Promise<number> => {
-  const existing = readCloudCredentials(deps)
-  if (existing !== undefined) {
-    deps.log(`This machine is already connected to ${existing.serverUrl}.`)
-    deps.log("Run `codevisor auth logout` first to connect it to a different account.")
-    return 0
-  }
   const serverUrl = resolveServer(deps, options)
   const fetchImpl = resolveFetch(options)
   try {
+    const port = await resolvePort(deps, options.port)
+    const existing = await ensureCloudServer(deps, port)
+    if (existing.deviceId !== undefined) {
+      await waitForCloudConnection(deps, port, existing.deviceId)
+      deps.log(`This machine is already connected to ${existing.serverUrl ?? "Codevisor Cloud"}.`)
+      deps.log("Run `codevisor auth logout` first to connect it to a different account.")
+      return 0
+    }
     const instance = await discoverInstance(fetchImpl, serverUrl)
     deps.log(`Connecting this machine to ${instance.instance} (${serverUrl})`)
     const grant = await requestDeviceCode(fetchImpl, serverUrl)
@@ -144,12 +127,6 @@ export const authLoginCommand = async (
         return 1
       }
       const machineName = options.machineName ?? deps.env.HOSTNAME ?? "machine"
-      const credentials = await provisionMachine(
-        fetchImpl,
-        serverUrl,
-        poll.sessionToken,
-        machineName
-      )
       // Fleet awareness for the sync ask below — fetched only when a
       // prompt could happen, so piped installs stay network-silent. An
       // unreachable list degrades to "unknown", which keeps the ask.
@@ -159,11 +136,20 @@ export const authLoginCommand = async (
               () => undefined
             )
           : undefined
-      deps.writeTextFile(cloudCredentialsPath(deps), JSON.stringify(credentials, null, 2))
+      const response = await deps.fetchJson(`${cloudUrl(port)}/connect`, {
+        method: "POST",
+        timeoutMs: 30_000,
+        body: { serverUrl, sessionToken: poll.sessionToken, machineName, managedBy: "external" }
+      })
+      const body = response?.body as { deviceId?: string; error?: string } | undefined
+      if (response?.status !== 200 || typeof body?.deviceId !== "string") {
+        throw new Error(body?.error ?? "The server could not save the Cloud registration")
+      }
+      await waitForCloudConnection(deps, port, body.deviceId)
       deps.log("")
       deps.log(`✓ Connected as ${machineName}.`)
-      deps.log("It will appear in your Codevisor apps once the server (re)starts.")
-      await applyLoginSyncChoice(deps, options, fleet)
+      deps.log("This machine is online in your Codevisor apps.")
+      await applyLoginSyncChoice(deps, { ...options, port }, fleet)
       return 0
     }
   } catch (error) {
@@ -182,33 +168,52 @@ export const authStatusCommand = async (
   deps: CliDeps,
   options: CloudAuthOptions = {}
 ): Promise<number> => {
-  const credentials = readCloudCredentials(deps)
-  if (credentials === undefined) {
-    deps.log("This machine is not connected to a Codevisor Cloud account.")
-    deps.log("Run `codevisor auth login` to connect it.")
-    return 0
-  }
-  deps.log(`Connected to ${credentials.serverUrl}`)
-  deps.log(`  device id: ${credentials.deviceId}`)
   try {
-    const instance = await discoverInstance(resolveFetch(options), credentials.serverUrl)
-    deps.log(`  instance:  ${instance.instance} (v${instance.version})`)
-  } catch {
-    deps.log("  instance:  unreachable right now")
+    const port = await resolvePort(deps, options.port)
+    const registration = await readCloudRegistration(deps, port)
+    if (registration === undefined) {
+      deps.error(`Codevisor server is not running on port ${port}; start it with: codevisor start`)
+      return 1
+    }
+    if (registration.deviceId === undefined) {
+      deps.log("This machine is not connected to a Codevisor Cloud account.")
+      deps.log("Run `codevisor auth login` to connect it.")
+      return 0
+    }
+    const state = registration.state ?? "unknown"
+    deps.log(
+      `${state === "connected" ? "Connected to" : "Registered with"} ${registration.serverUrl ?? "Codevisor Cloud"}`
+    )
+    deps.log(`  device id: ${registration.deviceId}`)
+    deps.log(`  relay:     ${state}`)
+    return state === "connected" ? 0 : 1
+  } catch (error) {
+    deps.error(`Cloud status failed: ${String(error)}`)
+    return 1
   }
-  return 0
 }
 
-export const authLogoutCommand = async (deps: CliDeps): Promise<number> => {
-  const credentials = readCloudCredentials(deps)
-  if (credentials === undefined) {
-    deps.log("This machine is not connected to a Codevisor Cloud account.")
+export const authLogoutCommand = async (
+  deps: CliDeps,
+  options: CommandOptions = {}
+): Promise<number> => {
+  try {
+    const port = await resolvePort(deps, options.port)
+    const registration = await ensureCloudServer(deps, port)
+    if (registration.deviceId === undefined) {
+      deps.log("This machine is not connected to a Codevisor Cloud account.")
+      return 0
+    }
+    const response = await deps.fetchJson(`${cloudUrl(port)}/disconnect`, { method: "POST" })
+    if (response?.status !== 200)
+      throw new Error("The server could not remove the Cloud registration")
+    deps.log(`Disconnected this machine from ${registration.serverUrl ?? "Codevisor Cloud"}.`)
+    deps.log(
+      "To revoke its credential too, remove the machine from your machine list in the Codevisor app."
+    )
     return 0
+  } catch (error) {
+    deps.error(`Cloud logout failed: ${String(error)}`)
+    return 1
   }
-  deps.removeFile(cloudCredentialsPath(deps))
-  deps.log(`Disconnected this machine from ${credentials.serverUrl}.`)
-  deps.log(
-    "To revoke its credential too, remove the machine from your machine list in the Codevisor app."
-  )
-  return 0
 }

@@ -39,6 +39,8 @@ import { routePluginProxy, routePlugins } from "./routes/plugins.js"
 import { routeSkills } from "./routes/skills.js"
 import { configMutationNamespace, runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import { routeSync } from "./routes/sync.js"
+import { routeMachineMcps } from "./routes/mcp-machine.js"
+import { routeClientControl } from "./routes/client-control.js"
 import { routeTerminals } from "./routes/terminals.js"
 import { routeWorkspaces } from "./routes/workspaces.js"
 
@@ -350,6 +352,9 @@ export const handleRequest = async (
     if (await routeProjects(services, config, fanout, request, response, url)) {
       return
     }
+    if (await routeClientControl(routeState.clientControl, request, response, url)) {
+      return
+    }
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
     }
@@ -357,6 +362,9 @@ export const handleRequest = async (
       return
     }
     if (await routeBrowserUse(services, request, response, url)) {
+      return
+    }
+    if (await routeMachineMcps(services, config, fanout, request, response, url)) {
       return
     }
     if (await routeMcps(services, request, response, url)) {
@@ -420,6 +428,7 @@ const updateInfoSignature = (info: UpdateInfo): string =>
     info.channel,
     info.lastApply?.state ?? null,
     info.lastApply?.message ?? null,
+    info.lastApply?.progress ?? null,
     info.lastApply?.at ?? null
   ])
 
@@ -430,6 +439,14 @@ const updateInfoSignature = (info: UpdateInfo): string =>
 const withRestartDrain = (routeState: RouteState, info: UpdateInfo): UpdateInfo => {
   const drain = routeState.restart.state()
   if (drain.state === "idle" || info.lastApply?.state === "failed") return info
+  // Once drained, the host updater owns the download/install detail. A
+  // previous attempt's report must not mask this attempt's restart drain.
+  if (
+    drain.state === "drained" &&
+    info.lastApply?.state === "installing" &&
+    Date.parse(info.lastApply.at) >= Date.parse(drain.startedAt)
+  )
+    return info
   const chats = `${drain.remaining} chat${drain.remaining === 1 ? "" : "s"}`
   return {
     ...info,

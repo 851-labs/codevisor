@@ -109,8 +109,8 @@ export async function waitForBuild(
     if (state === "VALID") {
       if (candidate.attributes.expired)
         throw new Error("The matching TestFlight build has expired.")
-      if (candidate.attributes.buildAudienceType !== "INTERNAL_ONLY") {
-        throw new Error("Refusing to distribute a build that is not marked INTERNAL_ONLY.")
+      if (candidate.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE") {
+        throw new Error("Expected an APP_STORE_ELIGIBLE build for later release promotion.")
       }
       if (
         ["PROCESSING_EXCEPTION", "EXPIRED", "MISSING_EXPORT_COMPLIANCE"].includes(internalState)
@@ -157,7 +157,7 @@ export async function internalGroup(client, appId, name) {
   return created.data
 }
 
-async function assignInternalBuild(
+export async function assignBuildToGroup(
   client,
   build,
   group,
@@ -245,6 +245,6 @@ export async function deliverInternalBuild(client, build, upload, options = {}) 
   if (!(await findBuild(client, build))) await upload()
   const processed = await waitForBuild(client, build, options)
   const group = await internalGroup(client, build.appId, options.groupName ?? "Alpha")
-  await assignInternalBuild(client, processed, group, options)
+  await assignBuildToGroup(client, processed, group, options)
   return { build: processed, group }
 }

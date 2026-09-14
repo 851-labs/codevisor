@@ -48,7 +48,7 @@ extension SessionContainerView {
       }
       guard let pane = restoredDescriptor(for: record.descriptor) else { continue }
 
-      let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id, isVisible: true)
+      let state = PaneGroupState(panes: [pane], selectedPaneId: pane.id)
       let tab = WorkspaceTab(root: .leaf(state))
       let index =
         workspace.centerTabs.firstIndex(where: { $0.id == record.tabId }).map { $0 + 1 }

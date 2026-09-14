@@ -25,6 +25,7 @@ export const APP_UPDATE_STATUS_TTL_MS = 30 * 60 * 1000
 /// The host app's report of its unattended update session, mirrored into
 /// `UpdateInfo.lastApply` by app-hosted servers.
 export type AppUpdateApplyState = {
+  readonly progress?: number | undefined
   readonly state: "installing" | "failed"
   readonly message?: string | undefined
   readonly targetVersion?: string | undefined
@@ -74,6 +75,7 @@ export const readAppUpdateApplyState = (
   }
   if (typeof parsed !== "object" || parsed === null) return undefined
   const value = parsed as {
+    readonly progress?: unknown
     readonly state?: unknown
     readonly message?: unknown
     readonly targetVersion?: unknown
@@ -86,6 +88,12 @@ export const readAppUpdateApplyState = (
     return undefined
   }
   return {
+    progress:
+      value.state === "installing" &&
+      typeof value.progress === "number" &&
+      Number.isFinite(value.progress)
+        ? Math.min(1, Math.max(0, value.progress))
+        : undefined,
     state: value.state,
     message: typeof value.message === "string" ? value.message : undefined,
     targetVersion: typeof value.targetVersion === "string" ? value.targetVersion : undefined,

@@ -10,14 +10,16 @@ extension View {
   /// navigation is off. An explicit focus target also needs an activation
   /// handler: a SwiftUI focus wrapper does not forward Space to its Button.
   func composerKeyboardButton(
-    shape: HoverIconButtonStyle.HighlightShape = .circle, action: @escaping () -> Void
+    shape: HoverIconButtonStyle.HighlightShape = .circle, isPresenting: Bool = false,
+    action: @escaping () -> Void
   ) -> some View {
-    modifier(ComposerKeyboardButton(shape: shape, action: action))
+    modifier(ComposerKeyboardButton(shape: shape, isPresenting: isPresenting, action: action))
   }
 }
 
 private struct ComposerKeyboardButton: ViewModifier {
   let shape: HoverIconButtonStyle.HighlightShape
+  let isPresenting: Bool
   let action: () -> Void
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.composerControlTypingFocus) private var typingFocus
@@ -39,7 +41,10 @@ private struct ComposerKeyboardButton: ViewModifier {
         typingFocus?.setControlFocused(false, id: controlID)
       }
       .onKeyPress(keys: [.space, .return], phases: .down) { press in
-        guard isEnabled, press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else {
+        // A popover inherits this handler while its trigger retains SwiftUI
+        // focus. Let the popover's search field and rows handle these keys.
+        guard isEnabled, !isPresenting, press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty
+        else {
           return .ignored
         }
         action()

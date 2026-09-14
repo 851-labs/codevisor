@@ -3,7 +3,6 @@ import CodevisorCore
 import CodevisorTheming
 import CodevisorUI
 import SwiftUI
-import UserNotifications
 import os
 
 // MARK: - Machines
@@ -43,15 +42,8 @@ struct MachinesSettingsScreen: View {
       List {
         Section {
           ForEach(remoteMachines, id: \.id) { machine in
-            Group {
-              if machine.id == focusedMachineID {
-                machineRow(machine)
-                  .listRowBackground(Color.accentColor.opacity(0.12))
-              } else {
-                machineRow(machine)
-              }
-            }
-            .id(machine.id)
+            machineRow(machine)
+              .id(machine.id)
           }
           if let lastError = cloud.lastError {
             Text(lastError)
@@ -268,14 +260,16 @@ struct MachinesSettingsScreen: View {
       Button(role: .destructive) {
         removeMachine(machine)
       } label: {
-        Label(machine.isCloud ? "Disconnect" : "Remove", systemImage: "trash")
+        Image(systemName: "trash")
       }
+      .accessibilityLabel(machine.isCloud ? "Disconnect" : "Remove")
       Button {
         renameText = machine.name
         renamingMachine = machine
       } label: {
-        Label("Rename", systemImage: "pencil")
+        Image(systemName: "pencil")
       }
+      .accessibilityLabel("Rename")
     }
   }
 

@@ -1,6 +1,7 @@
 import type { McpConnectionState } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { detectMcpAuth } from "./mcp-auth-detection.js"
+import type { BuiltinMcpId } from "./mcp-automation-builtins.js"
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -189,7 +190,7 @@ export const makeMcpServerOperations = (
       const unsupported = Object.keys(request).filter((key) => key !== "enabled")
       if (unsupported.length > 0) throw new Error(`${current.name} is managed by Codevisor`)
       const enabled = request.enabled ?? current.enabled
-      const state = builtinProviderState(current.id as "browser" | "computer", enabled)
+      const state = builtinProviderState(current.id as BuiltinMcpId, enabled)
       const saved = await saveRecord(current, {
         enabled,
         connectionState: state.connectionState,
@@ -361,12 +362,8 @@ export const makeMcpServerOperations = (
   }
 
   const tools: McpManager["tools"] = async (id) => {
-    const selected: CatalogServer | undefined =
-      id === undefined
-        ? undefined
-        : id === "codevisor"
-          ? { id: "codevisor", name: "Codevisor" }
-          : await record(id)
+    await builtinsReady
+    const selected: CatalogServer | undefined = id === undefined ? undefined : await record(id)
     const pairs =
       id === undefined
         ? await allTools()

@@ -19,7 +19,7 @@ struct AssistantTurnBody: View {
   @Environment(\.streamingTextAnimationVisibility) private var textAnimationVisibility
   @State private var textAnimationPresentation = StreamingTextAnimationPresentation()
   @State private var hasAutoCollapsed: Bool
-  @State private var linkedQuickLookURL: QuickLookURL?
+  @State private var linkedQuickLookURL: URL?
   let turn: AssistantTurn
   /// Stable identity for the turn's disclosure keys (the message id).
   let turnId: UUID
@@ -140,11 +140,7 @@ struct AssistantTurnBody: View {
     }
     .markdownLinkHandler(openMarkdownLink)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .sheet(item: $linkedQuickLookURL) { item in
-      QuickLookPreview(url: item.url)
-        .ignoresSafeArea()
-        .presentationDragIndicator(.visible)
-    }
+    .attachmentQuickLookPreview($linkedQuickLookURL)
     .onChange(of: isGenerating) { _, generating in
       if generating {
         if !hasAutoCollapsed {
@@ -185,9 +181,12 @@ struct AssistantTurnBody: View {
     ) { file, label in
       VStack(alignment: .leading, spacing: 4) {
         AttachmentThumbnailView(file: file, inline: true)
-        Text(label)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .accessibilityLabel(label)
+        if file.kind != .image {
+          Text(label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
     }
   }
@@ -274,7 +273,7 @@ struct AssistantTurnBody: View {
       guard let url = await materializeQuickLookURL(for: file, store: attachmentImages) else {
         return
       }
-      linkedQuickLookURL = QuickLookURL(url: url)
+      linkedQuickLookURL = url
     }
     return true
   }

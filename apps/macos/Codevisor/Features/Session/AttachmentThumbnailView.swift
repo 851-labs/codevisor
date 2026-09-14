@@ -133,8 +133,10 @@ struct AttachmentThumbnailView: View {
     // A tap gesture rather than a Button: buttons add their own
     // hover/press highlight over the artwork.
     return ZStack {
-      RoundedRectangle(cornerRadius: 8)
-        .fill(theme.bubbleBackground)
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .fill(theme.bubbleBackground)
+      }
       if let image {
         Image(nsImage: image)
           .resizable()
@@ -146,17 +148,21 @@ struct AttachmentThumbnailView: View {
     }
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .strokeBorder(.separator, lineWidth: 1)
-    )
+    .overlay {
+      if file.kind != .image {
+        RoundedRectangle(cornerRadius: 8)
+          .strokeBorder(.separator, lineWidth: 1)
+      }
+    }
     .contentShape(RoundedRectangle(cornerRadius: 8))
     .onTapGesture {
       preview()
     }
     .help(file.name)
+    .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
-    .accessibilityAddTraits(.isButton)
+    .accessibilityAddTraits([.isImage, .isButton])
+    .attachmentImageContextMenu(file: file, image: image)
   }
 
   private var thumbnailSize: CGSize {

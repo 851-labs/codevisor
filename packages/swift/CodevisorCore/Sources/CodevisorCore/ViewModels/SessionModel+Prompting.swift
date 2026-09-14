@@ -198,7 +198,6 @@ extension SessionModel {
   /// chat because another device may have started a turn while we were away.
   public func reconcileIfInFlight() async {
     guard isSending || isViewVisible else { return }
-    applySynchronization(.reconnecting)
     await reconcileFromServer()
   }
 
@@ -208,7 +207,7 @@ extension SessionModel {
   /// cycle. Deliberately narrower than `reconcileIfInFlight` — a healthy
   /// streaming turn must not restart its consumer on every navigation.
   public func reconcileIfStalled() async {
-    guard (isSending && isTakingLongerThanExpected) || streamSynchronization != .caughtUp else { return }
+    guard (isSending && isTakingLongerThanExpected) || streamSynchronization == .reconnecting else { return }
     await reconcileFromServer()
   }
 
@@ -393,15 +392,15 @@ extension SessionModel {
 
   var synchronizationMessage: String? {
     switch streamSynchronization {
-    case .reconnecting, .catchingUp: "Reconnecting…"
-    case .caughtUp, .cursor: nil
+    case .reconnecting: "Reconnecting…"
+    case .catchingUp, .caughtUp, .cursor: nil
     }
   }
 
   func applySynchronization(_ state: SessionStreamSynchronization) {
     guard state != .cursor else { return }
     streamSynchronization = state
-    if state == .caughtUp {
+    if state != .reconnecting {
       clearConnectionRecoveryPresentation()
     } else {
       connectionRecoveryMessage = synchronizationMessage

@@ -16,6 +16,7 @@ import { handleNotification } from "./notifications.js"
 import { killCodexCommandProcesses, type CodexCommandKiller } from "./process-kill.js"
 import { cancelPendingQuestions, serverRequestResponse } from "./questions.js"
 import type { CodexSession } from "./session.js"
+import { CodexTitleGenerator } from "./title-generation.js"
 
 const NATIVE_CODEX_PLUGIN_SKILL_NAMES = [
   "browser:control-in-app-browser",
@@ -217,10 +218,17 @@ export const makeStartSession = ({
     client.onNotification((method, params) => {
       handleNotification(session, method, params)
     })
+    session.titleGenerator = new CodexTitleGenerator(
+      client,
+      threadId,
+      cwd,
+      resumeThreadId !== undefined
+    )
     client.onRequest((method, params, signal) =>
       serverRequestResponse(session, method, params, signal)
     )
     client.onClose((error) => {
+      session.titleGenerator?.close()
       session.pendingPrompt?.resolve({ stopReason: "cancelled" })
       session.pendingPrompt = undefined
       cancelPendingQuestions(session)

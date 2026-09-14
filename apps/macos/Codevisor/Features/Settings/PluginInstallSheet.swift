@@ -6,6 +6,7 @@ import SwiftUI
 /// to the exact commands it will run. A registry selection auto-discovers,
 /// skipping the typing but never the consent.
 struct PluginInstallSheet: View {
+  @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Environment(\.theme) private var theme
   var initialSource: String?
@@ -47,6 +48,10 @@ struct PluginInstallSheet: View {
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       .disabled(isWorking)
       Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
+      if let discovery {
+        PluginConsentNotice(name: discovery.name)
+          .padding([.horizontal, .top])
+      }
       HStack {
         if discovery != nil {
           Button("Back") {
@@ -172,6 +177,9 @@ struct PluginInstallSheet: View {
     isWorking = true
     defer { isWorking = false }
     do {
+      guard let discovery else { return }
+      try await environment.pluginAccess.recordConsent(
+        pluginId: discovery.id, consentKey: discovery.consentKey, metadata: PluginConsentMetadata(discovery))
       try await onInstall(source.trimmingCharacters(in: .whitespaces))
       dismiss()
     } catch {

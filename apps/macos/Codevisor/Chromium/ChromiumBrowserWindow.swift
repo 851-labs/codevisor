@@ -30,16 +30,24 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
     toolbar.centeredItemIdentifiers = [address]
     window.toolbar = toolbar
     let content = NSHostingController(
-      rootView: ChromiumBrowserPaneView(model: model, isDetachedWindow: true))
+      rootView: ChromiumBrowserPaneView(model: model, isDetachedWindow: true)
+        .focusedSceneValue(\.browserPage, model))
     content.sizingOptions = []
     window.contentViewController = content
     window.setContentSize(NSSize(width: 1100, height: 800))
     window.center()
     keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       guard let self, let window = self.window, event.window === window,
-        window.isKeyWindow, window.attachedSheet == nil,
-        event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
+        window.isKeyWindow, window.attachedSheet == nil, NSApp.modalWindow == nil
       else { return event }
+      let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+      if event.charactersIgnoringModifiers?.lowercased() == "r",
+        modifiers == [.command, .shift]
+      {
+        self.model.reload(ignoringCache: true)
+        return nil
+      }
+      guard modifiers == .command else { return event }
       switch event.charactersIgnoringModifiers?.lowercased() {
       case "l": self.model.focusAddress()
       case "r": self.model.reload()
@@ -68,6 +76,9 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
     } else if identifier == address {
       let host = ChromiumToolbarHost(rootView: ChromiumBrowserToolbarContent(model: model))
       host.focusAddress = { [weak model] in model?.focusAddress() }
+      host.reload = { [weak model] in model?.reload(ignoringCache: $0) }
+      host.zoom = { [weak model] in model?.zoom($0) }
+      host.pageHasFocus = { [weak model] in model?.webView?.hasPageFocus == true }
       host.translatesAutoresizingMaskIntoConstraints = false
       NSLayoutConstraint.activate([
         host.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),

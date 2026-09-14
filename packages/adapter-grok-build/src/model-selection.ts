@@ -2,10 +2,12 @@ import type * as acp from "@agentclientprotocol/sdk"
 import type { SessionConfigOption } from "@codevisor/api"
 
 /// The synthesized config-option id for Grok's ACP model-selection extension.
-/// Agents that report `session/new.models` (e.g. grok) expose their model list
-/// via this optional extension rather than a `configOptions` entry, and apply a
-/// change through `session/set_model` — NOT `session/set_config_option` (which
-/// grok doesn't implement at all). `setConfigOption` routes this id accordingly.
+/// Grok reports `session/new.models` and, since 1.0.24, also a native
+/// `configOptions` list (`model` + `reasoning_effort`). Model changes still
+/// prefer `session/set_model` when the native model option is absent; effort
+/// changes go through `session/set_model` with `_meta.reasoningEffort` because
+/// that path is what this adapter has always driven. Native reasoning labels
+/// are verbose ("High Effort"), so the overlay below replaces them.
 export const acpModelConfigId = "model"
 export const acpReasoningEffortConfigId = "reasoning_effort"
 
@@ -244,6 +246,28 @@ const acpModelConfigOptions = (state: AcpModelState): ReadonlyArray<SessionConfi
   return reasoning === undefined
     ? [acpModelConfigOption(state)]
     : [acpModelConfigOption(state), reasoning]
+}
+
+/// Overlays the models-extension pickers onto ACP `configOptions`. Grok 1.0.24+
+/// already ships a native `reasoning_effort` select whose labels are "High
+/// Effort" / "Reasoning Effort"; replace that entry with the concise picker
+/// (name "Reasoning", labels "High") so the composer matches Codex/Claude.
+export const mergeAcpModelConfigOptions = (
+  configOptions: ReadonlyArray<SessionConfigOption>,
+  modelState: AcpModelState | undefined
+): ReadonlyArray<SessionConfigOption> => {
+  if (modelState === undefined) return configOptions
+  const merged = [...configOptions]
+  if (!merged.some((option) => option.category === "model")) {
+    merged.push(acpModelConfigOption(modelState))
+  }
+  const reasoning = acpReasoningEffortConfigOption(modelState)
+  if (reasoning !== undefined) {
+    const index = merged.findIndex((option) => option.id === acpReasoningEffortConfigId)
+    if (index >= 0) merged[index] = reasoning
+    else merged.push(reasoning)
+  }
+  return merged
 }
 
 /// `session/set_model` answers with a Rust-style `Result` under `_meta.model`

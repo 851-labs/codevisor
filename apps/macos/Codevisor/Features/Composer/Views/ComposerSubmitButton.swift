@@ -31,7 +31,11 @@ struct ComposerSubmitButton: View {
     Button(action: action) {
       Image(systemName: systemImage)
         .font(.system(size: 12, weight: .bold))
-        .frame(width: 26, height: 26)
+        .scaledFrame(
+          width: ComposerCardStyle.actionDiameter,
+          height: ComposerCardStyle.actionDiameter,
+          relativeTo: .subheadline
+        )
         .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
         .background(
           Circle().fill(

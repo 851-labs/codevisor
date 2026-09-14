@@ -7,6 +7,7 @@ import SwiftUI
 /// for the preceding Markdown to finish entering, fades as one native element,
 /// and only then allows later Markdown to mount.
 public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
+  @Environment(\.attachmentImages) private var attachmentImages
   private let turnID: UUID
   private let entryID: String
   private let markdown: String
@@ -56,6 +57,7 @@ public struct StreamingAssistantResponseView<AttachmentContent: View>: View {
     // its place. Its timeline and reveal ledger must not leak into the new
     // semantic response.
     .id(responseStreamID)
+    .environment(\.markdownImageLoader, attachmentImages?.markdownImageLoader ?? .remote)
   }
 }
 

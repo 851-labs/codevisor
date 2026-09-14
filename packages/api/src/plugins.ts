@@ -80,6 +80,8 @@ export const PluginToolDescriptor = Schema.Struct({
 export type PluginToolDescriptor = typeof PluginToolDescriptor.Type
 
 const PluginManifestBase = {
+  /// Publisher-declared minimum age. Required for presentation on iOS.
+  ageRating: Schema.optional(Schema.Literals([4, 9, 13, 16, 18])),
   /// Owner-namespaced id, lowercase `owner.name`. Validated against the
   /// install source on managed installs so a repo cannot impersonate another
   /// plugin.
@@ -150,6 +152,9 @@ export const PluginSource = Schema.Literals(["managed", "linked"])
 export type PluginSource = typeof PluginSource.Type
 
 export const PluginSummary = Schema.Struct({
+  ageRating: Schema.optional(Schema.Number),
+  consentKey: Schema.optional(Schema.String),
+  sourceRepo: Schema.optional(Schema.String),
   /// Disabled plugins remain installed but do not run or expose panes/tools.
   enabled: Schema.Boolean,
   /// A verified pre-update code/data snapshot is available for explicit restore.
@@ -224,6 +229,9 @@ export type DiscoverRemotePluginRequest = typeof DiscoverRemotePluginRequest.Typ
 /// sheet, the CLI prompt, agent approval cards) show exactly these before
 /// anything runs on the user's machine.
 export const DiscoverRemotePluginResult = Schema.Struct({
+  ageRating: Schema.optional(Schema.Number),
+  consentKey: Schema.optional(Schema.String),
+  sourceRepo: Schema.optional(Schema.String),
   id: Schema.String,
   name: Schema.String,
   version: Schema.String,
@@ -269,6 +277,7 @@ export type LinkPluginRequest = typeof LinkPluginRequest.Type
 /// time) that anchor it to a real owner. Mirrors the entries the cloud
 /// registry serves at /plugins/index.json (apps/cloud/src/plugin-registry.ts).
 export const PluginRegistryEntry = Schema.Struct({
+  ageRating: Schema.optional(Schema.Number),
   /// Owner-namespaced plugin id, lowercase `owner.name`.
   id: Schema.String,
   name: Schema.String,
@@ -349,6 +358,7 @@ export type PluginUpdatesResponse = typeof PluginUpdatesResponse.Type
 /// are display-safe renderings of the exact manifest values staged in the
 /// plan; the staged directory remains the execution authority.
 export const PluginUpdateReview = Schema.Struct({
+  ageRating: Schema.optional(Schema.Number),
   version: Schema.String,
   setupCommands: Schema.Array(Schema.String),
   runCommand: Schema.String,

@@ -92,8 +92,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     ServerLifecycleLog.default.note("update: install requested")
     installSessionActive = true
     serverPreparedForUpdate = false
-    AppUpdateHandoff.writeStatus(state: "installing")
-    model.reportProgress("Checking for the update…")
+    reportProgress("Checking for the update…")
     driver.armInstall()
     Task { @MainActor [weak self] in
       // Sparkle runs one session at a time and ignores a check requested
@@ -110,14 +109,25 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
   }
 
+  private func reportProgress(_ message: String?, fraction: Double? = nil) {
+    model.reportProgress(message, fraction: fraction)
+    guard installSessionActive else { return }
+    AppUpdateHandoff.writeStatus(
+      state: "installing",
+      message: message,
+      targetVersion: model.availableRelease?.version,
+      progress: model.progress
+    )
+  }
+
   private func report(_ progress: HeadlessUserDriver.Progress) {
     switch progress {
     case let .downloading(fraction):
-      model.reportProgress("Downloading…", fraction: fraction)
+      reportProgress("Downloading…", fraction: fraction)
     case let .extracting(fraction):
-      model.reportProgress("Preparing…", fraction: fraction)
+      reportProgress("Preparing…", fraction: fraction)
     case .installing:
-      model.reportProgress("Installing…")
+      reportProgress("Installing…")
     }
   }
 
@@ -188,7 +198,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       // Committed from here: the row shows progress, the composer stops
       // accepting turns, and a quit request is not confirmed.
       model.reportInstalling(version: version, releasePageURL: releasePageURL)
-      model.reportProgress("Downloading…")
+      reportProgress("Downloading…")
     }
   }
 
@@ -253,10 +263,10 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return
       }
       self.serverPreparedForUpdate = true
-      self.model.reportProgress("Waiting for the server…")
+      self.reportProgress("Waiting for the server…")
       let prepared = await self.serverAgent.prepareForAppUpdate(localServer: self.localServer) {
         [weak self] status in
-        self?.model.reportProgress(status)
+        self?.reportProgress(status)
       }
       guard prepared else {
         self.failInstall(
@@ -286,7 +296,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         )
         return
       }
-      self.model.reportProgress("Restarting…")
+      self.reportProgress("Restarting…")
       Log.updates.log("install: server prepared; handing over to Sparkle for the relaunch")
       ServerLifecycleLog.default.note("update: server prepared, Sparkle relaunching the app")
       installHandler()

@@ -37,6 +37,8 @@ public final class CloudAccountController {
   /// this becomes true.
   public private(set) var hasCompletedBootstrap = false
   public var lastError: String?
+  public internal(set) var linkedProviders: Set<CloudSignInProvider>?
+  var authenticationRevision: UInt64 = 0
   /// The validated instance name of the current custom server, for display
   /// in Settings. Only populated after a successful `setCustomServer`.
   public private(set) var customInstanceName: String?
@@ -49,6 +51,10 @@ public final class CloudAccountController {
   /// advertises it, or while its capabilities are still unknown.
   public var supportsGitHubSignIn: Bool {
     authProviders?.contains("github") ?? true
+  }
+
+  public var supportsAppleSignIn: Bool {
+    authProviders?.contains("apple") == true
   }
 
   /// The cloud instance itself advertises dev auth (`authProviders`
@@ -138,7 +144,7 @@ public final class CloudAccountController {
     (try? credentialStore.serverURL()) ?? nil
   }
 
-  private var storedToken: String? {
+  var storedToken: String? {
     (try? credentialStore.token()) ?? nil
   }
 
@@ -149,26 +155,8 @@ public final class CloudAccountController {
     !hasCompletedBootstrap && storedToken != nil
   }
 
-  private var client: any CloudAccountClienting {
+  var client: any CloudAccountClienting {
     clientFactory(serverURL)
-  }
-
-  /// The browser sign-in entry point: `/login/github` starts the OAuth flow
-  /// server-side and 302s straight to GitHub's consent page (no interstitial
-  /// button page), with a redirect that lands on the app-handoff page, which
-  /// bounces back into the app via `<scheme>://cloud-auth?ott=…`. Instances
-  /// without GitHub configured redirect to the /login page instead. The
-  /// redirect value is percent-encoded so its own `?app=` query survives.
-  public func signInURL(scheme: String) -> URL {
-    let base =
-      serverURL.absoluteString.hasSuffix("/")
-      ? String(serverURL.absoluteString.dropLast())
-      : serverURL.absoluteString
-    var allowed = CharacterSet.urlQueryAllowed
-    allowed.remove(charactersIn: "?=&+")
-    let redirect = "/auth/handoff?app=\(scheme)"
-    let encoded = redirect.addingPercentEncoding(withAllowedCharacters: allowed) ?? redirect
-    return URL(string: "\(base)/login/github?redirect=\(encoded)") ?? serverURL
   }
 
   /// Boot: validate whatever token is stored. An invalid token signs out
@@ -237,18 +225,26 @@ public final class CloudAccountController {
   /// The one sign-in completion: obtain a session token, store it, load
   /// the account. Every sign-in flow funnels through here so they cannot
   /// diverge.
-  private func adoptSession(_ obtainToken: () async throws -> String) async {
+  func adoptSession(_ obtainToken: () async throws -> String) async {
+    authenticationRevision &+= 1
+    let revision = authenticationRevision
+    let server = serverURL
     state = .validating
+    linkedProviders = nil
     lastError = nil
     let client = client
     do {
       let token = try await obtainToken()
+      guard authenticationRevision == revision, serverURL == server else { return }
       await discardHubForCredentialChange()
+      guard authenticationRevision == revision, serverURL == server else { return }
       try credentialStore.saveToken(token)
       let user = (try? await client.session(token: token)) ?? nil
+      guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
       state = .signedIn(userEmail: user?.email)
       await refreshMachines()
     } catch {
+      guard authenticationRevision == revision, serverURL == server else { return }
       Log.cloud.error("Cloud sign-in failed: \(String(describing: error), privacy: .public)")
       state = .signedOut
       lastError = error.localizedDescription
@@ -258,6 +254,9 @@ public final class CloudAccountController {
   /// Signs out locally: the token is cleared (a custom server choice is
   /// kept), the machine list emptied, and the relay connection torn down.
   public func signOut() {
+    authenticationRevision &+= 1
+    linkedProviders = nil
+    lastError = nil
     // Capture before the token is cleared: deregistering this machine
     // needs the session to revoke its api key on the account.
     let token = storedToken

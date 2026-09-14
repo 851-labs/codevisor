@@ -7,13 +7,16 @@
     case attributed(NSAttributedString)
     case markdown(blocks: [MarkdownBlock], theme: MarkdownTheme, foregroundColor: Color)
     #if canImport(AppKit)
-      case table(headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]], theme: MarkdownTheme)
+      case table(
+        headers: [MarkdownText], alignments: [ColumnAlignment], rows: [[MarkdownText]], theme: MarkdownTheme,
+        images: [String: MarkdownImageResource] = [:])
     #endif
 
     enum Key: Hashable {
       case attributed(NSAttributedString)
       case markdown([MarkdownBlock], theme: Int, foreground: Color)
-      case table([MarkdownText], [ColumnAlignment], [[MarkdownText]], theme: Int)
+      case table(
+        [MarkdownText], [ColumnAlignment], [[MarkdownText]], theme: Int, images: [String: MarkdownImageResource] = [:])
     }
 
     var key: Key {
@@ -22,8 +25,8 @@
       case let .markdown(blocks, theme, foreground):
         .markdown(blocks, theme: theme.renderFingerprint, foreground: foreground)
       #if canImport(AppKit)
-        case let .table(headers, alignments, rows, theme):
-          .table(headers, alignments, rows, theme: theme.renderFingerprint)
+        case let .table(headers, alignments, rows, theme, images):
+          .table(headers, alignments, rows, theme: theme.renderFingerprint, images: images)
       #endif
       }
     }
@@ -37,8 +40,8 @@
       case let .markdown(blocks, theme, foregroundColor):
         text = MarkdownTextRunRenderer.attributedString(for: blocks, theme: theme, foregroundColor: foregroundColor)
       #if canImport(AppKit)
-        case let .table(headers, alignments, rows, theme):
-          let table = MarkdownTableRenderer.prepare(headers: headers, rows: rows, theme: theme)
+        case let .table(headers, alignments, rows, theme, images):
+          let table = MarkdownTableRenderer.prepare(headers: headers, rows: rows, theme: theme, images: images)
           layoutWidth = MarkdownTextTableGeometry.width(
             max(width, MarkdownTableMetrics.minimumTableWidth(columnMinimumWidths: table.columnMinimumWidths)))
           text = MarkdownTableRenderer.make(prepared: table, alignments: alignments, theme: theme, width: layoutWidth)

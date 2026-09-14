@@ -5,6 +5,44 @@ import Testing
 
 @MainActor
 struct ScreenSharingControlTests {
+  @Test func initialRequestWaitsForAvailabilityAndDoesNotRetryADenial() throws {
+    var sent: [ScreenSharingControlMessage] = []
+    let viewer = ScreenSharingViewerControl(
+      now: { 0 },
+      send: {
+        sent.append($0); return true
+      })
+    viewer.requestWhenAvailable()
+    viewer.setAvailable(false)
+    #expect(sent.isEmpty)
+    viewer.setAvailable(true)
+    viewer.setAvailable(true)
+    #expect(sent.count == 1 && viewer.state == .requesting)
+    guard case .request(let request) = try #require(sent.first) else { Issue.record("Missing request"); return }
+    viewer.receive(.denied(request: request, reason: "Accessibility required"))
+    #expect(viewer.state == .viewing && viewer.message == "Accessibility required")
+    viewer.setAvailable(false)
+    viewer.setAvailable(true)
+    viewer.tick()
+    #expect(sent.count == 1 && viewer.state == .viewing)
+    viewer.request()
+    #expect(sent.count == 2 && viewer.state == .requesting)
+    viewer.release()
+  }
+
+  @Test func releaseCancelsAnInitialRequestBeforeTheChannelOpens() {
+    var sent: [ScreenSharingControlMessage] = []
+    let viewer = ScreenSharingViewerControl(
+      now: { 0 },
+      send: {
+        sent.append($0); return true
+      })
+    viewer.requestWhenAvailable()
+    viewer.release()
+    viewer.setAvailable(true)
+    #expect(sent.isEmpty && viewer.state == .viewing)
+  }
+
   @Test func leaseExpiryReleasesAllHeldInputAndRejectsDelayedPackets() throws {
     let fixture = HostControlFixture()
     let lease = try fixture.acquire()

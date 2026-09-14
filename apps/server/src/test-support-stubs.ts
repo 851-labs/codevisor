@@ -1,6 +1,7 @@
 import type { NativeMcpScan, SkillsScan } from "@codevisor/api"
 import { PluginsError } from "@codevisor/plugins"
 import type { PluginsManager, PluginStateEvent } from "@codevisor/plugins"
+import { SkillsError } from "@codevisor/skills"
 
 /// Scan fixtures and stub managers for the native MCP, skills, and plugin
 /// routes.
@@ -277,6 +278,20 @@ export const nativeMcpStub = (calls: Array<unknown[]>) => ({
 })
 
 export const skillsStub = (calls: Array<unknown[]>) => ({
+  read: async (directoryName: string) => {
+    calls.push(["read", directoryName])
+    if (!skillsScan.global.some((skill) => skill.directoryName === directoryName)) {
+      throw new SkillsError(`No global skill named ${directoryName}`, "notFound")
+    }
+    return { content: "---\nname: Deploy\ndescription: Deploy checklist\n---\nShip it.\n" }
+  },
+  update: async (directoryName: string, request: unknown) => {
+    calls.push(["update", directoryName, request])
+    if (!skillsScan.global.some((skill) => skill.directoryName === directoryName)) {
+      throw new SkillsError(`No global skill named ${directoryName}`, "notFound")
+    }
+    return skillsScan
+  },
   create: async (request: unknown) => {
     calls.push(["create", request])
     return skillsScan

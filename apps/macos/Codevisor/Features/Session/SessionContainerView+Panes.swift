@@ -111,6 +111,7 @@ extension SessionContainerView {
   /// leaf, when it is a chat. Reads the live group model so pane selection
   /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
+    guard isVisible, store.navigationWorkspaceId == selectedWorkspace.id else { return nil }
     let workspace = selectedWorkspace
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil
@@ -263,18 +264,47 @@ extension SessionContainerView {
   }
 
   func syncWorkspaceBackgroundTerminals() {
-    // Agent-owned background terminals belong to chats. A workspace with no
-    // chat has no controllers to sync and no bottom panel keyed to a session.
-    guard let session else { return }
-    let panel = store.paneGroup(for: session, project: project)
+    var workspace = selectedWorkspace
+    var updated: [PaneDescriptorState] = []
+    var removed: [PaneDescriptorState] = []
     for (chatId, controller) in workspaceChatControllers {
-      panel.syncAgentTerminals(
+      let changes = workspace.syncAgentTerminals(
         controller.backgroundTasks.compactMap { task in
           task.terminalKey.map { (terminalKey: $0, name: task.description) }
         },
         owner: chatId,
         pruneEnded: controller.hasBackgroundTaskSnapshot
       )
+      updated.append(contentsOf: changes.updated)
+      removed.append(contentsOf: changes.removed)
+    }
+    guard !updated.isEmpty || !removed.isEmpty else { return }
+    // Resolve cleanup against the old layout before its leaves disappear.
+    // Constructing a TerminalPane is lazy and does not attach a surface.
+    let oldWorkspace = selectedWorkspace
+    let closing = removed.compactMap { pane -> (any Pane)? in
+      guard
+        let leaf = oldWorkspace.centerTabs.lazy.compactMap({
+          $0.root.groupId(containingPane: pane.id)
+        }).first
+      else { return nil }
+      return store.centerGroup(
+        leafId: leaf, workspace: oldWorkspace, session: session, project: project
+      ).pane(for: pane)
+    }
+    environment.workspaces.save(workspace)
+    environment.workspaceSync.noteLocalMutation()
+    store.reconcileMountedPaneGroups(in: workspace)
+    workspaceRevision += 1
+    let client = environment.machines.client(for: workspace.serverId)
+    for pane in updated {
+      environment.workspaceSync.publishPane(pane, workspaceId: workspace.id, client: client)
+    }
+    for pane in removed {
+      environment.workspaceSync.deletePane(id: pane.id, workspaceId: workspace.id, client: client)
+    }
+    Task {
+      for pane in closing { await pane.willDelete() }
     }
   }
 }

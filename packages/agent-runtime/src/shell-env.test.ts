@@ -1,4 +1,5 @@
 import * as childProcess from "node:child_process"
+import * as os from "node:os"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   fallbackPathDirectories,
@@ -14,7 +15,72 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFile: vi.fn(actual.execFile) }
 })
 
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>()
+  return { ...actual, homedir: vi.fn(actual.homedir), userInfo: vi.fn(actual.userInfo) }
+})
+
 describe("resolveShellEnv", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it.each([undefined, ""])("restores HOME when the inherited value is %s", async (home) => {
+    const base = Object.freeze({ HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/sh" })
+    const runShell = vi.fn(() => Promise.resolve(envOutput("/probed")))
+    const resolved = await resolveShellEnv({
+      base,
+      platform: "linux",
+      homedir: "/home/test user",
+      userShell: () => undefined,
+      executableExists: () => true,
+      listDirectory: () => [],
+      runShell
+    })
+
+    expect(resolved.HOME).toBe("/home/test user")
+    expect(runShell).toHaveBeenCalledWith("/bin/sh", ["-ilc", "/usr/bin/env"], 5000, {
+      ...base,
+      HOME: "/home/test user"
+    })
+    expect(resolved.PATH).toContain("/home/test user/.local/bin")
+    expect(base.HOME).toBe(home)
+  })
+
+  it("preserves an explicit HOME and uses it for install directories", async () => {
+    const resolved = await resolveShellEnv({
+      base: { HOME: "/custom/home", PATH: "/usr/bin" },
+      platform: "linux",
+      homedir: "/fallback/home",
+      userShell: () => undefined,
+      executableExists: () => false,
+      listDirectory: () => []
+    })
+
+    expect(resolved.HOME).toBe("/custom/home")
+    expect(resolved.PATH).toContain("/custom/home/.local/bin")
+    expect(resolved.PATH).not.toContain("/fallback/home")
+  })
+
+  it("uses the account home when the OS environment home is empty", async () => {
+    vi.spyOn(os, "homedir").mockReturnValue("")
+    vi.spyOn(os, "userInfo").mockReturnValue({
+      homedir: "/home/account",
+      shell: "/bin/sh",
+      username: "account",
+      uid: 1000,
+      gid: 1000
+    })
+    const resolved = await resolveShellEnv({
+      base: { HOME: "" },
+      platform: "linux",
+      userShell: () => undefined,
+      executableExists: () => false,
+      listDirectory: () => []
+    })
+
+    expect(resolved.HOME).toBe("/home/account")
+    expect(resolved.PATH).toContain("/home/account/.local/bin")
+  })
+
   it("merges probed PATH first, then base PATH, then fallbacks, deduped", async () => {
     const invocations: Array<readonly [string, ReadonlyArray<string>, number]> = []
     const resolved = await resolveShellEnv({
@@ -64,6 +130,7 @@ describe("resolveShellEnv", () => {
     const directories = (resolved.PATH ?? "").split(":")
     expect(directories[0]).toBe("/base-only")
     expect(directories).toEqual(["/base-only", ...fallbackPathDirectories("/Users/tester")])
+    expect(resolved.HOME).toBe("/Users/tester")
   })
 
   it("defaults the shell per platform when SHELL is unset or empty", async () => {
@@ -222,6 +289,15 @@ describe("resolveShellEnv", () => {
 
 describe("runShellCommand", () => {
   afterEach(() => vi.restoreAllMocks())
+  it("exports the supplied HOME to child scripts", async () => {
+    await expect(
+      runShellCommand("/bin/sh", ["-uc", 'printf "%s" "$HOME"'], 5000, {
+        HOME: "/home/test user",
+        PATH: "/usr/bin:/bin"
+      })
+    ).resolves.toBe("/home/test user")
+  })
+
   it("resolves stdout from a real process", async () => {
     // /bin/sh -c is not a login shell — no user rc files run in tests.
     await expect(runShellCommand("/bin/sh", ["-c", "printf 'PATH=/x\\n'"], 5000)).resolves.toBe(

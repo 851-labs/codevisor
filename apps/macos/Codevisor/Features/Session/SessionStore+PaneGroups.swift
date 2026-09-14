@@ -8,23 +8,12 @@ import ACPKit
 
 extension SessionStore {
   func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
-    let groups = Array(centerLeafGroups.values) + Array(bottomGroups.values)
+    let groups = Array(centerLeafGroups.values)
     return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model }.first
   }
 
   func localBrowserTitle(paneId: UUID) -> String? {
     localBrowserModel(paneId: paneId)?.title
-  }
-
-  /// Returns the cached bottom-panel pane group for a session's WORKSPACE,
-  /// creating it on first use. Mirrors `controller(for:project:)` so panes
-  /// (and their terminals) survive panel close + navigation away and back.
-  func paneGroup(for session: ChatSession, project: Project) -> PaneGroupModel {
-    let workspaceId = workspace(for: session, project: project).id
-    if let existing = bottomGroups[workspaceId] { return existing }
-    let group = makePaneGroup(for: session, project: project, placement: .bottom)
-    bottomGroups[workspaceId] = group
-    return group
   }
 
   /// The center group hosting this session's chat: THE SAME model instance
@@ -40,7 +29,7 @@ extension SessionStore {
     else {
       // Unreachable (a workspace always has a leaf); satisfies the
       // optional without a second cache.
-      return makePaneGroup(for: session, project: project, placement: .center)
+      return makePaneGroup(for: session, project: project)
     }
     return centerGroup(leafId: leafId, workspace: workspace, session: session, project: project)
   }
@@ -54,7 +43,8 @@ extension SessionStore {
       serverId: session.serverId,
       projectId: project.id,
       rootDirectory: session.cwd ?? project.folderURL.path,
-      worktreeName: session.worktreeName
+      worktreeName: session.worktreeName,
+      assignedWorkspaceId: environment.projectList.workspaceAssignments(for: session.serverId)[session.id]
     )
     // A chat that is no longer active and has NO persisted workspace must
     // not mint one: archiving a scratch chat deletes its workspace (index
@@ -105,7 +95,7 @@ extension SessionStore {
       return existing
     }
     let group = makePaneGroup(
-      workspace: workspace, session: session, project: project, placement: .center, leafId: leafId)
+      workspace: workspace, session: session, project: project, leafId: leafId)
     centerLeafGroups[key] = group
     return group
   }
@@ -117,9 +107,6 @@ extension SessionStore {
   @discardableResult
   func reconcileMountedPaneGroups(in workspace: Workspace) -> Bool {
     var changed = false
-    if let bottom = bottomGroups[workspace.id] {
-      changed = bottom.reconcileExternalState(workspace.bottomGroup) || changed
-    }
 
     let centerStates = Dictionary(
       uniqueKeysWithValues: workspace.centerTabs.flatMap { tab in
@@ -147,12 +134,11 @@ extension SessionStore {
   func makePaneGroup(
     for session: ChatSession,
     project: Project,
-    placement: PaneGroupPlacement,
     leafId: UUID? = nil
   ) -> PaneGroupModel {
     makePaneGroup(
       workspace: workspace(for: session, project: project), session: session, project: project,
-      placement: placement, leafId: leafId)
+      leafId: leafId)
   }
 
   /// The shared implementation. The WORKSPACE supplies identity (server,
@@ -163,7 +149,6 @@ extension SessionStore {
     workspace: Workspace,
     session: ChatSession?,
     project: Project,
-    placement: PaneGroupPlacement,
     leafId: UUID? = nil
   ) -> PaneGroupModel {
     let serverId = workspace.serverId
@@ -179,14 +164,12 @@ extension SessionStore {
     // hosting this session's chat (a workspace without a chat has only the
     // given leaf).
     let resolvedLeafId =
-      placement == .center
-      ? (leafId
-        ?? session.flatMap { session in
-          workspace.centerTabs.lazy.compactMap {
-            $0.root.groupId(containingChat: session.id)
-          }.first
-        })
-      : nil
+      leafId
+      ?? session.flatMap { session in
+        workspace.centerTabs.lazy.compactMap {
+          $0.root.groupId(containingChat: session.id)
+        }.first
+      }
     let repository = WorkspacePaneGroupRepository(
       workspaceId: workspace.id,
       groupId: resolvedLeafId,
@@ -198,7 +181,6 @@ extension SessionStore {
     let workspaceRootDirectory = workspace.rootDirectory
     let model = PaneGroupModel(
       sessionId: session?.id,
-      placement: placement,
       repository: repository,
       pluginIconClient: client,
       pluginIconCacheNamespace: serverId,
@@ -209,7 +191,7 @@ extension SessionStore {
     // Browser links and automation are chat-rooted: they open next to a real
     // session. A workspace without one leaves both hooks nil, which is also
     // what makes `canHostBrowserAutomation` decline for its panes.
-    if placement == .center, let session {
+    if let session {
       installBrowserHooks(on: model, session: session, project: project)
     }
     model.onPaneChanged = { [weak self, weak environment] pane in
@@ -237,7 +219,7 @@ extension SessionStore {
       let panes =
         liveWorkspace.centerTabs.flatMap { tab in
           tab.root.allGroups.flatMap(\.state.panes)
-        } + liveWorkspace.bottomGroup.panes
+        }
       return panes.count == 1 && panes[0].id == pane.id
     }
     model.onPaneRemoved = { [weak environment] pane, replacement in

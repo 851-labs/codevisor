@@ -18,15 +18,10 @@ import {
   hasRoutableMachineSocket,
   type HubDeliveryPort
 } from "./hub-delivery.js"
+import { listHubMachines, removeHubMachine } from "./hub-registry.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { announceExpired, type HubNoticesPort } from "./hub-notices.js"
-import {
-  HUB_MIGRATIONS,
-  machinePresence,
-  machineRow,
-  machineRows,
-  type SocketAttachment
-} from "./hub-schema.js"
+import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
@@ -69,6 +64,7 @@ export const CLOSE_DELIVERY_FAILED = 4004
 const MAX_FRAME_LENGTH = 64 * 1024
 
 export class UserHub extends DurableObject<CloudEnv> {
+  #accountDeleted = false
   readonly #resume: ResumeSessions
   readonly #net: HubSockets
   readonly #metrics = new HubMetrics()
@@ -81,6 +77,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       Number(env.RESUME_GRACE_MS ?? "") || DEFAULT_RESUME_GRACE_MS
     )
     ctx.blockConcurrencyWhile(async () => {
+      this.#accountDeleted = (await ctx.storage.get<boolean>("account_deleted")) === true
       const version =
         (await ctx.storage.get<number>("schema_version")) ??
         // Fresh instance — run every migration below.
@@ -103,35 +100,29 @@ export class UserHub extends DurableObject<CloudEnv> {
 
   // -- Worker-facing RPC -----------------------------------------------------
 
+  /// Tombstone the hub before clearing its data so in-flight connections
+  /// authorized just before account deletion cannot recreate it.
+  async deleteAccount(): Promise<void> {
+    this.#accountDeleted = true
+    await this.ctx.storage.put("account_deleted", true)
+    for (const socket of this.ctx.getWebSockets()) {
+      socket.close(CLOSE_REVOKED, "cloud account deleted")
+    }
+    this.ctx.storage.sql.exec(
+      "DELETE FROM session_buffers; DELETE FROM sessions; DELETE FROM machines"
+    )
+    await this.ctx.storage.deleteAlarm()
+  }
+
   /// Registry + live presence; used by the REST surface and app settings.
   listMachines(): CloudMachinePresence[] {
-    // Machines in their resume grace window count as online: their
-    // disconnect was never announced, and a resume makes it moot.
-    const online = this.#resume.machineDeviceIdsInGrace(Date.now())
-    const rows = machineRows(this.ctx.storage.sql)
-    for (const row of rows) {
-      if (hasRoutableMachineSocket(this.#net, row.device_id, row.active_generation)) {
-        online.add(row.device_id)
-      }
-    }
-    return rows.map((row) => machinePresence(row, online.has(row.device_id)))
+    return listHubMachines(this.#notices())
   }
 
   /// Disconnects and forgets a machine. The Worker revokes the api key first;
   /// this makes the hub side immediate rather than next-auth-failure.
   removeMachine(deviceId: string): boolean {
-    const existing = machineRow(this.ctx.storage.sql, deviceId)
-    if (existing === undefined) return false
-    this.ctx.storage.sql.exec("DELETE FROM machines WHERE device_id = ?", deviceId)
-    this.#resume.deleteForMachineDevice(deviceId)
-    for (const socket of this.#net.machine(deviceId)) {
-      socket.close(CLOSE_REVOKED, "machine disconnected from account")
-    }
-    this.#net.broadcastToApps({
-      t: "presence",
-      machine: machinePresence({ ...existing, last_seen_at: isoTimestamp() }, false)
-    })
-    return true
+    return removeHubMachine(this.#notices(), deviceId, CLOSE_REVOKED)
   }
 
   renameMachine(deviceId: string, name: string): boolean {
@@ -158,6 +149,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   // -- WebSocket lifecycle ---------------------------------------------------
 
   override async fetch(request: Request): Promise<Response> {
+    if (this.#accountDeleted) return new Response("Account deleted", { status: 401 })
     const kind = request.headers.get(HUB_KIND_HEADER)
     if ((kind !== "app" && kind !== "machine") || request.headers.get("Upgrade") !== "websocket") {
       return new Response("expected authenticated websocket upgrade", { status: 400 })
@@ -179,6 +171,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   override async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    if (this.#accountDeleted) return
     const attachment = this.#net.attachment(socket)
     if (attachment === undefined) {
       socket.close(CLOSE_INVALID_FRAME, "missing attachment")
@@ -249,6 +242,7 @@ export class UserHub extends DurableObject<CloudEnv> {
         return
       }
       const { token, resumed } = await this.#adoptSession(attachment, "app", frame)
+      if (this.#accountDeleted) return
       attachment.deviceId = frame.device.deviceId
       attachment.publicKey = frame.device.publicKey
       this.#supersedeConnection(attachment.connectionId, socket)
@@ -297,6 +291,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       }
       const deviceId = attachment.deviceId!
       const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
+      if (this.#accountDeleted) return
       const now = isoTimestamp()
       const generation = (machineRow(this.ctx.storage.sql, deviceId)?.active_generation ?? 0) + 1
       this.ctx.storage.sql.exec(
@@ -375,6 +370,10 @@ export class UserHub extends DurableObject<CloudEnv> {
       frame.device,
       frame.resume
     )
+    if (this.#accountDeleted) {
+      this.#resume.delete(adopted.connectionId)
+      return adopted
+    }
     attachment.connectionId = adopted.connectionId
     this.#metrics.hello(kind, adopted.resumed, frame.resume !== undefined)
     return adopted
@@ -434,6 +433,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   #onGone(socket: WebSocket): void {
+    if (this.#accountDeleted) return
     const attachment = this.#net.attachment(socket)
     if (attachment === undefined || !attachment.helloDone) return
     // Make close/error callbacks idempotent and exclude this socket from all

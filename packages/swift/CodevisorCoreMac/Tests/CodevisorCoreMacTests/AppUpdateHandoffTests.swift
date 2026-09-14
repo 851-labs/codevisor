@@ -1,3 +1,4 @@
+import CodevisorClient
 import Foundation
 import Testing
 
@@ -41,7 +42,7 @@ struct AppUpdateHandoffTests {
     #expect(payload["state"] as? String == "failed")
     #expect(payload["message"] as? String == "Sparkle: no signature")
     #expect(payload["targetVersion"] as? String == "0.2.0")
-    #expect(payload["at"] as? String == ISO8601DateFormatter().string(from: date))
+    #expect(payload["at"] as? String == "2025-08-24T01:46:40.000Z")
   }
 
   @Test("Optional fields are omitted, not encoded as null")
@@ -68,5 +69,20 @@ struct AppUpdateHandoffTests {
     #expect(FileManager.default.fileExists(atPath: url.path))
     AppUpdateHandoff.clearStatus(at: url)
     #expect(!FileManager.default.fileExists(atPath: url.path))
+  }
+}
+
+extension AppUpdateHandoffTests {
+  @Test("Progress survives the host file and decodes in a remote client")
+  func progressRoundTrip() throws {
+    let url = temporaryURL("progress.json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    AppUpdateHandoff.writeStatus(state: "installing", message: "Downloading…", progress: 0.42, to: url)
+    let report = try JSONDecoder().decode(ServerUpdateApplyState.self, from: Data(contentsOf: url))
+    #expect(report.progress == 0.42)
+    #expect(report.message == "Downloading…")
+    AppUpdateHandoff.writeStatus(state: "installing", message: "Restarting…", to: url)
+    let restart = try JSONDecoder().decode(ServerUpdateApplyState.self, from: Data(contentsOf: url))
+    #expect(restart.progress == nil)
   }
 }

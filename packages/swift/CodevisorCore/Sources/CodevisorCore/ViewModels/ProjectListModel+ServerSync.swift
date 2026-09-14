@@ -96,7 +96,7 @@ extension ProjectListModel {
     }
   }
 
-  func syncSession(_ session: ChatSession) {
+  func syncSession(_ session: ChatSession, isRename: Bool = false) {
     // No harness gate: eagerly created chats (workspace "New Chat"
     // tabs) have no harness until their first send, and MUST still
     // reach the server — an unsynced row is dropped by the next
@@ -108,7 +108,11 @@ extension ProjectListModel {
         if let project {
           _ = try await serverClient.upsertProject(project)
         }
-        _ = try await serverClient.upsertSession(session)
+        if isRename {
+          _ = try await serverClient.renameSession(session)
+        } else {
+          _ = try await serverClient.upsertSession(session)
+        }
         // A successful write can still overtake an older list request.
         // mergeSessions retires the marker once a snapshot contains it.
       } catch {

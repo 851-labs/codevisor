@@ -39,7 +39,7 @@ struct MarkdownDocumentTests {
       id: id, kind: .document, name: "Audit.md", terminalKey: id.uuidString,
       documentPath: "/workspace/docs/Audit.md"
     )
-    let state = PaneGroupState(panes: [pane], selectedPaneId: id, isVisible: true)
+    let state = PaneGroupState(panes: [pane], selectedPaneId: id)
     let restored = try JSONDecoder().decode(
       PaneGroupState.self, from: JSONEncoder().encode(state)
     )

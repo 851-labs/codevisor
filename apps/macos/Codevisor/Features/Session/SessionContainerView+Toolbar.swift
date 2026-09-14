@@ -1,9 +1,10 @@
 import CodevisorCore
+import CodevisorCoreMac
 import SwiftUI
 
 extension SessionContainerView {
   /// Resolve within the selected tab, even during the frame between a tab
-  /// change and its focus callback. A stale split must never own browser commands.
+  /// change and its focus callback. A stale split must never own pane controls.
   private var activeToolbarGroup: PaneGroupModel? {
     let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
     let workspace = selectedWorkspace
@@ -21,18 +22,30 @@ extension SessionContainerView {
     return (group.selectedPane as? BrowserPane)?.model
   }
 
+  var activeScreenSharingPane: ScreenSharingPane? {
+    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
+      let pane = group.selectedPane as? ScreenSharingPane, pane.model != nil, !pane.showsDisplayPicker
+    else { return nil }
+    return pane
+  }
+
+  var paneControlsReplaceTitle: Bool {
+    activePaneDescriptor?.kind == .browser
+  }
+
   /// Chats retain the editable title and context previously used in Nous.
-  /// Other pane types name themselves; browser controls replace the title.
+  /// Connected screen sharing names the remote Mac; browser controls replace the title.
   var activePaneTitle: Binding<String> {
     Binding(
       get: {
+        if let pane = activeScreenSharingPane { return pane.machineName }
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
-        if descriptor.kind == .browser { return "" }
+        if paneControlsReplaceTitle { return "" }
         let workspace = selectedWorkspace
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in
-        guard activePaneDescriptor?.kind != .browser else { return }
+        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil else { return }
         let workspace = selectedWorkspace
         renameCenterTab(workspace.selectedCenterTabId, to: title)
       }
@@ -40,6 +53,11 @@ extension SessionContainerView {
   }
 
   var activePaneSubtitle: String {
+    if let model = activeScreenSharingPane?.model {
+      guard let display = model.displays.first(where: { $0.id == model.selectedDisplayId }) else { return "" }
+      return "\(display.width) × \(display.height)"
+    }
+    guard activePaneDescriptor?.kind == .chat else { return "" }
     let workspace = selectedWorkspace
     let candidates: [String?] = [
       workspace.name,

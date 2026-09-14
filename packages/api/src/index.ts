@@ -19,3 +19,7 @@ export * from "./openapi.js"
 export * from "./browser-state.js"
 
 export * from "./screen-sharing.js"
+export * from "./client-control.js"
+export * from "./client-ui.js"
+
+export * from "./workspace-position.js"

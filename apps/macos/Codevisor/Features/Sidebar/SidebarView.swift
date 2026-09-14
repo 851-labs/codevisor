@@ -29,8 +29,6 @@ struct SidebarView: View {
   /// non-observable repository is re-read.
   @State var workspaceRevision = 0
   @State var draggingWorkspaceID: UUID?
-  @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
-  var manualWorkspaceOrderRaw
   @ClientPreference("sidebar.showArchived", default: false) var showArchived
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
@@ -136,7 +134,9 @@ struct SidebarView: View {
           restoreRequest: $restoreRequest,
           onImport: { environment.importSessions($0.sessions, into: $0.project) },
           onRenameWorkspace: { renamed in
-            environment.workspaces.save(renamed)
+            environment.workspaceSync.renameWorkspace(
+              renamed, client: environment.machines.client(for: renamed.serverId)
+            )
             workspaceRevision += 1
           },
           onPerformRestore: { performRestore($0) }
@@ -160,13 +160,11 @@ struct SidebarView: View {
           isLoadingMoreArchived = false
         }
       }
-      .onChange(of: Set(activeSessionItems.map(\.id))) { _, _ in
+      // Keyed on assignments as well as ids: a chat created elsewhere can
+      // arrive before the server's workspace membership does, and the
+      // backfill must run again once it lands to re-home the chat.
+      .onChange(of: sessionWorkspaceAssignments) { _, _ in
         ensureSessionWorkspaces()
-      }
-      // Persist the initial order and incorporate new workspaces once, so
-      // adding or closing chats never changes an existing workspace's rank.
-      .onChange(of: workspaceItems.map(\.workspace.id), initial: true) { _, ids in
-        rememberWorkspaceOrder(ids)
       }
   }
 
