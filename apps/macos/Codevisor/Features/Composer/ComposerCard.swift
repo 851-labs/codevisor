@@ -18,7 +18,7 @@ extension EnvironmentValues {
 /// (models grouped by harness plus every model-owned setting), active modes,
 /// and a send button.
 struct ComposerCard: View {
-  static let cornerRadius = ComposerGlassStyle.composerCornerRadius
+  private var cardStyle = ComposerCardStyle()
 
   @Bindable var controller: SessionController
   /// Surfaces the composer's text view so keyboard handoffs can move
@@ -90,11 +90,11 @@ struct ComposerCard: View {
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
-    .padding(12)
+    .padding(ComposerCardStyle.contentPadding)
     // Every composer state shares this one functional Liquid Glass layer.
     // State-specific content must not recreate the card background.
     .composerGlassSurface(
-      cornerRadius: Self.cornerRadius,
+      shape: cardStyle.shape,
       id: .composer,
       in: glassNamespace
     )
@@ -129,7 +129,7 @@ struct ComposerCard: View {
     .overlay {
       if controller.activeQuestion != nil, isQuestionResolving {
         ZStack {
-          RoundedRectangle(cornerRadius: Self.cornerRadius)
+          cardStyle.shape
             .fill(theme.windowBackground.opacity(0.72))
           HStack(spacing: 8) {
             ProgressView()

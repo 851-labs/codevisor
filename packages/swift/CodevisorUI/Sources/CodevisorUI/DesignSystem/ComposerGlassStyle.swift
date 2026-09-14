@@ -4,7 +4,6 @@ import SwiftUI
 /// the composer. Keeping the material and geometry here prevents pinned
 /// controls from drifting back to opaque, independently styled cards.
 public enum ComposerGlassStyle {
-  public static let composerCornerRadius: CGFloat = 16
   public static let accessoryCornerRadius: CGFloat = 12
   public static let clusterSpacing: CGFloat = 8
 }
