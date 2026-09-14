@@ -97,6 +97,8 @@ export const worktreeFromRow = (row: WorktreeRow): Worktree => ({
 })
 
 export const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
+  sidebarPosition: row.sidebar_position,
+  sidebarOrderRevision: row.sidebar_order_revision,
   id: row.id,
   serverId: row.server_id,
   projectId: row.project_id,

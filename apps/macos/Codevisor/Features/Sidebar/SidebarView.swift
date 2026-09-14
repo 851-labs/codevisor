@@ -29,8 +29,6 @@ struct SidebarView: View {
   /// non-observable repository is re-read.
   @State var workspaceRevision = 0
   @State var draggingWorkspaceID: UUID?
-  @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
-  var manualWorkspaceOrderRaw
   @ClientPreference("sidebar.showArchived", default: false) var showArchived
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
@@ -167,11 +165,6 @@ struct SidebarView: View {
       // backfill must run again once it lands to re-home the chat.
       .onChange(of: sessionWorkspaceAssignments) { _, _ in
         ensureSessionWorkspaces()
-      }
-      // Persist the initial order and incorporate new workspaces once, so
-      // adding or closing chats never changes an existing workspace's rank.
-      .onChange(of: workspaceItems.map(\.workspace.id), initial: true) { _, ids in
-        rememberWorkspaceOrder(ids)
       }
   }
 

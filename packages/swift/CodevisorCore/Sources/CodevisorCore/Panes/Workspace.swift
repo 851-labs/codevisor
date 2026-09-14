@@ -51,6 +51,12 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
 
 public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public let id: UUID
+  public var sidebarPosition: String?
+  public var sidebarOrderRevision: Int = 0
+  /// Durable optimistic intent, retried when the owning machine reconnects.
+  public var pendingSidebarPosition: String?
+  public var pendingSidebarOrderRevision: Int?
+  public var sidebarOrderAttempt: WorkspaceOrderAttempt?
   /// Display name. Automatic names begin with the project name and may
   /// follow a newly-created worktree; an explicit rename pins the name.
   public var name: String
@@ -88,13 +94,19 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
     case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
-    case isServerSynced
+    case isServerSynced, sidebarPosition, sidebarOrderRevision, pendingSidebarPosition, pendingSidebarOrderRevision,
+      sidebarOrderAttempt
     /// Version-1 workspaces stored one tree whose leaves were tab groups.
     case centerTree
   }
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    sidebarPosition = try container.decodeIfPresent(String.self, forKey: .sidebarPosition)
+    sidebarOrderRevision = try container.decodeIfPresent(Int.self, forKey: .sidebarOrderRevision) ?? 0
+    pendingSidebarPosition = try container.decodeIfPresent(String.self, forKey: .pendingSidebarPosition)
+    pendingSidebarOrderRevision = try container.decodeIfPresent(Int.self, forKey: .pendingSidebarOrderRevision)
+    sidebarOrderAttempt = try container.decodeIfPresent(WorkspaceOrderAttempt.self, forKey: .sidebarOrderAttempt)
     id = try container.decode(UUID.self, forKey: .id)
     name = try container.decode(String.self, forKey: .name)
     hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
@@ -142,6 +154,11 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(isArchived, forKey: .isArchived)
     try container.encode(isServerSynced, forKey: .isServerSynced)
+    try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
+    try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
+    try container.encodeIfPresent(pendingSidebarPosition, forKey: .pendingSidebarPosition)
+    try container.encodeIfPresent(pendingSidebarOrderRevision, forKey: .pendingSidebarOrderRevision)
+    try container.encodeIfPresent(sidebarOrderAttempt, forKey: .sidebarOrderAttempt)
   }
 
   public init(
@@ -155,7 +172,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     centerTree: SplitNode,
     createdAt: Date = Date(),
     isArchived: Bool = false,
-    isServerSynced: Bool = false
+    isServerSynced: Bool = false,
+    sidebarOrderHead: String? = WorkspaceOrderClock.shared.head
   ) {
     self.id = id
     self.name = name
@@ -170,6 +188,9 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     self.createdAt = createdAt
     self.isArchived = isArchived
     self.isServerSynced = isServerSynced
+    self.sidebarPosition = WorkspacePosition.initial(
+      createdAt: createdAt, id: id, after: isServerSynced ? nil : sidebarOrderHead
+    )
   }
 
   public init(
@@ -184,7 +205,8 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     selectedCenterTabId: UUID? = nil,
     createdAt: Date = Date(),
     isArchived: Bool = false,
-    isServerSynced: Bool = false
+    isServerSynced: Bool = false,
+    sidebarOrderHead: String? = WorkspaceOrderClock.shared.head
   ) {
     precondition(!centerTabs.isEmpty, "A workspace must contain at least one center tab")
     self.id = id
@@ -202,6 +224,9 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     self.createdAt = createdAt
     self.isArchived = isArchived
     self.isServerSynced = isServerSynced
+    self.sidebarPosition = WorkspacePosition.initial(
+      createdAt: createdAt, id: id, after: isServerSynced ? nil : sidebarOrderHead
+    )
   }
 
   /// Transitional convenience for layout code: reads/writes the selected

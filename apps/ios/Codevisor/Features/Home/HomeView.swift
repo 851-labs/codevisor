@@ -15,8 +15,6 @@ struct HomeView: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) var scenePhase
 
-  @ClientPreference("sidebar.manualWorkspaceOrder", default: "")
-  var manualWorkspaceOrder
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
   @ClientPreference(AIDataSharingConsent.preferenceKey, default: 0)

@@ -36,6 +36,8 @@ public final class WorkspaceSyncModel {
 
   public internal(set) var revision: UInt64 = 0
 
+  @ObservationIgnored var workspaceOrderTasks: [UUID: Task<Void, Never>] = [:]
+
   let repository: any WorkspaceRepository
   let projectList: ProjectListModel
   @ObservationIgnored var sessionsInvalidatedByWorkspaceDeletion: [String: Set<UUID>] = [:]
@@ -164,6 +166,7 @@ public final class WorkspaceSyncModel {
         assignments: assignments,
         serverId: serverId
       )
+      retryWorkspaceOrders(serverId: serverId, client: client)
       return .committed
     } catch {
       Log.sync.error(

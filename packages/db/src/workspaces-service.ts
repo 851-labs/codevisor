@@ -1,4 +1,4 @@
-import { isoTimestamp } from "@codevisor/api"
+import { initialWorkspacePosition, workspacePositionEpoch, isoTimestamp } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
@@ -94,7 +94,7 @@ export const makeWorkspacesService = (
     listWorkspaces: attempt("listWorkspaces", () =>
       (
         sqlite
-          .prepare("select * from workspaces order by created_at desc")
+          .prepare("select * from workspaces order by sidebar_position, id")
           .all() as ReadonlyArray<WorkspaceRow>
       ).map(workspaceFromRow)
     ),
@@ -107,6 +107,15 @@ export const makeWorkspacesService = (
         const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
           | WorkspaceRow
           | undefined
+        const head = sqlite
+          .prepare("select sidebar_position from workspaces order by sidebar_position limit 1")
+          .get() as { sidebar_position: string } | undefined
+        const epoch = Math.max(
+          Date.now(),
+          head ? workspacePositionEpoch(head.sidebar_position) + 1 : 0,
+          request.sidebarOrderHead ? workspacePositionEpoch(request.sidebarOrderHead) + 1 : 0
+        )
+        const position = existing?.sidebar_position ?? initialWorkspacePosition(epoch, id)
         const stamp = archivedStamp(
           request.isArchived,
           existing?.is_archived === 1,
@@ -118,8 +127,8 @@ export const makeWorkspacesService = (
             .prepare(
               `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
-                 root_directory, is_archived, archived_at, created_at, updated_at
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+                 root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
@@ -139,6 +148,7 @@ export const makeWorkspacesService = (
               stamp === null ? 0 : 1,
               stamp,
               request.createdAt ?? now,
+              position,
               now
             )
           // A full upsert can flip the archive bit just like a PATCH, so it
@@ -163,6 +173,12 @@ export const makeWorkspacesService = (
         if (existing === undefined) {
           throw new Error(`Workspace not found: ${id}`)
         }
+        if (
+          request.sidebarOrder !== undefined &&
+          request.sidebarOrder.expectedRevision !== existing.sidebar_order_revision
+        ) {
+          return workspaceFromRow(existing)
+        }
         const wasArchived = existing.is_archived === 1
         // `archivedStamp` returns a moment exactly when the row ends up
         // archived, so the stamp doubles as the archived flag — deriving both
@@ -177,7 +193,8 @@ export const makeWorkspacesService = (
             .prepare(
               `update workspaces set
                  name = ?, has_custom_name = ?, root_directory = ?,
-                 is_archived = ?, archived_at = ?, updated_at = ?
+                 is_archived = ?, archived_at = ?, updated_at = ?,
+                 sidebar_position = ?, sidebar_order_revision = ?
                where id = ?`
             )
             .run(
@@ -187,6 +204,8 @@ export const makeWorkspacesService = (
               stamp === null ? 0 : 1,
               stamp,
               isoTimestamp(),
+              request.sidebarOrder?.position ?? existing.sidebar_position,
+              existing.sidebar_order_revision + (request.sidebarOrder === undefined ? 0 : 1),
               id
             )
           if (stamp !== null && !wasArchived) {
@@ -210,7 +229,7 @@ export const makeWorkspacesService = (
       sqlite.transaction(() => ({
         workspaces: (
           sqlite
-            .prepare("select * from workspaces order by created_at desc")
+            .prepare("select * from workspaces order by sidebar_position, id")
             .all() as ReadonlyArray<WorkspaceRow>
         ).map(workspaceFromRow),
         panes: (

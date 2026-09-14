@@ -81,6 +81,7 @@ private struct AnswerQuestionBody: Encodable {
 }
 
 struct CreateSessionBody: Encodable {
+  var sidebarOrderHead = WorkspaceOrderClock.shared.head
   var id: String
   var projectId: String
   var harnessId: String
@@ -118,6 +119,7 @@ struct CreateSessionBody: Encodable {
 }
 
 struct UpdateSessionBody: Encodable {
+  var sidebarOrderHead = WorkspaceOrderClock.shared.head
   var agentSessionId: String?
   var isArchived: Bool
   var title: String

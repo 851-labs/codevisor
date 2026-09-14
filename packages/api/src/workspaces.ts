@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { WorkspacePosition } from "./workspace-position.js"
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
 
 /// A pane workspace: the server-owned identity of one working surface inside
@@ -15,13 +16,22 @@ export const Workspace = Schema.Struct({
   isArchived: Schema.Boolean,
   archivedAt: Schema.optional(Schema.String),
   createdAt: Schema.String,
-  updatedAt: Schema.optional(Schema.String)
+  updatedAt: Schema.optional(Schema.String),
+  sidebarPosition: Schema.optional(WorkspacePosition),
+  sidebarOrderRevision: Schema.optional(Schema.Number)
 })
 export type Workspace = typeof Workspace.Type
 
 /// Partial workspace update. Exists alongside the full `PUT` upsert so a client
 /// can archive a workspace without resending (and racing on) its whole record.
 export const UpdateWorkspaceRequest = Schema.Struct({
+  /// Compare-and-set: a stale drag receives the current authoritative record.
+  sidebarOrder: Schema.optional(
+    Schema.Struct({
+      position: WorkspacePosition,
+      expectedRevision: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
+    })
+  ),
   name: Schema.optional(Schema.String),
   hasCustomName: Schema.optional(Schema.Boolean),
   rootDirectory: Schema.optional(Schema.String),
@@ -32,6 +42,8 @@ export const UpdateWorkspaceRequest = Schema.Struct({
 export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
 export const UpsertWorkspaceRequest = Schema.Struct({
+  /// Creation-only lower bound from the creator’s entire observed fleet.
+  sidebarOrderHead: Schema.optional(WorkspacePosition),
   /// Optional because the route path carries the id; when both are present
   /// they must match.
   id: Schema.optional(Schema.String),

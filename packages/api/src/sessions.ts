@@ -1,3 +1,4 @@
+import { WorkspacePosition } from "./workspace-position.js"
 import { Schema } from "effect"
 import {
   BackgroundTask,
@@ -289,6 +290,7 @@ export const SessionDetail = Schema.Struct({
 export type SessionDetail = typeof SessionDetail.Type
 
 export const CreateSessionRequest = Schema.Struct({
+  sidebarOrderHead: Schema.optional(WorkspacePosition),
   id: Schema.optional(Schema.String),
   projectId: Schema.String,
   harnessId: Schema.String,
@@ -309,6 +311,7 @@ export const CreateSessionRequest = Schema.Struct({
 export type CreateSessionRequest = typeof CreateSessionRequest.Type
 
 export const UpdateSessionRequest = Schema.Struct({
+  sidebarOrderHead: Schema.optional(WorkspacePosition),
   agentSessionId: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),

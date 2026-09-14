@@ -58,6 +58,8 @@ export interface WorktreeRow {
 }
 
 export interface WorkspaceRow {
+  readonly sidebar_position: string
+  readonly sidebar_order_revision: number
   readonly id: string
   readonly server_id: string
   readonly project_id: string

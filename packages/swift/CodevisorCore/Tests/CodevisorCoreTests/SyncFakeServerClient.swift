@@ -16,6 +16,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// Tests exercising composer attachments install one; the protocol
   /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
+  var workspaceOrderHandler: (@Sendable (UUID, String, Int) async throws -> ServerWorkspace)?
   var workspaceSnapshotHandler: (@Sendable () async throws -> ServerWorkspaceSnapshot?)?
 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
@@ -155,6 +156,20 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       }
       _workspaces.append(workspace)
       return workspace
+    }
+  }
+  func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
+    let handler = lock.withLock { workspaceOrderHandler }
+    if let handler { return try await handler(id, position, expectedRevision) }
+    return try lock.withLock {
+      guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else {
+        throw CodevisorServerClientError.httpStatus(404, "Missing workspace")
+      }
+      if _workspaces[index].sidebarOrderRevision == expectedRevision {
+        _workspaces[index].sidebarPosition = position
+        _workspaces[index].sidebarOrderRevision = expectedRevision + 1
+      }
+      return _workspaces[index]
     }
   }
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {

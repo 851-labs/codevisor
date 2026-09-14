@@ -21,7 +21,7 @@
       var body: some View {
         HomeSidebarList(
           sections: sections,
-          actions: HomeSidebarActions(reorder: { ids in
+          actions: HomeSidebarActions(reorder: { _, ids in
             let byID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
             sections = ids.compactMap { byID[$0] }
           }),

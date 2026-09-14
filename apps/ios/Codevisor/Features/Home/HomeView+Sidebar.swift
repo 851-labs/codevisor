@@ -26,10 +26,7 @@ extension HomeView {
     )
     let workspaces = environment.workspaces.loadAll()
       .filter { !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId) }
-      .sorted {
-        if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
-        return $0.id.uuidString < $1.id.uuidString
-      }
+      .sorted(by: WorkspaceSidebarOrder.precedes)
     let sections = workspaces.compactMap { workspace -> HomeSidebarSection? in
       let routedIDs = workspace.chatSessionIds.filter {
         environment.workspaces.workspaceId(forSession: $0) == workspace.id
@@ -59,11 +56,7 @@ extension HomeView {
         rows: rows
       )
     }
-    return manuallyOrdered(
-      sections,
-      ids: preferenceIDs(from: manualWorkspaceOrder),
-      id: \.id
-    )
+    return sections
   }
 
   static func sessionKey(_ serverId: String, _ id: UUID) -> String {
@@ -177,7 +170,7 @@ extension HomeView {
         environment.archiveWorkspace(workspace)
         bumpWorkspaceRevision()
       },
-      reorder: { ids in commitWorkspaceOrder(ids) }
+      reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) }
     )
   }
 
@@ -296,12 +289,12 @@ extension HomeView {
     }
   }
 
-  /// Persists a drag-to-reorder drop. Only the visible workspaces move;
-  /// ranks saved for hidden or archived ones are kept.
-  func commitWorkspaceOrder(_ ids: [UUID]) {
-    manualWorkspaceOrder = mergedPreferenceOrder(
-      visibleIDs: ids,
-      existingRawValue: manualWorkspaceOrder
+  /// Only the dragged workspace receives a new shared position.
+  func commitWorkspaceOrder(_ id: UUID, visibleIDs: [UUID]) {
+    guard let workspace = environment.workspaces.workspace(id: id) else { return }
+    environment.workspaceSync.reorderWorkspace(
+      id: id, visibleIDs: visibleIDs,
+      client: environment.machines.client(for: workspace.serverId)
     )
   }
 }

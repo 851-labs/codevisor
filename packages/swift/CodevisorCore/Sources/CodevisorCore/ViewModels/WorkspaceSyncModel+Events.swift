@@ -23,13 +23,21 @@ extension WorkspaceSyncModel {
     var workspace = existing
     Self.applyMetadata(record, to: &workspace)
     if workspace != existing {
-      repository.save(workspace)
+      repository.saveWithSidebarOrder(workspace)
       revision &+= 1
     }
     return true
   }
 
   static func applyMetadata(_ record: ServerWorkspace, to workspace: inout Workspace) {
+    if let position = record.sidebarPosition, WorkspacePosition.isValid(position),
+      let revision = record.sidebarOrderRevision, revision >= workspace.sidebarOrderRevision
+    {
+      workspace.sidebarPosition = position
+      workspace.sidebarOrderRevision = revision
+      if workspace.pendingSidebarOrderRevision == 0 { workspace.pendingSidebarOrderRevision = revision }
+      WorkspaceOrderClock.shared.observe(position)
+    }
     // Preserve native custom names predating workspace sync until the server
     // carries an explicit name. Match snapshot reconciliation exactly.
     if !workspace.hasCustomName || record.hasCustomName {

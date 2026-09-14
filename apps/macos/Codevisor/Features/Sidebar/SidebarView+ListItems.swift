@@ -21,8 +21,7 @@ extension SidebarView {
     }
   }
 
-  /// Saved workspace ranks own the list order. Workspaces without a saved
-  /// rank enter newest-first, including empty workspaces.
+  /// Shared positions own the list order, including empty workspaces.
   var workspaceItems: [SidebarWorkspaceListItem] {
     // Repository writes are not observable; local and remote layout writes
     // invalidate these tokens so the sidebar re-reads the tabs.
@@ -35,10 +34,7 @@ extension SidebarView {
     )
     let workspaces = environment.workspaces.loadAll()
       .filter { !$0.isArchived && environment.machines.machine(for: $0.serverId) != nil }
-      .sorted {
-        if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
-        return $0.id.uuidString < $1.id.uuidString
-      }
+      .sorted(by: WorkspaceSidebarOrder.precedes)
     let items = workspaces.compactMap { workspace -> SidebarWorkspaceListItem? in
       let routedSessionIDs = workspace.chatSessionIds.filter {
         environment.workspaces.workspaceId(forSession: $0) == workspace.id
@@ -58,6 +54,6 @@ extension SidebarView {
         }
       return SidebarWorkspaceListItem(workspace: workspace, routingSession: routingSession)
     }
-    return manuallyOrderedWorkspaces(items)
+    return items
   }
 }

@@ -12,7 +12,7 @@ struct HomeSidebarActions {
   var renameWorkspace: (HomeSidebarSection) -> Void = { _ in }
   var archiveWorkspace: (HomeSidebarSection) -> Void = { _ in }
   /// The workspace ids in their new order after a drag-to-reorder drop.
-  var reorder: ([UUID]) -> Void = { _ in }
+  var reorder: (UUID, [UUID]) -> Void = { _, _ in }
 }
 
 /// The sidebar: one always-expanded section per workspace listing its tabs.
@@ -232,7 +232,7 @@ struct HomeSidebarList: View {
   private func endDrag() {
     guard var current = drag, !current.isSettling else { return }
     if current.order != sections.map(\.id) {
-      actions.reorder(current.order)
+      actions.reorder(current.id, current.order)
     }
     current.isSettling = true
     current.fingerY = nil

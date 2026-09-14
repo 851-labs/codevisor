@@ -115,7 +115,7 @@ extension WorkspaceSyncModel {
       }
 
       if existing != workspace || migrationSource != nil {
-        repository.save(workspace)
+        repository.saveWithSidebarOrder(workspace)
         changed = true
       }
       if let source = migrationSource, source.id != id {
