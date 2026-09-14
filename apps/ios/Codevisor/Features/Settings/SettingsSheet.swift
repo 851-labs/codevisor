@@ -37,6 +37,12 @@ struct SettingsSheet: View {
 
   private static let supportEmail = "hello@codevisor.dev"
 
+  private var appVersion: String {
+    let version = AppUpdateModel.bundleVersion()
+    guard let buildNumber = AppUpdateModel.bundleBuildNumber() else { return version }
+    return "\(version) (\(buildNumber))"
+  }
+
   static let clientSections = [
     "root", "account", "machines", "updates", "general", "appearance", "agents", "mcps", "skills",
     "plugins",
@@ -118,7 +124,7 @@ struct SettingsSheet: View {
           .accessibilityIdentifier("settings.privacyPolicy")
           .accessibilityHint("Opens in your browser")
         } footer: {
-          Text("Version \(AppUpdateModel.bundleVersion())")
+          Text(appVersion)
             .font(.footnote)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
