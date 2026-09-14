@@ -6,7 +6,8 @@ import {
   codevisorRoot,
   defaultDatabasePath,
   resolveDataDir,
-  resolveLogsDir
+  resolveLogsDir,
+  resolveServerDataLayout
 } from "./data-dir.js"
 
 const previousDataDir = process.env["CODEVISOR_DATA_DIR"]
@@ -23,6 +24,44 @@ afterEach(() => {
   } else {
     process.env["CODEVISOR_LOGS_DIR"] = previousLogsDir
   }
+})
+
+describe("server data layout", () => {
+  const root = { platform: "linux", uid: 0, home: "/root", dataDirectory: undefined }
+  const canonical = "/root/.codevisor/data/codevisor-server.sqlite"
+  const legacy = "/var/lib/codevisor/data/codevisor-server.sqlite"
+
+  it.each([undefined, canonical, legacy])("migrates the Linux root default (%s)", (requested) => {
+    expect(resolveServerDataLayout(requested, root)).toEqual({
+      databasePath: canonical,
+      legacyDataDirectory: "/var/lib/codevisor/data"
+    })
+  })
+
+  it("leaves macOS and non-root Linux on their home-directory defaults", () => {
+    for (const platform of ["darwin", "linux"]) {
+      const context = { ...root, platform, uid: 501, home: "/home/person" }
+      expect(resolveServerDataLayout(undefined, context)).toEqual({
+        databasePath: "/home/person/.codevisor/data/codevisor-server.sqlite"
+      })
+      expect(resolveServerDataLayout(legacy, context)).toEqual({ databasePath: legacy })
+    }
+    expect(resolveServerDataLayout(legacy, { ...root, platform: "darwin" })).toEqual({
+      databasePath: legacy
+    })
+  })
+
+  it("honors explicit database and environment overrides without migrating them", () => {
+    expect(resolveServerDataLayout("/custom/server.db", root)).toEqual({
+      databasePath: "/custom/server.db"
+    })
+    expect(resolveServerDataLayout(undefined, { ...root, dataDirectory: "/custom/data" })).toEqual({
+      databasePath: "/custom/data/codevisor-server.sqlite"
+    })
+    expect(resolveServerDataLayout(legacy, { ...root, dataDirectory: "/custom/data" })).toEqual({
+      databasePath: legacy
+    })
+  })
 })
 
 describe("canonical data directory", () => {

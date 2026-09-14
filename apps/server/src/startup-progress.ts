@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, renameSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { resolveServerDataLayout } from "./infra/data-dir.js"
 
 // Keep this module limited to Node builtins: main writes a checkpoint before
 // importing the server, including native libraries that can stall during load.
@@ -54,13 +54,7 @@ export const makeStartupReporter = (
   log: (line: string) => void = console.error
 ) => {
   const bootId = (args["boot-id"] ??= randomUUID())
-  const database = resolve(
-    args.db ??
-      join(
-        process.env.CODEVISOR_DATA_DIR ?? join(homedir(), ".codevisor", "data"),
-        "codevisor-server.sqlite"
-      )
-  )
+  const database = resolveServerDataLayout(args.db).databasePath
   const path = resolve(args["startup-status"] ?? join(dirname(database), "server-startup.json"))
   const startedAt = new Date(Date.now() - process.uptime() * 1_000).toISOString()
   let stage: keyof typeof milestones = "loadingRuntime"

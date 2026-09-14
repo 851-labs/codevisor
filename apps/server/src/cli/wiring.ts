@@ -66,13 +66,15 @@ export const makeAuthCommand = (runCli: RunCli) => {
         "Cloud instance base URL (self-hosted or dev; defaults to Codevisor Cloud)"
       ),
       name: optionalString("name", "Display name for this machine (defaults to the hostname)"),
+      port: portFlag,
       noSync: Flag.boolean("no-sync").pipe(
         Flag.withDescription("Keep this machine out of config sync (skills, MCP servers, settings)")
       )
     },
-    ({ server, name, noSync }) =>
+    ({ server, name, noSync, port }) =>
       runCli((deps) =>
         authLoginCommand(deps, {
+          port: Option.getOrUndefined(port),
           ...(Option.isSome(server) ? { server: server.value } : {}),
           machineName: Option.getOrElse(name, () => hostname()),
           ...(noSync ? { syncConfig: false } : {}),
@@ -89,13 +91,13 @@ export const makeAuthCommand = (runCli: RunCli) => {
     Command.withDescription("Connect this machine to your Codevisor Cloud account (device code)")
   )
 
-  const status = Command.make("status", {}, () => runCli((deps) => authStatusCommand(deps))).pipe(
-    Command.withDescription("Show this machine's cloud account connection")
-  )
+  const status = Command.make("status", { port: portFlag }, ({ port }) =>
+    runCli((deps) => authStatusCommand(deps, { port: Option.getOrUndefined(port) }))
+  ).pipe(Command.withDescription("Show this machine's cloud account connection"))
 
-  const logout = Command.make("logout", {}, () => runCli((deps) => authLogoutCommand(deps))).pipe(
-    Command.withDescription("Disconnect this machine from its cloud account")
-  )
+  const logout = Command.make("logout", { port: portFlag }, ({ port }) =>
+    runCli((deps) => authLogoutCommand(deps, { port: Option.getOrUndefined(port) }))
+  ).pipe(Command.withDescription("Disconnect this machine from its cloud account"))
 
   return Command.make("auth").pipe(
     Command.withDescription("Connect this machine to a Codevisor Cloud account"),

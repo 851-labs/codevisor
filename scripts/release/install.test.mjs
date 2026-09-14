@@ -55,7 +55,7 @@ const install = (t, options = {}) => {
   const commands = {
     uname:
       'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
-    id: 'printf "1000\\n"',
+    id: 'printf "%s\\n" "$TEST_UID"',
     systemctl: 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
     // Stop the macOS path before it can touch /Applications or a running app.
     hdiutil: "exit 71",
@@ -98,13 +98,14 @@ else writeFileSync(args[output + 1], body);
       TMPDIR: root,
       CODEVISOR_INSTALL_DIR: runtime,
       CODEVISOR_BIN_DIR: join(root, "bin"),
-      CODEVISOR_DATA_DIR: join(root, "data"),
+      CODEVISOR_DATA_DIR: options.defaultDataDir ? undefined : join(root, "data"),
       CODEVISOR_NO_SETUP: "1",
       TEST_ROOT: root,
       TEST_REQUESTS: requests,
       TEST_SERVICES: services,
       TEST_PLATFORM: options.platform ?? "Linux",
       TEST_ARCH: architecture,
+      TEST_UID: String(options.uid ?? 1000),
       ...options.env
     }
   })
@@ -116,6 +117,16 @@ else writeFileSync(args[output + 1], body);
     requests: readFileSync(requests, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse),
     services: readFileSync(services, "utf8")
   }
+}
+
+for (const uid of [0, 1000]) {
+  test(`Linux uid ${uid} uses the same canonical home data directory`, (t) => {
+    const result = install(t, { uid, defaultDataDir: true, env: { CODEVISOR_NO_SERVICE: "1" } })
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(existsSync(join(result.root, ".codevisor", "data")))
+    assert.ok(existsSync(join(result.root, ".codevisor", "logs")))
+    assert.equal(result.services, "")
+  })
 }
 
 for (const architecture of ["x86_64", "aarch64"]) {

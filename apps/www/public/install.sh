@@ -13,7 +13,7 @@
 #   CODEVISOR_INSTALL_DIR  Linux server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
 #   CODEVISOR_BIN_DIR      CLI symlink dir            (default: ~/.local/bin; /usr/local/bin as root on Linux)
 #   CODEVISOR_PORT         Linux server port          (default: 49361)
-#   CODEVISOR_DATA_DIR     Linux server data dir      (default: ~/.codevisor/data, /var/lib/codevisor/data as root)
+#   CODEVISOR_DATA_DIR     Linux server data dir      (default: ~/.codevisor/data)
 #   CODEVISOR_NO_SERVICE   set to 1 to skip systemd setup on Linux
 #
 # The former HERDMAN_* option names remain accepted for upgrade compatibility.
@@ -150,6 +150,10 @@ install_macos() {
   open "$app_dest" || true
 }
 
+systemd_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g'
+}
+
 install_linux() {
   version="$1"
 
@@ -164,14 +168,12 @@ install_linux() {
   if [ "$(id -u)" = "0" ]; then
     install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-/opt/codevisor}}"
     bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-/usr/local/bin}}"
-    data_dir="${CODEVISOR_DATA_DIR:-/var/lib/codevisor/data}"
-    logs_dir="/var/lib/codevisor/logs"
   else
     install_dir="${CODEVISOR_INSTALL_DIR:-${HERDMAN_INSTALL_DIR:-$HOME/.codevisor/server}}"
     bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
-    data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
-    logs_dir="$HOME/.codevisor/logs"
   fi
+  data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
+  logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
   port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
 
   target="linux-$arch"
@@ -210,7 +212,11 @@ install_linux() {
   # The database must live outside the OS temp directory (the pre-1.x default)
   # so machine state survives reboots.
   mkdir -p "$data_dir" "$logs_dir"
-  serve_cmd="$install_dir/bin/codevisor-server serve --host 0.0.0.0 --port $port --auth token --db $data_dir/codevisor-server.sqlite"
+  serve_cmd="\"$(systemd_escape "$install_dir/bin/codevisor-server")\" serve --host 0.0.0.0 --port $port --auth token --db \"$(systemd_escape "$data_dir/codevisor-server.sqlite")\""
+  data_environment=""
+  if [ -n "${CODEVISOR_DATA_DIR:-}" ]; then
+    data_environment="Environment=\"CODEVISOR_DATA_DIR=$(systemd_escape "$CODEVISOR_DATA_DIR")\""
+  fi
 
   no_service="${CODEVISOR_NO_SERVICE:-${HERDMAN_NO_SERVICE:-0}}"
   if [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
@@ -229,7 +235,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=$serve_cmd
-StateDirectory=codevisor
+$data_environment
 Restart=on-failure
 RestartSec=2
 
@@ -254,6 +260,7 @@ After=network-online.target
 
 [Service]
 ExecStart=$serve_cmd
+$data_environment
 Restart=on-failure
 RestartSec=2
 

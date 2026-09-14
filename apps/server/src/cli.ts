@@ -250,19 +250,15 @@ const setup = Command.make("setup", { port: portFlag }, ({ port }) =>
   Effect.promise(async () => {
     process.exitCode = await setupCommand(makeSetupDeps(), {
       port: Option.getOrUndefined(port),
-      // The cloud path of the connect choice: device-code login, then a
-      // server restart so the machine connects to the hub immediately (the
-      // cloud bridge reads its credentials at boot).
+      // The running server saves the credential and connects immediately;
+      // login succeeds only after the relay handshake completes.
       cloudLogin: async () => {
         const deps = makeDeps()
-        const result = await authLoginCommand(deps, {
+        return authLoginCommand(deps, {
+          port: Option.getOrUndefined(port),
           machineName: hostname(),
           promptSyncConfig: syncConfigPrompt
         })
-        if (result === 0) {
-          await restartCommand(deps, { port: Option.getOrUndefined(port) })
-        }
-        return result
       }
     })
   })

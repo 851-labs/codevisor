@@ -158,7 +158,9 @@ export const provisionMachine = async (
     fetchImpl,
     `${serverUrl}/api/auth/api-key/create`,
     {
-      name: machineName,
+      // Credential labels have a 32-character limit. The relay advertises
+      // the full display name independently, including long hostnames.
+      name: machineName.slice(0, 32),
       metadata: { deviceId, publicKey: keys.publicKey }
     },
     { authorization: `Bearer ${sessionToken}` }

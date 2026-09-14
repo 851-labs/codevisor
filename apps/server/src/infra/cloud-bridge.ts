@@ -1,3 +1,4 @@
+import type { CloudServerControl } from "../server-context-types.js"
 import { hostname } from "node:os"
 import {
   decode,
@@ -34,11 +35,10 @@ import { deflateRawSync, inflateRawSync } from "node:zlib"
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,
 /// the filesystem, and live terminals — the protocol/reconnect/crypto logic
-/// it composes is fully covered in @codevisor/cloud-client and
-/// @codevisor/cloud-crypto, and the credential file format in cli/cloud-auth.
+/// it composes is covered in @codevisor/cloud-client and @codevisor/cloud-crypto.
 
 export interface CloudBridgeOptions {
-  /// ${dataDir}/cloud.json — written by `codevisor auth login`.
+  /// ${dataDir}/cloud.json — owned by this server for both native and CLI login.
   readonly credentialsPath: string
   readonly machineName: string
   readonly appVersion: string
@@ -63,6 +63,7 @@ export interface CloudBridge {
   /// This machine's cloud device id, advertised via /v1/info so clients can
   /// match the machine to its cloud presence entry.
   readonly deviceId: string
+  readonly serverUrl: string
   readonly managedBy: CloudBridgeManagedBy
   /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe:
   /// same channel handlers and pins as the relay, no hub in the middle.
@@ -71,10 +72,14 @@ export interface CloudBridge {
 
 const readCredentials = async (
   path: string
-): Promise<{ credentials: MachineCredentials; managedBy: CloudBridgeManagedBy } | undefined> => {
+): Promise<
+  | { credentials: MachineCredentials; managedBy: CloudBridgeManagedBy; machineName?: string }
+  | undefined
+> => {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<MachineCredentials> & {
       managedBy?: unknown
+      machineName?: unknown
     }
     if (
       typeof parsed.serverUrl === "string" &&
@@ -85,7 +90,8 @@ const readCredentials = async (
     ) {
       return {
         credentials: parsed as MachineCredentials,
-        managedBy: parsed.managedBy === "app" ? "app" : "external"
+        managedBy: parsed.managedBy === "app" ? "app" : "external",
+        ...(typeof parsed.machineName === "string" ? { machineName: parsed.machineName } : {})
       }
     }
     return undefined
@@ -320,6 +326,7 @@ const makeBridge = (
     stop: () => connection.stop(),
     state: () => connection.state,
     deviceId: credentials.deviceId,
+    serverUrl: credentials.serverUrl,
     managedBy,
     acceptDirect: (socket) => directHost.accept(socket)
   }
@@ -333,7 +340,12 @@ export const startCloudBridge = async (
   const stored = await readCredentials(options.credentialsPath)
   if (stored !== undefined) {
     const credentials = await validateOrReprovision(options, stored.credentials)
-    return makeBridge(options, credentials, stored.managedBy, await loadPeerKeyPins(options))
+    return makeBridge(
+      { ...options, machineName: stored.machineName ?? options.machineName },
+      credentials,
+      stored.managedBy,
+      await loadPeerKeyPins(options)
+    )
   }
   const provisioned = await devProvision(options)
   if (provisioned === undefined) return undefined
@@ -347,21 +359,30 @@ export const startCloudBridge = async (
 /// is tagged app-managed so sign-out knows it may disconnect it.
 export const connectCloudBridge = async (
   options: CloudBridgeOptions,
-  params: { readonly serverUrl: string; readonly sessionToken: string }
+  params: {
+    readonly serverUrl: string
+    readonly sessionToken: string
+    readonly managedBy?: CloudBridgeManagedBy
+    readonly machineName?: string
+  }
 ): Promise<CloudBridge> => {
   const serverUrl = params.serverUrl.replace(/\/+$/, "")
+  const managedBy = params.managedBy ?? "app"
+  const bridgeOptions = { ...options, machineName: params.machineName ?? options.machineName }
   const credentials = await provisionMachine(
     (input, init) => fetch(input, init),
     serverUrl,
     params.sessionToken,
-    options.machineName === "" ? hostname() : options.machineName
+    bridgeOptions.machineName === "" ? hostname() : bridgeOptions.machineName
   )
   await writeFile(
     options.credentialsPath,
-    JSON.stringify({ ...credentials, managedBy: "app" }, null, 2),
-    { mode: 0o600 }
+    JSON.stringify({ ...credentials, managedBy, machineName: params.machineName }, null, 2),
+    {
+      mode: 0o600
+    }
   )
-  return makeBridge(options, credentials, "app", await loadPeerKeyPins(options))
+  return makeBridge(bridgeOptions, credentials, managedBy, await loadPeerKeyPins(options))
 }
 
 /// Forgets this machine's stored cloud credential (the caller stops the
@@ -371,4 +392,34 @@ export const connectCloudBridge = async (
 export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
   await rm(credentialsPath, { force: true })
   await rm(peerPinsPath(credentialsPath), { force: true })
+}
+
+/// Shared live registration owner for native and CLI callers.
+export const makeCloudServerControl = (
+  options: CloudBridgeOptions,
+  initial: CloudBridge | undefined
+): CloudServerControl => {
+  let current = initial
+  return {
+    deviceId: () => current?.deviceId,
+    state: () => current?.state(),
+    serverUrl: () => current?.serverUrl,
+    managedBy: () => current?.managedBy,
+    connect: async (serverUrl, sessionToken, registration) => {
+      const bridge = await connectCloudBridge(options, { serverUrl, sessionToken, ...registration })
+      current?.stop()
+      current = bridge
+      return bridge.deviceId
+    },
+    disconnect: async () => {
+      current?.stop()
+      current = undefined
+      await removeCloudCredentials(options.credentialsPath)
+    },
+    acceptDirect: (socket) => {
+      if (current === undefined) return false
+      current.acceptDirect(socket)
+      return true
+    }
+  }
 }

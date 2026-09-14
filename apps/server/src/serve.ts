@@ -15,15 +15,14 @@ import {
 } from "@codevisor/db"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
-import {
-  connectCloudBridge,
-  removeCloudCredentials,
-  startCloudBridge
-} from "./infra/cloud-bridge.js"
-import { canonicalDatabasePaths, codevisorRoot, defaultDatabasePath } from "./infra/data-dir.js"
+import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
+import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
+import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import {
   customHarnessDefinition,
   loadCustomHarnesses,
@@ -100,7 +99,8 @@ export const runServe = (
     // the CLI's relative-path semantics while ensuring every later consumer
     // sees an absolute path.
     const launchDirectory = process.cwd()
-    const databasePath = resolve(launchDirectory, args.db ?? defaultDatabasePath())
+    const layout = resolveServerDataLayout(args.db)
+    const databasePath = layout.databasePath
     const requestedUpgradeStatusPath = args["upgrade-status"]
     const upgradeStatusPath =
       requestedUpgradeStatusPath === undefined
@@ -118,6 +118,17 @@ export const runServe = (
       throw new Error("An app-owned server requires --owner-pid")
     }
     const buildMetadata = bundledBuildMetadata()
+    yield* Effect.tryPromise(() =>
+      migrateLinuxDataLayout({
+        layout,
+        bootId,
+        servicePath: "/etc/systemd/system/codevisor-server.service",
+        reloadService: async () => {
+          await promisify(execFile)("systemctl", ["daemon-reload"])
+        },
+        log: (message) => console.error(message)
+      })
+    )
     // The canonical ~/.codevisor/data directory does not exist on first start
     // (unlike the old tmpdir default, which always did). It is also the
     // daemon's lifetime-stable cwd: an app-hosted server may outlive the
@@ -232,32 +243,7 @@ export const runServe = (
         startCloudBridge(cloudBridgeOptions)
       )
     )
-    // Live cloud registration control for /v1/cloud routes: the desktop app
-    // connects/disconnects this machine as its account session changes, so a
-    // signed-in Mac appears on the account without `codevisor auth login`.
-    const cloudBridgeHolder: { current: typeof cloudBridge } = { current: cloudBridge }
-    const cloudControl = {
-      deviceId: () => cloudBridgeHolder.current?.deviceId,
-      state: () => cloudBridgeHolder.current?.state(),
-      managedBy: () => cloudBridgeHolder.current?.managedBy,
-      connect: async (serverUrl: string, sessionToken: string) => {
-        const bridge = await connectCloudBridge(cloudBridgeOptions, { serverUrl, sessionToken })
-        cloudBridgeHolder.current?.stop()
-        cloudBridgeHolder.current = bridge
-        return bridge.deviceId
-      },
-      disconnect: async () => {
-        cloudBridgeHolder.current?.stop()
-        cloudBridgeHolder.current = undefined
-        await removeCloudCredentials(cloudBridgeOptions.credentialsPath)
-      },
-      acceptDirect: (socket: import("@codevisor/cloud-client").CloudSocket) => {
-        const bridge = cloudBridgeHolder.current
-        if (bridge === undefined) return false
-        bridge.acceptDirect(socket)
-        return true
-      }
-    }
+    const cloudControl = makeCloudServerControl(cloudBridgeOptions, cloudBridge)
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so
     // checkout hooks and filters can find user-installed tools such as

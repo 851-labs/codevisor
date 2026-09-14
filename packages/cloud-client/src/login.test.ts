@@ -124,6 +124,21 @@ describe("provisionMachine", () => {
     expect(error).toBeInstanceOf(CloudApiError)
     expect((error as CloudApiError).status).toBe(401)
   })
+
+  it("accepts hostnames longer than the Cloud credential label limit", async () => {
+    const { calls, fetch } = fetchStub((_input, init) => {
+      const body = JSON.parse(init?.body as string) as { name: string }
+      return body.name.length <= 32 ? jsonResponse({ key: "api-key" }) : jsonResponse({}, 400)
+    })
+    const credentials = await provisionMachine(
+      fetch,
+      "https://cloud.example",
+      "session",
+      "codevisor-dev-dev-direct-cream--5ea97d382f"
+    )
+    expect(credentials.apiKey).toBe("api-key")
+    expect(JSON.parse(calls[0]?.init?.body as string).name).toBe("codevisor-dev-dev-direct-cream--")
+  })
 })
 
 describe("discoverInstance", () => {

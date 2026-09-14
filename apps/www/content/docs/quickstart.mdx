@@ -14,7 +14,9 @@ curl -fsSL https://www.codevisor.dev/install.sh | sh
 ```
 
 The default port is `49361`. A non-root install uses `~/.codevisor`; a root install uses
-`/opt/codevisor` for the runtime and `/var/lib/codevisor` for data. In an interactive terminal, the
+`/opt/codevisor` for the runtime and `/root/.codevisor/data` for data. Existing root installations
+migrate their data from `/var/lib/codevisor/data` on the first startup after updating. Explicit
+custom data directories stay in place. In an interactive terminal, the
 installer runs setup after installation. Rerun it at any time:
 
 ```bash

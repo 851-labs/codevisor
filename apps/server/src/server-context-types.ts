@@ -93,12 +93,17 @@ export interface CodevisorServerConfig {
 export interface CloudServerControl {
   readonly deviceId: () => string | undefined
   readonly state: () => string | undefined
+  readonly serverUrl?: () => string | undefined
   /// "app" registrations follow the desktop app's account session; "external"
   /// ones (`codevisor auth login`, dev auto-provision) outlive it.
   readonly managedBy: () => "app" | "external" | undefined
   /// Provisions this machine on the account behind sessionToken and starts
   /// the bridge; resolves to the new cloud device id.
-  readonly connect: (serverUrl: string, sessionToken: string) => Promise<string>
+  readonly connect: (
+    serverUrl: string,
+    sessionToken: string,
+    options?: { readonly managedBy?: "app" | "external"; readonly machineName?: string }
+  ) => Promise<string>
   /// Stops the bridge and forgets the stored credential.
   readonly disconnect: () => Promise<void>
   /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe
