@@ -13,6 +13,9 @@ updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
 Store publication is a separate, explicit workflow and must not run as part of
 an app release.
 
+After publication verification passes, `Publish Stable` marks the release as
+GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
+
 Public iOS TestFlight publication uses the separate, manually triggered
 `Publish Beta` workflow. Do not dispatch it as part of a normal
 macOS/server release; submit an iOS beta only when requested.
@@ -79,8 +82,8 @@ Verify all of the following before reporting success:
 - The versioned Chrome extension ZIP and checksum are attached to the Stable
   release. Do not dispatch `Publish Chrome Extension` unless the user explicitly
   says the store listing is ready and asks to publish it.
-- The first Sparkle migration release is GitHub `latest`; later Stable
-  releases do not move that bridge pointer.
+- GitHub `latest` points to the promoted Stable release, and both architecture
+  download URLs under `releases/latest/download` resolve to that release.
 
 If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha,
 and dispatch the next unused version. If it fails after tagging, repair the

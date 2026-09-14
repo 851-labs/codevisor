@@ -46,9 +46,9 @@ resolve_version() {
     printf '%s' "${requested_version#v}"
     return
   fi
-  # GitHub's "latest" pointer is frozen at the updater migration release.
   # Resolve the same stable version as the server updater, then download its
-  # versioned assets. Never fall back to that older GitHub pointer.
+  # versioned assets. The manifest remains authoritative if GitHub's Latest
+  # pointer has not yet advanced during publication.
   release=$(fetch -H 'Cache-Control: no-cache' "$STABLE_MANIFEST_URL") ||
     fail "could not fetch the latest stable release from $STABLE_MANIFEST_URL; retry or set CODEVISOR_VERSION"
   # The manifest has one version field. Accept only a complete stable version,
