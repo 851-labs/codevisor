@@ -12,8 +12,10 @@ const xmlEscapes = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
 const escapeXML = (value) => String(value).replace(/[&<>"]/g, (c) => xmlEscapes[c])
 
 /// A user LaunchAgent that owns exactly one rig process in the GUI session.
-/// KeepAlive only on abnormal exit: closing the viewer window exits 0 and stays down.
-export function launchAgentPlist({ home, configPath, logPath }) {
+/// The viewer restarts only on abnormal exit: closing its window exits 0 and stays
+/// down. The host has no window and restarts on any exit, including the clean one
+/// macOS performs when a Screen Recording grant is applied with "Quit & Reopen".
+export function launchAgentPlist({ home, configPath, logPath, role = "viewer" }) {
   const executable = `${home}/${rigInstallDirectory}/${rigIdentity.appName}/Contents/MacOS/${rigIdentity.executableName}`
   const args = [executable, "--config", configPath]
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -24,7 +26,7 @@ export function launchAgentPlist({ home, configPath, logPath }) {
 ${args.map((a) => `<string>${escapeXML(a)}</string>`).join("\n")}
 </array>
 <key>RunAtLoad</key><true/>
-<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+${role === "host" ? "<key>KeepAlive</key><true/>" : "<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>"}
 <key>LimitLoadToSessionType</key><string>Aqua</string>
 <key>ProcessType</key><string>Interactive</string>
 <key>ThrottleInterval</key><integer>2</integer>

@@ -24,6 +24,18 @@ test("launch agent runs the installed rig with its config and restarts only abno
     /<string>\/Users\/x\/Applications\/CodevisorRig\/ScreenSharingRig\.app\/Contents\/MacOS\/screen-sharing-rig<\/string>\n<string>--config<\/string>\n<string>\/Users\/x\/Applications\/CodevisorRig\/rig\.json<\/string>/
   )
   assert.match(plist, /<key>KeepAlive<\/key><dict><key>SuccessfulExit<\/key><false\/><\/dict>/)
+  const host = launchAgentPlist({
+    home: "/Users/x",
+    configPath: "/Users/x/Applications/CodevisorRig/rig.json",
+    logPath: "/Users/x/Library/Logs/CodevisorRig/rig.log",
+    role: "host"
+  })
+  assert.match(
+    host,
+    /<key>KeepAlive<\/key><true\/>/,
+    "a host restarts after any exit, including Quit & Reopen"
+  )
+  assert.doesNotMatch(host, /SuccessfulExit/)
   assert.match(plist, /<key>LimitLoadToSessionType<\/key><string>Aqua<\/string>/)
   assert.match(
     plist,
