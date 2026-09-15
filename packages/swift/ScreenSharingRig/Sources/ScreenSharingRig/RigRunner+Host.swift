@@ -96,6 +96,10 @@
 
     func startSource(in session: RigSession) async throws {
       let video = configuration.video
+      session.metrics.label("captureError", "")
+      if session.displaySleepAssertion == nil {
+        session.displaySleepAssertion = RigDisplaySleepAssertion(reason: "Codevisor Screen Sharing Rig host session")
+      }
       switch activeCapture {
       case .synthetic:
         let source = try SyntheticSource(
@@ -192,6 +196,25 @@
         try await capture.start(
           displayID: id, configuration: video, sender: session.peer.frameSender, metrics: session.metrics)
         log("display \(id) captured")
+      }
+    }
+
+    /// ScreenCaptureKit stops a stream with an error when the displays sleep or the target
+    /// disappears, and never restarts it. The capture records the error in a label; when it
+    /// appears, re-apply the active source, at most every 5 s while the error persists.
+    func recoverFromCaptureError(in session: RigSession) async {
+      guard session.sourceStarted, let error = session.metrics.snapshot().labels["captureError"], !error.isEmpty
+      else { return }
+      let now = ScreenSharingMetrics.nowNs
+      guard now - session.lastCaptureRecoveryNs > 5_000_000_000 else { return }
+      session.lastCaptureRecoveryNs = now
+      log("capture error on \(activeCapture): \(error); restarting the source")
+      session.metrics.label("sourceStall", "capture stopped: \(error); restarting")
+      do {
+        _ = try await switchSource(to: activeCapture)
+        session.metrics.label("sourceStall", "")
+      } catch {
+        log("source restart failed: \(error)")
       }
     }
 

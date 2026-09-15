@@ -20,6 +20,9 @@
     var capture: ScreenSharingCapture?
     var workload: ProbeOwnedWorkloadWindow?
     var virtualDisplay: RigVirtualDisplay?
+    var displaySleepAssertion: RigDisplaySleepAssertion?
+    /// Uptime of the last automatic source restart after a capture error; bounds the retry rate.
+    var lastCaptureRecoveryNs: Int64 = 0
     var synthetic: SyntheticSource?
     var metalView: ScreenSharingMetalView?
     var frameSize: CGSize?
@@ -55,6 +58,7 @@
       workload = nil
       capture = nil
       virtualDisplay = nil  // releasing the object removes the display
+      displaySleepAssertion = nil
       sourceStarted = false
     }
 
@@ -222,6 +226,7 @@
     func tick() async {
       let elapsed = elapsedSeconds
       if let session, !session.closed {
+        if configuration.role == .host { await recoverFromCaptureError(in: session) }
         let statistics = await session.peer.statistics()
         guard !session.closed else { return }
         latestStatistics = statistics
