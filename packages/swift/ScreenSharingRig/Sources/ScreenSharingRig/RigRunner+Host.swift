@@ -146,8 +146,9 @@
         session.workload = workload
         // Cover the virtual display's menu bar so the captured raster is only the workload.
         workload.window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-        // On a display nobody else uses, the workload may take clicks: its Response counter proves injection.
+        // On a display nobody else uses, the workload may take clicks and keys: its Response counter proves injection.
         workload.window.ignoresMouseEvents = false
+        workload.window.acceptsKeys = true
         let sender = session.peer.frameSender
         let metrics = session.metrics
         let displayID = virtualDisplay.displayID
@@ -289,16 +290,27 @@
               let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary  // kAXTrustedCheckOptionPrompt
               _ = AXIsProcessTrustedWithOptions(options)
             }
-            return "Accessibility is not granted to the rig on this Mac; enable Codevisor Screen Sharing Rig under Privacy & Security → Accessibility."
+            return
+              "Accessibility is not granted to the rig on this Mac; enable Codevisor Screen Sharing Rig under Privacy & Security → Accessibility."
           }
           guard injector.isAvailable else { return "No event source." }
           return nil
         },
         inject: { injector.post($0) },
         send: { [weak session] message in session?.peer.control.send(message) ?? false })
-      control.onChanged = { [weak self] active in
+      control.onChanged = { [weak self, weak session] active in
         self?.log("control \(active ? "granted" : "released") on display \(displayID)")
-        session.metrics.label("controlActive", active ? "true" : "false")
+        session?.metrics.label("controlActive", active ? "true" : "false")
+        // Injected key events go to the frontmost app's key window: for the lease's duration, that is the
+        // workload on the virtual display. Focus returns to whatever was active on release.
+        guard let window = session?.workload?.window, window.acceptsKeys else { return }
+        if active {
+          NSApplication.shared.activate()
+          window.makeKeyAndOrderFront(nil)
+          window.makeFirstResponder(window.contentView)
+        } else {
+          NSApplication.shared.deactivate()
+        }
       }
       session.peer.control.onMessage = { [weak control] message in control?.receive(message) }
       session.hostControl = control

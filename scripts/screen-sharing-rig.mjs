@@ -62,7 +62,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
   tune    JSON|paced15-worker|default   Write engine tuning into both configs and restart both agents (no rebuild)
-  control-check [--clicks N]            Ask for control, click the host's workload N times (default 5), release; verifies delivery
+  control-check [--clicks N] [--keys M] Ask for control, click the host's workload N times (default 5) and press space M times, release; verifies delivery
   source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs
 
@@ -378,21 +378,29 @@ function tune() {
 
 async function controlCheck() {
   const clicks = options.clicks === undefined ? 5 : Number(options.clicks)
-  if (!Number.isInteger(clicks) || clicks < 0 || clicks > 100)
-    throw new Error("control-check needs --clicks 0...100")
+  const keys = options.keys === undefined ? 0 : Number(options.keys)
+  for (const [name, value] of [
+    ["clicks", clicks],
+    ["keys", keys]
+  ]) {
+    if (!Number.isInteger(value) || value < 0 || value > 100)
+      throw new Error(`control-check needs --${name} 0...100`)
+  }
   const { token, viewer } = endpoints()
   const result = await http("POST", `${viewer}/control-check`, token, {
     clicks,
+    keys,
     x: 0.5,
     y: 0.5,
     seconds: 15
   })
+  const expected = (result.clicksSent ?? 0) + (result.keysSent ?? 0)
+  const delivered = result.responsesAfter - result.responsesBefore === expected
   const outcome = result.granted
-    ? `granted · ${result.clicksSent} clicks · host responses ${result.responsesBefore ?? "?"} → ${result.responsesAfter ?? "?"} · ${result.responsesAfter - result.responsesBefore === result.clicksSent ? "DELIVERED" : "NOT delivered"} · released: ${result.revokedReason ?? "no revoke seen"}`
+    ? `granted · ${result.clicksSent} clicks · ${result.keysSent ?? 0} keys · host responses ${result.responsesBefore ?? "?"} → ${result.responsesAfter ?? "?"} · ${delivered ? "DELIVERED" : "NOT delivered"} · released: ${result.revokedReason ?? "no revoke seen"}`
     : `denied: ${result.deniedReason}`
   process.stdout.write(`control check: ${outcome}\n`)
-  if (!result.granted || result.responsesAfter - result.responsesBefore !== result.clicksSent)
-    process.exitCode = 1
+  if (!result.granted || !delivered) process.exitCode = 1
 }
 
 async function source() {

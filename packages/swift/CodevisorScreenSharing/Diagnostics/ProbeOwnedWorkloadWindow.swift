@@ -13,8 +13,11 @@ import CoreGraphics
 /// nothing from the console user's session.
 @MainActor
 package final class OwnedWorkloadWindow: NSWindow {
-  package override var canBecomeKey: Bool { false }
-  package override var canBecomeMain: Bool { false }
+  /// Off by default: the workload never takes focus on a desktop someone uses. A rig host on a virtual
+  /// display turns it on so injected key events can reach the workload's `keyDown`.
+  package var acceptsKeys = false
+  package override var canBecomeKey: Bool { acceptsKeys }
+  package override var canBecomeMain: Bool { acceptsKeys }
   package override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 

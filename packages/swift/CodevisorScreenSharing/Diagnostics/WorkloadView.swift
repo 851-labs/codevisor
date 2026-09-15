@@ -52,6 +52,8 @@ package final class WorkloadView: NSView {
   package private(set) var codes: ScreenSharingWorkloadSequence?
   package var isPaused: Bool { codes?.isFrozen ?? false }
   package override var acceptsFirstResponder: Bool { true }
+  /// The click that makes a key-able window key is otherwise swallowed by AppKit; the workload counts it.
+  package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
   package override var isOpaque: Bool { true }
 
   package init(painter: ProbeDesktopPainter, recordDrawTimes: Bool) {

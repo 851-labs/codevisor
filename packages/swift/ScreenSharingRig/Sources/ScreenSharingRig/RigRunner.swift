@@ -294,7 +294,11 @@
     }
 
     func metricsBody() async -> RigMetricsBody {
-      RigMetricsBody(
+      if configuration.role == .host, let workload = session?.workload {
+        // Fresh at request time, not at the last telemetry tick: a control check reads this right after injecting.
+        session?.metrics.label("workloadResponses", String(workload.view.responses))
+      }
+      return RigMetricsBody(
         role: configuration.role.rawValue, name: name, build: build, connection: session?.connection ?? "none",
         sessionID: session?.id, capture: configuration.role == .host ? activeCapture.description : nil,
         snapshot: session?.metrics.snapshot(), statistics: latestStatistics, latestSample: latestSample)

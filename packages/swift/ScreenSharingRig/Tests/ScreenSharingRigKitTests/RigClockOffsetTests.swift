@@ -7,7 +7,8 @@ struct RigClockOffsetTests {
 
   @Test func intervalBracketsTheTrueOffsetWithoutAssumingSymmetry() throws {
     // True offset 1000 s; asymmetric delays: 1 ms out, 5 ms back; host processing 0.5 ms.
-    let sample = Sample(sentAtSeconds: 10, hostReceivedAtSeconds: 1010.001, hostSentAtSeconds: 1010.0015, receivedAtSeconds: 10.0065)
+    let sample = Sample(
+      sentAtSeconds: 10, hostReceivedAtSeconds: 1010.001, hostSentAtSeconds: 1010.0015, receivedAtSeconds: 10.0065)
     let interval = try #require(sample.interval)
     #expect(interval.low <= 1000 && 1000 <= interval.high)
     #expect(abs((interval.high - interval.low) - 0.006) < 1e-9, "width is the round trip minus host processing")
@@ -18,8 +19,10 @@ struct RigClockOffsetTests {
   }
 
   @Test func tightestSampleWinsAndBadSamplesAreIgnored() throws {
-    let wide = Sample(sentAtSeconds: 0, hostReceivedAtSeconds: 500.010, hostSentAtSeconds: 500.010, receivedAtSeconds: 0.050)
-    let tight = Sample(sentAtSeconds: 1, hostReceivedAtSeconds: 501.001, hostSentAtSeconds: 501.001, receivedAtSeconds: 1.002)
+    let wide = Sample(
+      sentAtSeconds: 0, hostReceivedAtSeconds: 500.010, hostSentAtSeconds: 500.010, receivedAtSeconds: 0.050)
+    let tight = Sample(
+      sentAtSeconds: 1, hostReceivedAtSeconds: 501.001, hostSentAtSeconds: 501.001, receivedAtSeconds: 1.002)
     let backwards = Sample(sentAtSeconds: 2, hostReceivedAtSeconds: 502, hostSentAtSeconds: 502, receivedAtSeconds: 1.9)
     let offset = try #require(RigClockOffset(samples: [wide, backwards, tight]))
     #expect(offset.sampleCount == 2)

@@ -81,11 +81,15 @@ public struct RigTuning: Equatable, Sendable {
       playout = (low, high)
     }
     let jitter = try integer("jitterWindowFrames") ?? base.jitterWindowFrames
-    if let jitter { guard (2...600).contains(jitter) else { throw ScreenSharingError.invalid("tuning.jitterWindowFrames must be 2...600") } }
+    if let jitter, !(2...600).contains(jitter) {
+      throw ScreenSharingError.invalid("tuning.jitterWindowFrames must be 2...600")
+    }
     let drawables = try integer("drawables") ?? base.maximumDrawableCount
     guard (2...3).contains(drawables) else { throw ScreenSharingError.invalid("tuning.drawables must be 2 or 3") }
     let capture = try integer("captureIntervalFPS") ?? base.captureIntervalFPS
-    if let capture { guard (1...240).contains(capture) else { throw ScreenSharingError.invalid("tuning.captureIntervalFPS must be 1...240") } }
+    if let capture, !(1...240).contains(capture) {
+      throw ScreenSharingError.invalid("tuning.captureIntervalFPS must be 1...240")
+    }
     let renderOnArrival = try flag("renderOnArrival") ?? base.renderOnArrival
     let offMain = try flag("offMainPreparation") ?? base.offMainPreparation
     guard !offMain || renderOnArrival else {
@@ -98,7 +102,8 @@ public struct RigTuning: Equatable, Sendable {
 
   /// The process-wide WebRTC trial selection these knobs require.
   public var fieldTrialSelection: ScreenSharingFieldTrials.Selection {
-    .probeOptions(jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs)
+    .probeOptions(
+      jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs)
   }
 
   /// Short human label for status and the HUD; nil for the defaults.

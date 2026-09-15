@@ -14,6 +14,7 @@
     private var deniedReason: String?
     private var revokedReason: String?
     private var clicksSent = 0
+    private var keysSent = 0
     private var granted: CheckedContinuation<Void, any Error>?
     private var revoked: CheckedContinuation<Void, Never>?
     private var grantDeadline: Task<Void, Never>?
@@ -54,11 +55,14 @@
       }
       guard let lease else { throw ScreenSharingError.unavailable("Granted without a lease.") }
       let before = await responses()
-      for (sequence, event) in RigControlCheckPlan.events(clicks: request.clicks, x: request.x, y: request.y) {
+      for (sequence, event) in RigControlCheckPlan.events(
+        clicks: request.clicks, keys: request.keys, x: request.x, y: request.y)
+      {
         guard channel.send(.input(lease: lease, sequence: sequence, event: event)) else {
           throw ScreenSharingError.unavailable("The control channel refused input.")
         }
         if case .button(_, _, let down, _, _) = event, !down { clicksSent += 1 }
+        if case .key(_, let down, _, _) = event, !down { keysSent += 1 }
         try await Task.sleep(for: .milliseconds(60))
       }
       _ = channel.send(.heartbeat(lease: lease))
@@ -75,8 +79,8 @@
       }
       revokeDeadline?.cancel()
       return RigControlCheckResponse(
-        granted: true, deniedReason: nil, clicksSent: clicksSent, responsesBefore: before, responsesAfter: after,
-        revokedReason: revokedReason)
+        granted: true, deniedReason: nil, clicksSent: clicksSent, keysSent: keysSent, responsesBefore: before,
+        responsesAfter: after, revokedReason: revokedReason)
     }
 
     private func receive(_ message: ScreenSharingControlMessage) {
