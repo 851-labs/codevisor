@@ -68,6 +68,7 @@ jobs:
       - run: bun run swift:format:check
       - run: bun run swift:lint
       - run: bun run swift:test
+        timeout-minutes: 15
       - run: bun run swift:test:macos-transcript
       - run: bun run swift:test:macos-composer
       - run: bun run build:macos
