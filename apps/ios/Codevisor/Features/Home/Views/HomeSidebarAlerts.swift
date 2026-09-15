@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeTabRenameRequest: Identifiable, Equatable {
   let workspaceId: UUID
   let tabId: UUID
+  var chatSessionId: UUID? = nil
   var id: UUID { tabId }
 }
 

@@ -284,8 +284,12 @@ extension CodevisorServerClient {
   }
 
   public func renameSession(_ session: ChatSession) async throws -> ServerSession {
-    // A draft can be renamed before its asynchronous create has reached the server.
-    _ = try await upsertSession(session)
+    // Drafts may still need creation. Existing chats need only a title PATCH;
+    // a full upsert could overwrite another client's archive or config changes.
+    let remoteSessions = try await listSessions()
+    if !remoteSessions.contains(where: { UUID(uuidString: $0.id) == session.id }) {
+      _ = try await createSession(session, workspaceId: nil)
+    }
     return try await send(
       "/v1/sessions/\(session.id.uuidString)",
       method: "PATCH",

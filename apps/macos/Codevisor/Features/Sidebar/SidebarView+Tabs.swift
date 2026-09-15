@@ -123,7 +123,7 @@ extension SidebarView {
       onClose: { closeTab(tab, in: item) },
       onRename: {
         tabRenameTitle = tabTitle(tab, descriptor: descriptor, chatSession: chatSession)
-        renamingTab = SidebarTabRenameRequest(workspaceId: workspace.id, tabId: tab.id)
+        renamingTab = SidebarTabRenameRequest(workspaceId: workspace.id, tabId: tab.id, chatSessionId: chatSession?.id)
       }
     )
   }
@@ -160,6 +160,7 @@ extension SidebarView {
     descriptor: PaneDescriptorState?,
     chatSession: ChatSession?
   ) -> String {
+    if descriptor?.kind == .chat { return tab.displayTitle(for: descriptor, chatTitle: chatSession?.title) }
     if let customTitle = tab.customTitle { return customTitle }
     // Chat tabs follow the session's LIVE title (auto-titles, renames).
     return paneTitle(descriptor, chatSession: chatSession)
@@ -256,26 +257,12 @@ extension SidebarView {
     }
   }
 
-  /// Tab renames pin a layout title; split chat rows rename their session.
+  /// Chat rows rename the shared session, including single-pane tabs.
   func renameTab(_ request: SidebarTabRenameRequest, to title: String) {
-    guard var workspace = environment.workspaces.workspace(id: request.workspaceId),
-      let index = workspace.centerTabs.firstIndex(where: { $0.id == request.tabId })
-    else { return }
-    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let chatSessionId = request.chatSessionId {
-      guard !trimmed.isEmpty,
-        let session = list.sessions.first(where: {
-          $0.serverId == workspace.serverId && $0.id == chatSessionId
-        })
-      else { return }
-      list.renameSession(session, to: trimmed)
-      return
-    }
-    let normalized = trimmed.isEmpty ? nil : trimmed
-    guard workspace.centerTabs[index].customTitle != normalized else { return }
-    workspace.centerTabs[index].customTitle = normalized
-    environment.workspaces.save(workspace)
-    workspaceRevision += 1
+    environment.workspaceSync.renameTab(
+      workspaceId: request.workspaceId, tabId: request.tabId,
+      chatSessionId: request.chatSessionId, to: title
+    )
   }
 
   // MARK: - Keyboard stepping

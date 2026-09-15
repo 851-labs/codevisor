@@ -84,7 +84,7 @@ extension HomeView {
       rows.append(
         HomeSidebarTabRow(
           id: pane.id,
-          title: tab?.customTitle ?? paneTitle(pane, chat: chat),
+          title: tab?.displayTitle(for: pane, chatTitle: chat?.title) ?? paneTitle(pane, chat: chat),
           icon: paneIcon(pane, chat: chat),
           status: chat.map(status(for:)) ?? .idle,
           chatSessionId: chat?.id,
@@ -159,7 +159,7 @@ extension HomeView {
       rename: { row, section in
         guard let tabId = row.renamableTabId else { return }
         tabRenameTitle = row.title
-        renamingTab = HomeTabRenameRequest(workspaceId: section.id, tabId: tabId)
+        renamingTab = HomeTabRenameRequest(workspaceId: section.id, tabId: tabId, chatSessionId: row.chatSessionId)
       },
       newTab: { section in addSidebarTab(in: section) },
       renameWorkspace: { section in
@@ -263,17 +263,11 @@ extension HomeView {
     )
   }
 
-  /// A rename is a plain layout write (no pane machinery).
+  /// Chat labels belong to the shared session record.
   func renameSidebarTab(_ request: HomeTabRenameRequest, to title: String) {
-    guard var workspace = environment.workspaces.workspace(id: request.workspaceId),
-      let index = workspace.centerTabs.firstIndex(where: { $0.id == request.tabId })
-    else { return }
-    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    let normalized = trimmed.isEmpty ? nil : trimmed
-    guard workspace.centerTabs[index].customTitle != normalized else { return }
-    workspace.centerTabs[index].customTitle = normalized
-    environment.workspaces.save(workspace)
-    bumpWorkspaceRevision()
+    environment.workspaceSync.renameTab(
+      workspaceId: request.workspaceId, tabId: request.tabId, chatSessionId: request.chatSessionId, to: title
+    )
   }
 
   func renameWorkspace(_ renamed: Workspace) {

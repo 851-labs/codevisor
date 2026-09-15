@@ -205,7 +205,6 @@ extension SessionContainerView {
     guard !trimmed.isEmpty else { return }
     let model = configuredCenterModel(leafId: leafId)
     guard let descriptor = model.state.selectedPane else { return }
-    model.renamePane(id: descriptor.id, to: trimmed)
     if descriptor.kind == .chat,
       let chatId = descriptor.chatSessionId,
       let chat = environment.projectList.sessions.first(where: {
@@ -213,6 +212,8 @@ extension SessionContainerView {
       })
     {
       environment.projectList.renameSession(chat, to: trimmed)
+    } else {
+      model.renamePane(id: descriptor.id, to: trimmed)
     }
   }
 

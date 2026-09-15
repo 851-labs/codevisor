@@ -49,7 +49,7 @@ extension ProjectListModelTests {
   }
 
   @Test("Identical project and session ids stay isolated between machines")
-  func duplicateIdsStayMachineScoped() {
+  func duplicateIdsStayMachineScoped() async {
     let projectId = UUID()
     let sessionId = UUID()
     let localProject = Project(
@@ -76,7 +76,12 @@ extension ProjectListModelTests {
     )
 
     model.archive(remoteProject)
-    model.renameSession(remoteSession, to: "Renamed remote")
+    var archivedRemote = remoteProject
+    archivedRemote.isArchived = true
+    let fake = FakeServerClient(
+      projects: [serverProject(from: archivedRemote)], sessions: [serverSession(from: remoteSession)])
+    model.configureServerClientProvider { $0 == "remote-a" ? fake : nil }
+    await model.renameSession(remoteSession, to: "Renamed remote")?.value
 
     #expect(model.projects.first { $0.serverId == "local" }?.isArchived == false)
     #expect(model.projects.first { $0.serverId == "remote-a" }?.isArchived == true)

@@ -38,12 +38,8 @@ extension WorkspaceSyncModel {
       if workspace.pendingSidebarOrderRevision == 0 { workspace.pendingSidebarOrderRevision = revision }
       WorkspaceOrderClock.shared.observe(position)
     }
-    // Preserve native custom names predating workspace sync until the server
-    // carries an explicit name. Match snapshot reconciliation exactly.
-    if !workspace.hasCustomName || record.hasCustomName {
-      workspace.name = record.name
-      workspace.hasCustomName = record.hasCustomName
-    }
+    workspace.name = record.name
+    workspace.hasCustomName = record.hasCustomName
     workspace.rootDirectory = record.rootDirectory ?? workspace.rootDirectory
     workspace.isArchived = record.isArchived
     workspace.isServerSynced = true

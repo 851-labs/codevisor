@@ -105,6 +105,8 @@ public final class ProjectListModel {
   public internal(set) var projects: [Project] = []
   public internal(set) var sessions: [ChatSession] = []
   public private(set) var selectedServerId: String
+  @ObservationIgnored var sessionRenameTasks: [ScopedSessionID: Task<Void, Never>] = [:]
+  @ObservationIgnored var pendingSessionRenames: [ScopedSessionID: String] = [:]
   /// Fires whenever a session's attention state changes, from every path
   /// that can change it (live events, snapshot merges, local mutations).
   /// `SessionAttentionCoordinator` consumes these to drive focus auto-read
@@ -324,17 +326,6 @@ public final class ProjectListModel {
     persistSessions()
     syncSession(sessions[index])
     return sessions[index]
-  }
-
-  public func renameSession(_ session: ChatSession, to title: String) {
-    guard
-      let index = sessions.firstIndex(where: {
-        $0.serverId == session.serverId && $0.id == session.id
-      })
-    else { return }
-    sessions[index].title = title
-    persistSessions()
-    syncSession(sessions[index], isRename: true)
   }
 
   public func deleteSession(_ session: ChatSession) {

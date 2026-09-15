@@ -19,6 +19,12 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
   var workspaceOrderHandler: (@Sendable (UUID, String, Int) async throws -> ServerWorkspace)?
   var workspaceSnapshotHandler: (@Sendable () async throws -> ServerWorkspaceSnapshot?)?
+  var workspaceRenameHandler: (@Sendable (UUID, String, Bool) async throws -> Void)?
+  var sessionRenameHandler: (@Sendable (ChatSession) async throws -> Void)?
+  private var _workspaceRenameNames: [String] = []
+  private var _sessionRenameNames: [String] = []
+  var workspaceRenameNames: [String] { lock.withLock { _workspaceRenameNames } }
+  var sessionRenameNames: [String] { lock.withLock { _sessionRenameNames } }
 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
   var pluginPrepareError: String?
@@ -174,10 +180,31 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
   func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {
-    lock.withLock {
-      guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else { return }
+    let handler = lock.withLock {
+      _workspaceRenameNames.append(name)
+      return workspaceRenameHandler
+    }
+    try await handler?(id, name, hasCustomName)
+    try lock.withLock {
+      guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else {
+        throw CodevisorServerClientError.httpStatus(404, "Missing workspace")
+      }
       _workspaces[index].name = name
       _workspaces[index].hasCustomName = hasCustomName
+    }
+  }
+  func renameSession(_ session: ChatSession) async throws -> ServerSession {
+    let handler = lock.withLock {
+      _sessionRenameNames.append(session.title)
+      return sessionRenameHandler
+    }
+    try await handler?(session)
+    return try lock.withLock {
+      guard let index = _sessions.firstIndex(where: { UUID(uuidString: $0.id) == session.id }) else {
+        throw CodevisorServerClientError.httpStatus(404, "Missing chat")
+      }
+      _sessions[index].title = session.title
+      return _sessions[index]
     }
   }
   func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { lock.withLock { _panes } }

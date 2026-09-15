@@ -15,7 +15,7 @@ extension ProjectListModelTests {
     )
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
     let session = model.newSession(in: project, title: "First", harnessId: "codex")
-    model.renameSession(session, to: "Renamed")
+    await model.renameSession(session, to: "Renamed")?.value
     model.deleteSession(session)
     model.removeProject(project)
 
@@ -176,11 +176,13 @@ extension ProjectListModelTests {
   }
 
   @Test("Renaming and deleting sessions update state")
-  func renameDelete() {
+  func renameDelete() async {
     let (model, _, _) = makeModel()
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     let session = model.newSession(in: project)
-    model.renameSession(session, to: "Renamed")
+    model.serverClient = FakeServerClient(
+      projects: [serverProject(from: project)], sessions: [serverSession(from: session)])
+    await model.renameSession(session, to: "Renamed")?.value
     #expect(model.sessions(in: project).first?.title == "Renamed")
     model.deleteSession(session)
     #expect(model.sessions(in: project).isEmpty)
@@ -254,7 +256,8 @@ extension ProjectListModelTests {
       ], serverId: "local")
     let project = model.projects.first!
     let imported = model.sessions(in: project).first!
-    model.renameSession(imported, to: "My title")
+    // This test starts with already-edited metadata; rename sync is covered separately.
+    model.sessions[model.sessions.firstIndex(where: { $0.id == imported.id })!].title = "My title"
 
     model.importSessions(
       [

@@ -67,14 +67,10 @@ extension SessionContainerView {
   }
 
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {
-    var workspace = selectedWorkspace
-    guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
-    let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let normalized = trimmed.flatMap { $0.isEmpty ? nil : $0 }
-    guard workspace.centerTabs[index].customTitle != normalized else { return }
-    workspace.centerTabs[index].customTitle = normalized
-    environment.workspaces.save(workspace)
-    workspaceRevision += 1
+    environment.workspaceSync.renameTab(
+      workspaceId: selectedWorkspace.id, tabId: tabId,
+      chatSessionId: activePaneDescriptor?.chatSessionId, to: customTitle ?? ""
+    )
   }
 
   func closeCenterTab(_ tabId: UUID) {

@@ -16,7 +16,7 @@ public protocol WorkspaceRepository: Sendable {
   func workspace(id: UUID) -> Workspace?
   /// The workspace owning the chat pane for this session, if any.
   func workspaceId(forSession sessionId: UUID) -> UUID?
-  /// Layout writes preserve the current shared and pending order.
+  /// Layout writes preserve the server-owned name and current sidebar order.
   func save(_ workspace: Workspace)
   /// Reserved for authoritative metadata and explicit ordering mutations.
   func saveWithSidebarOrder(_ workspace: Workspace)
@@ -188,6 +188,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     var payload = payload()
     if preservingSidebarOrder, let stored = payload.workspaces.first(where: { $0.id == workspace.id }) {
       workspace.copySidebarOrder(from: stored)
+      if stored.isServerSynced {
+        workspace.name = stored.name
+        workspace.hasCustomName = stored.hasCustomName
+      }
     }
     WorkspaceOrderClock.shared.observe(workspace.sidebarPosition)
     if let index = payload.workspaces.firstIndex(where: { $0.id == workspace.id }) {

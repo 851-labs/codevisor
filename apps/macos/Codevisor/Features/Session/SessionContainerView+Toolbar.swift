@@ -42,6 +42,7 @@ extension SessionContainerView {
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
         if paneControlsReplaceTitle { return "" }
         let workspace = selectedWorkspace
+        if descriptor.kind == .chat { return paneTitle(descriptor) }
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in

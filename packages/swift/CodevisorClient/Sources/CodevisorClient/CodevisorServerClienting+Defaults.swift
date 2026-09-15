@@ -553,7 +553,9 @@ public extension CodevisorServerClienting {
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
     throw CodevisorServerClientError.httpStatus(405, "Workspace ordering is unavailable on this server.")
   }
-  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {}
+  func renameWorkspace(id: UUID, name: String, hasCustomName: Bool) async throws {
+    throw CodevisorServerClientError.invalidResponse
+  }
 
   func createWorktree(projectId: UUID, name: String?) async throws -> ServerWorktree {
     throw CodevisorServerClientError.invalidResponse

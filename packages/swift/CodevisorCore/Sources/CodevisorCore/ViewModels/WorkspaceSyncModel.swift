@@ -37,6 +37,8 @@ public final class WorkspaceSyncModel {
   public internal(set) var revision: UInt64 = 0
 
   @ObservationIgnored var workspaceOrderTasks: [UUID: Task<Void, Never>] = [:]
+  @ObservationIgnored var workspaceRenameTasks: [UUID: Task<Void, Never>] = [:]
+  @ObservationIgnored var pendingWorkspaceRenames: [UUID: Workspace] = [:]
 
   let repository: any WorkspaceRepository
   let projectList: ProjectListModel
