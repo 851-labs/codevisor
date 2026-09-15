@@ -3,11 +3,14 @@
 import { fileURLToPath } from "node:url"
 import { realpath } from "node:fs/promises"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import { requestedIOSSimulatorName, selectIOSSimulator } from "./dev-ios-target.mjs"
 import { iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 await bootstrapDevelopment(root)
+const simulator = await selectIOSSimulator(root, requestedIOSSimulatorName())
+console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 await runXcodebuild(root, "ios", [
   "-project",
   "apps/ios/Codevisor.xcodeproj",
@@ -16,7 +19,7 @@ await runXcodebuild(root, "ios", [
   "-configuration",
   "Debug",
   "-destination",
-  `platform=iOS Simulator,name=${process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"}`,
+  `platform=iOS Simulator,id=${simulator.udid}`,
   `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${iosDevelopmentBundleIdentifier(root)}`,
   "-only-testing:NavigationTests",
   ...process.argv.slice(2),

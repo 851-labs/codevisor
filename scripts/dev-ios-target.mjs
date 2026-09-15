@@ -16,7 +16,7 @@ export async function buildIOSDevelopmentApp({
   environment = process.env,
   didSelectSimulator
 }) {
-  const simulator = await selectSimulator(repoRoot, simulatorName, environment)
+  const simulator = await selectIOSSimulator(repoRoot, simulatorName, environment)
   didSelectSimulator?.(simulator)
   console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 
@@ -131,7 +131,19 @@ export function terminateIOSDevelopmentApp(target) {
   }).unref()
 }
 
-async function selectSimulator(repoRoot, name, environment) {
+export const defaultIOSSimulatorName = "iPhone 17 Pro"
+
+// The simulator name the user asked for, or the shared default.
+export function requestedIOSSimulatorName(environment = process.env) {
+  return environment.CODEVISOR_IOS_SIMULATOR ?? defaultIOSSimulatorName
+}
+
+// Resolves a simulator NAME to a concrete device. Every xcodebuild
+// destination must use the returned udid: a bare `name=` destination makes
+// xcodebuild pin `OS:latest`, which fails whenever the newest installed
+// runtime lacks a device of that name (a new iOS runtime ships with the
+// new iPhone lineup, not last year's) even though an older runtime has one.
+export async function selectIOSSimulator(repoRoot, name, environment = process.env) {
   const listing = JSON.parse(
     await capture(repoRoot, environment, "xcrun", [
       "simctl",
@@ -141,6 +153,11 @@ async function selectSimulator(repoRoot, name, environment) {
       "--json"
     ])
   )
+  return pickIOSSimulator(listing, name)
+}
+
+// Pure selection over a `simctl list devices --json` listing.
+export function pickIOSSimulator(listing, name) {
   const candidates = []
   for (const [runtimeIdentifier, devices] of Object.entries(listing.devices)) {
     const match = runtimeIdentifier.match(/iOS-(\d+)-(\d+)$/)

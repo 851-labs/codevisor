@@ -4,6 +4,7 @@ import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { developmentLayout } from "./dev-layout.mjs"
+import { requestedIOSSimulatorName, selectIOSSimulator } from "./dev-ios-target.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
@@ -51,6 +52,8 @@ let package = Package(
 )
 `
 )
+const simulator = await selectIOSSimulator(root, requestedIOSSimulatorName())
+console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 await runXcodebuild(
   harness,
   "ios",
@@ -58,7 +61,7 @@ await runXcodebuild(
     "-scheme",
     "IOSTranscriptTests",
     "-destination",
-    `platform=iOS Simulator,name=${process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"}`,
+    `platform=iOS Simulator,id=${simulator.udid}`,
     ...process.argv.slice(2),
     "test"
   ],

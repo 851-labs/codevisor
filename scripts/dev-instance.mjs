@@ -3,6 +3,7 @@ import { cp, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 
+import { requestedIOSSimulatorName } from "./dev-ios-target.mjs"
 import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import {
   colorFromHash,
@@ -75,7 +76,7 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
   const derivedDataPath = layout.build.macos.derivedData
   const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
   const appExecutable = join(appBundle, "Contents", "MacOS", appName)
-  const simulatorName = environment.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
+  const simulatorName = requestedIOSSimulatorName(environment)
 
   const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
   const requestedPort = parsePort(

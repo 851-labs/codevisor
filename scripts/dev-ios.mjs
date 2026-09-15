@@ -27,7 +27,8 @@ import {
 import {
   buildIOSDevelopmentApp,
   launchIOSDevelopmentApp,
-  terminateIOSDevelopmentApp
+  terminateIOSDevelopmentApp,
+  requestedIOSSimulatorName
 } from "./dev-ios-target.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import {
@@ -64,7 +65,7 @@ const developmentIconColor = colorFromHash(worktreeHash)
 const appDisplayName = `Codevisor (${worktreeName})`
 const bundleIdentifier = iosDevelopmentBundleIdentifier(repoRoot)
 const urlScheme = `codevisor-dev-${instanceHash}`
-const simulatorName = process.env.CODEVISOR_IOS_SIMULATOR ?? "iPhone 17 Pro"
+const simulatorName = requestedIOSSimulatorName()
 
 const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
 const requestedPort = parsePort(process.env.CODEVISOR_DEV_REMOTE_PORT, "CODEVISOR_DEV_REMOTE_PORT")
