@@ -40,12 +40,15 @@ public final class ScreenSharingViewerControl {
     if available { request() }
   }
 
+  /// `onReleased` reports a request or lease actually given up; releasing
+  /// while merely viewing is a no-op to observers.
   public func release(reason: String? = nil) {
     requestPendingAvailability = false
     let oldLease = lease
+    let wasHeld = state != .viewing
     requestID = nil; lease = nil; state = .viewing; message = reason
     onActiveChanged?(false)
-    onReleased?()
+    if wasHeld { onReleased?() }
     if let oldLease { _ = send(.release(lease: oldLease)) }
   }
 

@@ -1,8 +1,9 @@
 import CoreVideo
 import MetalKit
 
-/// One queued frame and one GPU command buffer maximum. NV12 planes are
-/// bound directly from the decoder's CVPixelBuffer through the texture cache.
+/// One queued frame and one GPU command buffer maximum. Biplanar YCbCr planes
+/// (the decoder's output) and packed BGRA (a framebuffer backend's output) are
+/// bound directly from the CVPixelBuffer through the texture cache.
 /// Scheduling, caching and the stop boundary live in the coordinator; this
 /// class encodes and submits (or, in the off-main diagnostic, hands the
 /// selected frame to a worker and commits its result).
@@ -65,16 +66,12 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       mailbox: mailbox, metrics: metrics, renderOnArrival: renderOnArrival, redrawsOnDemand: offMainPreparation)
     coordinator.audit = deliveryAudit
     self.coordinator = coordinator
-    let library = try device.makeLibrary(source: Self.shader, options: nil)
-    let descriptor = MTLRenderPipelineDescriptor()
-    descriptor.vertexFunction = library.makeFunction(name: "screenVertex")
-    descriptor.fragmentFunction = library.makeFunction(name: "screenFragment")
-    descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-    let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
-    encoder = try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipeline: pipeline)
+    let pipelines = try ScreenSharingMetalEncoder.Pipelines(device: device, shader: Self.shader)
+    encoder = try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipelines: pipelines)
     // The worker owns its own texture cache; the command queue is shared (thread-safe per Metal).
-    let workerEncoder =
-      offMainPreparation ? try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipeline: pipeline) : nil
+    let workerEncoder: ScreenSharingMetalEncoder? =
+      offMainPreparation
+      ? try ScreenSharingMetalEncoder(device: device, commandQueue: queue, pipelines: pipelines) : nil
     preparer = nil
     super.init(frame: .zero, device: device)
     colorPixelFormat = .bgra8Unorm
@@ -274,7 +271,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     return Surface(drawable: drawable, pass: pass)
   }
 
-  private static let shader = """
+  static let shader = """
     #include <metal_stdlib>
     using namespace metal;
     struct ScreenVertex { float4 position [[position]]; float2 uv; };
@@ -291,6 +288,10 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       float2 uv = uvPlane.sample(sample,in.uv).rg - float2(128.0/255.0);
       if (fullRange < 0.5) { y = (y-16.0/255.0)*(255.0/219.0); uv *= 255.0/224.0; }
       return float4(y+1.5748*uv.y, y-0.187324*uv.x-0.468124*uv.y, y+1.8556*uv.x, 1);
+    }
+    fragment float4 screenFragmentBGRA(ScreenVertex in [[stage_in]], texture2d<float> plane [[texture(0)]]) {
+      constexpr sampler sample(filter::linear, address::clamp_to_edge);
+      return float4(plane.sample(sample,in.uv).rgb, 1);
     }
     """
 }
@@ -310,31 +311,64 @@ final class TextureFrame: @unchecked Sendable {
   init(frame: ScreenSharingVideoFrame, textures: [CVMetalTexture]) { self.frame = frame; self.textures = textures }
 }
 
-/// Pure Metal encoding of one NV12 frame into a surface — no actor, no AppKit.
+/// Pure Metal encoding of one frame into a surface — no actor, no AppKit.
 /// One instance per thread (the texture cache is not shared); the command
-/// queue and pipeline are shared (thread-safe / immutable per Metal).
+/// queue and pipelines are shared (thread-safe / immutable per Metal).
 struct ScreenSharingMetalEncoder: @unchecked Sendable {
+  /// One pipeline per supported pixel layout, compiled once from the shared shader source.
+  struct Pipelines: @unchecked Sendable {
+    let biplanar: any MTLRenderPipelineState
+    let bgra: any MTLRenderPipelineState
+
+    init(device: any MTLDevice, shader: String) throws {
+      let library = try device.makeLibrary(source: shader, options: nil)
+      func pipeline(fragment: String) throws -> any MTLRenderPipelineState {
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = library.makeFunction(name: "screenVertex")
+        descriptor.fragmentFunction = library.makeFunction(name: fragment)
+        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        return try device.makeRenderPipelineState(descriptor: descriptor)
+      }
+      biplanar = try pipeline(fragment: "screenFragment")
+      bgra = try pipeline(fragment: "screenFragmentBGRA")
+    }
+  }
   /// Validated plane textures of one frame, created before any drawable is acquired.
   struct Textures {
+    enum Planes {
+      /// 4:2:0 or 4:4:4 biplanar YCbCr, video or full range: the decoder's output.
+      case biplanar(y: CVMetalTexture, uv: CVMetalTexture, fullRange: Bool)
+      /// Packed 8-bit BGRA: a framebuffer backend's output, drawn without conversion.
+      case bgra(CVMetalTexture)
+    }
     let frame: ScreenSharingVideoFrame
-    let y: CVMetalTexture
-    let uv: CVMetalTexture
-    let fullRange: Bool
+    let planes: Planes
+    var retained: [CVMetalTexture] {
+      switch planes {
+      case .biplanar(let y, let uv, _): [y, uv]
+      case .bgra(let plane): [plane]
+      }
+    }
   }
   struct Encoded {
     let buffer: any MTLCommandBuffer
     let retained: TextureFrame
   }
+  static let supportedPixelFormats: Set<OSType> = [
+    kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
+    kCVPixelFormatType_32BGRA,
+  ]
   private let commandQueue: any MTLCommandQueue
-  private let pipeline: any MTLRenderPipelineState
+  private let pipelines: Pipelines
   private let textureCache: CVMetalTextureCache
 
-  init(device: any MTLDevice, commandQueue: any MTLCommandQueue, pipeline: any MTLRenderPipelineState) throws {
+  init(device: any MTLDevice, commandQueue: any MTLCommandQueue, pipelines: Pipelines) throws {
     var cache: CVMetalTextureCache?
     let status = CVMetalTextureCacheCreate(nil, nil, device, nil, &cache)
     guard status == kCVReturnSuccess, let cache else { throw ScreenSharingError.codec("Create texture cache", status) }
     self.commandQueue = commandQueue
-    self.pipeline = pipeline
+    self.pipelines = pipelines
     textureCache = cache
   }
 
@@ -346,23 +380,21 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
   func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
     let pixel = frame.pixelBuffer
     let format = CVPixelBufferGetPixelFormatType(pixel)
-    guard
-      [
-        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-        kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange,
-      ].contains(format),
-      let y = texture(pixel, plane: 0, format: .r8Unorm),
-      let uv = texture(pixel, plane: 1, format: .rg8Unorm)
+    guard Self.supportedPixelFormats.contains(format) else { return nil }
+    if format == kCVPixelFormatType_32BGRA {
+      guard let plane = texture(pixel, plane: 0, format: .bgra8Unorm) else { return nil }
+      return Textures(frame: frame, planes: .bgra(plane))
+    }
+    guard let y = texture(pixel, plane: 0, format: .r8Unorm), let uv = texture(pixel, plane: 1, format: .rg8Unorm)
     else { return nil }
     let fullRange = [kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, kCVPixelFormatType_444YpCbCr8BiPlanarFullRange]
       .contains(format)
-    return Textures(frame: frame, y: y, uv: uv, fullRange: fullRange)
+    return Textures(frame: frame, planes: .biplanar(y: y, uv: uv, fullRange: fullRange))
   }
 
   /// Encodes and ends encoding; the buffer is neither presented nor committed here.
   func encode(_ textures: Textures, into target: Surface, fitToWindow: Bool) -> Encoded? {
     guard
-      let yTexture = CVMetalTextureGetTexture(textures.y), let uvTexture = CVMetalTextureGetTexture(textures.uv),
       let buffer = commandQueue.makeCommandBuffer(),
       let encoder = buffer.makeRenderCommandEncoder(descriptor: target.pass)
     else { return nil }
@@ -375,14 +407,28 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       MTLViewport(
         originX: (targetSize.width - width * scale) / 2, originY: (targetSize.height - height * scale) / 2,
         width: width * scale, height: height * scale, znear: 0, zfar: 1))
-    encoder.setRenderPipelineState(pipeline)
-    encoder.setFragmentTexture(yTexture, index: 0)
-    encoder.setFragmentTexture(uvTexture, index: 1)
-    var fullRange: Float = textures.fullRange ? 1 : 0
-    encoder.setFragmentBytes(&fullRange, length: MemoryLayout<Float>.size, index: 0)
+    switch textures.planes {
+    case .biplanar(let y, let uv, let isFullRange):
+      guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
+        encoder.endEncoding()
+        return nil
+      }
+      encoder.setRenderPipelineState(pipelines.biplanar)
+      encoder.setFragmentTexture(yTexture, index: 0)
+      encoder.setFragmentTexture(uvTexture, index: 1)
+      var fullRange: Float = isFullRange ? 1 : 0
+      encoder.setFragmentBytes(&fullRange, length: MemoryLayout<Float>.size, index: 0)
+    case .bgra(let plane):
+      guard let planeTexture = CVMetalTextureGetTexture(plane) else {
+        encoder.endEncoding()
+        return nil
+      }
+      encoder.setRenderPipelineState(pipelines.bgra)
+      encoder.setFragmentTexture(planeTexture, index: 0)
+    }
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
-    return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: [textures.y, textures.uv]))
+    return Encoded(buffer: buffer, retained: TextureFrame(frame: textures.frame, textures: textures.retained))
   }
 
   private func texture(_ buffer: CVPixelBuffer, plane: Int, format: MTLPixelFormat) -> CVMetalTexture? {

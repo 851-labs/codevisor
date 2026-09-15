@@ -105,8 +105,8 @@ struct SessionContainerView: View {
         if let browser = activeBrowserModel {
           ChromiumBrowserNavigationControls(model: browser)
           ChromiumBrowserAddressToolbarItem(model: browser)
-        } else if let pane = activeScreenSharingPane, let model = pane.model {
-          ScreenSharingToolbar(model: model)
+        } else if let pane = activeScreenSharingPane, let store = pane.store {
+          ScreenSharingToolbar(store: store)
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)

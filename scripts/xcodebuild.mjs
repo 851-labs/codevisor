@@ -14,6 +14,9 @@ export function xcodebuildArguments(layout, platform, arguments_) {
   if (arguments_.includes("-exportArchive") || arguments_.includes("-downloadPlatform")) {
     return [...arguments_]
   }
+  // Package dependencies ship Swift macros (Composable Architecture and its
+  // macro packages). Xcode gates unapproved macro plugins behind an
+  // interactive prompt; command-line builds trust the pinned checkouts.
   return [
     "-derivedDataPath",
     platformLayout.derivedData,
@@ -21,6 +24,7 @@ export function xcodebuildArguments(layout, platform, arguments_) {
     platformLayout.sourcePackages,
     "-packageCachePath",
     layout.build.packageCache,
+    "-skipMacroValidation",
     ...arguments_
   ]
 }
