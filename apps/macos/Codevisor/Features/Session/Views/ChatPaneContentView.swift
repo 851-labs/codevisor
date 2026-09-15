@@ -9,7 +9,12 @@ struct ChatPaneContentView: View {
   let descriptor: PaneDescriptorState
   let group: PaneGroupModel?
   let focus: TerminalFocusController
-  let session: ChatSession
+  /// The container's anchor chat, when it has one. Nil for a workspace that
+  /// has never hosted a chat: identity below comes from `hostWorkspace`.
+  let session: ChatSession?
+  /// The workspace hosting this pane — its server identity and id, which exist
+  /// with or without a chat.
+  let hostWorkspace: Workspace
   let project: Project
   let store: SessionStore
   let environment: AppEnvironment
@@ -17,10 +22,10 @@ struct ChatPaneContentView: View {
   var body: some View {
     if let chatSessionId = descriptor.chatSessionId {
       if let chatSession = environment.projectList.sessions.first(where: {
-        $0.serverId == session.serverId && $0.id == chatSessionId
+        $0.serverId == hostWorkspace.serverId && $0.id == chatSessionId
       }),
         let chatProject = environment.projectList.projects.first(where: {
-          $0.serverId == session.serverId && $0.id == chatSession.projectId
+          $0.serverId == hostWorkspace.serverId && $0.id == chatSession.projectId
         })
       {
         if isUnstarted(chatSession) {
@@ -34,7 +39,7 @@ struct ChatPaneContentView: View {
             initialProjectTarget: NewChatTarget(chatProject),
             paneDraftId: descriptor.id,
             onCreatedInPane: { created in
-              (group ?? store.centerPaneGroup(for: session, project: project))
+              (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
                 .assignChatSession(
                   paneId: descriptor.id,
                   sessionId: created.id,
@@ -43,7 +48,7 @@ struct ChatPaneContentView: View {
             },
             preCreatedSession: chatSession,
             paneFocus: focus,
-            hostWorkspaceId: store.workspace(for: session, project: project).id
+            hostWorkspaceId: hostWorkspace.id
           )
         } else {
           let controller = store.controller(for: chatSession, project: chatProject)
@@ -90,14 +95,14 @@ struct ChatPaneContentView: View {
         onCreatedInPane: { created in
           // Bind through the pane's OWNING group (the draft may
           // live in any split leaf, not just the primary).
-          (group ?? store.centerPaneGroup(for: session, project: project))
+          (group ?? session.map { store.centerPaneGroup(for: $0, project: project) })?
             .assignChatSession(
               paneId: descriptor.id,
               sessionId: created.id,
               name: created.title
             )
         },
-        hostWorkspaceId: store.workspace(for: session, project: project).id
+        hostWorkspaceId: hostWorkspace.id
       )
     }
   }

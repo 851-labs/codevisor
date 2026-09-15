@@ -9,11 +9,11 @@ struct LatestValuePreparationWorkerTests {
   @Test func runningWorkPublishesAndOnlyLatestPendingInputRuns() async {
     let started = TestSignal()
     let published = TestSignal()
-    let release = DispatchSemaphore(value: 0)
+    let release = TestSignal()
     let inputs = Mutex<[Int]>([])
     let worker = LatestValuePreparationWorker<Int, Int> { value in
       inputs.withLock { $0.append(value) }
-      if value == 1 { started.signal(); release.wait() }
+      if value == 1 { started.signal(); await release.wait() }
       return value
     }
     var outputs: [Int] = []
@@ -35,9 +35,9 @@ struct LatestValuePreparationWorkerTests {
   @Test func cancellationRejectsOldOutputAndAllowsANewPresentation() async {
     let started = TestSignal()
     let published = TestSignal()
-    let release = DispatchSemaphore(value: 0)
+    let release = TestSignal()
     let worker = LatestValuePreparationWorker<Int, Int> { value in
-      if value == 1 { started.signal(); release.wait() }
+      if value == 1 { started.signal(); await release.wait() }
       return value
     }
     worker.submit(1) { _, _ in Issue.record("Cancelled presentation published") }

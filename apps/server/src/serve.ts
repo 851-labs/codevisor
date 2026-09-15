@@ -33,10 +33,9 @@ import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import { acquireServerLease } from "./infra/server-lease.js"
 import type { ServerLease } from "./infra/server-lease.js"
-import { restoreTerminalPersistence } from "./serve-boot.js"
+import { restoreTerminalPersistence, nativeScreenSharing } from "./serve-boot.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
-import { makeMcpManager } from "@codevisor/mcp"
-import { makeNativeMcpManager } from "@codevisor/mcp"
+import { makeMcpManager, makeNativeMcpManager } from "@codevisor/mcp"
 import {
   makePluginRegistryClient,
   makePluginsManager,
@@ -454,6 +453,7 @@ export const runServe = (
           }, 250)
         },
         sessionActivity,
+        screenSharing: nativeScreenSharing(dirname(databasePath)),
         updater
       })
     )

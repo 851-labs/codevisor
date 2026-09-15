@@ -1,3 +1,4 @@
+import type { ScreenSharingRequest } from "@codevisor/api"
 import type { BrowserProxy } from "./infra/browser-proxy.js"
 import type { ClientControlBroker } from "./infra/client-control.js"
 import type { CredentialSource } from "@codevisor/harness-manager"
@@ -77,6 +78,7 @@ export interface CodevisorServerConfig {
   /// Host power policy for active locally hosted turns. The production macOS
   /// server supplies a scoped idle-sleep assertion; other platforms/tests
   /// omit it.
+  readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   /// This machine's Codevisor Cloud device id (from `codevisor auth login`),
   /// advertised via /v1/info so clients can match this machine to its cloud

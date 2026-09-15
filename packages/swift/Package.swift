@@ -25,12 +25,42 @@ let package = Package(
     .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
+    .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
+    .executable(name: "screen-sharing-probe", targets: ["ScreenSharingProbe"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
     .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
+    .package(url: "https://github.com/stasel/WebRTC.git", exact: "152.0.0"),
   ],
   targets: [
+    .target(
+      name: "CodevisorScreenSharing",
+      dependencies: [.product(name: "WebRTC", package: "WebRTC")],
+      path: "CodevisorScreenSharing/Sources/CodevisorScreenSharing",
+      resources: [
+        .copy("Resources/WebRTC-LICENSE.txt"),
+        .copy("Resources/WebRTC-ThirdPartyNotices-macOS.md"),
+        .copy("Resources/WebRTC-ThirdPartyNotices-iOS.md"),
+      ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
+      name: "ScreenSharingProbe",
+      dependencies: ["CodevisorScreenSharing", "CodevisorClient"],
+      path: "CodevisorScreenSharing/Probe",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "CodevisorScreenSharingTests",
+      dependencies: ["CodevisorScreenSharing", "CodevisorTestSupport"],
+      path: "CodevisorScreenSharing/Tests/CodevisorScreenSharingTests",
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      // SwiftPM's macOS test bundle loader needs the sibling binary framework.
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
+    ),
     .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: [.swiftLanguageMode(.v6)]),
     // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
     // palette derivation — Foundation-only, no SwiftUI)
@@ -131,6 +161,7 @@ let package = Package(
     .testTarget(
       name: "TranscriptKitTests",
       dependencies: [
+        "CodevisorTestSupport",
         "TranscriptKit",
         "ACPKit",
       ],
@@ -230,7 +261,7 @@ let package = Package(
     // iOS apps depend on CodevisorCore only; never link this on iOS.)
     .target(
       name: "CodevisorCoreMac",
-      dependencies: ["CodevisorCore"],
+      dependencies: ["CodevisorCore", "CodevisorScreenSharing"],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -291,7 +322,10 @@ let package = Package(
         "ACPKit",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
-      swiftSettings: [.swiftLanguageMode(.v6)]
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
   ]
 )

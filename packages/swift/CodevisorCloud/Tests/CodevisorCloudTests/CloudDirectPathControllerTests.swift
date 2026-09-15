@@ -167,7 +167,7 @@ struct CloudDirectPathControllerTests {
       webSocketTransport: FakeWebSocketTransport { _ in scriptedHub.socket },
       readyTimeout: .seconds(2),
       sleep: TestClock().sleep,
-      reconnectDelay: { _ in .zero }
+      reconnectDelay: { _ in .seconds(1) }
     )
     let relayEndpoint = CloudRelayEndpoint(
       hub: hub,

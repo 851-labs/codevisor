@@ -15,8 +15,11 @@ import CodevisorCore
 struct PaneContext {
   /// This pane's stable identity (persisted; survives app restarts).
   let paneId: UUID
-  /// The chat session this pane group belongs to.
-  let sessionId: UUID
+  /// The chat session this pane group belongs to, or nil when the group's
+  /// identity comes from its workspace instead (a workspace that has never
+  /// hosted a chat). Panes that genuinely need a session decline rather than
+  /// borrowing another identity.
+  let sessionId: UUID?
   /// The key the server's PTY manager stores this pane's shell under.
   let terminalKey: String
   /// Agent-owned background terminal: attach to the registered terminal
@@ -25,9 +28,14 @@ struct PaneContext {
   /// The machine (server URL + auth) the pane's backing resources live on.
   let machine: CodevisorMachine
   /// Source data for working-directory resolution: the anchor session's cwd
-  /// (the workspace's one working directory), else the project folder.
-  let session: ChatSession
+  /// (the workspace's one working directory), else the project folder. Nil
+  /// when the workspace has no chat yet — the project folder then applies,
+  /// exactly as it does for a session without a cwd.
+  let session: ChatSession?
   let project: Project
+  /// The workspace's own working directory, used when there is no chat to
+  /// anchor on. Nil falls back to the project folder.
+  var workspaceRootDirectory: String? = nil
   /// The owning workspace's identity, for panes whose server resources are
   /// workspace-scoped (plugin pane tokens). Nil in previews.
   var workspaceId: UUID? = nil

@@ -50,7 +50,7 @@ final class StreamingSegmenter {
 /// later streamed snapshots never run MD4C or build the Swift IR on MainActor.
 @MainActor
 final class StreamingMarkdownParseCoordinator: ObservableObject {
-  typealias SnapshotParser = @Sendable (String, Bool) -> [MarkdownSegment]
+  typealias SnapshotParser = @Sendable (String, Bool) async -> [MarkdownSegment]
 
   struct Presentation: Sendable {
     let text: String
@@ -77,10 +77,11 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
     requestedText = text
     requestedIsComplete = isComplete
     self.snapshotParser = snapshotParser
+    // Only streamed updates use the asynchronous parser seam; mounting stays synchronous.
     let segments =
       isComplete
       ? MarkdownSegmentCache.shared.segments(for: text)
-      : snapshotParser(text, false)
+      : StreamingSegmenter.parseSnapshot(text: text, isComplete: false)
     let renderSegments = MarkdownRenderSegment.initial(segments)
     nextSegmentID = UInt64(renderSegments.count)
     presentation = Presentation(
@@ -104,7 +105,7 @@ final class StreamingMarkdownParseCoordinator: ObservableObject {
 
     let snapshotParser = snapshotParser
     let parsed = await Task.detached(priority: .userInitiated) {
-      snapshotParser(text, isComplete)
+      await snapshotParser(text, isComplete)
     }.value
     guard !Task.isCancelled else { return }
     publish(parsed, text: text, isComplete: isComplete, generation: requestGeneration)

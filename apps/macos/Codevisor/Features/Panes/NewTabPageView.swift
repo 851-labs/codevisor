@@ -18,6 +18,7 @@ private struct NewTabOption: Identifiable, Equatable {
     case chat
     case terminal
     case browser
+    case screenSharing
     case plugin(pluginId: String, paneType: String, iconPath: String?)
   }
 
@@ -42,6 +43,7 @@ struct NewTabPageView: View {
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
 
+  @State private var supportsScreenSharing = false
   @State private var pluginOptions: [NewTabOption] = []
   @State private var query = ""
   /// Focusing this pane focuses the picker's input — never on appearance,
@@ -55,7 +57,9 @@ struct NewTabPageView: View {
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
       NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
-    ] + pluginOptions
+    ]
+      + (supportsScreenSharing
+        ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions
   }
 
   var body: some View {
@@ -102,6 +106,8 @@ struct NewTabPageView: View {
           Autocomplete.Action(option.title, id: option.id, systemImage: "text.bubble") { open(option) }
         case .browser:
           Autocomplete.Action(option.title, id: option.id, systemImage: "globe") { open(option) }
+        case .screenSharing:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "display") { open(option) }
         case .terminal:
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
         case let .plugin(pluginId, paneType, iconPath):
@@ -134,6 +140,8 @@ struct NewTabPageView: View {
       } else {
         group?.convertNewTabPane(id: paneId, to: .chat)
       }
+    case .screenSharing:
+      group?.convertNewTabPane(id: paneId, to: .screenSharing)
     case .browser:
       group?.convertNewTabPane(id: paneId, to: .browser)
     case .terminal:
@@ -158,7 +166,10 @@ struct NewTabPageView: View {
   /// page's built-in options never depend on the request.
   private func loadPluginOptions() async {
     guard let client else { return }
-    guard let plugins = try? await client.listPlugins() else { return }
+    async let info = try? client.info()
+    async let availablePlugins = try? client.listPlugins()
+    supportsScreenSharing = await info?.features?.contains("screen-sharing-v1") == true
+    guard let plugins = await availablePlugins else { return }
     pluginOptions = plugins.flatMap { plugin in
       plugin.panes.map { pane in
         NewTabOption(

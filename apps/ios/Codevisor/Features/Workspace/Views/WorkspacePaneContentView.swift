@@ -110,6 +110,10 @@ struct WorkspacePaneContentView: View {
         .task(id: environment.machines.httpConnectionState(forMachineId: machineId)) {
           await browserPaneModel(pane).connectionDidChange()
         }
+    case .screenSharing:
+      ContentUnavailableView(
+        "Screen Sharing", systemImage: "display",
+        description: Text("Screen Sharing currently requires Codevisor on a Mac."))
     case .document:
       if let path = pane.documentPath {
         MarkdownDocumentView(

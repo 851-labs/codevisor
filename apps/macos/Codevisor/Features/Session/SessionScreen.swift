@@ -5,7 +5,9 @@ import CodevisorUI
 
 /// The selected workspace tab, with focus routing and attachment loading.
 struct SessionScreen: View {
-  @Bindable var controller: SessionController
+  /// The chat controller, or nil when this screen hosts a workspace that has
+  /// no chat. Only attachment previews read it; panes, splits and focus do not.
+  var controller: SessionController?
   /// The active split's pane group; keyboard commands route through it.
   var centerGroup: PaneGroupModel
   /// The session's focus coordinator. Owned by the container (which also
@@ -50,7 +52,7 @@ struct SessionScreen: View {
         focus.startTypeToFocus()
         installAttachmentImageStoreIfNeeded()
       }
-      .onChange(of: controller.previewCacheNamespace) {
+      .onChange(of: controller?.previewCacheNamespace) {
         installAttachmentImageStoreIfNeeded()
       }
       .onDisappear {
@@ -61,6 +63,13 @@ struct SessionScreen: View {
   }
 
   private func installAttachmentImageStoreIfNeeded() {
+    // No chat controller, no attachment previews: drop any store a previous
+    // controller installed rather than leaving this screen serving a cache
+    // whose owner is gone.
+    guard let controller else {
+      attachmentImages = nil
+      return
+    }
     let namespace = controller.previewCacheNamespace
     guard attachmentImages?.namespace != namespace else { return }
     attachmentImages = AttachmentImageStore(

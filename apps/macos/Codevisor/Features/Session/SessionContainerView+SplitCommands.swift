@@ -9,7 +9,7 @@ extension SessionContainerView {
   /// workspace. Resolve navigation from the committed window destination.
   var navigationWorkspace: Workspace {
     store.navigationWorkspaceId.flatMap { environment.workspaces.workspace(id: $0) }
-      ?? store.workspace(for: session, project: project)
+      ?? selectedWorkspace
   }
 
   func saveSelectedTree(_ tree: SplitNode, workspaceId: UUID) {
@@ -72,7 +72,7 @@ extension SessionContainerView {
   }
 
   func splitActiveLeaf(edge: SplitEdge) {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
     splitLeaf(activeLeafId ?? tab.activeLeafId, edge: edge)
   }
@@ -81,7 +81,7 @@ extension SessionContainerView {
   /// their owning leaf; keyboard/menu commands pass the active leaf.
   func splitLeaf(_ leafId: UUID, edge: SplitEdge) {
     guard openingSplit == nil else { return }
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     rememberWorkspaceDefaults(fromLeaf: leafId, in: workspace)
     guard
       let tabIndex = workspace.centerTabs.firstIndex(where: {
@@ -125,7 +125,7 @@ extension SessionContainerView {
   /// group id survives, so its cached model and any live terminal surface
   /// move with the layout instead of being torn down and recreated.
   func moveSplitLeaf(_ sourceLeafId: UUID, relativeTo targetLeafId: UUID, edge: SplitEdge) {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     guard let tabIndex = workspace.selectedCenterTabIndex else { return }
     let current = workspace.centerTabs[tabIndex].root
     guard current.group(id: sourceLeafId) != nil,
@@ -158,7 +158,7 @@ extension SessionContainerView {
     edge: SplitEdge,
     canvasSize: CGSize
   ) -> Bool {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard let current = workspace.selectedCenterTab?.root,
       canvasSize.width > 0,
       canvasSize.height > 0
@@ -187,13 +187,13 @@ extension SessionContainerView {
   }
 
   func closeActiveLeaf() {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard let tab = workspace.selectedCenterTab else { return }
     closeLeaf(activeLeafId ?? tab.activeLeafId)
   }
 
   func closeLeaf(_ leafId: UUID) {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     let closesActiveLeaf = leafId == (activeLeafId ?? workspace.selectedCenterTab?.activeLeafId)
     let model = configuredCenterModel(leafId: leafId)
     guard let paneId = model.state.selectedPaneId else { return }
@@ -209,7 +209,7 @@ extension SessionContainerView {
     if descriptor.kind == .chat,
       let chatId = descriptor.chatSessionId,
       let chat = environment.projectList.sessions.first(where: {
-        $0.serverId == session.serverId && $0.id == chatId
+        $0.serverId == selectedWorkspace.serverId && $0.id == chatId
       })
     {
       environment.projectList.renameSession(chat, to: trimmed)

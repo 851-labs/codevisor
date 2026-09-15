@@ -41,6 +41,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     attributes: .concurrent
   )
   private let supportDirectory: URL
+  let screenSharing = NativeScreenSharingBridge()
   let recordings: ComputerUseRecordings
   let lock = NSLock()
   private var listener: Int32 = -1
@@ -106,6 +107,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     listener = descriptor
     let ready = Configuration(socketPath: socketPath, token: token)
     configuration = ready
+    screenSharing.start()
     listenerQueue.async { [weak self] in self?.acceptLoop(descriptor, token: token) }
     return ready
   }
@@ -128,6 +130,7 @@ public final class ComputerUseBridge: @unchecked Sendable {
     if let socketPath { unlink(socketPath) }
     ComputerUsePresentation.endAll()
     recordings.end()
+    screenSharing.stop()
   }
 
   private func bindSocket(_ descriptor: Int32, path: String) throws {

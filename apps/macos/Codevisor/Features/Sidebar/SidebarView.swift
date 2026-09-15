@@ -47,7 +47,7 @@ struct SidebarView: View {
   var isNewChatSelected: Bool {
     switch selection {
     case .newChat, .none: true
-    case .session: false
+    case .session, .workspace: false
     }
   }
 

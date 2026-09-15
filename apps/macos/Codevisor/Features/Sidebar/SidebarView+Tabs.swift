@@ -191,11 +191,12 @@ extension SidebarView {
   func activateTab(_ tab: WorkspaceTab, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     guard store?.selectDestination(.tab(tab.id), in: workspace.id) == true else { return }
-    if let chat = routableChat(in: tab, serverId: workspace.serverId) {
-      selection = .session(serverId: chat.serverId, id: chat.id)
-    } else if !routesSelectedSession(workspace), let routing = item.routingSession {
-      selection = .session(serverId: routing.serverId, id: routing.id)
-    }
+    apply(
+      workspace.selectionRoute(
+        activatedChatSessionId: routableChat(in: tab, serverId: workspace.serverId)?.id,
+        routingSessionId: item.routingSession?.id,
+        selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
+      ))
   }
 
   /// A pane row: name the leaf, and route through its own chat when it
@@ -203,12 +204,27 @@ extension SidebarView {
   func activateLeaf(_ leafId: UUID, state: PaneGroupState, in item: SidebarWorkspaceListItem) {
     let workspace = item.workspace
     guard store?.selectDestination(.leaf(leafId), in: workspace.id) == true else { return }
-    if let pane = state.selectedPane, let chat = sessionForPane(pane, serverId: workspace.serverId),
-      !chat.isArchived
-    {
-      selection = .session(serverId: chat.serverId, id: chat.id)
-    } else if !routesSelectedSession(workspace), let routing = item.routingSession {
-      selection = .session(serverId: routing.serverId, id: routing.id)
+    let paneChat = state.selectedPane
+      .flatMap { sessionForPane($0, serverId: workspace.serverId) }
+      .flatMap { $0.isArchived ? nil : $0 }
+    apply(
+      workspace.selectionRoute(
+        activatedChatSessionId: paneChat?.id,
+        routingSessionId: item.routingSession?.id,
+        selectionAlreadyRoutesWorkspace: routesSelectedSession(workspace)
+      ))
+  }
+
+  /// Applies the resolved route. A nil route means the current selection
+  /// already shows this workspace and must not be disturbed.
+  private func apply(_ route: WorkspaceSelectionRoute?) {
+    switch route {
+    case let .session(serverId, id):
+      selection = .session(serverId: serverId, id: id)
+    case let .workspace(serverId, id):
+      selection = .workspace(serverId: serverId, id: id)
+    case nil:
+      break
     }
   }
 

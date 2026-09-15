@@ -20,6 +20,7 @@ public enum PaneKind: String, Codable, Sendable {
   /// A read-only Markdown document on the workspace's machine.
   case document
   case browser
+  case screenSharing
 }
 
 /// The persisted identity of one pane in a session's pane group. Pure data —
@@ -51,6 +52,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var pluginId: String?
   /// Plugin panes only: which of the plugin's pane types this renders.
   public var pluginPaneType: String?
+  public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var documentPath: String?
   /// Every pane moves between groups alike — tabs are tabs (the only
@@ -70,7 +72,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     pluginId: String? = nil,
     pluginPaneType: String? = nil,
     documentPath: String? = nil,
-    browserURL: String? = nil
+    browserURL: String? = nil,
+    screenSharing: ScreenSharingPanePreferences? = nil
   ) {
     self.id = id
     self.kind = kind
@@ -83,6 +86,7 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
     self.pluginPaneType = pluginPaneType
     self.documentPath = documentPath
     self.browserURL = browserURL
+    self.screenSharing = screenSharing
   }
 
   public init(from decoder: Decoder) throws {
@@ -105,7 +109,8 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
       pluginId: try container.decodeIfPresent(String.self, forKey: .pluginId),
       pluginPaneType: try container.decodeIfPresent(String.self, forKey: .pluginPaneType),
       documentPath: try container.decodeIfPresent(String.self, forKey: .documentPath),
-      browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL)
+      browserURL: try container.decodeIfPresent(String.self, forKey: .browserURL),
+      screenSharing: try container.decodeIfPresent(ScreenSharingPanePreferences.self, forKey: .screenSharing)
     )
   }
 }
@@ -150,6 +155,15 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       terminalKey: sessionId.uuidString
     )
     return PaneGroupState(panes: [pane], selectedPaneId: pane.id)
+  }
+
+  /// The state a center group starts with when the workspace has no chat to
+  /// bind: the same New Tab placeholder the user gets from `addNewTabPane`,
+  /// so nothing here invents a chat or a session-scoped key.
+  public static func centerInitialWithoutChat() -> PaneGroupState {
+    var state = PaneGroupState()
+    state.addNewTabPane()
+    return state
   }
 
   /// The state a session's center group starts with: the chat pane, bound
@@ -205,6 +219,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   /// Appends a new terminal pane named "Terminal N" (N = highest existing
   /// numeric suffix + 1), and selects it. The shell spawns
   /// in the workspace's working directory (the anchor session's cwd).
+  /// Requires a session identity: the terminal key namespaces the server's
+  /// live PTY per session, so a substitute namespace would either collide with
+  /// a real session or orphan the shell. A group without a session never calls
+  /// this (see `convertNewTabPane`, which declines the terminal kind).
   @discardableResult
   public mutating func addTerminalPane(sessionId: UUID) -> PaneDescriptorState {
     let paneId = UUID()
@@ -294,7 +312,7 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   public mutating func convertNewTabPane(
     id: UUID,
     to kind: PaneKind,
-    sessionId: UUID,
+    sessionId: UUID?,
     chatSessionId: UUID? = nil,
     name: String? = nil,
     pluginId: String? = nil,
@@ -307,6 +325,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     let pane: PaneDescriptorState
     switch kind {
     case .terminal:
+      // Same rule as `addTerminalPane`: no session identity, no terminal.
+      guard let sessionId else { return nil }
       pane = PaneDescriptorState(
         id: paneId,
         kind: .terminal,
@@ -333,6 +353,10 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
       pane = PaneDescriptorState(
         id: paneId, kind: .browser, name: "Browser",
         terminalKey: paneId.uuidString, browserURL: "https://www.google.com/")
+    case .screenSharing:
+      pane = PaneDescriptorState(
+        id: paneId, kind: .screenSharing, name: "Screen Sharing",
+        terminalKey: paneId.uuidString, screenSharing: ScreenSharingPanePreferences())
     case .newTab, .document:
       return nil
     }

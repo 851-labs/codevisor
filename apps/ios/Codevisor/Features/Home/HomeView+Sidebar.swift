@@ -113,7 +113,7 @@ extension HomeView {
       return "New Tab"
     case .browser:
       return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document:
+    case .terminal, .plugin, .document, .screenSharing:
       return pane.name
     }
   }
@@ -133,6 +133,8 @@ extension HomeView {
       .plugin(pluginId: pane.pluginId ?? "", paneType: pane.pluginPaneType)
     case .document:
       .document
+    case .screenSharing:
+      .screenSharing
     case .newTab:
       .newTab
     }

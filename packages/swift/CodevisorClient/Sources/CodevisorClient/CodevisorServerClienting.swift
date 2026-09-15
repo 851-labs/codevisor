@@ -3,6 +3,7 @@ import CodevisorProtocol
 import Foundation
 
 public protocol CodevisorServerClienting: BrowserStateClienting {
+  func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply
   func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
   func browserNavigation(paneId: UUID) async throws -> BrowserNavigation?
   func publishBrowserNavigation(paneId: UUID, navigation: BrowserNavigation) async throws

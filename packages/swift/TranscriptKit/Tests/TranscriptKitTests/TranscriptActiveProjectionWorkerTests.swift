@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -7,15 +8,15 @@ import Testing
 struct TranscriptActiveProjectionWorkerTests {
   @Test("Projection keeps one in-flight parse and replaces the waiting snapshot")
   func latestPendingSnapshotWins() async {
-    let started = DispatchSemaphore(value: 0)
-    let release = DispatchSemaphore(value: 0)
+    let started = TestSignal()
+    let release = TestSignal()
     let projectedMarkdown = Mutex<[String]>([])
     let worker = TranscriptActiveProjectionWorker { item, _ in
       let markdown = Self.markdown(in: item)
       projectedMarkdown.withLock { $0.append(markdown) }
       if markdown == "first" {
         started.signal()
-        release.wait()
+        await release.wait()
       }
       return []
     }
@@ -25,12 +26,7 @@ struct TranscriptActiveProjectionWorkerTests {
       #expect(output.request.revision == 1)
       firstPublished.withLock { $0 = true }
     }
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global().async {
-        started.wait()
-        continuation.resume()
-      }
-    }
+    await started.wait()
     worker.submit(request(revision: 2, markdown: "second")) { _ in
       Issue.record("A replaced waiting projection must not publish")
     }

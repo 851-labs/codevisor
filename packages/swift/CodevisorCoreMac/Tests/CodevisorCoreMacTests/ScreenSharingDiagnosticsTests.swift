@@ -1,0 +1,52 @@
+import CodevisorScreenSharing
+import Testing
+@testable import CodevisorCoreMac
+
+@MainActor
+struct ScreenSharingDiagnosticsTests {
+  @Test func relayTransportDescribesTheClientConnectionRatherThanItsUDPAllocation() {
+    let diagnostics = ScreenSharingViewerDiagnostics()
+    diagnostics.update(
+      metrics: ScreenSharingMetrics().snapshot(),
+      statistics: [
+        "local-candidate.selected.candidateType": "relay",
+        "local-candidate.selected.protocol": "udp",
+        "local-candidate.selected.relayProtocol": "tls",
+      ], now: 10)
+    #expect(diagnostics.route == "Relay · TLS")
+  }
+  @Test func intervalRatesAndSelectedRouteUseOnlyMeasuredValues() {
+    let metrics = ScreenSharingMetrics()
+    let diagnostics = ScreenSharingViewerDiagnostics()
+    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 10)
+    #expect(diagnostics.framesPerSecond == nil)
+    #expect(diagnostics.roundTripMilliseconds == nil)
+    #expect(diagnostics.route == "Connecting")
+    metrics.increment("presentedFrames", by: 120)
+    metrics.increment("renderDrops", by: 3)
+    metrics.observe("decode", milliseconds: 2.5)
+    metrics.label("videoSize", "1920 × 1080")
+    metrics.label("decoder", "VideoToolbox hardware")
+    diagnostics.update(
+      metrics: metrics.snapshot(),
+      statistics: [
+        "inbound-rtp.video.bytesReceived": "3000000",
+        "candidate-pair.selected.currentRoundTripTime": "0.012",
+        "local-candidate.selected.candidateType": "relay",
+        "remote-candidate.selected.candidateType": "host",
+        "local-candidate.selected.protocol": "udp",
+      ], now: 12)
+    #expect(diagnostics.framesPerSecond == 60)
+    #expect(diagnostics.megabitsPerSecond == 12)
+    #expect(diagnostics.roundTripMilliseconds == 12)
+    #expect(diagnostics.route == "Relay · UDP")
+    #expect(diagnostics.resolution == "1920 × 1080")
+    #expect(diagnostics.decodeMilliseconds == 2.5)
+    #expect(diagnostics.droppedFrames == 3)
+    // Reset or missing RTC counters cannot produce negative bitrate.
+    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 13)
+    #expect(diagnostics.framesPerSecond == 0)
+    #expect(diagnostics.megabitsPerSecond == 0)
+    #expect(diagnostics.roundTripMilliseconds == nil)
+  }
+}

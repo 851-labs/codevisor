@@ -10,7 +10,7 @@ extension SessionContainerView {
   /// that content identity instead of leaving their creation-time snapshot
   /// in front of repository truth.
   func synchronizeMountedPaneGroups() {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     if store.reconcileMountedPaneGroups(in: workspace) {
       workspaceRevision += 1
     }
@@ -33,7 +33,7 @@ extension SessionContainerView {
   }
 
   func selectCenterTab(_ tabId: UUID) {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     store.selectDestination(.tab(tabId), in: workspace.id)
   }
 
@@ -47,7 +47,7 @@ extension SessionContainerView {
   }
 
   func addCenterTab() {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     if let current = workspace.selectedCenterTab {
       rememberWorkspaceDefaults(
         fromLeaf: activeLeafId ?? current.activeLeafId,
@@ -67,7 +67,7 @@ extension SessionContainerView {
   }
 
   func renameCenterTab(_ tabId: UUID, to customTitle: String?) {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let trimmed = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalized = trimmed.flatMap { $0.isEmpty ? nil : $0 }
@@ -78,7 +78,7 @@ extension SessionContainerView {
   }
 
   func closeCenterTab(_ tabId: UUID) {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     guard let index = workspace.centerTabs.firstIndex(where: { $0.id == tabId }) else { return }
     let closing = workspace.centerTabs[index]
     let closesSelectedTab = workspace.selectedCenterTabId == tabId
@@ -95,7 +95,7 @@ extension SessionContainerView {
     // this tab would close the workspace's final pane, that pane has been
     // converted in place and the tab remains. Otherwise empty leaves and
     // the now-empty layout tab are purely local cleanup.
-    workspace = store.workspace(for: session, project: project)
+    workspace = selectedWorkspace
     workspace.pruneClosedCenterTab(tabId)
     for leaf in closing.root.allGroups
     where workspace.centerTabs.allSatisfy({ $0.root.group(id: leaf.id) == nil }) {

@@ -46,7 +46,7 @@ struct CloudHubFlowControlTests {
       webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
       readyTimeout: .seconds(2),
       sleep: TestClock().sleep,
-      reconnectDelay: { _ in .zero }
+      reconnectDelay: { _ in .seconds(1) }
     )
     let recorder = Recorder()
     let closed = TestSignal()

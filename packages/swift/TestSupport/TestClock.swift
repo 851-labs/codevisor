@@ -23,6 +23,9 @@ public final class TestClock: Clock, @unchecked Sendable {
 
   public var pendingCount: Int { lock.withLock { pending.count } }
 
+  /// How many sleeps of exactly `duration` were ever requested (pending or resolved).
+  public func requestCount(_ duration: Duration) -> Int { lock.withLock { requests.filter { $0 == duration }.count } }
+
   public func sleep(for duration: Duration) async throws {
     try await sleep(for: duration, until: nil)
   }

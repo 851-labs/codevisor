@@ -10,7 +10,7 @@ extension SessionContainerView {
   func configuredCenterModel(leafId: UUID) -> PaneGroupModel {
     let model = store.centerGroup(
       leafId: leafId,
-      workspace: store.workspace(for: session, project: project),
+      workspace: selectedWorkspace,
       session: session,
       project: project
     )
@@ -56,7 +56,7 @@ extension SessionContainerView {
           // session (recoverable from the archived list); the
           // session itself always survives.
           if let closed = environment.projectList.sessions.first(where: {
-            $0.serverId == session.serverId && $0.id == closedSessionId
+            $0.serverId == selectedWorkspace.serverId && $0.id == closedSessionId
           }) {
             environment.archiveSession(closed)
           }
@@ -88,8 +88,8 @@ extension SessionContainerView {
             onNewChat: { [weak model] in
               createChat(convertingPlaceholder: descriptor.id, in: model)
             },
-            client: environment.machines.client(for: session.serverId),
-            iconCacheNamespace: session.serverId
+            client: environment.machines.client(for: selectedWorkspace.serverId),
+            iconCacheNamespace: selectedWorkspace.serverId
           ))
       }
       return AnyView(
@@ -98,6 +98,7 @@ extension SessionContainerView {
           group: model,
           focus: sessionFocus,
           session: session,
+          hostWorkspace: selectedWorkspace,
           project: project,
           store: store,
           environment: environment
@@ -111,7 +112,7 @@ extension SessionContainerView {
   /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
     guard isVisible, store.navigationWorkspaceId == selectedWorkspace.id else { return nil }
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil
     }
@@ -132,7 +133,7 @@ extension SessionContainerView {
   ) {
     guard let model else { return }
     guard model.state.panes.contains(where: { $0.id == paneId }) else { return }
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     guard
       let created = NewChatPanePromoter.promote(
         paneId: paneId,
@@ -150,7 +151,7 @@ extension SessionContainerView {
   /// Removes an emptied split leaf. A layout may need an empty shell, but
   /// that shell is not a shared pane and is never uploaded as New Tab.
   func dissolveIfEmpty(leafId: UUID) {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     let model = store.centerGroup(
       leafId: leafId, workspace: workspace, session: session, project: project
     )
@@ -175,14 +176,14 @@ extension SessionContainerView {
     environment.workspaceSync.publishPane(
       pane,
       workspaceId: workspaceId,
-      client: environment.machines.client(for: session.serverId)
+      client: environment.machines.client(for: selectedWorkspace.serverId)
     )
   }
 
   /// Makes a leaf the active group (keyboard routing + hints).
   func activateLeaf(_ leafId: UUID?) {
     guard let leafId else { return }
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     store.selectDestination(.leaf(leafId), in: workspace.id)
   }
 
@@ -205,7 +206,7 @@ extension SessionContainerView {
   func rememberWorkspaceDefaults(from chatId: UUID) {
     guard
       let chat = environment.projectList.sessions.first(where: {
-        $0.serverId == session.serverId && $0.id == chatId
+        $0.serverId == selectedWorkspace.serverId && $0.id == chatId
       })
     else { return }
     if let live = store.activeController(for: chat) {
@@ -231,7 +232,7 @@ extension SessionContainerView {
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
     guard let id = descriptor.chatSessionId else { return descriptor.name }
     return environment.projectList.sessions.first {
-      $0.serverId == session.serverId && $0.id == id
+      $0.serverId == selectedWorkspace.serverId && $0.id == id
     }?.title ?? descriptor.name
   }
 
@@ -240,11 +241,11 @@ extension SessionContainerView {
   /// a chat whose controller isn't cached contributes nothing, and its
   /// persisted tabs survive untouched until it reconnects.
   var workspaceChatControllers: [(chatId: UUID, controller: SessionController)] {
-    let workspace = store.workspace(for: session, project: project)
+    let workspace = selectedWorkspace
     return workspace.chatSessionIds.compactMap { chatId in
       guard
         let chat = environment.projectList.sessions.first(where: {
-          $0.serverId == session.serverId && $0.id == chatId
+          $0.serverId == selectedWorkspace.serverId && $0.id == chatId
         }), let controller = store.activeController(for: chat)
       else { return nil }
       return (chatId, controller)
@@ -263,7 +264,7 @@ extension SessionContainerView {
   }
 
   func syncWorkspaceBackgroundTerminals() {
-    var workspace = store.workspace(for: session, project: project)
+    var workspace = selectedWorkspace
     var updated: [PaneDescriptorState] = []
     var removed: [PaneDescriptorState] = []
     for (chatId, controller) in workspaceChatControllers {
@@ -280,7 +281,7 @@ extension SessionContainerView {
     guard !updated.isEmpty || !removed.isEmpty else { return }
     // Resolve cleanup against the old layout before its leaves disappear.
     // Constructing a TerminalPane is lazy and does not attach a surface.
-    let oldWorkspace = store.workspace(for: session, project: project)
+    let oldWorkspace = selectedWorkspace
     let closing = removed.compactMap { pane -> (any Pane)? in
       guard
         let leaf = oldWorkspace.centerTabs.lazy.compactMap({
@@ -295,7 +296,7 @@ extension SessionContainerView {
     environment.workspaceSync.noteLocalMutation()
     store.reconcileMountedPaneGroups(in: workspace)
     workspaceRevision += 1
-    let client = environment.machines.client(for: session.serverId)
+    let client = environment.machines.client(for: workspace.serverId)
     for pane in updated {
       environment.workspaceSync.publishPane(pane, workspaceId: workspace.id, client: client)
     }

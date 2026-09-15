@@ -31,6 +31,7 @@ struct HomeSidebarTabRow: Identifiable, Equatable {
     case browser(favicon: UIImage?)
     case plugin(pluginId: String, paneType: String?)
     case document
+    case screenSharing
     case newTab
   }
 

@@ -458,13 +458,16 @@ public final class WorkspacePaneGroupRepository: PaneGroupRepository, @unchecked
     self.repository = repository
   }
 
-  public func load(sessionId: UUID) -> PaneGroupState? {
+  /// The session key is deliberately unused: this repository is keyed by
+  /// workspace and leaf, so a workspace with no chat persists exactly like one
+  /// that has several.
+  public func load(sessionId: UUID?) -> PaneGroupState? {
     guard let workspace = repository.workspace(id: workspaceId) else { return nil }
     guard let groupId else { return workspace.centerTree.allGroups.first?.state }
     return workspace.centerTabs.lazy.compactMap { $0.root.group(id: groupId) }.first
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID) {
+  public func save(_ state: PaneGroupState, sessionId: UUID?) {
     guard var workspace = repository.workspace(id: workspaceId) else { return }
     let targetId = groupId ?? workspace.centerTree.allGroups.first?.id
     guard let targetId,

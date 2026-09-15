@@ -21,4 +21,6 @@ The runners install locked dependencies, resolve GhosttyKit when needed, and kee
 
 Keep at most one runner active per worktree. Track and stop the parent process you started before rebuilding. Never stop or modify another worktree's instance; if this worktree already has an instance you do not own, reuse it or report that it is running.
 
+For a permission-grant restart that must preserve the existing signed macOS binary, use `bun run dev:macos --reuse-macos-build` (container flags still apply). This verifies the worktree app's identity and strict signature, skips native building/signing, and starts the usual managed services and app. It deliberately does not incorporate native source edits. Missing, mismatched, or invalid artifacts fail without falling back to a rebuild. Normal launches continue to build. This option is macOS-only.
+
 For website-only development, use `bun run dev:web`.

@@ -1,5 +1,5 @@
 {
-  "originHash" : "35d49b86089100e9627cb12a984950b3d7590c5a60fbf1fd56250b4a429d9187",
+  "originHash" : "e4c1ace4bc5f71677b3ab179e798262a24616c20b9d3b22d343c1084ecb77130",
   "pins" : [
     {
       "identity" : "posthog-ios",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "dd2fb8ac5b861e7bf617c872895e338f38165648",
         "version" : "1.15.0"
+      }
+    },
+    {
+      "identity" : "webrtc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stasel/WebRTC.git",
+      "state" : {
+        "revision" : "1d04692697cb642bfebf6ad2dd99fe52649c3d6d",
+        "version" : "152.0.0"
       }
     }
   ],

@@ -11,12 +11,12 @@ public final class LatestValuePreparationWorker<Input: Sendable, Output: Sendabl
     let completion: @MainActor (Input, Result<Output, Error>) -> Void
   }
 
-  private let prepare: @Sendable (Input) throws -> Output
+  private let prepare: @Sendable (Input) async throws -> Output
   private var generation: UInt64 = 0
   private var pending: Work?
   private var processing: Task<Void, Never>?
 
-  public init(prepare: @escaping @Sendable (Input) throws -> Output) {
+  public init(prepare: @escaping @Sendable (Input) async throws -> Output) {
     self.prepare = prepare
   }
 
@@ -42,7 +42,7 @@ public final class LatestValuePreparationWorker<Input: Sendable, Output: Sendabl
         pending = nil
         let prepare = prepare
         let input = work.input
-        let task = Task.detached(priority: .userInitiated) { try prepare(input) }
+        let task = Task.detached(priority: .userInitiated) { try await prepare(input) }
         let result = await withTaskCancellationHandler {
           await task.result
         } onCancel: {

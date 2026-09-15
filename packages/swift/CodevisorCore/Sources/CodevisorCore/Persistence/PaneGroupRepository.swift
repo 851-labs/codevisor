@@ -4,9 +4,13 @@ import Foundation
 /// identity MUST survive app restarts: the codevisor server keeps one live PTY
 /// per pane key with no reaping, so stable keys are what let terminals
 /// reattach instead of orphaning shells.
+/// `sessionId` is the SESSION-SCOPED key. It is nil for a group whose identity
+/// comes from its workspace instead of a chat (a workspace that has never
+/// hosted one). Session-keyed stores have no key to use then and decline;
+/// workspace-keyed stores ignore the parameter entirely.
 public protocol PaneGroupRepository: Sendable {
-  func load(sessionId: UUID) -> PaneGroupState?
-  func save(_ state: PaneGroupState, sessionId: UUID)
+  func load(sessionId: UUID?) -> PaneGroupState?
+  func save(_ state: PaneGroupState, sessionId: UUID?)
   func legacyPanes(sessionId: UUID) -> [PaneDescriptorState]
   func removeAll()
 }
@@ -30,11 +34,17 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
     self.store = store
   }
 
-  public func load(sessionId: UUID) -> PaneGroupState? {
-    loadAll()["\(sessionId.uuidString):center"]
+  public func load(sessionId: UUID?) -> PaneGroupState? {
+    // No session key, no legacy entry: this store only ever held per-session
+    // states, and inventing a key here would collide with a real session's.
+    guard let sessionId else { return nil }
+    return loadAll()["\(sessionId.uuidString):center"]
   }
 
-  public func save(_ state: PaneGroupState, sessionId: UUID) {
+  public func save(_ state: PaneGroupState, sessionId: UUID?) {
+    // Same reason as `load`: without a session key there is no entry this
+    // store owns, and a substitute key would masquerade as a session.
+    guard let sessionId else { return }
     var all = loadAll()
     all["\(sessionId.uuidString):center"] = state
     lock.withLock { cache = all }

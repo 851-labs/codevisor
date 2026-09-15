@@ -48,6 +48,14 @@ public final class MarkdownDocumentModel {
     self.init(path: path, fetch: { try await client.fileData(sessionId: sessionId, path: path) }, imageLoader: loader)
   }
 
+  /// A document with no chat session to read files through — a pane group whose
+  /// identity comes from its workspace rather than a chat. The path still
+  /// renders; loading reports it as unavailable instead of fetching under a
+  /// substituted session id.
+  public convenience init(unavailablePath path: String) {
+    self.init(path: path, fetch: { throw MarkdownDocumentUnavailable() })
+  }
+
   init(
     path: String,
     fetch: @escaping @Sendable () async throws -> Data,

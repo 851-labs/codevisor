@@ -9,8 +9,11 @@ extension PaneGroupModel {
   /// Adds a terminal tab, selects it, opens the group, and returns the live
   /// pane (so callers can focus it). The shell opens in the workspace's
   /// working directory.
+  /// Returns nil for a group with no session identity: the terminal key
+  /// namespaces the server's live PTY per session.
   @discardableResult
-  func addTerminalPane() -> any Pane {
+  func addTerminalPane() -> (any Pane)? {
+    guard let sessionId else { return nil }
     let previouslySelected = selectedPane
     let descriptor = state.addTerminalPane(sessionId: sessionId)
     persist()
@@ -216,6 +219,7 @@ extension PaneGroupModel {
         wireChatHost(chat, paneId: descriptor.id)
       }
       if let browser = livePane as? BrowserPane { wireBrowser(browser) }
+      if let sharing = livePane as? ScreenSharingPane { wireScreenSharing(sharing) }
       live[descriptor.id] = livePane
     }
     if let previous, previous.id != descriptor.id {
