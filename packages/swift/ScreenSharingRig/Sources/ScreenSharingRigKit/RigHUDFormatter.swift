@@ -4,9 +4,9 @@ import Foundation
 public enum RigHUDFormatter {
   public static func lines(
     sample: RigTelemetrySample?, role: RigConfiguration.Role, name: String, build: RigBuildInfo,
-    peerName: String?, peerBuild: RigBuildInfo?, reconnects: Int, capture: String?
+    peerName: String?, peerBuild: RigBuildInfo?, reconnects: Int, capture: String?, tuning: String? = nil
   ) -> [String] {
-    var lines = ["\(role.rawValue) \(name) · \(build.label)"]
+    var lines = ["\(role.rawValue) \(name) · \(build.label)" + (tuning.map { " · tuning: \($0)" } ?? "")]
     if let peerName { lines.append("peer \(peerName) · \(peerBuild?.label ?? "?")") }
     guard let sample else {
       lines.append("connection: waiting · reconnects \(reconnects)")

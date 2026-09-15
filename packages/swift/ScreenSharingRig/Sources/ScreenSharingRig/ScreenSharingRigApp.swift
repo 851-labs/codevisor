@@ -18,8 +18,8 @@
         }
         let path = (arguments[1] as NSString).expandingTildeInPath
         let configuration = try RigConfiguration.parse(try Data(contentsOf: URL(fileURLWithPath: path)))
-        // The rig uses product defaults; a diagnostic profile would need a fresh process anyway.
-        _ = try ScreenSharingFieldTrials.process.install(.default)
+        // Process-global trials from rig.json's tuning; a change means a fresh process, which `rig tune` does.
+        _ = try ScreenSharingFieldTrials.process.install(configuration.tuning.fieldTrialSelection)
         let app = NSApplication.shared
         app.setActivationPolicy(configuration.role == .viewer ? .regular : .accessory)
         let runner = RigRunner(

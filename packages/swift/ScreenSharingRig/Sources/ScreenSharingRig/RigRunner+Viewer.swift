@@ -54,7 +54,10 @@
           self.connectionChanged(state, in: session)
         }
       }
-      let view = try ScreenSharingMetalView(mailbox: peer.mailbox, metrics: metrics)
+      let tuning = configuration.tuning
+      let view = try ScreenSharingMetalView(
+        mailbox: peer.mailbox, metrics: metrics, renderOnArrival: tuning.renderOnArrival,
+        maximumDrawableCount: tuning.maximumDrawableCount, offMainPreparation: tuning.offMainPreparation)
       view.onFrameSize = { [weak session] size in Task { @MainActor in session?.frameSize = size } }
       view.onFramePresented = { [weak self] presented in
         // Delivered on the main actor by the coordinator's hop; the offset is read at that moment.

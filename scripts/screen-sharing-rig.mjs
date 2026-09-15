@@ -33,8 +33,10 @@ import {
   quote,
   rigConfiguration,
   rigInstallDirectory,
+  parseTuningArgument,
   rigLaunchAgentLabel,
-  stopPlan
+  stopPlan,
+  withTuning
 } from "./screen-sharing-rig-lib.mjs"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -58,6 +60,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   stop    [--all]                       Unload the local agent (and the host's with --all)
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
+  tune    JSON|paced15-worker|default   Write engine tuning into both configs and restart both agents (no rebuild)
   source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs
 
@@ -383,6 +386,33 @@ async function sample() {
   )
 }
 
+function tune() {
+  const tuning = parseTuningArgument(positional[0])
+  const record = readDeployRecord()
+  const local = withTuning(readLocalConfig(), tuning)
+  writeFileSync(localConfigPath, JSON.stringify(local, null, 2) + "\n", { mode: 0o600 })
+  const remoteConfig = `${record.remoteHome}/${rigInstallDirectory}/rig.json`
+  const remote = withTuning(
+    JSON.parse(
+      run("ssh", ["-o", "BatchMode=yes", record.hostSSH, `cat ${quote(remoteConfig)}`], {
+        capture: true
+      })
+    ),
+    tuning
+  )
+  writeRemoteFile(record.hostSSH, remoteConfig, JSON.stringify(remote, null, 2) + "\n")
+  run("ssh", [
+    "-o",
+    "BatchMode=yes",
+    record.hostSSH,
+    `launchctl kickstart -k gui/${record.remoteUid}/${rigLaunchAgentLabel}`
+  ])
+  run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${rigLaunchAgentLabel}`])
+  process.stdout.write(
+    `tuning ${tuning === null ? "removed" : JSON.stringify(tuning)}; both agents restarted.\n`
+  )
+}
+
 async function source() {
   const spec = positional[0]
   if (!spec) throw new Error("source needs a capture spec, e.g. source app:com.apple.dt.Xcode")
@@ -443,7 +473,8 @@ const handlers = {
   sample,
   hud,
   logs,
-  source
+  source,
+  tune
 }
 try {
   await handlers[command]()

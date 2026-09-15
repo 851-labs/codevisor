@@ -101,12 +101,14 @@ public struct RigConfiguration: Sendable {
   public let capture: CaptureSource
   public let hud: Bool
   public let telemetryDirectory: String?
+  public let tuning: RigTuning
 
   public init(
     role: Role, peer: String?, port: UInt16 = RigConfiguration.defaultPort,
     controlPort: UInt16 = RigConfiguration.defaultControlPort, token: String,
     video: ScreenSharingVideoConfiguration, codec: ScreenSharingVideoCodec = .h264,
-    capture: CaptureSource = .synthetic, hud: Bool = true, telemetryDirectory: String? = nil
+    capture: CaptureSource = .synthetic, hud: Bool = true, telemetryDirectory: String? = nil,
+    tuning: RigTuning = .default
   ) throws {
     guard token.count >= Self.minimumTokenLength, token.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
     else {
@@ -128,6 +130,7 @@ public struct RigConfiguration: Sendable {
     self.capture = capture
     self.hud = hud
     self.telemetryDirectory = telemetryDirectory
+    self.tuning = tuning
   }
 
   /// Parse `rig.json`. Unknown keys are rejected so typos cannot silently
@@ -142,7 +145,7 @@ public struct RigConfiguration: Sendable {
     }
     let known: Set<String> = [
       "role", "peer", "port", "controlPort", "token", "width", "height", "fps", "bitrate", "codec", "capture", "hud",
-      "telemetryDirectory",
+      "telemetryDirectory", "tuning",
     ]
     let unknown = Set(dictionary.keys).subtracting(known).sorted()
     guard unknown.isEmpty else { throw ScreenSharingError.invalid("rig.json has unknown keys: \(unknown)") }
@@ -186,10 +189,15 @@ public struct RigConfiguration: Sendable {
     } else {
       hud = true
     }
+    var tuning = RigTuning.default
+    if let value = dictionary["tuning"] {
+      guard let object = value as? [String: Any] else { throw ScreenSharingError.invalid("tuning must be an object") }
+      tuning = try RigTuning.parse(object)
+    }
     return try RigConfiguration(
       role: role, peer: try string("peer"), port: try port("port", fallback: defaultPort),
       controlPort: try port("controlPort", fallback: defaultControlPort), token: token, video: video, codec: codec,
-      capture: capture, hud: hud, telemetryDirectory: try string("telemetryDirectory"))
+      capture: capture, hud: hud, telemetryDirectory: try string("telemetryDirectory"), tuning: tuning)
   }
 
   /// `http://host:port` for the viewer's signaling requests.

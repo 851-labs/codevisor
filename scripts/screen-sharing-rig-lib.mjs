@@ -129,7 +129,18 @@ export function quote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`
 }
 
-const commands = ["build", "install", "deploy", "status", "stop", "sample", "hud", "logs", "source"]
+const commands = [
+  "build",
+  "install",
+  "deploy",
+  "status",
+  "stop",
+  "sample",
+  "hud",
+  "logs",
+  "source",
+  "tune"
+]
 
 /// `rig <command> [--key value | --flag]...`. Unknown commands and dangling
 /// values are errors; `build` is the default so the old invocation still works.
@@ -169,4 +180,30 @@ export function buildInfoExtras({ commit, dirty, builtAt }) {
     CodevisorRigDirty: dirty ? "true" : "false",
     CodevisorRigBuiltAt: builtAt
   }
+}
+
+/// Parses `rig tune` arguments into the `tuning` object written to both configs: a JSON object,
+/// `default` (remove all tuning), or the product profile name.
+export function parseTuningArgument(argument) {
+  if (argument === undefined)
+    throw new Error("tune needs a JSON object, a profile name, or default")
+  if (argument === "default") return null
+  if (argument === "paced15-worker") return { profile: "paced15-worker" }
+  let object
+  try {
+    object = JSON.parse(argument)
+  } catch {
+    throw new Error(`tune: not JSON, a profile name, or default: ${argument}`)
+  }
+  if (object === null || typeof object !== "object" || Array.isArray(object))
+    throw new Error("tune: expected an object")
+  return object
+}
+
+/// Returns a new configuration with `tuning` set (or removed when null).
+export function withTuning(configuration, tuning) {
+  const next = { ...configuration }
+  if (tuning === null) delete next.tuning
+  else next.tuning = tuning
+  return next
 }

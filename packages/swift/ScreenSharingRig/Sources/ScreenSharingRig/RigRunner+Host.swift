@@ -118,7 +118,7 @@
         source.start()
         log("synthetic source started")
       case .workload(let width, let height, let fps):
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         let workloadConfiguration = try ScreenSharingVideoConfiguration(
           width: width, height: height, framesPerSecond: fps, bitrate: video.bitrate)
@@ -135,7 +135,7 @@
         try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
         let (virtualDisplay, screen) = try await createVirtualDisplay(
           width: width, height: height, fps: fps, in: session)
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         let workloadConfiguration = try ScreenSharingVideoConfiguration(
           width: width, height: height, framesPerSecond: fps, bitrate: video.bitrate)
@@ -156,7 +156,7 @@
       case .virtualDesktop(let width, let height, let fps):
         try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
         let (virtualDisplay, _) = try await createVirtualDisplay(width: width, height: height, fps: fps, in: session)
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
           displayID: virtualDisplay.displayID, configuration: video, sender: session.peer.frameSender,
@@ -174,7 +174,7 @@
         guard
           let display = content.displays.first(where: { CGDisplayIsMain($0.displayID) != 0 }) ?? content.displays.first
         else { throw ScreenSharingError.unavailable("no display to capture \(bundle) on") }
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(display: display, including: [application], exceptingWindows: []),
@@ -188,7 +188,7 @@
         guard let window = content.windows.first(where: { $0.windowID == id }) else {
           throw ScreenSharingError.unavailable("no window with ID \(id)")
         }
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(desktopIndependentWindow: window), configuration: video,
@@ -199,7 +199,7 @@
         log("window \(id) (\(window.title ?? "untitled")) captured")
       case .display(let id):
         try requireScreenRecording(for: "a physical display")
-        let capture = ScreenSharingCapture()
+        let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
           displayID: id, configuration: video, sender: session.peer.frameSender, metrics: session.metrics)

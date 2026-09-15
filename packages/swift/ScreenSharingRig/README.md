@@ -21,6 +21,7 @@ bun run screen-sharing:rig status
 bun run screen-sharing:rig sample --seconds 30
 bun run screen-sharing:rig hud off
 bun run screen-sharing:rig source app:com.apple.dt.Xcode   # switch the host's source on the live session
+bun run screen-sharing:rig tune paced15-worker        # or a JSON object, or default; restarts both agents, ~3 s
 bun run screen-sharing:rig logs
 bun run screen-sharing:rig stop --all
 ```
@@ -35,6 +36,7 @@ bun run screen-sharing:rig stop --all
 - `app:BUNDLE` captures every on-screen window of one application and `window:ID` one window regardless of what covers it (both need Screen Recording). `source SPEC` switches the host between any of these on the live session: the peer and its negotiated size stay, so two sources compare under the same network conditions; a failed switch restores the previous source.
 - Every second both processes append a `RigTelemetrySample` to `~/Library/Logs/CodevisorRig/<role>.jsonl` (rotated at 50 MB) and refresh the HUD. `H` toggles the viewer HUD; `POST /hud` toggles either. `POST /sample` on the viewer's loopback control port (48732) turns the HUD off, collects N seconds, fetches the host's snapshot and writes one report.
 - The viewer calibrates its clock against the host (`GET /clock`, 25 bracketed exchanges, tightest interval, every 60 s) and shows live image age — capture timestamp to on-screen presentation — as p50/p95/max per second with the clock error. Not input-to-photon.
+- `tuning` in `rig.json` (or `rig tune`) sets the WebRTC playout/jitter trials, the viewer renderer path and the host capture request at process start; both ends report the trial that was actually installed.
 - Samples never contain SDP, addresses or credentials. The token is a trusted-LAN convenience, not an authorization system.
 
 ## Permissions

@@ -139,6 +139,7 @@
         ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/CodevisorRig")
       telemetry = try RigTelemetryWriter(directory: directory, role: configuration.role.rawValue)
       log("build \(build.label) on \(name); telemetry \(telemetry?.url.path ?? "-")")
+      if let label = configuration.tuning.label { log("tuning: \(label)") }
       switch configuration.role {
       case .host: try await runHost()
       case .viewer: try await runViewer()
@@ -262,7 +263,8 @@
         hud?.update(
           lines: RigHUDFormatter.lines(
             sample: latestSample, role: configuration.role, name: name, build: build, peerName: peerName,
-            peerBuild: peerBuild, reconnects: reconnects, capture: activeCapture.description))
+            peerBuild: peerBuild, reconnects: reconnects, capture: activeCapture.description,
+            tuning: configuration.tuning.label))
       }
     }
 
@@ -271,7 +273,7 @@
         role: configuration.role.rawValue, name: name, build: build, connection: session?.connection ?? "none",
         sessionID: session?.id, peerName: peerName, peerBuild: peerBuild, uptimeSeconds: elapsedSeconds,
         reconnects: reconnects, capture: configuration.role == .host ? activeCapture.description : nil,
-        hud: hudEnabled)
+        hud: hudEnabled, tuning: configuration.tuning.label)
     }
 
     func metricsBody() async -> RigMetricsBody {

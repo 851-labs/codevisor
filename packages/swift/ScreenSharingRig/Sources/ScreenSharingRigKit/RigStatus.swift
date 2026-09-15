@@ -13,10 +13,13 @@ public struct RigStatus: Codable, Equatable, Sendable {
   public let reconnects: Int
   public let capture: String?
   public let hud: Bool
+  /// Active engine tuning label; nil for product defaults.
+  public let tuning: String?
 
   public init(
     role: String, name: String, build: RigBuildInfo, connection: String, sessionID: String?, peerName: String?,
-    peerBuild: RigBuildInfo?, uptimeSeconds: Double, reconnects: Int, capture: String?, hud: Bool
+    peerBuild: RigBuildInfo?, uptimeSeconds: Double, reconnects: Int, capture: String?, hud: Bool,
+    tuning: String? = nil
   ) {
     self.role = role
     self.name = name
@@ -29,6 +32,7 @@ public struct RigStatus: Codable, Equatable, Sendable {
     self.reconnects = reconnects
     self.capture = capture
     self.hud = hud
+    self.tuning = tuning
   }
 }
 

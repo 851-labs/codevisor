@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   bootstrapPlan,
+  parseTuningArgument,
+  withTuning,
   buildInfoExtras,
   deployPlan,
   launchAgentPlist,
@@ -190,4 +192,21 @@ test("shell quoting and build extras", () => {
     CodevisorRigDirty: "true",
     CodevisorRigBuiltAt: "t"
   })
+})
+
+test("tune accepts a JSON object, the product profile, or default", () => {
+  assert.deepEqual(parseTuningArgument('{"playoutDelayMs":[1,15]}'), { playoutDelayMs: [1, 15] })
+  assert.deepEqual(parseTuningArgument("paced15-worker"), { profile: "paced15-worker" })
+  assert.equal(parseTuningArgument("default"), null)
+  assert.throws(() => parseTuningArgument(undefined), /tune needs/)
+  assert.throws(() => parseTuningArgument("[1,2]"), /expected an object/)
+  assert.throws(() => parseTuningArgument("not json"), /not JSON/)
+  const base = { role: "host", token: "t", tuning: { profile: "paced15-worker" } }
+  assert.deepEqual(withTuning(base, null), { role: "host", token: "t" })
+  assert.deepEqual(withTuning({ role: "host", token: "t" }, { drawables: 2 }), {
+    role: "host",
+    token: "t",
+    tuning: { drawables: 2 }
+  })
+  assert.deepEqual(base.tuning, { profile: "paced15-worker" }, "input is not mutated")
 })
