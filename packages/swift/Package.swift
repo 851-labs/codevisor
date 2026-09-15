@@ -38,7 +38,11 @@ let package = Package(
       name: "CodevisorScreenSharing",
       dependencies: [.product(name: "WebRTC", package: "WebRTC")],
       path: "CodevisorScreenSharing/Sources/CodevisorScreenSharing",
-      resources: [.copy("Resources/WebRTC-LICENSE.txt")],
+      resources: [
+        .copy("Resources/WebRTC-LICENSE.txt"),
+        .copy("Resources/WebRTC-ThirdPartyNotices-macOS.md"),
+        .copy("Resources/WebRTC-ThirdPartyNotices-iOS.md"),
+      ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .executableTarget(
