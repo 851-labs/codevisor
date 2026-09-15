@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { trackProcessTree } from "@codevisor/processes"
 
 import { PORTABLE_TERM } from "./shell.js"
 import type { TerminalSpawner } from "./types.js"
@@ -17,12 +18,22 @@ export const nodePtySpawner: TerminalSpawner = {
           name: request.env.TERM ?? PORTABLE_TERM,
           rows: request.rows
         })
+        const tracked = trackProcessTree(child.pid, { detached: true })
         child.onData(handlers.onOutput)
-        child.onExit(({ exitCode }) => handlers.onExit(exitCode))
+        child.onExit(({ exitCode }) => {
+          void tracked
+            .then((tree) => tree.stop())
+            .finally(() => handlers.onExit(exitCode))
+            .catch(() => undefined)
+        })
+        const tree = await tracked
         return {
           write: (data) => child.write(data),
           resize: (cols, rows) => child.resize(cols, rows),
-          kill: () => child.kill()
+          kill: () => {
+            void tree.stop().catch(() => child.kill("SIGKILL"))
+          },
+          stop: () => tree.stop()
         }
       },
       catch: (cause) =>

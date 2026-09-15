@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { connect, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   shellQuote,
   startBackgroundTerminalHost,
@@ -17,6 +17,7 @@ interface RegisteredTerminal {
   readonly controls: {
     readonly write?: (data: string) => void
     readonly kill?: () => void
+    readonly stop?: () => Promise<void>
   }
   readonly outputs: Array<string>
   readonly exits: Array<number | undefined>
@@ -76,6 +77,37 @@ const until = (changes: EventEmitter, predicate: () => boolean): Promise<void> =
   })
 
 describe("background terminal host", () => {
+  it("awaits a wrapper process tree and reports tracking failures", async () => {
+    const { changes, registered, registry } = makeRegistry()
+    const stopped = Promise.withResolvers<void>()
+    const stop = vi.fn(() => stopped.promise)
+    const trackProcess = vi.fn(async () => ({ stop, dispose: () => {} }))
+    host = await startBackgroundTerminalHost({
+      registry,
+      socketPath: makeSocketPath(),
+      trackProcess
+    })
+    const wrapper = await connectWrapper(host.socketPath)
+    send(wrapper, { type: "hello", key: "owned", pid: 42 })
+    await until(changes, () => registered.length === 1)
+    let finished = false
+    const closing = registered[0]!.controls.stop!().then(() => {
+      finished = true
+    })
+    expect(finished).toBe(false)
+    stopped.resolve()
+    await closing
+    expect(trackProcess).toHaveBeenCalledWith(42)
+    expect(stop).toHaveBeenCalledOnce()
+    wrapper.destroy()
+
+    trackProcess.mockRejectedValueOnce(new Error("process table unavailable"))
+    const broken = await connectWrapper(host.socketPath)
+    send(broken, { type: "hello", key: "broken", pid: 43 })
+    await until(changes, () => registered.length === 2)
+    await expect(registered[1]!.controls.stop!()).rejects.toThrow("process table unavailable")
+    broken.destroy()
+  })
   let host: BackgroundTerminalHost | undefined
   const directories: string[] = []
   const makeSocketPath = () => {

@@ -234,7 +234,8 @@ export const backgroundTerminalIntegration = async (
         {
           write: controls.write ?? (() => undefined),
           resize: controls.resize ?? (() => undefined),
-          kill: controls.kill ?? (() => undefined)
+          kill: controls.kill ?? (() => undefined),
+          ...(controls.stop === undefined ? {} : { stop: controls.stop })
         }
       )
       return { output: handle.output, exit: handle.exit, remove: handle.remove }

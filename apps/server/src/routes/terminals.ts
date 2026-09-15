@@ -2,6 +2,7 @@ import { TerminalCreateRequest } from "@codevisor/api"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import {
   matchRoute,
+  HttpFailure,
   readSchema,
   run,
   writeJson,
@@ -15,11 +16,45 @@ export const routeTerminals = async (
   url: URL
 ): Promise<boolean> => {
   if (request.method === "POST" && url.pathname === "/v1/terminals") {
-    writeJson(
-      response,
-      201,
-      await run(services.terminal.createTerminal(await readSchema(request, TerminalCreateRequest)))
+    const payload = await readSchema(request, TerminalCreateRequest)
+    const key = payload.sessionId.toLowerCase()
+    const sessions = await run(services.db.listSessions)
+    const session = sessions.find((candidate) =>
+      [candidate.id, candidate.agentSessionId].some(
+        (id) =>
+          id !== undefined && (key === id.toLowerCase() || key.startsWith(`${id.toLowerCase()}:`))
+      )
     )
+    const panes = await run(services.db.listWorkspacePanes)
+    const pane = panes.find(
+      (candidate) =>
+        candidate.paneType === "terminal" && candidate.resourceId?.toLowerCase() === key
+    )
+    const workspaces = await run(services.db.listWorkspaces)
+    if (
+      session?.isArchived ||
+      workspaces.some(
+        (workspace) =>
+          workspace.isArchived &&
+          (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
+      )
+    ) {
+      throw new HttpFailure(409, "Restore the workspace before starting a terminal")
+    }
+    const terminal = await run(services.terminal.createTerminal(payload))
+    // A concurrent archive may have happened while the PTY was spawning.
+    const archivedNow =
+      (await run(services.db.listWorkspaces)).some(
+        (workspace) =>
+          workspace.isArchived &&
+          (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
+      ) ||
+      (session !== undefined && (await run(services.db.getSessionSummary(session.id))).isArchived)
+    if (archivedNow) {
+      await run(services.terminal.closeTerminal(terminal.terminalId))
+      throw new HttpFailure(409, "Workspace was archived while starting the terminal")
+    }
+    writeJson(response, 201, terminal)
     return true
   }
 

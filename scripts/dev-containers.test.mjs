@@ -6,9 +6,40 @@ import test from "node:test"
 
 import {
   alignDevCloudCredentialUrl,
+  sweepStaleContainers,
   devRemoteHomeMounts,
   syncLinuxWorkspace
 } from "./dev-containers.mjs"
+
+for (const engine of ["apple", "docker"]) {
+  test(`${engine} cleanup matches the exact worktree label`, async () => {
+    const calls = []
+    const entries =
+      engine === "apple"
+        ? [
+            { configuration: { id: "ours", labels: { "dev.codevisor.worktree": "abc" } } },
+            { configuration: { id: "other", labels: { "dev.codevisor.worktree": "abcdef" } } }
+          ]
+        : [
+            { ID: "ours", Labels: "x=y,dev.codevisor.worktree=abc" },
+            { ID: "other", Labels: "dev.codevisor.worktree=abcdef" },
+            { ID: "unrelated", Labels: "other.label=abc" }
+          ]
+    await sweepStaleContainers(engine, "abc", async (binary, args) => {
+      calls.push([binary, args])
+      return engine === "apple"
+        ? JSON.stringify(entries)
+        : entries.map((entry) => JSON.stringify(entry)).join("\n")
+    })
+    assert.deepEqual(calls.at(-1), [
+      engine === "apple" ? "container" : "docker",
+      ["rm", "--force", "ours"]
+    ])
+    assert.equal(calls.length, 2)
+    if (engine === "docker")
+      assert.deepEqual(calls[0][1], ["ps", "--all", "--format", "{{json .}}"])
+  })
+}
 
 test("dev remotes persist root state and user workspaces independently", () => {
   assert.deepEqual(devRemoteHomeMounts("/tmp/remote-cloud"), [

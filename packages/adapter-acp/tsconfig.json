@@ -18,6 +18,9 @@
     },
     {
       "path": "../adapter-codex"
+    },
+    {
+      "path": "../processes"
     }
   ]
 }

@@ -18,7 +18,8 @@
     "@agentclientprotocol/sdk": "1.1.0",
     "@codevisor/agent-runtime": "workspace:*",
     "@codevisor/api": "workspace:*",
-    "effect": "4.0.0-beta.92"
+    "effect": "4.0.0-beta.92",
+    "@codevisor/processes": "workspace:*"
   },
   "devDependencies": {
     "vitest": "4.1.6",

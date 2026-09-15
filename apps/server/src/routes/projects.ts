@@ -174,7 +174,17 @@ export const routeProjects = async (
     await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
     if (payload.isArchived !== undefined) {
       await publishChangedWorkspaces(services, fanout, workspacesBefore)
-      await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+      await applyCascadedSessionEffects(
+        services,
+        fanout,
+        config,
+        sessionsBefore,
+        payload.isArchived
+          ? workspacesBefore
+              .filter((workspace) => workspace.projectId === project.id)
+              .map((workspace) => workspace.id)
+          : []
+      )
     }
     writeJson(response, 200, await probeProject(serverId, project))
     return true

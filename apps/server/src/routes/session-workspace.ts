@@ -317,6 +317,8 @@ export const ensureAgentSessionFor = async (
   sessionId: string
 ): Promise<AgentSessionMetadata> => {
   let session = await run(services.db.getSessionSummary(sessionId))
+  if (session.isArchived)
+    throw new HttpFailure(409, "Restore the workspace before starting its agent")
   const project = await getProjectOrFail(services.db, session.projectId)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
   let accountContext: HarnessAccountContext | undefined
@@ -370,6 +372,10 @@ export const ensureAgentSessionFor = async (
         toolGateway
       )
     )
+    if ((await run(services.db.getSessionSummary(sessionId))).isArchived) {
+      await run(services.agents.closeAgentSession(agentSessionId))
+      throw new HttpFailure(409, "Workspace was archived while starting its agent")
+    }
     return restoreSessionConfigSelections(services, sessionId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
@@ -385,6 +391,10 @@ export const ensureAgentSessionFor = async (
       toolGateway
     )
   )
+  if ((await run(services.db.getSessionSummary(sessionId))).isArchived) {
+    await run(services.agents.closeAgentSession(agentSessionId))
+    throw new HttpFailure(409, "Workspace was archived while starting its agent")
+  }
   return restoreSessionConfigSelections(services, sessionId, metadata)
 }
 

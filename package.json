@@ -48,7 +48,8 @@
     "swift:format": "scripts/swift-format.sh fix",
     "swift:format:check": "scripts/swift-format.sh check",
     "boundaries": "turbo boundaries",
-    "ratchet:check": "node scripts/check-size-ratchet.mjs"
+    "ratchet:check": "node scripts/check-size-ratchet.mjs",
+    "ios-simulator": "bun scripts/ios-simulator.mjs"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

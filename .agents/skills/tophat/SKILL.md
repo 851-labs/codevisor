@@ -71,6 +71,9 @@ Read the relevant skills and follow their current instructions:
 - [run-dev](../run-dev/SKILL.md) owns development startup and runner lifecycle.
   Use `bun run dev` for both native apps, `bun run dev:macos` or
   `bun run dev:ios` for one platform, and `bun run dev:web` for the website.
+  Before either iOS-capable runner, start `bun run ios-simulator` as a
+  separate persistent background task and wait for `Simulator ready`.
+  Keep it running across rebuilds; stopping it deletes its worktree device.
   Reuse this worktree's matching instance when possible. Track processes you
   start and respect the one-runner-per-worktree rule.
 - [ios-development](../ios-development/SKILL.md) owns iOS Simulator inspection

@@ -23,7 +23,8 @@ export const openCommandTerminal = (
       : {
           kill: () => {
             void session.killCommandProcesses(codexPid, command).catch(() => undefined)
-          }
+          },
+          stop: () => session.killCommandProcesses(codexPid, command)
         })
   })
   const terminal: CodexCommandTerminal = {

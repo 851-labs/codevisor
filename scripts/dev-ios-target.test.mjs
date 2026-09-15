@@ -4,45 +4,7 @@ import { EventEmitter } from "node:events"
 import { syncBuiltinESMExports } from "node:module"
 import test from "node:test"
 
-import { launchIOSDevelopmentApp, pickIOSSimulator } from "./dev-ios-target.mjs"
-
-const listing = {
-  devices: {
-    "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
-      { name: "iPhone 17 Pro", udid: "17pro-26-5", state: "Shutdown" },
-      { name: "iPhone 17", udid: "17-26-5", state: "Shutdown" }
-    ],
-    "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
-      { name: "iPhone 18 Pro", udid: "18pro-27-0", state: "Shutdown" },
-      { name: "iPhone 17", udid: "17-27-0", state: "Shutdown" }
-    ],
-    "com.apple.CoreSimulator.SimRuntime.watchOS-27-0": [
-      { name: "iPhone 17 Pro", udid: "not-ios", state: "Shutdown" }
-    ]
-  }
-}
-
-test("picks the device from an older runtime when the newest runtime lacks it", () => {
-  // Exactly the case a bare `name=` destination fails on: xcodebuild pins
-  // OS:latest, where no "iPhone 17 Pro" exists.
-  const simulator = pickIOSSimulator(listing, "iPhone 17 Pro")
-  assert.equal(simulator.udid, "17pro-26-5")
-  assert.equal(simulator.runtime, "iOS 26.5")
-})
-
-test("prefers the newest runtime when several have the device", () => {
-  assert.equal(pickIOSSimulator(listing, "iPhone 17").udid, "17-27-0")
-})
-
-test("prefers a booted device over a newer runtime", () => {
-  const booted = structuredClone(listing)
-  booted.devices["com.apple.CoreSimulator.SimRuntime.iOS-26-5"][1].state = "Booted"
-  assert.equal(pickIOSSimulator(booted, "iPhone 17").udid, "17-26-5")
-})
-
-test("an unknown device name fails with the override hint", () => {
-  assert.throws(() => pickIOSSimulator(listing, "iPhone 3G"), /CODEVISOR_IOS_SIMULATOR/)
-})
+import { launchIOSDevelopmentApp } from "./dev-ios-target.mjs"
 
 for (const terminationExitCode of [0, 3]) {
   test(`iOS launch waits for termination to exit with code ${terminationExitCode}`, async (t) => {
@@ -69,8 +31,9 @@ for (const terminationExitCode of [0, 3]) {
 
     const operation = launchIOSDevelopmentApp({
       repoRoot: "/test/repo",
+      requireSimulator: async () => ({ lease: "test-lease" }),
       target: {
-        simulator: { udid: "test-device", name: "Test iPhone" },
+        simulator: { udid: "test-device", name: "Test iPhone", lease: "test-lease" },
         bundleIdentifier: "test.codevisor",
         appBundle: "/test/Codevisor.app"
       },

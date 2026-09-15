@@ -1,13 +1,15 @@
 // Exercise the production UIKit transcript with fixture rows and no app/server.
 // Stage the app-owned surface just as the macOS transcript harness does.
-import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { developmentLayout } from "./dev-layout.mjs"
-import { requestedIOSSimulatorName, selectIOSSimulator } from "./dev-ios-target.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
+import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
-const root = fileURLToPath(new URL("..", import.meta.url))
+const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
+const simulator = await requireIOSSimulator(root)
+console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 const harness = join(root, "tmp/ios-transcript-tests")
 const sources = join(harness, "Sources/TranscriptSurface")
 await rm(join(harness, "Sources"), { recursive: true, force: true })
@@ -52,8 +54,6 @@ let package = Package(
 )
 `
 )
-const simulator = await selectIOSSimulator(root, requestedIOSSimulatorName())
-console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
 await runXcodebuild(
   harness,
   "ios",

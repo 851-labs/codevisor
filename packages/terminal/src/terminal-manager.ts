@@ -8,6 +8,7 @@ import {
   noopProcess,
   sequenceFrame,
   terminalAttempt,
+  terminalPromise,
   terminalResponse,
   type RunningTerminal,
   type TerminalFramePayload
@@ -36,6 +37,7 @@ export class TerminalManager extends Context.Service<TerminalManager, TerminalMa
 export const makeTerminalManager = (config: TerminalManagerConfig = {}): TerminalManagerService => {
   const terminals = new Map<string, RunningTerminal>()
   const terminalsBySession = new Map<string, string>()
+  const stopping = new Map<string, Promise<void>>()
   /* v8 ignore next -- real node-pty spawning is covered by packaging smoke tests. */
   const spawner = config.spawner ?? nodePtySpawner
   const env = config.env ?? process.env
@@ -73,9 +75,30 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
     }
   }
 
+  const stopTerminal = (terminal: RunningTerminal): Promise<void> => {
+    const existing = stopping.get(terminal.sessionId)
+    if (existing !== undefined) return existing
+    const done = Promise.resolve()
+      .then(async () => {
+        if (terminal.process.stop !== undefined) await terminal.process.stop()
+        else if (!terminal.closed) terminal.process.kill()
+        terminal.closed = true
+        terminals.delete(terminal.terminalId)
+        clearSessionMapping(terminal)
+      })
+      .finally(() => stopping.delete(terminal.sessionId))
+    stopping.set(terminal.sessionId, done)
+    return done
+  }
+
   return {
     createTerminal: (request, envOverrides) =>
       Effect.gen(function* () {
+        if (stopping.has(request.sessionId)) {
+          return yield* Effect.fail(
+            new TerminalError({ operation: "createTerminal", message: "Terminal is stopping" })
+          )
+        }
         if (request.cols < 1 || request.rows < 1) {
           return yield* Effect.fail(
             new TerminalError({
@@ -181,7 +204,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         }
       }),
     handleClientFrame: (terminalId, frame) =>
-      terminalAttempt("handleClientFrame", () => {
+      terminalPromise("handleClientFrame", async () => {
         const terminal = getTerminal(terminalId, "handleClientFrame")
         if (terminal.closed) {
           // Clients legitimately attach to exited external terminals to read
@@ -206,9 +229,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
             break
           }
           case "close": {
-            terminal.closed = true
-            terminal.process.kill()
-            clearSessionMapping(terminal)
+            await stopTerminal(terminal)
             break
           }
         }
@@ -218,16 +239,17 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         getTerminal(terminalId, "terminalFrames").frames.filter((frame) => frame.seq > since)
       ),
     closeTerminal: (terminalId) =>
-      terminalAttempt("closeTerminal", () => {
+      terminalPromise("closeTerminal", async () => {
         const terminal = getTerminal(terminalId, "closeTerminal")
-        terminal.closed = true
-        terminal.process.kill()
-        terminals.delete(terminalId)
-        clearSessionMapping(terminal)
+        await stopTerminal(terminal)
       }),
     closeTerminalForSession: (sessionId) =>
-      terminalAttempt("closeTerminalForSession", () => {
-        const terminalId = terminalsBySession.get(sessionId)
+      terminalPromise("closeTerminalForSession", async () => {
+        const terminalId =
+          terminalsBySession.get(sessionId) ??
+          [...terminalsBySession].find(
+            ([key]) => key.toLowerCase() === sessionId.toLowerCase()
+          )?.[1]
         if (terminalId === undefined) {
           return false
         }
@@ -235,6 +257,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
         // (closeTerminal and close frames clear the mapping when removing).
         const terminal = getTerminal(terminalId, "closeTerminalForSession")
         if (terminal.closed) {
+          if (terminal.process.stop !== undefined) await stopTerminal(terminal)
           // The pty already exited on its own; just drop the stale mapping.
           // Exited external terminals are kept attachable for scrollback, so
           // an explicit session close is when they finally get removed.
@@ -244,28 +267,24 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           terminalsBySession.delete(sessionId)
           return false
         }
-        terminal.closed = true
-        terminal.process.kill()
-        terminals.delete(terminalId)
-        clearSessionMapping(terminal)
+        await stopTerminal(terminal)
         return true
       }),
     closeTerminalsForSessionPrefix: (prefix) =>
-      terminalAttempt("closeTerminalsForSessionPrefix", () => {
+      terminalPromise("closeTerminalsForSessionPrefix", async () => {
         let closed = 0
+        const pending: Array<Promise<void>> = []
         for (const [sessionId, terminalId] of [...terminalsBySession]) {
-          if (!sessionId.startsWith(prefix)) continue
+          if (!sessionId.toLowerCase().startsWith(prefix.toLowerCase())) continue
           const terminal = terminals.get(terminalId)
           /* v8 ignore next -- defensive: every code path that removes a terminal also clears its session mapping. */
           if (terminal === undefined) continue
-          if (!terminal.closed) {
-            terminal.closed = true
-            terminal.process.kill()
-          }
-          terminals.delete(terminalId)
-          terminalsBySession.delete(sessionId)
+          pending.push(stopTerminal(terminal))
           closed += 1
         }
+        const results = await Promise.allSettled(pending)
+        const failed = results.find((result) => result.status === "rejected")
+        if (failed?.status === "rejected") throw failed.reason
         return closed
       }),
     snapshotTerminals: () => ({

@@ -124,6 +124,47 @@ const taskSnapshots = (events: ReadonlyArray<RuntimeEvent>) =>
     .map((payload) => payload.backgroundTasks)
 
 describe("makeAcpTerminalHost", () => {
+  it("awaits child cleanup and rejects new commands after closing starts", async () => {
+    const gate = Promise.withResolvers<void>()
+    const stop = vi.fn(() => gate.promise)
+    const child = Object.assign(new FakeChild(), { stop })
+    const { registry } = makeFakeRegistry()
+    const host = makeAcpTerminalHost({
+      env: {},
+      emit: async () => {},
+      integration: { registry },
+      spawner: () => child
+    })
+    host.create({ sessionId: "session", command: "server" })
+    let finished = false
+    const closing = host.closeAll().then(() => {
+      finished = true
+    })
+    expect(stop).toHaveBeenCalledOnce()
+    expect(finished).toBe(false)
+    expect(() => host.create({ sessionId: "session", command: "another" })).toThrow("closing")
+    gate.resolve()
+    await closing
+    expect(finished).toBe(true)
+  })
+
+  it("reports failed cleanup after attempting every owned command", async () => {
+    const stop = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("cleanup failed"))
+      .mockResolvedValue(undefined)
+    const { registry } = makeFakeRegistry()
+    const host = makeAcpTerminalHost({
+      env: {},
+      emit: async () => {},
+      integration: { registry },
+      spawner: () => Object.assign(new FakeChild(), { stop })
+    })
+    host.create({ sessionId: "session", command: "one" })
+    host.create({ sessionId: "session", command: "two" })
+    await expect(host.closeAll()).rejects.toThrow("cleanup failed")
+    expect(stop).toHaveBeenCalledTimes(2)
+  })
   beforeEach(() => {
     vi.useFakeTimers()
   })

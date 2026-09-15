@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { readProcessTable, stopProcesses } from "@codevisor/processes"
 
 /// Best-effort kill for agent-run codex commands.
 ///
@@ -76,26 +76,9 @@ export const commandSubtreePids = (
 export type CodexCommandKiller = (rootPid: number, command: string) => Promise<void>
 
 /* v8 ignore start -- exercises the live process table; the pure matching logic is unit-tested above. */
-const listProcesses = (): Promise<string> =>
-  new Promise((resolvePromise) => {
-    execFile(
-      "ps",
-      ["-axo", "pid=,ppid=,command="],
-      { maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-        resolvePromise(error === null ? stdout : "")
-      }
-    )
-  })
-
 export const killCodexCommandProcesses: CodexCommandKiller = async (rootPid, command) => {
-  const table = parseProcessTable(await listProcesses())
-  for (const pid of commandSubtreePids(table, rootPid, command)) {
-    try {
-      process.kill(pid, "SIGTERM")
-    } catch {
-      // Already gone (or not ours to signal) — best effort.
-    }
-  }
+  const table = await readProcessTable()
+  const selected = new Set(commandSubtreePids(table, rootPid, command))
+  await stopProcesses(table.filter((entry) => selected.has(entry.pid)))
 }
 /* v8 ignore stop */

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { processIdentity, stopProcessTree, trackProcessTree } from "@codevisor/processes"
 import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
 
@@ -21,6 +22,7 @@ export interface CodexClient {
   ) => void
   onClose: (handler: (error: Error) => void) => void
   close: () => void
+  closeAndWait?: () => Promise<void>
   /// OS pid of the spawned codex app-server process, when this client wraps a
   /// real child process. The protocol offers no way to kill an agent-run
   /// command, so best-effort kill walks this process's descendants instead.
@@ -60,6 +62,7 @@ export const spawnCodexClient: CodexConnector = async (request) => {
     {
       cwd: request.cwd,
       env: request.env,
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"]
     }
   )
@@ -71,7 +74,34 @@ export const spawnCodexClient: CodexConnector = async (request) => {
     exitMessage: "codex app-server exited"
   })
   const client = wireCodexClient(transport)
-  return child.pid === undefined ? client : { ...client, pid: child.pid }
+  const pid = child.pid!
+  const identity = await processIdentity(pid)
+  const tree = await trackProcessTree(pid)
+  child.once("exit", () => {
+    void tree.stop().catch(() => undefined)
+  })
+  let closing: Promise<void> | undefined
+  const closeAndWait = (): Promise<void> => {
+    closing ??= (async () => {
+      // Codex's own command teardown uses SIGKILL. Let scripts finish their
+      // shutdown handlers before closing the app-server transport.
+      try {
+        await tree.stop({ includeRoot: false })
+      } finally {
+        client.close()
+        if (identity !== undefined) await stopProcessTree(pid, { identity })
+      }
+    })()
+    return closing
+  }
+  return {
+    ...client,
+    pid,
+    closeAndWait,
+    close: () => {
+      void closeAndWait().catch(() => child.kill())
+    }
+  }
 }
 /* v8 ignore stop */
 

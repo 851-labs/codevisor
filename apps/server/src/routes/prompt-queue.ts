@@ -357,6 +357,7 @@ export const drainPromptQueue = async (
   if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnStarted(busyHarnessId)
   try {
     while (true) {
+      if ((await run(services.db.getSessionSummary(sessionId))).isArchived) return
       // A gate that closed mid-drain (Update Now) holds the *next* item —
       // registering the session so the release re-drains what remains.
       /* v8 ignore start -- timing-dependent: requires the gate to close between

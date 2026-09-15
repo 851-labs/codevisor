@@ -3,7 +3,6 @@ import { cp, mkdir, rm } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 
-import { requestedIOSSimulatorName } from "./dev-ios-target.mjs"
 import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import {
   colorFromHash,
@@ -42,7 +41,6 @@ const ambientAllowlist = new Set([
   "CODEVISOR_GHOSTTY_ARTIFACT_ORIGIN",
   // Explicit, default-off native diagnostic; the app validates the value.
   "CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE",
-  "CODEVISOR_IOS_SIMULATOR",
   "CODEVISOR_VERSION",
   "HERDMAN_VERSION"
 ])
@@ -76,7 +74,6 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
   const derivedDataPath = layout.build.macos.derivedData
   const appBundle = join(derivedDataPath, "Build", "Products", "Debug", `${appName}.app`)
   const appExecutable = join(appBundle, "Contents", "MacOS", appName)
-  const simulatorName = requestedIOSSimulatorName(environment)
 
   const preferredPort = 51_000 + (Number.parseInt(instanceHash.slice(0, 8), 16) % 10_000)
   const requestedPort = parsePort(
@@ -120,7 +117,6 @@ export async function resolveDevelopmentInstance(repoRoot, environment) {
     macOSBundleIdentifier,
     port,
     remoteDataDirectory: layout.remote.data,
-    simulatorName,
     tmpRoot: layout.tmpRoot,
     urlScheme,
     worktreeName,

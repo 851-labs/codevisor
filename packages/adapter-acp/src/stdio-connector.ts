@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
+import { trackProcessTree } from "@codevisor/processes"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { homedir } from "node:os"
 import { Readable, Writable } from "node:stream"
@@ -207,12 +208,12 @@ export const makeStdioAcpConnectorWithOptions = (
       }
       closeConnection = (error) => {
         cancelQuestions(undefined)
-        terminals?.closeAll()
+        void terminals?.closeAll().catch(() => undefined)
         connection.close(error)
       }
       child.once("exit", () => {
         cancelQuestions(undefined)
-        terminals?.closeAll()
+        void terminals?.closeAll().catch(() => undefined)
         // A CLI that dies at startup can emit megabytes of minified bundle and
         // stack frames; this message reaches the UI, so summarize rather than
         // forward the captured tail verbatim.
@@ -252,14 +253,15 @@ export const makeStdioAcpConnectorWithOptions = (
           error = new Error(summarizeProcessFailure(stderr(), raw.message))
         }
         closeConnection(error)
-        terminate()
+        await terminate()
         throw error
       }
       const established = sdkConnection(connection, stderr, {
-        terminate: () => {
+        terminate: async () => {
           cancelQuestions(undefined)
-          terminals?.closeAll()
-          terminate()
+          const results = await Promise.allSettled([terminals?.closeAll(), terminate()])
+          const failed = results.find((result) => result.status === "rejected")
+          if (failed?.status === "rejected") throw failed.reason
         },
         promptCapabilities: initialized?.agentCapabilities?.promptCapabilities ?? {},
         questions: { answerQuestion, cancelQuestions },
@@ -381,29 +383,15 @@ const promiseWithTimeout = <A>(
   })
 }
 
-const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => void) => {
-  let terminated = false
-  return () => {
-    if (terminated) return
-    terminated = true
-    const pid = child.pid
-    if (pid === undefined || process.platform === "win32") {
+const processGroupTerminator = (child: ChildProcessWithoutNullStreams): (() => Promise<void>) => {
+  const tree = child.pid === undefined ? undefined : trackProcessTree(child.pid, { detached: true })
+  tree?.catch(() => undefined)
+  return async () => {
+    if (tree === undefined) {
       child.kill()
       return
     }
-    try {
-      process.kill(-pid, "SIGTERM")
-    } catch {
-      child.kill()
-    }
-    const forceKill = setTimeout(() => {
-      try {
-        process.kill(-pid, "SIGKILL")
-      } catch {
-        // The process group already exited.
-      }
-    }, 1_000)
-    forceKill.unref()
+    await (await tree).stop()
   }
 }
 

@@ -2,6 +2,9 @@
   "files": [],
   "references": [
     {
+      "path": "./packages/processes"
+    },
+    {
       "path": "./packages/api"
     },
     {

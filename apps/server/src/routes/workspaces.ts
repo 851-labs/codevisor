@@ -194,7 +194,13 @@ export const routeWorkspaces = async (
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
     // A PUT can flip the archive bit exactly like the PATCH below, so it owes
     // the same teardown/restore.
-    await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+    await applyCascadedSessionEffects(
+      services,
+      fanout,
+      config,
+      sessionsBefore,
+      workspace.isArchived ? [workspace.id] : []
+    )
     writeJson(response, 200, workspace)
     return true
   }
@@ -206,13 +212,23 @@ export const routeWorkspaces = async (
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
     await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
     if (payload.isArchived !== undefined) {
-      await applyCascadedSessionEffects(services, fanout, config, sessionsBefore)
+      await applyCascadedSessionEffects(
+        services,
+        fanout,
+        config,
+        sessionsBefore,
+        workspace.isArchived ? [workspace.id] : []
+      )
     }
     writeJson(response, 200, workspace)
     return true
   }
 
   if (workspaceId !== undefined && request.method === "DELETE") {
+    const sessionsBefore = await run(services.db.listSessions)
+    const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    await applyCascadedSessionEffects(services, fanout, config, sessionsBefore, [workspace.id])
     await run(services.db.deleteWorkspace(workspaceId))
     await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
       id: workspaceId

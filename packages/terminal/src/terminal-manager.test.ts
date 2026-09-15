@@ -144,7 +144,8 @@ describe("@codevisor/terminal terminal manager", () => {
     )
     expect(stillReplacement.terminalId).toBe(replacement.terminalId)
     await run(manager.closeTerminal(replacement.terminalId))
-    expect(process?.killCount).toBe(1)
+    expect(process?.killCount).toBe(0)
+    expect(spawner.processes[1]?.killCount).toBe(1)
     await expect(
       run(manager.connectTerminal(terminal.terminalId, 0, () => undefined))
     ).rejects.toBeInstanceOf(TerminalError)

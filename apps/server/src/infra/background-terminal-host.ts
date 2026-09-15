@@ -6,6 +6,7 @@
 /// back down the socket. One connection == one background process.
 import { createServer, type Server, type Socket } from "node:net"
 import { unlinkSync } from "node:fs"
+import { trackProcessTree } from "@codevisor/processes"
 
 /// Structural match for the agent-runtime's BackgroundTerminalRegistry —
 /// declared locally so this module stays importable without the runtime.
@@ -15,6 +16,7 @@ export interface BackgroundTerminalHostRegistry {
     controls: {
       readonly write?: (data: string) => void
       readonly kill?: () => void
+      readonly stop?: () => Promise<void>
     }
   ) => {
     readonly output: (data: string) => void
@@ -33,13 +35,17 @@ interface WrapperFrame {
   readonly key?: string
   readonly data?: string
   readonly exitCode?: number
+  readonly pid?: number
 }
 
 export const startBackgroundTerminalHost = (options: {
   readonly socketPath: string
   readonly registry: BackgroundTerminalHostRegistry
+  readonly trackProcess?: typeof trackProcessTree
 }): Promise<BackgroundTerminalHost> => {
-  const server: Server = createServer((socket) => handleConnection(socket, options.registry))
+  const server: Server = createServer((socket) =>
+    handleConnection(socket, options.registry, options.trackProcess ?? trackProcessTree)
+  )
   // A previous server process may have left its socket file behind.
   try {
     unlinkSync(options.socketPath)
@@ -65,22 +71,37 @@ export const startBackgroundTerminalHost = (options: {
   })
 }
 
-const handleConnection = (socket: Socket, registry: BackgroundTerminalHostRegistry): void => {
+const handleConnection = (
+  socket: Socket,
+  registry: BackgroundTerminalHostRegistry,
+  track: typeof trackProcessTree
+): void => {
   let stream: { output: (data: string) => void; exit: (exitCode?: number) => void } | undefined
   let exited = false
   let buffered = ""
+  let tracked: ReturnType<typeof trackProcessTree> | undefined
 
   const handleFrame = (frame: WrapperFrame): void => {
     switch (frame.type) {
       case "hello": {
         if (stream !== undefined || typeof frame.key !== "string") break
+        const tree = typeof frame.pid === "number" && frame.pid > 1 ? track(frame.pid) : undefined
+        tracked = tree
+        tree?.catch(() => undefined)
         stream = registry.register(frame.key, {
           write: (data) => {
             socket.write(`${JSON.stringify({ type: "input", data })}\n`)
           },
           kill: () => {
             socket.write(`${JSON.stringify({ type: "kill" })}\n`)
-          }
+          },
+          ...(tree === undefined
+            ? {}
+            : {
+                stop: async () => {
+                  await (await tree).stop()
+                }
+              })
         })
         break
       }
@@ -116,6 +137,7 @@ const handleConnection = (socket: Socket, registry: BackgroundTerminalHostRegist
     }
   })
   const settle = (): void => {
+    void tracked?.then((tree) => tree.stop()).catch(() => undefined)
     // A wrapper dying without an exit frame (SIGKILL, crash) still ends the
     // terminal stream.
     if (!exited) {

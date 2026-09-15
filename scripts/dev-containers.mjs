@@ -37,9 +37,9 @@ const execEngine = (binary, args, options = {}) =>
     })
   })
 
-const tryEngine = async (binary, args) => {
+const tryEngine = async (binary, args, options) => {
   try {
-    return await execEngine(binary, args)
+    return await execEngine(binary, args, options)
   } catch {
     return undefined
   }
@@ -85,13 +85,17 @@ const WORKTREE_LABEL = "dev.codevisor.worktree"
 /// Removes leftover dev containers for THIS worktree only — a crashed rig
 /// must never leave servers running, and other worktrees' containers are
 /// never touched.
-export async function sweepStaleContainers(engine, worktreeHash) {
-  const raw = await tryEngine(engine === "apple" ? "container" : "docker", [
-    "list",
-    "--all",
-    "--format",
-    "json"
-  ])
+export async function sweepStaleContainers(
+  engine,
+  worktreeHash,
+  runEngine = (binary, args) => tryEngine(binary, args, { timeout: 5_000 })
+) {
+  const raw = await runEngine(
+    engine === "apple" ? "container" : "docker",
+    engine === "apple"
+      ? ["list", "--all", "--format", "json"]
+      : ["ps", "--all", "--format", "{{json .}}"]
+  )
   if (raw === undefined) return
   let entries = []
   try {
@@ -105,15 +109,14 @@ export async function sweepStaleContainers(engine, worktreeHash) {
   }
   for (const entry of entries) {
     const labels = entry.configuration?.labels ?? entry.Labels ?? {}
-    const label = typeof labels === "string" ? labels : labels[WORKTREE_LABEL]
     const matches =
-      typeof label === "string"
-        ? label.includes(worktreeHash)
+      typeof labels === "string"
+        ? labels.split(",").some((label) => label === `${WORKTREE_LABEL}=${worktreeHash}`)
         : labels[WORKTREE_LABEL] === worktreeHash
     if (!matches) continue
     const id = entry.configuration?.id ?? entry.ID ?? entry.Names
     if (typeof id !== "string" || id.length === 0) continue
-    await tryEngine(engine === "apple" ? "container" : "docker", ["rm", "--force", id])
+    await runEngine(engine === "apple" ? "container" : "docker", ["rm", "--force", id])
   }
 }
 

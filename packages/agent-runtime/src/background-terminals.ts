@@ -13,6 +13,7 @@ export interface ExternalTerminalControls {
   readonly write?: (data: string) => void
   readonly resize?: (cols: number, rows: number) => void
   readonly kill?: () => void
+  readonly stop?: () => Promise<void>
 }
 
 /// The caller-facing stream for one registered terminal: pump output and the

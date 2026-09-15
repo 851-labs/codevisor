@@ -5,14 +5,22 @@ description: Develop and test the Codevisor iOS app with Xcode and the iOS Simul
 
 # iOS Development
 
-Open the iOS project in Xcode before trying to use Xcode's MCP tools. From the worktree root, run:
+From the worktree root, start the simulator owner as a persistent background task:
 
 ```sh
-xed apps/ios/Codevisor.xcodeproj
+bun run ios-simulator
 ```
 
-Wait for Xcode to open and load the project. Then prefer the Xcode MCP for building, running, inspecting, and driving the app in the iOS Simulator.
+Wait for `Simulator ready`, then start `bun run dev:ios` (iOS only) or `bun run dev` (iOS and macOS) in another background task. The simulator script creates a dedicated device, boots it, opens this worktree's project in Xcode, and opens Simulator or DeviceHub. The dev runner builds, installs, and launches the app on that exact device. Follow [run-dev](../run-dev/SKILL.md) for runner lifecycle.
 
-Keep simulator work in the Xcode MCP instead of trying several overlapping tools. Do not start with `xcrun simctl`, direct `xcodebuild` commands, generic computer-use automation, or separate screenshot/accessibility tools when the Xcode MCP can perform the operation.
+Use `bun run ios-simulator --device="iPhone 17" --runtime=27.0` to select an installed device type and runtime. Omit `--runtime` for the newest compatible installed iOS runtime. Select the printed worktree device in DeviceHub if another device is currently selected. Do not use a shared default iPhone or manually create another device.
+
+Read `tmp/runtime/ios-simulator.json` for the owned device UUID. Keep the simulator task running across dev-server restarts. Stopping the simulator task shuts down and deletes that device; its data lives in CoreSimulator's default location so DeviceHub can discover it. The owner also watches launcher death and worktree deletion. A later launch recovers marked orphan devices after an owner crash.
+
+The iOS transcript and navigation test scripts also require this running simulator and select it by UUID. Keep `ios-simulator` running during the pre-commit checks, which include the iOS transcript suite.
+
+Once the scripts finish startup, prefer Xcode MCP for inspecting and driving the app. Check that its project and destination match this worktree and the printed UUID. Use the dev runner to rebuild and reinstall so its worktree configuration is preserved.
+
+Keep app inspection and interaction in Xcode MCP when it supports the operation. The repo scripts own simulator lifecycle, project opening, builds, installation, and launch.
 
 Use another tool only when the Xcode MCP is unavailable or lacks the required capability. Keep any fallback narrow, and state why it is needed before using it.

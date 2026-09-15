@@ -5,7 +5,6 @@ import {
   adapterPromise,
   clampFailureDetail,
   normalizePromptInput,
-  runtimeEffect,
   summarizeProcessFailure,
   type AgentSessionMetadata,
   type AgentSessionSummary,
@@ -73,7 +72,7 @@ export interface AcpSdkConnectionCustomization {
 }
 
 export interface AcpSdkConnectionOptions {
-  readonly terminate?: () => void
+  readonly terminate?: () => void | Promise<void>
   readonly promptCapabilities?: AcpPromptCapabilities
   readonly questions?: AcpQuestionControls
   readonly auth?: AcpAuthControls
@@ -262,9 +261,9 @@ export const sdkConnection = (
         })
         return normalizeAcpConfigOptions(response.configOptions ?? [])
       }),
-    close: runtimeEffect("close", () => {
+    close: adapterPromise("close", async () => {
       connection.close(new Error(summarizeProcessFailure(stderr(), "agent connection closed")))
-      terminate()
+      await terminate()
     })
   }
   return (

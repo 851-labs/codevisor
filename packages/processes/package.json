@@ -1,0 +1,20 @@
+{
+  "name": "@codevisor/processes",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tmp/typecheck.tsbuildinfo --pretty false",
+    "test": "vitest run src",
+    "test:coverage": "vitest run src --coverage"
+  },
+  "devDependencies": {
+    "vitest": "4.1.6"
+  }
+}

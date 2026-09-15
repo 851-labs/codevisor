@@ -16,6 +16,8 @@ export interface TerminalProcess {
   readonly write: (data: string) => void
   readonly resize: (cols: number, rows: number) => void
   readonly kill: () => void
+  /// Resolves only once the owned process tree has exited.
+  readonly stop?: () => Promise<void>
 }
 
 export interface TerminalSpawnRequest extends TerminalCreateRequest {

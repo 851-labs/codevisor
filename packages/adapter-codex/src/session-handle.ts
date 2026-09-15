@@ -41,8 +41,9 @@ export const handleFor = (session: CodexSession): AgentSessionHandle => ({
     session.pendingPrompt?.resolve({ stopReason: "cancelled" })
     session.pendingPrompt = undefined
     cancelPendingQuestions(session)
+    if (session.client.closeAndWait !== undefined) await session.client.closeAndWait()
+    else session.client.close()
     closeCommandTerminals(session)
-    session.client.close()
   }),
   prompt: (input) =>
     adapterPromise("prompt", async () => {

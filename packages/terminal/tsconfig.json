@@ -6,5 +6,5 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../api" }]
+  "references": [{ "path": "../api" }, { "path": "../processes" }]
 }

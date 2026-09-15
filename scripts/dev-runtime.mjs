@@ -1,11 +1,21 @@
-import { readFile, rm, writeFile } from "node:fs/promises"
+import { link, readFile, rm, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { processIdentity } from "../packages/processes/src/index.mjs"
 
 export async function claimDevelopmentRunner(manifestPath, manifest) {
   const serializedManifest = `${JSON.stringify(manifest, null, 2)}\n`
 
   while (true) {
     try {
-      await writeFile(manifestPath, serializedManifest, { flag: "wx" })
+      const temporary = `${manifestPath}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, serializedManifest)
+        // Publish a complete manifest atomically; contenders never mistake
+        // a partially written live claim for a crashed owner.
+        await link(temporary, manifestPath)
+      } finally {
+        await rm(temporary, { force: true })
+      }
       return
     } catch (error) {
       if (error?.code !== "EEXIST") throw error
@@ -13,7 +23,8 @@ export async function claimDevelopmentRunner(manifestPath, manifest) {
 
     const existing = await readManifest(manifestPath)
     if (existing === undefined) continue
-    if (processIsRunning(existing.pid)) {
+    const identity = await processIdentity(existing.ownerPid ?? existing.pid)
+    if (identity && (!existing.ownerStartedAt || existing.ownerStartedAt === identity.startedAt)) {
       const owner = existing.repoRoot ?? "an unknown worktree"
       throw new Error(
         `A Codevisor development runner is already active for ${owner} (PID ${existing.pid}).`
@@ -27,6 +38,7 @@ export async function claimDevelopmentRunner(manifestPath, manifest) {
 export async function releaseDevelopmentRunner(manifestPath, manifest) {
   const existing = await readManifest(manifestPath)
   if (existing?.pid !== manifest.pid || existing.repoRoot !== manifest.repoRoot) return
+  if (manifest.startedAt !== undefined && existing.startedAt !== manifest.startedAt) return
   await rm(manifestPath, { force: true })
 }
 
@@ -37,15 +49,5 @@ async function readManifest(manifestPath) {
     if (error?.code === "ENOENT") return undefined
     if (error instanceof SyntaxError) return {}
     throw error
-  }
-}
-
-function processIsRunning(processID) {
-  if (!Number.isSafeInteger(processID) || processID <= 0) return false
-  try {
-    process.kill(processID, 0)
-    return true
-  } catch (error) {
-    return error?.code === "EPERM"
   }
 }

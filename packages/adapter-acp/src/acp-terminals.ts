@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
+import { trackProcessTree } from "@codevisor/processes"
 import {
   backgroundTerminalKey,
   DEFAULT_PROMOTION_DELAY_MS,
@@ -26,6 +27,7 @@ export interface AcpTerminalChild {
   ) => void
   readonly write: (data: string) => void
   readonly kill: () => void
+  readonly stop?: () => Promise<void>
 }
 
 export type AcpTerminalSpawner = (
@@ -69,7 +71,7 @@ export interface AcpTerminalHost {
   /// Connection teardown: kills every process that is still running and
   /// removes terminals that were never surfaced to a client. Promoted
   /// terminals keep their scrollback (the tab outlives the agent process).
-  readonly closeAll: () => void
+  readonly closeAll: () => Promise<void>
 }
 
 export interface AcpTerminalHostConfig {
@@ -105,6 +107,7 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
   const registry = config.integration.registry
   const promotionDelayMs = config.integration.promotionDelayMs ?? DEFAULT_PROMOTION_DELAY_MS
   const terminals = new Map<string, AcpTerminalEntry>()
+  let closing = false
 
   const emitTasks = (sessionId: string): void => {
     const backgroundTasks = [...terminals.values()]
@@ -162,6 +165,7 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
 
   return {
     create: (params) => {
+      if (closing) throw new Error("Agent terminals are closing")
       const terminalId = randomUUID()
       const terminalKey = backgroundTerminalKey(params.sessionId, terminalId)
       const commandLine = [params.command, ...(params.args ?? [])].join(" ")
@@ -179,6 +183,7 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
         ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {})
       })
       const stream = registry.register(terminalKey, {
+        ...(child.stop === undefined ? {} : { stop: child.stop }),
         kill: () => child.kill(),
         write: (data) => child.write(data)
       })
@@ -255,13 +260,19 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
       }
       removeEntry(entry)
     },
-    closeAll: () => {
+    closeAll: async () => {
+      closing = true
+      const pending: Array<Promise<void>> = []
       for (const entry of [...terminals.values()]) {
-        if (entry.exitStatus === undefined) {
+        if (entry.child.stop !== undefined) pending.push(entry.child.stop())
+        else if (entry.exitStatus === undefined) {
           entry.child.kill()
         }
         removeEntry(entry)
       }
+      const results = await Promise.allSettled(pending)
+      const failure = results.find((result) => result.status === "rejected")
+      if (failure?.status === "rejected") throw failure.reason
     }
   }
 }
@@ -307,11 +318,18 @@ const truncateToByteLimit = (value: string, limit: number): string => {
 /* v8 ignore start -- real child_process spawning is exercised by integration smoke tests. */
 export const nodeChildProcessSpawner: AcpTerminalSpawner = (command, args, options) => {
   const child = spawn(command, [...args], {
+    detached: true,
     cwd: options.cwd,
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"]
   })
+  const tree = trackProcessTree(child.pid!, { detached: true })
+  tree.catch(() => undefined)
+  const stop = async (): Promise<void> => {
+    await (await tree).stop()
+  }
   return {
+    stop,
     onOutput: (callback) => {
       child.stdout.setEncoding("utf8")
       child.stderr.setEncoding("utf8")
@@ -326,7 +344,7 @@ export const nodeChildProcessSpawner: AcpTerminalSpawner = (command, args, optio
       child.stdin.write(data)
     },
     kill: () => {
-      child.kill()
+      void stop().catch(() => child.kill())
     }
   }
 }

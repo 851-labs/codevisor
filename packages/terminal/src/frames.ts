@@ -52,6 +52,21 @@ export const terminalAttempt = <A>(
           })
   })
 
+export const terminalPromise = <A>(
+  operation: string,
+  run: () => Promise<A>
+): Effect.Effect<A, TerminalError> =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) =>
+      cause instanceof TerminalError
+        ? cause
+        : new TerminalError({
+            operation,
+            message: cause instanceof Error ? cause.message : String(cause)
+          })
+  })
+
 export const terminalResponse = (terminal: RunningTerminal): TerminalCreateResponse => ({
   terminalId: terminal.terminalId,
   websocketPath: `/v1/terminals/${terminal.terminalId}/socket`,

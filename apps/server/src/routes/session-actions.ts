@@ -204,6 +204,9 @@ export const routeSessionActions = async (
 
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
+    if ((await run(services.db.getSessionSummary(promptSessionId))).isArchived) {
+      throw new HttpFailure(409, "Restore the workspace before sending a prompt")
+    }
     const payload = await readSchema(request, PromptRequest)
     const actionKey = actionIdKey(promptSessionId, payload.clientActionId)
     if (payload.clientActionId !== undefined) {

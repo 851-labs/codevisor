@@ -14,6 +14,7 @@
 /// (forwarded to the child's stdin) and kill requests.
 import { spawn } from "node:child_process"
 import { connect } from "node:net"
+import { trackProcessTree } from "@codevisor/processes"
 
 interface HostFrame {
   readonly type: "input" | "resize" | "kill"
@@ -29,9 +30,22 @@ const main = (): void => {
   const command = Buffer.from(encodedCommand, "base64").toString("utf8")
 
   const child = spawn("/bin/sh", ["-c", command], {
+    detached: true,
     stdio: ["pipe", "pipe", "pipe"],
     env: process.env
   })
+  child.stdin.on("error", () => undefined)
+  process.stdout.on("error", () => undefined)
+  process.stderr.on("error", () => undefined)
+  const tree = trackProcessTree(child.pid!, { detached: true })
+  let stopping: Promise<void> | undefined
+  const stop = (): Promise<void> => (stopping ??= tree.then((owner) => owner.stop()))
+  const requestStop = (): void => {
+    void stop().catch((error: unknown) => {
+      console.error(error)
+      process.exitCode = 1
+    })
+  }
 
   let socketReady = false
   let socketDead = false
@@ -47,7 +61,9 @@ const main = (): void => {
     }
   }
   socket.on("connect", () => {
-    socket.write(`${JSON.stringify({ type: "hello", key: terminalKey, command })}\n`)
+    socket.write(
+      `${JSON.stringify({ type: "hello", key: terminalKey, command, pid: process.pid })}\n`
+    )
     socketReady = true
     for (const line of pending.splice(0)) {
       socket.write(line)
@@ -82,7 +98,7 @@ const main = (): void => {
           }
           break
         case "kill":
-          child.kill("SIGTERM")
+          requestStop()
           break
         default:
           // resize is meaningless without a PTY.
@@ -102,14 +118,15 @@ const main = (): void => {
 
   const forward = (signal: NodeJS.Signals): void => {
     process.on(signal, () => {
-      child.kill(signal)
+      requestStop()
     })
   }
   forward("SIGTERM")
   forward("SIGINT")
   forward("SIGHUP")
 
-  child.once("exit", (code, signal) => {
+  child.once("exit", async (code, signal) => {
+    await stop().catch((error: unknown) => console.error(error))
     const exitCode = code ?? (signal === null ? 0 : 1)
     process.exitCode = exitCode
     send({ type: "exit", exitCode })

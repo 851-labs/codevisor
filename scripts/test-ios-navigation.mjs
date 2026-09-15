@@ -3,14 +3,14 @@
 import { fileURLToPath } from "node:url"
 import { realpath } from "node:fs/promises"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
-import { requestedIOSSimulatorName, selectIOSSimulator } from "./dev-ios-target.mjs"
 import { iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
+import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
-await bootstrapDevelopment(root)
-const simulator = await selectIOSSimulator(root, requestedIOSSimulatorName())
+const simulator = await requireIOSSimulator(root)
 console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
+await bootstrapDevelopment(root)
 await runXcodebuild(root, "ios", [
   "-project",
   "apps/ios/Codevisor.xcodeproj",

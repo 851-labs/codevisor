@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process"
-import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
 
 import { runXcodebuild } from "./xcodebuild.mjs"
+import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
 export async function buildIOSDevelopmentApp({
   repoRoot,
   layout,
-  simulatorName,
   appDisplayName,
   bundleIdentifier,
   urlScheme,
@@ -16,14 +16,9 @@ export async function buildIOSDevelopmentApp({
   environment = process.env,
   didSelectSimulator
 }) {
-  const simulator = await selectIOSSimulator(repoRoot, simulatorName, environment)
+  const simulator = await requireIOSSimulator(repoRoot)
   didSelectSimulator?.(simulator)
   console.log(`  device:    ${simulator.name} (${simulator.runtime}) ${simulator.udid}`)
-
-  // Build and launch against a concrete booted device so this also works from
-  // a fresh simulator shutdown.
-  await run(repoRoot, environment, "xcrun", ["simctl", "bootstatus", simulator.udid, "-b"])
-  await openSimulatorUserInterface(repoRoot, environment)
 
   const generatedIconDirectory = await createDevelopmentAppIcon(repoRoot, developmentIconColor)
   try {
@@ -77,9 +72,13 @@ export async function launchIOSDevelopmentApp({
   remoteToken,
   remoteName,
   urlScheme,
-  cloudURL
+  cloudURL,
+  requireSimulator = requireIOSSimulator
 }) {
   const { simulator, bundleIdentifier, appBundle } = target
+  const current = await requireSimulator(repoRoot)
+  if (current.lease !== simulator.lease)
+    throw new Error("The worktree simulator changed during the build. Restart the dev runner.")
   await run(repoRoot, environment, "xcrun", ["simctl", "install", simulator.udid, appBundle])
   // A slow termination must finish before launch, or it can kill the new app.
   // A nonzero exit is expected when this is the first launch on the device.
@@ -124,81 +123,12 @@ export async function launchIOSDevelopmentApp({
   console.log("")
 }
 
-export function terminateIOSDevelopmentApp(target) {
+export async function terminateIOSDevelopmentApp(target) {
   if (target === undefined) return
-  spawn("xcrun", ["simctl", "terminate", target.simulator.udid, target.bundleIdentifier], {
-    stdio: "ignore"
-  }).unref()
-}
-
-export const defaultIOSSimulatorName = "iPhone 17 Pro"
-
-// The simulator name the user asked for, or the shared default.
-export function requestedIOSSimulatorName(environment = process.env) {
-  return environment.CODEVISOR_IOS_SIMULATOR ?? defaultIOSSimulatorName
-}
-
-// Resolves a simulator NAME to a concrete device. Every xcodebuild
-// destination must use the returned udid: a bare `name=` destination makes
-// xcodebuild pin `OS:latest`, which fails whenever the newest installed
-// runtime lacks a device of that name (a new iOS runtime ships with the
-// new iPhone lineup, not last year's) even though an older runtime has one.
-export async function selectIOSSimulator(repoRoot, name, environment = process.env) {
-  const listing = JSON.parse(
-    await capture(repoRoot, environment, "xcrun", [
-      "simctl",
-      "list",
-      "devices",
-      "available",
-      "--json"
-    ])
-  )
-  return pickIOSSimulator(listing, name)
-}
-
-// Pure selection over a `simctl list devices --json` listing.
-export function pickIOSSimulator(listing, name) {
-  const candidates = []
-  for (const [runtimeIdentifier, devices] of Object.entries(listing.devices)) {
-    const match = runtimeIdentifier.match(/iOS-(\d+)-(\d+)$/)
-    if (match === null) continue
-    const version = Number(match[1]) * 100 + Number(match[2])
-    for (const device of devices) {
-      if (device.name !== name) continue
-      candidates.push({
-        udid: device.udid,
-        name: device.name,
-        runtime: `iOS ${match[1]}.${match[2]}`,
-        version,
-        booted: device.state === "Booted"
-      })
-    }
-  }
-  if (candidates.length === 0) {
-    throw new Error(
-      `No available simulator named "${name}" was found. Set CODEVISOR_IOS_SIMULATOR to one of the devices in \`xcrun simctl list devices available\`.`
-    )
-  }
-  // Prefer an already-booted device, then the newest runtime.
-  candidates.sort((a, b) => Number(b.booted) - Number(a.booted) || b.version - a.version)
-  return candidates[0]
-}
-
-// Xcode 27+ replaced Simulator.app with DeviceHub.app.
-async function openSimulatorUserInterface(repoRoot, environment) {
-  const developerDirectory = (await capture(repoRoot, environment, "xcode-select", ["-p"])).trim()
-  const candidates = [
-    join(developerDirectory, "Applications", "Simulator.app"),
-    join(developerDirectory, "..", "Applications", "DeviceHub.app")
-  ]
-  for (const candidate of candidates) {
-    if (await pathExists(candidate)) {
-      await run(repoRoot, environment, "open", [candidate])
-      return
-    }
-  }
-  console.warn(
-    "No simulator UI app (Simulator.app or DeviceHub.app) was found in the selected Xcode; the app is running headless. Open the simulator UI manually to see it."
+  await waitForExit(
+    spawn("xcrun", ["simctl", "terminate", target.simulator.udid, target.bundleIdentifier], {
+      stdio: "ignore"
+    })
   )
 }
 
@@ -242,32 +172,6 @@ function run(repoRoot, environment, command, arguments_) {
     if (result.code === 0) return
     throw new Error(`${command} failed (${describeExit(result)})`)
   })
-}
-
-function capture(repoRoot, environment, command, arguments_) {
-  const child = spawn(command, arguments_, {
-    cwd: repoRoot,
-    env: environment,
-    stdio: ["ignore", "pipe", "inherit"]
-  })
-  let output = ""
-  child.stdout.setEncoding("utf8")
-  child.stdout.on("data", (chunk) => {
-    output += chunk
-  })
-  return waitForExit(child).then((result) => {
-    if (result.code === 0) return output
-    throw new Error(`${command} failed (${describeExit(result)})`)
-  })
-}
-
-async function pathExists(path) {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function waitForExit(child) {
