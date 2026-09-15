@@ -237,6 +237,7 @@ Milestone 0 now includes exploratory two-Mac runs and a matched-scale 4K recordi
 | SHA-256 | `115cb9944248a3302c0c8af17462e2576a28ccc7adef9f6a1fe66ee75d9e1cc8` |
 | Required slices present | macOS arm64/x86_64; iOS arm64; iOS Simulator arm64/x86_64 |
 | Upstream workflow Xcode pin | `26.5` |
+| Codevisor source-build Xcode pin | `26.6` (deliberate toolchain update, September 14) |
 
 SwiftPM validates the artifact checksum. The package and both Xcode workspaces pin the package revision. The reference checkout is [.repos/WebRTC](../../../.repos/WebRTC), added as a submodule. The downloaded archive checksum and required slices were inspected locally; this change uses the published binary rather than claiming a local WebRTC source build.
 
@@ -244,7 +245,7 @@ The reference build script and release workflow are available at `.repos/WebRTC/
 
 The Codevisor-owned recipe is [scripts/build-webrtc.mjs](../../../scripts/build-webrtc.mjs), with source, depot_tools, Python and Xcode pins in [webrtc-build.lock.json](../../../scripts/webrtc-build.lock.json). `node scripts/build-webrtc.mjs --plan` reviews its five architecture builds without changing files. The build disables depot_tools auto-update, records actual dependency revisions and GN arguments, generates notices from each platform's GN target graph, preserves dSYMs/privacy manifests, signs the local frameworks and writes an XCFramework archive with a SHA-256 manifest. Source and artifacts stay under a recipe-specific `tmp/webrtc-source/` directory; SwiftPM pins are unchanged.
 
-A manual [artifact workflow](../../../.github/workflows/webrtc-artifact.yml) uploads a candidate for review without publishing it. Local preflight correctly rejected Xcode 27: the pinned upstream recipe requires Xcode 26.5, which is not installed here. The complete source build, notices review, binary smoke tests and candidate promotion remain unverified. Pinning inputs alone is not evidence of a byte-reproducible build.
+A manual [artifact workflow](../../../.github/workflows/webrtc-artifact.yml) uploads a candidate for review without publishing it. Codevisor's recipe now pins Xcode 26.6, deliberately differing from the upstream workflow's 26.5 pin. The earlier refusal of Xcode 27 was an exact-version preflight check, not evidence that 26.6 is incompatible. Python remains pinned to 3.12.14. The complete source build, notices review, binary smoke tests and candidate promotion remain unverified. Pinning inputs alone is not evidence of a byte-reproducible build.
 
 The archive's WebRTC BSD notice is copied into the module resource bundle and the diagnostic app. The framework's supplied privacy manifest is preserved. The archive does not include a generated aggregate third-party license file: generate and audit the complete notices from the actual source-build dependency graph before product distribution. The existing macOS release script already signs and verifies embedded frameworks inside-out, including WebRTC. A signed/notarized release containing this feature has not been produced or published.
 

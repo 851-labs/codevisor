@@ -108,7 +108,7 @@ Milestones are sequential at their interfaces. Milestone 0 can be split into dep
 - [x] Explicit native HEVC/Main444 transport and NV24 rendering in the probe, Release builds, scoped capture picker and bounded pipeline experiments; see the [pipeline report](../measurements/native-screen-sharing-pipeline-2026-09-11/README.md). Performance parity and product codec promotion remain open.
 - [x] Keep requested recovery keyframes pending across encoder admission drops; explicit decoder-state-loss checks pass for H.264 and Main444, including 4K encoder backpressure. This is local fault injection, not loss acceptance on a real network.
 - [x] Pinned source-build recipe and manual artifact workflow prepared; published dependency checksum/slices verified.
-- [ ] Complete the pinned source build with Xcode 26.5, audit generated third-party notices and validate the candidate binary before promotion.
+- [ ] Complete the pinned source build with Xcode 26.6, audit generated third-party notices and validate the candidate binary before promotion. The toolchain pin was deliberately updated from 26.5 on September 14; the WebRTC source revision and installed artifact remain unchanged.
 - [ ] Run the specified two-Mac LAN editing/terminal/browser and input-to-photon checks, including rotated/external displays and non-US input methods.
 - [ ] Validate separate networks, forced TURN, UDP restrictions and route changes against a deployed relay.
 - [ ] Complete isolated wired-LAN and 30-minute resource/latency comparisons, matched 1080p Apple runs, quantitative text fidelity and external input-to-photon measurements.

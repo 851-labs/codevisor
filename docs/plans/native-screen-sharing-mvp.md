@@ -32,7 +32,7 @@ The pinned stasel WebRTC 152.0.0 archive was downloaded again on September 14. I
 
 The built macOS app includes the WebRTC license and privacy manifest. The app and its embedded WebRTC framework pass strict signature verification. The release script signs embedded frameworks before signing and verifying the enclosing app; Developer ID signing and notarization of this final revision have not been executed.
 
-The archive contains the main WebRTC license but no aggregate third-party notices. The pinned source build and graph-derived notice audit remain open. The recipe requires Xcode 26.5 and Python 3.12.14. The available Macs have Xcode 27 beta and 26.6; an isolated Python 3.12.14 installation is now prepared. The recipe correctly refuses the unmatched Xcode before fetching sources. No toolchain pin was relaxed and no replacement dependency was promoted.
+The archive contains the main WebRTC license but no aggregate third-party notices. The pinned source build and graph-derived notice audit remain open. On September 14, the Xcode pin was deliberately updated from 26.5 to the available 26.6 toolchain; Python remains pinned to 3.12.14. The earlier 26.5 refusal was the recipe's exact-version check, not an established upstream compatibility limit. The WebRTC source revision and installed dependency remain unchanged; the candidate artifact must pass its build, notice audit and validation before promotion.
 
 Pushing to `main` automatically starts the Alpha build and publication workflow, so the dependency/distribution gate cannot be deferred to a later manual release. The PR currently has no completed GitHub build/test workflow; its correctness check is skipped while in draft. The full-check result above is local verification, not a CI result.
 
