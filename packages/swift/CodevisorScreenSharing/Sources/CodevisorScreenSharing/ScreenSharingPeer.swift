@@ -56,13 +56,8 @@ public final class ScreenSharingPeer {
   ) throws {
     self.metrics = metrics
     self.frameDeliveryAudit = frameDeliveryAudit
-    if let transportCeilingBps {
-      guard (configuration.bitrate...500_000_000).contains(transportCeilingBps) else {
-        throw ScreenSharingError.invalid("Transport ceiling must be at least the video bitrate and at most 500 Mbps.")
-      }
-      metrics.label("transportCeiling", "\(transportCeilingBps) bps")
-    }
-    self.transportCeilingBps = transportCeilingBps
+    self.transportCeilingBps = try configuration.validatingTransportCeiling(transportCeilingBps)
+    if let transportCeilingBps { metrics.label("transportCeiling", "\(transportCeilingBps) bps") }
     // Process-wide WebRTC trials must exist before ANY RTC object. Real peers always bootstrap through the REAL
     // process boundary — there is deliberately no injection point here, because a fake initializer must never be able
     // to authorize a real RTC factory or publish a playout label that nothing installed.
@@ -471,5 +466,16 @@ public final class ScreenSharingPeer {
     let continuation = gathering
     gathering = nil
     continuation?.resume(throwing: error)
+  }
+}
+
+extension ScreenSharingVideoConfiguration {
+  /// A diagnostic estimator ceiling must cover the configured bitrate and stay within reason.
+  fileprivate func validatingTransportCeiling(_ ceiling: Int?) throws -> Int? {
+    guard let ceiling else { return nil }
+    guard (bitrate...500_000_000).contains(ceiling) else {
+      throw ScreenSharingError.invalid("Transport ceiling must be at least the video bitrate and at most 500 Mbps.")
+    }
+    return ceiling
   }
 }
