@@ -55,6 +55,16 @@ jobs:
           xcodebuild -version
           xcrun swift --version
       - run: bun install --frozen-lockfile
+      - name: Install the validated SwiftLint version
+        run: |
+          tool_dir="$RUNNER_TEMP/swiftlint-0.63.1"
+          mkdir -p "$tool_dir"
+          curl --fail --location --retry 3 --output "$tool_dir/swiftlint.zip" \
+            https://github.com/realm/SwiftLint/releases/download/0.63.1/portable_swiftlint.zip
+          echo "0e6369741b694b701e9bd4e4fe9b408a5946d4bb076b79ea6ec2bce428475739  $tool_dir/swiftlint.zip" | shasum -a 256 -c -
+          ditto -x -k "$tool_dir/swiftlint.zip" "$tool_dir"
+          "$tool_dir/swiftlint" version
+          echo "$tool_dir" >> "$GITHUB_PATH"
       - run: bun run swift:format:check
       - run: bun run swift:lint
       - run: bun run swift:test
