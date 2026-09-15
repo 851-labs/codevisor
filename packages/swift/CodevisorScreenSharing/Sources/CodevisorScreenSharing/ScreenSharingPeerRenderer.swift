@@ -33,6 +33,7 @@ final class ScreenSharingPeerRenderer: NSObject, RTCVideoRenderer, @unchecked Se
         ScreenSharingVideoFrame(
           pixelBuffer: native.pixelBuffer, timestampNs: frame.timeStampNs,
           rtpTimestamp: UInt32(bitPattern: frame.timeStamp), receivedAtSeconds: CACurrentMediaTime(),
+          sourceTimestampNs: ScreenSharingFrameIdentity.sourceTimestampNs(of: native.pixelBuffer),
           deliveryAuditIdentity: identity))
       if let audit, let replaced {
         audit.record(.mailboxReplaced, replaced.deliveryAuditIdentity, rtpTimestamp: replaced.rtpTimestamp)

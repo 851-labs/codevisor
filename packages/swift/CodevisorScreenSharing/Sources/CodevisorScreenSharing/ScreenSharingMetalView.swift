@@ -19,6 +19,11 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     get { coordinator.onPresented }
     set { coordinator.onPresented = newValue }
   }
+  /// Diagnostic: every on-screen presentation with its clocks and content identity. Nil costs nothing.
+  public var onFramePresented: ((ScreenSharingPresentedFrame) -> Void)? {
+    get { coordinator.onFramePresented }
+    set { coordinator.onFramePresented = newValue }
+  }
   /// True after `stop()`; nothing is scheduled, cached or notified afterwards.
   public var isStopped: Bool { coordinator.stopped }
   package let coordinator: ScreenSharingRenderCoordinator

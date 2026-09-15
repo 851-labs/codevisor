@@ -38,6 +38,10 @@ public struct RigTelemetrySample: Codable, Equatable, Sendable {
   public let frameSize: String?
   /// Set when a source started but produced no frames; empty otherwise.
   public let sourceStall: String?
+  /// Viewer: capture-to-presentation age of frames shown this interval, from the calibrated clock offset.
+  public let imageAge: RigImageAge.Summary?
+  /// Viewer: half-width of the clock offset interval; every image age carries this uncertainty.
+  public let clockErrorMilliseconds: Double?
   public let counters: [String: Int]
   public let timingsP95: [String: Double]
 }
@@ -63,7 +67,8 @@ public struct RigTelemetryReducer: Sendable {
 
   public mutating func reduce(
     elapsed: Double, role: String, connection: String, sessionID: String?,
-    snapshot: ScreenSharingMetrics.Snapshot, statistics: [String: String], mailboxDrops: Int, frameSize: String?
+    snapshot: ScreenSharingMetrics.Snapshot, statistics: [String: String], mailboxDrops: Int, frameSize: String?,
+    imageAge: RigImageAge.Summary? = nil, clockErrorMilliseconds: Double? = nil
   ) -> RigTelemetrySample {
     let means = interval.update(statistics)
     let interval = previousElapsed.map { elapsed - $0 } ?? 0
@@ -107,6 +112,7 @@ public struct RigTelemetryReducer: Sendable {
       qualityLimitation: Self.statistic(statistics, type: "outbound-rtp", field: "qualityLimitationReason"),
       captureSize: snapshot.labels["captureSize"], captureFPS: snapshot.labels["captureFPS"], frameSize: frameSize,
       sourceStall: snapshot.labels["sourceStall"].flatMap { $0.isEmpty ? nil : $0 },
+      imageAge: imageAge, clockErrorMilliseconds: clockErrorMilliseconds,
       counters: snapshot.counters, timingsP95: snapshot.timings.mapValues(\.p95Ms))
     previousElapsed = elapsed
     previousCounters = snapshot.counters

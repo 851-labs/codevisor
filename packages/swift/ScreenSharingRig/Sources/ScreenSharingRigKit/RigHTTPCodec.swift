@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 
 /// A parsed HTTP/1.1 request. Header names are lowercased.
 public struct RigHTTPRequest: Equatable, Sendable {
@@ -6,12 +7,15 @@ public struct RigHTTPRequest: Equatable, Sendable {
   public let path: String
   public let headers: [String: String]
   public let body: Data
+  /// `CACurrentMediaTime` when the request was fully received; 0 when constructed by hand.
+  public let receivedAtSeconds: Double
 
-  public init(method: String, path: String, headers: [String: String], body: Data) {
+  public init(method: String, path: String, headers: [String: String], body: Data, receivedAtSeconds: Double = 0) {
     self.method = method
     self.path = path
     self.headers = headers
     self.body = body
+    self.receivedAtSeconds = receivedAtSeconds
   }
 }
 
@@ -60,7 +64,9 @@ public enum RigHTTPCodec {
     guard bytes.count - bodyStart >= length else { return .incomplete }
     let body = Data(bytes[bodyStart..<(bodyStart + length)])
     return .complete(
-      RigHTTPRequest(method: String(parts[0]), path: String(parts[1]), headers: headers, body: body),
+      RigHTTPRequest(
+        method: String(parts[0]), path: String(parts[1]), headers: headers, body: body,
+        receivedAtSeconds: CACurrentMediaTime()),
       consumed: bodyStart + length)
   }
 

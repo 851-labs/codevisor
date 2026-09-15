@@ -78,3 +78,13 @@ public struct RigSourceResponse: Codable, Equatable, Sendable {
     self.live = live
   }
 }
+
+/// Host clock responder: both values from the host's `CACurrentMediaTime` clock.
+public struct RigClockReply: Codable, Equatable, Sendable {
+  public let receivedAtSeconds: Double
+  public let sentAtSeconds: Double
+  public init(receivedAtSeconds: Double, sentAtSeconds: Double) {
+    self.receivedAtSeconds = receivedAtSeconds
+    self.sentAtSeconds = sentAtSeconds
+  }
+}

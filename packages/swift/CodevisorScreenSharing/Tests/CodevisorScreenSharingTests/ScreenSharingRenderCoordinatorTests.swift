@@ -348,3 +348,41 @@ struct ScreenSharingRenderCoordinatorTests {
     #expect(g.queue.drain() == 1 && !g.coordinator.inFlight && g.draws.value == 2)
   }
 }
+
+extension ScreenSharingRenderCoordinatorTests {
+  /// The diagnostic presentation hook carries the frame's clocks and in-band identity, fires only for
+  /// real presentations, and is cleared by `stop()` like the product notification.
+  @Test func framePresentedHookCarriesIdentityAndClocks() throws {
+    let f = Fixture(renderOnArrival: false)
+    var presented: [ScreenSharingPresentedFrame] = []
+    f.coordinator.onFramePresented = { presented.append($0) }
+    let submission = ControlledSubmission()
+    let buffer = try makeBuffer()
+    let frame = ScreenSharingVideoFrame(
+      pixelBuffer: buffer, timestampNs: 7, rtpTimestamp: 41, receivedAtSeconds: 0.5, sourceTimestampNs: 123_000_000)
+    f.mailbox.put(frame)
+    let selected = try #require(f.coordinator.select())
+    f.coordinator.commit(
+      submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
+    submission.complete()
+    _ = f.queue.drain()
+    submission.present(at: 0)  // a skipped drawable: not a presentation
+    #expect(f.queue.drain() == 0 && presented.isEmpty)
+    let second = ControlledSubmission()
+    f.mailbox.put(frame)
+    let again = try #require(f.coordinator.select())
+    f.coordinator.commit(second, retaining: Retained(again.frame), frame: again.frame, isNewFrame: true, submittedAt: 2)
+    second.complete()
+    _ = f.queue.drain()
+    second.present(at: 2.5)
+    #expect(f.queue.drain() == 1)
+    #expect(
+      presented == [
+        ScreenSharingPresentedFrame(
+          presentedAtSeconds: 2.5, submittedAtSeconds: 2, receivedAtSeconds: 0.5, sourceTimestampNs: 123_000_000,
+          rtpTimestamp: 41)
+      ])
+    f.coordinator.stop()
+    #expect(f.coordinator.onFramePresented == nil)
+  }
+}

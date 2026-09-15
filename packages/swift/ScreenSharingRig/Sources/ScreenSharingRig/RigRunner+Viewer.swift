@@ -2,6 +2,7 @@
   import AppKit
   import CodevisorScreenSharing
   import Foundation
+  import QuartzCore
   import ScreenSharingDiagnostics
   import ScreenSharingRigKit
 
@@ -16,6 +17,7 @@
       log("control on 127.0.0.1:\(port); host \(base.absoluteString)")
       showViewerWindow()
       startTelemetry()
+      startClockCalibration(base: base)
       var policy = RigReconnectPolicy()
       while true {
         var current: RigSession?
@@ -54,6 +56,14 @@
       }
       let view = try ScreenSharingMetalView(mailbox: peer.mailbox, metrics: metrics)
       view.onFrameSize = { [weak session] size in Task { @MainActor in session?.frameSize = size } }
+      view.onFramePresented = { [weak self] presented in
+        // Delivered on the main actor by the coordinator's hop; the offset is read at that moment.
+        MainActor.assumeIsolated {
+          guard let self, let offset = self.clockOffset, let source = presented.sourceTimestampNs else { return }
+          self.imageAges.record(
+            ageSeconds: offset.imageAgeSeconds(sourceTimestampNs: source, presentedAtSeconds: presented.presentedAtSeconds))
+        }
+      }
       if let container {
         view.frame = container.bounds
         view.autoresizingMask = [.width, .height]
@@ -92,6 +102,41 @@
       }
       log("session \(session.id) connected")
       return session
+    }
+
+    /// Calibrates `host - viewer` from 25 bracketed `/clock` exchanges, now and every 60 s, keeping the
+    /// tightest interval. Image age is only shown while an offset exists.
+    func startClockCalibration(base: URL) {
+      clockTask?.cancel()
+      clockTask = Task { @MainActor [weak self] in
+        while !Task.isCancelled {
+          guard let self else { return }
+          var samples: [RigClockOffset.Sample] = []
+          for _ in 0..<25 {
+            let sent = CACurrentMediaTime()
+            guard
+              let reply = try? await RigHTTPClient.get(
+                base.appendingPathComponent("clock"), token: configuration.token, expecting: RigClockReply.self,
+                timeoutSeconds: 2)
+            else { break }
+            samples.append(
+              RigClockOffset.Sample(
+                sentAtSeconds: sent, hostReceivedAtSeconds: reply.receivedAtSeconds,
+                hostSentAtSeconds: reply.sentAtSeconds, receivedAtSeconds: CACurrentMediaTime()))
+          }
+          if let offset = RigClockOffset(samples: samples) {
+            if clockOffset == nil {
+              log(
+                "clock offset \(String(format: "%.3f", offset.offsetSeconds)) s ± \(String(format: "%.2f", offset.errorSeconds * 1000)) ms from \(offset.sampleCount) samples"
+              )
+            }
+            clockOffset = offset
+          } else {
+            clockOffset = nil
+          }
+          try? await Task.sleep(for: .seconds(60))
+        }
+      }
     }
 
     func waitForEnd(of session: RigSession) async {

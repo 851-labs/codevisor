@@ -30,6 +30,15 @@ public enum RigHUDFormatter {
       lines.append(
         "present p95 \(format(sample.submissionToPresentationP95Milliseconds, 1)) ms · cb→present p95 \(format(sample.callbackToPresentationP95Milliseconds, 1)) ms"
       )
+      if let age = sample.imageAge {
+        lines.append(
+          "image age p50 \(format(age.p50Milliseconds, 1)) · p95 \(format(age.p95Milliseconds, 1)) · max \(format(age.maximumMilliseconds, 1)) ms ± \(format(sample.clockErrorMilliseconds, 2)) (\(age.count) frames)"
+        )
+      } else {
+        lines.append(
+          sample.clockErrorMilliseconds == nil
+            ? "image age — (clock not calibrated)" : "image age — (no frames presented this second)")
+      }
       lines.append(
         "drops mailbox \(sample.mailboxDrops) render \(sample.renderDrops) · key \(sample.keyFramesDecoded.map(String.init) ?? "—") nack \(sample.nackCount.map(String.init) ?? "—") pli \(sample.pliCount.map(String.init) ?? "—") · decode errors \(sample.decodeErrors)"
       )

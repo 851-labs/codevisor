@@ -87,7 +87,8 @@ struct RigTelemetryTests {
     let viewer = RigHUDFormatter.lines(
       sample: sample, role: .viewer, name: "mac", build: build, peerName: nil, peerBuild: nil, reconnects: 0,
       capture: nil)
-    #expect(viewer.count == 7)
+    #expect(viewer.count == 8)
+    #expect(viewer[6] == "image age — (clock not calibrated)")
     #expect(viewer[3].contains("rtt 4.0 ms · host/udp→host"))
   }
 

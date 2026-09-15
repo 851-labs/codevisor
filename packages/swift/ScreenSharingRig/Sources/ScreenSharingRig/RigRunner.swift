@@ -112,6 +112,10 @@
     var keyMonitor: Any?
     var disconnectGrace: Task<Void, Never>?
     var screenRecordingRequested = false
+    /// Viewer: calibrated `host - viewer` clock offset for image age; nil until the first calibration.
+    var clockOffset: RigClockOffset?
+    var clockTask: Task<Void, Never>?
+    var imageAges = RigImageAge()
 
     init(configuration: RigConfiguration, build: RigBuildInfo) {
       self.configuration = configuration
@@ -143,6 +147,7 @@
 
     func stop() async {
       telemetryTask?.cancel()
+      clockTask?.cancel()
       server?.stop()
       if let session {
         self.session = nil
@@ -236,7 +241,8 @@
           elapsed: elapsed, role: configuration.role.rawValue, connection: session.connection, sessionID: session.id,
           snapshot: session.metrics.snapshot(), statistics: statistics,
           mailboxDrops: session.peer.mailbox.droppedFrames,
-          frameSize: session.frameSizeLabel)
+          frameSize: session.frameSizeLabel, imageAge: imageAges.take(),
+          clockErrorMilliseconds: clockOffset.map { $0.errorSeconds * 1000 })
         latestSample = sample
         try? telemetry?.append(sample)
         if var sampling {

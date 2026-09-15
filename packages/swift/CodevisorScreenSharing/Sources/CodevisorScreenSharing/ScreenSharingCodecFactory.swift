@@ -235,6 +235,8 @@ private final class ScreenSharingRTCDecoder: NSObject, RTCVideoDecoder, @uncheck
       if let sourceTimestampNs = frame.sourceTimestampNs {
         self.deliveryAudit.decoded(sourceTimestampNs: sourceTimestampNs)
         self.metrics.label("latestDecodedSourceTimestampNs", String(sourceTimestampNs))
+        // The identity rides the decoded buffer to the renderer, as it rides the captured buffer to the encoder.
+        ScreenSharingFrameIdentity.attach(sourceTimestampNs: sourceTimestampNs, to: frame.pixelBuffer)
       }
       let decoded = RTCVideoFrame(
         buffer: RTCCVPixelBuffer(pixelBuffer: frame.pixelBuffer), rotation: ._0, timeStampNs: frame.timestampNs)

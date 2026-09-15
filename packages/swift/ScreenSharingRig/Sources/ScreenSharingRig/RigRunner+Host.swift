@@ -4,6 +4,7 @@
   import ScreenSharingDiagnostics
   import Foundation
   import ScreenSharingDiagnostics
+  import QuartzCore
   import ScreenCaptureKit
   import ScreenSharingRigKit
 
@@ -30,6 +31,11 @@
           log("switch to \(capture) failed: \(error)")
           return .error(500, "\(error)")
         }
+      }
+      if request.method == "GET", request.path == "/clock" {
+        // Both stamps are this process's CACurrentMediaTime, the clock capture timestamps use.
+        let received = request.receivedAtSeconds
+        return .json(200, RigClockReply(receivedAtSeconds: received, sentAtSeconds: CACurrentMediaTime()))
       }
       if request.method == "POST", request.path == "/offer" {
         guard let offer = try? RigJSON.decode(RigOfferRequest.self, from: request.body), offer.version == 1 else {
