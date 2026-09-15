@@ -59,7 +59,9 @@ export function rigConfiguration({
   if (
     role === "host" &&
     capture !== undefined &&
-    !/^(synthetic|workload:\d+x\d+@\d+|virtual:\d+x\d+@\d+|display:\d+)$/.test(capture)
+    !/^(synthetic|workload:\d+x\d+@\d+|virtual:\d+x\d+@\d+|app:[A-Za-z0-9.-]+|window:\d+|display:\d+)$/.test(
+      capture
+    )
   ) {
     throw new Error("capture must be synthetic, workload:WxH@fps or display:ID")
   }
@@ -118,7 +120,7 @@ export function quote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`
 }
 
-const commands = ["build", "install", "deploy", "status", "stop", "sample", "hud", "logs"]
+const commands = ["build", "install", "deploy", "status", "stop", "sample", "hud", "logs", "source"]
 
 /// `rig <command> [--key value | --flag]...`. Unknown commands and dangling
 /// values are errors; `build` is the default so the old invocation still works.

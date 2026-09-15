@@ -39,10 +39,9 @@
 
     var frameSizeLabel: String? { frameSize.map { "\(Int($0.width))×\(Int($0.height))" } }
 
-    func close() async {
-      guard !closed else { return }
-      closed = true
-      stateContinuation.finish()
+    /// Stops whatever source feeds the peer and releases it; the peer stays open so a
+    /// different source can take over on the same session.
+    func stopSource() async {
       synthetic?.stop()
       synthetic = nil
       if let workload {
@@ -56,6 +55,14 @@
       workload = nil
       capture = nil
       virtualDisplay = nil  // releasing the object removes the display
+      sourceStarted = false
+    }
+
+    func close() async {
+      guard !closed else { return }
+      closed = true
+      stateContinuation.finish()
+      await stopSource()
       metalView?.stop()
       metalView?.removeFromSuperview()
       metalView = nil
@@ -76,6 +83,8 @@
     }
 
     let configuration: RigConfiguration
+    /// The host's current source; starts as the configured one and changes through `POST /source`.
+    var activeCapture: RigConfiguration.CaptureSource
     let build: RigBuildInfo
     let name: String
     let startedNs = ScreenSharingMetrics.nowNs
@@ -100,6 +109,7 @@
 
     init(configuration: RigConfiguration, build: RigBuildInfo) {
       self.configuration = configuration
+      activeCapture = configuration.capture
       self.build = build
       name = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
       hudEnabled = configuration.hud
@@ -150,7 +160,7 @@
           session.sourceStarted = true
           Task { @MainActor in
             do { try await self.startSource(in: session) } catch {
-              self.log("source \(self.configuration.capture) failed: \(error)")
+              self.log("source \(self.activeCapture) failed: \(error)")
               await self.endSession(session, reason: "source failed")
             }
           }
@@ -236,7 +246,7 @@
         hud?.update(
           lines: RigHUDFormatter.lines(
             sample: latestSample, role: configuration.role, name: name, build: build, peerName: peerName,
-            peerBuild: peerBuild, reconnects: reconnects, capture: configuration.capture.description))
+            peerBuild: peerBuild, reconnects: reconnects, capture: activeCapture.description))
       }
     }
 
@@ -244,14 +254,14 @@
       RigStatus(
         role: configuration.role.rawValue, name: name, build: build, connection: session?.connection ?? "none",
         sessionID: session?.id, peerName: peerName, peerBuild: peerBuild, uptimeSeconds: elapsedSeconds,
-        reconnects: reconnects, capture: configuration.role == .host ? configuration.capture.description : nil,
+        reconnects: reconnects, capture: configuration.role == .host ? activeCapture.description : nil,
         hud: hudEnabled)
     }
 
     func metricsBody() async -> RigMetricsBody {
       RigMetricsBody(
         role: configuration.role.rawValue, name: name, build: build, connection: session?.connection ?? "none",
-        sessionID: session?.id, capture: configuration.role == .host ? configuration.capture.description : nil,
+        sessionID: session?.id, capture: configuration.role == .host ? activeCapture.description : nil,
         snapshot: session?.metrics.snapshot(), statistics: latestStatistics, latestSample: latestSample)
     }
 

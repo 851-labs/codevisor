@@ -4,6 +4,7 @@
   import ScreenSharingDiagnostics
   import Foundation
   import ScreenSharingDiagnostics
+  import ScreenCaptureKit
   import ScreenSharingRigKit
 
   extension RigRunner {
@@ -21,6 +22,15 @@
 
     func handleHostRequest(_ request: RigHTTPRequest) async -> RigHTTPServer.Response {
       guard RigHTTPCodec.isAuthorized(request, token: configuration.token) else { return .error(401, "bad token") }
+      if request.method == "POST", request.path == "/source" {
+        guard let body = try? RigJSON.decode(RigSourceRequest.self, from: request.body),
+          let capture = try? RigConfiguration.CaptureSource.parse(body.capture)
+        else { return .error(400, "source needs a valid capture spec") }
+        do { return .json(200, try await switchSource(to: capture)) } catch {
+          log("switch to \(capture) failed: \(error)")
+          return .error(500, "\(error)")
+        }
+      }
       if request.method == "POST", request.path == "/offer" {
         guard let offer = try? RigJSON.decode(RigOfferRequest.self, from: request.body), offer.version == 1 else {
           return .error(400, "malformed offer")
@@ -31,6 +41,30 @@
         }
       }
       return await handleSharedRequest(request) ?? .error(404, "unknown route \(request.method) \(request.path)")
+    }
+
+    /// Replaces the source on the live session (or just the default for the next one). The peer,
+    /// its negotiated size and the viewer are untouched, so two sources compare on one session.
+    func switchSource(to capture: RigConfiguration.CaptureSource) async throws -> RigSourceResponse {
+      let previous = activeCapture
+      activeCapture = capture
+      guard let session, !session.closed else {
+        log("source set to \(capture) for the next session (previously \(previous))")
+        return RigSourceResponse(capture: capture.description, previous: previous.description, live: false)
+      }
+      await session.stopSource()
+      session.metrics.label("captureSize", "")
+      do {
+        session.sourceStarted = true
+        try await startSource(in: session)
+      } catch {
+        activeCapture = previous
+        session.sourceStarted = true
+        try? await startSource(in: session)
+        throw error
+      }
+      log("source switched \(previous) → \(capture) on session \(session.id)")
+      return RigSourceResponse(capture: capture.description, previous: previous.description, live: true)
     }
 
     /// Latest offer wins: a new viewer replaces the current session outright.
@@ -62,7 +96,7 @@
 
     func startSource(in session: RigSession) async throws {
       let video = configuration.video
-      switch configuration.capture {
+      switch activeCapture {
       case .synthetic:
         let source = try SyntheticSource(
           configuration: video, sender: session.peer.frameSender, metrics: session.metrics, pixelFormat: .nv12,
@@ -70,6 +104,7 @@
         session.synthetic = source
         session.metrics.label("captureSize", "\(video.width) × \(video.height)")
         session.metrics.label("captureFPS", String(video.framesPerSecond))
+        session.metrics.label("captureSelection", "synthetic desktop pattern (no capture)")
         source.start()
         log("synthetic source started")
       case .workload(let width, let height, let fps):
@@ -116,7 +151,40 @@
         _ = try await workload.start(timeoutSeconds: 10) {
           try await capture.start(displayID: displayID, configuration: video, sender: sender, metrics: metrics)
         }
+        session.metrics.label("captureSelection", "virtual display \(displayID) with the owned workload window")
         log("virtual display \(displayID) captured with the workload window on it (\(width)×\(height)@\(fps))")
+      case .app(let bundle):
+        try requireScreenRecording(for: "an application's windows")
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let application = content.applications.first(where: { $0.bundleIdentifier == bundle }) else {
+          throw ScreenSharingError.unavailable("no running application with bundle identifier \(bundle)")
+        }
+        guard
+          let display = content.displays.first(where: { CGDisplayIsMain($0.displayID) != 0 }) ?? content.displays.first
+        else { throw ScreenSharingError.unavailable("no display to capture \(bundle) on") }
+        let capture = ScreenSharingCapture()
+        session.capture = capture
+        try await capture.start(
+          pickedFilter: SCContentFilter(display: display, including: [application], exceptingWindows: []),
+          configuration: video, sender: session.peer.frameSender, metrics: session.metrics)
+        session.metrics.label(
+          "captureSelection", "application \(bundle) (\(application.applicationName)) on display \(display.displayID)")
+        log("application \(bundle) captured on display \(display.displayID)")
+      case .window(let id):
+        try requireScreenRecording(for: "a window")
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        guard let window = content.windows.first(where: { $0.windowID == id }) else {
+          throw ScreenSharingError.unavailable("no window with ID \(id)")
+        }
+        let capture = ScreenSharingCapture()
+        session.capture = capture
+        try await capture.start(
+          pickedFilter: SCContentFilter(desktopIndependentWindow: window), configuration: video,
+          sender: session.peer.frameSender, metrics: session.metrics)
+        session.metrics.label(
+          "captureSelection",
+          "window \(id) \"\(window.title ?? "")\" of \(window.owningApplication?.bundleIdentifier ?? "?")")
+        log("window \(id) (\(window.title ?? "untitled")) captured")
       case .display(let id):
         try requireScreenRecording(for: "a physical display")
         let capture = ScreenSharingCapture()

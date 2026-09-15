@@ -61,3 +61,20 @@ public struct RigHUDRequest: Codable, Equatable, Sendable {
   public let enabled: Bool
   public init(enabled: Bool) { self.enabled = enabled }
 }
+
+/// Host control: replace the capture source, live if a session exists.
+public struct RigSourceRequest: Codable, Equatable, Sendable {
+  public let capture: String
+  public init(capture: String) { self.capture = capture }
+}
+
+public struct RigSourceResponse: Codable, Equatable, Sendable {
+  public let capture: String
+  public let previous: String
+  public let live: Bool
+  public init(capture: String, previous: String, live: Bool) {
+    self.capture = capture
+    self.previous = previous
+    self.live = live
+  }
+}

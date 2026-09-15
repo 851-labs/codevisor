@@ -17,10 +17,27 @@ public struct RigConfiguration: Sendable {
     /// A virtual display created through the private CGVirtualDisplay API with
     /// the workload window on it; requires Screen Recording on the host. Rig only.
     case virtual(width: Int, height: Int, framesPerSecond: Int)
+    /// Every on-screen window of one application, by bundle identifier; requires Screen Recording.
+    case app(String)
+    /// One window by CGWindowID, independent of what covers it; requires Screen Recording.
+    case window(UInt32)
 
     public static func parse(_ text: String) throws -> CaptureSource {
       let trimmed = text.trimmingCharacters(in: .whitespaces)
       if trimmed == "synthetic" { return .synthetic }
+      if trimmed.hasPrefix("app:") {
+        let bundle = String(trimmed.dropFirst("app:".count))
+        guard !bundle.isEmpty, bundle.range(of: "^[A-Za-z0-9.-]+$", options: .regularExpression) != nil else {
+          throw ScreenSharingError.invalid("capture app needs a bundle identifier, e.g. app:com.apple.dt.Xcode")
+        }
+        return .app(bundle)
+      }
+      if trimmed.hasPrefix("window:") {
+        guard let id = UInt32(trimmed.dropFirst("window:".count)), id > 0 else {
+          throw ScreenSharingError.invalid("capture window needs a positive window ID, e.g. window:1234")
+        }
+        return .window(id)
+      }
       if trimmed.hasPrefix("display:") {
         guard let id = UInt32(trimmed.dropFirst("display:".count)), id > 0 else {
           throw ScreenSharingError.invalid("capture display needs a positive display ID, e.g. display:1")
@@ -45,7 +62,8 @@ public struct RigConfiguration: Sendable {
           : .workload(width: width, height: height, framesPerSecond: fps)
       }
       throw ScreenSharingError.invalid(
-        "capture must be synthetic, workload:WxH@fps, virtual:WxH@fps or display:ID (got \(text))")
+        "capture must be synthetic, workload:WxH@fps, virtual:WxH@fps, app:BUNDLE, window:ID or display:ID (got \(text))"
+      )
     }
 
     public var description: String {
@@ -54,6 +72,8 @@ public struct RigConfiguration: Sendable {
       case .workload(let width, let height, let fps): return "workload:\(width)x\(height)@\(fps)"
       case .display(let id): return "display:\(id)"
       case .virtual(let width, let height, let fps): return "virtual:\(width)x\(height)@\(fps)"
+      case .app(let bundle): return "app:\(bundle)"
+      case .window(let id): return "window:\(id)"
       }
     }
   }

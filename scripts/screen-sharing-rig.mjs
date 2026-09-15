@@ -58,6 +58,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   stop    [--all]                       Unload the local agent (and the host's with --all)
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
+  source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs
 
 Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), virtual:WxH@fps (private CGVirtualDisplay with the workload window on it; needs Screen Recording), display:ID (needs Screen Recording).
@@ -377,6 +378,16 @@ async function sample() {
   )
 }
 
+async function source() {
+  const spec = positional[0]
+  if (!spec) throw new Error("source needs a capture spec, e.g. source app:com.apple.dt.Xcode")
+  const { token, host } = endpoints()
+  const result = await http("POST", `${host}/source`, token, { capture: spec })
+  process.stdout.write(
+    `host source ${result.previous} → ${result.capture}${result.live ? " (live)" : " (next session)"}\n`
+  )
+}
+
 async function hud() {
   const enabled = positional[0] === "on" ? true : positional[0] === "off" ? false : null
   if (enabled === null) throw new Error("hud needs on|off")
@@ -426,7 +437,8 @@ const handlers = {
   stop,
   sample,
   hud,
-  logs
+  logs,
+  source
 }
 try {
   await handlers[command]()

@@ -64,7 +64,7 @@ test("rig configuration validates roles, tokens, peers and capture", () => {
   assert.throws(() => rigConfiguration({ role: "viewer", token }), /host address/)
   assert.throws(() => rigConfiguration({ role: "admin", token }), /role/)
   assert.throws(() => rigConfiguration({ role: "host", token: "short" }), /token/)
-  assert.throws(() => rigConfiguration({ role: "host", token, capture: "window:3" }), /capture/)
+  assert.throws(() => rigConfiguration({ role: "host", token, capture: "tab:3" }), /capture/)
   assert.equal(
     rigConfiguration({ role: "host", token, capture: "virtual:1920x1080@60" }).capture,
     "virtual:1920x1080@60"
