@@ -256,7 +256,7 @@ struct CloudRelayLoopbackBridgeTests {
       webSocketTransport: FakeWebSocketTransport { _ in scriptedMachine.hub.socket },
       readyTimeout: .seconds(2),
       sleep: TestClock().sleep,
-      reconnectDelay: { _ in .zero }
+      reconnectDelay: { _ in .seconds(1) }
     )
     return (
       CloudRelayLoopbackBridge(

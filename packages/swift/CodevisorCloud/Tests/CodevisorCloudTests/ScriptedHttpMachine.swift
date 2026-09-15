@@ -215,7 +215,7 @@ func makeRelayEndpoint(
     webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
     readyTimeout: .seconds(2),
     sleep: TestClock().sleep,
-    reconnectDelay: { _ in .zero }
+    reconnectDelay: { _ in .seconds(1) }
   )
   let endpoint = CloudRelayEndpoint(
     hub: hub,

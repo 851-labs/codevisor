@@ -145,7 +145,8 @@ func makeHub(
     heartbeatInterval: heartbeatInterval,
     heartbeatTimeout: heartbeatTimeout,
     sleep: TestClock().sleep,
-    reconnectDelay: { _ in .zero },
+    // A closed fake socket must suspend between attempts, even with one Swift worker.
+    reconnectDelay: { _ in .seconds(1) },
     onMachineWait: onMachineWait
   )
   return (hub, store)

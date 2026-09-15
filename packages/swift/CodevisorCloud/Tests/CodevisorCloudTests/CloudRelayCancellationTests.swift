@@ -15,7 +15,7 @@ struct CloudRelayCancellationTests {
       credentialStore: InMemoryCloudCredentialStore(token: "test-token"),
       deviceName: "Test", deviceOS: "macOS",
       webSocketTransport: FakeWebSocketTransport { _ in upstream },
-      readyTimeout: .seconds(20), sleep: clock.sleep, reconnectDelay: { _ in .zero })
+      readyTimeout: .seconds(20), sleep: clock.sleep, reconnectDelay: { _ in .seconds(1) })
     let endpoint = CloudRelayEndpoint(hub: hub, machineDeviceId: "machine", machinePublicKey: "unused")
     let socket = CloudRelayWebSocketTransport(endpoint: endpoint).connect(
       URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/sessions/chat/events/socket")!),

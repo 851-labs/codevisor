@@ -161,6 +161,7 @@ let package = Package(
     .testTarget(
       name: "TranscriptKitTests",
       dependencies: [
+        "CodevisorTestSupport",
         "TranscriptKit",
         "ACPKit",
       ],

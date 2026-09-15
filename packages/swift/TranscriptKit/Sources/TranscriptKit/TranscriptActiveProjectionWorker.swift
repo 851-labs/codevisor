@@ -30,7 +30,7 @@ public final class TranscriptActiveProjectionWorker {
     public let rows: [TranscriptPresentationRow]
   }
 
-  typealias Projector = @Sendable (ConversationItem, String?) -> [TranscriptPresentationRow]
+  typealias Projector = @Sendable (ConversationItem, String?) async -> [TranscriptPresentationRow]
 
   private let worker: LatestValuePreparationWorker<Request, [TranscriptPresentationRow]>
 
@@ -42,7 +42,7 @@ public final class TranscriptActiveProjectionWorker {
 
   init(projector: @escaping Projector) {
     worker = LatestValuePreparationWorker { request in
-      projector(request.item, request.waitingOnBackgroundTask)
+      await projector(request.item, request.waitingOnBackgroundTask)
     }
   }
 
