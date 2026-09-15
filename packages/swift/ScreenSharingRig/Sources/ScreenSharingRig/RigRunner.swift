@@ -159,7 +159,10 @@
         if configuration.role == .host, !session.sourceStarted {
           session.sourceStarted = true
           Task { @MainActor in
-            do { try await self.startSource(in: session) } catch {
+            do {
+              try await self.startSource(in: session)
+              self.watchForStall(in: session)
+            } catch {
               self.log("source \(self.activeCapture) failed: \(error)")
               await self.endSession(session, reason: "source failed")
             }

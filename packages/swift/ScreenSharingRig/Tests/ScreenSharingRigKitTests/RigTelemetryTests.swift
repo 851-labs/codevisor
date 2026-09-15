@@ -145,3 +145,25 @@ extension RigTelemetryTests {
     #expect(steady.presentedFramesPerSecond == 55)
   }
 }
+
+extension RigTelemetryTests {
+  @Test func stallLabelReachesTheSampleAndTheHostHUD() {
+    var reducer = RigTelemetryReducer()
+    let metrics = ScreenSharingMetrics()
+    metrics.label("sourceStall", "")
+    let quiet = reducer.reduce(
+      elapsed: 1, role: "host", connection: "connected", sessionID: "s", snapshot: metrics.snapshot(),
+      statistics: [:], mailboxDrops: 0, frameSize: nil)
+    #expect(quiet.sourceStall == nil, "an empty label means no stall")
+    metrics.label("sourceStall", "no frames 5 s after synthetic started")
+    let stalled = reducer.reduce(
+      elapsed: 2, role: "host", connection: "connected", sessionID: "s", snapshot: metrics.snapshot(),
+      statistics: [:], mailboxDrops: 0, frameSize: nil)
+    #expect(stalled.sourceStall == "no frames 5 s after synthetic started")
+    let lines = RigHUDFormatter.lines(
+      sample: stalled, role: .host, name: "h", build: .unknown, peerName: nil, peerBuild: nil, reconnects: 0,
+      capture: "synthetic")
+    #expect(lines.count == 6)
+    #expect(lines[2].contains("STALL: no frames 5 s after synthetic started"))
+  }
+}

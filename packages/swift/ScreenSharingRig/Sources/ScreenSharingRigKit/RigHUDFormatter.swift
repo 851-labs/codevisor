@@ -34,7 +34,9 @@ public enum RigHUDFormatter {
         "drops mailbox \(sample.mailboxDrops) render \(sample.renderDrops) · key \(sample.keyFramesDecoded.map(String.init) ?? "—") nack \(sample.nackCount.map(String.init) ?? "—") pli \(sample.pliCount.map(String.init) ?? "—") · decode errors \(sample.decodeErrors)"
       )
     case .host:
-      lines.append("source \(capture ?? "—") · \(sample.captureSize ?? "—") @ \(sample.captureFPS ?? "—")")
+      lines.append(
+        "source \(capture ?? "—") · \(sample.captureSize ?? "—") @ \(sample.captureFPS ?? "—")"
+          + (sample.sourceStall.map { " · STALL: \($0)" } ?? ""))
       lines.append(
         "captured \(fps(sample.capturedFramesPerSecond)) · encoded \(fps(sample.encodedFramesPerSecond)) · encode p95 \(format(sample.encodeP95Milliseconds, 1)) ms"
       )

@@ -36,6 +36,8 @@ public struct RigTelemetrySample: Codable, Equatable, Sendable {
   public let captureSize: String?
   public let captureFPS: String?
   public let frameSize: String?
+  /// Set when a source started but produced no frames; empty otherwise.
+  public let sourceStall: String?
   public let counters: [String: Int]
   public let timingsP95: [String: Double]
 }
@@ -104,6 +106,7 @@ public struct RigTelemetryReducer: Sendable {
       availableOutgoingKilobits: number("candidate-pair", "availableOutgoingBitrate").map { $0 / 1000 },
       qualityLimitation: Self.statistic(statistics, type: "outbound-rtp", field: "qualityLimitationReason"),
       captureSize: snapshot.labels["captureSize"], captureFPS: snapshot.labels["captureFPS"], frameSize: frameSize,
+      sourceStall: snapshot.labels["sourceStall"].flatMap { $0.isEmpty ? nil : $0 },
       counters: snapshot.counters, timingsP95: snapshot.timings.mapValues(\.p95Ms))
     previousElapsed = elapsed
     previousCounters = snapshot.counters

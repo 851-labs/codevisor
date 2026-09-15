@@ -195,6 +195,25 @@
       }
     }
 
+    /// A source that starts and then delivers nothing is what an exhausted capture daemon looks
+    /// like (see the plan): say so instead of showing a silent "— fps".
+    static let stallSeconds: Double = 5
+
+    func watchForStall(in session: RigSession) {
+      session.metrics.label("sourceStall", "")
+      let started = session.metrics.snapshot().counters["capturedFrames", default: 0]
+      Task { @MainActor [weak self, weak session] in
+        try? await Task.sleep(for: .seconds(Self.stallSeconds))
+        guard let self, let session, session === self.session, !session.closed else { return }
+        let frames = session.metrics.snapshot().counters["capturedFrames", default: 0]
+        guard frames == started else { return }
+        let text =
+          "no frames \(Int(Self.stallSeconds)) s after \(self.activeCapture) started; if this persists for physical displays too, replayd is probably exhausted (kill it; see docs/plans/screen-sharing-rig.md)"
+        session.metrics.label("sourceStall", text)
+        self.log("stall: \(text)")
+      }
+    }
+
     /// Non-owned capture needs the Screen Recording grant. When it is missing, ask once so the rig
     /// appears in System Settings → Privacy & Security → Screen & System Audio Recording, then fail
     /// clearly; the viewer keeps retrying and picks the grant up on the next session.

@@ -13,7 +13,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
@@ -298,7 +298,12 @@ async function install() {
   writeRemoteFile(
     target,
     remotePlist,
-    launchAgentPlist({ home: remoteHome, configPath: remoteConfig, logPath: remoteLog })
+    launchAgentPlist({
+      home: remoteHome,
+      configPath: remoteConfig,
+      logPath: remoteLog,
+      role: "host"
+    })
   )
 
   await build({ debug: Boolean(options.debug), install: false })
@@ -364,13 +369,13 @@ async function status() {
 async function sample() {
   const seconds = Number(options.seconds)
   if (!Number.isInteger(seconds) || seconds < 1) throw new Error("sample needs --seconds N")
-  const report =
-    options.report ??
-    join(
-      root,
-      "tmp/screen-sharing/rig-samples",
-      `${new Date().toISOString().replace(/[:.]/g, "-")}.json`
-    )
+  const report = options.report
+    ? resolve(options.report)
+    : join(
+        root,
+        "tmp/screen-sharing/rig-samples",
+        `${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+      )
   const { token, viewer } = endpoints()
   const result = await http("POST", `${viewer}/sample`, token, { seconds, report })
   process.stdout.write(
