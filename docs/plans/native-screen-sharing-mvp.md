@@ -14,7 +14,7 @@ The intended MVP is one Codevisor Mac viewing and controlling an existing displa
 - Chatless workspace navigation through the shared pane container, including conversion from New Tab and sidebar title updates.
 - Bounded media ownership, terminal renderer stop and owner-scoped cancellation of pending host starts.
 - A default-off `CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE=paced15-worker` profile: 120 fps capture request at adaptive level zero, 1–15 ms receiver playout bounds, synchronized arrival rendering with two drawables and off-main preparation. A capture request is not an achieved frame rate. Process-wide WebRTC configuration requires an app restart to change.
-- A standalone probe and a pinned WebRTC artifact-build recipe. The recipe's complete source build and generated dependency notices remain unverified.
+- A standalone probe and a pinned WebRTC artifact-build recipe. The source build, generated-notice audit and isolated candidate tests now pass with Xcode 26.6; the candidate is not installed or promoted.
 
 ## Existing verification
 
@@ -32,7 +32,9 @@ The pinned stasel WebRTC 152.0.0 archive was downloaded again on September 14. I
 
 The built macOS app includes the WebRTC license and privacy manifest. The app and its embedded WebRTC framework pass strict signature verification. The release script signs embedded frameworks before signing and verifying the enclosing app; Developer ID signing and notarization of this final revision have not been executed.
 
-The archive contains the main WebRTC license but no aggregate third-party notices. The pinned source build and graph-derived notice audit remain open. On September 14, the Xcode pin was deliberately updated from 26.5 to the available 26.6 toolchain; Python remains pinned to 3.12.14. The earlier 26.5 refusal was the recipe's exact-version check, not an established upstream compatibility limit. The WebRTC source revision and installed dependency remain unchanged; the candidate artifact must pass its build, notice audit and validation before promotion.
+The published archive contains the main WebRTC license but no aggregate third-party notices. On September 14, the Xcode pin was deliberately updated from 26.5 to 26.6 (17F113), with Python 3.12.14 unchanged. The first source-build attempt found a missing depot_tools bootstrap before GN; the corrected recipe initializes the pinned tools without updating their revision. The subsequent complete build passed for all five macOS/iOS architectures and packaged a candidate XCFramework (`cd477857489c347daddfbfa19bf0d905a2e2a143f3ee84543ba887b97cc13c45`). The generated notices match the exact source license texts for every mapped dependency in all five target graphs. Headers, slices, signatures, privacy manifests and matching dSYM UUIDs passed inspection; all 180 unchanged screen-sharing tests passed against the isolated candidate, as did factory/track/peer/data-channel creation and close. No capture or media connection was run with it.
+
+The WebRTC source revision and installed product dependency remain unchanged. The candidate includes audited notices, but the product resource bundle still needs their integration and packaging verification. Actual-app validation of the candidate, its promotion, and Developer ID signing/notarization remain open. A successful source build does not establish byte reproducibility or performance equivalence.
 
 Pushing to `main` automatically starts the Alpha build and publication workflow, so the dependency/distribution gate cannot be deferred to a later manual release. The PR currently has no completed GitHub build/test workflow; its correctness check is skipped while in draft. The full-check result above is local verification, not a CI result.
 

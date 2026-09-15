@@ -203,6 +203,9 @@ function build() {
       "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
       lock.depotToolsRevision
     )
+    // Disabling depot_tools updates also skips gclient's implicit bootstrap.
+    // Initialize its pinned tools without advancing the checkout revision.
+    run(join(depot, "ensure_bootstrap"), [], depot)
     checkout(source, "https://webrtc.googlesource.com/src.git", lock.sourceRevision)
     writeFileSync(
       join(workspace, ".gclient"),
