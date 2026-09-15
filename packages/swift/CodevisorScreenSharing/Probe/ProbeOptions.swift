@@ -1,10 +1,11 @@
 import CodevisorScreenSharing
+import ScreenSharingDiagnostics
 import CoreVideo
 import Foundation
 
 struct ProbeOptions {
   enum Mode: String, Codable { case loopback, send, receive }
-  enum SyntheticPixelFormat: String { case bgra, nv12 }
+  typealias SyntheticPixelFormat = ScreenSharingDiagnostics.SyntheticPixelFormat
   let mode: Mode
   let configuration: ScreenSharingVideoConfiguration
   let duration: Double

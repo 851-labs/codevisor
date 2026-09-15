@@ -5,8 +5,8 @@ import Foundation
 import ImageIO
 import CodevisorScreenSharing
 
-enum ProbeCodecPattern {
-  static func make(width: Int, height: Int, sequence: Int) throws -> CVPixelBuffer {
+package enum ProbeCodecPattern {
+  package static func make(width: Int, height: Int, sequence: Int) throws -> CVPixelBuffer {
     var pixel: CVPixelBuffer?
     let status = CVPixelBufferCreate(
       nil, width, height, kCVPixelFormatType_32BGRA,
@@ -51,7 +51,7 @@ enum ProbeCodecPattern {
     return pixel
   }
 
-  static func write(_ pixel: CVPixelBuffer, to url: URL) throws {
+  package static func write(_ pixel: CVPixelBuffer, to url: URL) throws {
     CVPixelBufferLockBaseAddress(pixel, .readOnly)
     defer { CVPixelBufferUnlockBaseAddress(pixel, .readOnly) }
     guard CVPixelBufferGetPixelFormatType(pixel) == kCVPixelFormatType_32BGRA,
@@ -62,7 +62,7 @@ enum ProbeCodecPattern {
     guard CGImageDestinationFinalize(destination) else { throw ScreenSharingError.invalid("PNG write failed.") }
   }
 
-  static func rgbRMSE(_ source: CVPixelBuffer, _ decoded: CVPixelBuffer) -> Double? {
+  package static func rgbRMSE(_ source: CVPixelBuffer, _ decoded: CVPixelBuffer) -> Double? {
     guard CVPixelBufferGetPixelFormatType(decoded) == kCVPixelFormatType_32BGRA,
       CVPixelBufferGetWidth(source) == CVPixelBufferGetWidth(decoded),
       CVPixelBufferGetHeight(source) == CVPixelBufferGetHeight(decoded)

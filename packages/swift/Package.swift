@@ -27,6 +27,7 @@ let package = Package(
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
     .executable(name: "screen-sharing-probe", targets: ["ScreenSharingProbe"]),
+    .executable(name: "screen-sharing-rig", targets: ["ScreenSharingRig"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -47,9 +48,39 @@ let package = Package(
     ),
     .executableTarget(
       name: "ScreenSharingProbe",
-      dependencies: ["CodevisorScreenSharing", "CodevisorClient"],
+      dependencies: ["CodevisorScreenSharing", "CodevisorClient", "ScreenSharingDiagnostics"],
       path: "CodevisorScreenSharing/Probe",
       swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // Diagnostic sources shared by the probe and the rig: workload window, painter, synthetic source.
+    .target(
+      name: "ScreenSharingDiagnostics",
+      dependencies: ["CodevisorScreenSharing"],
+      path: "CodevisorScreenSharing/Diagnostics",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // The two-Mac development rig: a consumer of the media package, never shipped. See docs/plans/screen-sharing-rig.md.
+    .target(
+      name: "ScreenSharingRigKit",
+      dependencies: ["CodevisorScreenSharing"],
+      path: "ScreenSharingRig/Sources/ScreenSharingRigKit",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
+      name: "ScreenSharingRig",
+      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics", "ScreenSharingRigKit"],
+      path: "ScreenSharingRig/Sources/ScreenSharingRig",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "ScreenSharingRigKitTests",
+      dependencies: ["ScreenSharingRigKit", "CodevisorTestSupport"],
+      path: "ScreenSharingRig/Tests/ScreenSharingRigKitTests",
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      // SwiftPM's macOS test bundle loader needs the sibling binary framework.
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
     .testTarget(
       name: "CodevisorScreenSharingTests",

@@ -36,6 +36,7 @@
     "release:tap": "node scripts/release/update-homebrew-tap.mjs",
     "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "screen-sharing:probe": "bun scripts/screen-sharing-probe.mjs",
+    "screen-sharing:rig": "bun scripts/screen-sharing-rig.mjs",
     "swift:test": "swift test --package-path packages/swift",
     "swift:test:macos-transcript": "bun scripts/test-macos-transcript.mjs",
     "swift:test:macos-composer": "bun scripts/test-macos-composer.mjs",

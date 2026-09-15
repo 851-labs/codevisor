@@ -6,55 +6,55 @@ import QuartzCore
 /// owned-window capture diagnostic. Counters describe AppKit draw calls and
 /// received events, never claimed source/display presentation times.
 @MainActor
-final class WorkloadWindow: NSWindow {
-  override var canBecomeKey: Bool { true }
-  override var canBecomeMain: Bool { true }
+package final class WorkloadWindow: NSWindow {
+  package override var canBecomeKey: Bool { true }
+  package override var canBecomeMain: Bool { true }
   // The diagnostic may need a 4K backing surface on a smaller physical display.
-  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+  package override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
-struct WorkloadDraw: Encodable {
-  let code: Int
-  let startedAtSeconds: Double
+package struct WorkloadDraw: Encodable {
+  package let code: Int
+  package let startedAtSeconds: Double
 }
 
-struct WorkloadEvent: Encodable {
-  let kind: String
-  let response: Int
-  let elapsedSeconds: Double
+package struct WorkloadEvent: Encodable {
+  package let kind: String
+  package let response: Int
+  package let elapsedSeconds: Double
 }
 
 @MainActor
-final class WorkloadView: NSView {
-  let painter: ProbeDesktopPainter
-  let fps: Int
+package final class WorkloadView: NSView {
+  package let painter: ProbeDesktopPainter
+  package let fps: Int
   private var timer: Timer?
-  private(set) var startedAt = 0.0
-  private(set) var drawCalls = 0
-  private(set) var sequence = 0
-  private(set) var responses = 0
-  private(set) var events: [WorkloadEvent] = []
+  package private(set) var startedAt = 0.0
+  package private(set) var drawCalls = 0
+  package private(set) var sequence = 0
+  package private(set) var responses = 0
+  package private(set) var events: [WorkloadEvent] = []
   private let recordDrawTimes: Bool
   /// Bounded first-draw-start record (shared semantics with the image-age analyzer).
   private var drawRecord = ScreenSharingDrawTimestampRecord()
-  var drawSamples: [WorkloadDraw] {
+  package var drawSamples: [WorkloadDraw] {
     drawRecord.samples.map { WorkloadDraw(code: $0.code, startedAtSeconds: $0.startedAtSeconds) }
   }
-  var drawSamplesTruncated: Bool { drawRecord.truncated }
+  package var drawSamplesTruncated: Bool { drawRecord.truncated }
   /// Core Animation time at which the first `draw(_:)` call started, and the
   /// time at which that call returned. Neither is a presentation time: the
   /// window server displays the drawn content later.
-  private(set) var firstDrawStartedAt: Double?
-  private(set) var firstDrawCompletedAt: Double?
+  package private(set) var firstDrawStartedAt: Double?
+  package private(set) var firstDrawCompletedAt: Double?
   /// Called once, on the main actor, right after the first draw call returns.
-  var onFirstDraw: (() -> Void)?
+  package var onFirstDraw: (() -> Void)?
   /// Frozen at a pause: later redraws keep the same code (see the sequence type).
-  private(set) var codes: ScreenSharingWorkloadSequence?
-  var isPaused: Bool { codes?.isFrozen ?? false }
-  override var acceptsFirstResponder: Bool { true }
-  override var isOpaque: Bool { true }
+  package private(set) var codes: ScreenSharingWorkloadSequence?
+  package var isPaused: Bool { codes?.isFrozen ?? false }
+  package override var acceptsFirstResponder: Bool { true }
+  package override var isOpaque: Bool { true }
 
-  init(painter: ProbeDesktopPainter, recordDrawTimes: Bool) {
+  package init(painter: ProbeDesktopPainter, recordDrawTimes: Bool) {
     self.painter = painter
     self.fps = painter.fps
     self.recordDrawTimes = recordDrawTimes
@@ -63,7 +63,7 @@ final class WorkloadView: NSView {
 
   required init?(coder: NSCoder) { nil }
 
-  func start() {
+  package func start() {
     startedAt = CACurrentMediaTime()
     codes = ScreenSharingWorkloadSequence(framesPerSecond: fps, startedAtSeconds: startedAt)
     let timer = Timer(
@@ -73,24 +73,24 @@ final class WorkloadView: NSView {
     needsDisplay = true
   }
 
-  func stop() { timer?.invalidate(); timer = nil }
+  package func stop() { timer?.invalidate(); timer = nil }
 
   /// Stops the animation and freezes the frame code at the LAST DRAWN code —
   /// not a newly time-derived one — so a pause between frames holds what was
   /// actually rendered last, through any later redraw. Distinct from stopping
   /// a capture stream.
-  func pause() {
+  package func pause() {
     stop()
     codes?.freezeAtLastDrawn(atSeconds: CACurrentMediaTime())
   }
 
   /// The frozen code after a pause; equals `sequence` (the last drawn code).
-  var frozenCode: Int? { codes?.frozenCode }
+  package var frozenCode: Int? { codes?.frozenCode }
 
   @objc private func tick() { needsDisplay = true }
 
-  override func mouseDown(with event: NSEvent) { respond(kind: "mouseDown") }
-  override func keyDown(with event: NSEvent) {
+  package override func mouseDown(with event: NSEvent) { respond(kind: "mouseDown") }
+  package override func keyDown(with event: NSEvent) {
     if !event.isARepeat { respond(kind: "keyDown") }
   }
 
@@ -102,7 +102,7 @@ final class WorkloadView: NSView {
     needsDisplay = true
   }
 
-  override func draw(_ dirtyRect: NSRect) {
+  package override func draw(_ dirtyRect: NSRect) {
     guard startedAt > 0, let context = NSGraphicsContext.current?.cgContext else { return }
     drawCalls += 1
     let drawStarted = CACurrentMediaTime()

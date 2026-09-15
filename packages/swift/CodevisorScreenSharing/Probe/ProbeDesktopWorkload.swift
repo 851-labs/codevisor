@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorScreenSharing
+import ScreenSharingDiagnostics
 import QuartzCore
 
 /// A common desktop target for external viewers. Counters describe AppKit draw

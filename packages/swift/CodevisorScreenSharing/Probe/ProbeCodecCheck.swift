@@ -1,4 +1,5 @@
 import CodevisorScreenSharing
+import ScreenSharingDiagnostics
 import Foundation
 import VideoToolbox
 
