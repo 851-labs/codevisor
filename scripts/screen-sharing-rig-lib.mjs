@@ -139,7 +139,8 @@ const commands = [
   "hud",
   "logs",
   "source",
-  "tune"
+  "tune",
+  "control-check"
 ]
 
 /// `rig <command> [--key value | --flag]...`. Unknown commands and dangling
