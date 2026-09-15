@@ -10,6 +10,7 @@ import Foundation
 @Observable
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   var _infoCloudDeviceId: String?
+  var _infoFeatures: [String]?
   /// Tests that need capability responses (or to delay them) install one.
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?

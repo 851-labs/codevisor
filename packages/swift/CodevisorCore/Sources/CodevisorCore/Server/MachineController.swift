@@ -69,20 +69,30 @@ public struct MachineStatus: Sendable, Equatable {
   /// entries carry in the fleet's sync namespaces. Distinct from the
   /// CLIENT-side machine id ("cloud:<deviceId>", "remote-…").
   public var serverId: String?
+  /// The capabilities the server advertised on its last probe (the
+  /// `features` list from /v1/info). Cached here so views can gate on a
+  /// capability synchronously instead of re-probing the server on every
+  /// mount — a probe-after-render pops the gated UI in late.
+  public var features: Set<String>
 
   public init(
     isReachable: Bool,
     label: String,
     cloudDeviceId: String? = nil,
     route: MachineRoute? = nil,
-    serverId: String? = nil
+    serverId: String? = nil,
+    features: Set<String> = []
   ) {
     self.isReachable = isReachable
     self.label = label
     self.cloudDeviceId = cloudDeviceId
     self.route = route
     self.serverId = serverId
+    self.features = features
   }
+
+  /// Whether the server can drive a native screen-sharing session.
+  public var supportsScreenSharing: Bool { features.contains("screen-sharing-v1") }
 }
 
 /// The transport a machine's traffic currently rides.

@@ -42,8 +42,10 @@ struct NewTabPageView: View {
   /// Nil (previews, machineless groups) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
   var iconCacheNamespace = "preview"
+  /// The machine whose cached status gates capability rows (Screen
+  /// Sharing). Nil (previews, machineless groups) shows none.
+  var machineId: String? = nil
 
-  @State private var supportsScreenSharing = false
   @State private var pluginOptions: [NewTabOption] = []
   @State private var query = ""
   /// Focusing this pane focuses the picker's input — never on appearance,
@@ -51,6 +53,14 @@ struct NewTabPageView: View {
   @State private var inputFocus = Autocomplete.InputFocus()
 
   private static let popupCornerRadius: CGFloat = 18
+
+  /// Read from the machine's last status probe rather than re-probing on
+  /// every mount: the first render already has the right rows, so the
+  /// popup never grows (and re-centers) a beat after it appears.
+  private var supportsScreenSharing: Bool {
+    guard let machineId else { return false }
+    return environment.machines.statusByMachineId[machineId]?.supportsScreenSharing == true
+  }
 
   private var options: [NewTabOption] {
     [
@@ -166,10 +176,7 @@ struct NewTabPageView: View {
   /// page's built-in options never depend on the request.
   private func loadPluginOptions() async {
     guard let client else { return }
-    async let info = try? client.info()
-    async let availablePlugins = try? client.listPlugins()
-    supportsScreenSharing = await info?.features?.contains("screen-sharing-v1") == true
-    guard let plugins = await availablePlugins else { return }
+    guard let plugins = try? await client.listPlugins() else { return }
     pluginOptions = plugins.flatMap { plugin in
       plugin.panes.map { pane in
         NewTabOption(
