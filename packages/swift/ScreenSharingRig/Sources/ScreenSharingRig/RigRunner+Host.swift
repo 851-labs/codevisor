@@ -127,7 +127,8 @@
         log("owned workload window \(workload.windowID) captured at \(width)×\(height)@\(fps)")
       case .virtual(let width, let height, let fps):
         try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
-        let (virtualDisplay, screen) = try await createVirtualDisplay(width: width, height: height, fps: fps, in: session)
+        let (virtualDisplay, screen) = try await createVirtualDisplay(
+          width: width, height: height, fps: fps, in: session)
         let capture = ScreenSharingCapture()
         session.capture = capture
         let workloadConfiguration = try ScreenSharingVideoConfiguration(
@@ -260,9 +261,9 @@
     }
 
     /// Creates the 1:1 virtual display for a WxH-pixel video and waits for AppKit to attach it.
-    func createVirtualDisplay(width: Int, height: Int, fps: Int, in session: RigSession) async throws -> (
-      RigVirtualDisplay, NSScreen
-    ) {
+    func createVirtualDisplay(
+      width: Int, height: Int, fps: Int, in session: RigSession
+    ) async throws -> (display: RigVirtualDisplay, screen: NSScreen) {
       // The display's pixel raster equals the video raster: WxH pixels is (W/2)x(H/2) points at 2x.
       let virtualDisplay = try RigVirtualDisplay(width: width / 2, height: height / 2, framesPerSecond: fps) {
         [weak self] in

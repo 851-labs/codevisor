@@ -40,7 +40,8 @@ struct RigConfigurationTests {
 
   @Test(arguments: [
     "synthetic", "workload:1920x1080@60", "workload:1280x720@30", "display:1", "display:69734400",
-    "virtual:1920x1080@60", "virtual:2560x1440@30", "virtual-desktop:1920x1080@60", "app:com.apple.dt.Xcode", "app:com.apple.finder", "window:4711",
+    "virtual:1920x1080@60", "virtual:2560x1440@30", "virtual-desktop:1920x1080@60", "app:com.apple.dt.Xcode",
+    "app:com.apple.finder", "window:4711",
   ])
   func captureSourcesRoundTrip(_ text: String) throws {
     let source = try RigConfiguration.CaptureSource.parse(text)
@@ -50,7 +51,8 @@ struct RigConfigurationTests {
   @Test(arguments: [
     "", "window", "display:0", "display:-1", "display:x", "workload:1920x1080", "workload:1921x1080@60",
     "workload:1920x1080@0", "workload:1920x1080@121", "workload:100x100@60", "workload:4000x1080@60",
-    "virtual:1920x1080", "virtual:1921x1080@60", "virtual:", "virtual-desktop:1920x1080", "app:", "app:has space", "window:0", "window:x",
+    "virtual:1920x1080", "virtual:1921x1080@60", "virtual:", "virtual-desktop:1920x1080", "app:", "app:has space",
+    "window:0", "window:x",
   ])
   func invalidCaptureSources(_ text: String) {
     #expect(throws: (any Error).self) { try RigConfiguration.CaptureSource.parse(text) }
