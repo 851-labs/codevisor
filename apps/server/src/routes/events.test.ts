@@ -38,6 +38,18 @@ describe("event routes", () => {
     })
   })
 
+  it("negotiates durable shell replay and an immediate checkpoint", async () => {
+    const { server, services } = await start()
+    const event = await run(
+      services.db.appendEvent("project.updated", "project", { title: "Updated" })
+    )
+    const frames = await readWebSocketEvents(server, 2, "0&sync=1")
+    expect(frames).toEqual([
+      { ...event, previousEventId: 0 },
+      expect.objectContaining({ id: event.id, kind: "keepalive", subjectId: "" })
+    ])
+  })
+
   it("persists and fans out agent-initiated events with no prompt in flight", async () => {
     const { agents, server, services } = await start()
     const workspaceRoot = mkdtempSync(join(tmpdir(), "codevisor-server-background-"))

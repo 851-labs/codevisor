@@ -108,6 +108,7 @@ extension CodevisorServerClient {
   private struct ServerEventKindProbe: Decodable {
     var id: Int
     var kind: String
+    var previousEventId: Int?
   }
 
   private func makeEventStream(
@@ -123,7 +124,7 @@ extension CodevisorServerClient {
         while !Task.isCancelled {
           do {
             try await waitForServerIfNeeded(path: path)
-            var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)\(scoped ? "&sync=1" : "")"))
+            var request = URLRequest(url: try websocketURL(for: "\(path)?since=\(cursor)&sync=1"))
             applyAuthorization(to: &request)
             let socket = webSocketTransport.connect(
               request,
@@ -131,47 +132,54 @@ extension CodevisorServerClient {
             )
             defer { socket.cancel(with: .goingAway, reason: nil) }
 
-            // Scoped sockets must never wait indefinitely, including
-            // when a replay starts but its final checkpoint is lost.
-            var expectsKeepalives = false
+            // Both shell and chat streams must recover from a half-open
+            // path, including one that never delivers its first frame.
+            // Older servers ignore sync=1; quiet ones safely reconnect
+            // from the same cursor even if they do not send heartbeats.
             var receivedFirstFrame = false
             var needsConnectionConfirmation = scoped
             while !Task.isCancelled {
-              let deadline: Duration? =
-                !receivedFirstFrame && scoped
-                ? Self.eventOpenDeadline : (scoped || expectsKeepalives ? Self.eventReceiveDeadline : nil)
+              let deadline = receivedFirstFrame ? Self.eventReceiveDeadline : Self.eventOpenDeadline
               let message = try await receiveEventMessage(socket, deadline: deadline)
               receivedFirstFrame = true
               guard let data = Self.data(from: message) else { continue }
-              if let handledKinds {
-                let probe = try decoder.decode(ServerEventKindProbe.self, from: data)
-                // Keepalives prove liveness; they are not
-                // events. Skip before the cursor advance: a
-                // live-only sentinel must never adopt one.
-                if probe.kind == Self.keepaliveEventKind {
-                  expectsKeepalives = true
-                  failures = 0
-                  continue
-                }
-                // Filtered events still advance the cursor so a
-                // reconnect never replays the skipped volume.
-                cursor = Self.advanceEventCursor(cursor, to: probe.id)
-                failures = 0
-                guard handledKinds.contains(probe.kind) else { continue }
+              // Chat streams need every payload. Decode them only once;
+              // the small shell probe avoids building discarded payloads.
+              let decodedEvent = scoped ? try decoder.decode(ServerEventEnvelope.self, from: data) : nil
+              let probe: ServerEventKindProbe
+              if let decodedEvent {
+                probe = ServerEventKindProbe(id: decodedEvent.id, kind: decodedEvent.kind)
+              } else {
+                probe = try decoder.decode(ServerEventKindProbe.self, from: data)
               }
-              let event = try decoder.decode(ServerEventEnvelope.self, from: data)
-              if event.kind == Self.keepaliveEventKind {
-                expectsKeepalives = true
+              if probe.kind == Self.keepaliveEventKind {
+                // Check even filtered shell streams. A heartbeat beyond
+                // our received tail is a missed update, not proof of sync.
+                if cursor < ServerSessionTransport.liveOnlyEventCursor, probe.id != cursor {
+                  throw EventStreamGapError(expected: cursor, received: probe.id)
+                }
                 failures = 0
                 if scoped {
-                  if cursor < ServerSessionTransport.liveOnlyEventCursor, event.id != cursor {
-                    throw EventStreamGapError(expected: cursor, received: event.id)
-                  }
                   needsConnectionConfirmation = false
                   continuation.yield(.synchronization(.caughtUp, cursor: cursor))
                 }
                 continue
               }
+              if cursor < ServerSessionTransport.liveOnlyEventCursor {
+                guard probe.id > cursor else { continue }
+                // Shell ids may have legitimate holes after migrations.
+                // The server links deliveries to their predecessor so a
+                // missing frame is detected without assuming id + 1.
+                if let previous = probe.previousEventId, previous != cursor {
+                  throw EventStreamGapError(expected: cursor, received: previous)
+                }
+              }
+              if let handledKinds, !handledKinds.contains(probe.kind) {
+                cursor = Self.advanceEventCursor(cursor, to: probe.id)
+                failures = 0
+                continue
+              }
+              let event = try decodedEvent ?? decoder.decode(ServerEventEnvelope.self, from: data)
               if scoped, cursor < ServerSessionTransport.liveOnlyEventCursor {
                 guard event.id > cursor else { continue }
                 if event.subjectRevision != nil, event.id != cursor + 1 {
@@ -202,7 +210,10 @@ extension CodevisorServerClient {
             if scoped {
               continuation.yield(.synchronization(.reconnecting, cursor: cursor))
             }
-            if error is EventStreamGapError {
+            // A shell gap can replay from the unchanged cursor, preserving
+            // live attention edges. Invalid envelopes need the machine's
+            // authoritative snapshot recovery rather than endless replay.
+            if (scoped && error is EventStreamGapError) || (!scoped && error is DecodingError) {
               continuation.finish(throwing: error)
               return
             }
@@ -226,9 +237,9 @@ extension CodevisorServerClient {
     }
   }
 
-  /// Liveness frames the server interleaves on session event sockets
-  /// (~every 25s). Never yielded and never cursor-advancing — their only
-  /// job is to make silence measurable.
+  /// Liveness frames the server interleaves on shell and session sockets
+  /// (~every 25s). Never yielded or cursor-advancing; they prove liveness
+  /// and check that the delivered tail matches the client's cursor.
   static let keepaliveEventKind = "keepalive"
 
   /// How long a keepalive-bearing socket may stay silent before the path is
@@ -251,10 +262,9 @@ extension CodevisorServerClient {
   /// channel with it) and the stream re-dials from its cursor.
   private func receiveEventMessage(
     _ socket: any ServerWebSocketConnecting,
-    deadline: Duration?
+    deadline: Duration
   ) async throws -> ServerWebSocketMessage {
     try await withTaskCancellationHandler {
-      guard let deadline else { return try await socket.receive() }
       return try await withThrowingTaskGroup(of: ServerWebSocketMessage.self) { group in
         group.addTask { try await socket.receive() }
         group.addTask {

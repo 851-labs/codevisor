@@ -4,6 +4,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { adaptDirectSocket } from "./net-direct.js"
+import { attachShellEventSocket } from "./events-shell.js"
 import type { ClientControlBroker } from "../infra/client-control.js"
 import type { Socket } from "node:net"
 import { WebSocket, type WebSocketServer } from "ws"
@@ -111,7 +112,10 @@ export const handleUpgrade = async (
           fanout,
           numberSearchParam(url, "since"),
           webSocket,
-          config.id
+          config.id,
+          undefined,
+          EVENT_SOCKET_KEEPALIVE_MS,
+          url.searchParams.get("sync") === "1"
         ).catch(
           /* v8 ignore next -- defensive: socket setup failures close the just-upgraded connection. */
           () => webSocket.close()
@@ -167,9 +171,9 @@ export const handleUpgrade = async (
 /// deadline (a few multiples of this) once they see the first keepalive, so
 /// "no frames" reliably means "dead path" instead of "quiet turn" — the
 /// difference between a subway-stalled stream reconnecting in seconds and
-/// hanging forever. Session sockets only: old live-only *global* subscribers
-/// replace their cursor with the first received id, which a keepalive must
-/// never influence.
+/// hanging forever. Legacy global subscribers receive no heartbeats; sync=1
+/// shell subscribers opt into durable checkpoints in events-shell.ts.
+/// Heartbeats must never advance a client's replay cursor.
 const EVENT_SOCKET_KEEPALIVE_MS = 25_000
 
 export const attachEventSocket = async (
@@ -182,6 +186,9 @@ export const attachEventSocket = async (
   keepaliveMs: number = EVENT_SOCKET_KEEPALIVE_MS,
   durableReplay: boolean = false
 ): Promise<void> => {
+  if (subjectId === undefined && durableReplay) {
+    return attachShellEventSocket(db, fanout, since, webSocket, serverId, keepaliveMs)
+  }
   const liveOnly = since >= Number.MAX_SAFE_INTEGER
   let cursor = liveOnly ? 0 : since
   let hasDurableCursor = !liveOnly

@@ -78,7 +78,7 @@ private func since(of request: URLRequest?) -> String? {
   return components.queryItems?.first(where: { $0.name == "since" })?.value
 }
 
-@Suite("Event stream keepalives")
+@Suite("Event stream keepalives", .timeLimit(.minutes(1)))
 struct EventStreamKeepaliveTests {
   private func makeClient(_ transport: ScriptedEventTransport, clock: TestClock = TestClock()) -> CodevisorServerClient
   {
@@ -241,6 +241,149 @@ private final class LockedBox<Value>: @unchecked Sendable {
 }
 
 extension EventStreamKeepaliveTests {
+  @Test("Shell streams reconnect after silence before or after their first frame", arguments: [false, true])
+  func shellDeadlineReconnects(afterFrame: Bool) async throws {
+    let clock = TestClock()
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport, clock: clock)
+    let received = LockedBox<[Int]>([])
+    let delivered = TestSignal()
+    let consumer = Task {
+      for try await event in client.shellEventStream(since: 3, handledKinds: ["session.attention.updated"]) {
+        received.mutate { $0.append(event.id) }
+        delivered.signal()
+      }
+    }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    #expect(transport.requests.first?.url?.query?.contains("sync=1") == true)
+    if afterFrame {
+      transport.socket(0)!.push(envelope(kind: "keepalive", id: 3))
+    }
+    let deadline = afterFrame ? CodevisorServerClient.eventReceiveDeadline : CodevisorServerClient.eventOpenDeadline
+    await clock.waitForSleep(deadline)
+    clock.advance(by: deadline - .milliseconds(1))
+    #expect(transport.requests.count == 1)
+    clock.advance(by: .milliseconds(1))
+    await transport.connected.wait(for: 2)
+    #expect(since(of: transport.requests.last) == "3")
+    // The replay remains a live update; it can drive the unread edge.
+    transport.socket(1)!.push(envelope(kind: "session.attention.updated", id: 4))
+    await delivered.wait()
+    #expect(received.value == [4])
+    consumer.cancel()
+    _ = await consumer.result
+    #expect(clock.pendingCount == 0)
+  }
+
+  @Test("Shell keepalive gaps replay from the last event even with kind filtering", arguments: [false, true])
+  func shellCheckpointGap(filtered: Bool) async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let delivered = TestSignal()
+    let received = LockedBox<[Int]>([])
+    let stream =
+      filtered
+      ? client.shellEventStream(since: 3, handledKinds: ["session.attention.updated"])
+      : client.eventStream(since: 3)
+    let consumer = Task {
+      for try await event in stream {
+        received.mutate { $0.append(event.id) }
+        delivered.signal()
+      }
+    }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    transport.socket(0)!.push(envelope(kind: "keepalive", id: 4))
+    await transport.connected.wait(for: 2)
+    #expect(since(of: transport.requests.last) == "3")
+    transport.socket(1)!.push(envelope(kind: "session.attention.updated", id: 4))
+    await delivered.wait()
+    #expect(received.value == [4])
+    consumer.cancel()
+    _ = await consumer.result
+  }
+
+  @Test("Shell predecessor gaps recover before applying later states; filtered events still advance")
+  func shellPredecessorGap() async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let received = LockedBox<[Int]>([])
+    let delivered = TestSignal()
+    let consumer = Task {
+      for try await event in client.shellEventStream(since: 3, handledKinds: ["session.attention.updated"]) {
+        received.mutate { $0.append(event.id) }
+        delivered.signal()
+      }
+    }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    func shellEvent(_ id: Int, previous: Int, kind: String = "session.attention.updated") -> String {
+      envelope(kind: kind, id: id).replacingOccurrences(
+        of: "\"payload\":{}", with: "\"previousEventId\":\(previous),\"payload\":{}")
+    }
+    // Missing event 4 must not be skipped merely because event 5 arrives.
+    transport.socket(0)!.push(shellEvent(5, previous: 4))
+    await transport.connected.wait(for: 2)
+    #expect(since(of: transport.requests.last) == "3")
+    #expect(received.value.isEmpty)
+    let socket = transport.socket(1)!
+    socket.push(shellEvent(4, previous: 3))
+    socket.push(shellEvent(5, previous: 4, kind: "plugin.updated"))
+    // Global ids can have holes; the predecessor proves continuity.
+    socket.push(shellEvent(8, previous: 5))
+    socket.push(shellEvent(8, previous: 5))
+    socket.push(shellEvent(9, previous: 8))
+    await delivered.wait(for: 3)
+    #expect(received.value == [4, 8, 9])
+    socket.fail()
+    await transport.connected.wait(for: 3)
+    #expect(since(of: transport.requests.last) == "9")
+    consumer.cancel()
+    _ = await consumer.result
+  }
+
+  @Test("Shell heartbeats preserve live-only cursors", arguments: [false, true])
+  func shellSentinel(filtered: Bool) async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let sentinel = ServerSessionTransport.liveOnlyEventCursor
+    let stream =
+      filtered
+      ? client.shellEventStream(since: sentinel, handledKinds: ["session.attention.updated"])
+      : client.eventStream(since: sentinel)
+    let consumer = Task { for try await _ in stream {} }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    let socket = transport.socket(0)!
+    socket.push(envelope(kind: "keepalive", id: 0))
+    await socket.receiving.wait(for: 2)
+    socket.fail()
+    await transport.connected.wait(for: 2)
+    #expect(since(of: transport.requests.last) == String(sentinel))
+    consumer.cancel()
+    _ = await consumer.result
+  }
+
+  @Test("Malformed handled shell events request snapshot recovery without advancing past the event")
+  func invalidShellEventRequiresSnapshot() async {
+    let transport = ScriptedEventTransport()
+    let client = makeClient(transport)
+    let consumer = Task {
+      for try await _ in client.shellEventStream(since: 3, handledKinds: ["session.attention.updated"]) {
+        Issue.record("Malformed event was applied")
+      }
+    }
+    defer { consumer.cancel() }
+    await transport.connected.wait()
+    transport.socket(0)!.push("{\"id\":4,\"kind\":\"session.attention.updated\"}")
+    switch await consumer.result {
+    case .success: Issue.record("Malformed event was silently skipped")
+    case let .failure(error): #expect(error is DecodingError)
+    }
+    #expect(transport.requests.count == 1)
+  }
+
   @Test("Old-server traffic confirms connection before its first heartbeat", arguments: [false, true])
   func trafficConfirmsConnection(afterFailure: Bool) async {
     let transport = ScriptedEventTransport()
