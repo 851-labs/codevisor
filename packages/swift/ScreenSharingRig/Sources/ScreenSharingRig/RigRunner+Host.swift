@@ -203,18 +203,25 @@
     /// disappears, and never restarts it. The capture records the error in a label; when it
     /// appears, re-apply the active source, at most every 5 s while the error persists.
     func recoverFromCaptureError(in session: RigSession) async {
-      guard session.sourceStarted, let error = session.metrics.snapshot().labels["captureError"], !error.isEmpty
-      else { return }
+      guard session.sourceStarted else { return }
+      let error = session.metrics.snapshot().labels["captureError"] ?? ""
+      if !error.isEmpty, !session.captureRecoveryPending {
+        session.captureRecoveryPending = true
+        log("capture error on \(activeCapture): \(error); restarting the source")
+        session.metrics.label("sourceStall", "capture stopped: \(error); restarting")
+      }
+      guard session.captureRecoveryPending else { return }
       let now = ScreenSharingMetrics.nowNs
       guard now - session.lastCaptureRecoveryNs > 5_000_000_000 else { return }
       session.lastCaptureRecoveryNs = now
-      log("capture error on \(activeCapture): \(error); restarting the source")
-      session.metrics.label("sourceStall", "capture stopped: \(error); restarting")
       do {
         _ = try await switchSource(to: activeCapture)
+        session.captureRecoveryPending = false
         session.metrics.label("sourceStall", "")
+        log("source restarted after the capture error")
       } catch {
-        log("source restart failed: \(error)")
+        // Displays may still be asleep; keep the flag and try again on a later tick.
+        log("source restart failed: \(error); retrying")
       }
     }
 

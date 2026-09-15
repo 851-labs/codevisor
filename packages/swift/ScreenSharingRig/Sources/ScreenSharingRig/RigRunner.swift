@@ -23,6 +23,8 @@
     var displaySleepAssertion: RigDisplaySleepAssertion?
     /// Uptime of the last automatic source restart after a capture error; bounds the retry rate.
     var lastCaptureRecoveryNs: Int64 = 0
+    /// Set when the capture reported an error; stays set until a source restart succeeds.
+    var captureRecoveryPending = false
     var synthetic: SyntheticSource?
     var metalView: ScreenSharingMetalView?
     var frameSize: CGSize?
