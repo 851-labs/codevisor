@@ -4,10 +4,10 @@ import Foundation
 /// The session owns this controller and closes it before stopping media.
 /// No input is accepted until the active peer explicitly acquires control.
 @MainActor
-final class ScreenSharingHostControl {
-  private(set) var lease: UUID?
-  private(set) var heldKeys = Set<UInt16>()
-  private(set) var heldButtons = Set<UInt8>()
+package final class ScreenSharingHostControl {
+  package private(set) var lease: UUID?
+  package private(set) var heldKeys = Set<UInt16>()
+  package private(set) var heldButtons = Set<UInt8>()
   private var pointer = ScreenSharingPointer(x: 0.5, y: 0.5)
   private var modifiers: UInt8 = 0
   private var sequence: UInt64 = 0
@@ -16,9 +16,9 @@ final class ScreenSharingHostControl {
   private let availability: () -> String?
   private let inject: (ScreenSharingInputEvent) -> Void
   private let send: (ScreenSharingControlMessage) -> Bool
-  var onChanged: ((Bool) -> Void)?
+  package var onChanged: ((Bool) -> Void)?
 
-  init(
+  package init(
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
     availability: @escaping () -> String?, inject: @escaping (ScreenSharingInputEvent) -> Void,
     send: @escaping (ScreenSharingControlMessage) -> Bool
@@ -26,7 +26,7 @@ final class ScreenSharingHostControl {
     self.now = now; self.availability = availability; self.inject = inject; self.send = send
   }
 
-  func receive(_ message: ScreenSharingControlMessage) {
+  package func receive(_ message: ScreenSharingControlMessage) {
     checkDeadline()
     switch message {
     case .request(let request):
@@ -54,11 +54,11 @@ final class ScreenSharingHostControl {
     }
   }
 
-  func checkDeadline() {
+  package func checkDeadline() {
     if lease != nil, now() >= deadline { revoke("Control timed out. Request control again.") }
   }
 
-  func revoke(_ reason: String) {
+  package func revoke(_ reason: String) {
     guard let previous = lease else { return }
     // Invalidate first: reentrant callbacks and queued packets cannot inject.
     lease = nil

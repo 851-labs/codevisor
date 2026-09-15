@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorScreenSharing
+import ScreenSharingHostInput
 
 @MainActor
 protocol ScreenSharingInputTarget: NSView {

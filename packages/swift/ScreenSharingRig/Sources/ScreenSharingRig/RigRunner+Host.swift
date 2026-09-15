@@ -2,6 +2,7 @@
   import AppKit
   import CodevisorScreenSharing
   import ScreenSharingDiagnostics
+  import ScreenSharingHostInput
   import Foundation
   import ScreenSharingDiagnostics
   import QuartzCore
@@ -145,6 +146,8 @@
         session.workload = workload
         // Cover the virtual display's menu bar so the captured raster is only the workload.
         workload.window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        // On a display nobody else uses, the workload may take clicks: its Response counter proves injection.
+        workload.window.ignoresMouseEvents = false
         let sender = session.peer.frameSender
         let metrics = session.metrics
         let displayID = virtualDisplay.displayID
@@ -152,6 +155,7 @@
           try await capture.start(displayID: displayID, configuration: video, sender: sender, metrics: metrics)
         }
         session.metrics.label("captureSelection", "virtual display \(displayID) with the owned workload window")
+        installHostControl(in: session, displayID: displayID)
         log("virtual display \(displayID) captured with the workload window on it (\(width)×\(height)@\(fps))")
       case .virtualDesktop(let width, let height, let fps):
         try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
@@ -162,6 +166,7 @@
           displayID: virtualDisplay.displayID, configuration: video, sender: session.peer.frameSender,
           metrics: session.metrics)
         session.metrics.label("captureSelection", "bare virtual display \(virtualDisplay.displayID)")
+        installHostControl(in: session, displayID: virtualDisplay.displayID)
         log(
           "bare virtual display \(virtualDisplay.displayID) captured (\(width)×\(height)@\(fps)); move windows onto \"\(RigVirtualDisplay.name)\" to stream them"
         )
@@ -203,6 +208,7 @@
         session.capture = capture
         try await capture.start(
           displayID: id, configuration: video, sender: session.peer.frameSender, metrics: session.metrics)
+        installHostControl(in: session, displayID: id)
         log("display \(id) captured")
       }
     }
@@ -264,6 +270,44 @@
       throw ScreenSharingError.unavailable(
         "Screen Recording is not granted to the rig on this Mac (needed for \(purpose)); enable Codevisor Screen Sharing Rig under Privacy & Security → Screen & System Audio Recording, or use capture workload."
       )
+    }
+
+    /// The product's control lease and CGEvent injector, bound to the captured display. Only display-backed
+    /// sources accept control; a request is answered with the reason otherwise. Accessibility is asked for
+    /// once so the rig appears in System Settings on a Mac where prompts do not show.
+    func installHostControl(in session: RigSession, displayID: CGDirectDisplayID) {
+      session.controlDisplayID = displayID
+      let injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(displayID))
+      let control = ScreenSharingHostControl(
+        availability: { [weak self, weak session] in
+          guard let session, session.controlDisplayID != nil else {
+            return "Control needs a display-backed source (virtual, virtual-desktop or display)."
+          }
+          guard AXIsProcessTrusted() else {
+            if let self, !self.accessibilityRequested {
+              self.accessibilityRequested = true
+              let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary  // kAXTrustedCheckOptionPrompt
+              _ = AXIsProcessTrustedWithOptions(options)
+            }
+            return "Accessibility is not granted to the rig on this Mac; enable Codevisor Screen Sharing Rig under Privacy & Security → Accessibility."
+          }
+          guard injector.isAvailable else { return "No event source." }
+          return nil
+        },
+        inject: { injector.post($0) },
+        send: { [weak session] message in session?.peer.control.send(message) ?? false })
+      control.onChanged = { [weak self] active in
+        self?.log("control \(active ? "granted" : "released") on display \(displayID)")
+        session.metrics.label("controlActive", active ? "true" : "false")
+      }
+      session.peer.control.onMessage = { [weak control] message in control?.receive(message) }
+      session.hostControl = control
+      session.controlDeadlineTask = Task { @MainActor [weak control] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .milliseconds(250))
+          control?.checkDeadline()
+        }
+      }
     }
 
     /// Creates the 1:1 virtual display for a WxH-pixel video and waits for AppKit to attach it.

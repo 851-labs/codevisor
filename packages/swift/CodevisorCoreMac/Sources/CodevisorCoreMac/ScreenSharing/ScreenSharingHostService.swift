@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorCore
 import CodevisorScreenSharing
+import ScreenSharingHostInput
 import Foundation
 import OSLog
 

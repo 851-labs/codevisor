@@ -24,6 +24,7 @@ import {
   rigIdentity,
   signDiagnosticApp
 } from "./screen-sharing-bundle.mjs"
+import { endpointsFor, http, summarize } from "./screen-sharing-rig-client.mjs"
 import {
   bootstrapPlan,
   buildInfoExtras,
@@ -61,6 +62,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
   tune    JSON|paced15-worker|default   Write engine tuning into both configs and restart both agents (no rebuild)
+  control-check [--clicks N]            Ask for control, click the host's workload N times (default 5), release; verifies delivery
   source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs
 
@@ -108,29 +110,6 @@ function readDeployRecord() {
   if (!existsSync(deployRecordPath))
     throw new Error(`No deploy record: ${deployRecordPath}. Run install first.`)
   return readJSON(deployRecordPath)
-}
-
-async function http(method, url, token, body) {
-  const init = {
-    method,
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(body?.seconds ? (body.seconds + 15) * 1000 : 5000)
-  }
-  if (body) {
-    init.headers["Content-Type"] = "application/json"
-    init.body = JSON.stringify(body)
-  }
-  const response = await fetch(url, init)
-  const text = await response.text()
-  let parsed
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    parsed = { error: text }
-  }
-  if (!response.ok)
-    throw new Error(`${method} ${url} → ${response.status}: ${parsed.error ?? text}`)
-  return parsed
 }
 
 // ---------------------------------------------------------------- build
@@ -336,23 +315,7 @@ async function deploy() {
 
 // ---------------------------------------------------------------- inspect / control
 
-function endpoints() {
-  const config = readLocalConfig()
-  if (config.role !== "viewer")
-    throw new Error("This Mac's rig is not the viewer; status runs from the viewer.")
-  return {
-    token: config.token,
-    viewer: `http://127.0.0.1:${config.controlPort ?? 48732}`,
-    host: `http://${config.peer.includes(":") ? config.peer : `${config.peer}:${config.port ?? 48731}`}`
-  }
-}
-
-function summarize(status) {
-  const build = status.build
-    ? `${status.build.commit.slice(0, 8)}${status.build.dirty ? "*" : ""} ${status.build.configuration}`
-    : "?"
-  return `${status.role.padEnd(6)} ${status.name} · ${build} · ${status.connection} · session ${status.sessionID ?? "-"} · reconnects ${status.reconnects} · up ${Math.round(status.uptimeSeconds)}s${status.capture ? ` · ${status.capture}` : ""}`
-}
+const endpoints = () => endpointsFor(readLocalConfig())
 
 async function status() {
   const { token, viewer, host } = endpoints()
@@ -411,6 +374,25 @@ function tune() {
   process.stdout.write(
     `tuning ${tuning === null ? "removed" : JSON.stringify(tuning)}; both agents restarted.\n`
   )
+}
+
+async function controlCheck() {
+  const clicks = options.clicks === undefined ? 5 : Number(options.clicks)
+  if (!Number.isInteger(clicks) || clicks < 0 || clicks > 100)
+    throw new Error("control-check needs --clicks 0...100")
+  const { token, viewer } = endpoints()
+  const result = await http("POST", `${viewer}/control-check`, token, {
+    clicks,
+    x: 0.5,
+    y: 0.5,
+    seconds: 15
+  })
+  const outcome = result.granted
+    ? `granted · ${result.clicksSent} clicks · host responses ${result.responsesBefore ?? "?"} → ${result.responsesAfter ?? "?"} · ${result.responsesAfter - result.responsesBefore === result.clicksSent ? "DELIVERED" : "NOT delivered"} · released: ${result.revokedReason ?? "no revoke seen"}`
+    : `denied: ${result.deniedReason}`
+  process.stdout.write(`control check: ${outcome}\n`)
+  if (!result.granted || result.responsesAfter - result.responsesBefore !== result.clicksSent)
+    process.exitCode = 1
 }
 
 async function source() {
@@ -474,7 +456,8 @@ const handlers = {
   hud,
   logs,
   source,
-  tune
+  tune,
+  "control-check": controlCheck
 }
 try {
   await handlers[command]()

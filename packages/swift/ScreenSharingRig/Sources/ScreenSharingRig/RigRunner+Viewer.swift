@@ -150,6 +150,30 @@
 
     func handleViewerRequest(_ request: RigHTTPRequest) async -> RigHTTPServer.Response {
       guard RigHTTPCodec.isAuthorized(request, token: configuration.token) else { return .error(401, "bad token") }
+      if request.method == "POST", request.path == "/control-check" {
+        guard let body = try? RigJSON.decode(RigControlCheckRequest.self, from: request.body),
+          (0...100).contains(body.clicks), (0...1).contains(body.x), (0...1).contains(body.y)
+        else { return .error(400, "control-check needs clicks 0...100 and x/y in 0...1") }
+        guard let session, session.connection == "connected" else { return .error(503, "not connected") }
+        let base = configuration.hostBaseURL
+        let token = configuration.token
+        let check = RigViewerControlCheck(channel: session.peer.control, request: body)
+        do {
+          let result = try await check.run {
+            guard let base,
+              let metrics = try? await RigHTTPClient.get(
+                base.appendingPathComponent("metrics"), token: token, expecting: RigMetricsBody.self, timeoutSeconds: 3)
+            else { return nil }
+            return metrics.snapshot?.labels["workloadResponses"].flatMap(Int.init)
+          }
+          log(
+            "control check: granted \(result.granted)\(result.deniedReason.map { " (\($0))" } ?? "") · \(result.clicksSent) clicks · responses \(result.responsesBefore.map(String.init) ?? "?") → \(result.responsesAfter.map(String.init) ?? "?") · \(result.delivered ? "delivered" : "not delivered")"
+          )
+          return .json(200, result)
+        } catch {
+          return .error(500, "\(error)")
+        }
+      }
       if request.method == "POST", request.path == "/sample" {
         guard let body = try? RigJSON.decode(RigSampleRequest.self, from: request.body),
           (1...3600).contains(body.seconds), body.report.hasPrefix("/")

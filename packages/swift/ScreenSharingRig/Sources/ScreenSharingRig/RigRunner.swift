@@ -4,6 +4,7 @@
   import ScreenSharingDiagnostics
   import Foundation
   import ScreenSharingDiagnostics
+  import ScreenSharingHostInput
   import ScreenSharingRigKit
 
   /// One media session of the rig: a peer, its metrics, and whatever source or
@@ -21,6 +22,10 @@
     var workload: ProbeOwnedWorkloadWindow?
     var virtualDisplay: RigVirtualDisplay?
     var displaySleepAssertion: RigDisplaySleepAssertion?
+    /// Host: the display injected input maps to; nil for sources that are not a whole display.
+    var controlDisplayID: CGDirectDisplayID?
+    var hostControl: ScreenSharingHostControl?
+    var controlDeadlineTask: Task<Void, Never>?
     /// Uptime of the last automatic source restart after a capture error; bounds the retry rate.
     var lastCaptureRecoveryNs: Int64 = 0
     /// Set when the capture reported an error; stays set until a source restart succeeds.
@@ -47,6 +52,12 @@
     /// Stops whatever source feeds the peer and releases it; the peer stays open so a
     /// different source can take over on the same session.
     func stopSource() async {
+      controlDeadlineTask?.cancel()
+      controlDeadlineTask = nil
+      hostControl?.revoke("The source stopped.")
+      hostControl = nil
+      peer.control.onMessage = nil
+      controlDisplayID = nil
       synthetic?.stop()
       synthetic = nil
       if let workload {
@@ -112,6 +123,7 @@
     var keyMonitor: Any?
     var disconnectGrace: Task<Void, Never>?
     var screenRecordingRequested = false
+    var accessibilityRequested = false
     /// Viewer: calibrated `host - viewer` clock offset for image age; nil until the first calibration.
     var clockOffset: RigClockOffset?
     var clockTask: Task<Void, Never>?
@@ -234,7 +246,12 @@
     func tick() async {
       let elapsed = elapsedSeconds
       if let session, !session.closed {
-        if configuration.role == .host { await recoverFromCaptureError(in: session) }
+        if configuration.role == .host {
+          await recoverFromCaptureError(in: session)
+          if let workload = session.workload {
+            session.metrics.label("workloadResponses", String(workload.view.responses))
+          }
+        }
         let statistics = await session.peer.statistics()
         guard !session.closed else { return }
         latestStatistics = statistics

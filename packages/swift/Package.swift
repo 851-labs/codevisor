@@ -52,6 +52,14 @@ let package = Package(
       path: "CodevisorScreenSharing/Probe",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    // The host's control lease and CGEvent injection: product code, extracted so the rig can exercise
+    // the real path without linking the rest of CodevisorCoreMac.
+    .target(
+      name: "ScreenSharingHostInput",
+      dependencies: ["CodevisorScreenSharing"],
+      path: "CodevisorCoreMac/HostInput",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     // Diagnostic sources shared by the probe and the rig: workload window, painter, synthetic source.
     .target(
       name: "ScreenSharingDiagnostics",
@@ -70,6 +78,7 @@ let package = Package(
       name: "ScreenSharingRig",
       dependencies: [
         "CodevisorScreenSharing", "ScreenSharingDiagnostics", "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
+        "ScreenSharingHostInput",
       ],
       path: "ScreenSharingRig/Sources/ScreenSharingRig",
       swiftSettings: [.swiftLanguageMode(.v6)]
@@ -301,7 +310,7 @@ let package = Package(
     // iOS apps depend on CodevisorCore only; never link this on iOS.)
     .target(
       name: "CodevisorCoreMac",
-      dependencies: ["CodevisorCore", "CodevisorScreenSharing"],
+      dependencies: ["CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput"],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
