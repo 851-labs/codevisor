@@ -107,7 +107,7 @@ struct AttachmentThumbnailView: View {
   private var imageThumb: some View {
     let size = thumbnailSize
     return ZStack {
-      if file.kind != .image {
+      if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .fill(theme.bubbleBackground)
       }
@@ -123,7 +123,7 @@ struct AttachmentThumbnailView: View {
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      if file.kind != .image {
+      if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .strokeBorder(.separator, lineWidth: 1)
       }

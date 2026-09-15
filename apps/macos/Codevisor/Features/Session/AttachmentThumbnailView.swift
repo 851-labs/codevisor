@@ -133,7 +133,7 @@ struct AttachmentThumbnailView: View {
     // A tap gesture rather than a Button: buttons add their own
     // hover/press highlight over the artwork.
     return ZStack {
-      if file.kind != .image {
+      if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .fill(theme.bubbleBackground)
       }
@@ -149,7 +149,7 @@ struct AttachmentThumbnailView: View {
     .frame(width: size.width, height: size.height)
     .clipShape(RoundedRectangle(cornerRadius: 8))
     .overlay {
-      if file.kind != .image {
+      if !inline || file.kind != .image {
         RoundedRectangle(cornerRadius: 8)
           .strokeBorder(.separator, lineWidth: 1)
       }
