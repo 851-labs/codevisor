@@ -79,6 +79,19 @@ public struct ScreenSharingEncodedFrame: Sendable {
   public let isKeyFrame: Bool
   /// Content identity written into the frame's marker.
   public var sourceTimestampNs: Int64? = nil
+
+  package init(
+    data: Data, timestampNs: Int64, rtpTimestamp: UInt32, width: Int, height: Int, isKeyFrame: Bool,
+    sourceTimestampNs: Int64? = nil
+  ) {
+    self.data = data
+    self.timestampNs = timestampNs
+    self.rtpTimestamp = rtpTimestamp
+    self.width = width
+    self.height = height
+    self.isKeyFrame = isKeyFrame
+    self.sourceTimestampNs = sourceTimestampNs
+  }
 }
 
 /// A one-element mailbox. A slow renderer retains the newest frame, never an

@@ -41,6 +41,8 @@ xcode_args=(
   -scheme "$scheme"
   -configuration Release
   -derivedDataPath "$derived_data"
+  # Pinned package dependencies ship Swift macros; trust them without Xcode's interactive approval.
+  -skipMacroValidation
   MARKETING_VERSION="$placeholder_version"
   CURRENT_PROJECT_VERSION="$placeholder_build_number"
   CODE_SIGNING_ALLOWED=NO
