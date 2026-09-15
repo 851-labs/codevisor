@@ -163,11 +163,9 @@
       }
 
       func listHeight(metrics: Metrics, dividers: Bool) -> CGFloat {
-        max(
-          metrics.emptyListHeight,
-          metrics.listHeight(
-            itemCount: resultItems.count, groupLabelCount: sections.filter { $0.title != nil }.count,
-            dividerCount: dividers ? max(sections.count - 1, 0) : 0))
+        metrics.listHeight(
+          itemCount: resultItems.count, groupLabelCount: sections.filter { $0.title != nil }.count,
+          dividerCount: dividers ? max(sections.count - 1, 0) : 0)
       }
 
       func footerHeight(metrics: Metrics, dividers: Bool) -> CGFloat {
