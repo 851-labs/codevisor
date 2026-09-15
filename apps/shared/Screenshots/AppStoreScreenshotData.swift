@@ -1,12 +1,43 @@
 #if DEBUG
   import ACPKit
   import CodevisorCore
+  import CodevisorTheming
   import Foundation
+  import SwiftUI
 
   /// Offline inputs for the production views. Never compiled into release builds.
   enum AppStoreScreenshotData {
     static var isEnabled: Bool {
       ProcessInfo.processInfo.environment["CODEVISOR_APP_STORE_SCREENSHOTS"] == "1"
+    }
+
+    static var colorScheme: ColorScheme {
+      ProcessInfo.processInfo.environment["CODEVISOR_SCREENSHOT_APPEARANCE"] == "dark" ? .dark : .light
+    }
+
+    @MainActor
+    static func makeEnvironment() -> AppEnvironment {
+      let environment = AppEnvironment.preview(
+        seedProjects: [project], seedSessions: [session],
+        seedMachines: [
+          CodevisorMachine(
+            id: machineID, name: "Studio Mac", baseURL: URL(string: "https://screenshots.invalid")!, kind: "remote")
+        ], seedCapabilities: capabilities
+      )
+      environment.theme.setMode(colorScheme == .dark ? .dark : .light)
+      environment.composerDefaults.rememberNewWorkspaceServer(serverId: machineID)
+      environment.composerDefaults.rememberNewWorkspaceProject(serverId: machineID, projectId: projectID)
+      environment.composerDefaults.rememberHarnessSelection(serverId: machineID, harnessId: "claude-code")
+      environment.configCache.store(capabilities, forServer: machineID)
+      return environment
+    }
+
+    @MainActor
+    static func makeController() -> SessionController {
+      SessionController.preview(
+        project: project, model: .preview(conversation: conversation()),
+        harnesses: SessionController.previewHarnesses.filter { $0.id == "codex" }
+      )
     }
 
     static let projectID = id(1)
@@ -112,8 +143,8 @@
       }
       """
 
-    static let sections: [HomeSidebarSection] = [
-      HomeSidebarSection(
+    static let sections: [ScreenshotSidebarSection] = [
+      ScreenshotSidebarSection(
         id: id(10), serverId: "studio", name: "daylight", machineName: "Studio Mac",
         anchorSessionId: sessionID, status: .unread,
         rows: [
@@ -123,7 +154,7 @@
           row(14, "Development server", .terminal(isAgentOwned: false)),
         ]
       ),
-      HomeSidebarSection(
+      ScreenshotSidebarSection(
         id: id(20), serverId: "studio", name: "portfolio", machineName: "Studio Mac",
         anchorSessionId: id(21), status: .inProgress,
         rows: [
@@ -134,7 +165,7 @@
           row(24, "README.md", .document),
         ]
       ),
-      HomeSidebarSection(
+      ScreenshotSidebarSection(
         id: id(30), serverId: "linux", name: "api", machineName: "Linux Server",
         anchorSessionId: id(31), status: .idle,
         rows: [
@@ -146,10 +177,37 @@
     ]
 
     private static func row(
-      _ value: Int, _ title: String, _ icon: HomeSidebarTabRow.Icon, status: HomeSessionStatus = .idle
-    ) -> HomeSidebarTabRow {
-      HomeSidebarTabRow(
+      _ value: Int, _ title: String, _ icon: ScreenshotSidebarTabRow.Icon, status: ScreenshotSessionStatus = .idle
+    ) -> ScreenshotSidebarTabRow {
+      ScreenshotSidebarTabRow(
         id: id(value), title: title, icon: icon, status: status, chatSessionId: nil, renamableTabId: id(value))
     }
+  }
+
+  enum ScreenshotSessionStatus: Int { case idle, unread, inProgress }
+
+  struct ScreenshotSidebarSection: Identifiable {
+    let id: UUID
+    let serverId: String
+    let name: String
+    let machineName: String?
+    let anchorSessionId: UUID
+    let status: ScreenshotSessionStatus
+    let rows: [ScreenshotSidebarTabRow]
+  }
+
+  struct ScreenshotSidebarTabRow: Identifiable {
+    enum Icon {
+      case chat(harnessId: String, fallbackSymbolName: String)
+      case browser(favicon: String?)
+      case terminal(isAgentOwned: Bool)
+      case document
+    }
+    let id: UUID
+    let title: String
+    let icon: Icon
+    let status: ScreenshotSessionStatus
+    let chatSessionId: UUID?
+    let renamableTabId: UUID?
   }
 #endif

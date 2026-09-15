@@ -18,14 +18,43 @@
 		FCE74E962FF368F000B42227 /* Autocomplete in Frameworks */ = {isa = PBXBuildFile; productRef = FCE74E972FF368F000B42227 /* Autocomplete */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXTargetDependency section */
+		5D0000000000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000100000000 /* Codevisor */;
+			targetProxy = 5D0000000000000000000008 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		5D0000000000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000100000000;
+			remoteInfo = Codevisor;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Codevisor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codevisor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D0000000000000000000001 /* ScreenshotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = ScreenshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* Codevisor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Codevisor;
+			sourceTree = "<group>";
+		};
+		5C0000000000000000000001 /* Screenshot fixtures */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../shared/Screenshots;
+			sourceTree = "<group>";
+		};
+		5C0000000000000000000002 /* Screenshot tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../shared/ScreenshotTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -45,12 +74,19 @@
 				FCE74E962FF368F000B42227 /* Autocomplete in Frameworks */,
 			);
 		};
+		5D0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		000000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				5C0000000000000000000001 /* Screenshot fixtures */,
+				5C0000000000000000000002 /* Screenshot tests */,
 				000000000000000000000010 /* Codevisor */,
 				FCE74E8B2FF368F000B42227 /* Frameworks */,
 				000000000000000000000020 /* Products */,
@@ -61,6 +97,7 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000120 /* Codevisor.app */,
+				5D0000000000000000000001 /* ScreenshotTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -88,6 +125,7 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
+				5C0000000000000000000001 /* Screenshot fixtures */,
 				000000000000000000000010 /* Codevisor */,
 			);
 			name = Codevisor;
@@ -105,6 +143,26 @@
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Codevisor.app */;
 			productType = "com.apple.product-type.application";
+		};
+		5D0000000000000000000003 /* ScreenshotTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D0000000000000000000004 /* Build configuration list for PBXNativeTarget "ScreenshotTests" */;
+			buildPhases = (
+				5D0000000000000000000005 /* Sources */,
+				5D0000000000000000000006 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5D0000000000000000000007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				5C0000000000000000000002 /* Screenshot tests */,
+			);
+			name = ScreenshotTests;
+			productName = ScreenshotTests;
+			productReference = 5D0000000000000000000001 /* ScreenshotTests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -139,6 +197,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				5D0000000000000000000003 /* ScreenshotTests */,
 				000000000000000100000000 /* Codevisor */,
 			);
 		};
@@ -181,6 +240,11 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		000000000000000120000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		5D0000000000000000000005 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
@@ -521,6 +585,40 @@
 			};
 			name = Release;
 		};
+		5D0000000000000000000009 /* Debug configuration for PBXNativeTarget "ScreenshotTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODEVISOR_DEV_BUNDLE_IDENTIFIER = com.851labs.Codevisor.Development;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODEVISOR_DEV_BUNDLE_IDENTIFIER).screenshot-tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				CODE_SIGN_IDENTITY = "-";
+				TEST_TARGET_NAME = Codevisor;
+			};
+			name = Debug;
+		};
+		5D0000000000000000000010 /* Release configuration for PBXNativeTarget "ScreenshotTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODEVISOR_DEV_BUNDLE_IDENTIFIER = com.851labs.Codevisor.Development;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODEVISOR_DEV_BUNDLE_IDENTIFIER).screenshot-tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				CODE_SIGN_IDENTITY = "-";
+				TEST_TARGET_NAME = Codevisor;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -537,6 +635,14 @@
 			buildConfigurations = (
 				000000000000000111000000 /* Debug configuration for PBXNativeTarget "Codevisor" */,
 				000000000000000112000000 /* Release configuration for PBXNativeTarget "Codevisor" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		5D0000000000000000000004 /* Build configuration list for PBXNativeTarget "ScreenshotTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D0000000000000000000009 /* Debug configuration for PBXNativeTarget "ScreenshotTests" */,
+				5D0000000000000000000010 /* Release configuration for PBXNativeTarget "ScreenshotTests" */,
 			);
 			defaultConfigurationName = Release;
 		};

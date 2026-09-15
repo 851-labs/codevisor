@@ -7,11 +7,7 @@ enum BrowserAddress {
   /// Keep the actual origin recognizable while omitting navigation details.
   /// Never reduce a hostname to its last two labels (for example, co.uk).
   static func display(_ url: URL) -> String {
-    guard var host = url.host(percentEncoded: true) else { return url.absoluteString }
-    if host.hasPrefix("www.") { host.removeFirst(4) }
-    if host.contains(":"), !host.hasPrefix("[") { host = "[\(host)]" }
-    let standardPort = url.scheme == "https" ? 443 : 80
-    return host + (url.port.flatMap { $0 == standardPort ? nil : ":\($0)" } ?? "")
+    BrowserLocation.display(url)
   }
 
   static func proxied(_ url: URL) -> URL? {

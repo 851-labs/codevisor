@@ -1,13 +1,17 @@
 #if DEBUG
+  import SwiftUI
+
   /// A bundled example of a user's project, shown inside the real browser pane.
   /// No external fonts, assets, scripts, network requests, or live server.
   enum AppStoreScreenshotPage {
-    static let html = """
+    static var html: String {
+      """
       <!doctype html>
       <html lang="en"><head>
+      <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-      <meta name="theme-color" content="#f7f5ef">
+      <meta name="theme-color" content="\(AppStoreScreenshotData.colorScheme == .dark ? "#18251d" : "#f7f5ef")">
       <title>Daylight</title>
       <style>
       * { box-sizing: border-box; }
@@ -34,16 +38,31 @@
       .done { background: #dce7d4; color: #526b4d; text-align: center; font-size: 14px; }
       .muted { color: #81907e; text-decoration: line-through; }
       @media (min-width: 650px) {
-        main { padding-top: 50px; } nav { margin-bottom: 68px; } h1 { font-size: 66px; }
-        .intro { font-size: 19px; max-width: 490px; margin-bottom: 42px; }
-        .timer { padding: 38px; } .ring { width: 270px; height: 270px; } .time { font-size: 64px; }
-        .tasks { margin-top: 38px; } .task { padding: 22px 0; }
+        main { max-width: 1000px; padding: 34px; display: grid; gap: 28px 34px;
+          grid-template-columns: 1fr 1fr; grid-template-areas: "nav nav" "hero timer" "tasks timer"; }
+        nav { grid-area: nav; margin-bottom: 18px; }
+        .hero { grid-area: hero; } h1 { font-size: 56px; }
+        .intro { font-size: 17px; margin-bottom: 0; }
+        .timer { grid-area: timer; padding: 36px 18px; align-self: center; }
+        .ring { width: 230px; height: 230px; margin: 30px auto; } .time { font-size: 60px; }
+        .tasks { grid-area: tasks; margin-top: 0; } .task { padding: 17px 0; }
       }
-      </style></head><body><main>
+      body.dark { color-scheme: dark; background: #18251d; color: #e3e9db; }
+      .dark .intro, .dark .eyebrow, .dark .badge { color: #acbfa4; }
+      .dark .badge, .dark .task { border-color: #3d503c; }
+      .dark .timer { background: #293c2b; }
+      .dark .timer p, .dark .ring span { color: #b4c5aa; }
+      .dark .ring { border-color: #415a3a; border-top-color: #a8c197; border-right-color: #a8c197; }
+      .dark button { background: #c4d7b6; color: #21351e; }
+      .dark .done { background: #3e5536; color: #d3e3c8; }
+      .dark .muted { color: #9bac91; }
+      </style></head><body class="\(AppStoreScreenshotData.colorScheme == .dark ? "dark" : "light")"><main>
       <nav><strong>☀ Daylight</strong><span class="badge">Your daily space</span></nav>
+      <section class="hero">
       <div class="eyebrow">MAKE ROOM FOR WHAT MATTERS</div>
       <h1>One thing at a time.</h1>
       <p class="intro">A little structure. A little breathing room.<br>Find your focus and enjoy the work.</p>
+      </section>
       <section class="timer" aria-label="Focus timer"><p>FOCUS SESSION</p>
       <div class="ring"><div class="time">25:00</div><span>Time to settle in</span></div>
       <button>Start focus</button></section>
@@ -53,5 +72,6 @@
       <div class="task"><span class="check"></span>Step outside for a moment</div></section>
       </main></body></html>
       """
+    }
   }
 #endif

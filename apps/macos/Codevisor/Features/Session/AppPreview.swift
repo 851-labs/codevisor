@@ -4,6 +4,9 @@ import Foundation
 /// subprocesses (which would hang against the mock preview transport).
 enum AppPreview {
   static var isRunning: Bool {
-    ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    #if DEBUG
+      if AppStoreScreenshotData.isEnabled { return true }
+    #endif
+    return ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
   }
 }

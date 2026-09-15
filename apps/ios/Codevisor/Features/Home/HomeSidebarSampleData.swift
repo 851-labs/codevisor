@@ -16,7 +16,7 @@
     struct Sidebar: View {
       @State private var sections =
         AppStoreScreenshotData.isEnabled
-        ? AppStoreScreenshotData.sections : HomeSidebarSampleData.sections
+        ? AppStoreScreenshotData.homeSections : HomeSidebarSampleData.sections
 
       var body: some View {
         HomeSidebarList(

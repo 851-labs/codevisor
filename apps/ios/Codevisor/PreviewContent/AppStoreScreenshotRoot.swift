@@ -42,7 +42,7 @@
       }
       .modifier(ThemedRoot())
       .environment(fixture.environment)
-      .preferredColorScheme(.light)
+      .preferredColorScheme(AppStoreScreenshotData.colorScheme)
     }
   }
 
@@ -56,22 +56,8 @@
 
     init() {
       let data = AppStoreScreenshotData.self
-      let environment = AppEnvironment.preview(
-        seedProjects: [data.project], seedSessions: [data.session],
-        seedMachines: [
-          CodevisorMachine(
-            id: data.machineID, name: "Studio Mac", baseURL: URL(string: "https://screenshots.invalid")!, kind: "remote"
-          )
-        ], seedCapabilities: data.capabilities
-      )
-      environment.composerDefaults.rememberNewWorkspaceServer(serverId: data.machineID)
-      environment.composerDefaults.rememberNewWorkspaceProject(serverId: data.machineID, projectId: data.projectID)
-      environment.composerDefaults.rememberHarnessSelection(serverId: data.machineID, harnessId: "claude-code")
-      environment.configCache.store(data.capabilities, forServer: data.machineID)
-      let controller = SessionController.preview(
-        project: data.project, model: .preview(conversation: data.conversation()),
-        harnesses: SessionController.previewHarnesses.filter { $0.id == "codex" }
-      )
+      let environment = data.makeEnvironment()
+      let controller = data.makeController()
       let panes = PaneGroupState(
         panes: [
           PaneDescriptorState(

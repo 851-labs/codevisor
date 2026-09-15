@@ -10,7 +10,9 @@ struct BrowserNavigationTests {
     ("https://shop.example.co.uk/orders", "shop.example.co.uk"),
     ("https://www.example.com:443/path", "example.com"),
     ("http://localhost:3000/path", "localhost:3000"),
-    ("http://ipv6.proxy.localhost:61334/", "ipv6.proxy.localhost:61334"),
+    ("http://proxy.localhost:3000/", "localhost:3000"),
+    ("http://ipv4-127-0-0-1.proxy.localhost:8080/", "127.0.0.1:8080"),
+    ("http://ipv6.proxy.localhost:61334/", "[::1]:61334"),
     ("http://[::1]:3000/path", "[::1]:3000"),
     ("https://example.com.attacker.test/path", "example.com.attacker.test"),
   ])

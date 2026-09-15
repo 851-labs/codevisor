@@ -21,7 +21,8 @@ test("options stay rooted in this checkout and reject missing or unknown argumen
     {
       device: "iphone",
       output: "/checkout/captures",
-      runtime: "iOS 27.0"
+      runtime: "iOS 27.0",
+      appearance: "all"
     }
   )
   for (const args of [

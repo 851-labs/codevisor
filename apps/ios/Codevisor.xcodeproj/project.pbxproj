@@ -53,6 +53,16 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		5C0000000000000000000001 /* Screenshot fixtures */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../shared/Screenshots;
+			sourceTree = "<group>";
+		};
+		5C0000000000000000000002 /* Screenshot tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ../shared/ScreenshotTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +87,8 @@
 		0C0000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				5C0000000000000000000001 /* Screenshot fixtures */,
+				5C0000000000000000000002 /* Screenshot tests */,
 				0C0000000000000000000010 /* Codevisor */,
 				0C0000000000000000000020 /* Products */,
 				0D0000000000000000000002 /* Tests */,
@@ -106,6 +118,7 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
+				5C0000000000000000000001 /* Screenshot fixtures */,
 				0C0000000000000000000010 /* Codevisor */,
 			);
 			name = Codevisor;
@@ -133,6 +146,7 @@
 				0D0000000000000000000007 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				5C0000000000000000000002 /* Screenshot tests */,
 				0D0000000000000000000002 /* Tests */,
 			);
 			name = NavigationTests;
