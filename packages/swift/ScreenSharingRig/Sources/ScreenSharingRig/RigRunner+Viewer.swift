@@ -45,7 +45,8 @@
       reducer.reset()
       let metrics = ScreenSharingMetrics()
       let peer = try ScreenSharingPeer(
-        sending: false, configuration: configuration.video, metrics: metrics, codec: configuration.codec)
+        sending: false, configuration: configuration.video, metrics: metrics,
+        useLowLatencyRateControl: useLowLatencyRateControl, codec: configuration.codec)
       let session = RigSession(id: UUID().uuidString.lowercased(), peer: peer, metrics: metrics)
       self.session = session
       peer.onConnectionChanged = { [weak self, weak session] state in

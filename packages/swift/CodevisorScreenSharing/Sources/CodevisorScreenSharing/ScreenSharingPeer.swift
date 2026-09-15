@@ -19,6 +19,10 @@ public final class ScreenSharingPeer {
   public let control: ScreenSharingControlChannel
   public let clipboard: ScreenSharingClipboardChannel
   public let mailbox = ScreenSharingFrameMailbox()
+  /// Diagnostic: lets the bandwidth estimator's cap exceed the encoder's target, which stays capped at the
+  /// configured bitrate through the sender's `maxBitrateBps`. nil keeps the product's single ceiling. How fast
+  /// a keyframe may leave is the pacer's multiplier of the target (`WebRTC-Video-Pacing`), not this cap.
+  private let transportCeilingBps: Int?
   public var onConnectionChanged: ((String) -> Void)?
   private let factory: RTCPeerConnectionFactory
   private let codecFactory: ScreenSharingCodecFactory
@@ -46,12 +50,19 @@ public final class ScreenSharingPeer {
     connectivity: ScreenSharingICEConfiguration? = nil, useLowLatencyRateControl: Bool = true,
     codec: ScreenSharingVideoCodec = .h264, disableLookAhead: Bool = false, maximumPendingFrames: Int = 2,
     maintainSourceRate: Bool = false, staticCodecRate: Bool = false, completeEachFrame: Bool = false,
-    prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
+    prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2, transportCeilingBps: Int? = nil,
     sourceIdleThresholdNs: Int64? = nil, deliveryGrace: Duration? = nil, deliveryGraceExtensions: Int? = nil,
     frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
   ) throws {
     self.metrics = metrics
     self.frameDeliveryAudit = frameDeliveryAudit
+    if let transportCeilingBps {
+      guard (configuration.bitrate...500_000_000).contains(transportCeilingBps) else {
+        throw ScreenSharingError.invalid("Transport ceiling must be at least the video bitrate and at most 500 Mbps.")
+      }
+      metrics.label("transportCeiling", "\(transportCeilingBps) bps")
+    }
+    self.transportCeilingBps = transportCeilingBps
     // Process-wide WebRTC trials must exist before ANY RTC object. Real peers always bootstrap through the REAL
     // process boundary — there is deliberately no injection point here, because a fake initializer must never be able
     // to authorize a real RTC factory or publish a playout label that nothing installed.
@@ -215,7 +226,7 @@ public final class ScreenSharingPeer {
       transceiver.sender.parameters = parameters
       connection.setBweMinBitrateBps(
         100_000, currentBitrateBps: NSNumber(value: configuration.bitrate),
-        maxBitrateBps: NSNumber(value: configuration.bitrate))
+        maxBitrateBps: NSNumber(value: transportCeilingBps ?? configuration.bitrate))
     }
     if !sending {
       let options = RTCRtpTransceiverInit()

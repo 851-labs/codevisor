@@ -201,10 +201,24 @@ export function parseTuningArgument(argument) {
   return object
 }
 
-/// Returns a new configuration with `tuning` set (or removed when null).
+/// Keys a `tune` object may carry that live at the top of rig.json rather than under `tuning`.
+const topLevelTuningKeys = ["codec", "bitrate"]
+
+/// Returns a new configuration with `tuning` set (or removed when null). `codec` and `bitrate` in the
+/// object move to the top level so one `tune` call can switch the codec with its knobs; `default` keeps them.
 export function withTuning(configuration, tuning) {
   const next = { ...configuration }
-  if (tuning === null) delete next.tuning
-  else next.tuning = tuning
+  if (tuning === null) {
+    delete next.tuning
+    return next
+  }
+  const rest = { ...tuning }
+  for (const key of topLevelTuningKeys) {
+    if (!(key in rest)) continue
+    next[key] = rest[key]
+    delete rest[key]
+  }
+  if (Object.keys(rest).length === 0) delete next.tuning
+  else next.tuning = rest
   return next
 }

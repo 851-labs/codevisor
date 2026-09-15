@@ -17,6 +17,19 @@ public struct RigTuning: Equatable, Sendable {
   public let offMainPreparation: Bool
   /// Host: ScreenCaptureKit minimum-frame-interval request, independent of the video rate.
   public let captureIntervalFPS: Int?
+  /// Host encoder: nominal keyframe interval in seconds; nil keeps the product's 2 s.
+  public let keyframeIntervalSeconds: Int?
+  /// Host encoder: VideoToolbox standard rate control instead of the low-latency controller. Main444 needs it.
+  public let standardRateControl: Bool
+  /// Host encoder: frames admitted to VideoToolbox at once; nil keeps the product's 2.
+  public let pendingFrames: Int?
+  /// Host transport: estimator/sender cap in bps above the encoder's average bitrate; nil keeps one ceiling.
+  public let transportCeilingBps: Int?
+  /// Host encoder: ignore the transport's rate updates and hold the configured average bitrate, so a raised
+  /// ceiling changes only how fast bytes may leave, not how many the encoder makes.
+  public let staticCodecRate: Bool
+  /// Host transport: `WebRTC-Video-Pacing factor` — the pacer's multiple of the target bitrate; nil keeps 2.5.
+  public let pacingFactor: Double?
 
   public static let `default` = RigTuning(
     playoutDelayMs: nil, jitterWindowFrames: nil, renderOnArrival: false, maximumDrawableCount: 3,
@@ -29,7 +42,9 @@ public struct RigTuning: Equatable, Sendable {
 
   public init(
     playoutDelayMs: (min: Int, max: Int)?, jitterWindowFrames: Int?, renderOnArrival: Bool,
-    maximumDrawableCount: Int, offMainPreparation: Bool, captureIntervalFPS: Int?
+    maximumDrawableCount: Int, offMainPreparation: Bool, captureIntervalFPS: Int?,
+    keyframeIntervalSeconds: Int? = nil, standardRateControl: Bool = false, pendingFrames: Int? = nil,
+    transportCeilingBps: Int? = nil, staticCodecRate: Bool = false, pacingFactor: Double? = nil
   ) {
     self.playoutDelayMs = playoutDelayMs
     self.jitterWindowFrames = jitterWindowFrames
@@ -37,6 +52,12 @@ public struct RigTuning: Equatable, Sendable {
     self.maximumDrawableCount = maximumDrawableCount
     self.offMainPreparation = offMainPreparation
     self.captureIntervalFPS = captureIntervalFPS
+    self.keyframeIntervalSeconds = keyframeIntervalSeconds
+    self.standardRateControl = standardRateControl
+    self.pendingFrames = pendingFrames
+    self.transportCeilingBps = transportCeilingBps
+    self.staticCodecRate = staticCodecRate
+    self.pacingFactor = pacingFactor
   }
 
   public static func == (lhs: RigTuning, rhs: RigTuning) -> Bool {
@@ -44,13 +65,18 @@ public struct RigTuning: Equatable, Sendable {
       && lhs.jitterWindowFrames == rhs.jitterWindowFrames && lhs.renderOnArrival == rhs.renderOnArrival
       && lhs.maximumDrawableCount == rhs.maximumDrawableCount && lhs.offMainPreparation == rhs.offMainPreparation
       && lhs.captureIntervalFPS == rhs.captureIntervalFPS
+      && lhs.keyframeIntervalSeconds == rhs.keyframeIntervalSeconds
+      && lhs.standardRateControl == rhs.standardRateControl && lhs.pendingFrames == rhs.pendingFrames
+      && lhs.transportCeilingBps == rhs.transportCeilingBps && lhs.staticCodecRate == rhs.staticCodecRate
+      && lhs.pacingFactor == rhs.pacingFactor
   }
 
   /// Parses the `tuning` object. `profile` sets a base the other keys override.
   public static func parse(_ object: [String: Any]) throws -> RigTuning {
     let known: Set<String> = [
       "profile", "playoutDelayMs", "jitterWindowFrames", "renderOnArrival", "drawables", "offMainPreparation",
-      "captureIntervalFPS",
+      "captureIntervalFPS", "keyframeIntervalSeconds", "rateControl", "pendingFrames", "transportCeiling",
+      "staticCodecRate", "pacingFactor",
     ]
     let unknown = Set(object.keys).subtracting(known).sorted()
     guard unknown.isEmpty else { throw ScreenSharingError.invalid("tuning has unknown keys: \(unknown)") }
@@ -62,15 +88,19 @@ public struct RigTuning: Equatable, Sendable {
       }
       base = .paced15Worker
     }
+    // JSON `true`/`false` and the numbers 0/1 both bridge to Bool and NSNumber; only the CF type tells them apart.
+    func isBoolean(_ value: Any) -> Bool { CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() }
     func integer(_ key: String) throws -> Int? {
       guard let value = object[key] else { return nil }
-      guard let number = value as? NSNumber, !(value is Bool), number.doubleValue == number.doubleValue.rounded()
+      guard let number = value as? NSNumber, !isBoolean(value), number.doubleValue == number.doubleValue.rounded()
       else { throw ScreenSharingError.invalid("tuning.\(key) must be an integer") }
       return number.intValue
     }
     func flag(_ key: String) throws -> Bool? {
       guard let value = object[key] else { return nil }
-      guard let flag = value as? Bool else { throw ScreenSharingError.invalid("tuning.\(key) must be true or false") }
+      guard isBoolean(value), let flag = value as? Bool else {
+        throw ScreenSharingError.invalid("tuning.\(key) must be true or false")
+      }
       return flag
     }
     var playout = base.playoutDelayMs
@@ -95,15 +125,45 @@ public struct RigTuning: Equatable, Sendable {
     guard !offMain || renderOnArrival else {
       throw ScreenSharingError.invalid("tuning.offMainPreparation requires renderOnArrival")
     }
+    let keyframe = try integer("keyframeIntervalSeconds") ?? base.keyframeIntervalSeconds
+    if let keyframe, !(1...60).contains(keyframe) {
+      throw ScreenSharingError.invalid("tuning.keyframeIntervalSeconds must be 1...60")
+    }
+    var standardRateControl = base.standardRateControl
+    if let value = object["rateControl"] {
+      guard let name = value as? String, ["lowLatency", "standard"].contains(name) else {
+        throw ScreenSharingError.invalid("tuning.rateControl must be lowLatency or standard")
+      }
+      standardRateControl = name == "standard"
+    }
+    let pending = try integer("pendingFrames") ?? base.pendingFrames
+    if let pending, !(1...8).contains(pending) {
+      throw ScreenSharingError.invalid("tuning.pendingFrames must be 1...8")
+    }
+    let ceiling = try integer("transportCeiling") ?? base.transportCeilingBps
+    if let ceiling, !(100_000...500_000_000).contains(ceiling) {
+      throw ScreenSharingError.invalid("tuning.transportCeiling must be 100000...500000000 bps")
+    }
+    let staticRate = try flag("staticCodecRate") ?? base.staticCodecRate
+    var pacing = base.pacingFactor
+    if let value = object["pacingFactor"] {
+      guard let number = value as? NSNumber, !isBoolean(value), (1.0...50.0).contains(number.doubleValue) else {
+        throw ScreenSharingError.invalid("tuning.pacingFactor must be a number 1...50")
+      }
+      pacing = number.doubleValue
+    }
     return RigTuning(
       playoutDelayMs: playout, jitterWindowFrames: jitter, renderOnArrival: renderOnArrival,
-      maximumDrawableCount: drawables, offMainPreparation: offMain, captureIntervalFPS: capture)
+      maximumDrawableCount: drawables, offMainPreparation: offMain, captureIntervalFPS: capture,
+      keyframeIntervalSeconds: keyframe, standardRateControl: standardRateControl, pendingFrames: pending,
+      transportCeilingBps: ceiling, staticCodecRate: staticRate, pacingFactor: pacing)
   }
 
   /// The process-wide WebRTC trial selection these knobs require.
   public var fieldTrialSelection: ScreenSharingFieldTrials.Selection {
     .probeOptions(
-      jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs)
+      jitterWindowFrames: jitterWindowFrames, lowLatencyPlayout: false, playoutDelayBoundsMs: playoutDelayMs,
+      pacingFactor: pacingFactor)
   }
 
   /// Short human label for status and the HUD; nil for the defaults.
@@ -114,6 +174,12 @@ public struct RigTuning: Equatable, Sendable {
     if renderOnArrival { parts.append(offMainPreparation ? "arrival+worker" : "arrival") }
     if maximumDrawableCount != 3 { parts.append("\(maximumDrawableCount) drawables") }
     if let captureIntervalFPS { parts.append("capture \(captureIntervalFPS)") }
+    if let keyframeIntervalSeconds { parts.append("keyframe \(keyframeIntervalSeconds)s") }
+    if standardRateControl { parts.append("standard rc") }
+    if let pendingFrames { parts.append("pending \(pendingFrames)") }
+    if let transportCeilingBps { parts.append("ceiling \(transportCeilingBps / 1_000_000) Mb") }
+    if staticCodecRate { parts.append("static rate") }
+    if let pacingFactor { parts.append("pacing ×\(pacingFactor)") }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 }

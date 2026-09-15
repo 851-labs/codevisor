@@ -139,6 +139,12 @@
 
     var elapsedSeconds: Double { Double(ScreenSharingMetrics.nowNs - startedNs) / 1_000_000_000 }
 
+    /// Main444 only exists under VideoToolbox's standard rate controller; the low-latency flag silently
+    /// downgrades it to 4:2:0, so the codec choice overrides the tuning knob.
+    var useLowLatencyRateControl: Bool {
+      !configuration.tuning.standardRateControl && configuration.codec != .hevc444
+    }
+
     func log(_ message: String) {
       let stamp = ISO8601DateFormatter().string(from: Date())
       print("\(stamp) rig \(configuration.role.rawValue): \(message)")

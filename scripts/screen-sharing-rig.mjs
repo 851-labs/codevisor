@@ -61,7 +61,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   stop    [--all]                       Unload the local agent (and the host's with --all)
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
-  tune    JSON|paced15-worker|default   Write engine tuning into both configs and restart both agents (no rebuild)
+  tune    JSON|paced15-worker|default   Write engine tuning (and codec/bitrate) into both configs; restarts both agents
   control-check [--clicks N] [--keys M] Ask for control, click the host's workload N times (default 5) and press space M times, release; verifies delivery
   source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs

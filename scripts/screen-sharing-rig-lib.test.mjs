@@ -195,6 +195,22 @@ test("shell quoting and build extras", () => {
 })
 
 test("tune accepts a JSON object, the product profile, or default", () => {
+  assert.deepEqual(
+    withTuning(
+      { role: "host", codec: "h264", tuning: { drawables: 2 } },
+      { codec: "hevc444", keyframeIntervalSeconds: 60 }
+    ),
+    { role: "host", codec: "hevc444", tuning: { keyframeIntervalSeconds: 60 } },
+    "codec and bitrate move to the top level; the rest replaces tuning"
+  )
+  assert.deepEqual(
+    withTuning(
+      { role: "host", codec: "hevc444", tuning: { drawables: 2 } },
+      { bitrate: 24_000_000 }
+    ),
+    { role: "host", codec: "hevc444", bitrate: 24_000_000 },
+    "an object with only top-level keys clears tuning"
+  )
   assert.deepEqual(parseTuningArgument('{"playoutDelayMs":[1,15]}'), { playoutDelayMs: [1, 15] })
   assert.deepEqual(parseTuningArgument("paced15-worker"), { profile: "paced15-worker" })
   assert.equal(parseTuningArgument("default"), null)

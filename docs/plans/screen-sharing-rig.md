@@ -168,6 +168,31 @@ First two-Mac reading (tuftlord virtual display → local viewer, direct path, 3
 
 `rig.json` accepts a `tuning` object — `profile: paced15-worker` (the product's diagnostic profile, as a base), `playoutDelayMs: [min, max]`, `jitterWindowFrames`, `renderOnArrival`, `drawables`, `offMainPreparation`, `captureIntervalFPS` — applied at process start: the WebRTC trials through the same process-wide boundary the product uses, the renderer options through `ScreenSharingMetalView`, the capture request through `ScreenSharingCapture`. `rig tune JSON|paced15-worker|default` rewrites both configs and restarts both agents without a rebuild; measured 2.7 s from the command to both agents running with the new tuning, and both ends publish the trial actually installed (`playoutExperiment`) so the HUD's tuning label cannot claim a selection that did not take. First reading on the tuftlord virtual-display session: defaults p50 45–104 / max ≤137 ms, `paced15-worker` p50 40 / p95 73 / max 82 ms, ± 4 ms — single samples a few minutes apart, but the loop that makes a real comparison cheap now exists.
 
+## Keyframe stalls and pacing (2026-09-15)
+
+Why HEVC 4:4:4 stalls: a 4:4:4 keyframe is tens of times larger than a delta frame, and the product's transport caps the sender, the encoder target and the bandwidth estimator at the same 12 Mbps, so WebRTC's pacer lets a keyframe leave at 2.5 × 12 Mbps at most. Every frame encoded behind it queues, and the viewer holds the last picture until the keyframe has drained and decoded. The product asks for a keyframe every 2 s (`MaxKeyFrameInterval`), so the stall repeats.
+
+The rig now carries the knobs to test that on a live session: `keyframeIntervalSeconds`, `rateControl` (Main444 forces the standard controller), `pendingFrames`, `transportCeiling` (estimator cap only; the encoder target stays at `bitrate`), `pacingFactor` (`WebRTC-Video-Pacing factor`, a new option of the library's `probeOptions` trial selection) and `staticCodecRate`; `rig tune` also switches `codec`/`bitrate`. Each row below streamed the 1920×1080@60 virtual display for 45 s between an M1 Pro host and the M4 Max viewer over the LAN; image age is the calibrated capture-to-presentation age (p50/p95 of the per-second values, worst second); freeze-s counts seconds whose worst age exceeded 250 ms. Rows whose viewer window was covered by another app present nothing and were discarded — an occluded window is a measurement error, not a codec result.
+
+| Row | Codec      | Keyframe | Pacing               | Presented fps | Image age p50/p95 |      Worst | Freeze-s |   Receive |
+| --- | ---------- | -------- | -------------------- | ------------: | ----------------: | ---------: | -------: | --------: |
+| A   | H.264      | 2 s      | 2.5× (product)       |          53.4 |        83 / 86 ms |     134 ms |        0 | 10.4 Mb/s |
+| H   | HEVC 4:4:4 | 2 s      | 2.5× (product)       |          50.4 |  **168 / 192 ms** | **419 ms** |   **11** |  7.9 Mb/s |
+| C   | HEVC 4:4:4 | 60 s     | 2.5×                 |          51.6 |      126 / 131 ms |     187 ms |        0 |  9.5 Mb/s |
+| I   | HEVC 4:4:4 | 2 s      | **10×**              |          51.4 |  **102 / 109 ms** |     182 ms |        0 | 11.4 Mb/s |
+| J   | HEVC 4:4:4 | 60 s     | 10×                  |          52.3 |      102 / 104 ms |     122 ms |        0 | 11.2 Mb/s |
+| K   | H.264      | 2 s      | 10×                  |          51.2 |        86 / 91 ms |     112 ms |        0 | 11.5 Mb/s |
+| L   | HEVC 4:4:4 | 2 s      | 10×, 1 pending frame |          28.9 |      150 / 159 ms |     207 ms |        0 |  8.9 Mb/s |
+| M   | HEVC 4:4:4 | 60 s     | 10×, 1 pending frame |          25.6 |      112 / 116 ms |     132 ms |        0 |  9.1 Mb/s |
+
+An earlier 4:4:4 run at the product settings (row B) presented only 23.7 fps while decoding 50; the rerun (H) presented 50 with eleven freeze-seconds instead. Same cause, different symptom: whether the burst after a keyframe is discarded by the latest-frame mailbox or waited for is timing luck.
+
+What the table says. The pacer multiplier alone removes the stalls at the product's 2 s keyframe interval (H → I: worst 419 → 182 ms, eleven freeze-seconds → none) without changing the average bitrate. Stretching the keyframe interval alone also removes them (C) but leaves the tail high; both together (J) give the smoothest tail. Neither changes H.264 much (A → K), which is why the product never showed this. Raising only the estimator cap does nothing useful, and letting the sender cap rise with it (an earlier row) made WebRTC drive the encoder to ~70 Mb/s and the M1 Pro could not keep 4:4:4 at that rate — the ceiling must stay off the encoder target. `staticCodecRate` holds WebRTC's initial rate (~2 Mb/s), not `bitrate`, so it is not the right tool for this and its rows were discarded.
+
+Admitting one frame to the encoder at a time (L, M) halves the frame rate without lowering image age — the 4:4:4 encoder needs two frames in flight to sustain 60 fps, so the encoder queue is not where the latency sits.
+
+What remains after pacing: 4:4:4 still costs about 20 ms of image age over H.264 (102 vs 83–86 ms p50), which is the standard rate controller's encoder latency, not transport. Product implications, not yet made: a pacing multiplier above 2.5 is a one-line field trial; a longer keyframe interval trades recovery time on a lossy path for smoothness on a clean one; both should be measured on the internet path before either becomes a default.
+
 ## Control on the virtual display (2026-09-15)
 
 `ScreenSharingHostControl` and `ScreenSharingInputInjector` moved out of CodevisorCoreMac into a `ScreenSharingHostInput` library (package access, no behaviour change; CoreMac and its 26 tests use it unchanged) so the rig can exercise the product's real lease and injection without linking the product core and its analytics. The rig host installs them for display-backed sources, bound to the captured display, with the product's 250 ms deadline check; on a virtual display the workload accepts clicks and the host publishes its Response counter. `rig control-check --clicks N` runs the viewer side of the protocol over the real encrypted data channel and compares the counter before and after.

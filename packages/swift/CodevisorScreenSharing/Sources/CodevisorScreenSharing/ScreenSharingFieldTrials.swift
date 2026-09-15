@@ -48,8 +48,11 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     /// * `playoutDelayBoundsMs` selects those exact bounds (pinned timing.cc uses ASAP only for min 0 and max <= 500,
     ///   so a positive minimum keeps paced rendering — an experiment, not a guarantee).
     /// The two playout options are mutually exclusive at parse time, so their ordering here is unobservable.
+    /// * `pacingFactor` sets `WebRTC-Video-Pacing factor:` (pinned video_send_stream_impl.cc: the pacer sends at this
+    ///   multiple of the target bitrate; the default is 2.5), so a keyframe can leave faster than the average rate.
     public static func probeOptions(
-      jitterWindowFrames: Int?, lowLatencyPlayout: Bool, playoutDelayBoundsMs: (min: Int, max: Int)?
+      jitterWindowFrames: Int?, lowLatencyPlayout: Bool, playoutDelayBoundsMs: (min: Int, max: Int)?,
+      pacingFactor: Double? = nil
     ) -> Selection {
       var trials: [String: String] = [:]
       if let window = jitterWindowFrames {
@@ -59,6 +62,7 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
       if let bounds = playoutDelayBoundsMs {
         trials["WebRTC-ForcePlayoutDelay"] = "min_ms:\(bounds.min),max_ms:\(bounds.max)"
       }
+      if let pacingFactor { trials["WebRTC-Video-Pacing"] = "factor:\(pacingFactor)" }
       return Selection(name: trials.isEmpty ? "default" : "probe options", trials: trials)
     }
   }
