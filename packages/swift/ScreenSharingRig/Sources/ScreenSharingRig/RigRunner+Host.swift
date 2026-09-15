@@ -127,18 +127,7 @@
         log("owned workload window \(workload.windowID) captured at \(width)×\(height)@\(fps)")
       case .virtual(let width, let height, let fps):
         try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
-        // The display's pixel raster equals the video raster: WxH pixels is (W/2)x(H/2) points at 2x,
-        // so the workload window fills it and capture is 1:1, the property Apple's virtual display has.
-        let virtualDisplay = try RigVirtualDisplay(width: width / 2, height: height / 2, framesPerSecond: fps) {
-          [weak self] in
-          Task { @MainActor in
-            guard let self, let session = self.session else { return }
-            await self.endSession(session, reason: "virtual display terminated by the system")
-          }
-        }
-        session.virtualDisplay = virtualDisplay
-        let screen = try await virtualDisplay.waitForScreen(timeoutSeconds: 10)
-        log(virtualDisplay.summary + " · backing scale \(screen.backingScaleFactor)")
+        let (virtualDisplay, screen) = try await createVirtualDisplay(width: width, height: height, fps: fps, in: session)
         let capture = ScreenSharingCapture()
         session.capture = capture
         let workloadConfiguration = try ScreenSharingVideoConfiguration(
@@ -146,9 +135,9 @@
         let workload = try ProbeOwnedWorkloadWindow(configuration: workloadConfiguration, screen: screen) {
           try await capture.stop()
         }
+        session.workload = workload
         // Cover the virtual display's menu bar so the captured raster is only the workload.
         workload.window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-        session.workload = workload
         let sender = session.peer.frameSender
         let metrics = session.metrics
         let displayID = virtualDisplay.displayID
@@ -157,6 +146,18 @@
         }
         session.metrics.label("captureSelection", "virtual display \(displayID) with the owned workload window")
         log("virtual display \(displayID) captured with the workload window on it (\(width)×\(height)@\(fps))")
+      case .virtualDesktop(let width, let height, let fps):
+        try requireScreenRecording(for: "a virtual display, which is captured like a physical one")
+        let (virtualDisplay, _) = try await createVirtualDisplay(width: width, height: height, fps: fps, in: session)
+        let capture = ScreenSharingCapture()
+        session.capture = capture
+        try await capture.start(
+          displayID: virtualDisplay.displayID, configuration: video, sender: session.peer.frameSender,
+          metrics: session.metrics)
+        session.metrics.label("captureSelection", "bare virtual display \(virtualDisplay.displayID)")
+        log(
+          "bare virtual display \(virtualDisplay.displayID) captured (\(width)×\(height)@\(fps)); move windows onto \"\(RigVirtualDisplay.name)\" to stream them"
+        )
       case .app(let bundle):
         try requireScreenRecording(for: "an application's windows")
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -256,6 +257,24 @@
       throw ScreenSharingError.unavailable(
         "Screen Recording is not granted to the rig on this Mac (needed for \(purpose)); enable Codevisor Screen Sharing Rig under Privacy & Security → Screen & System Audio Recording, or use capture workload."
       )
+    }
+
+    /// Creates the 1:1 virtual display for a WxH-pixel video and waits for AppKit to attach it.
+    func createVirtualDisplay(width: Int, height: Int, fps: Int, in session: RigSession) async throws -> (
+      RigVirtualDisplay, NSScreen
+    ) {
+      // The display's pixel raster equals the video raster: WxH pixels is (W/2)x(H/2) points at 2x.
+      let virtualDisplay = try RigVirtualDisplay(width: width / 2, height: height / 2, framesPerSecond: fps) {
+        [weak self] in
+        Task { @MainActor in
+          guard let self, let session = self.session else { return }
+          await self.endSession(session, reason: "virtual display terminated by the system")
+        }
+      }
+      session.virtualDisplay = virtualDisplay
+      let screen = try await virtualDisplay.waitForScreen(timeoutSeconds: 10)
+      log(virtualDisplay.summary + " · backing scale \(screen.backingScaleFactor)")
+      return (virtualDisplay, screen)
     }
 
     func showHostWindow() {

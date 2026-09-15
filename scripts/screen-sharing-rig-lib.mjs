@@ -61,7 +61,7 @@ export function rigConfiguration({
   if (
     role === "host" &&
     capture !== undefined &&
-    !/^(synthetic|workload:\d+x\d+@\d+|virtual:\d+x\d+@\d+|app:[A-Za-z0-9.-]+|window:\d+|display:\d+)$/.test(
+    !/^(synthetic|workload:\d+x\d+@\d+|virtual:\d+x\d+@\d+|virtual-desktop:\d+x\d+@\d+|app:[A-Za-z0-9.-]+|window:\d+|display:\d+)$/.test(
       capture
     )
   ) {

@@ -17,6 +17,9 @@ public struct RigConfiguration: Sendable {
     /// A virtual display created through the private CGVirtualDisplay API with
     /// the workload window on it; requires Screen Recording on the host. Rig only.
     case virtual(width: Int, height: Int, framesPerSecond: Int)
+    /// The same virtual display left bare: its own desktop, for moving real applications onto
+    /// it. Requires Screen Recording. Rig only.
+    case virtualDesktop(width: Int, height: Int, framesPerSecond: Int)
     /// Every on-screen window of one application, by bundle identifier; requires Screen Recording.
     case app(String)
     /// One window by CGWindowID, independent of what covers it; requires Screen Recording.
@@ -44,22 +47,24 @@ public struct RigConfiguration: Sendable {
         }
         return .display(id)
       }
-      if trimmed.hasPrefix("workload:") || trimmed.hasPrefix("virtual:") {
-        let isVirtual = trimmed.hasPrefix("virtual:")
-        let spec = trimmed.dropFirst((isVirtual ? "virtual:" : "workload:").count)
+      if trimmed.hasPrefix("workload:") || trimmed.hasPrefix("virtual:") || trimmed.hasPrefix("virtual-desktop:") {
+        let kind =
+          trimmed.hasPrefix("virtual-desktop:")
+          ? "virtual-desktop" : trimmed.hasPrefix("virtual:") ? "virtual" : "workload"
+        let spec = trimmed.dropFirst(kind.count + 1)
         let parts = spec.split(separator: "@", omittingEmptySubsequences: false)
         let size = parts.first.map { $0.split(separator: "x", omittingEmptySubsequences: false) } ?? []
         guard parts.count == 2, size.count == 2, let width = Int(size[0]), let height = Int(size[1]),
           let fps = Int(parts[1]), (320...3840).contains(width), (240...2160).contains(height),
           width.isMultiple(of: 2), height.isMultiple(of: 2), (1...120).contains(fps)
         else {
-          throw ScreenSharingError.invalid(
-            "capture \(isVirtual ? "virtual" : "workload") must look like \(isVirtual ? "virtual" : "workload"):1920x1080@60"
-          )
+          throw ScreenSharingError.invalid("capture \(kind) must look like \(kind):1920x1080@60")
         }
-        return isVirtual
-          ? .virtual(width: width, height: height, framesPerSecond: fps)
-          : .workload(width: width, height: height, framesPerSecond: fps)
+        switch kind {
+        case "virtual-desktop": return .virtualDesktop(width: width, height: height, framesPerSecond: fps)
+        case "virtual": return .virtual(width: width, height: height, framesPerSecond: fps)
+        default: return .workload(width: width, height: height, framesPerSecond: fps)
+        }
       }
       throw ScreenSharingError.invalid(
         "capture must be synthetic, workload:WxH@fps, virtual:WxH@fps, app:BUNDLE, window:ID or display:ID (got \(text))"
@@ -72,6 +77,7 @@ public struct RigConfiguration: Sendable {
       case .workload(let width, let height, let fps): return "workload:\(width)x\(height)@\(fps)"
       case .display(let id): return "display:\(id)"
       case .virtual(let width, let height, let fps): return "virtual:\(width)x\(height)@\(fps)"
+      case .virtualDesktop(let width, let height, let fps): return "virtual-desktop:\(width)x\(height)@\(fps)"
       case .app(let bundle): return "app:\(bundle)"
       case .window(let id): return "window:\(id)"
       }

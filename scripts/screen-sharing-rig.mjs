@@ -58,7 +58,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   stop    [--all]                       Unload the local agent (and the host's with --all)
   sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
   hud     on|off [--host]               Toggle the viewer (or host) overlay
-  source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, app:BUNDLE, window:ID, display:ID)
+  source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
   logs                                  Tail both rig logs
 
 Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), virtual:WxH@fps (private CGVirtualDisplay with the workload window on it; needs Screen Recording), display:ID (needs Screen Recording).
