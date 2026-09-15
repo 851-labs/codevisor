@@ -100,7 +100,7 @@ extension ComposerBar {
         slashMenuContentHeight = $0
       }
       .composerGlassSurface(
-        cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+        shape: cardStyle.shape,
         id: .commandPalette,
         in: glassNamespace
       )
@@ -136,7 +136,7 @@ extension ComposerBar {
         slashMenuContentHeight = $0
       }
       .composerGlassSurface(
-        cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+        shape: cardStyle.shape,
         id: .commandPalette,
         in: glassNamespace
       )

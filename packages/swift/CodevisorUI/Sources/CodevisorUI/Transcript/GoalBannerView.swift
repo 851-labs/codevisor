@@ -8,6 +8,7 @@ import SwiftUI
 /// the session has a goal; hidden entirely on harnesses without goal support.
 /// Goals are created/replaced through the composer's goal-mode toggle.
 public struct GoalBannerView: View {
+  private var cardStyle = ComposerCardStyle()
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Bindable var controller: SessionController
   let goal: SessionGoal
@@ -37,10 +38,10 @@ public struct GoalBannerView: View {
       Spacer(minLength: 8)
       controls
     }
-    .padding(10)
+    .padding(ComposerCardStyle.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      shape: cardStyle.shape,
       id: .goal,
       in: glassNamespace
     )

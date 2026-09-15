@@ -2,7 +2,14 @@ import CodevisorUI
 import SwiftUI
 
 struct ComposerSlashCommandPopup: View {
+  private var cardStyle = ComposerCardStyle()
   @Environment(\.theme) private var theme
+
+  private static let listInset: CGFloat = 6
+
+  private var selectionShape: ConcentricRectangle {
+    cardStyle.insetShape(by: Self.listInset)
+  }
 
   let isLoading: Bool
   let matches: [ComposerSlashItem]
@@ -29,7 +36,8 @@ struct ComposerSlashCommandPopup: View {
       } action: {
         onContentHeightChange($0)
       }
-      .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+      .background(theme.windowBackground, in: cardStyle.shape)
+      .composerGlassSurface(shape: cardStyle.shape)
       .accessibilityElement(children: .combine)
       .accessibilityLabel("Connecting to harness")
     } else if !matches.isEmpty {
@@ -47,7 +55,7 @@ struct ComposerSlashCommandPopup: View {
               .id(command.id)
           }
         }
-        .padding(6)
+        .padding(Self.listInset)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {
@@ -60,7 +68,11 @@ struct ComposerSlashCommandPopup: View {
         proxy.scrollTo(matches[index].id)
       }
     }
-    .composerGlassSurface(cornerRadius: ComposerGlassStyle.accessoryCornerRadius)
+    .clipShape(cardStyle.shape)
+    // The palette overlays other glass accessories, whose text must not
+    // show through this surface when their materials merge.
+    .background(theme.windowBackground, in: cardStyle.shape)
+    .composerGlassSurface(shape: cardStyle.shape)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Slash commands")
     .accessibilityHint(
@@ -97,10 +109,10 @@ struct ComposerSlashCommandPopup: View {
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
       .background(
-        RoundedRectangle(cornerRadius: 6)
+        selectionShape
           .fill(isSelected ? theme.accent : .clear)
       )
-      .contentShape(RoundedRectangle(cornerRadius: 6))
+      .contentShape(selectionShape)
     }
     .buttonStyle(.plain)
     .accessibilityLabel("/\(command.name), \(command.description)")

@@ -226,7 +226,11 @@ extension ComposerBar {
             .tint(.red)
         }
       }
-      .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
+      .scaledFrame(
+        width: ComposerCardStyle.actionDiameter,
+        height: ComposerCardStyle.actionDiameter,
+        relativeTo: .subheadline
+      )
       .expandedHitTarget(base: 30)
     }
     .buttonStyle(.plain)

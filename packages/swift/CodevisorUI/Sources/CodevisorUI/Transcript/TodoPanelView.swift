@@ -6,6 +6,7 @@ import ACPKit
 /// Collapsible: the header always shows progress and the current step; the
 /// body lists every step.
 public struct TodoPanelView: View {
+  private var cardStyle = ComposerCardStyle()
   let plan: Plan
   @Binding var isExpanded: Bool
   var glassNamespace: Namespace.ID? = nil
@@ -97,10 +98,10 @@ public struct TodoPanelView: View {
         .padding(.top, 6)
       }
     }
-    .padding(10)
+    .padding(ComposerCardStyle.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      shape: cardStyle.shape,
       id: .todos,
       in: glassNamespace
     )

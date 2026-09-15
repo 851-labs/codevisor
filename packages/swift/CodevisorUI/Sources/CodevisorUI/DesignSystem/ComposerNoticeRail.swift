@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct ComposerNoticeRail: View {
+  private var cardStyle = ComposerCardStyle()
   public enum Kind {
     case warning
     case error
@@ -78,16 +79,15 @@ public struct ComposerNoticeRail: View {
       }
     }
     .foregroundStyle(foregroundColor)
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
+    .padding(ComposerCardStyle.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background {
       ZStack {
         // Notices float beyond the transcript mask, so their base must
         // be opaque or transcript text bleeds through the status tint.
-        RoundedRectangle(cornerRadius: 8)
+        cardStyle.shape
           .fill(theme.windowBackground)
-        RoundedRectangle(cornerRadius: 8)
+        cardStyle.shape
           .fill(foregroundColor.opacity(0.08))
       }
     }

@@ -52,7 +52,7 @@ struct IOSGoalAccessory: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .padding(10)
+      .padding(ComposerCardStyle.contentPadding)
       .frame(
         maxWidth: .infinity,
         minHeight: Typography.minimumInteractiveTargetSize,

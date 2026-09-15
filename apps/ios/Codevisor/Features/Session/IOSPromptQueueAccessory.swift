@@ -42,7 +42,7 @@ struct IOSPromptQueueAccessory: View {
             .fixedSize(horizontal: true, vertical: false)
         }
       }
-      .padding(10)
+      .padding(ComposerCardStyle.contentPadding)
       .frame(maxWidth: .infinity, minHeight: Typography.minimumInteractiveTargetSize, alignment: .leading)
       .contentShape(Rectangle())
     }

@@ -1,3 +1,4 @@
+import CodevisorUI
 import SwiftUI
 
 /// Fades transcript pixels beneath the floating composer's top edge, then

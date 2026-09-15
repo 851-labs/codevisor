@@ -27,7 +27,7 @@ extension ComposerBar {
     // Keep 44-point controls while drawing a slimmer pill behind them.
     .padding(.vertical, -6)
     .composerGlassSurface(
-      cornerRadius: 16, id: .newChatConfiguration, in: glassNamespace
+      shape: cardStyle.shape, id: .newChatConfiguration, in: glassNamespace
     )
     .padding(.vertical, 6)
     .disabled(controller.isSubmitting || controller.hasAcceptedFirstSend)

@@ -6,6 +6,7 @@ import StreamMarkdown
 import TranscriptKit
 
 struct PromptQueueView: View {
+  private var cardStyle = ComposerCardStyle()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
   @Binding var isExpanded: Bool
@@ -45,10 +46,10 @@ struct PromptQueueView: View {
         .transition(Motion.unfold(reduceMotion: reduceMotion))
       }
     }
-    .padding(10)
+    .padding(ComposerCardStyle.contentPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
     .composerGlassSurface(
-      cornerRadius: ComposerGlassStyle.accessoryCornerRadius,
+      shape: cardStyle.shape,
       id: .queue,
       in: glassNamespace
     )
