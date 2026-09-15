@@ -107,9 +107,16 @@ export function deployPlan({ builtApp, home, uid, remote }) {
   ]
 }
 
-/// Commands to (re)load the LaunchAgent from its plist path.
+/// Commands to (re)load the LaunchAgent from its plist path. `bootout` returns while the
+/// service is still unloading and a `bootstrap` issued then fails with EIO, so wait until
+/// the service is gone (bounded) before loading it again.
 export function bootstrapPlan({ uid, plistPath, remote }) {
-  const script = `launchctl bootout gui/${uid}/${rigLaunchAgentLabel} >/dev/null 2>&1 || true; launchctl bootstrap gui/${uid} ${quote(plistPath)} && launchctl kickstart -k gui/${uid}/${rigLaunchAgentLabel}`
+  const service = `gui/${uid}/${rigLaunchAgentLabel}`
+  const script = [
+    `launchctl bootout ${service} >/dev/null 2>&1 || true`,
+    `for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do launchctl print ${service} >/dev/null 2>&1 || break; sleep 0.5; done`,
+    `launchctl bootstrap gui/${uid} ${quote(plistPath)} && launchctl kickstart -k ${service}`
+  ].join("; ")
   return remote ? [["ssh", remote, script]] : [["sh", "-c", script]]
 }
 

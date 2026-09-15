@@ -135,8 +135,19 @@ test("bootstrap and stop plans use the gui domain", () => {
   assert.equal(`${shell} ${flag}`, "sh -c")
   assert.match(
     script,
-    /launchctl bootout gui\/501\/com\.codevisor\.screen-sharing-rig[^;]*\|\| true; launchctl bootstrap gui\/501 '\/p\/x\.plist' && launchctl kickstart -k gui\/501\/com\.codevisor\.screen-sharing-rig/
+    /^launchctl bootout gui\/501\/com\.codevisor\.screen-sharing-rig[^;]*\|\| true; /
   )
+  assert.match(
+    script,
+    /launchctl print gui\/501\/com\.codevisor\.screen-sharing-rig >\/dev\/null 2>&1 \|\| break; sleep 0\.5/,
+    "waits for the old instance to unload"
+  )
+  assert.match(
+    script,
+    /launchctl bootstrap gui\/501 '\/p\/x\.plist' && launchctl kickstart -k gui\/501\/com\.codevisor\.screen-sharing-rig$/
+  )
+  assert.ok(script.indexOf("bootout") < script.indexOf("launchctl print"))
+  assert.ok(script.indexOf("launchctl print") < script.indexOf("bootstrap gui"))
   assert.equal(bootstrapPlan({ uid: 501, plistPath: "/p/x.plist", remote: "u@h" })[0][0], "ssh")
   assert.match(stopPlan({ uid: 501 })[0][2], /bootout gui\/501/)
 })
