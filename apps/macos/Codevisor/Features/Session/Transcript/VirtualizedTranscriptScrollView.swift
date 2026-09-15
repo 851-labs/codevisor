@@ -447,24 +447,8 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       clearTranscriptSelection()
       return
     }
-    let scrollKeys: Set<UInt16> = [115, 116, 119, 121, 123, 124, 125, 126]
-    guard scrollKeys.contains(event.keyCode) else {
-      super.keyDown(with: event)
-      return
-    }
-    guard initialPresentationGate.isReady else { return }
-    cancelDisclosureViewportAnchor()
-    bottomJumpGate.cancel()
-    lockedRestoreDistance = nil
-    isHandlingUserInput = true
-    markRecentUserInput()
-    let snapshotGeneration = viewportSnapshotGeneration
+    if handleKeyboardScroll(with: event) { return }
     super.keyDown(with: event)
-    if viewportSnapshotGeneration == snapshotGeneration {
-      emitViewportSnapshot()
-    }
-    isHandlingUserInput = false
-    markRecentUserInput()
   }
 
   var effectiveRowWidth: CGFloat {
