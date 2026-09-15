@@ -355,7 +355,7 @@ final class PaneGroupModel: Identifiable {
         discardLivePane(id: id)
         invalidatedLiveIds.insert(id)
       } else if let sharing = live[id] as? ScreenSharingPane {
-        sharing.model?.applyPreferences(next.screenSharing ?? .init())
+        sharing.applyPreferences(next.screenSharing ?? .init())
       }
     }
 

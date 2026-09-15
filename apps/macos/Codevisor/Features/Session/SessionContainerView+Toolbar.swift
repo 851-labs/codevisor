@@ -1,5 +1,6 @@
 import CodevisorCore
 import CodevisorCoreMac
+import ComposableArchitecture
 import SwiftUI
 
 extension SessionContainerView {
@@ -24,7 +25,7 @@ extension SessionContainerView {
 
   var activeScreenSharingPane: ScreenSharingPane? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
-      let pane = group.selectedPane as? ScreenSharingPane, pane.model != nil, !pane.showsDisplayPicker
+      let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil, !pane.showsDisplayPicker
     else { return nil }
     return pane
   }
@@ -54,8 +55,8 @@ extension SessionContainerView {
   }
 
   var activePaneSubtitle: String {
-    if let model = activeScreenSharingPane?.model {
-      guard let display = model.displays.first(where: { $0.id == model.selectedDisplayId }) else { return "" }
+    if let store = activeScreenSharingPane?.store {
+      guard let display = store.displays.first(where: { $0.id == store.selectedDisplayId }) else { return "" }
       return "\(display.width) × \(display.height)"
     }
     guard activePaneDescriptor?.kind == .chat else { return "" }

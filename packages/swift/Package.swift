@@ -33,11 +33,22 @@ let package = Package(
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
     .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
     .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
+    .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
+    .package(url: "https://github.com/pointfreeco/swift-concurrency-extras", exact: "1.4.1"),
   ],
   targets: [
+    // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
+    // metrics, input/control/clipboard messages, the message-channel and viewing-session contracts. A
+    // backend that is not the native WebRTC pipeline depends on this target only. See
+    // docs/plans/screen-sharing-composable-architecture.md.
+    .target(
+      name: "ScreenSharingCore",
+      path: "CodevisorScreenSharing/Core",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .target(
       name: "CodevisorScreenSharing",
-      dependencies: [.product(name: "WebRTC", package: "WebRTC")],
+      dependencies: ["ScreenSharingCore", .product(name: "WebRTC", package: "WebRTC")],
       path: "CodevisorScreenSharing/Sources/CodevisorScreenSharing",
       resources: [
         .copy("Resources/WebRTC-LICENSE.txt"),
@@ -310,7 +321,10 @@ let package = Package(
     // iOS apps depend on CodevisorCore only; never link this on iOS.)
     .target(
       name: "CodevisorCoreMac",
-      dependencies: ["CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput"],
+      dependencies: [
+        "CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput",
+        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+      ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -369,6 +383,8 @@ let package = Package(
         "CodevisorCoreMac",
         "CodevisorCore",
         "ACPKit",
+        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+        .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],

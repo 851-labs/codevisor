@@ -8,15 +8,16 @@ test("xcodebuild builds pin worktree-local caches", () => {
   const layout = developmentLayout("/repo/codevisor", {})
   const arguments_ = xcodebuildArguments(layout, "macos", ["-scheme", "Codevisor", "build"])
 
-  assert.deepEqual(arguments_.slice(0, 6), [
+  assert.deepEqual(arguments_.slice(0, 7), [
     "-derivedDataPath",
     layout.build.macos.derivedData,
     "-clonedSourcePackagesDirPath",
     layout.build.macos.sourcePackages,
     "-packageCachePath",
-    layout.build.packageCache
+    layout.build.packageCache,
+    "-skipMacroValidation"
   ])
-  assert.deepEqual(arguments_.slice(6), ["-scheme", "Codevisor", "build"])
+  assert.deepEqual(arguments_.slice(7), ["-scheme", "Codevisor", "build"])
 })
 
 test("standalone Xcode operations omit incompatible build flags", () => {

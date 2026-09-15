@@ -37,5 +37,3 @@ public enum ScreenSharingClipboardMessage: Codable, Sendable, Equatable {
   }
   private struct Envelope: Codable { let version: Int; let message: ScreenSharingClipboardMessage }
 }
-
-public typealias ScreenSharingClipboardChannel = ScreenSharingDataChannel<ScreenSharingClipboardMessage>
