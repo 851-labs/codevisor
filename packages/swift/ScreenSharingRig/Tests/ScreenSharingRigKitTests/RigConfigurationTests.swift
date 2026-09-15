@@ -40,6 +40,7 @@ struct RigConfigurationTests {
 
   @Test(arguments: [
     "synthetic", "workload:1920x1080@60", "workload:1280x720@30", "display:1", "display:69734400",
+    "virtual:1920x1080@60", "virtual:2560x1440@30",
   ])
   func captureSourcesRoundTrip(_ text: String) throws {
     let source = try RigConfiguration.CaptureSource.parse(text)
@@ -49,6 +50,7 @@ struct RigConfigurationTests {
   @Test(arguments: [
     "", "window", "display:0", "display:-1", "display:x", "workload:1920x1080", "workload:1921x1080@60",
     "workload:1920x1080@0", "workload:1920x1080@121", "workload:100x100@60", "workload:4000x1080@60",
+    "virtual:1920x1080", "virtual:1921x1080@60", "virtual:",
   ])
   func invalidCaptureSources(_ text: String) {
     #expect(throws: (any Error).self) { try RigConfiguration.CaptureSource.parse(text) }
@@ -92,5 +94,16 @@ struct RigConfigurationTests {
     #expect(configuration.capture == .workload(width: 1280, height: 720, framesPerSecond: 30))
     #expect(configuration.hud == false)
     #expect(configuration.telemetryDirectory == "/tmp/x")
+  }
+}
+
+extension RigConfigurationTests {
+  @Test func virtualIsAHostSourceDistinctFromWorkload() throws {
+    let virtual = try RigConfiguration.CaptureSource.parse("virtual:1920x1080@60")
+    #expect(virtual == .virtual(width: 1920, height: 1080, framesPerSecond: 60))
+    #expect(virtual != .workload(width: 1920, height: 1080, framesPerSecond: 60))
+    let configuration = try RigConfiguration.parse(
+      Self.json(["role": "host", "token": Self.token, "capture": "virtual:1920x1080@60"]))
+    #expect(configuration.capture.description == "virtual:1920x1080@60")
   }
 }

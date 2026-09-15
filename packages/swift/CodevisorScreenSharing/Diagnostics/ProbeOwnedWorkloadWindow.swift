@@ -35,13 +35,14 @@ package final class ProbeOwnedWorkloadWindow {
   /// every path where the stream may have started before hiding the window.
   /// `recordDrawTimes` is the explicit opt-in for the bounded first-draw-start
   /// record (off by default; nothing is retained otherwise).
+  /// `screen` places the window on a specific display (for example a virtual one); the main display otherwise.
   package init(
-    configuration: ScreenSharingVideoConfiguration, recordDrawTimes: Bool = false,
+    configuration: ScreenSharingVideoConfiguration, recordDrawTimes: Bool = false, screen: NSScreen? = nil,
     stopCapture: @escaping @MainActor () async throws -> Void
   )
     throws
   {
-    guard let screen = NSScreen.main else {
+    guard let screen = screen ?? NSScreen.main else {
       throw ScreenSharingError.unavailable("No desktop display for the owned workload window.")
     }
     let painter = try ProbeDesktopPainter.make(

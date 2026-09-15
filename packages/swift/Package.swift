@@ -68,9 +68,18 @@ let package = Package(
     ),
     .executableTarget(
       name: "ScreenSharingRig",
-      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics", "ScreenSharingRigKit"],
+      dependencies: [
+        "CodevisorScreenSharing", "ScreenSharingDiagnostics", "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
+      ],
       path: "ScreenSharingRig/Sources/ScreenSharingRig",
       swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // Private CoreGraphics virtual-display declarations; rig only, see the header.
+    .target(
+      name: "CGVirtualDisplayPrivate",
+      path: "ScreenSharingRig/Sources/CGVirtualDisplayPrivate",
+      publicHeadersPath: "include",
+      linkerSettings: [.linkedFramework("CoreGraphics")]
     ),
     .testTarget(
       name: "ScreenSharingRigKitTests",

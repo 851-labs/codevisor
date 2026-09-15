@@ -30,7 +30,7 @@ bun run screen-sharing:rig stop --all
 
 - The viewer creates a receive-only offer and `POST`s it with a bearer token to the host's listener (port 48731); the host answers. Latest offer wins on the host. There is no ICE trickle; the peer gathers before offering, as the product does.
 - The viewer reconnects with bounded backoff (1 → 10 s). On `disconnected` it asks the host whether its session still exists and skips the 5 s grace when the host has restarted. Kill or redeploy either side and media returns on its own.
-- `capture: workload:WxH@fps` draws the probe's workload window in-process and captures it through current-process shareable content, which needs no Screen Recording grant. `display:ID` captures a real display and does. `synthetic` needs nothing and no display.
+- `capture: workload:WxH@fps` draws the probe's workload window in-process and captures it through current-process shareable content, which needs no Screen Recording grant. `display:ID` captures a real display and does. `virtual:WxH@fps` creates a HiDPI virtual display through the private `CGVirtualDisplay` API, puts the workload window on it and captures that display (Screen Recording again; rig only, removed with the session). `synthetic` needs nothing and no display.
 - Every second both processes append a `RigTelemetrySample` to `~/Library/Logs/CodevisorRig/<role>.jsonl` (rotated at 50 MB) and refresh the HUD. `H` toggles the viewer HUD; `POST /hud` toggles either. `POST /sample` on the viewer's loopback control port (48732) turns the HUD off, collects N seconds, fetches the host's snapshot and writes one report.
 - Samples never contain SDP, addresses or credentials. The token is a trusted-LAN convenience, not an authorization system.
 

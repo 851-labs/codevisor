@@ -19,6 +19,7 @@
     private(set) var closed = false
     var capture: ScreenSharingCapture?
     var workload: ProbeOwnedWorkloadWindow?
+    var virtualDisplay: RigVirtualDisplay?
     var synthetic: SyntheticSource?
     var metalView: ScreenSharingMetalView?
     var frameSize: CGSize?
@@ -54,6 +55,7 @@
       }
       workload = nil
       capture = nil
+      virtualDisplay = nil  // releasing the object removes the display
       metalView?.stop()
       metalView?.removeFromSuperview()
       metalView = nil
@@ -94,6 +96,7 @@
     var sampling: Sampling?
     var keyMonitor: Any?
     var disconnectGrace: Task<Void, Never>?
+    var screenRecordingRequested = false
 
     init(configuration: RigConfiguration, build: RigBuildInfo) {
       self.configuration = configuration

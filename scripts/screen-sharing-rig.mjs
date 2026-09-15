@@ -60,7 +60,7 @@ const usage = `Usage: bun run screen-sharing:rig <command> [options]
   hud     on|off [--host]               Toggle the viewer (or host) overlay
   logs                                  Tail both rig logs
 
-Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), display:ID (needs Screen Recording).
+Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), virtual:WxH@fps (private CGVirtualDisplay with the workload window on it; needs Screen Recording), display:ID (needs Screen Recording).
 `
 
 const { command, options, positional } = (() => {

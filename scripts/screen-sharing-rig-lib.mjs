@@ -59,7 +59,7 @@ export function rigConfiguration({
   if (
     role === "host" &&
     capture !== undefined &&
-    !/^(synthetic|workload:\d+x\d+@\d+|display:\d+)$/.test(capture)
+    !/^(synthetic|workload:\d+x\d+@\d+|virtual:\d+x\d+@\d+|display:\d+)$/.test(capture)
   ) {
     throw new Error("capture must be synthetic, workload:WxH@fps or display:ID")
   }
