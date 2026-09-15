@@ -31,10 +31,10 @@
     {
       "identity" : "webrtc",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stasel/WebRTC.git",
+      "location" : "https://github.com/851-labs/webrtc.git",
       "state" : {
-        "revision" : "1d04692697cb642bfebf6ad2dd99fe52649c3d6d",
-        "version" : "152.0.0"
+        "revision" : "c9d45927ea35ae3d83011f67fa1f06e61b5e5e2c",
+        "version" : "152.0.0-codevisor.1"
       }
     }
   ],

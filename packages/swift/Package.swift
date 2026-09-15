@@ -32,7 +32,7 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
     .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
-    .package(url: "https://github.com/stasel/WebRTC.git", exact: "152.0.0"),
+    .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
   ],
   targets: [
     .target(

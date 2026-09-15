@@ -14,7 +14,7 @@ The intended MVP is one Codevisor Mac viewing and controlling an existing displa
 - Chatless workspace navigation through the shared pane container, including conversion from New Tab and sidebar title updates.
 - Bounded media ownership, terminal renderer stop and owner-scoped cancellation of pending host starts.
 - A default-off `CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE=paced15-worker` profile: 120 fps capture request at adaptive level zero, 1–15 ms receiver playout bounds, synchronized arrival rendering with two drawables and off-main preparation. A capture request is not an achieved frame rate. Process-wide WebRTC configuration requires an app restart to change.
-- A standalone probe and a pinned WebRTC artifact-build recipe. The source build, generated-notice audit and isolated candidate tests now pass with Xcode 26.6; the candidate is not installed or promoted.
+- A standalone probe and a pinned WebRTC artifact-build recipe. The source build, generated-notice audit and isolated candidate tests pass with Xcode 27.0, and that build is the installed dependency (`851-labs/webrtc` `152.0.0-codevisor.1`) since September 15.
 
 ## Existing verification
 
@@ -40,7 +40,7 @@ An unpublished Developer ID packaging run of `d455c353` completed through the or
 
 This was a local packaging check using the installed Xcode 27 beta. The isolated WebRTC source-build recipe used Xcode 26.6 for that build; its lock now names 27.0 (September 15), and the recipe completed on 27.0 the same day with headers and notices byte-identical to the audited ones (media tests and smoke not repeated on the 27.0 candidate). The ARM runtime was rebuilt from this revision. For Intel, only the unchanged native Node/dependency tree was reused from main's successful CI run at `10bdc699`, with current JavaScript and resources. All dependency manifests and the lockfile matched (the root manifest differs only by the development probe script); 2,019 current non-native files and all eight Intel Mach-O files were checked. Intel execution was unavailable without Rosetta. These review artifacts were not published and do not replace native release builds. Notarization was not attempted because this session has no notarization credentials.
 
-The source-built WebRTC candidate remains isolated and unpromoted; actual-app validation is required before replacing the installed dependency. A successful source build does not establish byte reproducibility or performance equivalence.
+On September 15 the Xcode 27.0 source build replaced the stasel archive as the installed dependency after the isolated media tests, the repo media tests and a macOS build passed against it. A successful source build does not establish byte reproducibility or performance equivalence with the stasel build; that comparison has not been measured.
 
 Pushing to `main` automatically starts the Alpha build and publication workflow, so pre-commit validation, distribution and actual-app acceptance must be reviewed before merging. [PR #7](https://github.com/851-labs/codevisor/pull/7) is ready for review and has not been merged. Validation uses the existing pre-commit hook: typography and the complete `bun run check` chain, without exclusions. The added PR validation workflow and its uncommitted watchdog were removed at the user's request; hosted PR checks are not an MVP gate. Existing release and dependency-artifact workflows are unchanged. Macroscope's automatic review is unavailable because of a workspace billing/usage issue; no automatic review approval is claimed.
 
