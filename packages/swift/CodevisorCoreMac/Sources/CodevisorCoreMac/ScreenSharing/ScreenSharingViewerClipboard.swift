@@ -13,7 +13,10 @@ public final class ScreenSharingViewerClipboard {
   @ObservationIgnored private var expectedChangeCount: Int?
   @ObservationIgnored private var receiving = false
 
-  init(channel: ScreenSharingClipboardChannel, pasteboard: ScreenSharingPasteboard = .init()) {
+  init(
+    channel: any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>,
+    pasteboard: ScreenSharingPasteboard = .init()
+  ) {
     self.pasteboard = pasteboard
     transfer = ScreenSharingClipboardTransfer(
       send: { [weak channel] in channel?.send($0) ?? false },

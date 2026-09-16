@@ -1,54 +1,77 @@
 import AppKit
 import Autocomplete
+import CodevisorClient
 import CodevisorCore
 import CodevisorCoreMac
 import CodevisorUI
+import ComposableArchitecture
 import SwiftUI
 
 @MainActor
 final class ScreenSharingPane: Pane {
   let id: UUID
   let kind: PaneKind = .screenSharing
-  let model: ScreenSharingViewerModel?
+  let store: StoreOf<ScreenSharingViewer>?
   let machineName: String
   let isLocal: Bool
   let displaySearchFocus = Autocomplete.InputFocus()
   var onGroupCommand: ((PaneGroupCommand) -> Void)?
-  var onFocusChanged: ((Bool) -> Void)? { didSet { model?.onFocusChanged = onFocusChanged } }
+  var onFocusChanged: ((Bool) -> Void)? { didSet { store?.endpoint?.onFocusChanged = onFocusChanged } }
   var onFocus: (() -> Void)?
-  var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)? {
-    didSet { model?.onPreferencesChanged = onPreferencesChanged }
-  }
+  var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)?
   private var mounts = Set<UUID>()
+  private var persistedRevision = 0
+  private var observation: ObserveToken?
 
-  var showsDisplayPicker: Bool {
-    guard let model else { return false }
-    return ![.connecting, .reconnecting, .viewing].contains(model.phase)
-  }
+  var showsDisplayPicker: Bool { store?.showsDisplayPicker ?? false }
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
     machineName = context.machine.name
     isLocal = context.machine.isLocal
-    model = context.workspaceId.map {
-      ScreenSharingViewerModel(
-        client: context.client ?? CodevisorServerClient(config: context.machine.serverConfig),
-        workspaceId: $0, paneId: descriptor.id, preferences: descriptor.screenSharing ?? .init())
+    store = context.workspaceId.map { workspaceId in
+      let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
+      return Store(initialState: ScreenSharingViewer.State(preferences: descriptor.screenSharing ?? .init())) {
+        ScreenSharingViewer()
+      } withDependencies: {
+        $0.screenSharingViewerBackend = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
+      }
+    }
+    guard let store else { return }
+    // Each connection's endpoint carries the focus callback; preferences the
+    // user changed here (and only those) are handed to the registry.
+    observation = observe { [weak self] in
+      guard let self else { return }
+      store.endpoint?.onFocusChanged = self.onFocusChanged
+      let revision = store.preferencesRevision
+      guard revision != self.persistedRevision else { return }
+      self.persistedRevision = revision
+      self.onPreferencesChanged?(store.preferences)
     }
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
-  func focus() { if model?.control?.state != .controlling { onFocus?() } }
-  func visibilityChanged(_ visible: Bool) { model?.setVisible(visible) }
-  func willDelete() async { mounts = []; await model?.close() }
-  func detach() { mounts = []; model?.setVisible(false) }
-  func mounted(_ token: UUID) { mounts.insert(token); model?.setVisible(true) }
+  func focus() { if store?.endpoint?.control.state != .controlling { onFocus?() } }
+  func visibilityChanged(_ visible: Bool) { store?.send(.setVisible(visible)) }
+  func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.applyPreferences(preferences)) }
+  func willDelete() async {
+    mounts = []
+    await store?.send(.close).finish()
+  }
+  func detach() {
+    mounts = []
+    store?.send(.setVisible(false))
+  }
+  func mounted(_ token: UUID) {
+    mounts.insert(token)
+    store?.send(.setVisible(true))
+  }
   func unmounted(_ token: UUID) {
     mounts.remove(token)
     // SwiftUI reparents carried panes within the same presentation update.
     // Coalesce that handoff; a true navigation-away has no replacement mount.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.mounts.isEmpty else { return }
-      self.model?.setVisible(false)
+      self.store?.send(.setVisible(false))
     }
   }
 }
@@ -61,11 +84,11 @@ private struct ScreenSharingPaneView: View {
 
   var body: some View {
     Group {
-      if let model = pane.model {
-        if pane.showsDisplayPicker {
-          displayPicker(model)
+      if let store = pane.store {
+        if store.showsDisplayPicker {
+          displayPicker(store)
         } else {
-          connection(model)
+          connection(store)
         }
       } else {
         ContentUnavailableView(
@@ -81,36 +104,36 @@ private struct ScreenSharingPaneView: View {
     }
   }
 
-  private func displayPicker(_ model: ScreenSharingViewerModel) -> some View {
+  private func displayPicker(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     GeometryReader { geometry in
       ScrollView {
         VStack(spacing: 16) {
           Autocomplete.Suggestions(query: $query, focus: pane.displaySearchFocus) {
-            for display in model.displays {
+            for display in store.displays {
               Autocomplete.Action(
                 "\(display.name) · \(display.width) × \(display.height)", id: display.id, systemImage: "display"
               ) {
-                model.selectDisplay(display.id)
+                store.send(.selectDisplay(display.id))
                 // Selecting a display already reconnects a previously connected pane.
-                if model.phase == .ready { model.connect() }
+                if store.phase == .ready { store.send(.connect) }
               }
             }
           }
           .autocompleteSearchPrompt("Search screens")
           .autocompleteSearchLabel("Search available screens on \(pane.machineName)")
           .autocompleteEmptyMessage("No matching screens", noItems: "No screens available")
-          .autocompleteLoadingState(model.phase == .loading ? .loading("Finding screens…") : .ready)
+          .autocompleteLoadingState(store.phase == .loading ? .loading("Finding screens…") : .ready)
           .composerGlassSurface(cornerRadius: 18)
           .accessibilityElement(children: .contain)
           .accessibilityLabel("Available screens on \(pane.machineName)")
 
-          if model.phase == .failed {
+          if store.phase == .failed {
             VStack(spacing: 12) {
-              if let message = model.message {
+              if let message = store.message {
                 Text(message).foregroundStyle(.secondary)
                   .multilineTextAlignment(.center).frame(maxWidth: 380)
               }
-              Button("Retry") { model.refresh() }
+              Button("Retry") { store.send(.refresh) }
               if pane.isLocal {
                 Button("Screen Recording Settings") {
                   if let url = URL(
@@ -136,23 +159,23 @@ private struct ScreenSharingPaneView: View {
     )
   }
 
-  private func connection(_ model: ScreenSharingViewerModel) -> some View {
+  private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     VStack(spacing: 0) {
-      if let message = model.control?.message {
+      if let message = store.endpoint?.control.message {
         Text(message).font(.caption).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }
-      if let message = model.clipboard?.message {
+      if let message = store.endpoint?.clipboard?.message {
         Text(message).font(.caption).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }
       ZStack {
-        if let videoView = model.videoView { ScreenSharingNativeView(view: videoView) }
-        if model.phase != .viewing {
+        if let endpoint = store.endpoint { ScreenSharingNativeView(view: endpoint.view) }
+        if store.phase != .viewing {
           VStack(spacing: 12) {
             ProgressView().controlSize(.small)
             Text(
-              model.phase == .reconnecting
+              store.phase == .reconnecting
                 ? "Reconnecting to \(pane.machineName)…" : "Connecting to \(pane.machineName)…")
           }
           .padding(24)

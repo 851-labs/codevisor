@@ -1,49 +1,55 @@
 import CodevisorClient
 import CodevisorCore
 import CodevisorCoreMac
+import ComposableArchitecture
 import SwiftUI
 
-/// Window toolbar controls borrow the selected pane's model; the pane owns
+/// Window toolbar controls borrow the selected pane's store; the pane owns
 /// the connection and control state across toolbar and menu updates.
+/// Controls that need a capability the connected backend lacks are not shown.
 struct ScreenSharingToolbar: ToolbarContent {
-  let model: ScreenSharingViewerModel
+  let store: StoreOf<ScreenSharingViewer>
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-      controlActions
+      if store.endpoint?.supportsControl != false { controlActions }
     }
     ToolbarItem(id: "screenSharing.size", placement: .primaryAction) {
-      Picker("Size", selection: Binding(get: { model.preferences.fitToWindow }, set: { model.setFitToWindow($0) })) {
+      Picker(
+        "Size", selection: Binding(get: { store.preferences.fitToWindow }, set: { store.send(.setFitToWindow($0)) })
+      ) {
         Text("Fit").tag(true)
         Text("Actual Size").tag(false)
       }
       .labelsHidden().frame(width: 110)
     }
     ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
-      Menu {
-        Group {
-          Button("Send Clipboard to Mac") { model.clipboard?.sendLocalText() }
-          Button("Get Clipboard from Mac") { model.clipboard?.getRemoteText() }
+      if store.endpoint?.supportsClipboard != false {
+        Menu {
+          Group {
+            Button("Send Clipboard to Mac") { store.endpoint?.clipboard?.sendLocalText() }
+            Button("Get Clipboard from Mac") { store.endpoint?.clipboard?.getRemoteText() }
+          }
+          .disabled(store.endpoint?.clipboard?.available != true || store.endpoint?.clipboard?.busy == true)
+        } label: {
+          Image(systemName: "doc.on.clipboard")
         }
-        .disabled(model.clipboard?.available != true || model.clipboard?.busy == true)
-      } label: {
-        Image(systemName: "doc.on.clipboard")
+        .accessibilityLabel("Clipboard")
+        .help("Transfer plain text between clipboards")
       }
-      .accessibilityLabel("Clipboard")
-      .help("Transfer plain text between clipboards")
     }
     ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
-      ScreenSharingDetailsButton(model: model).id(ObjectIdentifier(model))
+      ScreenSharingDetailsButton(store: store).id(ObjectIdentifier(store))
     }
   }
 
   private var controlActions: some View {
     Picker(
       "Interaction mode",
-      selection: Binding(get: { model.interactionMode }, set: { model.setInteractionMode($0) })
+      selection: Binding(get: { store.interactionMode }, set: { store.send(.setInteractionMode($0)) })
     ) {
-      Text("View").tag(ScreenSharingViewerModel.InteractionMode.view)
-      Text("Control").tag(ScreenSharingViewerModel.InteractionMode.control)
+      Text("View").tag(ScreenSharingViewer.InteractionMode.view)
+      Text("Control").tag(ScreenSharingViewer.InteractionMode.control)
     }
     .pickerStyle(.segmented).labelsHidden().fixedSize()
     .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
@@ -52,7 +58,7 @@ struct ScreenSharingToolbar: ToolbarContent {
 }
 
 private struct ScreenSharingDetailsButton: View {
-  let model: ScreenSharingViewerModel
+  let store: StoreOf<ScreenSharingViewer>
   @State private var showDiagnostics = false
 
   var body: some View {
@@ -67,7 +73,7 @@ private struct ScreenSharingDetailsButton: View {
   }
 
   @ViewBuilder private var details: some View {
-    if let diagnostics = model.diagnostics {
+    if let diagnostics = store.endpoint?.diagnostics {
       VStack(alignment: .leading, spacing: 10) {
         Text("Connection Details").font(.headline)
         LabeledContent("Route", value: diagnostics.route)
@@ -88,7 +94,7 @@ private struct ScreenSharingDetailsButton: View {
     } else {
       VStack(alignment: .leading, spacing: 10) {
         Text("Connection Details").font(.headline)
-        Text(model.message ?? "Connection details will appear when the screen share is ready.")
+        Text(store.message ?? "Connection details will appear when the screen share is ready.")
           .foregroundStyle(.secondary)
       }
       .font(.callout)

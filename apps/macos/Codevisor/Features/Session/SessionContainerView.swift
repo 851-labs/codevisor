@@ -109,8 +109,8 @@ struct SessionContainerView: View {
               .id(browser.paneId)
           }
           .sharedBackgroundVisibility(.hidden)
-        } else if let pane = activeScreenSharingPane, let model = pane.model {
-          ScreenSharingToolbar(model: model)
+        } else if let pane = activeScreenSharingPane, let store = pane.store {
+          ScreenSharingToolbar(store: store)
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)

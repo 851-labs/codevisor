@@ -2,9 +2,10 @@ import Foundation
 @preconcurrency import WebRTC
 
 /// A bounded native ordered channel. Independent SCTP streams carry input and
-/// clipboard transfers. Video uses its own RTP transport.
+/// clipboard transfers. Video uses its own RTP transport. Protocol code is
+/// written against `ScreenSharingMessageChannel`; this is its WebRTC carrier.
 @MainActor
-public final class ScreenSharingDataChannel<Message: Sendable> {
+public final class ScreenSharingDataChannel<Message: Sendable>: ScreenSharingMessageChannel {
   public var onMessage: ((Message) -> Void)?
   public var onAvailabilityChanged: ((Bool) -> Void)?
   public var isAvailable: Bool { !closed && channel.readyState == .open }
@@ -115,3 +116,4 @@ struct ScreenSharingControlInbox {
 }
 
 public typealias ScreenSharingControlChannel = ScreenSharingDataChannel<ScreenSharingControlMessage>
+public typealias ScreenSharingClipboardChannel = ScreenSharingDataChannel<ScreenSharingClipboardMessage>
