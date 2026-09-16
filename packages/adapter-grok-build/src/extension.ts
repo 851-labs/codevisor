@@ -24,12 +24,12 @@ import {
 } from "./grok.js"
 import {
   acpConfigOptionIds,
-  acpReasoningEffortConfigId,
   applyAcpModelSelection,
   applyAcpReasoningEffortSelection,
   extractAcpModelState,
   mergeAcpModelConfigOptions,
   usesAcpModelSelectionExtension,
+  usesAcpReasoningEffortExtension,
   type AcpModelState
 } from "./model-selection.js"
 import { GrokStreamNormalizer } from "./stream.js"
@@ -262,10 +262,11 @@ export const makeGrokBuildExtension: AcpStdioExtensionFactory = ({ emit, enqueue
         return withGrokMetadata(metadata, modelState)
       },
       setConfigOption: ({ connection, sessionId, configId, value }) => {
-        if (usesAcpModelSelectionExtension(configId, nativeConfigIds.get(sessionId))) {
+        const nativeIds = nativeConfigIds.get(sessionId)
+        if (usesAcpModelSelectionExtension(configId, nativeIds)) {
           return applyAcpModelSelection(connection, modelStates, sessionId, value)
         }
-        if (configId === acpReasoningEffortConfigId) {
+        if (usesAcpReasoningEffortExtension(configId, nativeIds)) {
           return applyAcpReasoningEffortSelection(connection, modelStates, sessionId, value)
         }
         return Promise.resolve(undefined)
