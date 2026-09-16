@@ -49,7 +49,13 @@ toolbar. VNC is how a Linux VPS gets there and is never shown to the user.
 - Stage 4 landed: `RFBWebSocketTransport`, `screenSharingVNCSocket` on the
   client, and the native backend's provider switch, tested against the
   loopback server.
-- Stage 5 is next.
+- Stage 5 in progress on the Contabo box (164.68.121.169): `codevisor-server`
+  from the public installer, then `scripts/deploy-dev-server.sh` swaps in a
+  runtime built from the working tree (the release lacks the provider);
+  `scripts/vnc-desktop.sh` provisioned the desktop; the box is paired to the
+  dev cloud through an SSH reverse tunnel (`ssh -R 49372:localhost:49372`)
+  with `codevisor auth login --server http://127.0.0.1:49372`. Pairing to
+  production cloud waits for a release that carries the viewer.
 
 ## Not in scope
 
