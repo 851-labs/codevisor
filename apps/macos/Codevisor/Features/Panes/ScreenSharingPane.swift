@@ -24,6 +24,13 @@ final class ScreenSharingPane: Pane {
   private var observation: ObserveToken?
 
   var showsDisplayPicker: Bool { store?.showsDisplayPicker ?? false }
+  /// The VNC server's name while it is the selected display, else the machine's.
+  var connectionName: String {
+    if let store, let target = store.preferences.vnc, store.selectedDisplayId == target.displayId {
+      return target.displayName
+    }
+    return machineName
+  }
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
@@ -84,14 +91,6 @@ private struct ScreenSharingPaneView: View {
   @Environment(\.theme) private var theme
   @State private var mount = UUID()
   @State private var query = ""
-
-  /// The VNC server's name while it is the selected display, else the machine's.
-  private var connectionName: String {
-    if let store = pane.store, let target = store.preferences.vnc, store.selectedDisplayId == target.displayId {
-      return target.displayName
-    }
-    return pane.machineName
-  }
 
   var body: some View {
     Group {
@@ -190,7 +189,8 @@ private struct ScreenSharingPaneView: View {
           VStack(spacing: 12) {
             ProgressView().controlSize(.small)
             Text(
-              store.phase == .reconnecting ? "Reconnecting to \(connectionName)…" : "Connecting to \(connectionName)…")
+              store.phase == .reconnecting
+                ? "Reconnecting to \(pane.connectionName)…" : "Connecting to \(pane.connectionName)…")
           }
           .padding(24)
         }

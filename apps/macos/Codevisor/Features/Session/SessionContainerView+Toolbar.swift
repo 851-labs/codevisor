@@ -39,7 +39,7 @@ extension SessionContainerView {
   var activePaneTitle: Binding<String> {
     Binding(
       get: {
-        if let pane = activeScreenSharingPane { return pane.machineName }
+        if let pane = activeScreenSharingPane { return pane.connectionName }
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
         if paneControlsReplaceTitle { return "" }
         let workspace = selectedWorkspace
@@ -56,7 +56,9 @@ extension SessionContainerView {
 
   var activePaneSubtitle: String {
     if let store = activeScreenSharingPane?.store {
-      guard let display = store.displays.first(where: { $0.id == store.selectedDisplayId }) else { return "" }
+      guard let display = store.displays.first(where: { $0.id == store.selectedDisplayId }), display.width > 0 else {
+        return ""
+      }
       return "\(display.width) × \(display.height)"
     }
     guard activePaneDescriptor?.kind == .chat else { return "" }
