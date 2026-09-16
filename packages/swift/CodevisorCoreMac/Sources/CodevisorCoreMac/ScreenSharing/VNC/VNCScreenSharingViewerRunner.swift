@@ -1,5 +1,4 @@
 import CodevisorClient
-import CodevisorCore
 import CodevisorScreenSharing
 import ScreenSharingViewer
 import Foundation
@@ -19,21 +18,6 @@ extension ScreenSharingViewerBackend {
         try ScreenSharingVideoSurface(
           mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())
       })
-  }
-
-  /// This backend for machine displays, a VNC connection for a display id
-  /// that names a target. Discovery stays the machine's; the reducer adds the
-  /// saved target's entry itself.
-  @MainActor
-  public func dispatchingVNC(password: @escaping @Sendable (ScreenSharingVNCTarget) async -> String?) -> Self {
-    let native = self
-    return Self(
-      connect: { display in
-        guard let target = ScreenSharingVNCTarget(displayId: display) else { return await native.connect(display) }
-        let vnc = await Self.vnc(target: target) { await password(target) }
-        return await vnc.connect(display)
-      },
-      discover: native.discover)
   }
 
   typealias VNCOpen =

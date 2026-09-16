@@ -326,14 +326,13 @@ struct ScreenSharingViewerTests {
 
   private func makeStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
-    preferences: ScreenSharingPanePreferences = .init(), credentials: FakeVNCCredentials = FakeVNCCredentials()
+    preferences: ScreenSharingPanePreferences = .init()
   ) -> TestStoreOf<ScreenSharingViewer> {
     TestStore(initialState: ScreenSharingViewer.State(preferences: preferences)) {
       ScreenSharingViewer()
     } withDependencies: {
       $0[ScreenSharingViewerBackend.self] = backend.value
       $0[ScreenSharingEndpointClient.self] = client.value
-      $0[ScreenSharingVNCCredentials.self] = credentials.value
       $0.continuousClock = Clocks.TestClock()
       $0.uuid = .incrementing
     }

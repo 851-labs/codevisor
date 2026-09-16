@@ -21,13 +21,8 @@ final class ScreenSharingPane: Pane {
   private var persistedRevision = 0
   private var observation: ObserveToken?
 
-  /// The VNC server's name while it is the selected display, else the machine's.
-  var connectionName: String {
-    if let store, let target = store.preferences.vnc, store.selectedDisplayId == target.displayId {
-      return target.displayName
-    }
-    return machineName
-  }
+  /// The machine the pane streams from.
+  var connectionName: String { machineName }
 
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
@@ -38,10 +33,7 @@ final class ScreenSharingPane: Pane {
       return Store(initialState: ScreenSharingViewer.State(preferences: descriptor.screenSharing ?? .init())) {
         ScreenSharingViewer()
       } withDependencies: {
-        $0[ScreenSharingViewerBackend.self] = ScreenSharingViewerBackend.native(
-          client: client, workspaceId: workspaceId, paneId: descriptor.id
-        )
-        .dispatchingVNC { target in await ScreenSharingVNCCredentials.liveValue.password(target.credentialAccount) }
+        $0[ScreenSharingViewerBackend.self] = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
       }
     }
     guard let store else { return }

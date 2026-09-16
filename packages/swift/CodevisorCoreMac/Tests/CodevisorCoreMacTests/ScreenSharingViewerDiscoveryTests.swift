@@ -70,7 +70,6 @@ struct ScreenSharingViewerDiscoveryTests {
     } withDependencies: {
       $0[ScreenSharingViewerBackend.self] = backend.value
       $0[ScreenSharingEndpointClient.self] = FakeEndpointClient().value
-      $0[ScreenSharingVNCCredentials.self] = FakeVNCCredentials().value
       $0.continuousClock = Clocks.TestClock()
       $0.uuid = .incrementing
     }
