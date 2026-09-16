@@ -51,6 +51,9 @@
   /// so TextKit 2 surfaces keep their viewport layout.
   @MainActor
   open class TranscriptSurfaceTextView: NSTextView {
+    /// The host's handling of link and inline-image activations.
+    var linkAction: MarkdownLinkAction?
+
     /// The slice of this view's text covered by the transcript selection.
     public var transcriptSelectionHighlight: NSRange? {
       didSet {
@@ -165,7 +168,8 @@
     }
 
     open override func menu(for event: NSEvent) -> NSMenu? {
-      transcriptSelectionCoordinator?.transcriptSelectionMenu(for: self, with: event)
+      if let menu = markdownImageMenu(at: convert(event.locationInWindow, from: nil)) { return menu }
+      return transcriptSelectionCoordinator?.transcriptSelectionMenu(for: self, with: event)
         ?? super.menu(for: event)
     }
 

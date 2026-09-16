@@ -134,7 +134,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
-    .attachmentImageContextMenu(file: file, image: image)
+    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
 
   private var thumbnailSize: CGSize {
@@ -164,6 +164,10 @@ struct AttachmentThumbnailView: View {
   }
 
   private var fileChip: some View {
+    fileChipButton.attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab)
+  }
+
+  private var fileChipButton: some View {
     Button {
       preview()
     } label: {
@@ -195,8 +199,11 @@ struct AttachmentThumbnailView: View {
 
   /// Quick Look needs a file URL: fetch the bytes and materialize them under
   /// the file's real filename so the preview titles correctly.
+  private func openInNewTab() {
+    _ = openFileDocument?(FileDocumentLocation.target(for: file))
+  }
+
   private func preview() {
-    if openFileDocument?(FileDocumentLocation.target(for: file)) == true { return }
     guard let attachmentImages else { return }
     let file = self.file
     Task {

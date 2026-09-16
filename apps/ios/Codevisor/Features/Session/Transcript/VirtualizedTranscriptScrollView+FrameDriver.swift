@@ -51,6 +51,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     interruptSendPresentation()
     rowContent = nil
     openMarkdownLink = nil
+    markdownImageActions = nil
     claimSendAnimation = nil
     onSendAnimationStarted = nil
     onSendAnimationCompleted = nil

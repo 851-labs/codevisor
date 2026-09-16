@@ -16,24 +16,31 @@ public final class FilePaneModel {
   public var showsReplacement = false
   public var showsGoToLine = false
   public var showsConflict = false
-  public var showsDetails = false
   public var findText = ""
   public var replacement = ""
   public var lineText = ""
+  /// Incremented when the inline picker (an empty pane) should take keyboard
+  /// focus: the pane becoming active, or ⌘O while it is already showing.
+  public private(set) var explorerFocusRequests = 0
   @ObservationIgnored public var onNavigate: ((String) -> Void)?
   @ObservationIgnored private let sessions: FileEditorSessions
+  @ObservationIgnored let recents: FileRecents
   let explorer: FileExplorerModel
 
-  public init(id: UUID, path: String, rootPath: String, machineId: String, client: any CodevisorServerClienting) {
+  public init(
+    id: UUID, path: String, rootPath: String, machineId: String, client: any CodevisorServerClienting,
+    recents: FileRecents = .shared
+  ) {
     self.id = id
     self.path = path
     self.rootPath = rootPath
     self.machineId = machineId
     self.client = client
+    self.recents = recents
     sessions = FileEditorSessions { path in
       FileDocumentStore.shared.document(machineId: machineId, path: path, client: client)
     }
-    explorer = FileExplorerModel(root: rootPath, machineId: machineId, client: client)
+    explorer = FileExplorerModel(root: rootPath, client: client)
   }
 
   public var document: FileDocumentModel { editor.document }
@@ -48,6 +55,18 @@ public final class FilePaneModel {
     document.isDirty && document.isEditable && !document.isSaving && document.conflict == nil
   }
 
+  /// Open File… — presents the picker over a document, or focuses the
+  /// picker an empty pane already shows.
+  public func openExplorer() {
+    if isBrowsing { focusExplorer() } else { showsExplorer = true }
+  }
+
+  /// Routes keyboard focus into an empty pane's picker.
+  public func focusExplorer() {
+    guard isBrowsing else { return }
+    explorerFocusRequests += 1
+  }
+
   public func navigate(to target: String, notify: Bool = true) {
     if path != target {
       document.flushAutosave()
@@ -55,6 +74,12 @@ public final class FilePaneModel {
       if notify { onNavigate?(target) }
     }
     showsExplorer = false
+  }
+
+  /// Called once the current document has loaded, so a file that never
+  /// opened (moved, deleted, unreadable) is not offered again as recent.
+  func recordRecent() {
+    recents.record(path, machineId: machineId, root: rootPath)
   }
 
   func findNext() {

@@ -99,6 +99,7 @@ struct AttachmentThumbnailView: View {
         AttachmentFileChip(name: file.name) {
           preview()
         }
+        .attachmentContextMenu(file: file, image: nil, openInNewTab: openInNewTab)
       }
     }
     .task(id: AttachmentThumbnailLoadID(file: file, store: attachmentImages)) {
@@ -163,7 +164,7 @@ struct AttachmentThumbnailView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Attachment \(file.name)")
     .accessibilityAddTraits([.isImage, .isButton])
-    .attachmentImageContextMenu(file: file, image: image)
+    .attachmentContextMenu(file: file, image: image, openInNewTab: openInNewTab)
   }
 
   private var thumbnailSize: CGSize {
@@ -192,8 +193,11 @@ struct AttachmentThumbnailView: View {
     geometry.resolve(aspectRatio: nil, fallbackAspectRatio: fallbackAspectRatio)
   }
 
+  private func openInNewTab() {
+    _ = openFileDocument?(FileDocumentLocation.target(for: file))
+  }
+
   private func preview() {
-    if openFileDocument?(FileDocumentLocation.target(for: file)) == true { return }
     quickLook?.present(
       .remote(
         source: file.source,

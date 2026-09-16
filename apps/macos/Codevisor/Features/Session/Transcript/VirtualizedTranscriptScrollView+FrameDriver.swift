@@ -46,6 +46,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     finishAllDisclosureCollapsePresentations()
     rowContent = nil
     openMarkdownLink = nil
+    markdownImageActions = nil
     claimSendAnimation = nil
     onViewportChange = nil
     onBottomStateChange = nil

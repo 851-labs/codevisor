@@ -22,10 +22,21 @@ final class FilePane: Pane {
   }
 
   func makeView() -> AnyView {
-    AnyView(FilePaneView(model: model))
+    // The picker page has no editor to report focus, so whitespace clicks
+    // activate the group here (the editor's first-responder change covers
+    // an open document).
+    AnyView(
+      FilePaneView(model: model)
+        .simultaneousGesture(
+          TapGesture().onEnded { [weak self] in
+            guard let self, model.isBrowsing else { return }
+            onFocusChanged?(true)
+            model.focusExplorer()
+          }
+        ))
   }
 
-  func focus() {}
+  func focus() { model.focusExplorer() }
   func visibilityChanged(_ visible: Bool) {}
   func willDelete() async { model.close() }
   func detach() { model.close() }

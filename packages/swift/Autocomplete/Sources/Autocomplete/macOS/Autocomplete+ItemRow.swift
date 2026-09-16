@@ -37,7 +37,7 @@
         bottomEdge.contains(bottom: rowBottom) ? style.metrics.bottomCornerRadius : style.metrics.itemCornerRadius
       }
       private var showsAccessories: Bool {
-        !disabled && (hovering || highlighted || focus.wrappedValue?.itemID == item.id)
+        style.showsAccessories && !disabled && (hovering || highlighted || focus.wrappedValue?.itemID == item.id)
       }
 
       var body: some View {
@@ -157,7 +157,8 @@
       }
 
       private var accessoryWidth: CGFloat {
-        CGFloat(item.definition.secondaryActions.count) * style.metrics.itemAccessoryWidth
+        guard style.showsAccessories else { return 0 }
+        return CGFloat(item.definition.secondaryActions.count) * style.metrics.itemAccessoryWidth
       }
       private var accessibilityHint: String {
         [item.definition.help, item.definition.shortcut.map(Autocomplete.accessibilityDescription)]

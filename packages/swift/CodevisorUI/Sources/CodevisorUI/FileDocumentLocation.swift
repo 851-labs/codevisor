@@ -17,7 +17,7 @@ public enum FileDocumentLocation {
   }
 
   public static func name(_ target: String) -> String {
-    if target.hasSuffix("/") { return "Files" }
+    if target.hasSuffix("/") { return "Open File" }
     return markdownAttachmentFile(target)?.name ?? (target as NSString).lastPathComponent
   }
 

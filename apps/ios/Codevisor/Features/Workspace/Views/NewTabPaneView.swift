@@ -50,8 +50,8 @@ struct NewTabPaneView: View {
           newTabOption(title: "New Browser", action: onNewBrowser) {
             Image(systemName: "globe")
           }
-          newTabOption(title: "Files", action: onOpenFiles) {
-            Image(systemName: "folder")
+          newTabOption(title: "Open File…", action: onOpenFiles) {
+            Image(systemName: "doc.text.magnifyingglass")
           }
           ForEach(pluginOptions) { option in
             newTabOption(

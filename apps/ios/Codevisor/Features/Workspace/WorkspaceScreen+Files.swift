@@ -22,8 +22,10 @@ extension WorkspaceScreen {
   func openFiles(_ source: PaneDescriptorState) {
     var state = panes
     guard let index = state.panes.firstIndex(where: { $0.id == source.id }) else { return }
+    let path = workspaceCwd + "/"
     let pane = PaneDescriptorState(
-      id: source.id, kind: .document, name: "Files", terminalKey: source.terminalKey, documentPath: workspaceCwd + "/")
+      id: source.id, kind: .document, name: FileDocumentLocation.name(path), terminalKey: source.terminalKey,
+      documentPath: path)
     state.panes[index] = pane
     paneBinding.wrappedValue = state
     publishPane(pane)

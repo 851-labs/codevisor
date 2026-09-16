@@ -22,7 +22,26 @@ extension Workspace {
       centerTabs = [replacement]
       selectedCenterTabId = replacement.id
     } else if !centerTabs.contains(where: { $0.id == selectedCenterTabId }) {
-      selectedCenterTabId = centerTabs[min(index, centerTabs.count - 1)].id
+      selectedCenterTabId = Self.replacementTab(afterRemovingAt: index, from: centerTabs).id
     }
+  }
+
+  /// The tab that takes over when the selected tab at `index` closes: the
+  /// nearest tab the sidebar lists — the one above first, then below — so
+  /// closing never lands on a tab holding only hidden agent terminals.
+  /// When no listed tab remains, the plain right-neighbor rule applies.
+  static func replacementTab(
+    afterRemovingAt index: Int, from tabs: [WorkspaceTab],
+    visibility: PaneNavigationVisibility = PaneNavigationVisibility()
+  ) -> WorkspaceTab {
+    func isListed(_ tab: WorkspaceTab) -> Bool {
+      tab.root.allGroups.contains { group in
+        guard let pane = group.state.selectedPane ?? group.state.panes.first else { return true }
+        return visibility.includes(pane)
+      }
+    }
+    let before = tabs[..<index].last(where: isListed)
+    let after = tabs[index...].first(where: isListed)
+    return before ?? after ?? tabs[min(index, tabs.count - 1)]
   }
 }

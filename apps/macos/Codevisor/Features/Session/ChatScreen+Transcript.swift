@@ -8,6 +8,12 @@ import TranscriptKit
 // MARK: - Transcript
 
 extension ChatScreen {
+  /// Inline images preview in Quick Look; their menu opens a tab or copies.
+  var transcriptImageActions: MarkdownImageActions {
+    TranscriptMarkdownImageOpener.actions(
+      quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+  }
+
   var transcriptSurface: some View {
     ZStack {
       theme.contentBackground
@@ -74,6 +80,7 @@ extension ChatScreen {
                         url, quickLook: quickLook, attachmentImages: attachmentImages,
                         openDocument: openFileDocument)
                     }
+                    .markdownImageActions(transcriptImageActions)
                     .environment(\.theme, theme)
                     .environment(\.attachmentImages, attachmentImages)
                     .environment(\.openFileDocument, openFileDocument)
@@ -118,7 +125,8 @@ extension ChatScreen {
                 TranscriptMarkdownLinkOpener.open(
                   url, quickLook: quickLook, attachmentImages: attachmentImages,
                   openDocument: openFileDocument)
-              }
+              },
+              markdownImageActions: transcriptImageActions
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,
             onInitialPresentationReady: {

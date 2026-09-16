@@ -194,16 +194,17 @@
         let accessoryCount: Int
       }
 
-      func popupWidth(catalog: Catalog, metrics: Metrics) -> CGFloat {
+      func popupWidth(catalog: Catalog, metrics: Metrics, showsAccessories: Bool = true) -> CGFloat {
+        let accessoryCount = showsAccessories ? catalog.maximumAccessoryCount : 0
         let next = Key(
           titles: catalog.titles, shortcuts: catalog.shortcuts.map(Autocomplete.symbols),
           metrics: metrics, icons: catalog.showsIcons, checks: catalog.showsCheckmarks,
-          accessoryCount: catalog.maximumAccessoryCount)
+          accessoryCount: accessoryCount)
         if key != next {
           width = metrics.popupWidth(
             fitting: catalog.titles, hasIcons: catalog.showsIcons,
             showsCheckmarks: catalog.showsCheckmarks, shortcuts: catalog.shortcuts,
-            accessoryCount: catalog.maximumAccessoryCount)
+            accessoryCount: accessoryCount)
           key = next
           measurementCount += 1
         }

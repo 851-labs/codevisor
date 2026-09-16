@@ -354,6 +354,7 @@ let package = Package(
         "StreamMarkdown",
         "CodeHighlighter",
         "TranscriptKit",
+        "Autocomplete",
       ],
       path: "CodevisorUI/Sources/CodevisorUI",
       resources: [

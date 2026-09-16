@@ -16,7 +16,6 @@
     private var representedText: NSAttributedString?
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
-    var linkAction: MarkdownLinkAction?
 
     var usesTextKit2: Bool { textLayoutManager != nil }
 
@@ -150,15 +149,9 @@
       false
     }
 
-    func textView(_: NSTextView, clickedOnLink link: Any, at _: Int) -> Bool {
-      let url: URL?
-      switch link {
-      case let value as URL: url = value
-      case let value as String: url = URL(string: value)
-      default: url = nil
-      }
-      guard let url, let linkAction else { return false }
-      return linkAction(url)
+    func textView(_: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
+      guard let url = markdownLinkURL(link), let linkAction else { return false }
+      return linkAction.activate(url, isImage: textStorage?.streamMarkdownHasImage(at: index) ?? false)
     }
 
     /// TextKit 2 delegates link interaction through `.link`. The existing

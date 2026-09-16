@@ -160,8 +160,9 @@ final class PaneGroupModel: Identifiable {
     guard let index = state.panes.firstIndex(where: { $0.id == id }) else { return }
     let context = makeContext(state.panes[index])
     let root = context.workspaceRootDirectory ?? context.session?.cwd ?? context.project.folderURL.path
+    let path = root + "/"
     let pane = PaneDescriptorState(
-      id: id, kind: .document, name: "Files", terminalKey: id.uuidString, documentPath: root + "/")
+      id: id, kind: .document, name: FileDocumentLocation.name(path), terminalKey: id.uuidString, documentPath: path)
     discardLivePane(id: id)
     state.panes[index] = pane
     persist()

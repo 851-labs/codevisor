@@ -37,17 +37,16 @@
   }
 
   @MainActor
-  func handleMarkdownLink(_ link: Any, action: MarkdownLinkAction?) -> Bool {
-    let url: URL?
+  func handleMarkdownLink(_ link: Any, isImage: Bool = false, action: MarkdownLinkAction?) -> Bool {
+    guard let url = markdownLinkURL(link), let action else { return false }
+    return action.activate(url, isImage: isImage)
+  }
+
+  func markdownLinkURL(_ link: Any) -> URL? {
     switch link {
-    case let value as URL:
-      url = value
-    case let value as String:
-      url = URL(string: value)
-    default:
-      url = nil
+    case let value as URL: value
+    case let value as String: URL(string: value)
+    default: nil
     }
-    guard let url, let action else { return false }
-    return action(url)
   }
 #endif

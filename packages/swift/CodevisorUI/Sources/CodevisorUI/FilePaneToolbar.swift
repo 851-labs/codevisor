@@ -28,7 +28,7 @@ public struct FilePaneToolbar: ToolbarContent {
     #else
       ToolbarItem(id: "file.title", placement: .principal) {
         if model.isBrowsing {
-          Text("Files").font(.headline)
+          Text(model.title).font(.headline)
         } else {
           FilePaneTitleButton(model: model)
         }
@@ -52,18 +52,18 @@ public struct FilePaneToolbar: ToolbarContent {
   }
 }
 
+/// The document title doubles as the Open File trigger. On Mac the picker
+/// is a popover anchored here; on iPhone it is a sheet the pane presents.
 private struct FilePaneTitleButton: View {
   @Bindable var model: FilePaneModel
 
   var body: some View {
     Button {
-      model.showsExplorer = true
+      model.openExplorer()
     } label: {
       HStack(spacing: 6) {
         Text(model.title).font(.headline).lineLimit(1).truncationMode(.middle)
-        if !model.isBrowsing {
-          Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-        }
+        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
       }
       #if canImport(AppKit)
         .frame(maxWidth: 260, alignment: .leading)
@@ -73,29 +73,12 @@ private struct FilePaneTitleButton: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .disabled(model.isBrowsing)
-    .accessibilityLabel("\(model.title), Browse Files")
-    .help("Browse workspace files")
-
-  }
-}
-
-struct FileBrowserSheet: View {
-  let model: FilePaneModel
-
-  var body: some View {
+    .accessibilityLabel("\(model.title), Open File")
+    .help("Open File")
     #if canImport(AppKit)
-      NavigationStack {
-        FileBrowserView(model: model)
-          .scenePadding(.top)
+      .popover(isPresented: $model.showsExplorer, arrowEdge: .bottom) {
+        MacFileOpenPopover(model: model)
       }
-      .frame(width: 560, height: 360)
-    #else
-      NavigationStack {
-        FileBrowserView(model: model)
-      }
-      .presentationDetents([.medium, .large])
-      .presentationDragIndicator(.visible)
     #endif
   }
 }
@@ -106,7 +89,7 @@ private struct FilePaneActions: View {
 
   var body: some View {
     Menu {
-      Button("Open File…", systemImage: "folder") { model.showsExplorer = true }
+      Button("Open File…", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
         .keyboardShortcut("o", modifiers: .command)
       if model.document.isMarkdown {
         Button(
@@ -116,30 +99,17 @@ private struct FilePaneActions: View {
           model.editor.preview.toggle()
         }
       }
-      Divider()
       if model.document.snapshot?.content != nil {
+        Divider()
         Button("Find…", systemImage: "magnifyingglass") {
           model.showsFind.toggle()
           model.editor.preview = false
         }
         .keyboardShortcut("f", modifiers: .command)
-        Menu("Editor") {
-          Button("Go to Line…", systemImage: "number") { model.showsGoToLine = true }
-            .keyboardShortcut("g", modifiers: .control)
-          #if canImport(AppKit)
-            Toggle(
-              "Wrap Lines", isOn: Binding(get: { model.editor.wrapsLines }, set: { model.editor.wrapsLines = $0 })
-            )
-          #endif
-          Toggle(
-            "Line Numbers",
-            isOn: Binding(get: { model.editor.showsLineNumbers }, set: { model.editor.showsLineNumbers = $0 }))
-          Divider()
-          Button("Undo", systemImage: "arrow.uturn.backward") { model.editor.undo() }
-          Button("Redo", systemImage: "arrow.uturn.forward") { model.editor.redo() }
-        }
+        Button("Go to Line…", systemImage: "number") { model.showsGoToLine = true }
+          .keyboardShortcut("g", modifiers: .control)
       }
-      Button("File Info", systemImage: "info.circle") { model.showsDetails = true }
+      Divider()
       Button("Reload from Machine", systemImage: "arrow.clockwise") { Task { await model.document.refresh() } }
       Divider()
       Button("New Tab", systemImage: "plus") { onNewTab() }
@@ -149,21 +119,5 @@ private struct FilePaneActions: View {
     .menuIndicator(.hidden)
     .accessibilityLabel("File Actions")
     .help("File Actions")
-  }
-}
-
-/// A temporary browser, presented from the title or as an empty file pane.
-struct FileBrowserView: View {
-  let model: FilePaneModel
-  @Environment(\.openFileDocument) private var openFile
-
-  var body: some View {
-    FileExplorerView(
-      model: model.explorer, selectedPath: model.path,
-      open: { model.navigate(to: $0) },
-      openInTab: { target in
-        model.showsExplorer = false
-        _ = openFile?(target)
-      })
   }
 }

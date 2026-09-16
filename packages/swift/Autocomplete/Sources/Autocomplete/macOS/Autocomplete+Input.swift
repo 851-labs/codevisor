@@ -44,8 +44,6 @@
       @Environment(\.layoutDirection) private var layoutDirection
       @Environment(\.isEnabled) private var isEnabled
 
-      private static let transparentSearchIcon = NSImage(size: NSSize(width: 1, height: 1))
-
       func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, onCommand: onCommand, onFocusChange: onFocusChange, onAdvanceFocus: onAdvanceFocus)
       }
@@ -131,8 +129,10 @@
         searchCell.isBezeled = false
         searchCell.isBordered = false
         searchCell.drawsBackground = false
-        searchCell.searchButtonCell?.image = Self.transparentSearchIcon
-        searchCell.searchButtonCell?.imageScaling = .scaleProportionallyDown
+        // The capsule draws its own magnifier on the rows' icon keyline. A
+        // hidden search button would still reserve its width and push the
+        // typed text away from the glyph, so drop the button altogether.
+        searchCell.searchButtonCell = nil
       }
 
       @MainActor

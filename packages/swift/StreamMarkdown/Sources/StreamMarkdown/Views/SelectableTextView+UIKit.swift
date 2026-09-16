@@ -169,14 +169,24 @@
       }
 
       public func textView(
-        _: UITextView,
+        _ textView: UITextView,
         primaryActionFor textItem: UITextItem,
         defaultAction: UIAction
       ) -> UIAction? {
         guard case let .link(url) = textItem.content, let linkAction else {
           return defaultAction
         }
-        return linkAction(url) ? UIAction { _ in } : defaultAction
+        let isImage = textView.textStorage.streamMarkdownHasImage(at: textItem.range.location)
+        return linkAction.activate(url, isImage: isImage) ? UIAction { _ in } : defaultAction
+      }
+
+      public func textView(
+        _ textView: UITextView,
+        menuConfigurationFor textItem: UITextItem,
+        defaultMenu: UIMenu
+      ) -> UITextItem.MenuConfiguration? {
+        markdownImageMenuConfiguration(
+          in: textView, for: textItem, defaultMenu: defaultMenu, action: linkAction)
       }
     }
   }

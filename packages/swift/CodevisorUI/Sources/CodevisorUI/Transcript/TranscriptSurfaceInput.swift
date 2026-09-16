@@ -148,6 +148,8 @@ public struct TranscriptSurfaceCallbacks {
   /// workspace file shown in Quick Look); false lets the platform open it.
   public var markdownImageLoader: MarkdownImageLoader?
   public var openMarkdownLink: (@MainActor (URL) -> Bool)?
+  /// Inline images preview on activation and offer new-tab/copy in their menu.
+  public var markdownImageActions: MarkdownImageActions?
   #if canImport(UIKit)
     public var onSendAnimationStarted: (@MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool)?
   #endif
@@ -164,6 +166,7 @@ public struct TranscriptSurfaceCallbacks {
       onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
       markdownImageLoader: MarkdownImageLoader? = nil,
       openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
+      markdownImageActions: MarkdownImageActions? = nil,
       onSendAnimationStarted: (
         @MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
       )? = nil
@@ -178,6 +181,7 @@ public struct TranscriptSurfaceCallbacks {
       self.onSendAnimationCompleted = onSendAnimationCompleted
       self.markdownImageLoader = markdownImageLoader
       self.openMarkdownLink = openMarkdownLink
+      self.markdownImageActions = markdownImageActions
       self.onSendAnimationStarted = onSendAnimationStarted
     }
   #else
@@ -191,7 +195,8 @@ public struct TranscriptSurfaceCallbacks {
       onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
       onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
       markdownImageLoader: MarkdownImageLoader? = nil,
-      openMarkdownLink: (@MainActor (URL) -> Bool)? = nil
+      openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
+      markdownImageActions: MarkdownImageActions? = nil
     ) {
       self.claimSendAnimation = claimSendAnimation
       self.rowContent = rowContent
@@ -203,6 +208,7 @@ public struct TranscriptSurfaceCallbacks {
       self.onSendAnimationCompleted = onSendAnimationCompleted
       self.markdownImageLoader = markdownImageLoader
       self.openMarkdownLink = openMarkdownLink
+      self.markdownImageActions = markdownImageActions
     }
   #endif
 }

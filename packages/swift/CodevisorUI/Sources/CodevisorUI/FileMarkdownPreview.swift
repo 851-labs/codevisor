@@ -35,7 +35,7 @@ struct FileMarkdownPreview: View {
         .padding(28)
         .frame(maxWidth: .infinity)
     }
-    .background(theme.windowBackground)
+    .background(theme.contentBackground)
     .environment(\.markdownImageLoader, imageLoader)
     .environment(\.markdownTheme, makeMarkdownTheme(theme: theme, highlight: highlight.map { ($0.key, $0.json) }))
     .markdownLinkHandler { url in

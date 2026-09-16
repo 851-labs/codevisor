@@ -143,8 +143,12 @@
         shortcuts: [KeyboardShortcut] = [],
         accessoryCount: Int = 0
       ) -> CGFloat {
+        // Row chrome around the title: list and item insets, the accessory
+        // column, and the stack gap plus minimum length of the trailing
+        // spacer that keeps titles clear of shortcuts and accessories.
         var chrome =
-          (2 * listHorizontalInset) + (2 * itemHorizontalInset) + CGFloat(accessoryCount) * itemAccessoryWidth + 8
+          (2 * listHorizontalInset) + (2 * itemHorizontalInset) + CGFloat(accessoryCount) * itemAccessoryWidth
+          + itemIconSpacing + 8
         if hasIcons {
           chrome += itemIconSize + itemIconSpacing
         }
@@ -184,15 +188,21 @@
       public var itemHighlight: ItemHighlight
       /// Whether the list shows the mini system scroller.
       public var usesMiniScroller: Bool
+      /// Whether secondary actions surface as hover/highlight accessory
+      /// buttons. Hidden, they stay reachable through the context menu,
+      /// accessibility actions, and their shortcuts.
+      public var showsAccessories: Bool
 
       public init(
         metrics: Metrics = .xcodeMenu,
         itemHighlight: ItemHighlight = .menuSelection,
-        usesMiniScroller: Bool = true
+        usesMiniScroller: Bool = true,
+        showsAccessories: Bool = true
       ) {
         self.metrics = metrics
         self.itemHighlight = itemHighlight
         self.usesMiniScroller = usesMiniScroller
+        self.showsAccessories = showsAccessories
       }
 
       /// The look of Xcode's searchable pickers (scheme, destination, …).

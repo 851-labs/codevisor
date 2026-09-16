@@ -28,14 +28,47 @@ public typealias CodeHighlighting =
 /// preserves the platform's normal URL-opening behavior.
 public struct MarkdownLinkAction: @unchecked Sendable {
   private let handler: @MainActor (URL) -> Bool
+  /// Host behavior for images the renderer draws inline. Nil treats an
+  /// image activation like any other link.
+  public var images: MarkdownImageActions?
 
-  public init(_ handler: @escaping @MainActor (URL) -> Bool) {
+  public init(_ handler: @escaping @MainActor (URL) -> Bool, images: MarkdownImageActions? = nil) {
     self.handler = handler
+    self.images = images
   }
 
   @MainActor
   public func callAsFunction(_ url: URL) -> Bool {
     handler(url)
+  }
+
+  var linkHandler: @MainActor (URL) -> Bool { handler }
+
+  /// Activates a link. An inline image is a different affordance from a
+  /// text link to the same file — its primary activation previews — so
+  /// image activations go to the image handler first.
+  @MainActor
+  public func activate(_ url: URL, isImage: Bool) -> Bool {
+    if isImage, let images, images.open(url) { return true }
+    return handler(url)
+  }
+}
+
+/// What the host does with an image rendered inline: the primary
+/// activation (a preview) and the secondary actions its menu offers.
+public struct MarkdownImageActions: @unchecked Sendable {
+  public var open: @MainActor (URL) -> Bool
+  public var openInNewTab: (@MainActor (URL) -> Void)?
+  public var copy: (@MainActor (URL) -> Void)?
+
+  public init(
+    open: @escaping @MainActor (URL) -> Bool,
+    openInNewTab: (@MainActor (URL) -> Void)? = nil,
+    copy: (@MainActor (URL) -> Void)? = nil
+  ) {
+    self.open = open
+    self.openInNewTab = openInNewTab
+    self.copy = copy
   }
 }
 
@@ -189,12 +222,23 @@ public extension View {
     _ handler: @escaping @MainActor (URL) -> Bool
   ) -> some View {
     let action = MarkdownLinkAction(handler)
-    return environment(\.markdownLinkAction, action)
-      .environment(
-        \.openURL,
-        OpenURLAction { url in
-          action(url) ? .handled : .systemAction
-        }
-      )
+    return transformEnvironment(\.markdownLinkAction) { current in
+      current = MarkdownLinkAction(handler, images: current?.images)
+    }
+    .environment(
+      \.openURL,
+      OpenURLAction { url in
+        action(url) ? .handled : .systemAction
+      }
+    )
+  }
+
+  /// Gives inline images their own activation and menu, independent of
+  /// the link handler (either modifier may wrap the other).
+  func markdownImageActions(_ actions: MarkdownImageActions) -> some View {
+    let unhandled: @MainActor (URL) -> Bool = { _ in false }
+    return transformEnvironment(\.markdownLinkAction) { action in
+      action = MarkdownLinkAction(action?.linkHandler ?? unhandled, images: actions)
+    }
   }
 }

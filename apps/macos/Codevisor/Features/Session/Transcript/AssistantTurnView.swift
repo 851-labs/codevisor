@@ -213,6 +213,10 @@ struct AssistantTurnView: View {
       }
     }
     .markdownLinkHandler(openMarkdownLink)
+    .markdownImageActions(
+      TranscriptMarkdownImageOpener.actions(
+        quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
+    )
     .frame(maxWidth: .infinity, alignment: .leading)
     // Whole-row hover target, full width and height: AppKit tracking
     // (not .onHover) so the transparent regions count too.

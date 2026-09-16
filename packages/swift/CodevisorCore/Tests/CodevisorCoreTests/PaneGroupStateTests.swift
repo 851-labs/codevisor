@@ -139,17 +139,18 @@ struct PaneGroupStateTests {
     #expect(state.addTerminalPane(sessionId: sessionId).name == "Terminal 2")
   }
 
-  @Test("Closing the selected pane selects its right neighbor, else the new last pane")
+  @Test("Closing the selected pane selects the pane before it, else the one after")
   func closeSelectsNeighbor() {
     var state = PaneGroupState.initial(sessionId: sessionId)
+    let first = state.panes[0]
     let second = state.addTerminalPane(sessionId: sessionId)
     let third = state.addTerminalPane(sessionId: sessionId)
     state.selectPane(id: second.id)
     state.closePane(id: second.id)
+    #expect(state.selectedPaneId == first.id)
+    // Closing the first pane in the list falls forward to its right neighbor.
+    state.closePane(id: first.id)
     #expect(state.selectedPaneId == third.id)
-    // Closing the last pane in the list falls back to the left neighbor.
-    state.closePane(id: third.id)
-    #expect(state.selectedPaneId == state.panes[0].id)
   }
 
   @Test("Closing a non-selected pane keeps the selection")

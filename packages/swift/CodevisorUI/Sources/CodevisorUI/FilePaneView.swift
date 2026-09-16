@@ -38,12 +38,15 @@ public struct FilePaneView: View {
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(theme.windowBackground)
+    // Same surface rule as every other pane: system themes reveal the
+    // native window backdrop; custom palettes paint their editor color.
+    .background(theme.contentBackground)
     .task(id: model.path) {
       guard !model.isBrowsing else { return }
       let active = document
       defer { active.flushAutosave() }
       await active.refresh()
+      if active.snapshot != nil { model.recordRecent() }
       guard !model.path.hasPrefix("https://attachments.codevisor.invalid/") else { return }
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(3)) } catch { break }
@@ -63,20 +66,24 @@ public struct FilePaneView: View {
       Button("Go") { model.editor.goToLine(Int(model.lineText) ?? 1) }
       Button("Cancel", role: .cancel) {}
     }
-    .sheet(isPresented: $model.showsExplorer) {
-      FileBrowserSheet(model: model)
+    #if !canImport(AppKit)
+      // On Mac the picker is a popover from the title (see FilePaneToolbar).
+      .sheet(isPresented: $model.showsExplorer) {
+        FileBrowserSheet(model: model)
         .buttonStyle(.automatic)
         .environment(\.closeFileBrowser, { model.showsExplorer = false })
-    }
+      }
+    #endif
     .sheet(isPresented: $model.showsConflict) { FileConflictView(model: model) }
-    .sheet(isPresented: $model.showsDetails) { FileDetailsView(model: model) }
   }
 
   @ViewBuilder private var content: some View {
     if model.isBrowsing {
-      FileBrowserView(model: model)
-        .frame(maxWidth: 620)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      #if canImport(AppKit)
+        MacFileOpenPage(model: model)
+      #else
+        FileBrowserView(model: model)
+      #endif
     } else if document.snapshot == nil {
       if document.isLoading {
         ProgressView("Opening file…").frame(maxWidth: .infinity, maxHeight: .infinity)

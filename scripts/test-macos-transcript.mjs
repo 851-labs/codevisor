@@ -16,6 +16,7 @@ const excluded = new Set([
   "AssistantTurnView.swift",
   "ConversationItemView.swift",
   "TranscriptItemsView.swift",
+  "TranscriptMarkdownImageOpener.swift",
   "TranscriptMarkdownLinkOpener.swift",
   "TranscriptRowLeaves+macOS.swift"
 ])

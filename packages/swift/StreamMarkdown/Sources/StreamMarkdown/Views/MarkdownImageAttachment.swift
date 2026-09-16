@@ -23,6 +23,16 @@ extension NSAttributedString.Key {
   static let streamMarkdownImageAlt = NSAttributedString.Key("streamMarkdown.imageAlt")
 }
 
+extension NSAttributedString {
+  /// Whether the character at `index` is an image the renderer drew inline
+  /// (its attachment carries the alt text used for copying and
+  /// accessibility). Unloaded images render as text and count as links.
+  func streamMarkdownHasImage(at index: Int) -> Bool {
+    guard index >= 0, index < length else { return false }
+    return attribute(.streamMarkdownImageAlt, at: index, effectiveRange: nil) != nil
+  }
+}
+
 enum MarkdownImageAttachment {
   static func content(
     _ reference: MarkdownImageReference,

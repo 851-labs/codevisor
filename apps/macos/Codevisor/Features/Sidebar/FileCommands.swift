@@ -67,7 +67,7 @@ struct FileCommands: Commands {
     }
     CommandGroup(after: .newItem) {
       if let file {
-        Button("Open File…") { file.showsExplorer = true }
+        Button("Open File…") { file.openExplorer() }
           .keyboardShortcut("o", modifiers: .command)
       }
     }

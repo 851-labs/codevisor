@@ -68,7 +68,7 @@ struct NewTabPageView: View {
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
       NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
-      NewTabOption(id: "files", title: "Files", kind: .files),
+      NewTabOption(id: "files", title: "Open File…", kind: .files),
     ]
       + (supportsScreenSharing
         ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions
@@ -123,7 +123,7 @@ struct NewTabPageView: View {
         case .terminal:
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
         case .files:
-          Autocomplete.Action(option.title, id: option.id, systemImage: "folder") { open(option) }
+          Autocomplete.Action(option.title, id: option.id, systemImage: "doc.text.magnifyingglass") { open(option) }
         case let .plugin(pluginId, paneType, iconPath):
           Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
             if let client {

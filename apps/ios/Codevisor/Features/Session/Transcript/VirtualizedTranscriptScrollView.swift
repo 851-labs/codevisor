@@ -63,6 +63,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var remainingMountsThisFrame = 2
   var rowContent: ((TranscriptVirtualRow) -> AnyView)?
   var openMarkdownLink: ((URL) -> Bool)?
+  var markdownImageActions: MarkdownImageActions?
   var pendingMeasurements: [String: TranscriptRowMeasurement] = [:]
   var measurementCommitTask: Task<Void, Never>?
   weak var sessionController: SessionController?

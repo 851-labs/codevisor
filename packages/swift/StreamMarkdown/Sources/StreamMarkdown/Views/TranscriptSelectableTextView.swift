@@ -26,7 +26,6 @@
     private var linkHoverTrackingArea: NSTrackingArea?
     private var pendingServerFileLinkClick: PendingServerFileLinkClick?
     private(set) var hoveredLinkRange: NSRange?
-    var linkAction: MarkdownLinkAction?
 
     /// `NSTextView` normally claims the shared Quick Look panel so it can
     /// preview its own selected content. Transcript links are presented by
@@ -38,7 +37,8 @@
     }
 
     public override func clicked(onLink link: Any, at charIndex: Int) {
-      guard !handleMarkdownLink(link, action: linkAction) else { return }
+      let isImage = textStorage?.streamMarkdownHasImage(at: charIndex) ?? false
+      guard !handleMarkdownLink(link, isImage: isImage, action: linkAction) else { return }
       super.clicked(onLink: link, at: charIndex)
     }
 
@@ -286,12 +286,13 @@
       guard let hit = linkHit(at: point), hit.isServerFile, hit.range == pending.range else {
         return
       }
-      _ = activateServerFileLink(pending.value)
+      _ = activateServerFileLink(pending.value, at: pending.range.location)
     }
 
     @discardableResult
-    func activateServerFileLink(_ value: Any) -> Bool {
-      handleMarkdownLink(value, action: linkAction)
+    func activateServerFileLink(_ value: Any, at index: Int? = nil) -> Bool {
+      let isImage = index.map { textStorage?.streamMarkdownHasImage(at: $0) ?? false } ?? false
+      return handleMarkdownLink(value, isImage: isImage, action: linkAction)
     }
 
     private var currentMouseLocation: NSPoint {

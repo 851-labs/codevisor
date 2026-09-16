@@ -1,28 +1,41 @@
-import CodevisorCore
-import SwiftUI
-
-extension EnvironmentValues {
-  @Entry var closeFileBrowser: (() -> Void)?
-}
-
-/// File navigation adapts to the platform: an outline on Mac, folder pages on iPhone.
-struct FileExplorerView: View {
-  @Bindable var model: FileExplorerModel
-  let selectedPath: String
-  let open: (String) -> Void
-  let openInTab: (String) -> Void
-
-  var body: some View {
-    #if canImport(AppKit)
-      MacFileExplorer(model: model, selectedPath: selectedPath, open: open, openInTab: openInTab)
-    #else
-      FileExplorerFolderPage(
-        model: model, directory: model.root, selectedPath: selectedPath, open: open, openInTab: openInTab)
-    #endif
-  }
-}
-
 #if canImport(UIKit)
+  import CodevisorCore
+  import SwiftUI
+
+  extension EnvironmentValues {
+    @Entry var closeFileBrowser: (() -> Void)?
+  }
+
+  /// Open File on iPhone and iPad: folder pages in a navigation stack, with
+  /// filename search on the machine that owns the files.
+  struct FileBrowserSheet: View {
+    let model: FilePaneModel
+
+    var body: some View {
+      NavigationStack {
+        FileBrowserView(model: model)
+      }
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
+    }
+  }
+
+  /// The browser as an empty pane's content, or inside the sheet above.
+  struct FileBrowserView: View {
+    let model: FilePaneModel
+    @Environment(\.openFileDocument) private var openFile
+
+    var body: some View {
+      FileExplorerFolderPage(
+        model: model.explorer, directory: model.explorer.root, selectedPath: model.path,
+        open: { model.navigate(to: $0) },
+        openInTab: { target in
+          model.showsExplorer = false
+          _ = openFile?(target)
+        })
+    }
+  }
+
   private struct FileExplorerFolderPage: View {
     @Bindable var model: FileExplorerModel
     let directory: String
@@ -118,7 +131,7 @@ struct FileExplorerView: View {
       .autocorrectionDisabled()
       .task(id: filter) { await updateSearch() }
       .navigationTitle(
-        closeBrowser == nil ? (directory == model.root ? "Files" : (directory as NSString).lastPathComponent) : ""
+        closeBrowser == nil ? (directory == model.root ? "Open File" : (directory as NSString).lastPathComponent) : ""
       )
       .navigationSubtitle(
         closeBrowser == nil ? (relativeParent.isEmpty ? model.rootName : model.rootName + "/" + relativeParent) : ""

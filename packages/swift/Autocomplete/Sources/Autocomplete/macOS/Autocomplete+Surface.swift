@@ -123,9 +123,14 @@
           }
         }
         .autocompleteStyle(
-          Style(metrics: metrics, itemHighlight: style.itemHighlight, usesMiniScroller: style.usesMiniScroller)
+          Style(
+            metrics: metrics, itemHighlight: style.itemHighlight, usesMiniScroller: style.usesMiniScroller,
+            showsAccessories: style.showsAccessories)
         )
-        .frame(width: measurements.popupWidth(catalog: catalog, metrics: metrics))
+        .frame(
+          width: measurements.popupWidth(
+            catalog: catalog, metrics: metrics, showsAccessories: style.showsAccessories)
+        )
         .onChange(
           of: UpdateKey(
             revision: catalog.revision, targets: snapshot.eligibleIDs, query: search.wrappedValue, enabled: isEnabled,

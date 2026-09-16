@@ -52,7 +52,12 @@
       textView.isEditable = session.document.isEditable
       container.gutter.isHidden = !session.showsLineNumbers
       container.gutter.update()
-      textView.backgroundColor = NSColor(theme.windowBackground)
+      // System themes composite the text onto the window's live backdrop,
+      // like the terminal surface; custom palettes paint their own color.
+      let paintsBackground = !theme.isSystem
+      textView.drawsBackground = paintsBackground
+      container.drawsBackground = paintsBackground
+      textView.backgroundColor = paintsBackground ? NSColor(theme.windowBackground) : .clear
       container.backgroundColor = textView.backgroundColor
       textView.insertionPointColor = NSColor(theme.textPrimary)
       let wraps = session.wrapsLines
@@ -92,6 +97,7 @@
       // Document height can change after TextKit lays out an edit or wraps lines.
       gutter.setFrameSize(
         NSSize(width: gutter.width, height: max(contentSize.height, documentView?.frame.height ?? 0)))
+      gutter.scrolledHorizontally = clipView.bounds.origin.x > 0
     }
 
     override func layout() {
