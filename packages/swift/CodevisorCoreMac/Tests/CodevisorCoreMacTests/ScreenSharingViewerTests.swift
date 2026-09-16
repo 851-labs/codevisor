@@ -16,28 +16,6 @@ struct ScreenSharingViewerTests {
   private let display = ScreenSharingViewerFixtures.display
   private let second = ScreenSharingViewerFixtures.second
 
-  @Test func aMissingPreferredDisplayNeverSelectsAnotherDisplay() async {
-    await withMainSerialExecutor {
-      let backend = FakeBackend(displays: [display])
-      let store = makeStore(backend, preferences: .init(preferredDisplayId: "missing"))
-      await store.send(.paneAppeared) {
-        $0.visible = true
-        $0.phase = .loading
-      }
-      await store.receive(\.discoveryResponse.success) {
-        $0.displays = [self.display]
-        $0.phase = .failed
-        $0.message = "The selected display is unavailable. Choose another display to connect."
-      }
-      expectNoDifference(backend.connections, [])
-      await store.send(.paneClosed) {
-        $0.visible = false
-        $0.phase = .suspended
-      }
-      await store.finish()
-    }
-  }
-
   @Test func discoveryFailureShowsTheServerMessage() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
@@ -68,14 +46,8 @@ struct ScreenSharingViewerTests {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
       let client = FakeEndpointClient()
-      let store = await makeReadyStore(backend, client)
+      let store = await makeConnectingStore(backend, client)
       await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
-      await store.send(.connectButtonTapped) {
-        $0.preferences.preferredDisplayId = "display"
-        $0.preferencesRevision = 1
-        $0.wantsConnection = true
-        $0.phase = .connecting
-      }
       await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
       if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
       await store.send(.fitToWindowChanged(false)) {
@@ -106,7 +78,6 @@ struct ScreenSharingViewerTests {
       #expect(store.state.interactionMode == mode)
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.endpoint = nil
         $0.lease = nil
         $0.phase = .suspended
@@ -136,7 +107,6 @@ struct ScreenSharingViewerTests {
       expectNoDifference(client.messages(to: endpoint.id), [.request(id: UUID(0))])
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.endpoint = nil
         $0.lease = nil
         $0.phase = .suspended
@@ -186,7 +156,6 @@ struct ScreenSharingViewerTests {
       #expect(store.state.interactionMode == .view)
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.endpoint = nil
         $0.lease = nil
         $0.phase = .suspended
@@ -234,7 +203,6 @@ struct ScreenSharingViewerTests {
       expectNoDifference(backend.connections.count, 1)
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.endpoint = nil
         $0.lease = nil
         $0.phase = .suspended
@@ -264,7 +232,6 @@ struct ScreenSharingViewerTests {
       expectNoDifference(backend.connections, ["display", "display"])
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.phase = .suspended
       }
       await store.finish()
@@ -289,7 +256,6 @@ struct ScreenSharingViewerTests {
       await store.send(.displaySelected("unknown"))
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.phase = .suspended
       }
       await store.finish()
@@ -317,7 +283,6 @@ struct ScreenSharingViewerTests {
       expectNoDifference(backend.connections.count, 2)
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.phase = .suspended
       }
       await store.finish()
@@ -341,17 +306,16 @@ struct ScreenSharingViewerTests {
       preferences.preferredDisplayId = "missing"
       await store.send(.preferencesSynced(preferences)) {
         $0.preferences = preferences
-        $0.wantsConnection = false
         $0.endpoint = nil
         $0.lease = nil
         $0.phase = .loading
       }
       await store.receive(\.discoveryResponse.success) {
-        $0.selectedDisplayId = nil
-        $0.phase = .failed
-        $0.message = "The selected display is unavailable. Choose another display to connect."
+        $0.preferences.preferredDisplayId = "display"
+        $0.preferencesRevision = 2
+        $0.phase = .connecting
       }
-      #expect(backend.connections.count == 1 && store.state.preferencesRevision == 1)
+      #expect(backend.connections.count == 2)
       await store.send(.paneClosed) {
         $0.visible = false
         $0.phase = .suspended
@@ -375,8 +339,8 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// Visible with the first display selected and nothing connected.
-  private func makeReadyStore(
+  /// Visible and connecting to the first display, which discovery remembered.
+  private func makeConnectingStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient
   ) async -> TestStoreOf<ScreenSharingViewer> {
     let store = makeStore(backend, client)
@@ -386,8 +350,10 @@ struct ScreenSharingViewerTests {
     }
     await store.receive(\.discoveryResponse.success) {
       $0.displays = backend.displays
+      $0.preferences.preferredDisplayId = backend.displays.first?.id
+      $0.preferencesRevision = 1
       $0.selectedDisplayId = backend.displays.first?.id
-      $0.phase = .ready
+      $0.phase = .connecting
     }
     return store
   }
@@ -398,14 +364,8 @@ struct ScreenSharingViewerTests {
     _ backend: FakeBackend, _ client: FakeEndpointClient,
     mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true
   ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = await makeReadyStore(backend, client)
+    let store = await makeConnectingStore(backend, client)
     if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
-    await store.send(.connectButtonTapped) {
-      $0.preferences.preferredDisplayId = backend.displays.first?.id
-      $0.preferencesRevision = 1
-      $0.wantsConnection = true
-      $0.phase = .connecting
-    }
     let endpoint = backend.open()
     await store.receive(\.connectionEvent.opened) {
       $0.endpoint = endpoint

@@ -41,7 +41,7 @@ extension SessionContainerView {
 
   var activeScreenSharingPane: ScreenSharingPane? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
-      let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil, !pane.showsDisplayPicker
+      let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil
     else { return nil }
     return pane
   }

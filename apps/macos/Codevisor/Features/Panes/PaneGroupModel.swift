@@ -223,14 +223,7 @@ final class PaneGroupModel: Identifiable {
   func wireScreenSharing(_ sharing: ScreenSharingPane) {
     sharing.onFocus = { [weak self, weak sharing] in
       guard let self, let sharing, self.canFocusSelectedPane, self.state.selectedPaneId == sharing.id else { return }
-      if sharing.showsDisplayPicker {
-        sharing.displaySearchFocus.focus { [weak self, weak sharing] in
-          guard let self, let sharing else { return false }
-          return self.canFocusSelectedPane && self.state.selectedPaneId == sharing.id && sharing.showsDisplayPicker
-        }
-      } else {
-        self.requestBackgroundFocus?()
-      }
+      self.requestBackgroundFocus?()
     }
     sharing.onPreferencesChanged = { [weak self, weak sharing] preferences in
       guard let self, let sharing,

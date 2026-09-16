@@ -6,7 +6,10 @@ import Foundation
 
 /// The viewer's control plane: visibility, display choice, presentation
 /// preferences, interaction mode and the lifecycle of one connection at a
-/// time, with the control lease as a child feature per endpoint. Everything
+/// time, with the control lease as a child feature per endpoint. A visible
+/// pane is always connecting or connected: discovery picks the display the
+/// pane last used, else the first one, and connects at once; the toolbar's
+/// display menu reconnects on choice. Everything
 /// timed or transport-specific lives in the backend; the long-running effects
 /// here are the backend's event stream and the endpoint's control-event
 /// stream, and cancelling them is how every transition away from a connection
@@ -15,7 +18,7 @@ import Foundation
 public struct ScreenSharingViewer {
   public enum InteractionMode: Hashable, Sendable { case control, view }
   public enum Phase: Equatable, Sendable {
-    case connecting, failed, idle, loading, ready, reconnecting, suspended, viewing
+    case connecting, failed, idle, loading, reconnecting, suspended, viewing
   }
 
   @ObservableState
@@ -34,15 +37,11 @@ public struct ScreenSharingViewer {
     public var preferencesRevision = 0
     public var selectedDisplayId: String?
     var visible = false
-    var wantsConnection = false
 
     public init(preferences: ScreenSharingPanePreferences = .init()) { self.preferences = preferences }
-
-    public var showsDisplayPicker: Bool { ![.connecting, .reconnecting, .viewing].contains(phase) }
   }
 
   public enum Action {
-    case connectButtonTapped
     case connectionEvent(ScreenSharingViewerEvent)
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
@@ -72,13 +71,6 @@ public struct ScreenSharingViewer {
   public var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
-      case .connectButtonTapped:
-        guard state.visible, state.selectedDisplayId != nil else { return .none }
-        state.preferences.preferredDisplayId = state.selectedDisplayId
-        state.preferencesRevision += 1
-        state.wantsConnection = true
-        return connect(&state)
-
       case .connectionEvent(.opened(let endpoint)):
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
@@ -107,24 +99,16 @@ public struct ScreenSharingViewer {
         fail(&state, message)
         return .cancel(id: CancelID.controlEvents)
 
+      // The display the pane last used when it is still listed, else the first one.
       case .discoveryResponse(.success(let displays)):
         guard state.visible, state.phase == .loading else { return .none }
         state.displays = Self.listing(displays, vnc: state.preferences.vnc)
-        if let preferred = state.preferences.preferredDisplayId {
-          state.selectedDisplayId = state.displays.first(where: { $0.id == preferred })?.id
-          guard state.selectedDisplayId != nil else {
-            fail(&state, "The selected display is unavailable. Choose another display to connect.")
-            return .none
-          }
-        } else {
-          state.selectedDisplayId = state.displays.first?.id
-        }
-        guard state.selectedDisplayId != nil else {
+        let preferred = state.preferences.preferredDisplayId
+        guard let chosen = state.displays.first(where: { $0.id == preferred }) ?? state.displays.first else {
           fail(&state, "No displays are available on this Mac.")
           return .none
         }
-        state.phase = .ready
-        return state.wantsConnection ? connect(&state) : .none
+        return select(chosen.id, &state)
 
       // A machine without screen sharing still offers the saved VNC server.
       case .discoveryResponse(.failure(let error)):
@@ -132,22 +116,14 @@ public struct ScreenSharingViewer {
         state.displays = Self.listing([], vnc: state.preferences.vnc)
         if let preferred = state.preferences.preferredDisplayId, state.displays.contains(where: { $0.id == preferred })
         {
-          state.selectedDisplayId = preferred
-          state.phase = .ready
-          return state.wantsConnection ? connect(&state) : .none
+          return select(preferred, &state)
         }
         fail(&state, serverErrorMessage(error))
         return .none
 
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
-        state.preferences.preferredDisplayId = id
-        state.selectedDisplayId = id
-        state.preferencesRevision += 1
-        if state.wantsConnection { return connect(&state) }
-        state.message = nil
-        state.phase = .ready
-        return .none
+        return select(id, &state)
 
       case .fitToWindowChanged(let fit):
         state.preferences.fitToWindow = fit
@@ -174,7 +150,6 @@ public struct ScreenSharingViewer {
         return refresh(&state)
 
       case .paneClosed:
-        state.wantsConnection = false
         state.visible = false
         dropEndpoint(&state)
         state.phase = .suspended
@@ -194,7 +169,6 @@ public struct ScreenSharingViewer {
         let displayChanged = state.preferences.preferredDisplayId != preferences.preferredDisplayId
         state.preferences = preferences
         guard displayChanged else { return fitEndpoint(state) }
-        state.wantsConnection = false
         return .merge(fitEndpoint(state), refresh(&state))
 
       case .retryButtonTapped:
@@ -207,7 +181,6 @@ public struct ScreenSharingViewer {
         state.preferencesRevision += 1
         state.displays = Self.listing(state.displays, vnc: target)
         state.selectedDisplayId = target.displayId
-        state.wantsConnection = true
         let account = target.credentialAccount
         // The backend reads the password at connection time: the save must land first.
         return .concatenate(
@@ -219,7 +192,6 @@ public struct ScreenSharingViewer {
         state.preferences.vnc = nil
         if state.preferences.preferredDisplayId == target.displayId { state.preferences.preferredDisplayId = nil }
         state.preferencesRevision += 1
-        state.wantsConnection = false
         let account = target.credentialAccount
         return .merge(
           .run { [credentials] _ in try? await credentials.save(account, nil) },
@@ -254,8 +226,18 @@ public struct ScreenSharingViewer {
       .cancellable(id: CancelID.connection, cancelInFlight: true))
   }
 
+  /// Remembers `id` as the pane's display (persisted only when it changed) and connects to it.
+  private func select(_ id: String, _ state: inout State) -> Effect<Action> {
+    if state.preferences.preferredDisplayId != id {
+      state.preferences.preferredDisplayId = id
+      state.preferencesRevision += 1
+    }
+    state.selectedDisplayId = id
+    return connect(&state)
+  }
+
   private func connect(_ state: inout State) -> Effect<Action> {
-    guard let display = state.selectedDisplayId else { return .none }
+    guard state.visible, let display = state.selectedDisplayId else { return .none }
     dropEndpoint(&state)
     state.phase = .connecting
     state.message = nil

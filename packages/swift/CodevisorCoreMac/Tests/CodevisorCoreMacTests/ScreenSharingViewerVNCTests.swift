@@ -29,23 +29,22 @@ struct ScreenSharingViewerVNCTests {
       }
       await store.receive(\.discoveryResponse.success) {
         $0.displays = [self.display]
+        $0.preferences.preferredDisplayId = self.display.id
+        $0.preferencesRevision = 1
         $0.selectedDisplayId = self.display.id
-        $0.phase = .ready
+        $0.phase = .connecting
       }
       await store.send(.vncTargetSubmitted(Self.vncTarget, password: "pw")) {
         $0.preferences.vnc = Self.vncTarget
         $0.preferences.preferredDisplayId = Self.vncDisplay.id
-        $0.preferencesRevision = 1
+        $0.preferencesRevision = 2
         $0.displays = [self.display, Self.vncDisplay]
         $0.selectedDisplayId = Self.vncDisplay.id
-        $0.wantsConnection = true
-        $0.phase = .connecting
       }
       #expect(await awaitPolled { credentials.saved == ["mini.local:5901=pw"] })
-      expectNoDifference(backend.connections, [Self.vncDisplay.id])
+      expectNoDifference(backend.connections, [self.display.id, Self.vncDisplay.id])
       await store.send(.paneClosed) {
         $0.visible = false
-        $0.wantsConnection = false
         $0.phase = .suspended
       }
       await store.finish()
@@ -65,8 +64,9 @@ struct ScreenSharingViewerVNCTests {
       await store.receive(\.discoveryResponse.failure) {
         $0.displays = [Self.vncDisplay]
         $0.selectedDisplayId = Self.vncDisplay.id
-        $0.phase = .ready
+        $0.phase = .connecting
       }
+      expectNoDifference(backend.connections, [Self.vncDisplay.id])
       await store.send(.paneClosed) {
         $0.visible = false
         $0.phase = .suspended
@@ -89,7 +89,7 @@ struct ScreenSharingViewerVNCTests {
       await store.receive(\.discoveryResponse.success) {
         $0.displays = [self.display, Self.vncDisplay]
         $0.selectedDisplayId = Self.vncDisplay.id
-        $0.phase = .ready
+        $0.phase = .connecting
       }
       await store.send(.vncTargetRemoved) {
         $0.preferences.vnc = nil
@@ -99,8 +99,10 @@ struct ScreenSharingViewerVNCTests {
       }
       await store.receive(\.discoveryResponse.success) {
         $0.displays = [self.display]
+        $0.preferences.preferredDisplayId = self.display.id
+        $0.preferencesRevision = 2
         $0.selectedDisplayId = self.display.id
-        $0.phase = .ready
+        $0.phase = .connecting
       }
       #expect(await awaitPolled { credentials.saved == ["mini.local:5901=<removed>"] })
       await store.send(.paneClosed) {
