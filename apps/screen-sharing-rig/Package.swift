@@ -32,6 +32,8 @@ let package = Package(
         .product(name: "ScreenSharingHostInput", package: "CodevisorKit"),
         .product(name: "ScreenSharingRFB", package: "CodevisorKit"),
         .product(name: "ScreenSharingRFBLoopback", package: "CodevisorKit"),
+        .product(name: "ScreenSharingVNC", package: "CodevisorKit"),
+        .product(name: "ScreenSharingViewer", package: "CodevisorKit"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
