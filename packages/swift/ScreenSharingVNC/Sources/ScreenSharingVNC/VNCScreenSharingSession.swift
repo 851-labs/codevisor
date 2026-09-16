@@ -24,9 +24,9 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
   private let sender: Task<Void, Never>
   /// The read loop; its value is the error that ended it.
   private var run: Task<any Error, Never>!
-  private(set) var closed = false
+  public private(set) var closed = false
 
-  init(
+  public init(
     client: RFBClient, parameters: RFBServerParameters, metrics: ScreenSharingMetrics = ScreenSharingMetrics(),
     keys: VNCKeyTranslator = VNCKeyTranslator()
   ) {
@@ -69,7 +69,7 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
   }
 
   /// The error that ended the read loop, once it has.
-  func outcome() async -> any Error { await run.value }
+  public func outcome() async -> any Error { await run.value }
 
   public func statistics() async -> [String: String] { [:] }
 
@@ -108,6 +108,25 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
       failure = error.localizedDescription
       metrics.label("vncFailure", error.localizedDescription)
       onConnectionChanged?("failed")
+    }
+  }
+}
+
+/// TCP, handshake and authentication against a VNC server; the client is
+/// closed on any failure. The parameters name and size the desktop.
+public enum VNCConnection {
+  public static func open(
+    host: String, port: UInt16, password: String?
+  ) async throws -> (
+    client: RFBClient, outcome: RFBHandshake.Outcome
+  ) {
+    let transport = try await RFBNetworkTransport.connect(host: host, port: port)
+    let client = try RFBClient(transport: transport)
+    do {
+      return (client, try await client.connect(password: password))
+    } catch {
+      client.close()
+      throw error
     }
   }
 }

@@ -3,6 +3,7 @@ import CodevisorCore
 import CodevisorScreenSharing
 import Foundation
 import ScreenSharingRFB
+import ScreenSharingVNC
 
 extension ScreenSharingViewerBackend {
   /// A standard VNC server. Discovery performs a handshake to learn the
@@ -41,14 +42,8 @@ extension ScreenSharingViewerBackend {
 
   /// TCP, handshake and authentication; the client is closed on any failure.
   static let openVNC: VNCOpen = { host, port, password in
-    let transport = try await RFBNetworkTransport.connect(host: host, port: port)
-    let client = try RFBClient(transport: transport)
-    do {
-      return (client, try await client.connect(password: password))
-    } catch {
-      client.close()
-      throw error
-    }
+    let (client, outcome) = try await VNCConnection.open(host: host, port: port, password: password)
+    return (client, outcome)
   }
 
   @MainActor

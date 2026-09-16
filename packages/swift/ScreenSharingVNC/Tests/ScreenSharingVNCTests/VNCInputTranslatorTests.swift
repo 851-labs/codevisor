@@ -2,7 +2,7 @@ import CodevisorScreenSharing
 import Foundation
 import ScreenSharingRFB
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharingVNC
 
 @MainActor
 struct VNCInputTranslatorTests {

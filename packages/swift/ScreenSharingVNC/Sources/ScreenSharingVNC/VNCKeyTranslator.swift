@@ -8,8 +8,8 @@ import ScreenSharingRFB
 /// through the current keyboard layout with Shift, Option and Caps Lock
 /// applied — never Control or Command, so ⌘C reaches the server as Super+c,
 /// which is what it expects.
-struct VNCKeyTranslator: Sendable {
-  typealias Layout = @Sendable (_ code: UInt16, _ carbonModifiers: UInt32) -> Unicode.Scalar?
+public struct VNCKeyTranslator: Sendable {
+  public typealias Layout = @Sendable (_ code: UInt16, _ carbonModifiers: UInt32) -> Unicode.Scalar?
 
   static let modifierKeysyms: [UInt16: UInt32] = [
     56: RFBKeysym.shiftLeft, 60: RFBKeysym.shiftRight, 59: RFBKeysym.controlLeft, 62: RFBKeysym.controlRight,
@@ -30,10 +30,10 @@ struct VNCKeyTranslator: Sendable {
 
   private let layout: Layout
 
-  init(layout: @escaping Layout = VNCKeyTranslator.currentLayout) { self.layout = layout }
+  public init(layout: @escaping Layout = VNCKeyTranslator.currentLayout) { self.layout = layout }
 
   /// nil: nothing to send for this key.
-  func keysym(code: UInt16, modifiers: UInt8) -> UInt32? {
+  public func keysym(code: UInt16, modifiers: UInt8) -> UInt32? {
     if Self.ignoredCodes.contains(code) { return nil }
     if let keysym = Self.modifierKeysyms[code] ?? Self.specialKeysyms[code] { return keysym }
     // Carbon modifier state as UCKeyTranslate wants it: (flags >> 8) & 0xff.
@@ -46,7 +46,7 @@ struct VNCKeyTranslator: Sendable {
   }
 
   /// The user's current keyboard layout through `UCKeyTranslate`.
-  static let currentLayout: Layout = { code, carbonModifiers in
+  public static let currentLayout: Layout = { code, carbonModifiers in
     guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
       let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
     else { return nil }

@@ -5,7 +5,7 @@ import Foundation
 import ScreenSharingRFB
 import ScreenSharingRFBLoopback
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharingVNC
 
 /// The VNC viewing session against the loopback server: frames into the
 /// mailbox, the locally granted control lease driving RFB input, the

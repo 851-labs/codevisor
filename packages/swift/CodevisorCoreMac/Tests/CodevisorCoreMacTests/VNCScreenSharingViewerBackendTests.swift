@@ -6,6 +6,7 @@ import CustomDump
 import Foundation
 import ScreenSharingRFB
 import ScreenSharingRFBLoopback
+import ScreenSharingVNC
 import Testing
 @testable import CodevisorCoreMac
 

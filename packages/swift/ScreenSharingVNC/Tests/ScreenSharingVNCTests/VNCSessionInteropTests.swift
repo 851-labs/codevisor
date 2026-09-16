@@ -4,7 +4,7 @@ import CoreVideo
 import Foundation
 import ScreenSharingRFB
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharingVNC
 
 /// The viewing session against a real server named by the environment
 /// (`VNC_TEST_HOST`, `VNC_TEST_PORT`, `VNC_TEST_PASSWORD`); skipped otherwise.
@@ -13,8 +13,9 @@ struct VNCSessionInteropTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))
   func framesReachTheMailbox() async throws {
     let environment = ProcessInfo.processInfo.environment
-    let (client, outcome) = try await ScreenSharingViewerBackend.openVNC(
-      environment["VNC_TEST_HOST"]!, UInt16(environment["VNC_TEST_PORT"] ?? "5900")!, environment["VNC_TEST_PASSWORD"])
+    let (client, outcome) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
     let session = VNCScreenSharingSession(client: client, parameters: outcome.parameters)
     var transports: [String] = []
     session.onConnectionChanged = { transports.append($0) }

@@ -7,12 +7,15 @@ import ScreenSharingRFB
 /// Copies the RFB framebuffer into pooled, IOSurface-backed BGRA pixel
 /// buffers the Metal renderer draws directly. Called from the client's read
 /// loop only, one update at a time, so it is unchecked rather than locked.
-final class VNCFramePublisher: @unchecked Sendable {
+public final class VNCFramePublisher: @unchecked Sendable {
+  public init() {}
   private var pool: CVPixelBufferPool?
   private var poolWidth = 0
   private var poolHeight = 0
 
-  func publish(_ framebuffer: RFBFramebuffer, to mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics) {
+  public func publish(
+    _ framebuffer: RFBFramebuffer, to mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics
+  ) {
     guard let pixelBuffer = makePixelBuffer(width: framebuffer.width, height: framebuffer.height) else {
       metrics.increment("vncPixelBufferFailures")
       return

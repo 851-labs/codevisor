@@ -4,6 +4,7 @@ import CodevisorTestSupport
 import CoreVideo
 import Foundation
 import ScreenSharingRFB
+import ScreenSharingVNC
 import Testing
 @testable import CodevisorCoreMac
 
