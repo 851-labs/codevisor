@@ -30,7 +30,11 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip >/dev/null
-# The SSH key of whoever provisions is already authorized; nothing else listens publicly.
+# The SSH key of whoever provisions is already authorized; from here on keys only
+# (the hosting panel's password reset is the recovery path). Nothing else listens publicly.
+install -d /etc/ssh/sshd_config.d
+printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' > /etc/ssh/sshd_config.d/90-keys-only.conf
+systemctl reload ssh 2>/dev/null || systemctl reload sshd
 mkdir -p ~/.vnc
 printf '%s\n' "$VNC_PASSWORD" | vncpasswd -f > ~/.vnc/passwd
 chmod 600 ~/.vnc/passwd
