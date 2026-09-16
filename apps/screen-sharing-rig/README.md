@@ -27,6 +27,12 @@ bun run screen-sharing:rig logs
 bun run screen-sharing:rig stop --all
 ```
 
+```sh
+swift run --package-path apps/screen-sharing-rig screen-sharing-rig vnc-server --port 5901 --password secret --size 1280x800
+```
+
+`vnc-server` is a standalone VNC server on 127.0.0.1 with an animated desktop (RFB 3.8, VNC Authentication or `--no-password`, ZRLE or `--encoding raw`). It prints the keys, button changes and clipboard text the viewer sends. It is the tophat target for the app's VNC viewer (`docs/plans/vnc-viewer.md`): open a Screen Sharing pane, enter `127.0.0.1`, port `5901` and the password under "VNC server".
+
 `install` configures this Mac as the viewer and the SSH target as the host, writes both `rig.json` files and LaunchAgents (`com.codevisor.screen-sharing-rig`, GUI session, restarted only on abnormal exit), builds, pushes and starts both. `deploy` rebuilds and restarts both; run `install` again if the executable name or ports change. The host never builds: both Macs are Apple silicon and the bundle is `rsync`ed.
 
 ## How it works

@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorCore
 import CodevisorScreenSharing
+import CodevisorTestSupport
 import ComposableArchitecture
 import Foundation
 import Testing
@@ -361,13 +362,14 @@ struct ScreenSharingViewerTests {
 
   private func makeStore(
     _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
-    preferences: ScreenSharingPanePreferences = .init()
+    preferences: ScreenSharingPanePreferences = .init(), credentials: FakeVNCCredentials = FakeVNCCredentials()
   ) -> TestStoreOf<ScreenSharingViewer> {
     TestStore(initialState: ScreenSharingViewer.State(preferences: preferences)) {
       ScreenSharingViewer()
     } withDependencies: {
       $0[ScreenSharingViewerBackend.self] = backend.value
       $0[ScreenSharingEndpointClient.self] = client.value
+      $0[ScreenSharingVNCCredentials.self] = credentials.value
       $0.continuousClock = Clocks.TestClock()
       $0.uuid = .incrementing
     }
@@ -432,7 +434,7 @@ struct ScreenSharingViewerTests {
 /// connection hands the test the stream's continuation. Endpoints it opens
 /// are real, over fake sessions and surfaces.
 @MainActor
-private final class FakeBackend {
+final class FakeBackend {
   var displays: [ServerScreenSharingDisplay]
   var discoveryFailure: String?
   private(set) var connections: [String] = []

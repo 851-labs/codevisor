@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Foundation
 import Testing
+import ScreenSharingRFBLoopback
 @testable import ScreenSharingRFB
 
 /// The whole client against the loopback server over TCP: handshake, the

@@ -55,12 +55,17 @@ public struct ScreenSharingViewer {
     /// A registry update from another client: applied to the live surface without echo.
     case preferencesSynced(ScreenSharingPanePreferences)
     case retryButtonTapped
+    /// A VNC server entered in the pane: saved with its password, listed and connected.
+    case vncTargetSubmitted(ScreenSharingVNCTarget, password: String?)
+    /// The saved VNC server forgotten, password included.
+    case vncTargetRemoved
   }
 
   enum CancelID { case connection, controlEvents }
 
   @Dependency(ScreenSharingViewerBackend.self) var backend
   @Dependency(ScreenSharingEndpointClient.self) var endpointClient
+  @Dependency(ScreenSharingVNCCredentials.self) var credentials
 
   public init() {}
 
@@ -104,15 +109,15 @@ public struct ScreenSharingViewer {
 
       case .discoveryResponse(.success(let displays)):
         guard state.visible, state.phase == .loading else { return .none }
-        state.displays = displays
+        state.displays = Self.listing(displays, vnc: state.preferences.vnc)
         if let preferred = state.preferences.preferredDisplayId {
-          state.selectedDisplayId = displays.first(where: { $0.id == preferred })?.id
+          state.selectedDisplayId = state.displays.first(where: { $0.id == preferred })?.id
           guard state.selectedDisplayId != nil else {
             fail(&state, "The selected display is unavailable. Choose another display to connect.")
             return .none
           }
         } else {
-          state.selectedDisplayId = displays.first?.id
+          state.selectedDisplayId = state.displays.first?.id
         }
         guard state.selectedDisplayId != nil else {
           fail(&state, "No displays are available on this Mac.")
@@ -121,8 +126,16 @@ public struct ScreenSharingViewer {
         state.phase = .ready
         return state.wantsConnection ? connect(&state) : .none
 
+      // A machine without screen sharing still offers the saved VNC server.
       case .discoveryResponse(.failure(let error)):
         guard state.visible, state.phase == .loading, !isTaskCancellation(error) else { return .none }
+        state.displays = Self.listing([], vnc: state.preferences.vnc)
+        if let preferred = state.preferences.preferredDisplayId, state.displays.contains(where: { $0.id == preferred })
+        {
+          state.selectedDisplayId = preferred
+          state.phase = .ready
+          return state.wantsConnection ? connect(&state) : .none
+        }
         fail(&state, serverErrorMessage(error))
         return .none
 
@@ -186,11 +199,45 @@ public struct ScreenSharingViewer {
 
       case .retryButtonTapped:
         return refresh(&state)
+
+      case .vncTargetSubmitted(let target, let password):
+        guard state.visible else { return .none }
+        state.preferences.vnc = target
+        state.preferences.preferredDisplayId = target.displayId
+        state.preferencesRevision += 1
+        state.displays = Self.listing(state.displays, vnc: target)
+        state.selectedDisplayId = target.displayId
+        state.wantsConnection = true
+        let account = target.credentialAccount
+        return .merge(
+          .run { [credentials] _ in try? await credentials.save(account, password) },
+          connect(&state))
+
+      case .vncTargetRemoved:
+        guard let target = state.preferences.vnc else { return .none }
+        state.preferences.vnc = nil
+        if state.preferences.preferredDisplayId == target.displayId { state.preferences.preferredDisplayId = nil }
+        state.preferencesRevision += 1
+        state.wantsConnection = false
+        let account = target.credentialAccount
+        return .merge(
+          .run { [credentials] _ in try? await credentials.save(account, nil) },
+          refresh(&state))
       }
     }
     .ifLet(\.lease, action: \.lease) {
       ControlLease()
     }
+  }
+
+  /// The machine's displays followed by the saved VNC server's single entry
+  /// (size unknown until connected, shown without dimensions).
+  static func listing(
+    _ displays: [ServerScreenSharingDisplay], vnc: ScreenSharingVNCTarget?
+  ) -> [ServerScreenSharingDisplay] {
+    let machine = displays.filter { ScreenSharingVNCTarget(displayId: $0.id) == nil }
+    guard let vnc else { return machine }
+    return machine + [ServerScreenSharingDisplay(id: vnc.displayId, name: vnc.displayName, width: 0, height: 0)]
   }
 
   private func refresh(_ state: inout State) -> Effect<Action> {

@@ -19,6 +19,21 @@ extension ScreenSharingViewerBackend {
       })
   }
 
+  /// This backend for machine displays, a VNC connection for a display id
+  /// that names a target. Discovery stays the machine's; the reducer adds the
+  /// saved target's entry itself.
+  @MainActor
+  public func dispatchingVNC(password: @escaping @Sendable (ScreenSharingVNCTarget) async -> String?) -> Self {
+    let native = self
+    return Self(
+      connect: { display in
+        guard let target = ScreenSharingVNCTarget(displayId: display) else { return await native.connect(display) }
+        let vnc = await Self.vnc(target: target) { await password(target) }
+        return await vnc.connect(display)
+      },
+      discover: native.discover)
+  }
+
   typealias VNCOpen =
     @Sendable (_ host: String, _ port: UInt16, _ password: String?) async throws -> (
       RFBClient, RFBHandshake.Outcome

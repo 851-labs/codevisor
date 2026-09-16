@@ -1,33 +1,35 @@
 import Foundation
 import Network
+import ScreenSharingRFB
 
 /// An in-process VNC server for tests and the rig: a scripted handshake, a
 /// BGRA framebuffer whose rectangles go out as Raw, CopyRect, ZRLE or
 /// DesktopSize, and a log of every client message. One client at a time.
-/// Package-only: it is test support that happens to need the protocol's
-/// internals.
-package final class RFBLoopbackServer: @unchecked Sendable {
-  package struct Configuration: Sendable {
-    package var version = RFBProtocolVersion.v3_8
-    package var securityTypes: [UInt8] = [RFBSecurityType.vncAuthentication.rawValue]
-    package var password: String? = "secret"
-    package var width = 64
-    package var height = 48
-    package var name = "Loopback"
+/// Its own target so product modules never link it.
+public final class RFBLoopbackServer: @unchecked Sendable {
+  public struct Configuration: Sendable {
+    public var version = RFBProtocolVersion.v3_8
+    public var securityTypes: [UInt8] = [RFBSecurityType.vncAuthentication.rawValue]
+    public var password: String? = "secret"
+    public var width = 64
+    public var height = 48
+    public var name = "Loopback"
     /// The encoding of a whole-frame reply to a non-incremental request.
-    package var encoding: RFBEncoding = .raw
-    package init() {}
+    public var encoding: RFBEncoding = .raw
+    /// nil: an ephemeral port, read from `port` once started.
+    public var port: UInt16?
+    public init() {}
   }
 
-  package enum Rectangle: Sendable {
+  public enum Rectangle: Sendable {
     case raw(RFBRectangle)
     case zrle(RFBRectangle)
     case copy(RFBRectangle, fromX: Int, fromY: Int)
     case desktopSize(width: Int, height: Int)
   }
 
-  package private(set) var port: UInt16 = 0
-  package let framebuffer: RFBFramebuffer
+  public private(set) var port: UInt16 = 0
+  public let framebuffer: RFBFramebuffer
   private let configuration: Configuration
   private let listener: NWListener
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.rfb.loopback")
@@ -40,12 +42,15 @@ package final class RFBLoopbackServer: @unchecked Sendable {
   private var messages: [RFBClientMessage] = []
   private var deflater: RFBZlibDeflater?
   private var connections = 0
+  /// Every client message as it arrives, for a live server's log.
+  public var onClientMessage: (@Sendable (RFBClientMessage) -> Void)?
 
-  package init(configuration: Configuration = .init()) async throws {
+  public init(configuration: Configuration = .init()) async throws {
     self.configuration = configuration
     framebuffer = try RFBFramebuffer(width: configuration.width, height: configuration.height)
     let parameters = NWParameters.tcp
-    parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: .any)
+    parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
+      host: .ipv4(.loopback), port: configuration.port.flatMap { NWEndpoint.Port(rawValue: $0) } ?? .any)
     listener = try NWListener(using: parameters)
     // A listener started without a connection handler fails with EINVAL.
     listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
@@ -66,27 +71,32 @@ package final class RFBLoopbackServer: @unchecked Sendable {
 
   // MARK: Observation
 
-  package var received: [RFBClientMessage] { lock.withLock { messages } }
-  package var connectionCount: Int { lock.withLock { connections } }
-  package var isRequestPending: Bool { lock.withLock { pendingRequest } }
+  public var received: [RFBClientMessage] { lock.withLock { messages } }
+  public var connectionCount: Int { lock.withLock { connections } }
+  public var isRequestPending: Bool { lock.withLock { pendingRequest } }
 
   // MARK: Driving the client
 
   /// Sends now if the client is waiting for an update, otherwise on its next request.
-  package func enqueue(_ rectangles: [Rectangle]) {
+  public func enqueue(_ rectangles: [Rectangle]) {
     lock.withLock {
       pending.append(contentsOf: rectangles)
       if pendingRequest { flushPendingLocked() }
     }
   }
 
-  package func paint(_ rect: RFBRectangle, blue: UInt8, green: UInt8, red: UInt8) throws {
+  public func paint(_ rect: RFBRectangle, blue: UInt8, green: UInt8, red: UInt8) throws {
     try lock.withLock { try framebuffer.fill(rect, blue: blue, green: green, red: red) }
   }
 
-  package func sendBell() { write([2]) }
+  /// `pixels`: `rect.width * rect.height` BGRA pixels, row-major.
+  public func paint(_ rect: RFBRectangle, pixels: [UInt8]) throws {
+    try lock.withLock { try framebuffer.fillRaw(rect, from: pixels) }
+  }
 
-  package func sendCutText(_ text: String) {
+  public func sendBell() { write([2]) }
+
+  public func sendCutText(_ text: String) {
     var writer = RFBByteWriter()
     let latin1 = RFBLatin1.encode(text)
     writer.u8(3); writer.pad(3); writer.u32(UInt32(latin1.count)); writer.append(latin1)
@@ -94,17 +104,17 @@ package final class RFBLoopbackServer: @unchecked Sendable {
   }
 
   /// Raw bytes, for malformed-message tests.
-  package func write(_ bytes: [UInt8]) {
+  public func write(_ bytes: [UInt8]) {
     lock.withLock { client?.send(content: Data(bytes), completion: .idempotent) }
   }
 
-  package func closeClient() {
+  public func closeClient() {
     lock.withLock {
       client?.cancel(); client = nil; transport = nil; pendingRequest = false
     }
   }
 
-  package func stop() {
+  public func stop() {
     closeClient()
     lock.withLock {
       serving?.cancel(); serving = nil
@@ -172,6 +182,7 @@ package final class RFBLoopbackServer: @unchecked Sendable {
     try await transport.write(writer.bytes)
     while true {
       let message = try await RFBClientMessage.read(from: stream)
+      onClientMessage?(message)
       lock.withLock {
         messages.append(message)
         if case .framebufferUpdateRequest(let incremental, _) = message {

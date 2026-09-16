@@ -29,6 +29,8 @@ let package = Package(
     // Consumed by the dev-only executable under apps/screen-sharing-rig.
     .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
     .library(name: "ScreenSharingRFB", targets: ["ScreenSharingRFB"]),
+    // Consumed by the rig's `vnc-server` subcommand.
+    .library(name: "ScreenSharingRFBLoopback", targets: ["ScreenSharingRFBLoopback"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
@@ -53,9 +55,17 @@ let package = Package(
       path: "ScreenSharingRFB/Sources/ScreenSharingRFB",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    // An in-process VNC server (scripted handshake, every encoding, a message log) for the
+    // protocol and viewer tests and for the rig; never linked by product modules.
+    .target(
+      name: "ScreenSharingRFBLoopback",
+      dependencies: ["ScreenSharingRFB"],
+      path: "ScreenSharingRFBLoopback/Sources/ScreenSharingRFBLoopback",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .testTarget(
       name: "ScreenSharingRFBTests",
-      dependencies: ["ScreenSharingRFB", "CodevisorTestSupport"],
+      dependencies: ["ScreenSharingRFB", "ScreenSharingRFBLoopback", "CodevisorTestSupport"],
       path: "ScreenSharingRFB/Tests/ScreenSharingRFBTests",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -356,6 +366,7 @@ let package = Package(
         "CodevisorCore",
         "ACPKit",
         "ScreenSharingRFB",
+        "ScreenSharingRFBLoopback",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],

@@ -45,3 +45,30 @@ and `ScreenSharingViewingSession` seams.
   soon as the previous update is applied. The first request is non-incremental.
 - Errors are terminal: an unknown encoding or malformed message ends the
   session with a message; there is no resynchronisation in RFB.
+
+## Status
+
+Stages 1–3 have landed. What exists:
+
+- `packages/swift/ScreenSharingRFB` (protocol, 36 fixture and loopback tests) and
+  `packages/swift/ScreenSharingRFBLoopback` (the in-process server used by tests and the rig).
+- `CodevisorCoreMac/ScreenSharing/VNC`: `VNCScreenSharingSession`, `VNCHostEmulator`,
+  `VNCKeyTranslator`, `VNCInputTranslator`, `VNCFramePublisher`,
+  `ScreenSharingViewerBackend.vnc(target:password:)` and `dispatchingVNC(password:)`,
+  `ScreenSharingVNCCredentials` (Keychain service `com.851labs.Codevisor.vnc-password`,
+  account `host:port`).
+- `ScreenSharingPanePreferences.vnc` and the pane's "VNC server" form; the target rides
+  the pane's registry metadata, the password never leaves the Keychain.
+- `screen-sharing-rig vnc-server`: a loopback VNC server with an animated desktop and an
+  input log, for tophats without third-party software.
+
+To tophat against macOS itself, enable Screen Sharing with a VNC password once:
+
+```sh
+sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+  -configure -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw secret
+```
+
+Not yet: Apple Remote Desktop authentication (type 30), Tight encoding, cursor
+pseudo-encodings, ExtendedDesktopSize, a display size in the picker before the first
+connection.

@@ -2,8 +2,8 @@ import Foundation
 
 /// ZRLE (RFC 6143 §7.7.6) for the client's 24-bit-depth format, where each
 /// CPIXEL is three bytes: B, G, R in our little-endian layout.
-enum RFBZRLEDecoder {
-  static let tile = 64
+package enum RFBZRLEDecoder {
+  package static let tile = 64
 
   static func decode(_ data: [UInt8], rect: RFBRectangle, into framebuffer: RFBFramebuffer) throws {
     try framebuffer.validate(rect)

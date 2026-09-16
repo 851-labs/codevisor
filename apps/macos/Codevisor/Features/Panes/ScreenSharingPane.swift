@@ -34,7 +34,10 @@ final class ScreenSharingPane: Pane {
       return Store(initialState: ScreenSharingViewer.State(preferences: descriptor.screenSharing ?? .init())) {
         ScreenSharingViewer()
       } withDependencies: {
-        $0[ScreenSharingViewerBackend.self] = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
+        $0[ScreenSharingViewerBackend.self] = ScreenSharingViewerBackend.native(
+          client: client, workspaceId: workspaceId, paneId: descriptor.id
+        )
+        .dispatchingVNC { target in await ScreenSharingVNCCredentials.liveValue.password(target.credentialAccount) }
       }
     }
     guard let store else { return }
@@ -82,6 +85,14 @@ private struct ScreenSharingPaneView: View {
   @State private var mount = UUID()
   @State private var query = ""
 
+  /// The VNC server's name while it is the selected display, else the machine's.
+  private var connectionName: String {
+    if let store = pane.store, let target = store.preferences.vnc, store.selectedDisplayId == target.displayId {
+      return target.displayName
+    }
+    return pane.machineName
+  }
+
   var body: some View {
     Group {
       if let store = pane.store {
@@ -110,8 +121,10 @@ private struct ScreenSharingPaneView: View {
         VStack(spacing: 16) {
           Autocomplete.Suggestions(query: $query, focus: pane.displaySearchFocus) {
             for display in store.displays {
+              let isVNC = ScreenSharingVNCTarget(displayId: display.id) != nil
               Autocomplete.Action(
-                "\(display.name) · \(display.width) × \(display.height)", id: display.id, systemImage: "display"
+                display.width > 0 ? "\(display.name) · \(display.width) × \(display.height)" : display.name,
+                id: display.id, systemImage: isVNC ? "network" : "display"
               ) {
                 store.send(.displaySelected(display.id))
                 // Selecting a display already reconnects a previously connected pane.
@@ -126,6 +139,8 @@ private struct ScreenSharingPaneView: View {
           .composerGlassSurface(cornerRadius: 18)
           .accessibilityElement(children: .contain)
           .accessibilityLabel("Available screens on \(pane.machineName)")
+
+          VNCServerForm(store: store)
 
           if store.phase == .failed {
             VStack(spacing: 12) {
@@ -175,14 +190,65 @@ private struct ScreenSharingPaneView: View {
           VStack(spacing: 12) {
             ProgressView().controlSize(.small)
             Text(
-              store.phase == .reconnecting
-                ? "Reconnecting to \(pane.machineName)…" : "Connecting to \(pane.machineName)…")
+              store.phase == .reconnecting ? "Reconnecting to \(connectionName)…" : "Connecting to \(connectionName)…")
           }
           .padding(24)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+  }
+}
+
+/// Enter a standard VNC server (host, port, password) or forget the saved one.
+/// The password goes to the Keychain through the reducer; only the target is
+/// persisted with the pane.
+private struct VNCServerForm: View {
+  let store: StoreOf<ScreenSharingViewer>
+  @State private var host = ""
+  @State private var port = String(ScreenSharingVNCTarget.defaultPort)
+  @State private var password = ""
+
+  private var target: ScreenSharingVNCTarget? {
+    let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !host.isEmpty, let port = UInt16(port.trimmingCharacters(in: .whitespaces)) else { return nil }
+    return ScreenSharingVNCTarget(host: host, port: port)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("VNC server").font(.headline)
+      if let saved = store.preferences.vnc {
+        HStack {
+          Label(saved.displayName, systemImage: "network").foregroundStyle(.secondary)
+          Spacer()
+          Button("Forget") { store.send(.vncTargetRemoved) }
+        }
+      }
+      HStack(spacing: 8) {
+        TextField("Host", text: $host).frame(minWidth: 160)
+        TextField("Port", text: $port).frame(width: 64)
+        SecureField("Password", text: $password).frame(minWidth: 120)
+        Button("Connect", action: connect).disabled(target == nil)
+      }
+      .textFieldStyle(.roundedBorder)
+      .onSubmit(connect)
+      Text(
+        "Any RFB 3.x server: macOS Screen Sharing with “VNC viewers may control screen with password”, TigerVNC, RealVNC…"
+      )
+      .font(.caption).foregroundStyle(.secondary)
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .composerGlassSurface(cornerRadius: 18)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Connect to a VNC server")
+  }
+
+  private func connect() {
+    guard let target else { return }
+    store.send(.vncTargetSubmitted(target, password: password.isEmpty ? nil : password))
+    password = ""
   }
 }
 

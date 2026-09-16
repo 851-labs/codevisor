@@ -20,4 +20,14 @@ public struct ScreenSharingVNCTarget: Codable, Equatable, Hashable, Sendable {
   public var credentialAccount: String { "\(host):\(port)" }
   /// The display id the viewer reducer selects; a VNC target has exactly one.
   public var displayId: String { "vnc:\(host):\(port)" }
+
+  /// The target a display id names, or nil for a machine display.
+  public init?(displayId: String) {
+    guard displayId.hasPrefix("vnc:"), let separator = displayId.lastIndex(of: ":"),
+      let port = UInt16(displayId[displayId.index(after: separator)...])
+    else { return nil }
+    let host = String(displayId[displayId.index(displayId.startIndex, offsetBy: 4)..<separator])
+    guard !host.isEmpty else { return nil }
+    self.init(host: host, port: port)
+  }
 }

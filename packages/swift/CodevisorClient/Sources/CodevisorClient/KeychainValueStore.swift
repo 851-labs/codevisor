@@ -8,6 +8,7 @@ import Security
 public enum KeychainCredentialServices {
   public static let productionMachine = "com.851labs.Codevisor.machine-token"
   public static let productionCloud = "com.851labs.Codevisor.cloud-session"
+  public static let productionVNC = "com.851labs.Codevisor.vnc-password"
 
   public static var machine: String {
     scopedService(productionService: productionMachine)
@@ -15,6 +16,11 @@ public enum KeychainCredentialServices {
 
   public static var cloud: String {
     scopedService(productionService: productionCloud)
+  }
+
+  /// VNC passwords, one item per "host:port" account.
+  public static var vnc: String {
+    scopedService(productionService: productionVNC)
   }
 
   private static func scopedService(productionService: String) -> String {
