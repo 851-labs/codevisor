@@ -75,6 +75,7 @@ export const defaultServerConfig = (
   restartDrainTimeoutMs: overrides.restartDrainTimeoutMs,
   sessionActivity: overrides.sessionActivity,
   screenSharing: overrides.screenSharing,
+  screenSharingVNC: overrides.screenSharingVNC,
   cloudDeviceId: overrides.cloudDeviceId,
   cloud: overrides.cloud
 })

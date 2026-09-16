@@ -1,3 +1,5 @@
+import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
+import type { ScreenSharingVNCConfig } from "./server-context-types.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import type { StartupReporter } from "./startup-progress.js"
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
@@ -23,6 +25,20 @@ export const nativeScreenSharing = (dataDir: string) =>
   process.platform === "darwin"
     ? (request: ScreenSharingRequest) => requestMacScreenSharing(dataDir, request)
     : undefined
+/// The native helper where it exists (macOS), else the operator's VNC
+/// desktop, else no screen sharing at all.
+export const screenSharingProvider = (
+  dataDir: string
+): {
+  readonly screenSharing: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
+  readonly screenSharingVNC: ScreenSharingVNCConfig | undefined
+} => {
+  const native = nativeScreenSharing(dataDir)
+  if (native !== undefined) return { screenSharing: native, screenSharingVNC: undefined }
+  const vnc = readScreenSharingVNC(dataDir)
+  if (vnc === undefined) return { screenSharing: undefined, screenSharingVNC: undefined }
+  return { screenSharing: vncScreenSharing(vnc), screenSharingVNC: vnc }
+}
 /// Background cache only: clients checking on the user's behalf pass
 /// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
 /// here made remote machines deny fresh releases for most of a day.

@@ -15,6 +15,9 @@ export const ScreenSharingReply = Schema.Struct({
   version: Schema.Literal(1),
   status: Schema.String,
   message: Schema.optional(Schema.String),
+  /// How the display is streamed: WebRTC from the native helper (absent or
+  /// "native") or RFB over the VNC socket route ("vnc").
+  provider: Schema.optional(Schema.Literals(["native", "vnc"])),
   displays: Schema.Array(
     Schema.Struct({
       id: Schema.String,

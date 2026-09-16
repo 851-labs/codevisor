@@ -79,6 +79,9 @@ export interface CodevisorServerConfig {
   /// server supplies a scoped idle-sleep assertion; other platforms/tests
   /// omit it.
   readonly screenSharing?: ((request: ScreenSharingRequest) => Promise<unknown>) | undefined
+  /// The loopback VNC server that stands in for a display on machines
+  /// without the native helper; the socket route splices clients onto it.
+  readonly screenSharingVNC?: ScreenSharingVNCConfig | undefined
   readonly sessionActivity?: SessionActivityController | undefined
   /// This machine's Codevisor Cloud device id (from `codevisor auth login`),
   /// advertised via /v1/info so clients can match this machine to its cloud
@@ -90,6 +93,11 @@ export interface CodevisorServerConfig {
   /// desktop app register this machine on the signed-in account via
   /// /v1/cloud/connect instead of requiring a separate `codevisor auth login`.
   readonly cloud?: CloudServerControl | undefined
+}
+
+export interface ScreenSharingVNCConfig {
+  readonly port: number
+  readonly name: string
 }
 
 export interface CloudServerControl {

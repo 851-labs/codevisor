@@ -37,13 +37,17 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var displays: [ServerScreenSharingDisplay]
   public var answer: String?
   public var connectivity: ServerScreenSharingConnectivity?
+  /// "vnc" when the machine streams over the VNC socket route; absent or
+  /// "native" for WebRTC from the native helper.
+  public var provider: String?
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,
-    connectivity: ServerScreenSharingConnectivity? = nil
+    connectivity: ServerScreenSharingConnectivity? = nil, provider: String? = nil
   ) {
     version = 1; self.status = status; self.message = message; self.displays = displays; self.answer = answer
     self.connectivity = connectivity
+    self.provider = provider
   }
 }
 
