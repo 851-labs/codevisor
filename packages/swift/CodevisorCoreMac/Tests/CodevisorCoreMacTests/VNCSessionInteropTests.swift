@@ -1,0 +1,34 @@
+import CodevisorScreenSharing
+import CodevisorTestSupport
+import CoreVideo
+import Foundation
+import ScreenSharingRFB
+import Testing
+@testable import CodevisorCoreMac
+
+/// The viewing session against a real server named by the environment
+/// (`VNC_TEST_HOST`, `VNC_TEST_PORT`, `VNC_TEST_PASSWORD`); skipped otherwise.
+@MainActor
+struct VNCSessionInteropTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))
+  func framesReachTheMailbox() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, outcome) = try await ScreenSharingViewerBackend.openVNC(
+      environment["VNC_TEST_HOST"]!, UInt16(environment["VNC_TEST_PORT"] ?? "5900")!, environment["VNC_TEST_PASSWORD"])
+    let session = VNCScreenSharingSession(client: client, parameters: outcome.parameters)
+    var transports: [String] = []
+    session.onConnectionChanged = { transports.append($0) }
+    let arrived = await awaitPolled(timeout: .seconds(20)) { session.frames.isHolding }
+    let snapshot = session.metrics.snapshot()
+    print(
+      "interop: arrived=\(arrived) counters=\(snapshot.counters) labels=\(snapshot.labels) failure=\(String(describing: session.failure)) transports=\(transports)"
+    )
+    if let frame = session.frames.take() {
+      print(
+        "interop: frame \(CVPixelBufferGetWidth(frame.pixelBuffer))x\(CVPixelBufferGetHeight(frame.pixelBuffer)) format=\(CVPixelBufferGetPixelFormatType(frame.pixelBuffer))"
+      )
+    }
+    session.close()
+    #expect(arrived)
+  }
+}

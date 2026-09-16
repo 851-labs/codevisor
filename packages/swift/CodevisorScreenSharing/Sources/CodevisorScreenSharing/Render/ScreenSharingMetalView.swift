@@ -215,10 +215,15 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
         )
       }
     }
-    guard let target else { metrics.increment("renderDrops"); return }
+    guard let target else {
+      metrics.increment("renderDrops")
+      if isNewFrame { coordinator.deferPresentation() }
+      return
+    }
     coordinator.reportSize(ScreenSharingMetalEncoder.videoSize(of: frame))
     guard let encoded = encoder.encode(textures, into: target, fitToWindow: fitToWindow) else {
       metrics.increment("renderDrops")
+      if isNewFrame { coordinator.deferPresentation() }
       return
     }
     // Submission boundary after successful encoding, immediately before commit —

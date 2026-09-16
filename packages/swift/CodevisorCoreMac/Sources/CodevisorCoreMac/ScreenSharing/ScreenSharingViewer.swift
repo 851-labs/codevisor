@@ -209,7 +209,8 @@ public struct ScreenSharingViewer {
         state.selectedDisplayId = target.displayId
         state.wantsConnection = true
         let account = target.credentialAccount
-        return .merge(
+        // The backend reads the password at connection time: the save must land first.
+        return .concatenate(
           .run { [credentials] _ in try? await credentials.save(account, password) },
           connect(&state))
 

@@ -117,6 +117,11 @@ package final class ScreenSharingRenderCoordinator {
   package var isHoldingCachedFrame: Bool { lastFrame != nil }
   private var lastFrame: ScreenSharingVideoFrame?
   private var needsRedraw = false
+  /// A new frame was selected but could not be drawn (no drawable yet, encoding refused): the next
+  /// draw of the cached frame still owes the product its presentation. Without this a one-shot
+  /// source — a VNC desktop that only repaints on change — renders on a later redraw but never
+  /// reports ready.
+  private var owedPresentation = false
   private var reportedSize = CGSize.zero
   private var requestDraw: @MainActor () -> Void = {}
   private let hop: Hop
@@ -186,10 +191,21 @@ package final class ScreenSharingRenderCoordinator {
     guard let frame = incoming ?? (needsRedraw ? lastFrame : nil) else { return nil }
     lastFrame = frame
     needsRedraw = false
+    let isNewFrame = incoming != nil || owedPresentation
+    owedPresentation = false
     if let audit, incoming != nil {
       audit.record(.selection, frame.deliveryAuditIdentity, rtpTimestamp: frame.rtpTimestamp)
     }
-    return (frame, incoming != nil)
+    return (frame, isNewFrame)
+  }
+
+  /// The frame `select()` just returned as new was dropped before submission.
+  /// Its presentation is owed: the cached frame is redrawn and that draw
+  /// counts as new. Nothing after `stop()`.
+  package func deferPresentation() {
+    guard !stopped else { return }
+    owedPresentation = true
+    setNeedsRedraw()
   }
 
   package func reportSize(_ size: CGSize) {
@@ -269,6 +285,7 @@ package final class ScreenSharingRenderCoordinator {
     guard let prepared else {
       metrics.increment("renderDrops")
       releaseSlot(occupancy: token)
+      if pending.isNewFrame { deferPresentation() }
       return
     }
     reportSize(prepared.videoSize)

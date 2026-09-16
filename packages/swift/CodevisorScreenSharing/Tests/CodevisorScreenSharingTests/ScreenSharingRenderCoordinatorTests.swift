@@ -385,4 +385,30 @@ extension ScreenSharingRenderCoordinatorTests {
     f.coordinator.stop()
     #expect(f.coordinator.onFramePresented == nil)
   }
+
+  /// A new frame dropped before submission (no drawable yet, encoding refused)
+  /// still owes its presentation: the redraw it schedules re-selects the cached
+  /// frame as new, exactly once; an ordinary redraw stays not-new; nothing after stop.
+  @Test func aDroppedNewFrameOwesItsPresentationToTheNextRedraw() throws {
+    let f = Fixture(renderOnArrival: false)
+    f.mailbox.put(frame(try makeBuffer(), rtp: 3))
+    let dropped = try #require(f.coordinator.select())
+    #expect(dropped.isNewFrame)
+    f.coordinator.deferPresentation()
+    let owed = try #require(f.coordinator.select())
+    #expect(owed.isNewFrame && owed.frame.rtpTimestamp == 3)
+    #expect(f.coordinator.select() == nil)
+    f.coordinator.setNeedsRedraw()
+    let plain = try #require(f.coordinator.select())
+    #expect(!plain.isNewFrame)
+    // A newer incoming frame supersedes an owed presentation: it is new on its own.
+    f.coordinator.deferPresentation()
+    f.mailbox.put(frame(try makeBuffer(), rtp: 4))
+    let newer = try #require(f.coordinator.select())
+    #expect(newer.isNewFrame && newer.frame.rtpTimestamp == 4)
+    #expect(f.coordinator.select() == nil)
+    f.coordinator.stop()
+    f.coordinator.deferPresentation()
+    #expect(f.coordinator.select() == nil)
+  }
 }
