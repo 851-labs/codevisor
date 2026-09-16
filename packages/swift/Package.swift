@@ -294,7 +294,7 @@ let package = Package(
     .target(
       name: "CodevisorCoreMac",
       dependencies: [
-        "CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput",
+        "CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput", "ScreenSharingRFB",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
@@ -355,6 +355,7 @@ let package = Package(
         "CodevisorCoreMac",
         "CodevisorCore",
         "ACPKit",
+        "ScreenSharingRFB",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],

@@ -41,14 +41,3 @@ extension Array where Element == UInt8 {
 
 func u32(_ value: UInt32) -> [UInt8] { var writer = RFBByteWriter(); writer.u32(value); return writer.bytes }
 func u16(_ value: UInt16) -> [UInt8] { var writer = RFBByteWriter(); writer.u16(value); return writer.bytes }
-
-/// Polls lock-protected server state; the loopback server is not observable.
-func eventually(timeout: Duration = .seconds(5), _ condition: @escaping @Sendable () -> Bool) async -> Bool {
-  let clock = ContinuousClock()
-  let deadline = clock.now + timeout
-  while clock.now < deadline {
-    if condition() { return true }
-    try? await Task.sleep(for: .milliseconds(5))
-  }
-  return condition()
-}

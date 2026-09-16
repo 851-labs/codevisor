@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 @testable import ScreenSharingRFB
@@ -67,7 +68,7 @@ struct RFBClientLoopbackTests {
     #expect(harness.client.framebuffer.width == 64)
     let first = await harness.nextUpdate()
     #expect(first?.update == RFBUpdate(rectangles: [RFBRectangle(x: 0, y: 0, width: 64, height: 48)], resized: false))
-    #expect(await eventually { harness.server.isRequestPending })
+    #expect(await awaitPolled { harness.server.isRequestPending })
     #expect(
       harness.server.received.prefix(3) == [
         .setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223]),
@@ -117,7 +118,7 @@ struct RFBClientLoopbackTests {
     harness.server.enqueue([.raw(RFBRectangle(x: 96, y: 16, width: 4, height: 4))])
     let painted = await harness.nextUpdate()
     #expect(painted?.pixel(x: 99, y: 19) == [7, 7, 7])
-    #expect(await eventually { harness.server.isRequestPending })
+    #expect(await awaitPolled { harness.server.isRequestPending })
     #expect(
       harness.server.received.last
         == .framebufferUpdateRequest(incremental: true, RFBRectangle(x: 0, y: 0, width: 100, height: 20)))
@@ -134,7 +135,7 @@ struct RFBClientLoopbackTests {
     try await harness.client.send(.keyEvent(keysym: 0x61, down: true))
     try await harness.client.send(.pointerEvent(buttons: 1, x: 5, y: 6))
     try await harness.client.send(.clientCutText("to server"))
-    #expect(await eventually { harness.server.received.contains(.clientCutText("to server")) })
+    #expect(await awaitPolled { harness.server.received.contains(.clientCutText("to server")) })
     #expect(harness.server.received.contains(.keyEvent(keysym: 0x61, down: true)))
     #expect(harness.server.received.contains(.pointerEvent(buttons: 1, x: 5, y: 6)))
   }
