@@ -66,7 +66,12 @@ mistakes; do not expand every change into a full product audit.
 
 ## Run the right environment
 
-Read the relevant skills and follow their current instructions:
+Read the relevant skills and follow their current instructions. Skills named
+here without a path (`computer-use`, `browser-use`, `attaching-files`) are
+user-level skills installed at `~/.agents/skills/<name>/SKILL.md`; the
+agent-specific directories (`~/.claude/skills`, `~/.codex/skills`) symlink
+there. They may not appear in the session's skill list, so read the file from
+that path before treating one as unavailable.
 
 - [run-dev](../run-dev/SKILL.md) owns development startup and runner lifecycle.
   Use `bun run dev` for both native apps, `bun run dev:macos` or
@@ -98,8 +103,9 @@ mocked responses for the integration being verified.
   observable conditions instead of relying on arbitrary sleeps.
 - Capture concise evidence of the result. A screenshot suits a visible state;
   a short recording suits an interaction, animation, or cross-device flow.
-  Inspect captured evidence before using it to support a conclusion. Use the
-  available `attaching-files` skill to share files in the final response.
+  Inspect captured evidence before using it to support a conclusion. Read the
+  `attaching-files` skill and follow it to show evidence in the final
+  response; creating or inspecting a file does not by itself share it.
 - If a scenario fails, record reproduction steps and expected versus actual
   behavior, then inspect relevant logs or state to narrow the cause. Compare
   against the base revision when needed to establish whether it is a regression.
