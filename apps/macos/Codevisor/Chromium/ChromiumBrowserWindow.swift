@@ -87,6 +87,8 @@ final class ChromiumBrowserWindow: NSWindowController, NSWindowDelegate, NSToolb
       ])
       host.setFrameSize(NSSize(width: 650, height: 32))
       item.view = host
+      // The hosted address bar already draws its own glass capsule.
+      item.isBordered = false
       item.visibilityPriority = .high
     } else {
       return nil

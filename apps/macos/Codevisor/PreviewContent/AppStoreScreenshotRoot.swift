@@ -34,9 +34,7 @@
               .navigationTitle("Daylight")
               .toolbar {
                 ChromiumBrowserNavigationControls(model: fixture.browser)
-                ToolbarItem(placement: .principal) {
-                  ChromiumBrowserToolbar(model: fixture.browser).frame(width: 560)
-                }
+                ChromiumBrowserAddressToolbarItem(model: fixture.browser, width: 560)
               }
           } else if scene == "conversation" {
             ChatScreen(

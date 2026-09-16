@@ -1,6 +1,21 @@
 import CodevisorUI
 import SwiftUI
 
+/// The address bar supplies its own glass; every SwiftUI host must hide the toolbar's extra backing.
+struct ChromiumBrowserAddressToolbarItem: ToolbarContent {
+  let model: ChromiumBrowserModel
+  var width: CGFloat?
+
+  var body: some ToolbarContent {
+    ToolbarItem(placement: .principal) {
+      ChromiumBrowserToolbar(model: model)
+        .id(model.paneId)
+        .frame(width: width)
+    }
+    .sharedBackgroundVisibility(.hidden)
+  }
+}
+
 struct ChromiumBrowserNavigationControls: ToolbarContent {
   @Bindable var model: ChromiumBrowserModel
 

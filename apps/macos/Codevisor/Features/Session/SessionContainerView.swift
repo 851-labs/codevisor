@@ -104,11 +104,7 @@ struct SessionContainerView: View {
       .toolbar {
         if let browser = activeBrowserModel {
           ChromiumBrowserNavigationControls(model: browser)
-          ToolbarItem(placement: .principal) {
-            ChromiumBrowserToolbar(model: browser)
-              .id(browser.paneId)
-          }
-          .sharedBackgroundVisibility(.hidden)
+          ChromiumBrowserAddressToolbarItem(model: browser)
         } else if let pane = activeScreenSharingPane, let model = pane.model {
           ScreenSharingToolbar(model: model)
         }
