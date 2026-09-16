@@ -25,9 +25,10 @@ struct VNCScreenSharingViewerBackendTests {
 
     init(configuration: RFBLoopbackServer.Configuration = .init(), password: String? = "secret") async throws {
       server = try await RFBLoopbackServer(configuration: configuration)
+      let port = server.port
       backend = .vnc(
-        target: ScreenSharingVNCTarget(host: "127.0.0.1", port: server.port), password: { password },
-        open: ScreenSharingViewerBackend.openVNC,
+        displayId: "vnc:127.0.0.1:\(port)",
+        open: { try await VNCConnection.open(host: "127.0.0.1", port: port, password: password) },
         makeSurface: { [self] _ in
           let surface = FakeSurface()
           surfaces.append(surface)
@@ -107,7 +108,9 @@ struct VNCScreenSharingViewerBackendTests {
     // A privileged port nothing listens on: a stopped loopback server's ephemeral port could be
     // reused by another test's server while this one connects.
     let backend = ScreenSharingViewerBackend.vnc(
-      target: ScreenSharingVNCTarget(host: "127.0.0.1", port: 1), password: { nil })
+      displayId: "vnc:127.0.0.1:1",
+      open: { try await VNCConnection.open(host: "127.0.0.1", port: 1, password: nil) },
+      makeSurface: { _ in FakeSurface() })
     let log = ScreenSharingEventLog()
     for await event in await backend.connect("vnc") { log.append(event) }
     expectNoDifference(log.events, [.ended("The VNC server refused the connection.")])

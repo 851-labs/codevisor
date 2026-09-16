@@ -3,6 +3,8 @@ import CodevisorScreenSharing
 import CodevisorTestSupport
 import CustomDump
 import Foundation
+import ScreenSharingRFBLoopback
+import ScreenSharingVNC
 import Testing
 @testable import CodevisorCoreMac
 
@@ -166,4 +168,34 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.sessions[0].closed)
   }
 
+  /// A machine whose capabilities name the VNC provider: the display is
+  /// opened through the socket route, no WebRTC session or start request.
+  @Test func aVNCProviderIsViewedOverTheSocketRouteWithoutSignaling() async throws {
+    let server = try await RFBLoopbackServer(configuration: .init())
+    defer { server.stop() }
+    let port = server.port
+    let opened = OpenedDisplays()
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(provider: "vnc"),
+      vncOpen: { display in
+        await opened.append(display)
+        return try await VNCConnection.open(host: "127.0.0.1", port: port, password: "secret")
+      })
+    _ = try await harness.backend.discover()
+    harness.connect("vnc:5901")
+    #expect(await awaitPolled { harness.log.endpoints.count == 1 })
+    #expect(await opened.displays == ["vnc:5901"])
+    #expect(harness.sessions.isEmpty)
+    harness.surfaces[0].present()
+    #expect(await awaitPolled { harness.log.events.count == 2 })
+    expectNoDifference(harness.log.events, [.opened(harness.log.endpoints[0]), .ready])
+    await harness.cancelConsumers()
+    #expect(harness.log.finished == 1)
+    #expect(await harness.transport.requests.map(\.operation) == [.capabilities])
+  }
+}
+
+actor OpenedDisplays {
+  private(set) var displays: [String] = []
+  func append(_ display: String) { displays.append(display) }
 }

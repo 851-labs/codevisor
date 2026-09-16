@@ -4,6 +4,7 @@ import CodevisorScreenSharing
 import ScreenSharingViewer
 import CodevisorTestSupport
 import Foundation
+import ScreenSharingRFB
 import Observation
 @testable import CodevisorCoreMac
 
@@ -119,17 +120,19 @@ actor SharingTransport: ServerRequestTransport {
   private let capabilitiesStatus: String
   private let heartbeatStatus: String
   private let restartStatus: String
+  private let provider: String?
   private(set) var requests: [ServerScreenSharingRequest] = []
   private(set) var stopWasCancelled = false
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
-    restartStatus: String = "connecting"
+    restartStatus: String = "connecting", provider: String? = nil
   ) {
     self.blockFirstStart = blockFirstStart
     self.capabilitiesStatus = capabilitiesStatus
     self.heartbeatStatus = heartbeatStatus
     self.restartStatus = restartStatus
+    self.provider = provider
   }
 
   func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -138,7 +141,7 @@ actor SharingTransport: ServerRequestTransport {
     let reply: ServerScreenSharingReply
     switch payload.operation {
     case .capabilities:
-      reply = .init(status: capabilitiesStatus, displays: [ScreenSharingViewerFixtures.display])
+      reply = .init(status: capabilitiesStatus, displays: [ScreenSharingViewerFixtures.display], provider: provider)
     case .start, .restart:
       let first = requests.filter { $0.operation == .start }.count == 1
       started.signal()
@@ -182,7 +185,12 @@ final class NativeBackendHarness {
   private(set) var backend: ScreenSharingViewerBackend!
   private var consumers: [Task<Void, Never>] = []
 
-  init(transport: SharingTransport = SharingTransport()) {
+  init(
+    transport: SharingTransport = SharingTransport(),
+    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen = { _ in
+      throw RFBError.transport("No VNC display in this test.")
+    }
+  ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
     let clock = clock
@@ -199,7 +207,8 @@ final class NativeBackendHarness {
         (session as? FakeMediaSession)?.surface = surface
         surfaces.append(surface)
         return surface
-      })
+      },
+      vncOpen: vncOpen)
   }
 
   /// Consumes one connection's events into the log until the stream ends or the consumer is cancelled.

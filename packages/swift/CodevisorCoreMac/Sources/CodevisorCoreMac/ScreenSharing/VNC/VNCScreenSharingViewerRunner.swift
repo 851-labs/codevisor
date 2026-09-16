@@ -1,62 +1,41 @@
 import CodevisorClient
 import CodevisorScreenSharing
-import ScreenSharingViewer
 import Foundation
 import ScreenSharingRFB
 import ScreenSharingVNC
+import ScreenSharingViewer
 
 extension ScreenSharingViewerBackend {
-  /// A standard VNC server. Discovery performs a handshake to learn the
-  /// desktop's name and size (and to surface a bad password early); a
+  typealias VNCOpen = @Sendable () async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
+
+  /// A VNC server reached through `open` (the rig's loopback server in
+  /// tests; the product goes through the native backend's provider switch).
+  /// Discovery performs a handshake to learn the desktop's name and size; a
   /// connection is replaced up to three times after video was seen and the
   /// socket dropped, and ends with the server's own message otherwise.
   @MainActor
-  public static func vnc(target: ScreenSharingVNCTarget, password: @escaping @Sendable () async -> String?) -> Self {
-    vnc(
-      target: target, password: password, open: openVNC,
-      makeSurface: { session in
-        try ScreenSharingVideoSurface(
-          mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())
-      })
-  }
-
-  typealias VNCOpen =
-    @Sendable (_ host: String, _ port: UInt16, _ password: String?) async throws -> (
-      RFBClient, RFBHandshake.Outcome
-    )
-
-  /// TCP, handshake and authentication; the client is closed on any failure.
-  static let openVNC: VNCOpen = { host, port, password in
-    let (client, outcome) = try await VNCConnection.open(host: host, port: port, password: password)
-    return (client, outcome)
-  }
-
-  @MainActor
   static func vnc(
-    target: ScreenSharingVNCTarget, password: @escaping @Sendable () async -> String?, open: @escaping VNCOpen,
+    displayId: String, open: @escaping VNCOpen,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   ) -> Self {
-    let runner = VNCScreenSharingViewerRunner(target: target, password: password, open: open, makeSurface: makeSurface)
+    let runner = VNCScreenSharingViewerRunner(displayId: displayId, open: open, makeSurface: makeSurface)
     return Self(connect: { _ in await runner.connect() }, discover: { try await runner.discover() })
   }
 }
 
 /// One pane's VNC connections, one after another, mirroring the native runner's shape.
 @MainActor
-private final class VNCScreenSharingViewerRunner {
-  private let target: ScreenSharingVNCTarget
-  private let password: @Sendable () async -> String?
+final class VNCScreenSharingViewerRunner {
+  private let displayId: String
   private let open: ScreenSharingViewerBackend.VNCOpen
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private var previous: Task<Void, Never>?
 
   init(
-    target: ScreenSharingVNCTarget, password: @escaping @Sendable () async -> String?,
-    open: @escaping ScreenSharingViewerBackend.VNCOpen,
+    displayId: String, open: @escaping ScreenSharingViewerBackend.VNCOpen,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   ) {
-    self.target = target
-    self.password = password
+    self.displayId = displayId
     self.open = open
     self.makeSurface = makeSurface
   }
@@ -64,12 +43,12 @@ private final class VNCScreenSharingViewerRunner {
   func discover() async throws -> [ServerScreenSharingDisplay] {
     await previous?.value
     try Task.checkCancellation()
-    let (client, outcome) = try await open(target.host, target.port, await password())
+    let (client, outcome) = try await open()
     client.close()
     let parameters = outcome.parameters
     return [
       ServerScreenSharingDisplay(
-        id: target.displayId, name: parameters.name.isEmpty ? target.displayName : parameters.name,
+        id: displayId, name: parameters.name.isEmpty ? "VNC Desktop" : parameters.name,
         width: parameters.width, height: parameters.height)
     ]
   }
@@ -111,7 +90,7 @@ private final class VNCScreenSharingViewerRunner {
     let client: RFBClient
     let outcome: RFBHandshake.Outcome
     do {
-      (client, outcome) = try await open(target.host, target.port, await password())
+      (client, outcome) = try await open()
     } catch {
       return Task.isCancelled ? .cancelled : .ended(error.localizedDescription)
     }

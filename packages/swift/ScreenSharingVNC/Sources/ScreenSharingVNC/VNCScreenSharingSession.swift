@@ -115,12 +115,22 @@ public final class VNCScreenSharingSession: ScreenSharingViewingSession {
 /// TCP, handshake and authentication against a VNC server; the client is
 /// closed on any failure. The parameters name and size the desktop.
 public enum VNCConnection {
+  /// TCP, handshake and authentication; the client is closed on any failure.
   public static func open(
     host: String, port: UInt16, password: String?
   ) async throws -> (
     client: RFBClient, outcome: RFBHandshake.Outcome
   ) {
-    let transport = try await RFBNetworkTransport.connect(host: host, port: port)
+    try await open(transport: try await RFBNetworkTransport.connect(host: host, port: port), password: password)
+  }
+
+  /// Handshake and authentication over a connected transport; the client
+  /// (and with it the transport) is closed on any failure.
+  public static func open(
+    transport: any RFBTransport, password: String?
+  ) async throws -> (
+    client: RFBClient, outcome: RFBHandshake.Outcome
+  ) {
     let client = try RFBClient(transport: transport)
     do {
       return (client, try await client.connect(password: password))

@@ -36,6 +36,21 @@ toolbar. VNC is how a Linux VPS gets there and is never shown to the user.
    archive on the box from the working tree. Tophat: open the VPS workspace in
    the app, Screen Sharing, stream.
 
+## Status
+
+- Stage 1 landed (de6bb786) and verified in the dev app: a new tab connects
+  to the Built-in display at once; the toolbar's Display menu lists the Mac's
+  displays.
+- Stage 2 landed (93656285, efc41831, 32b177b8, bf1c74c9): the rig window
+  with Raw VNC and Loopback server scenarios; the pane no longer takes a VNC
+  target, password or preference.
+- Stage 3 landed (4f936eca): `apps/server/src/routes/screen-sharing-vnc.ts`
+  with tests for the config file, `capabilities` and the socket splice.
+- Stage 4 landed: `RFBWebSocketTransport`, `screenSharingVNCSocket` on the
+  client, and the native backend's provider switch, tested against the
+  loopback server.
+- Stage 5 is next.
+
 ## Not in scope
 
 Managing the desktop from `codevisor setup`, multiple VNC displays, cursor

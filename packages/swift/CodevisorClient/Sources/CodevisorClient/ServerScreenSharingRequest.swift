@@ -72,11 +72,25 @@ extension CodevisorServerClient {
   public func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
     try await send("/v1/screen-sharing", method: "POST", body: request)
   }
+
+  /// The RFB byte stream behind a "vnc:" display, over the machine-authenticated socket route.
+  public func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting {
+    var query = URLComponents()
+    query.queryItems = [URLQueryItem(name: "displayId", value: displayId)]
+    let path = "/v1/screen-sharing/vnc/socket?\(query.percentEncodedQuery ?? "")"
+    var request = URLRequest(url: try websocketURL(for: path))
+    applyAuthorization(to: &request)
+    return webSocketTransport.connect(request, maximumMessageSize: 1 << 20)
+  }
 }
 
 public extension CodevisorServerClienting {
   func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply {
     throw CodevisorServerClientError.httpStatus(
       501, "Screen Sharing requires an updated Codevisor app on the host Mac.")
+  }
+
+  func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting {
+    throw CodevisorServerClientError.httpStatus(501, "This machine has no VNC display.")
   }
 }

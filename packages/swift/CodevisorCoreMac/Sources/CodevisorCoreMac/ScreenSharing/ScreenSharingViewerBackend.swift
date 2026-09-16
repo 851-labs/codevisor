@@ -1,8 +1,10 @@
 import CodevisorClient
 import CodevisorScreenSharing
-import ScreenSharingViewer
 import ComposableArchitecture
 import Foundation
+import ScreenSharingRFB
+import ScreenSharingVNC
+import ScreenSharingViewer
 
 /// What a backend tells the viewer about one connection attempt, in order.
 /// `opened` may repeat after `reconnecting`; `ended` is terminal and the stream
@@ -20,8 +22,9 @@ public enum ScreenSharingViewerEvent: Equatable, Sendable {
 }
 
 /// The seam between the viewer feature and whatever negotiates media. The
-/// native implementation talks to the Codevisor server; a future VNC
-/// implementation would open a socket. The reducer never learns which.
+/// native implementation talks to the Codevisor server, which either streams
+/// a Mac's display over WebRTC or splices a "vnc:" display's RFB bytes over a
+/// socket; the reducer never learns which.
 /// Installed per pane with `withDependencies`: the native backend needs the
 /// pane's server client and identity, so there is no process-wide live value.
 @DependencyClient
@@ -41,7 +44,8 @@ extension ScreenSharingViewerBackend {
   /// The shipped backend: capabilities, one-shot SDP over authenticated
   /// signaling, 8 s heartbeats, lease-bound media replacement after network
   /// loss (three restarts with the same viewer id), and an authenticated stop
-  /// that survives cancellation.
+  /// that survives cancellation. A machine whose capabilities name the "vnc"
+  /// provider is viewed over the server's VNC socket route instead.
   @MainActor
   public static func native(client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID) -> Self {
     native(
@@ -50,19 +54,27 @@ extension ScreenSharingViewerBackend {
       makeSurface: { session in
         try ScreenSharingVideoSurface(
           mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())
+      },
+      vncOpen: { displayId in
+        let socket = try client.screenSharingVNCSocket(displayId: displayId)
+        return try await VNCConnection.open(transport: RFBWebSocketTransport(socket: socket), password: nil)
       })
   }
+
+  /// Opens the RFB connection behind a "vnc:" display id.
+  typealias NativeVNCOpen = @Sendable (String) async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
 
   @MainActor
   static func native(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
-    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
+    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
+    vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") }
   ) -> Self {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface)
+      makeSurface: makeSurface, vncOpen: vncOpen)
     return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
   }
 }
@@ -78,13 +90,19 @@ private final class NativeScreenSharingViewerRunner {
   private let sleep: @Sendable (Duration) async throws -> Void
   private let makeSession: @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
+  private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
   private var previous: Task<Void, Never>?
+  /// The provider the last capabilities reply named; "vnc:" display ids
+  /// are routed to the VNC runner even before discovery has run.
+  private var provider: String?
+  private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
 
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
-    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
+    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
+    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen
   ) {
     self.client = client
     self.workspaceId = workspaceId
@@ -92,6 +110,7 @@ private final class NativeScreenSharingViewerRunner {
     self.sleep = sleep
     self.makeSession = makeSession
     self.makeSurface = makeSurface
+    self.vncOpen = vncOpen
   }
 
   func discover() async throws -> [ServerScreenSharingDisplay] {
@@ -101,11 +120,13 @@ private final class NativeScreenSharingViewerRunner {
     guard reply.version == 1, ["available", "busy"].contains(reply.status) else {
       throw ViewerError(reply.message ?? "Screen Sharing is unavailable on this Mac.")
     }
+    provider = reply.provider
     return reply.displays
   }
 
   func connect(_ display: String) -> AsyncStream<ScreenSharingViewerEvent> {
-    AsyncStream { continuation in
+    if provider == "vnc" || display.hasPrefix("vnc:") { return vncRunner(for: display).connect() }
+    return AsyncStream { continuation in
       let pending = previous
       let run = Task { @MainActor [self] in
         await pending?.value
@@ -117,6 +138,16 @@ private final class NativeScreenSharingViewerRunner {
       previous = run
       continuation.onTermination = { _ in run.cancel() }
     }
+  }
+
+  /// One VNC runner per display keeps its connections in sequence.
+  private func vncRunner(for display: String) -> VNCScreenSharingViewerRunner {
+    if let runner = vncRunners[display] { return runner }
+    let open = vncOpen
+    let runner = VNCScreenSharingViewerRunner(
+      displayId: display, open: { try await open(display) }, makeSurface: makeSurface)
+    vncRunners[display] = runner
+    return runner
   }
 
   private enum Outcome { case lost, ended(String), cancelled }
