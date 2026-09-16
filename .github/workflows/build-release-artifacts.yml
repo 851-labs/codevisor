@@ -193,6 +193,7 @@ jobs:
         run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
       - name: Run Swift package tests on Intel
         id: swift-tests
+        timeout-minutes: 30
         run: bun run swift:test
       - name: Collect recent Swift test crash reports
         if: failure() && steps.swift-tests.conclusion == 'failure'

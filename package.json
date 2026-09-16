@@ -38,7 +38,7 @@
     "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "screen-sharing:probe": "bun scripts/screen-sharing-probe.mjs",
     "screen-sharing:rig": "bun scripts/screen-sharing-rig.mjs",
-    "swift:test": "swift test --package-path packages/swift && swift test --package-path apps/screen-sharing-rig",
+    "swift:test": "node scripts/test-swift.mjs",
     "swift:test:macos-transcript": "bun scripts/test-macos-transcript.mjs",
     "swift:test:macos-composer": "bun scripts/test-macos-composer.mjs",
     "swift:test:ios-navigation": "bun scripts/test-ios-navigation.mjs",

@@ -76,6 +76,9 @@ extension ScreenSharingSourceIdleTests {
     audit.decoded(sourceTimestampNs: 210)
     clock.advance(by: .milliseconds(100))
     await settled.wait(for: 9)
+    // The report precedes registration of the extended sleep. Wait for that
+    // registration before cancelling it, so the replacement is sleep ten.
+    await clock.waitForSleep(.milliseconds(100), count: 9)
     verifier.noticed(latestTimestampNs: 310)
     await clock.waitForSleep(.milliseconds(100), count: 10)
     #expect(clock.pendingCount == 1)
