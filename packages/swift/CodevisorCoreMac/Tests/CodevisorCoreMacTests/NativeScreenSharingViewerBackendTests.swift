@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorScreenSharing
 import CodevisorTestSupport
+import CustomDump
 import Foundation
 import Testing
 @testable import CodevisorCoreMac
@@ -25,17 +26,17 @@ struct NativeScreenSharingViewerBackendTests {
     harness.connect()
     await harness.clock.waitForSleep(.seconds(8))
     let endpoint = try #require(harness.log.endpoints.first)
-    #expect(harness.log.events == [.opened(endpoint)])
+    expectNoDifference(harness.log.events, [.opened(endpoint)])
     #expect(harness.sessions[0].offers == 1 && harness.sessions[0].answers == ["fixture answer"])
     harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
-    #expect(harness.log.events == [.opened(endpoint), .ready])
+    expectNoDifference(harness.log.events, [.opened(endpoint), .ready])
     await harness.cancelConsumers()
     await harness.transport.stopped.wait()
     #expect(harness.sessions[0].closed && harness.surfaces[0].stopped)
     #expect(harness.clock.pendingCount == 0)
     let operations = await harness.transport.requests.map(\.operation)
-    #expect(operations == [.capabilities, .start, .stop])
+    expectNoDifference(operations, [.capabilities, .start, .stop])
   }
 
   @Test func networkLossAfterVideoReplacesMediaWithinTheSameSession() async throws {
@@ -47,7 +48,8 @@ struct NativeScreenSharingViewerBackendTests {
     let endpoints = harness.log.endpoints
     try #require(endpoints.count == 2)
     #expect(endpoints[0] != endpoints[1])
-    #expect(harness.log.events == [.opened(endpoints[0]), .ready, .reconnecting, .opened(endpoints[1]), .ready])
+    expectNoDifference(
+      harness.log.events, [.opened(endpoints[0]), .ready, .reconnecting, .opened(endpoints[1]), .ready])
     #expect(harness.sessions[0].closed && !harness.sessions[1].closed)
     let requests = await harness.transport.requests
     let start = try #require(requests.first { $0.operation == .start })
@@ -164,26 +166,4 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.sessions[0].closed)
   }
 
-  @Test func aReleasedControlLeaseIsReportedAsAnEvent() async throws {
-    let harness = NativeBackendHarness()
-    harness.connect()
-    await awaitObserved { harness.log.events.contains(.ready) }
-    let endpoint = try #require(harness.log.endpoints.first)
-    endpoint.control.requestWhenAvailable()
-    let channel = harness.sessions[0].controlChannel
-    guard case .request(let request)? = channel.sent.first else {
-      Issue.record("Missing control request"); await harness.cancelConsumers(); return
-    }
-    let lease = UUID()
-    channel.deliver(.grant(request: request, lease: lease))
-    #expect(endpoint.control.state == .controlling && harness.surfaces[0].inputActive)
-    channel.deliver(.revoked(lease: UUID(), reason: "Someone else's lease"))
-    #expect(endpoint.control.state == .controlling && !harness.log.events.contains(.controlReleased))
-    channel.deliver(.revoked(lease: lease, reason: "Host ended control"))
-    #expect(endpoint.control.state == .viewing && !harness.surfaces[0].inputActive)
-    await awaitObserved { harness.log.events.count >= 3 }
-    #expect(harness.log.events == [.opened(endpoint), .ready, .controlReleased])
-    await harness.cancelConsumers()
-    await harness.transport.stopped.wait()
-  }
 }

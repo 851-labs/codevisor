@@ -6,44 +6,6 @@ import Testing
 
 @MainActor
 struct ScreenSharingControlTests {
-  @Test func initialRequestWaitsForAvailabilityAndDoesNotRetryADenial() throws {
-    var sent: [ScreenSharingControlMessage] = []
-    let viewer = ScreenSharingViewerControl(
-      now: { 0 },
-      send: {
-        sent.append($0); return true
-      })
-    viewer.requestWhenAvailable()
-    viewer.setAvailable(false)
-    #expect(sent.isEmpty)
-    viewer.setAvailable(true)
-    viewer.setAvailable(true)
-    #expect(sent.count == 1 && viewer.state == .requesting)
-    guard case .request(let request) = try #require(sent.first) else { Issue.record("Missing request"); return }
-    viewer.receive(.denied(request: request, reason: "Accessibility required"))
-    #expect(viewer.state == .viewing && viewer.message == "Accessibility required")
-    viewer.setAvailable(false)
-    viewer.setAvailable(true)
-    viewer.tick()
-    #expect(sent.count == 1 && viewer.state == .viewing)
-    viewer.request()
-    #expect(sent.count == 2 && viewer.state == .requesting)
-    viewer.release()
-  }
-
-  @Test func releaseCancelsAnInitialRequestBeforeTheChannelOpens() {
-    var sent: [ScreenSharingControlMessage] = []
-    let viewer = ScreenSharingViewerControl(
-      now: { 0 },
-      send: {
-        sent.append($0); return true
-      })
-    viewer.requestWhenAvailable()
-    viewer.release()
-    viewer.setAvailable(true)
-    #expect(sent.isEmpty && viewer.state == .viewing)
-  }
-
   @Test func leaseExpiryReleasesAllHeldInputAndRejectsDelayedPackets() throws {
     let fixture = HostControlFixture()
     let lease = try fixture.acquire()
@@ -128,54 +90,6 @@ struct ScreenSharingControlTests {
     #expect(fixture.host.lease == nil)
     #expect(fixture.events.count == 2)
     #expect(fixture.host.heldButtons.isEmpty)
-  }
-
-  @Test func cancelledAndTimedOutRequestsReleaseLateGrants() throws {
-    var time = 0.0
-    var sent: [ScreenSharingControlMessage] = []
-    let viewer = ScreenSharingViewerControl(
-      now: { time },
-      send: {
-        sent.append($0); return true
-      })
-    viewer.setAvailable(true)
-    viewer.request()
-    guard case .request(let request) = try #require(sent.last) else { Issue.record("Missing request"); return }
-    viewer.release()
-    let lease = UUID()
-    viewer.receive(.grant(request: request, lease: lease))
-    #expect(viewer.state == .viewing)
-    #expect(sent.last == .release(lease: lease))
-    viewer.request()
-    guard case .request(let second) = try #require(sent.last) else { Issue.record("Missing request"); return }
-    time = 3
-    viewer.receive(.grant(request: second, lease: lease))
-    viewer.tick()
-    #expect(viewer.state == .viewing)
-    #expect(viewer.message?.contains("did not grant") == true)
-  }
-
-  @Test func congestionStopsViewerInputAndRequiresExplicitControlAgain() throws {
-    var writable = true
-    var sent: [ScreenSharingControlMessage] = []
-    let viewer = ScreenSharingViewerControl(send: {
-      sent.append($0); return writable
-    })
-    viewer.setAvailable(true); viewer.request()
-    guard case .request(let request) = try #require(sent.last) else { Issue.record("Missing request"); return }
-    let lease = UUID()
-    viewer.receive(.grant(request: request, lease: lease))
-    #expect(viewer.state == .controlling)
-    viewer.input(.move(.init(x: 0, y: 0), modifiers: 0))
-    #expect(sent.last == .input(lease: lease, sequence: 1, event: .move(.init(x: 0, y: 0), modifiers: 0)))
-    writable = false
-    viewer.tick()
-    #expect(viewer.state == .viewing)
-    let count = sent.count
-    viewer.input(.key(code: 0, down: true, repeatKey: false, modifiers: 0))
-    writable = true; viewer.tick()
-    #expect(sent.count == count)
-    #expect(viewer.state == .viewing)
   }
 
   @Test func quartzMappingUsesGlobalPointsAndProducesNativeDragAndReleaseEvents() throws {

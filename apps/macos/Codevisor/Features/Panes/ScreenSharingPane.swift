@@ -34,7 +34,7 @@ final class ScreenSharingPane: Pane {
       return Store(initialState: ScreenSharingViewer.State(preferences: descriptor.screenSharing ?? .init())) {
         ScreenSharingViewer()
       } withDependencies: {
-        $0.screenSharingViewerBackend = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
+        $0[ScreenSharingViewerBackend.self] = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
       }
     }
     guard let store else { return }
@@ -50,20 +50,20 @@ final class ScreenSharingPane: Pane {
     }
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
-  func focus() { if store?.endpoint?.control.state != .controlling { onFocus?() } }
-  func visibilityChanged(_ visible: Bool) { store?.send(.setVisible(visible)) }
-  func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.applyPreferences(preferences)) }
+  func focus() { if store?.lease?.phase != .controlling { onFocus?() } }
+  func visibilityChanged(_ visible: Bool) { store?.send(visible ? .paneAppeared : .paneDisappeared) }
+  func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }
   func willDelete() async {
     mounts = []
-    await store?.send(.close).finish()
+    await store?.send(.paneClosed).finish()
   }
   func detach() {
     mounts = []
-    store?.send(.setVisible(false))
+    store?.send(.paneDisappeared)
   }
   func mounted(_ token: UUID) {
     mounts.insert(token)
-    store?.send(.setVisible(true))
+    store?.send(.paneAppeared)
   }
   func unmounted(_ token: UUID) {
     mounts.remove(token)
@@ -71,7 +71,7 @@ final class ScreenSharingPane: Pane {
     // Coalesce that handoff; a true navigation-away has no replacement mount.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.mounts.isEmpty else { return }
-      self.store?.send(.setVisible(false))
+      self.store?.send(.paneDisappeared)
     }
   }
 }
@@ -113,9 +113,9 @@ private struct ScreenSharingPaneView: View {
               Autocomplete.Action(
                 "\(display.name) · \(display.width) × \(display.height)", id: display.id, systemImage: "display"
               ) {
-                store.send(.selectDisplay(display.id))
+                store.send(.displaySelected(display.id))
                 // Selecting a display already reconnects a previously connected pane.
-                if store.phase == .ready { store.send(.connect) }
+                if store.phase == .ready { store.send(.connectButtonTapped) }
               }
             }
           }
@@ -133,7 +133,7 @@ private struct ScreenSharingPaneView: View {
                 Text(message).foregroundStyle(.secondary)
                   .multilineTextAlignment(.center).frame(maxWidth: 380)
               }
-              Button("Retry") { store.send(.refresh) }
+              Button("Retry") { store.send(.retryButtonTapped) }
               if pane.isLocal {
                 Button("Screen Recording Settings") {
                   if let url = URL(
@@ -161,7 +161,7 @@ private struct ScreenSharingPaneView: View {
 
   private func connection(_ store: StoreOf<ScreenSharingViewer>) -> some View {
     VStack(spacing: 0) {
-      if let message = store.endpoint?.control.message {
+      if let message = store.lease?.message {
         Text(message).font(.caption).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }

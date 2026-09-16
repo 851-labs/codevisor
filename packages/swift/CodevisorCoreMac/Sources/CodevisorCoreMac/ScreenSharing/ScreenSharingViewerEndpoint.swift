@@ -21,25 +21,26 @@ protocol ScreenSharingViewerSurface: AnyObject {
   func stop()
 }
 
-/// One connected viewing endpoint as the pane sees it, for any backend: the
-/// surface rendering the session's frames, the control lease driven over the
-/// session's control channel, the explicit clipboard transfer, and the
-/// diagnostics sampled from the session. Equal by identity — the reducer keeps
-/// the live endpoint in state and replaces it whole on reconnection.
+/// One connected viewing endpoint, for any backend: the surface rendering the
+/// session's frames, the control channel and input forwarding the lease
+/// reducer drives through `ScreenSharingEndpointClient`, the explicit
+/// clipboard transfer, and the diagnostics sampled from the session. Equal by
+/// identity — the reducer keeps the live endpoint in state for the view and
+/// addresses it by `id` for everything else.
 ///
-/// Control, clipboard and diagnostics stay `@Observable` objects: they are
-/// data-plane state (1 Hz ticks, input events, chunk transfers) that the pane
-/// observes directly rather than routing through actions.
+/// Clipboard and diagnostics stay `@Observable` objects: they are data-plane
+/// state (chunk transfers, 1 Hz samples) that the pane observes directly.
 @MainActor
-public final class ScreenSharingViewerEndpoint: Equatable {
+public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
+  public typealias ID = UUID
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
+  public let id = ID()
   public let capabilities: ScreenSharingCapabilities
   /// The lease-based control protocol is available on this session.
   public var supportsControl: Bool { capabilities.contains(.control) }
   /// The explicit text clipboard protocol is available on this session.
   public var supportsClipboard: Bool { capabilities.contains(.clipboard) }
   public var view: NSView { surface.view }
-  public let control: ScreenSharingViewerControl
   public let clipboard: ScreenSharingViewerClipboard?
   public let diagnostics = ScreenSharingViewerDiagnostics()
   public var failure: String? { session.failure }
@@ -52,53 +53,52 @@ public final class ScreenSharingViewerEndpoint: Equatable {
   var onReady: (() -> Void)?
   let session: any ScreenSharingViewingSession
   private let surface: any ScreenSharingViewerSurface
-  private var controlTask: Task<Void, Never>?
+  private let channel: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)?
+  private let forwarder: ScreenSharingInputForwarder
+  private var subscribers: [UUID: AsyncStream<ScreenSharingControlEvent>.Continuation] = [:]
+  private var tickTask: Task<Void, Never>?
   private var diagnosticsTask: Task<Void, Never>?
   private var presented = false
+  private var reportedFailure = false
   private var closed = false
 
   init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface) {
     self.session = session
     self.surface = surface
     capabilities = session.capabilities
-    if let channel = session.control {
-      let control = ScreenSharingViewerControl(send: { [weak channel] in channel?.send($0) ?? false })
-      channel.onMessage = { [weak control] in control?.receive($0) }
-      channel.onAvailabilityChanged = { [weak control] in control?.setAvailable($0) }
-      control.setAvailable(channel.isAvailable)
-      self.control = control
-    } else {
-      // No control protocol on this session: the lease can never become available.
-      control = ScreenSharingViewerControl(send: { _ in false })
-    }
+    channel = session.control
+    let channel = session.control
+    forwarder = ScreenSharingInputForwarder(send: { [weak channel] in channel?.send($0) ?? false })
     clipboard = session.clipboard.map { ScreenSharingViewerClipboard(channel: $0) }
-    control.onActiveChanged = { [weak self] active in
-      guard let self else { return }
-      if active {
-        if !self.surface.beginInput() { self.control.release(reason: self.surface.inputFailureMessage) }
-      } else {
-        self.surface.endInput()
-      }
+    channel?.onMessage = { [weak self] in self?.emit(.message($0)) }
+    channel?.onAvailabilityChanged = { [weak self] in self?.emit(.availability($0)) }
+    forwarder.onLost = { [weak self] reason in
+      self?.surface.endInput()
+      self?.emit(.inputLost(reason))
     }
-    surface.onInput = { [weak control] in control?.input($0) }
-    surface.onInputReleased = { [weak control, weak surface] in control?.release(reason: surface?.inputFailureMessage) }
+    surface.onInput = { [weak forwarder] in forwarder?.forward($0) }
+    surface.onInputReleased = { [weak self] in
+      guard let self else { return }
+      self.forwarder.end()
+      self.emit(.inputLost(self.surface.inputFailureMessage))
+    }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }
       self.presented = true
       self.onReady?()
     }
-    controlTask = Task { [weak self] in
+    tickTask = Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
-        self?.clipboard?.tick()
-        if self?.failure != nil {
-          self?.control.release(reason: "Video decoding failed. Reconnect before controlling.")
-        } else {
-          self?.control.tick()
+        guard let self else { return }
+        self.clipboard?.tick()
+        if self.session.failure != nil, !self.reportedFailure {
+          self.reportedFailure = true
+          self.emit(.sessionFailed("Video decoding failed. Reconnect before controlling."))
         }
       }
     }
-    // Statistics callbacks must never delay input lease heartbeats.
+    // Statistics callbacks must never delay the lease's heartbeats, which run on their own timer.
     diagnosticsTask = Task { [weak self] in
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -111,19 +111,65 @@ public final class ScreenSharingViewerEndpoint: Equatable {
         }
       }
     }
+    ScreenSharingEndpointRegistry.shared.register(self)
+  }
+
+  // MARK: Control plane, addressed through ScreenSharingEndpointClient
+
+  /// A stream that opens with the channel's current availability and then
+  /// carries every control event until the endpoint closes.
+  func controlEvents() -> AsyncStream<ScreenSharingControlEvent> {
+    let (stream, continuation) = AsyncStream<ScreenSharingControlEvent>.makeStream()
+    guard !closed else {
+      continuation.finish()
+      return stream
+    }
+    let token = UUID()
+    subscribers[token] = continuation
+    continuation.onTermination = { [weak self] _ in
+      Task { @MainActor in self?.subscribers[token] = nil }
+    }
+    continuation.yield(.availability(channel?.isAvailable ?? false))
+    return stream
+  }
+
+  @discardableResult
+  func sendControl(_ message: ScreenSharingControlMessage) -> Bool { channel?.send(message) ?? false }
+
+  /// Begins capturing input on the surface and forwarding it under `lease`;
+  /// returns the surface's failure message when capture is refused.
+  func beginInput(lease: UUID) -> String? {
+    guard surface.beginInput() else { return surface.inputFailureMessage }
+    forwarder.begin(lease: lease)
+    return nil
+  }
+
+  func endInput() {
+    forwarder.end()
+    surface.endInput()
   }
 
   public func fit(_ enabled: Bool) { surface.fitToWindow = enabled }
 
-  /// Terminal and idempotent: releases input, stops the ticks and the
-  /// surface, then closes the session (which clears its mailbox and channels).
+  private func emit(_ event: ScreenSharingControlEvent) {
+    guard !closed else { return }
+    for continuation in subscribers.values { continuation.yield(event) }
+  }
+
+  /// Terminal and idempotent: releases a held lease on the wire, stops input,
+  /// the ticks and the surface, ends every control-event stream, then closes
+  /// the session (which clears its mailbox and channels).
   func close() {
     guard !closed else { return }
     closed = true
+    ScreenSharingEndpointRegistry.shared.unregister(id)
+    if let lease = forwarder.lease { _ = channel?.send(.release(lease: lease)) }
+    endInput()
     clipboard?.close()
-    control.release()
-    controlTask?.cancel(); controlTask = nil
+    tickTask?.cancel(); tickTask = nil
     diagnosticsTask?.cancel(); diagnosticsTask = nil
+    for continuation in subscribers.values { continuation.finish() }
+    subscribers = [:]
     let metrics = session.metrics.snapshot()
     Self.logger.info(
       "Viewer ended: \(String(describing: metrics.counters), privacy: .public), \(String(describing: metrics.labels), privacy: .public)"

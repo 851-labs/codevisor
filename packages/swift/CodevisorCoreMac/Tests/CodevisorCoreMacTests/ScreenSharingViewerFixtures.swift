@@ -89,11 +89,14 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
   var inputFailureMessage: String?
+  /// Whether `beginInput` succeeds; false models a refused focus or keyboard capture.
+  var beginInputSucceeds = true
   private(set) var inputActive = false
   private(set) var presentations = 0
   private(set) var stopped = false
 
   func beginInput() -> Bool {
+    guard beginInputSucceeds else { return false }
     inputActive = true
     return true
   }

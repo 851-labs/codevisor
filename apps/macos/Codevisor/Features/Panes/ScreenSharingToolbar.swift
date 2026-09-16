@@ -8,16 +8,14 @@ import SwiftUI
 /// the connection and control state across toolbar and menu updates.
 /// Controls that need a capability the connected backend lacks are not shown.
 struct ScreenSharingToolbar: ToolbarContent {
-  let store: StoreOf<ScreenSharingViewer>
+  @Bindable var store: StoreOf<ScreenSharingViewer>
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
       if store.endpoint?.supportsControl != false { controlActions }
     }
     ToolbarItem(id: "screenSharing.size", placement: .primaryAction) {
-      Picker(
-        "Size", selection: Binding(get: { store.preferences.fitToWindow }, set: { store.send(.setFitToWindow($0)) })
-      ) {
+      Picker("Size", selection: $store.preferences.fitToWindow.sending(\.fitToWindowChanged)) {
         Text("Fit").tag(true)
         Text("Actual Size").tag(false)
       }
@@ -44,10 +42,7 @@ struct ScreenSharingToolbar: ToolbarContent {
   }
 
   private var controlActions: some View {
-    Picker(
-      "Interaction mode",
-      selection: Binding(get: { store.interactionMode }, set: { store.send(.setInteractionMode($0)) })
-    ) {
+    Picker("Interaction mode", selection: $store.interactionMode.sending(\.interactionModeChanged)) {
       Text("View").tag(ScreenSharingViewer.InteractionMode.view)
       Text("Control").tag(ScreenSharingViewer.InteractionMode.control)
     }

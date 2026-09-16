@@ -34,7 +34,6 @@ let package = Package(
     .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.23.0"),
     .package(url: "https://github.com/851-labs/webrtc.git", exact: "152.0.0-codevisor.1"),
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
-    .package(url: "https://github.com/pointfreeco/swift-concurrency-extras", exact: "1.4.1"),
   ],
   targets: [
     // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
@@ -383,8 +382,6 @@ let package = Package(
         "CodevisorCoreMac",
         "CodevisorCore",
         "ACPKit",
-        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-        .product(name: "ConcurrencyExtras", package: "swift-concurrency-extras"),
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],
