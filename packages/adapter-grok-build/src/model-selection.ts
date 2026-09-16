@@ -3,11 +3,10 @@ import type { SessionConfigOption } from "@codevisor/api"
 
 /// The synthesized config-option id for Grok's ACP model-selection extension.
 /// Grok reports `session/new.models` and, since 1.0.24, also a native
-/// `configOptions` list (`model` + `reasoning_effort`). Model changes still
-/// prefer `session/set_model` when the native model option is absent; effort
-/// changes go through `session/set_model` with `_meta.reasoningEffort` because
-/// that path is what this adapter has always driven. Native reasoning labels
-/// are verbose ("High Effort"), so the overlay below replaces them.
+/// `configOptions` list (`model` + `reasoning_effort`). When a native option
+/// is present, changes go through `session/set_config_option`. The models
+/// extension (`session/set_model`, including `_meta.reasoningEffort`) is
+/// only used to fill a gap the CLI has not advertised yet.
 export const acpModelConfigId = "model"
 export const acpReasoningEffortConfigId = "reasoning_effort"
 
@@ -207,6 +206,12 @@ export const usesAcpModelSelectionExtension = (
   nativeConfigIds: ReadonlySet<string> | undefined
 ): boolean => configId === acpModelConfigId && !nativeConfigIds?.has(acpModelConfigId)
 
+export const usesAcpReasoningEffortExtension = (
+  configId: string,
+  nativeConfigIds: ReadonlySet<string> | undefined
+): boolean =>
+  configId === acpReasoningEffortConfigId && !nativeConfigIds?.has(acpReasoningEffortConfigId)
+
 /// Synthesizes the Codevisor `category: "model"` picker option from the ACP model
 /// extension so clients render a model chip — mirroring the shape claude/codex
 /// build for their native model pickers.
@@ -248,10 +253,12 @@ const acpModelConfigOptions = (state: AcpModelState): ReadonlyArray<SessionConfi
     : [acpModelConfigOption(state), reasoning]
 }
 
-/// Overlays the models-extension pickers onto ACP `configOptions`. Grok 1.0.24+
-/// already ships a native `reasoning_effort` select whose labels are "High
-/// Effort" / "Reasoning Effort"; replace that entry with the concise picker
-/// (name "Reasoning", labels "High") so the composer matches Codex/Claude.
+/// Overlays the models-extension pickers onto ACP `configOptions` only when
+/// the CLI omitted them. Grok 1.0.24+ already ships native `model` and
+/// `reasoning_effort` selects; those stay authoritative so a later
+/// `config_option_update` (the live effort menu after a model switch) is
+/// not replaced by a cached overlay. Thought-level labels are canonicalized
+/// by `normalizeAcpConfigOptions` at every ACP ingress.
 export const mergeAcpModelConfigOptions = (
   configOptions: ReadonlyArray<SessionConfigOption>,
   modelState: AcpModelState | undefined
@@ -262,10 +269,9 @@ export const mergeAcpModelConfigOptions = (
     merged.push(acpModelConfigOption(modelState))
   }
   const reasoning = acpReasoningEffortConfigOption(modelState)
-  if (reasoning !== undefined) {
-    const index = merged.findIndex((option) => option.id === acpReasoningEffortConfigId)
-    if (index >= 0) merged[index] = reasoning
-    else merged.push(reasoning)
+  const hasNativeReasoning = merged.some((option) => option.id === acpReasoningEffortConfigId)
+  if (reasoning !== undefined && !hasNativeReasoning) {
+    merged.push(reasoning)
   }
   return merged
 }
@@ -311,7 +317,8 @@ export const applyAcpModelSelection = async (
   return acpModelConfigOptions(state)
 }
 
-/// Grok applies a per-session effort by setting the current model again with
+/// Fallback for CLIs that have no native `reasoning_effort` option: Grok
+/// applies a per-session effort by setting the current model again with
 /// `_meta.reasoningEffort`. The picker value is the server-defined option id;
 /// the request carries its canonical value so custom ids such as `deep` map to
 /// the xAI wire value (`xhigh`) correctly.

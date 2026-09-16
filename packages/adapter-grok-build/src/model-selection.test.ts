@@ -8,7 +8,8 @@ import {
   applyAcpReasoningEffortSelection,
   extractAcpModelState,
   mergeAcpModelConfigOptions,
-  usesAcpModelSelectionExtension
+  usesAcpModelSelectionExtension,
+  usesAcpReasoningEffortExtension
 } from "./index.js"
 
 describe("Grok Build model-selection extension", () => {
@@ -25,6 +26,11 @@ describe("Grok Build model-selection extension", () => {
     expect(usesAcpModelSelectionExtension("model", new Set(["model"]))).toBe(false)
     expect(usesAcpModelSelectionExtension("model", new Set(["thought_level"]))).toBe(true)
     expect(usesAcpModelSelectionExtension("thought_level", undefined)).toBe(false)
+    expect(usesAcpReasoningEffortExtension("reasoning_effort", new Set(["reasoning_effort"]))).toBe(
+      false
+    )
+    expect(usesAcpReasoningEffortExtension("reasoning_effort", new Set(["model"]))).toBe(true)
+    expect(usesAcpReasoningEffortExtension("model", undefined)).toBe(false)
   })
 
   type ModelSetter = Parameters<typeof applyAcpModelSelection>[0]
@@ -263,7 +269,7 @@ describe("Grok Build model-selection extension", () => {
     expect(acpReasoningEffortConfigOption(state!)?.currentValue).toBe("medium")
   })
 
-  it("replaces Grok's native verbose reasoning_effort option with the concise picker", () => {
+  it("keeps Grok's native reasoning_effort option instead of overlaying a cached picker", () => {
     const state = extractAcpModelState({
       models: {
         currentModelId: "grok-4.6",
@@ -285,6 +291,18 @@ describe("Grok Build model-selection extension", () => {
         ]
       }
     })
+    const native = {
+      category: "thought_level" as const,
+      currentValue: "high",
+      id: "reasoning_effort",
+      name: "Reasoning",
+      options: [
+        { name: "Extra High", value: "xhigh" },
+        { name: "High", value: "high" },
+        { name: "Medium", value: "medium" },
+        { name: "Low", value: "low" }
+      ]
+    }
     const merged = mergeAcpModelConfigOptions(
       [
         {
@@ -294,27 +312,49 @@ describe("Grok Build model-selection extension", () => {
           name: "Model",
           options: [{ name: "Grok 4.6", value: "grok-4.6" }]
         },
+        native
+      ],
+      state
+    )
+    expect(merged[1]).toBe(native)
+  })
+
+  it("synthesizes a reasoning picker from the models extension when the CLI omits one", () => {
+    const state = extractAcpModelState({
+      models: {
+        currentModelId: "grok-4.5",
+        availableModels: [
+          {
+            modelId: "grok-4.5",
+            name: "Grok 4.5",
+            _meta: {
+              supportsReasoningEffort: true,
+              reasoningEffort: "high",
+              reasoningEfforts: [
+                { value: "high", label: "High Effort" },
+                { value: "low", label: "Low Effort" }
+              ]
+            }
+          }
+        ]
+      }
+    })
+    const merged = mergeAcpModelConfigOptions(
+      [
         {
-          category: "thought_level",
-          currentValue: "high",
-          id: "reasoning_effort",
-          name: "Reasoning Effort",
-          options: [
-            { name: "Extra High Effort", value: "xhigh" },
-            { name: "High Effort", value: "high" },
-            { name: "Medium Effort", value: "medium" },
-            { name: "Low Effort", value: "low" }
-          ]
+          category: "model",
+          currentValue: "grok-4.5",
+          id: "model",
+          name: "Model",
+          options: [{ name: "Grok 4.5", value: "grok-4.5" }]
         }
       ],
       state
     )
-    expect(merged.map((option) => [option.id, option.name])).toEqual([
-      ["model", "Model"],
-      ["reasoning_effort", "Reasoning"]
+    expect(merged.map((option) => option.id)).toEqual(["model", "reasoning_effort"])
+    expect(acpReasoningEffortConfigOption(state!)?.options.map((option) => option.name)).toEqual([
+      "High",
+      "Low"
     ])
-    expect(
-      merged[1]?.options.map((option) => ("group" in option ? option.group : option.name))
-    ).toEqual(["Extra High", "High", "Medium", "Low"])
   })
 })
