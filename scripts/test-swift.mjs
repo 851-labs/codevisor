@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url"
 // The two complementary selections run every test with normal parallelism.
 export const mainSerialExecutorSuites = [
   "ControlLeaseTests",
-  "ScreenSharingViewerTests",
-  "ScreenSharingViewerVNCTests"
+  "ScreenSharingViewerDiscoveryTests",
+  "ScreenSharingViewerTests"
 ]
 
 export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})/`

@@ -26,6 +26,8 @@ describe("VNC screen sharing configuration", () => {
     for (const text of [
       "",
       "{",
+      "null",
+      "42",
       "[]",
       '{ "vnc": null }',
       '{ "vnc": { "port": 0 } }',
@@ -126,6 +128,57 @@ describe("VNC screen sharing provider", () => {
     await closed(socket)
     await new Promise<void>((resolve) => vnc.connections[0]!.once("close", () => resolve()))
     expect(vnc.connections).toHaveLength(1)
+  })
+
+  it("reports that stop signaling is unsupported by the VNC provider", async () => {
+    const { server } = await start({ port: 5901, name: "Desktop" })
+    const reply = await jsonRequest(server, "/v1/screen-sharing", {
+      method: "POST",
+      body: JSON.stringify({
+        version: 1,
+        operation: "stop",
+        workspaceId: randomUUID(),
+        paneId: randomUUID(),
+        viewerId: randomUUID()
+      })
+    })
+    expect(reply).toEqual({
+      status: 200,
+      body: {
+        version: 1,
+        status: "unsupported",
+        provider: "vnc",
+        message: "This machine streams its display over the VNC socket",
+        displays: []
+      }
+    })
+  })
+
+  it("closes the upstream connection when a WebSocket frame is invalid", async ({
+    onTestFinished
+  }) => {
+    const vnc = await fakeVNC()
+    onTestFinished(async () => {
+      for (const connection of vnc.connections) connection.destroy()
+      await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
+    })
+    const config = { port: vnc.port, name: "Desktop" }
+    const { socketUrl } = await start(config)
+    const socket = new WebSocket(socketUrl(vncDisplayId(config)))
+    onTestFinished(async () => {
+      if (socket.readyState === WebSocket.CLOSED) return
+      const closing = closed(socket)
+      socket.terminate()
+      await closing
+    })
+    await nextMessage(socket)
+    const upstream = vnc.connections[0]!
+    const upstreamClosed = new Promise<void>((resolve) => upstream.once("close", () => resolve()))
+    const socketClosed = closed(socket)
+    socket.send(Buffer.from([0xff]), { binary: false })
+    expect(await socketClosed).toBe(1007)
+    await upstreamClosed
+    expect(upstream.destroyed).toBe(true)
   })
 
   it("ends the socket when the VNC server hangs up", async () => {
