@@ -5,16 +5,22 @@
   import ScreenSharingRigKit
 
   /// `screen-sharing-rig --config rig.json`: the resident host or viewer
-  /// process. A consumer of the media package, not part of it; see
-  /// docs/plans/screen-sharing-rig.md.
+  /// process. `screen-sharing-rig probe …`: the single-process diagnostic
+  /// (see `ProbeCommand`). A consumer of the media package, not part of it;
+  /// see docs/plans/screen-sharing-rig.md.
   @main
   @MainActor
   struct ScreenSharingRigApp {
     static func main() {
       do {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == "probe" {
+          ProbeCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
         guard arguments.count == 2, arguments[0] == "--config" else {
-          throw ScreenSharingError.invalid("Usage: screen-sharing-rig --config /path/to/rig.json")
+          throw ScreenSharingError.invalid(
+            "Usage: screen-sharing-rig --config /path/to/rig.json | screen-sharing-rig probe [--help]")
         }
         let path = (arguments[1] as NSString).expandingTildeInPath
         let configuration = try RigConfiguration.parse(try Data(contentsOf: URL(fileURLWithPath: path)))

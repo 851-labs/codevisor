@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build a self-contained diagnostic app, including the pinned WebRTC framework.
+// Build the self-contained diagnostic app (the rig executable's `probe` subcommand), including the pinned WebRTC framework.
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const packagePath = join(root, "apps/screen-sharing-probe")
+const packagePath = join(root, "apps/screen-sharing-rig")
 const args = process.argv.slice(2)
 const releaseIndex = args.indexOf("--release")
 const configuration = releaseIndex >= 0 ? "release" : "debug"
@@ -61,7 +61,7 @@ run("swift", [
   "--configuration",
   configuration,
   "--product",
-  "screen-sharing-probe"
+  "screen-sharing-rig"
 ])
 const bin = run(
   "swift",
@@ -74,7 +74,7 @@ const executable = join(contents, "MacOS/screen-sharing-probe")
 mkdirSync(join(contents, "MacOS"), { recursive: true })
 mkdirSync(join(contents, "Frameworks"), { recursive: true })
 mkdirSync(join(contents, "Resources"), { recursive: true })
-cpSync(join(bin, "screen-sharing-probe"), executable)
+cpSync(join(bin, "screen-sharing-rig"), executable)
 cpSync(join(bin, "WebRTC.framework"), join(contents, "Frameworks/WebRTC.framework"), {
   recursive: true,
   verbatimSymlinks: true
@@ -109,4 +109,4 @@ run("install_name_tool", ["-add_rpath", "@executable_path/../Frameworks", execut
 run("codesign", ["--force", "--sign", "-", join(contents, "Frameworks/WebRTC.framework")])
 run("codesign", ["--force", "--sign", "-", app])
 process.stdout.write(`Built ${app}\n`)
-if (!args.includes("--build-only")) run(executable, args)
+if (!args.includes("--build-only")) run(executable, ["probe", ...args])

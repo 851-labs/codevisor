@@ -6,8 +6,9 @@ import QuartzCore
 /// The caller brackets each response with its own clock; no symmetry assumption
 /// is required to derive an offset interval from a request's round-trip time.
 enum ProbeClockSync {
-  static func run() throws {
-    guard CommandLine.arguments.count == 2 else {
+  /// `arguments` are the probe's words; `--clock-sync` must be the only one.
+  static func run(arguments: [String]) throws {
+    guard arguments == ["--clock-sync"] else {
       throw ScreenSharingError.invalid("--clock-sync must run alone.")
     }
     for _ in 0..<10_000 {

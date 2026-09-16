@@ -8,18 +8,22 @@ import ScreenSharingDiagnostics
   import ScreenCaptureKit
   @preconcurrency import WebRTC
 
-  @main
+  /// `screen-sharing-rig probe …`: the single-process diagnostic — both peers in this
+  /// process over a loopback exchange, with the measurement and recovery experiments
+  /// described in packages/swift/CodevisorScreenSharing/README.md. Owns the process
+  /// once dispatched: it installs the field trials and runs its own application loop.
   @MainActor
-  struct ScreenSharingProbe {
-    static func main() {
-      if CommandLine.arguments.contains("--help") { print(ProbeOptions.usage); return }
+  enum ProbeCommand {
+    /// `arguments` are the words after `probe`.
+    static func main(arguments: [String]) {
+      if arguments.contains("--help") { print(ProbeOptions.usage); return }
       do {
-        if CommandLine.arguments.dropFirst().first == "--clock-sync" {
-          try ProbeClockSync.run()
+        if arguments.first == "--clock-sync" {
+          try ProbeClockSync.run(arguments: arguments)
           return
         }
-        if CommandLine.arguments.dropFirst().first == "--observe-window" {
-          let options = try ProbeWindowObservation.Options(arguments: Array(CommandLine.arguments.dropFirst(2)))
+        if arguments.first == "--observe-window" {
+          let options = try ProbeWindowObservation.Options(arguments: Array(arguments.dropFirst()))
           let app = NSApplication.shared
           app.setActivationPolicy(.regular)
           Task { @MainActor in
@@ -34,7 +38,7 @@ import ScreenSharingDiagnostics
           app.run()
           return
         }
-        let options = try ProbeOptions(arguments: Array(CommandLine.arguments.dropFirst()))
+        let options = try ProbeOptions(arguments: arguments)
         // This standalone executable owns its process. M152 exposes these experiments through process-wide trials;
         // they are installed once, through the single boundary, before any RTC call.
         try ScreenSharingFieldTrials.process.install(options.fieldTrialSelection)
@@ -432,10 +436,5 @@ import ScreenSharingDiagnostics
       if options.checkQuality { try await checkQuality() }
       try await measure()
     }
-  }
-#else
-  @main
-  struct ScreenSharingProbe {
-    static func main() { print("The diagnostic executable requires macOS; the media library also supports iOS.") }
   }
 #endif

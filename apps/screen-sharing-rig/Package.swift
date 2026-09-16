@@ -1,8 +1,9 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// The two-Mac screen-sharing development rig: a consumer of the media package,
-// never shipped. See docs/plans/screen-sharing-rig.md and README.md.
+// The screen-sharing development tools, never shipped: the two-Mac rig and, as the
+// `probe` subcommand, the single-process diagnostic. A consumer of the media package.
+// See docs/plans/screen-sharing-rig.md and README.md.
 let package = Package(
   name: "ScreenSharingRig",
   platforms: [.macOS("26.0")],
@@ -25,6 +26,7 @@ let package = Package(
       name: "ScreenSharingRig",
       dependencies: [
         "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
+        .product(name: "CodevisorClient", package: "CodevisorKit"),
         .product(name: "CodevisorScreenSharing", package: "CodevisorKit"),
         .product(name: "ScreenSharingDiagnostics", package: "CodevisorKit"),
         .product(name: "ScreenSharingHostInput", package: "CodevisorKit"),

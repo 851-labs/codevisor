@@ -26,7 +26,7 @@ let package = Package(
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
-    // Consumed by the dev-only executables under apps/ (screen-sharing-rig, screen-sharing-probe).
+    // Consumed by the dev-only executable under apps/screen-sharing-rig.
     .library(name: "ScreenSharingDiagnostics", targets: ["ScreenSharingDiagnostics"]),
     .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
@@ -41,8 +41,8 @@ let package = Package(
     // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
     // metrics, input/control/clipboard messages, the message-channel and viewing-session contracts. A
     // backend that is not the native WebRTC pipeline depends on this target only. See
-    // docs/plans/screen-sharing-composable-architecture.md. The dev-only executables (probe, rig) are
-    // their own packages under apps/ and consume this package's products.
+    // docs/plans/screen-sharing-composable-architecture.md. The dev-only executable (the rig, whose `probe` subcommand is the
+    // single-process diagnostic) is its own package under apps/ and consumes this package's products.
     .target(
       name: "ScreenSharingCore",
       path: "ScreenSharingCore/Sources/ScreenSharingCore",

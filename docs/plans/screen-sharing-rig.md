@@ -35,7 +35,7 @@ One executable, one identity, one resident process per Mac.
 
 - A user LaunchAgent `com.codevisor.screen-sharing-rig` (`RunAtLoad`, `KeepAlive`, `LimitLoadToSessionType: Aqua`) owns exactly one rig process in the GUI session. It is the only launcher; SSH is used for file transfer and `launchctl kickstart -k`, never to start the app, so TCC attribution is always the rig bundle.
 - `bun run rig:deploy [--to <host>[,<host>]] [--config rig.json]`:
-  1. `swift build -c release --product screen-sharing-probe` locally (incremental; both Macs are Apple silicon, so the remote Mac never builds).
+  1. `swift build -c release --product screen-sharing-rig` locally (incremental; both Macs are Apple silicon, so the remote Mac never builds).
   2. Assemble and sign the bundle (reuse the probe script's assembly; identity as above).
   3. Local: atomic swap into `~/Applications/CodevisorRig/`, then `launchctl kickstart -k gui/$UID/com.codevisor.screen-sharing-rig`.
   4. Remote: `rsync -a --delete` into `.staging/`, `ssh mv` atomic swap, remote `kickstart -k`. Uses key-based SSH to `tuftlord@tuftlords-macbook-pro` (verified: macOS 26.6.2, arm64). Signaling targets the host's Ethernet address `192.168.10.191` (`en7`), which shares the `192.168.10.x` subnet with the local Mac; tuftlord's Wi-Fi is on a different subnet and must not be the configured peer.

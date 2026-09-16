@@ -106,7 +106,7 @@ Synthetic input defaults to **BGRA**, while ScreenCaptureKit supplies video-rang
 
 The [pixel-format investigation](../../../docs/measurements/native-screen-sharing-pixel-format-2026-09-11/README.md) records two trials for each input/controller combination. Standard mode improves the lightweight NV12 media workload, while low-latency mode wins the isolated NV12 colored-text codec test. Real-desktop measurements remain necessary before selecting a different product default.
 
-The build command creates `tmp/screen-sharing/ScreenSharingProbe.app`, embeds WebRTC and its resource bundle, fixes the framework search path, and signs the diagnostic app ad hoc. `--build-only` builds without launching. The resulting binary is at `ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe`; invoke it directly to rerun without rebuilding. Close the window to stop a viewer early.
+The build command (`bun run screen-sharing:probe`, which runs the rig executable's `probe` subcommand) creates `tmp/screen-sharing/ScreenSharingProbe.app`, embeds WebRTC and its resource bundle, fixes the framework search path, and signs the diagnostic app ad hoc. `--build-only` builds without launching. The resulting binary is at `ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe`; invoke it directly to rerun without rebuilding. Close the window to stop a viewer early.
 
 Use `--instance NAME` to build a separately named diagnostic app without replacing another running probe. The bundle identifier is stable for each worktree/instance pair and differs between pairs, so Launch Services and permission entries cannot confuse distinct diagnostic instances. Grant capture permission separately for each identity. Previously built probes retain their old identity until rebuilt.
 
@@ -154,7 +154,7 @@ The [pipeline report](../../../docs/measurements/native-screen-sharing-pipeline-
 Build the probe on each Mac. Choose fresh signaling filenames for every session. On the sending Mac:
 
 ```sh
-ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe \
+ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe probe \
   --send --offer /tmp/screen-offer.json --answer /tmp/screen-answer.json \
   --duration 30 --report /tmp/screen-sender-report.json
 ```
@@ -162,7 +162,7 @@ ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe \
 Add `--display ID` for a real display. Otherwise the sender generates synthetic motion. Transfer the offer to the receiving Mac over a trusted channel such as authenticated SSH, then run there:
 
 ```sh
-ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe \
+ScreenSharingProbe.app/Contents/MacOS/screen-sharing-probe probe \
   --receive --offer /tmp/screen-offer.json --answer /tmp/screen-answer.json \
   --duration 30 --report /tmp/screen-receiver-report.json
 ```
