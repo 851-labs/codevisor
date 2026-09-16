@@ -1,38 +1,37 @@
 import AppKit
-import CodevisorClient
 import CodevisorScreenSharing
 import OSLog
 
 @MainActor
-final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenSharingViewerSurface {
-  var onFocusChanged: ((Bool) -> Void)?
+public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenSharingViewerSurface {
+  public var onFocusChanged: ((Bool) -> Void)?
   let metal: ScreenSharingMetalView
   lazy var input = ScreenSharingInputSurface(view: self)
-  var view: NSView { self }
-  var onPresented: (() -> Void)? {
+  public var view: NSView { self }
+  public var onPresented: (() -> Void)? {
     didSet { metal.onPresented = onPresented.map { presented in { _ in presented() } } }
   }
-  var onInput: ((ScreenSharingInputEvent) -> Void)? {
+  public var onInput: ((ScreenSharingInputEvent) -> Void)? {
     get { input.onInput }
     set { input.onInput = newValue }
   }
-  var onInputReleased: (() -> Void)? {
+  public var onInputReleased: (() -> Void)? {
     get { input.onRelease }
     set { input.onRelease = newValue }
   }
-  var inputFailureMessage: String? { input.failureMessage }
-  func beginInput() -> Bool { input.begin() }
-  func endInput() { input.end() }
+  public var inputFailureMessage: String? { input.failureMessage }
+  public func beginInput() -> Bool { input.begin() }
+  public func endInput() { input.end() }
   private var tracking: NSTrackingArea?
   private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
   private let scroll = NSScrollView()
   private var videoSize = CGSize(width: 1920, height: 1080)
-  var fitToWindow = true { didSet { needsLayout = true; metal.fitToWindow = fitToWindow } }
+  public var fitToWindow = true { didSet { needsLayout = true; metal.fitToWindow = fitToWindow } }
 
   /// `profile` nil (the default) keeps the product renderer exactly as it was: display-link drive, three drawables,
   /// main-actor preparation. The explicit profile forwards to the EXISTING worker/arrival2 initializer; no pacing,
   /// render-queue rewrite or auditing feature is added here.
-  init(
+  public init(
     mailbox: ScreenSharingFrameMailbox, metrics: ScreenSharingMetrics, profile: ScreenSharingDiagnosticProfile? = nil
   ) throws {
     metal = try ScreenSharingMetalView(
@@ -49,8 +48,8 @@ final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenS
       self?.needsLayout = true
     }
   }
-  required init?(coder: NSCoder) { nil }
-  override func layout() {
+  public required init?(coder: NSCoder) { nil }
+  public override func layout() {
     super.layout()
     scroll.frame = bounds
     scroll.hasHorizontalScroller = !fitToWindow
@@ -65,27 +64,27 @@ final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenS
           width: max(viewport.width, pixels.width), height: max(viewport.height, pixels.height)))
     window?.invalidateCursorRects(for: self)
   }
-  override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
+  public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
   /// Input first, then the renderer's terminal stop (arrival subscription,
   /// mailbox, cached frame and callbacks released; an in-flight submission
   /// keeps its buffers until the GPU completes it).
-  func stop() { input.end(); metal.stop() }
-  override var acceptsFirstResponder: Bool { true }
-  override func becomeFirstResponder() -> Bool {
+  public func stop() { input.end(); metal.stop() }
+  public override var acceptsFirstResponder: Bool { true }
+  public override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
     if accepted { input.resume(); onFocusChanged?(true) }
     return accepted
   }
-  override func resignFirstResponder() -> Bool {
+  public override func resignFirstResponder() -> Bool {
     let accepted = super.resignFirstResponder()
     if accepted { input.suspend(); onFocusChanged?(false) }
     return accepted
   }
-  override func hitTest(_ point: NSPoint) -> NSView? {
+  public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
     return input.active && hit != nil ? self : hit
   }
-  override func updateTrackingAreas() {
+  public override func updateTrackingAreas() {
     super.updateTrackingAreas()
     if let tracking { removeTrackingArea(tracking) }
     let area = NSTrackingArea(
@@ -93,7 +92,7 @@ final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenS
       owner: self)
     tracking = area; addTrackingArea(area)
   }
-  override func resetCursorRects() {
+  public override func resetCursorRects() {
     super.resetCursorRects()
     guard input.active else { return }
     let drawable = metal.convertToBacking(metal.bounds).size
@@ -109,27 +108,27 @@ final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, ScreenS
     window?.invalidateCursorRects(for: self)
     if !input.active, NSCursor.current === Self.remoteCursor { NSCursor.arrow.set() }
   }
-  override func cursorUpdate(with event: NSEvent) {
+  public override func cursorUpdate(with event: NSEvent) {
     if input.active, pointer(event, clamp: false) != nil { Self.remoteCursor.set() } else { NSCursor.arrow.set() }
   }
-  override func mouseExited(with event: NSEvent) {
+  public override func mouseExited(with event: NSEvent) {
     if NSCursor.current === Self.remoteCursor { NSCursor.arrow.set() }
   }
-  override func mouseEntered(with event: NSEvent) { cursorUpdate(with: event) }
-  override func mouseMoved(with event: NSEvent) {
+  public override func mouseEntered(with event: NSEvent) { cursorUpdate(with: event) }
+  public override func mouseMoved(with event: NSEvent) {
     if input.active { cursorUpdate(with: event) }
     input.mouse(event)
   }
-  override func mouseDown(with event: NSEvent) { input.mouse(event) }
-  override func mouseUp(with event: NSEvent) { input.mouse(event) }
-  override func rightMouseDown(with event: NSEvent) { input.mouse(event) }
-  override func rightMouseUp(with event: NSEvent) { input.mouse(event) }
-  override func otherMouseDown(with event: NSEvent) { input.mouse(event) }
-  override func otherMouseUp(with event: NSEvent) { input.mouse(event) }
-  override func mouseDragged(with event: NSEvent) { input.mouse(event) }
-  override func rightMouseDragged(with event: NSEvent) { input.mouse(event) }
-  override func otherMouseDragged(with event: NSEvent) { input.mouse(event) }
-  override func scrollWheel(with event: NSEvent) {
+  public override func mouseDown(with event: NSEvent) { input.mouse(event) }
+  public override func mouseUp(with event: NSEvent) { input.mouse(event) }
+  public override func rightMouseDown(with event: NSEvent) { input.mouse(event) }
+  public override func rightMouseUp(with event: NSEvent) { input.mouse(event) }
+  public override func otherMouseDown(with event: NSEvent) { input.mouse(event) }
+  public override func otherMouseUp(with event: NSEvent) { input.mouse(event) }
+  public override func mouseDragged(with event: NSEvent) { input.mouse(event) }
+  public override func rightMouseDragged(with event: NSEvent) { input.mouse(event) }
+  public override func otherMouseDragged(with event: NSEvent) { input.mouse(event) }
+  public override func scrollWheel(with event: NSEvent) {
     if input.active { input.mouse(event) } else { super.scrollWheel(with: event) }
   }
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? {

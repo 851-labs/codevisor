@@ -1,25 +1,7 @@
 import AppKit
 import CodevisorScreenSharing
 import OSLog
-
-/// The AppKit half of a viewer endpoint: the view the pane mounts, its input
-/// capture, and the signal that a frame reached the screen. The product
-/// surface is `ScreenSharingVideoSurface`; tests supply a controlled one.
-@MainActor
-protocol ScreenSharingViewerSurface: AnyObject {
-  var view: NSView { get }
-  var fitToWindow: Bool { get set }
-  /// Fired for every presentation; the endpoint reports only the first.
-  var onPresented: (() -> Void)? { get set }
-  var onFocusChanged: ((Bool) -> Void)? { get set }
-  var onInput: ((ScreenSharingInputEvent) -> Void)? { get set }
-  /// The surface lost the ability to capture input (event tap interrupted, focus refused).
-  var onInputReleased: (() -> Void)? { get set }
-  var inputFailureMessage: String? { get }
-  func beginInput() -> Bool
-  func endInput()
-  func stop()
-}
+import ScreenSharingViewer
 
 /// One connected viewing endpoint, for any backend: the surface rendering the
 /// session's frames, the control channel and input forwarding the lease

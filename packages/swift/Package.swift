@@ -31,6 +31,8 @@ let package = Package(
     .library(name: "ScreenSharingRFB", targets: ["ScreenSharingRFB"]),
     // The VNC viewing session over the RFB client; the rig links it without CodevisorCoreMac.
     .library(name: "ScreenSharingVNC", targets: ["ScreenSharingVNC"]),
+    // The viewer surface (Metal view, input capture, cursor) any viewing session renders into.
+    .library(name: "ScreenSharingViewer", targets: ["ScreenSharingViewer"]),
     // Consumed by the rig's `vnc-server` subcommand.
     .library(name: "ScreenSharingRFBLoopback", targets: ["ScreenSharingRFBLoopback"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
@@ -73,6 +75,24 @@ let package = Package(
       dependencies: ["CodevisorScreenSharing", "ScreenSharingRFB"],
       path: "ScreenSharingVNC/Sources/ScreenSharingVNC",
       swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // The AppKit surface a viewing session renders into and captures input from: the scroll
+    // view, fit-to-window, the input surface with its keyboard capture, and the input forwarder.
+    // Host-input aware, so it sits above the media package; the product and the rig share it.
+    .target(
+      name: "ScreenSharingViewer",
+      dependencies: ["CodevisorScreenSharing", "ScreenSharingHostInput"],
+      path: "ScreenSharingViewer/Sources/ScreenSharingViewer",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "ScreenSharingViewerTests",
+      dependencies: ["ScreenSharingViewer", "CodevisorTestSupport"],
+      path: "ScreenSharingViewer/Tests/ScreenSharingViewerTests",
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
     .testTarget(
       name: "ScreenSharingVNCTests",
@@ -359,6 +379,7 @@ let package = Package(
       name: "CodevisorCoreMac",
       dependencies: [
         "CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput", "ScreenSharingRFB", "ScreenSharingVNC",
+        "ScreenSharingViewer",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
@@ -424,6 +445,7 @@ let package = Package(
         "ScreenSharingRFB",
         "ScreenSharingRFBLoopback",
         "ScreenSharingVNC",
+        "ScreenSharingViewer",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],

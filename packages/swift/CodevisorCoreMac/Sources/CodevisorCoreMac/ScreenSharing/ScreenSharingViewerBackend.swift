@@ -1,5 +1,6 @@
 import CodevisorClient
 import CodevisorScreenSharing
+import ScreenSharingViewer
 import ComposableArchitecture
 import Foundation
 

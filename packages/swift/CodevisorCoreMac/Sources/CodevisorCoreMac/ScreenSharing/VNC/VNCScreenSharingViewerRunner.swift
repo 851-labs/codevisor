@@ -1,6 +1,7 @@
 import CodevisorClient
 import CodevisorCore
 import CodevisorScreenSharing
+import ScreenSharingViewer
 import Foundation
 import ScreenSharingRFB
 import ScreenSharingVNC

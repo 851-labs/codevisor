@@ -1,6 +1,7 @@
 import AppKit
 import CodevisorClient
 import CodevisorScreenSharing
+import ScreenSharingViewer
 import CodevisorTestSupport
 import Foundation
 import Observation

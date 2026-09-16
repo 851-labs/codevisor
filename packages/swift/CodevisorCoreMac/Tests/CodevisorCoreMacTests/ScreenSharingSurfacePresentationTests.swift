@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorScreenSharing
+import ScreenSharingViewer
 import CodevisorTestSupport
 import CoreVideo
 import Foundation

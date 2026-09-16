@@ -2,7 +2,7 @@ import AppKit
 import CodevisorScreenSharing
 import ScreenSharingHostInput
 import Testing
-@testable import CodevisorCoreMac
+@testable import ScreenSharingViewer
 
 @MainActor
 struct ScreenSharingInputSurfaceTests {

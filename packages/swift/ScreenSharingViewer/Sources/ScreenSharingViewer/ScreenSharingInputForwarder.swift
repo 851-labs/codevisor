@@ -7,24 +7,24 @@ import Foundation
 /// channel refuses ends forwarding and reports the loss once; the lease's
 /// state machine decides what to do about it.
 @MainActor
-final class ScreenSharingInputForwarder {
-  private(set) var lease: UUID?
+public final class ScreenSharingInputForwarder {
+  public private(set) var lease: UUID?
   private var sequence: UInt64 = 0
   private let send: (ScreenSharingControlMessage) -> Bool
-  var onLost: ((String?) -> Void)?
+  public var onLost: ((String?) -> Void)?
 
-  init(send: @escaping (ScreenSharingControlMessage) -> Bool) { self.send = send }
+  public init(send: @escaping (ScreenSharingControlMessage) -> Bool) { self.send = send }
 
-  var isActive: Bool { lease != nil }
+  public var isActive: Bool { lease != nil }
 
-  func begin(lease: UUID) {
+  public func begin(lease: UUID) {
     self.lease = lease
     sequence = 0
   }
 
-  func end() { lease = nil }
+  public func end() { lease = nil }
 
-  func forward(_ event: ScreenSharingInputEvent) {
+  public func forward(_ event: ScreenSharingInputEvent) {
     guard let lease, event.isValid else { return }
     guard sequence < UInt64.max else {
       end()
