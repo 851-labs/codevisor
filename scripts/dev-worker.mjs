@@ -178,7 +178,7 @@ if (!reuseMacOSBuild) {
         `CODEVISOR_DEV_DISPLAY_NAME=${appName}`,
         `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${macOSBundleIdentifier}`,
         `CODEVISOR_URL_SCHEME=${urlScheme}`,
-        "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
+        "CODEVISOR_APP_ICON_NAME=AppIconDevGenerated",
         "INFOPLIST_KEY_CFBundleIconFile=AppIconDevGenerated",
         "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
         ...developmentSigningArguments,

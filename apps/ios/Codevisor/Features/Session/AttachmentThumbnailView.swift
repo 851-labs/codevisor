@@ -35,6 +35,7 @@ typealias AttachmentGeometryReadinessPreferenceKey = ContentLayoutReadinessPrefe
 /// A rounded thumbnail for an image, PDF, or video attachment in the
 /// transcript, or a file chip for other types. Tapping opens Quick Look.
 struct AttachmentThumbnailView: View {
+  @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.theme) private var theme
   @Environment(\.attachmentImages) private var attachmentImages
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -195,6 +196,7 @@ struct AttachmentThumbnailView: View {
   /// Quick Look needs a file URL: fetch the bytes and materialize them under
   /// the file's real filename so the preview titles correctly.
   private func preview() {
+    if openFileDocument?(FileDocumentLocation.target(for: file)) == true { return }
     guard let attachmentImages else { return }
     let file = self.file
     Task {

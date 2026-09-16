@@ -20,6 +20,7 @@ struct NewTabPaneView: View {
   let onNewChat: () -> Void
   let onNewTerminal: () -> Void
   var onNewBrowser: () -> Void = {}
+  var onOpenFiles: () -> Void = {}
   /// The machine's API client, for the machine-scoped plugin pane rows.
   /// Nil (previews) shows no plugin rows.
   var client: (any CodevisorServerClienting)? = nil
@@ -48,6 +49,9 @@ struct NewTabPaneView: View {
           }
           newTabOption(title: "New Browser", action: onNewBrowser) {
             Image(systemName: "globe")
+          }
+          newTabOption(title: "Files", action: onOpenFiles) {
+            Image(systemName: "folder")
           }
           ForEach(pluginOptions) { option in
             newTabOption(

@@ -17,7 +17,7 @@ public enum PaneKind: String, Codable, Sendable {
   /// identify the plugin server and pane type; the app layer renders it
   /// through the server's plugin proxy.
   case plugin
-  /// A read-only Markdown document on the workspace's machine.
+  /// A file on the workspace’s machine. The persisted name retains compatibility with document panes.
   case document
   case browser
   case screenSharing

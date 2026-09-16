@@ -13,12 +13,12 @@ extension WorkspaceScreen {
   /// worktree (or project folder) stamps every sub-chat at creation.
   func convertToChat(_ pane: PaneDescriptorState) {
     // Reachable only from the tab grid, which a draft doesn't have.
-    guard let project = resolvedProject, let workspaceSessionId = activeSessionId else { return }
+    guard let project = resolvedProject, let workspaceSessionId = paneStorageId else { return }
     let chat = environment.projectList.newSession(
       in: project,
       title: "New Chat",
       worktreeName: rootSession?.worktreeName,
-      cwd: rootSession?.cwd
+      cwd: workspaceCwd
     )
     var state = panes
     let converted = state.convertNewTabPane(
@@ -31,7 +31,7 @@ extension WorkspaceScreen {
   }
 
   func convertToBrowser(_ pane: PaneDescriptorState) {
-    guard let workspaceSessionId = activeSessionId else { return }
+    guard let workspaceSessionId = paneStorageId else { return }
     var state = panes
     let converted = state.convertNewTabPane(id: pane.id, to: .browser, sessionId: workspaceSessionId)
     paneBinding.wrappedValue = state
@@ -39,7 +39,7 @@ extension WorkspaceScreen {
   }
 
   func convertToTerminal(_ pane: PaneDescriptorState) {
-    guard let workspaceSessionId = activeSessionId else { return }
+    guard let workspaceSessionId = paneStorageId else { return }
     var state = panes
     let converted = state.convertNewTabPane(
       id: pane.id, to: .terminal, sessionId: workspaceSessionId
@@ -53,7 +53,7 @@ extension WorkspaceScreen {
   /// The New Tab placeholder becomes a plugin pane in place, mirroring
   /// macOS's New Tab plugin cards.
   func convertToPlugin(_ pane: PaneDescriptorState, option: PluginNewTabOption) {
-    guard let workspaceSessionId = activeSessionId else { return }
+    guard let workspaceSessionId = paneStorageId else { return }
     var state = panes
     let converted = state.convertNewTabPane(
       id: pane.id,

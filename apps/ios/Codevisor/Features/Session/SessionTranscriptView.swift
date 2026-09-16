@@ -14,6 +14,7 @@ extension Notification.Name {
 /// shared row views. UIKit owns the virtual window and viewport coordinate so
 /// opening, measurement, pagination, and streaming are one position system.
 struct SessionTranscriptView: View {
+  @Environment(\.openFileDocument) var openFileDocument
   /// Increment whenever the iOS row-measurement environment changes. Scroll
   /// state can outlive a mounted transcript, so heights produced under an
   /// older hosting contract must not be restored as exact geometry.

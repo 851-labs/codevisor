@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
+import { routeFileDocuments } from "./file-documents.js"
 import {
   HttpFailure,
   readSchema,
@@ -76,6 +77,7 @@ export const routeFs = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  if (await routeFileDocuments(request, response, url)) return true
   if (url.pathname === "/v1/fs/file" && (request.method === "GET" || request.method === "HEAD")) {
     const requested = url.searchParams.get("path")
     if (requested === null || requested.length === 0) {

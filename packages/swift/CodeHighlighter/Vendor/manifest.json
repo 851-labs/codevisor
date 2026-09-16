@@ -1,0 +1,262 @@
+[
+  {
+    "name": "runtime",
+    "repository": "tree-sitter/tree-sitter",
+    "revision": "d97971e24500218865c05ed1febdee2acf41bae1",
+    "paths": [
+      "lib/src/",
+      "lib/include/",
+      "LICENSE"
+    ]
+  },
+  {
+    "name": "bash",
+    "repository": "tree-sitter/tree-sitter-bash",
+    "revision": "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "c",
+    "repository": "tree-sitter/tree-sitter-c",
+    "revision": "b780e47fc780ddc8da13afa35a3f4ed5c157823d",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "cpp",
+    "repository": "tree-sitter/tree-sitter-cpp",
+    "revision": "8b5b49eb196bec7040441bee33b2c9a4838d6967",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "css",
+    "repository": "tree-sitter/tree-sitter-css",
+    "revision": "dda5cfc5722c429eaba1c910ca32c2c0c5bb1a3f",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "go",
+    "repository": "tree-sitter/tree-sitter-go",
+    "revision": "2346a3ab1bb3857b48b29d779a1ef9799a248cd7",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "html",
+    "repository": "tree-sitter/tree-sitter-html",
+    "revision": "73a3947324f6efddf9e17c0ea58d454843590cc0",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "java",
+    "repository": "tree-sitter/tree-sitter-java",
+    "revision": "e10607b45ff745f5f876bfa3e94fbcc6b44bdc11",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "javascript",
+    "repository": "tree-sitter/tree-sitter-javascript",
+    "revision": "58404d8cf191d69f2674a8fd507bd5776f46cb11",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "json",
+    "repository": "tree-sitter/tree-sitter-json",
+    "revision": "254c42a6476413b776221e03982ac8ae159eeb72",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "python",
+    "repository": "tree-sitter/tree-sitter-python",
+    "revision": "26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "ruby",
+    "repository": "tree-sitter/tree-sitter-ruby",
+    "revision": "ad907a69da0c8a4f7a943a7fe012712208da6dee",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "rust",
+    "repository": "tree-sitter/tree-sitter-rust",
+    "revision": "77a3747266f4d621d0757825e6b11edcbf991ca5",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "typescript",
+    "repository": "tree-sitter/tree-sitter-typescript",
+    "revision": "75b3874edb2dc714fb1fd77a32013d0f8699989f",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/",
+      "typescript/src/",
+      "tsx/src/"
+    ]
+  },
+  {
+    "name": "diff",
+    "repository": "tree-sitter-grammars/tree-sitter-diff",
+    "revision": "ada384ac7bfc1307f32de474620120add29998fb",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "markdown",
+    "repository": "tree-sitter-grammars/tree-sitter-markdown",
+    "revision": "a0a00f817d02412bd92c54d316f164d827b57b5c",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/",
+      "tree-sitter-markdown/src/",
+      "tree-sitter-markdown/queries/",
+      "tree-sitter-markdown-inline/src/",
+      "tree-sitter-markdown-inline/queries/"
+    ]
+  },
+  {
+    "name": "toml",
+    "repository": "tree-sitter-grammars/tree-sitter-toml",
+    "revision": "64b56832c2cffe41758f28e05c756a3a98d16f41",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "yaml",
+    "repository": "tree-sitter-grammars/tree-sitter-yaml",
+    "revision": "a1c4812a73ec5e089de8e441fdea3a921e8d5079",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "kotlin",
+    "repository": "fwcd/tree-sitter-kotlin",
+    "revision": "1852ea17b7f60fb3f9d84e0b1555d56b46b39fb1",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ]
+  },
+  {
+    "name": "swift",
+    "repository": "alex-pinkus/tree-sitter-swift",
+    "revision": "88bfd19a89be9d0481b14566fb6160cccea2fe0a",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ],
+    "archive": "https://registry.npmjs.org/tree-sitter-swift/-/tree-sitter-swift-0.7.1.tgz",
+    "sha256": "abd89284f1b0f1375ba5efaa9ddf99ad4b16ac91fc7751ef10c5f013cca06f8c"
+  },
+  {
+    "name": "sql",
+    "repository": "DerekStride/tree-sitter-sql",
+    "revision": "7b51ecda191d36b92f5a90a8d1bc3faef1c7b8b8",
+    "paths": [
+      "src/",
+      "queries/",
+      "LICENSE",
+      "COPYING",
+      "common/"
+    ],
+    "archive": "https://registry.npmjs.org/@derekstride/tree-sitter-sql/-/tree-sitter-sql-0.3.11.tgz",
+    "sha256": "20f2670c6bee98c442cf0a2afe6e4965b1a96a7752c89d8a37604c173db0c623"
+  }
+]

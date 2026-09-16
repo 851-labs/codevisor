@@ -8,6 +8,8 @@ extension RootView {
     let workspaceId: UUID?
     if case let .session(selectedServer, sessionId) = selection, selectedServer == serverId {
       workspaceId = environment.workspaces.workspaceId(forSession: sessionId)
+    } else if case let .workspace(selectedServer, id) = selection, selectedServer == serverId {
+      workspaceId = id
     } else {
       workspaceId = nil
     }
@@ -20,7 +22,9 @@ extension RootView {
     let settings = SettingsRouter.shared
     context.page = ClientPageContext(
       page: {
-        if case .session = selection { return "workspace" }; return "new_chat"
+        if case .session = selection { return "workspace" }
+        if case .workspace = selection { return "workspace" }
+        return "new_chat"
       }(),
       settingsSection: settings.controlWindow?.isVisible == true ? settings.selectedTab.rawValue : nil,
       presentation: settings.controlWindow?.isVisible == true ? "settings" : nil
@@ -43,18 +47,16 @@ extension RootView {
     let tab = selected.selectedCenterTab
     let selectedChat = tab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane?.chatSessionId }
     let candidates = [selectedChat].compactMap { $0 } + workspace.chatSessionIds
-    guard
-      let anchor = candidates.first(where: { id in
-        environment.projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
-      })
-    else { throw ClientControlError("Workspace has no available chat route on this client") }
+    let anchor = candidates.first(where: { id in
+      environment.projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
+    })
     guard
       store.selectDestination(
         request.destination?.workspaceDestination ?? .tab(selected.selectedCenterTabId),
         in: workspace.id
       )
     else { throw ClientControlError("Destination is no longer available") }
-    selection = .session(serverId: serverId, id: anchor)
+    selection = anchor.map { .session(serverId: serverId, id: $0) } ?? .workspace(serverId: serverId, id: workspace.id)
   }
 
   var clientSidebarVisible: Bool {

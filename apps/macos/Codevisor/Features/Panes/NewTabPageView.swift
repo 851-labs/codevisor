@@ -17,6 +17,7 @@ private struct NewTabOption: Identifiable, Equatable {
   enum Kind: Equatable {
     case chat
     case terminal
+    case files
     case browser
     case screenSharing
     case plugin(pluginId: String, paneType: String, iconPath: String?)
@@ -67,6 +68,7 @@ struct NewTabPageView: View {
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
       NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
+      NewTabOption(id: "files", title: "Files", kind: .files),
     ]
       + (supportsScreenSharing
         ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions
@@ -120,6 +122,8 @@ struct NewTabPageView: View {
           Autocomplete.Action(option.title, id: option.id, systemImage: "display") { open(option) }
         case .terminal:
           Autocomplete.Action(option.title, id: option.id, systemImage: "terminal") { open(option) }
+        case .files:
+          Autocomplete.Action(option.title, id: option.id, systemImage: "folder") { open(option) }
         case let .plugin(pluginId, paneType, iconPath):
           Autocomplete.Action(option.title, id: option.id, action: { open(option) }) {
             if let client {
@@ -144,6 +148,8 @@ struct NewTabPageView: View {
 
   private func open(_ option: NewTabOption) {
     switch option.kind {
+    case .files:
+      group?.openFiles(id: paneId)
     case .chat:
       if let onNewChat {
         onNewChat()

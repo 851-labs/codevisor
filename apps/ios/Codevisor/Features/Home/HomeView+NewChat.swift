@@ -188,15 +188,15 @@ extension HomeView {
   func workspaceDestination(
     serverId: String,
     workspaceId: UUID,
-    anchorSessionId: UUID,
+    anchorSessionId: UUID?,
     preferredChatSessionId: UUID?,
     preferredPaneId: UUID? = nil
   ) -> some View {
     let controller = projectList.sessions.first(where: {
       $0.serverId == serverId && $0.id == anchorSessionId
-    }).flatMap { _ in
+    }).flatMap { session in
       ChatControllerCache.shared.existingController(
-        sessionId: anchorSessionId,
+        sessionId: session.id,
         serverId: serverId
       )
     }

@@ -134,3 +134,9 @@
 [submodule ".repos/acp-registry"]
 	path = .repos/acp-registry
 	url = https://github.com/agentclientprotocol/registry.git
+[submodule ".repos/tree-sitter"]
+	path = .repos/tree-sitter
+	url = https://github.com/tree-sitter/tree-sitter.git
+[submodule ".repos/vscode-icons"]
+	path = .repos/vscode-icons
+	url = https://github.com/vscode-icons/vscode-icons.git

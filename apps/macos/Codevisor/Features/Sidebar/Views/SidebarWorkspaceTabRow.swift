@@ -114,6 +114,8 @@ struct SidebarWorkspaceTabRow: View {
       )
       .frame(width: 14, height: 14)
       .frame(width: 18)
+    } else if kind == .document {
+      FileIcon(path: title, size: 16).frame(width: 18)
     } else {
       Image(systemName: iconName)
         .frame(width: 18)
@@ -127,7 +129,7 @@ struct SidebarWorkspaceTabRow: View {
     case .terminal: isAgentOwned ? "server.rack" : "terminal"
     case .newTab: "square.dashed"
     case .plugin: "puzzlepiece.extension"
-    case .document: "doc.richtext"
+    case .document: "text.document"
     case .browser: "globe"
     case .screenSharing: "display"
     }

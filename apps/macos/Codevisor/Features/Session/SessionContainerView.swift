@@ -97,8 +97,7 @@ struct SessionContainerView: View {
   @State var isVisible = false
 
   var body: some View {
-    contentColumn
-      .navigationTitle(activePaneTitle)
+    titledContentColumn
       .navigationSubtitle(activePaneSubtitle)
       .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
       .toolbar {
@@ -107,9 +106,12 @@ struct SessionContainerView: View {
           ChromiumBrowserAddressToolbarItem(model: browser)
         } else if let pane = activeScreenSharingPane, let store = pane.store {
           ScreenSharingToolbar(store: store)
+        } else if let model = activeFileModel {
+          FilePaneToolbar(model: model, onNewTab: addCenterTab)
         }
       }
       .focusedSceneValue(\.browserPage, activeBrowserModel)
+      .focusedSceneValue(\.filePane, activeFileModel)
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(
@@ -131,7 +133,7 @@ struct SessionContainerView: View {
       )
       // Keep background terminals synchronized across all of a workspace's
       // chats, including persisted terminal descriptors from older layouts.
-      .environment(\.openMarkdownDocument, openMarkdownDocument)
+      .environment(\.openFileDocument, openFileDocument)
       .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
         syncWorkspaceBackgroundTerminals()
       }

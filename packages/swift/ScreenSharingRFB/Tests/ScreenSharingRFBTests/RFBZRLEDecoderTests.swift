@@ -50,7 +50,8 @@ struct RFBZRLEDecoderTests {
     // 2 palette entries: index 1 run of 3 (0x81, 2), index 0 single, index 1 single
     let framebuffer = try decode([130, 5, 5, 5, 6, 6, 6, 0x81, 2, 0, 1], width: 5, height: 1)
     #expect((0..<5).map { framebuffer.pixel(x: $0, y: 0).blue } == [6, 6, 6, 5, 6])
-    #expect(throws: RFBError.self) { try decode([130, 5, 5, 5, 6, 6, 6, 2], width: 1, height: 1) }  // index out of palette
+    // Index out of palette.
+    #expect(throws: RFBError.self) { try decode([130, 5, 5, 5, 6, 6, 6, 2], width: 1, height: 1) }
   }
 
   @Test func rectanglesSpanTilesAndRejectBadInput() throws {

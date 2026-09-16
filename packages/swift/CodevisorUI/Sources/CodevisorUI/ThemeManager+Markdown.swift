@@ -90,6 +90,10 @@ public func attributedLine(_ line: [CodeHighlighter.Token]) -> AttributedString 
     if let color = token.color, let rgba = RGBA(css: color) {
       piece.foregroundColor = Color(rgba: rgba)
     }
+    var intent = piece.inlinePresentationIntent ?? []
+    if token.bold { intent.insert(.stronglyEmphasized) }
+    if token.italic { intent.insert(.emphasized) }
+    if !intent.isEmpty { piece.inlinePresentationIntent = intent }
     result += piece
   }
   return result

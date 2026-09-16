@@ -1,0 +1,26 @@
+{
+  "images": [
+    {
+      "filename": "file_type_light_leanconfig.svg",
+      "idiom": "universal"
+    },
+    {
+      "filename": "file_type_leanconfig.svg",
+      "idiom": "universal",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "preserves-vector-representation": true,
+    "template-rendering-intent": "original"
+  }
+}

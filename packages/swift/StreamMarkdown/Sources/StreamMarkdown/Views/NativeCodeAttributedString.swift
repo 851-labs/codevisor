@@ -12,11 +12,15 @@
       weight: .regular
     )
     for run in text.runs {
+      var traits: NSFontTraitMask = []
+      if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true { traits.insert(.boldFontMask) }
+      if run.inlinePresentationIntent?.contains(.emphasized) == true { traits.insert(.italicFontMask) }
+      let styledFont = traits.isEmpty ? font : NSFontManager.shared.convert(font, toHaveTrait: traits)
       result.append(
         NSAttributedString(
           string: String(text[run.range].characters),
           attributes: [
-            .font: font,
+            .font: styledFont,
             .foregroundColor: run.foregroundColor.map(NSColor.init) ?? foreground,
           ]
         )

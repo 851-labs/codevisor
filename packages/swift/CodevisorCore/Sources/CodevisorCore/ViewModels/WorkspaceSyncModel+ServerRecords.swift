@@ -71,7 +71,7 @@ extension WorkspaceSyncModel {
         metadata = String(data: data, encoding: .utf8)
       }
     case .document:
-      paneType = "markdown"
+      paneType = "file"
       resourceKind = "file"
       resourceId = pane.documentPath
     case .plugin:
@@ -135,7 +135,7 @@ extension WorkspaceSyncModel {
       return PaneDescriptorState(
         id: id, kind: .browser, name: record.title,
         terminalKey: id.uuidString, browserURL: value?.url)
-    case "markdown":
+    case "file", "markdown":
       guard record.resourceKind == "file", let path = record.resourceId, !path.isEmpty else {
         return nil
       }

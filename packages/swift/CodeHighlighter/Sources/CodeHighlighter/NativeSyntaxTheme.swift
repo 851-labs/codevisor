@@ -1,8 +1,6 @@
 import Foundation
 
-/// Resolves semantic capture names from the native lexer against
-/// VS Code/TextMate `tokenColors` rules. The renderer only consumes foreground
-/// colors today, matching the old Shiki bridge's output contract.
+/// Resolves Tree-sitter captures against the app’s VS Code/TextMate themes.
 struct NativeSyntaxTheme: Sendable {
   private struct Document: Decodable {
     var tokenColors: [Rule]?
@@ -16,6 +14,7 @@ struct NativeSyntaxTheme: Sendable {
 
   private struct Settings: Decodable {
     var foreground: String?
+    var fontStyle: String?
   }
 
   private enum ScopeList: Decodable {
@@ -41,7 +40,8 @@ struct NativeSyntaxTheme: Sendable {
 
   private struct CompiledRule: Sendable {
     let selectors: [Selector]
-    let foreground: String
+    let foreground: String?
+    let fontStyle: String?
     let order: Int
   }
 
@@ -103,36 +103,70 @@ struct NativeSyntaxTheme: Sendable {
     let document = try JSONDecoder().decode(Document.self, from: Data(json.utf8))
     let sourceRules = document.tokenColors ?? document.settings ?? []
     rules = sourceRules.enumerated().compactMap { index, rule in
-      guard let foreground = rule.settings?.foreground, !foreground.isEmpty else { return nil }
+      guard let settings = rule.settings, settings.foreground != nil || settings.fontStyle != nil else { return nil }
       let rawScopes = rule.scope?.values ?? []
       let selectors =
         rawScopes
         .flatMap { $0.split(separator: ",").map(String.init) }
         .compactMap(Selector.init)
       guard !selectors.isEmpty else { return nil }
-      return CompiledRule(selectors: selectors, foreground: foreground, order: index)
+      return CompiledRule(
+        selectors: selectors, foreground: settings.foreground, fontStyle: settings.fontStyle, order: index)
     }
   }
 
-  func foreground(for capture: String?, language: SyntaxLanguage) -> String? {
-    guard let capture else { return nil }
+  func style(for capture: String, language: SyntaxLanguage) -> CodeHighlightDocument.Style {
     let root = language.textMateRootScope
-    var best: (score: Int, order: Int, color: String)?
-
-    for leaf in Self.textMateScopes(for: capture) {
-      let stack = [root, leaf]
+    var color: (score: Int, order: Int, value: String)?
+    var font: (score: Int, order: Int, value: String)?
+    var category = Self.normalized(capture)
+    var scopes: [String] = []
+    while true {
+      let mapped = Self.textMateScopes(for: category)
+      scopes += mapped
+      if mapped != [category] { break }
+      guard let dot = category.lastIndex(of: ".") else { break }
+      category = String(category[..<dot])
+    }
+    for leaf in scopes {
       for rule in rules {
         for selector in rule.selectors {
-          guard let score = selector.score(in: stack) else { continue }
-          if best == nil || score > best!.score
-            || (score == best!.score && rule.order >= best!.order)
+          guard let score = selector.score(in: [root, leaf]) else { continue }
+          if let value = rule.foreground,
+            color == nil || score > color!.score || (score == color!.score && rule.order >= color!.order)
           {
-            best = (score, rule.order, rule.foreground)
+            color = (score, rule.order, value)
+          }
+          if let value = rule.fontStyle,
+            font == nil || score > font!.score || (score == font!.score && rule.order >= font!.order)
+          {
+            font = (score, rule.order, value)
           }
         }
       }
     }
-    return best?.color
+    let traits = font?.value.split(separator: " ") ?? []
+    return .init(foreground: color?.value, bold: traits.contains("bold"), italic: traits.contains("italic"))
+  }
+
+  private static func normalized(_ capture: String) -> String {
+    switch capture {
+    case "diff.plus": "markup.inserted"
+    case "diff.minus": "markup.deleted"
+    case "diff.delta": "markup.changed"
+    case "text.title", "markup.heading": "markup.heading"
+    case "text.literal", "markup.raw": "string"
+    case "text.uri", "text.reference", "markup.link.url": "markup.link"
+    case "text.strong", "markup.strong": "markup.bold"
+    case "text.emphasis", "markup.emphasis": "markup.italic"
+    case "constant.builtin": "constant"
+    case "constructor": "type"
+    case "variable.member": "property"
+    case "string.special.key": "property"
+    case "escape": "string.escape"
+    case "attribute": "attribute"
+    default: capture
+    }
   }
 
   private static func textMateScopes(for capture: String) -> [String] {

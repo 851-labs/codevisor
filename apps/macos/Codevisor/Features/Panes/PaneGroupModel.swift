@@ -156,6 +156,18 @@ final class PaneGroupModel: Identifiable {
 
   // MARK: - Live panes
 
+  func openFiles(id: UUID) {
+    guard let index = state.panes.firstIndex(where: { $0.id == id }) else { return }
+    let context = makeContext(state.panes[index])
+    let root = context.workspaceRootDirectory ?? context.session?.cwd ?? context.project.folderURL.path
+    let pane = PaneDescriptorState(
+      id: id, kind: .document, name: "Files", terminalKey: id.uuidString, documentPath: root + "/")
+    discardLivePane(id: id)
+    state.panes[index] = pane
+    persist()
+    onPaneChanged?(pane)
+  }
+
   /// The live pane for a descriptor, built on first use. New pane kinds add
   /// a factory branch here.
   func pane(for descriptor: PaneDescriptorState) -> any Pane {
@@ -171,8 +183,14 @@ final class PaneGroupModel: Identifiable {
       wireScreenSharing(sharing)
       pane = sharing
     case .document:
-      let document = MarkdownDocumentPane(context: makeContext(descriptor), descriptor: descriptor)
-      document.onFocus = { [weak self] in self?.requestBackgroundFocus?() }
+      let document = FilePane(context: makeContext(descriptor), descriptor: descriptor)
+      document.onNavigate = { [weak self] path in
+        guard let self, let index = state.panes.firstIndex(where: { $0.id == descriptor.id }) else { return }
+        state.panes[index].documentPath = path
+        state.panes[index].name = FileDocumentLocation.name(path)
+        persist()
+        onPaneChanged?(state.panes[index])
+      }
       pane = document
     case .terminal:
       let terminal = TerminalPane(context: makeContext(descriptor))

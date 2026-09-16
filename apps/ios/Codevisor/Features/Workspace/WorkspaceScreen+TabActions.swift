@@ -40,6 +40,7 @@ extension WorkspaceScreen {
     if pane.kind == .browser {
       BrowserPaneCache.shared.remove(paneId: pane.id)
     }
+    if pane.kind == .document { FilePaneCache.shared.remove(paneId: pane.id) }
     if pane.kind == .chat {
       TranscriptPresentationSurfaceCache.shared.remove(paneID: pane.id)
     }

@@ -44,14 +44,13 @@ extension HomeView {
           $0.serverId == workspace.serverId
             && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
         }
-      guard let anchor else { return nil }
       let rows = sidebarRows(for: workspace, sessionsByKey: sessionsByKey)
       return HomeSidebarSection(
         id: workspace.id,
         serverId: workspace.serverId,
         name: workspace.name,
         machineName: machines.fleetMachineName(for: workspace.serverId),
-        anchorSessionId: anchor.id,
+        anchorSessionId: anchor?.id,
         status: rows.map(\.status).min() ?? .idle,
         rows: rows
       )

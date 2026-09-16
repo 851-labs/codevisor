@@ -105,7 +105,7 @@ struct WorkspaceScreen: View {
   /// created. Nil only while an unsent draft.
   var activeSessionId: UUID? { sessionId ?? startedSessionId }
 
-  var isDraft: Bool { activeSessionId == nil }
+  var isDraft: Bool { activeSessionId == nil && workspaceId == nil }
 
   /// The first send is under way the moment its optimistic message exists —
   /// before the scratch folder or session is created. The run pickers
@@ -182,6 +182,11 @@ struct WorkspaceScreen: View {
   /// chat's first send must show the chat, not a placeholder.
   var resolvedProject: Project? {
     project
+      ?? resolvedWorkspace.flatMap { workspace in
+        environment.projectList.projects.first {
+          $0.serverId == workspace.serverId && $0.id == workspace.projectId
+        }
+      }
       ?? draftController?.project
       ?? rootSession.flatMap { session in
         environment.projectList.projects.first {
@@ -228,7 +233,8 @@ struct WorkspaceScreen: View {
   }
 
   var workspaceCwd: String {
-    rootSession?.cwd
+    resolvedWorkspace?.rootDirectory
+      ?? rootSession?.cwd
       ?? resolvedProject?.folderURL.path
       ?? ""
   }
@@ -295,14 +301,18 @@ struct WorkspaceScreen: View {
     // Sent chats align their title and subtitle to the leading edge; drafts keep a centered title.
     .toolbarRole(!isDraft && activePane?.kind == .chat ? .editor : .automatic)
     .toolbar {
-      WorkspaceScreenToolbar(
-        isNewChatPresentation: isNewChatPresentation,
-        isPromotingNewChat: isPromotingNewChat,
-        blocksServerContent: blocksServerContent,
-        isDraft: isDraft,
-        onDismissNewChat: { dismissNewChatPresentation() },
-        onAddTab: { addTab() }
-      )
+      if !blocksServerContent, let model = activeFileModel {
+        FilePaneToolbar(model: model, onNewTab: { addTab() })
+      } else {
+        WorkspaceScreenToolbar(
+          isNewChatPresentation: isNewChatPresentation,
+          isPromotingNewChat: isPromotingNewChat,
+          blocksServerContent: blocksServerContent,
+          isDraft: isDraft,
+          onDismissNewChat: { dismissNewChatPresentation() },
+          onAddTab: { addTab() }
+        )
+      }
     }
     .task(id: preparationIdentity) {
       IOSNavigationDiagnostics.record(

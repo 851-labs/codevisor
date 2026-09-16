@@ -11,7 +11,7 @@ enum HomeRoute: Hashable {
   case workspace(
     serverId: String,
     workspaceId: UUID,
-    anchorSessionId: UUID,
+    anchorSessionId: UUID?,
     preferredChatSessionId: UUID?,
     preferredPaneId: UUID? = nil
   )

@@ -157,10 +157,43 @@ let package = Package(
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
 
-    // MARK: CodeHighlighter (native Swift tokenization and VS Code theme mapping)
+    // MARK: CodeHighlighter (our Swift bindings over the vendored Tree-sitter C API)
+    .target(
+      name: "CTreeSitter",
+      path: "CodeHighlighter/Vendor/runtime",
+      sources: ["lib/src/lib.c"],
+      publicHeadersPath: "lib/include",
+      cSettings: [.headerSearchPath("lib/src")]
+    ),
+    .target(
+      name: "CodeHighlighterGrammars",
+      dependencies: ["CTreeSitter"],
+      path: "CodeHighlighter/Vendor",
+      sources: [
+        "bash/src/parser.c", "bash/src/scanner.c", "c/src/parser.c",
+        "cpp/src/parser.c", "cpp/src/scanner.c", "css/src/parser.c", "css/src/scanner.c",
+        "diff/src/parser.c", "go/src/parser.c", "html/src/parser.c", "html/src/scanner.c",
+        "java/src/parser.c", "javascript/src/parser.c", "javascript/src/scanner.c", "json/src/parser.c",
+        "kotlin/src/parser.c", "kotlin/src/scanner.c",
+        "markdown/tree-sitter-markdown/src/parser.c", "markdown/tree-sitter-markdown/src/scanner.c",
+        "markdown/tree-sitter-markdown-inline/src/parser.c", "markdown/tree-sitter-markdown-inline/src/scanner.c",
+        "python/src/parser.c", "python/src/scanner.c", "ruby/src/parser.c", "ruby/src/scanner.c",
+        "rust/src/parser.c", "rust/src/scanner.c", "sql/src/parser.c", "sql/src/scanner.c",
+        "swift/src/parser.c", "swift/src/scanner.c", "toml/src/parser.c", "toml/src/scanner.c",
+        "typescript/typescript/src/parser.c", "typescript/typescript/src/scanner.c",
+        "typescript/tsx/src/parser.c", "typescript/tsx/src/scanner.c",
+        "yaml/src/parser.c", "yaml/src/scanner.c",
+      ],
+      publicHeadersPath: "include",
+      cSettings: [.headerSearchPath("typescript/typescript/src")]
+    ),
     .target(
       name: "CodeHighlighter",
-      path: "CodeHighlighter/Sources/CodeHighlighter",
+      dependencies: ["CTreeSitter", "CodeHighlighterGrammars"],
+      path: "CodeHighlighter",
+      exclude: ["Vendor", "Tests", "README.md"],
+      sources: ["Sources/CodeHighlighter"],
+      resources: [.copy("Resources/Queries"), .copy("Resources/ThirdPartyNotices.txt")],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
@@ -326,6 +359,7 @@ let package = Package(
       resources: [
         .copy("Resources/plugin-bridge.js"), .copy("Resources/BrowserRouting"),
         .copy("Resources/browser-navigation.js"),
+        .process("Resources/FileIcons.xcassets"), .copy("Resources/FileIcons"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

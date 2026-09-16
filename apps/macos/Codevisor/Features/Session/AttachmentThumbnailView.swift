@@ -61,6 +61,7 @@ extension PreviewFile {
 /// transcript, or a file chip for other types. Every attachment opens with
 /// Quick Look.
 struct AttachmentThumbnailView: View {
+  @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.theme) private var theme
   @Environment(\.quickLook) private var quickLook
   @Environment(\.attachmentImages) private var attachmentImages
@@ -192,6 +193,7 @@ struct AttachmentThumbnailView: View {
   }
 
   private func preview() {
+    if openFileDocument?(FileDocumentLocation.target(for: file)) == true { return }
     quickLook?.present(
       .remote(
         source: file.source,

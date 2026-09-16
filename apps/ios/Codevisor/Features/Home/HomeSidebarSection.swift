@@ -13,7 +13,7 @@ struct HomeSidebarSection: Identifiable, Equatable {
   let machineName: String?
   /// The chat the workspace mounts through: iOS opens a workspace by its
   /// anchor chat, whatever tab it then shows.
-  let anchorSessionId: UUID
+  let anchorSessionId: UUID?
   /// The most urgent tab status, summarized on a collapsed header.
   let status: HomeSessionStatus
   let rows: [HomeSidebarTabRow]

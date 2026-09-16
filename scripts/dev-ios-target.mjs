@@ -37,8 +37,7 @@ export async function buildIOSDevelopmentApp({
         `CODEVISOR_IOS_BUNDLE_IDENTIFIER=${bundleIdentifier}`,
         `CODEVISOR_URL_SCHEME=${urlScheme}`,
         `INFOPLIST_KEY_CFBundleDisplayName=${appDisplayName}`,
-        "ASSETCATALOG_COMPILER_APPICON_NAME=AppIconDevGenerated",
-        "INFOPLIST_KEY_CFBundleIconName=AppIconDevGenerated",
+        "CODEVISOR_APP_ICON_NAME=AppIconDevGenerated",
         "build"
       ],
       { environment, layout }

@@ -8,6 +8,7 @@ import SwiftUI
 import TranscriptKit
 
 struct AssistantTurnBody: View {
+  @Environment(\.openFileDocument) private var openFileDocument
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.transcriptController) private var transcriptController
   @Environment(\.runningSubagentToolCallIds) private var runningSubagents
@@ -267,6 +268,7 @@ struct AssistantTurnBody: View {
   }
 
   private func openMarkdownLink(_ url: URL) -> Bool {
+    if openFileDocument?(url.relativeString) == true { return true }
     guard let file = markdownLinkPreviewFile(url) else { return false }
     guard let attachmentImages else { return true }
     Task {

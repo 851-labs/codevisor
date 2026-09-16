@@ -1,9 +1,20 @@
 import CodevisorCore
 import CodevisorCoreMac
+import CodevisorUI
 import ComposableArchitecture
 import SwiftUI
 
 extension SessionContainerView {
+  @ViewBuilder
+  var titledContentColumn: some View {
+    if let model = activeFileModel {
+      // Keep the window's document title while the toolbar supplies a browse button.
+      contentColumn.navigationTitle(model.title)
+    } else {
+      contentColumn.navigationTitle(activePaneTitle)
+    }
+  }
+
   /// Resolve within the selected tab, even during the frame between a tab
   /// change and its focus callback. A stale split must never own pane controls.
   private var activeToolbarGroup: PaneGroupModel? {
@@ -23,6 +34,11 @@ extension SessionContainerView {
     return (group.selectedPane as? BrowserPane)?.model
   }
 
+  var activeFileModel: FilePaneModel? {
+    guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .document else { return nil }
+    return (group.selectedPane as? FilePane)?.model
+  }
+
   var activeScreenSharingPane: ScreenSharingPane? {
     guard let group = activeToolbarGroup, group.state.selectedPane?.kind == .screenSharing,
       let pane = group.selectedPane as? ScreenSharingPane, pane.store != nil, !pane.showsDisplayPicker
@@ -31,23 +47,23 @@ extension SessionContainerView {
   }
 
   var paneControlsReplaceTitle: Bool {
-    activePaneDescriptor?.kind == .browser
+    activePaneDescriptor?.kind == .browser || activeFileModel != nil
   }
 
   /// Chats retain the editable title and context previously used in Nous.
-  /// Connected screen sharing names the remote Mac; browser controls replace the title.
+  /// Connected screen sharing names the remote Mac; browser and file controls replace the title.
   var activePaneTitle: Binding<String> {
     Binding(
       get: {
         if let pane = activeScreenSharingPane { return pane.connectionName }
         guard let descriptor = activePaneDescriptor else { return "New Tab" }
-        if paneControlsReplaceTitle { return "" }
+        if descriptor.kind == .browser { return "" }
         let workspace = selectedWorkspace
         if descriptor.kind == .chat { return paneTitle(descriptor) }
         return workspace.selectedCenterTab?.customTitle ?? paneTitle(descriptor)
       },
       set: { title in
-        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil else { return }
+        guard !paneControlsReplaceTitle, activeScreenSharingPane == nil, activeFileModel == nil else { return }
         let workspace = selectedWorkspace
         renameCenterTab(workspace.selectedCenterTabId, to: title)
       }

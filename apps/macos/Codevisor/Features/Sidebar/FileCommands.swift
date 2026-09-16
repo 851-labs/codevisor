@@ -1,4 +1,10 @@
+import CodevisorClient
+import CodevisorUI
 import SwiftUI
+
+private struct FilePaneKey: FocusedValueKey {
+  typealias Value = FilePaneModel
+}
 
 /// Scene-scoped creation and navigation actions published by the sidebar (via
 /// `.focusedSceneValue`) so menu commands drive the same code paths as
@@ -33,6 +39,11 @@ private struct NewChatComposerFocusKey: FocusedValueKey {
 }
 
 extension FocusedValues {
+  var filePane: FilePaneModel? {
+    get { self[FilePaneKey.self] }
+    set { self[FilePaneKey.self] = newValue }
+  }
+
   var sidebarActions: SidebarActions? {
     get { self[SidebarActionsKey.self] }
     set { self[SidebarActionsKey.self] = newValue }
@@ -47,10 +58,36 @@ extension FocusedValues {
 /// The File > New items. Replaces the default "New Window" so ⌘N creates a
 /// chat — the app's primary "new document" action.
 struct FileCommands: Commands {
+  @FocusedValue(\.filePane) private var file
+
   var body: some Commands {
     CommandGroup(replacing: .newItem) {
       NewChatMenuItem()
       NewProjectMenuItem()
+    }
+    CommandGroup(after: .newItem) {
+      if let file {
+        Button("Open File…") { file.showsExplorer = true }
+          .keyboardShortcut("o", modifiers: .command)
+      }
+    }
+    CommandGroup(replacing: .saveItem) {
+      if let file, !file.isBrowsing {
+        Button("Save") { Task { await file.document.save() } }
+          .keyboardShortcut("s", modifiers: .command)
+          .disabled(!file.canSave)
+      }
+    }
+    CommandGroup(after: .textEditing) {
+      if let file, !file.isBrowsing, file.document.snapshot?.content != nil {
+        Button("Find in File…") {
+          file.showsFind = true
+          file.editor.preview = false
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        Button("Go to Line…") { file.showsGoToLine = true }
+          .keyboardShortcut("g", modifiers: .control)
+      }
     }
   }
 }

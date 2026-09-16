@@ -11,7 +11,7 @@ extension WorkspaceScreen {
       "workspace.prepare.begin",
       "session=\(activeSessionId.map(Self.diagnosticID) ?? "nil") controllers=\(controllers.count)"
     )
-    guard let sessionId = activeSessionId else {
+    if isDraft {
       setUpDraftIfNeeded()
       guard let controller = draftController, controller.isServerReady else { return }
       let targetServerId = controller.project.serverId
@@ -52,6 +52,11 @@ extension WorkspaceScreen {
         publishPane(explicitlyOpenedPane)
       }
       synchronizePaneStateFromWorkspace()
+    }
+    guard let sessionId = activeSessionId else {
+      project = resolvedProject
+      serverConfig = environment.machines.serverConfig(for: resolvedServerId)
+      return
     }
     if controllers[sessionId] == nil {
       guard let session = rootSession,

@@ -47,7 +47,7 @@ struct MarkdownDocumentTests {
     let record = WorkspaceSyncModel.serverPane(
       from: pane, workspaceId: UUID(), createdAt: Date()
     )
-    #expect(record.paneType == "markdown")
+    #expect(record.paneType == "file")
     #expect(record.resourceId == "/workspace/docs/Audit.md")
     #expect(WorkspaceSyncModel.descriptor(from: record) == pane)
   }

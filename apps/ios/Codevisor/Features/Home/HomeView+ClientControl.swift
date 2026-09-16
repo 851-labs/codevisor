@@ -41,11 +41,9 @@ extension HomeView {
     let tab = selected.selectedCenterTab
     let pane = tab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane }
     let candidates = [pane?.chatSessionId].compactMap { $0 } + workspace.chatSessionIds
-    guard
-      let anchor = candidates.first(where: { id in
-        projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
-      })
-    else { throw ClientControlError("Workspace has no available chat route on this client") }
+    let anchor = candidates.first(where: { id in
+      projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
+    })
     environment.workspaces.save(selected)
     environment.workspaceSync.noteLocalMutation()
     path = [

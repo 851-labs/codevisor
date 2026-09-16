@@ -8,6 +8,8 @@ import SwiftUI
 struct WorkspacePaneContentView: View {
   @Environment(AppEnvironment.self) private var environment
   let pane: PaneDescriptorState
+  let filePaneModel: (PaneDescriptorState) -> FilePaneModel
+  var onOpenFiles: (() -> Void)? = nil
   /// Resolved via the cache (and the draft controller) so an already-live
   /// chat renders on the FIRST frame — a just-sent message must never flash
   /// a spinner over itself.
@@ -101,6 +103,7 @@ struct WorkspacePaneContentView: View {
         onNewChat: onConvertToChat,
         onNewTerminal: onConvertToTerminal,
         onNewBrowser: onConvertToBrowser,
+        onOpenFiles: { onOpenFiles?() },
         client: machineClient,
         iconCacheNamespace: machineId,
         onOpenPlugin: onConvertToPlugin
@@ -115,10 +118,8 @@ struct WorkspacePaneContentView: View {
         "Screen Sharing", systemImage: "display",
         description: Text("Screen Sharing currently requires Codevisor on a Mac."))
     case .document:
-      if let path = pane.documentPath {
-        MarkdownDocumentView(
-          path: path, sessionId: activeSessionId ?? pane.id, client: machineClient
-        )
+      if pane.documentPath != nil {
+        FilePaneView(model: filePaneModel(pane))
       } else {
         ContentUnavailableView("Document unavailable", systemImage: "doc")
       }

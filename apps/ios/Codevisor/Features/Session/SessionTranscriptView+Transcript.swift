@@ -11,6 +11,7 @@ extension SessionTranscriptView {
   /// Shows a linked workspace file in Quick Look; web links fall through
   /// to the platform.
   func openMarkdownLink(_ url: URL) -> Bool {
+    if openFileDocument?(url.relativeString) == true { return true }
     guard let file = markdownLinkPreviewFile(url) else { return false }
     guard let attachmentImages else { return true }
     Task {
@@ -89,6 +90,7 @@ extension SessionTranscriptView {
               .reportsStreamingTextAnimationActivity()
               .environment(\.theme, theme)
               .environment(\.attachmentImages, attachmentImages)
+              .environment(\.openFileDocument, openFileDocument)
               .environment(\.transcriptDisclosure, disclosure)
               .environment(\.transcriptController, controller)
               .environment(

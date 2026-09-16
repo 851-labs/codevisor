@@ -72,11 +72,11 @@ extension ChatScreen {
                     .markdownLinkHandler { url in
                       TranscriptMarkdownLinkOpener.open(
                         url, quickLook: quickLook, attachmentImages: attachmentImages,
-                        openDocument: openMarkdownDocument)
+                        openDocument: openFileDocument)
                     }
                     .environment(\.theme, theme)
                     .environment(\.attachmentImages, attachmentImages)
-                    .environment(\.openMarkdownDocument, openMarkdownDocument)
+                    .environment(\.openFileDocument, openFileDocument)
                     .environment(\.hoverTrackingSuspended, controller.isSending)
                     .environment(\.transcriptDisclosure, controller.disclosure)
                     .environment(\.transcriptController, controller)
@@ -117,7 +117,7 @@ extension ChatScreen {
               openMarkdownLink: { url in
                 TranscriptMarkdownLinkOpener.open(
                   url, quickLook: quickLook, attachmentImages: attachmentImages,
-                  openDocument: openMarkdownDocument)
+                  openDocument: openFileDocument)
               }
             ),
             markdownRowStyle: transcriptMarkdownRowStyle,

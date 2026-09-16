@@ -3,60 +3,47 @@ import os
 
 private let log = Logger(subsystem: "com.851labs.codevisor", category: "highlighting")
 
-/// Native, incremental syntax highlighting for transcript code blocks and
-/// diffs. The lexer is intentionally lexical rather than editor-grade: it
-/// recognizes the language constructs that affect presentation, carries
-/// multiline comment/string state between lines, and never executes JavaScript
-/// or loads a runtime bundle on the rendering path.
+/// Snapshot adapter for chat and diffs over our document-scoped Tree-sitter
+/// engine. Native editors use CodeHighlightDocument's range updates directly.
 public actor CodeHighlighter {
-  /// One styled output run. A nil color inherits the code block's foreground.
   public struct Token: Sendable, Equatable, Codable {
     public let content: String
     public let color: String?
+    public let bold: Bool
+    public let italic: Bool
 
-    public init(content: String, color: String?) {
+    public init(content: String, color: String?, bold: Bool = false, italic: Bool = false) {
       self.content = content
       self.color = color
+      self.bold = bold
+      self.italic = italic
     }
   }
 
-  private struct ResultCacheKey: Hashable {
-    let themeKey: String
-    let themeRevision: UInt64
+  private struct CacheKey: Hashable {
     let language: SyntaxLanguage
-    let code: String
+    let themeRevision: UInt64
+    let source: String
   }
-
-  private struct ThemeEntry {
-    let json: String
-    let theme: NativeSyntaxTheme?
+  private struct Session {
+    let document: CodeHighlightDocument
+    let language: SyntaxLanguage
     let revision: UInt64
   }
-
-  private struct SessionEntry {
-    let document: NativeLexedDocument
-    let revision: UInt64
-  }
-
   public static let shared = CodeHighlighter()
-
-  private var resultCache: [ResultCacheKey: [[Token]]] = [:]
-  private var resultCacheOrder: [ResultCacheKey] = []
-  private var themes: [String: ThemeEntry] = [:]
-  private var themeRevision: UInt64 = 0
-  private var sessions: [String: SessionEntry] = [:]
-  private var sessionRevision: UInt64 = 0
-  private let resultCacheLimit = 200
-  private let sessionLimit = 32
+  private var cache: [CacheKey: [[Token]]] = [:]
+  private var cacheOrder: [CacheKey] = []
+  private var cachedBytes = 0
+  private var themes: [String: (json: String, revision: UInt64)] = [:]
+  private var sessions: [String: Session] = [:]
+  private var revision: UInt64 = 0
 
   public init() {}
 
-  /// Grammar name for a file path's extension, or nil when Codevisor does
-  /// not support it. This is also used by the diff viewer.
   public static func language(forPath path: String) -> String? {
-    let ext = (path as NSString).pathExtension.lowercased()
-    guard !ext.isEmpty else { return nil }
-    return extensionLanguages[ext]?.rawValue
+    let name = (path as NSString).lastPathComponent
+    if [".bashrc", ".zshrc", ".bash_profile"].contains(name) { return "bash" }
+    return extensionLanguages[(path as NSString).pathExtension.lowercased()]?.rawValue
   }
 
   private static let extensionLanguages: [String: SyntaxLanguage] = [
@@ -84,107 +71,89 @@ public actor CodeHighlighter {
     "yml": .yaml, "yaml": .yaml,
   ]
 
-  /// Highlights source using a VS Code/Shiki theme document.
-  ///
-  /// `sessionID` gives a growing streaming block a stable identity. When the
-  /// next snapshot arrives, unchanged lines and their ending lexer states are
-  /// reused. Set `isComplete` for the final snapshot so the session is
-  /// released and the styled result enters the bounded settled-result cache.
   public func highlight(
-    code: String,
-    language: String?,
-    themeKey: String,
-    themeJSON: String,
-    sessionID: String? = nil,
-    isComplete: Bool = true
-  ) -> [[Token]]? {
+    code: String, language: String?, themeKey: String, themeJSON: String,
+    sessionID: String? = nil, isComplete: Bool = true
+  ) async -> [[Token]]? {
     guard let language = SyntaxLanguage.resolve(language) else { return nil }
-    guard let (theme, themeRevision) = theme(for: themeKey, json: themeJSON) else {
-      if isComplete, let sessionID { sessions.removeValue(forKey: sessionID) }
-      return nil
+    revision &+= 1
+    let requestRevision = revision
+    if themes[themeKey]?.json != themeJSON {
+      if themes.count >= 64 { themes.removeAll() }
+      themes[themeKey] = (themeJSON, revision)
     }
-
-    let cacheKey = ResultCacheKey(
-      themeKey: themeKey,
-      themeRevision: themeRevision,
-      language: language,
-      code: code
-    )
-    if isComplete, let cached = resultCache[cacheKey] {
-      touchResult(cacheKey)
+    let key = CacheKey(language: language, themeRevision: themes[themeKey]!.revision, source: code)
+    if isComplete, let cached = cache[key] {
       if let sessionID { sessions.removeValue(forKey: sessionID) }
       return cached
     }
-
-    let previous = sessionID.flatMap { sessions[$0]?.document }
-    let document = NativeSyntaxLexer.lex(code, as: language, reusing: previous)
-
+    let existing = sessionID.flatMap { sessions[$0] }
+    let document =
+      existing?.language == language ? existing!.document : CodeHighlightDocument(language: language.rawValue)
     if let sessionID {
       if isComplete {
         sessions.removeValue(forKey: sessionID)
       } else {
-        sessionRevision &+= 1
-        sessions[sessionID] = SessionEntry(document: document, revision: sessionRevision)
-        trimSessionsIfNeeded()
-      }
-    }
-
-    let result = document.lines.map { line in
-      var tokens: [Token] = []
-      for lexeme in line.lexemes {
-        let color = theme.foreground(for: lexeme.capture, language: language)
-        if let last = tokens.last, last.color == color {
-          tokens[tokens.count - 1] = Token(
-            content: last.content + lexeme.content,
-            color: color
-          )
-        } else {
-          tokens.append(Token(content: lexeme.content, color: color))
+        sessions[sessionID] = Session(document: document, language: language, revision: revision)
+        if sessions.count > 32, let oldest = sessions.min(by: { $0.value.revision < $1.value.revision }) {
+          sessions.removeValue(forKey: oldest.key)
         }
       }
-      return tokens
-    }
-
-    if isComplete {
-      resultCache[cacheKey] = result
-      touchResult(cacheKey)
-      if resultCacheOrder.count > resultCacheLimit {
-        resultCache.removeValue(forKey: resultCacheOrder.removeFirst())
-      }
-    }
-    return result
-  }
-
-  private func theme(for key: String, json: String) -> (NativeSyntaxTheme, UInt64)? {
-    if let entry = themes[key], entry.json == json {
-      guard let theme = entry.theme else { return nil }
-      return (theme, entry.revision)
     }
     do {
-      let theme = try NativeSyntaxTheme(json: json)
-      themeRevision &+= 1
-      themes[key] = ThemeEntry(json: json, theme: theme, revision: themeRevision)
-      return (theme, themeRevision)
+      let spans = try await document.snapshot(source: code, themeJSON: themeJSON, revision: Int(requestRevision))
+      let result = Self.tokens(code: code, spans: spans)
+      let cost = code.utf8.count * 4 + result.reduce(0) { $0 + $1.count * 64 }
+      if isComplete, !Task.isCancelled, cost <= 8 * 1024 * 1024, cache[key] == nil {
+        cache[key] = result
+        cacheOrder.append(key)
+        cachedBytes += cost
+        while cachedBytes > 16 * 1024 * 1024 || cacheOrder.count > 200 {
+          let oldest = cacheOrder.removeFirst()
+          if let removed = cache.removeValue(forKey: oldest) {
+            cachedBytes -= oldest.source.utf8.count * 4 + removed.reduce(0) { $0 + $1.count * 64 }
+          }
+        }
+      }
+      return result
     } catch {
-      log.error(
-        "Failed to decode syntax theme \(key, privacy: .public): \(String(describing: error), privacy: .public)"
-      )
-      themes[key] = ThemeEntry(json: json, theme: nil, revision: 0)
+      if !(error is CancellationError), !Task.isCancelled {
+        log.error("Tree-sitter highlighting failed: \(String(describing: error), privacy: .public)")
+      }
       return nil
     }
   }
 
-  private func touchResult(_ key: ResultCacheKey) {
-    if let index = resultCacheOrder.firstIndex(of: key) {
-      resultCacheOrder.remove(at: index)
-    }
-    resultCacheOrder.append(key)
-  }
+  public func releaseSession(_ id: String) { sessions.removeValue(forKey: id) }
 
-  private func trimSessionsIfNeeded() {
-    guard sessions.count > sessionLimit else { return }
-    let overflow = sessions.count - sessionLimit
-    let oldest = sessions.sorted { $0.value.revision < $1.value.revision }.prefix(overflow)
-    for (key, _) in oldest { sessions.removeValue(forKey: key) }
+  private static func tokens(code: String, spans: [CodeHighlightDocument.Span]) -> [[Token]] {
+    let source = code as NSString
+    var lines: [[Token]] = [[]]
+    func append(_ range: NSRange, _ style: CodeHighlightDocument.Style) {
+      guard range.length > 0 else { return }
+      for (index, part) in source.substring(with: range).components(separatedBy: "\n").enumerated() {
+        if index > 0 { lines.append([]) }
+        guard !part.isEmpty else { continue }
+        let line = lines.count - 1
+        if let last = lines[line].last, last.color == style.foreground, last.bold == style.bold,
+          last.italic == style.italic
+        {
+          lines[line][lines[line].count - 1] = Token(
+            content: last.content + part, color: style.foreground, bold: style.bold, italic: style.italic)
+        } else {
+          lines[line].append(Token(content: part, color: style.foreground, bold: style.bold, italic: style.italic))
+        }
+      }
+    }
+    var offset = 0
+    for span in spans {
+      if span.range.location > offset {
+        append(NSRange(location: offset, length: span.range.location - offset), .init())
+      }
+      append(span.range, span.style)
+      offset = NSMaxRange(span.range)
+    }
+    if offset < source.length { append(NSRange(location: offset, length: source.length - offset), .init()) }
+    return lines
   }
 }

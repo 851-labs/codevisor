@@ -21,6 +21,8 @@ extension WorkspaceScreen {
   func paneContent(_ pane: PaneDescriptorState) -> some View {
     WorkspacePaneContentView(
       pane: pane,
+      filePaneModel: { filePaneModel(for: $0) },
+      onOpenFiles: { openFiles(pane) },
       chatController: { chatController(for: $0) },
       activeSessionId: activeSessionId,
       session: { session(for: $0) },
@@ -52,6 +54,7 @@ extension WorkspaceScreen {
       pluginPaneModel: { pluginPaneModel(for: $0) },
       onRenamePane: { renamePane($0, to: $1) }
     )
+    .environment(\.openFileDocument, openFileDocument)
     // BrowserPaneView extends its page separately so its floating controls
     // retain the home-indicator and keyboard safe areas.
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])

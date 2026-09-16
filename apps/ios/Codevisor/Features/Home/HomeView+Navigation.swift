@@ -116,6 +116,12 @@ extension HomeView {
     guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _)? = path.last else {
       return .keep
     }
+    guard let anchorSessionId else {
+      guard let workspace = environment.workspaces.workspace(id: workspaceId),
+        workspace.serverId == serverId, !workspace.isArchived
+      else { return .dismiss }
+      return .keep
+    }
     return environment.workspaceSync.routeDisposition(
       workspaceId: workspaceId,
       anchorSessionId: anchorSessionId,
@@ -129,7 +135,7 @@ extension HomeView {
     }
     IOSNavigationDiagnostics.record(
       "home.routeDisposition",
-      "value=\(routeDispositionSummary(disposition)) workspace=\(shortID(workspaceId)) anchor=\(shortID(anchorSessionId)) pathBefore=\(navigationPathSummary(path))"
+      "value=\(routeDispositionSummary(disposition)) workspace=\(shortID(workspaceId)) anchor=\(anchorSessionId.map(shortID) ?? "nil") pathBefore=\(navigationPathSummary(path))"
     )
     switch disposition {
     case .keep:

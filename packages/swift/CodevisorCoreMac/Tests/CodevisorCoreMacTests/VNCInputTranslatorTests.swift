@@ -58,7 +58,8 @@ struct VNCInputTranslatorTests {
         .keyEvent(keysym: RFBKeysym.superLeft, down: true)
       ])
     #expect(translator.translate(.key(code: 63, down: true, repeatKey: false, modifiers: 32)) == [])
-    #expect(translator.translate(.key(code: 1, down: true, repeatKey: false, modifiers: 0)) == [])  // unknown to the layout
+    // Unknown to the layout.
+    #expect(translator.translate(.key(code: 1, down: true, repeatKey: false, modifiers: 0)) == [])
     #expect(
       translator.translate(.text("hé")) == [
         .keyEvent(keysym: 0x68, down: true), .keyEvent(keysym: 0x68, down: false),

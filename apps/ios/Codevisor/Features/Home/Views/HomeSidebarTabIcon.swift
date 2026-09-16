@@ -51,7 +51,7 @@ struct HomeSidebarTabIcon: View {
       case .screenSharing:
         symbol("display")
       case .document:
-        symbol("doc.richtext")
+        FileIcon(path: row.title, size: size)
       case .newTab:
         symbol("square.dashed")
       }
@@ -74,7 +74,7 @@ extension HomeSidebarTabRow.Icon {
     case .browser: "Browser"
     case .plugin: "Plugin"
     case .screenSharing: "Screen Sharing"
-    case .document: "Document"
+    case .document: "File"
     case .newTab: "New Tab"
     }
   }
