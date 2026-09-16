@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { processIdentity } from "../packages/processes/src/index.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
+import { openOwnedXcodeWindow } from "./xcode-window.mjs"
 import {
   parseSimulatorArguments,
   selectSimulatorConfiguration,
@@ -33,6 +34,7 @@ const claim = {
   ownerStartedAt: owner.startedAt
 }
 let manifest
+let xcodeWindow
 let marked = false
 let stopping = false
 let wake
@@ -90,9 +92,23 @@ try {
   console.log(`Starting ${name}: ${udid} (${config.runtime})`)
   await simctl(["bootstatus", udid, "-b"], { signal: startup.signal })
   check()
-  await exec("xed", [join(repoRoot, "apps/ios/Codevisor.xcodeproj")])
   const { stdout } = await exec("xcode-select", ["-p"])
   const developer = stdout.trim()
+  xcodeWindow = await openOwnedXcodeWindow(
+    join(repoRoot, "apps/ios/Codevisor.xcodeproj"),
+    await realpath(join(developer, "../.."))
+  )
+  xcodeWindow.exited.then(requestStop, (error) => {
+    console.error(error.message)
+    process.exitCode = 1
+    requestStop()
+  })
+  console.log(
+    xcodeWindow.owned
+      ? "Opened an owned Xcode project window."
+      : "Reusing an existing Xcode project window; it will stay open."
+  )
+  check()
   const apps = [
     join(developer, "Applications/Simulator.app"),
     join(developer, "../Applications/DeviceHub.app")
@@ -112,7 +128,7 @@ try {
   manifest.ready = true
   await writeJSON(manifestPath, manifest)
   console.log(
-    `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${repoRoot}/apps/ios/Codevisor.xcodeproj\n  State: ${manifestPath}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator.`
+    `Simulator ready: ${name}\n  Device: ${udid}\n  Project: ${repoRoot}/apps/ios/Codevisor.xcodeproj\n  State: ${manifestPath}\nStart the app separately with bun run dev:ios or bun run dev. Leave this task running; stopping it deletes this simulator and closes any Xcode window it owns.`
   )
   // File removal also ends ownership, including manual worktree deletion.
   const monitor = setInterval(() => {
@@ -133,6 +149,12 @@ try {
     process.exitCode = 1
   }
 } finally {
+  try {
+    await xcodeWindow?.close()
+  } catch (error) {
+    console.error(`Xcode window cleanup failed: ${error.message}`)
+    process.exitCode = 1
+  }
   if (manifest) {
     try {
       if (marked) await deleteOwnedSimulator(manifest)

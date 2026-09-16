@@ -7,7 +7,7 @@ import { runOwnedTask } from "./owned-task.mjs"
 const options = parseSimulatorArguments(process.argv.slice(2))
 if (options.help) {
   console.log(
-    'Usage: bun run ios-simulator [--device="iPhone 17 Pro"] [--runtime=27.0]\n\nStarts only this worktree\'s simulator and opens its Xcode project. Leave this task running while using dev:ios or dev. Stopping it deletes its simulator.'
+    'Usage: bun run ios-simulator [--device="iPhone 17 Pro"] [--runtime=27.0]\n\nStarts only this worktree\'s simulator and opens its Xcode project. Leave this task running while using dev:ios or dev. Stopping it deletes its simulator and closes the Xcode window it opened; an already-open window is left alone. Requires macOS Accessibility access.'
   )
 } else {
   runOwnedTask(

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 import {
   parseProcessTable,
   processIdentity,
@@ -163,45 +163,72 @@ describe("owned process shutdown", () => {
     await stopProcesses([entry(30)], { system: fake.system, graceMs: 0, forceMs: 0 })
   })
 
-  it("shuts down a real shell tree and observes a child cleanup acknowledgement", async () => {
+  it.each(["tree", "child-first"])("shuts down a real shell tree (%s)", async (order) => {
     const child = spawn(
       process.execPath,
       [
         "-e",
         `
       const {spawn}=require('node:child_process');
-      const worker=spawn(process.execPath,['-e', 'process.on("SIGTERM",()=>{console.log("cleaned");process.exit(0)});console.log("ready");setInterval(()=>{},1000)'],{stdio:['ignore','pipe','inherit']});
+      const worker=spawn(process.execPath,['-e', 'process.on("SIGTERM",()=>{console.log("cleaned");process.exit(0)});console.log("ready",process.pid);setInterval(()=>{},1000)'],{stdio:['ignore','pipe','inherit']});
       worker.stdout.pipe(process.stdout);
-      process.on('SIGTERM',()=>worker.once('exit',()=>process.exit(0)));
+      let stopping=false;
+      let workerExited=false;
+      const finish=()=>{if(stopping && workerExited) process.exit(0)};
+      worker.once('exit',()=>{workerExited=true;console.log('worker-exited');finish()});
+      process.on('SIGTERM',()=>{stopping=true;finish()});
       setInterval(()=>{},1000);
     `
       ],
       { detached: true, stdio: ["ignore", "pipe", "inherit"] }
     )
     let output = ""
-    const ready = new Promise<void>((resolve) =>
+    let workerPID = 0
+    let acknowledgeWorkerExit: () => void
+    const workerExited = new Promise<void>((resolve) => {
+      acknowledgeWorkerExit = resolve
+    })
+    const ready = new Promise<void>((resolve, reject) => {
       child.stdout.on("data", (chunk) => {
         output += chunk
-        if (output.includes("ready")) resolve()
+        const match = output.match(/ready (\d+)/)
+        if (match) {
+          workerPID = Number(match[1])
+          resolve()
+        }
+        if (output.includes("worker-exited")) acknowledgeWorkerExit()
       })
-    )
+      child.once("exit", () => reject(new Error("Fixture exited before readiness")))
+      child.once("error", reject)
+    })
     const exited = once(child, "exit")
-    const tree = await trackProcessTree(child.pid!, { detached: true })
+    const tracking = trackProcessTree(child.pid!, { detached: true })
+    const cleanup = async () => {
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          process.kill(-child.pid!, "SIGKILL")
+        } catch {
+          /* Already exited. */
+        }
+      }
+      await exited
+      ;(await tracking).dispose()
+    }
+    onTestFinished(cleanup)
     try {
-      await ready
+      const [, tree] = await Promise.all([ready, tracking])
       expect(await processIdentity(child.pid!)).toBeDefined()
+      if (order === "child-first") {
+        process.kill(workerPID, "SIGTERM")
+        await workerExited
+      }
       await tree.stop()
       await exited
       expect(output).toContain("cleaned")
       expect(await processIdentity(child.pid!)).toBeUndefined()
       await tree.stop()
     } finally {
-      tree.dispose()
-      try {
-        process.kill(-child.pid!, "SIGKILL")
-      } catch {
-        /* test process already exited */
-      }
+      await cleanup()
     }
   })
 })

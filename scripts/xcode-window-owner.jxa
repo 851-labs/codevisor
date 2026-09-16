@@ -1,0 +1,256 @@
+// Run with osascript -l JavaScript. Keep the AX window object alive until EOF;
+// neither window titles, frontmost-window positions, nor recycled IDs own it.
+function ownXcodeWindow(system) {
+  var before = system.snapshot()
+  var owned
+  try {
+    system.open()
+    var deadline = system.now() + 30000
+    while (true) {
+      var current = system.snapshot()
+      if (before.app && current.app && !system.sameApp(before.app, current.app)) {
+        throw new Error("Xcode restarted while opening the project; refusing to claim a window.")
+      }
+      var matches = current.windows.filter(system.matchesProject)
+      var existing = matches.some(function (window) {
+        return before.windows.some(function (old) {
+          return system.sameWindow(old, window)
+        })
+      })
+      if (existing) break
+      if (matches.length > 1)
+        throw new Error("Multiple Xcode project windows opened; ownership is ambiguous.")
+      if (matches.length === 1) {
+        owned = { app: current.app, window: matches[0] }
+        break
+      }
+      if (system.now() >= deadline)
+        throw new Error("Timed out identifying the opened Xcode project window.")
+      system.pause()
+    }
+    system.ready(Boolean(owned))
+    system.waitForShutdown()
+  } finally {
+    if (owned) {
+      var live = system.snapshot()
+      if (
+        live.app &&
+        system.sameApp(owned.app, live.app) &&
+        live.windows.some(function (window) {
+          return system.sameWindow(owned.window, window)
+        }) &&
+        system.matchesProject(owned.window)
+      ) {
+        system.close(owned.window)
+      }
+    }
+  }
+}
+
+function taskStopConfirmation(system, before, current, window) {
+  if (
+    !current.app ||
+    !system.sameApp(before.app, current.app) ||
+    !system.sameWindow(system.mainWindow(current.app), window) ||
+    !system.matchesProject(window)
+  )
+    return null
+  var dialogs = current.windows.filter(system.isModal)
+  if (
+    dialogs.length !== 1 ||
+    before.windows.some(function (old) {
+      return system.sameWindow(old, dialogs[0])
+    })
+  )
+    return null
+  return system.taskStopButton(dialogs[0])
+}
+
+function readXcodeAttribute(system, name) {
+  var deadline = system.now() + 5000
+  while (true) {
+    var result = system.read(Math.min(1000, deadline - system.now()))
+    if (result.status === 0) return result.value
+    if (
+      result.status === -25202 ||
+      result.status === -25212 ||
+      (name === "AXDocument" && result.status === -25205)
+    )
+      return null // Destroyed element, no value, or a window without a document.
+    if (result.status === -25204 && system.now() < deadline) {
+      // Xcode can briefly stop answering AX requests as a workspace closes.
+      // Retry reads within the original budget; never interpret failure as absence.
+      system.pause()
+      if (system.now() < deadline) continue
+    }
+    throw new Error("Cannot read " + name + " from Xcode (AX error " + result.status + ").")
+  }
+}
+
+function run(argv) {
+  // Codevisor's task stop signals the whole tree. Only the parent's pipe owns
+  // our lifetime: let its EOF finish cleanup even if we also receive SIGTERM.
+  ObjC.bindFunction("signal", ["long", ["int", "long"]])
+  ;[1, 2, 13, 15].forEach(function (signal) {
+    $.signal(signal, 1)
+  }) // SIG_IGN
+  ObjC.import("Cocoa")
+  ObjC.bindFunction("AXIsProcessTrusted", ["bool", []])
+  ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]])
+  ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]])
+  ObjC.bindFunction("AXUIElementPerformAction", ["int", ["id", "id"]])
+  ObjC.bindFunction("AXUIElementSetMessagingTimeout", ["int", ["id", "float"]])
+  ObjC.bindFunction("CFEqual", ["bool", ["id", "id"]])
+  if (!$.AXIsProcessTrusted()) {
+    throw new Error(
+      "Xcode window ownership requires Accessibility access for the terminal or app running ios-simulator."
+    )
+  }
+  var projectPath = argv[0]
+  var appPath = argv[1]
+  function attribute(element, name) {
+    return readXcodeAttribute(
+      {
+        now: now,
+        pause: pause,
+        read: function (timeout) {
+          $.AXUIElementSetMessagingTimeout(element, timeout / 1000)
+          var value = Ref()
+          var status = $.AXUIElementCopyAttributeValue(element, $(name), value)
+          return { status: status, value: status === 0 ? value[0] : null }
+        }
+      },
+      name
+    )
+  }
+  function snapshot() {
+    var apps = ObjC.unwrap(
+      $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.apple.dt.Xcode")
+    ).filter(function (app) {
+      return ObjC.unwrap(app.bundleURL.URLByResolvingSymlinksInPath.path) === appPath
+    })
+    if (apps.length > 1)
+      throw new Error("Multiple copies of the selected Xcode are running; ownership is ambiguous.")
+    if (apps.length === 0) return { app: null, windows: [] }
+    var app = apps[0]
+    var element = $.AXUIElementCreateApplication(app.processIdentifier)
+    var windows = attribute(element, "AXWindows")
+    return { app: app, windows: windows ? ObjC.unwrap(windows) : [] }
+  }
+  function sameWindow(left, right) {
+    return Boolean(left && right && $.CFEqual(left, right))
+  }
+  function matchesProject(window) {
+    var document = attribute(window, "AXDocument")
+    if (!document) return false
+    var url = $.NSURL.URLWithString(document)
+    return (
+      url && url.isFileURL && ObjC.unwrap(url.URLByResolvingSymlinksInPath.path) === projectPath
+    )
+  }
+  function pause() {
+    $.NSThread.sleepForTimeInterval(0.1)
+  }
+  function now() {
+    return Number($.NSProcessInfo.processInfo.systemUptime) * 1000
+  }
+  var dialogSystem = {
+    sameApp: function (left, right) {
+      return !left.terminated && left.isEqual(right)
+    },
+    sameWindow: sameWindow,
+    matchesProject: matchesProject,
+    mainWindow: function (app) {
+      return attribute($.AXUIElementCreateApplication(app.processIdentifier), "AXMainWindow")
+    },
+    isModal: function (window) {
+      return Boolean(ObjC.unwrap(attribute(window, "AXModal")))
+    },
+    taskStopButton: function (dialog) {
+      var button = attribute(dialog, "AXDefaultButton")
+      if (!button || ObjC.unwrap(attribute(button, "AXTitle")) !== "Stop Tasks") return null
+      var children = attribute(dialog, "AXChildren")
+      var taskMessage =
+        children &&
+        ObjC.unwrap(children).some(function (child) {
+          return (
+            ObjC.unwrap(attribute(child, "AXRole")) === "AXStaticText" &&
+            String(ObjC.unwrap(attribute(child, "AXValue"))).indexOf(
+              "Closing this workspace will stop "
+            ) === 0
+          )
+        })
+      return taskMessage ? button : null
+    }
+  }
+  ownXcodeWindow({
+    snapshot: snapshot,
+    sameApp: function (left, right) {
+      return !left.terminated && left.isEqual(right)
+    },
+    sameWindow: sameWindow,
+    matchesProject: matchesProject,
+    now: now,
+    pause: pause,
+    open: function () {
+      var task = $.NSTask.alloc.init
+      task.launchPath = "/usr/bin/xed"
+      task.arguments = [projectPath]
+      task.standardOutput = $.NSFileHandle.fileHandleWithStandardError
+      task.launch
+      task.waitUntilExit
+      if (task.terminationStatus !== 0) throw new Error("xed failed to open the Xcode project.")
+    },
+    ready: function (owned) {
+      var message = $(JSON.stringify({ ready: true, owned: owned }) + "\n")
+      var error = Ref()
+      if (
+        !$.NSFileHandle.fileHandleWithStandardOutput.writeDataError(
+          message.dataUsingEncoding($.NSUTF8StringEncoding),
+          error
+        )
+      )
+        throw new Error("Xcode window owner lost its parent before readiness.")
+    },
+    // The simulator owner holds this pipe. EOF also arrives if that owner is
+    // SIGKILLed. This helper has its own process group and survives that kill.
+    waitForShutdown: function () {
+      $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile
+    },
+    close: function (window) {
+      var beforeClose = snapshot()
+      if (beforeClose.windows.some(dialogSystem.isModal))
+        throw new Error("Xcode has an existing dialog; leaving it and the owned window alone.")
+      var button = attribute(window, "AXCloseButton")
+      if (!button) throw new Error("The owned Xcode window has no close button.")
+      $.AXUIElementSetMessagingTimeout(button, 1)
+      var result = $.AXUIElementPerformAction(button, $("AXPress"))
+      // A synchronous close can time out while Xcode shows its task-stop alert.
+      if (result !== 0 && result !== -25204)
+        throw new Error("Could not close the owned Xcode window (AX error " + result + ").")
+      var deadline = now() + 8000
+      var confirmed = false
+      while (true) {
+        var current = snapshot()
+        if (
+          !current.windows.some(function (live) {
+            return sameWindow(window, live)
+          })
+        )
+          return
+        var confirmation =
+          !confirmed && taskStopConfirmation(dialogSystem, beforeClose, current, window)
+        if (confirmation) {
+          confirmed = true
+          $.AXUIElementSetMessagingTimeout(confirmation, 1)
+          var status = $.AXUIElementPerformAction(confirmation, $("AXPress"))
+          if (status !== 0 && status !== -25204)
+            throw new Error("Could not confirm stopping the owned Xcode project's tasks.")
+        }
+        if (now() >= deadline)
+          throw new Error("The owned Xcode window did not close; check it for a save dialog.")
+        pause()
+      }
+    }
+  })
+}
