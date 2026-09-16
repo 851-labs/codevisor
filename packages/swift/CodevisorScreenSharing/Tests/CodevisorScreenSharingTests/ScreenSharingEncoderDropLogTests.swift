@@ -1,5 +1,6 @@
 import Testing
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 struct ScreenSharingEncoderDropLogTests {
   @Test func retainsOnlyExpectedNumericCounters() {

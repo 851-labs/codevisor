@@ -1,3 +1,4 @@
+import CodevisorScreenSharing
 import Foundation
 
 /// Pure semantics for the owned-window diagnostic's observations. Platform

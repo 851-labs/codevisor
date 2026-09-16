@@ -2,6 +2,7 @@ import Foundation
 import Testing
 
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 /// Lifecycle of the receiver-only RTC event-log diagnostic with injected
 /// clock/start/stop boundaries: window validation, once-only start and stop,

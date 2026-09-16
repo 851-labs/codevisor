@@ -39,10 +39,11 @@ let package = Package(
     // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
     // metrics, input/control/clipboard messages, the message-channel and viewing-session contracts. A
     // backend that is not the native WebRTC pipeline depends on this target only. See
-    // docs/plans/screen-sharing-composable-architecture.md.
+    // docs/plans/screen-sharing-composable-architecture.md. Tooling (probe, diagnostics) lives under
+    // ScreenSharingTools/ and is never linked into the app.
     .target(
       name: "ScreenSharingCore",
-      path: "CodevisorScreenSharing/Core",
+      path: "ScreenSharingCore/Sources/ScreenSharingCore",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -59,7 +60,7 @@ let package = Package(
     .executableTarget(
       name: "ScreenSharingProbe",
       dependencies: ["CodevisorScreenSharing", "CodevisorClient", "ScreenSharingDiagnostics"],
-      path: "CodevisorScreenSharing/Probe",
+      path: "ScreenSharingTools/Probe",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     // The host's control lease and CGEvent injection: product code, extracted so the rig can exercise
@@ -70,17 +71,19 @@ let package = Package(
       path: "CodevisorCoreMac/HostInput",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    // Diagnostic sources shared by the probe and the rig: workload window, painter, synthetic source.
+    // Diagnostics shared by the probe and the rig: workload window, painter, synthetic source, and the
+    // experiment-only instrumentation (RTC event log, first-observation and interval records, encoder drop
+    // log, owned-window session) that product code never links.
     .target(
       name: "ScreenSharingDiagnostics",
       dependencies: ["CodevisorScreenSharing"],
-      path: "CodevisorScreenSharing/Diagnostics",
+      path: "ScreenSharingTools/Diagnostics",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     // The two-Mac development rig: a consumer of the media package, never shipped. See docs/plans/screen-sharing-rig.md.
     .target(
       name: "ScreenSharingRigKit",
-      dependencies: ["CodevisorScreenSharing"],
+      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics"],
       path: "ScreenSharingRig/Sources/ScreenSharingRigKit",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -112,7 +115,7 @@ let package = Package(
     ),
     .testTarget(
       name: "CodevisorScreenSharingTests",
-      dependencies: ["CodevisorScreenSharing", "CodevisorTestSupport"],
+      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics", "CodevisorTestSupport"],
       path: "CodevisorScreenSharing/Tests/CodevisorScreenSharingTests",
       swiftSettings: [.swiftLanguageMode(.v6)],
       // SwiftPM's macOS test bundle loader needs the sibling binary framework.

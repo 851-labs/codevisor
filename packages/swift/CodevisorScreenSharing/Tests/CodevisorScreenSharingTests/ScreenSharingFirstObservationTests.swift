@@ -1,6 +1,7 @@
 import Testing
 
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 @Suite struct ScreenSharingFirstObservationTests {
   @Test func firstNonZeroTickIsRecordedOncePerMetricWithInitialAndFinalValues() {

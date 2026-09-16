@@ -1,3 +1,4 @@
+import ScreenSharingDiagnostics
 import CodevisorScreenSharing
 
 /// Per-second interval means; never present percentiles of these as per-frame p95.

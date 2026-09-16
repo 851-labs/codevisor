@@ -2,6 +2,7 @@ import Testing
 import CodevisorTestSupport
 
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 @Suite struct ScreenSharingFirstDrawGateTests {
   @Test @MainActor func signalResumesAPendingWaitOnce() async throws {

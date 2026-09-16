@@ -1,3 +1,4 @@
+import CodevisorScreenSharing
 import Foundation
 
 /// The pinned M152 encoder emits these aggregate counts periodically. Retain

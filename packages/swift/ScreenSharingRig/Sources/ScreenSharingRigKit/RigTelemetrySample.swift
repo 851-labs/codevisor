@@ -1,3 +1,4 @@
+import ScreenSharingDiagnostics
 import CodevisorScreenSharing
 import Foundation
 

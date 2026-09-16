@@ -1,6 +1,7 @@
 import Testing
 
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 @Suite struct ScreenSharingDrawTimestampRecordTests {
   @Test func recordsFirstDrawStartPerCodeSkipsRepeatsAndTruncatesAtTheLimit() {

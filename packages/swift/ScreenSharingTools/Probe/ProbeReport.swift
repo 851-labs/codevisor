@@ -1,3 +1,4 @@
+import ScreenSharingDiagnostics
 #if os(macOS)
   import AppKit
   import CodevisorScreenSharing

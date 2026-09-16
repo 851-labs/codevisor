@@ -1,5 +1,6 @@
 import Testing
 @testable import CodevisorScreenSharing
+@testable import ScreenSharingDiagnostics
 
 struct ScreenSharingRTCIntervalMetricsTests {
   private func sample(_ id: String = "a", seconds: String, count: String) -> [String: String] {
