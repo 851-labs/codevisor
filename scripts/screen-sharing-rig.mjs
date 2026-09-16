@@ -41,7 +41,7 @@ import {
 } from "./screen-sharing-rig-lib.mjs"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const packagePath = join(root, "packages/swift")
+const packagePath = join(root, "apps/screen-sharing-rig")
 const home = homedir()
 const installDirectory = join(home, rigInstallDirectory)
 const installedApp = join(installDirectory, rigIdentity.appName)

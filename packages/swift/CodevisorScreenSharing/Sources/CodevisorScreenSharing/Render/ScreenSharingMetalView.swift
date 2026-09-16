@@ -182,7 +182,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
 
   /// The standalone Metal display-link experiment supplies its drawable. The
   /// ordinary MTKView path retains its existing acquisition/scheduling policy.
-  package func draw(displayLinkDrawable drawable: any CAMetalDrawable) {
+  public func draw(displayLinkDrawable drawable: any CAMetalDrawable) {
     let pass = MTLRenderPassDescriptor()
     pass.colorAttachments[0].texture = drawable.texture
     pass.colorAttachments[0].loadAction = .clear

@@ -4,22 +4,22 @@ import CodevisorScreenSharing
 /// Public Quartz events only, without automation's waits or app activation.
 /// Display bounds are Quartz global points, including negative display origins.
 @MainActor
-package final class ScreenSharingInputInjector {
-  package static let eventTag: Int64 = 0x435653435245454E
+public final class ScreenSharingInputInjector {
+  public static let eventTag: Int64 = 0x435653435245454E
   private let source = CGEventSource(stateID: .privateState)
   private let displayBounds: CGRect
   private var buttons = Set<UInt8>()
   private let deliver: (CGEvent) -> Void
-  package var isAvailable: Bool { source != nil }
+  public var isAvailable: Bool { source != nil }
 
-  package init(displayBounds: CGRect, deliver: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
+  public init(displayBounds: CGRect, deliver: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
     self.deliver = deliver
     self.displayBounds = displayBounds
     source?.userData = Self.eventTag
     source?.localEventsSuppressionInterval = 0
   }
 
-  package func post(_ input: ScreenSharingInputEvent) {
+  public func post(_ input: ScreenSharingInputEvent) {
     guard let source else { return }
     switch input {
     case .move(let pointer, let modifiers):
@@ -68,7 +68,7 @@ package final class ScreenSharingInputInjector {
     }
   }
 
-  package func location(_ pointer: ScreenSharingPointer) -> CGPoint {
+  public func location(_ pointer: ScreenSharingPointer) -> CGPoint {
     CGPoint(
       x: displayBounds.minX + min(displayBounds.width - 0.001, pointer.x * displayBounds.width),
       y: displayBounds.minY + min(displayBounds.height - 0.001, pointer.y * displayBounds.height))

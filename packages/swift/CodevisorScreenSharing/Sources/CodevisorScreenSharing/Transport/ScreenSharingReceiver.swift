@@ -50,7 +50,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
 
   /// Package-only fault injection for the standalone recovery probe. The
   /// decoder discards its VT state, then refuses deltas until a fresh keyframe.
-  package func simulateDecoderLoss(
+  public func simulateDecoderLoss(
     afterFrames: Int, droppingRecoveryKeyframeFrom sender: ScreenSharingSender? = nil,
     idlingCaptureFrom idleSender: ScreenSharingSender? = nil
   ) {

@@ -26,8 +26,10 @@ let package = Package(
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
-    .executable(name: "screen-sharing-probe", targets: ["ScreenSharingProbe"]),
-    .executable(name: "screen-sharing-rig", targets: ["ScreenSharingRig"]),
+    // Consumed by the dev-only executables under apps/ (screen-sharing-rig, screen-sharing-probe).
+    .library(name: "ScreenSharingDiagnostics", targets: ["ScreenSharingDiagnostics"]),
+    .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
+    .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -39,8 +41,8 @@ let package = Package(
     // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
     // metrics, input/control/clipboard messages, the message-channel and viewing-session contracts. A
     // backend that is not the native WebRTC pipeline depends on this target only. See
-    // docs/plans/screen-sharing-composable-architecture.md. Tooling (probe, diagnostics) lives under
-    // ScreenSharingTools/ and is never linked into the app.
+    // docs/plans/screen-sharing-composable-architecture.md. The dev-only executables (probe, rig) are
+    // their own packages under apps/ and consume this package's products.
     .target(
       name: "ScreenSharingCore",
       path: "ScreenSharingCore/Sources/ScreenSharingCore",
@@ -57,12 +59,6 @@ let package = Package(
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    .executableTarget(
-      name: "ScreenSharingProbe",
-      dependencies: ["CodevisorScreenSharing", "CodevisorClient", "ScreenSharingDiagnostics"],
-      path: "ScreenSharingTools/Probe",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
     // The host's control lease and CGEvent injection: product code, extracted so the rig can exercise
     // the real path without linking the rest of CodevisorCoreMac.
     .target(
@@ -71,47 +67,14 @@ let package = Package(
       path: "CodevisorCoreMac/HostInput",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    // Diagnostics shared by the probe and the rig: workload window, painter, synthetic source, and the
-    // experiment-only instrumentation (RTC event log, first-observation and interval records, encoder drop
-    // log, owned-window session) that product code never links.
+    // Diagnostics shared by the probe, the rig and the media tests: workload window, painter, synthetic
+    // source, and the experiment-only instrumentation (RTC event log, first-observation and interval
+    // records, encoder drop log, owned-window session) that product code never links.
     .target(
       name: "ScreenSharingDiagnostics",
       dependencies: ["CodevisorScreenSharing"],
-      path: "ScreenSharingTools/Diagnostics",
+      path: "ScreenSharingDiagnostics/Sources/ScreenSharingDiagnostics",
       swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    // The two-Mac development rig: a consumer of the media package, never shipped. See docs/plans/screen-sharing-rig.md.
-    .target(
-      name: "ScreenSharingRigKit",
-      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics"],
-      path: "ScreenSharingRig/Sources/ScreenSharingRigKit",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .executableTarget(
-      name: "ScreenSharingRig",
-      dependencies: [
-        "CodevisorScreenSharing", "ScreenSharingDiagnostics", "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
-        "ScreenSharingHostInput",
-      ],
-      path: "ScreenSharingRig/Sources/ScreenSharingRig",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    // Private CoreGraphics virtual-display declarations; rig only, see the header.
-    .target(
-      name: "CGVirtualDisplayPrivate",
-      path: "ScreenSharingRig/Sources/CGVirtualDisplayPrivate",
-      publicHeadersPath: "include",
-      linkerSettings: [.linkedFramework("CoreGraphics")]
-    ),
-    .testTarget(
-      name: "ScreenSharingRigKitTests",
-      dependencies: ["ScreenSharingRigKit", "CodevisorTestSupport"],
-      path: "ScreenSharingRig/Tests/ScreenSharingRigKitTests",
-      swiftSettings: [.swiftLanguageMode(.v6)],
-      // SwiftPM's macOS test bundle loader needs the sibling binary framework.
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
     ),
     .testTarget(
       name: "CodevisorScreenSharingTests",

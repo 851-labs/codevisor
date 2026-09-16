@@ -4,10 +4,10 @@ import Foundation
 /// The session owns this controller and closes it before stopping media.
 /// No input is accepted until the active peer explicitly acquires control.
 @MainActor
-package final class ScreenSharingHostControl {
-  package private(set) var lease: UUID?
-  package private(set) var heldKeys = Set<UInt16>()
-  package private(set) var heldButtons = Set<UInt8>()
+public final class ScreenSharingHostControl {
+  public private(set) var lease: UUID?
+  public private(set) var heldKeys = Set<UInt16>()
+  public private(set) var heldButtons = Set<UInt8>()
   private var pointer = ScreenSharingPointer(x: 0.5, y: 0.5)
   private var modifiers: UInt8 = 0
   private var sequence: UInt64 = 0
@@ -16,9 +16,9 @@ package final class ScreenSharingHostControl {
   private let availability: () -> String?
   private let inject: (ScreenSharingInputEvent) -> Void
   private let send: (ScreenSharingControlMessage) -> Bool
-  package var onChanged: ((Bool) -> Void)?
+  public var onChanged: ((Bool) -> Void)?
 
-  package init(
+  public init(
     now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
     availability: @escaping () -> String?, inject: @escaping (ScreenSharingInputEvent) -> Void,
     send: @escaping (ScreenSharingControlMessage) -> Bool
@@ -26,7 +26,7 @@ package final class ScreenSharingHostControl {
     self.now = now; self.availability = availability; self.inject = inject; self.send = send
   }
 
-  package func receive(_ message: ScreenSharingControlMessage) {
+  public func receive(_ message: ScreenSharingControlMessage) {
     checkDeadline()
     switch message {
     case .request(let request):
@@ -54,11 +54,11 @@ package final class ScreenSharingHostControl {
     }
   }
 
-  package func checkDeadline() {
+  public func checkDeadline() {
     if lease != nil, now() >= deadline { revoke("Control timed out. Request control again.") }
   }
 
-  package func revoke(_ reason: String) {
+  public func revoke(_ reason: String) {
     guard let previous = lease else { return }
     // Invalidate first: reentrant callbacks and queued packets cannot inject.
     lease = nil

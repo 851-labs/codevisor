@@ -5,9 +5,9 @@ import Foundation
 
 /// Immutable drawing resources shared by the visible desktop target and the
 /// synthetic source. Each owner draws on its own serial queue.
-package final class ProbeDesktopPainter: @unchecked Sendable {
-  package let pattern: CGImage
-  package let fps: Int
+public final class ProbeDesktopPainter: @unchecked Sendable {
+  public let pattern: CGImage
+  public let fps: Int
   // Use a concrete, retained CTFont like the source pattern. Repeated AppKit
   // system-font resolution in NSString.draw raised a CoreText exception on
   // the macOS 26 host during an extended workload run.
@@ -16,9 +16,9 @@ package final class ProbeDesktopPainter: @unchecked Sendable {
     NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1),
   ]
 
-  package init(pattern: CGImage, fps: Int) { self.pattern = pattern; self.fps = fps }
+  public init(pattern: CGImage, fps: Int) { self.pattern = pattern; self.fps = fps }
 
-  package static func make(width: Int, height: Int, fps: Int) throws -> ProbeDesktopPainter {
+  public static func make(width: Int, height: Int, fps: Int) throws -> ProbeDesktopPainter {
     let pixel = try ProbeCodecPattern.make(width: width, height: height, sequence: 0)
     let source = CIImage(cvPixelBuffer: pixel)
     guard let pattern = CIContext().createCGImage(source, from: source.extent) else {
@@ -27,7 +27,7 @@ package final class ProbeDesktopPainter: @unchecked Sendable {
     return ProbeDesktopPainter(pattern: pattern, fps: fps)
   }
 
-  package func draw(in context: CGContext, bounds: CGRect, sequence: Int, responses: Int) {
+  public func draw(in context: CGContext, bounds: CGRect, sequence: Int, responses: Int) {
     let width = CGFloat(pattern.width)
     let height = CGFloat(pattern.height)
     context.saveGState()

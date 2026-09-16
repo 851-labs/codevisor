@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const packagePath = join(root, "packages/swift")
+const packagePath = join(root, "apps/screen-sharing-probe")
 const args = process.argv.slice(2)
 const releaseIndex = args.indexOf("--release")
 const configuration = releaseIndex >= 0 ? "release" : "debug"

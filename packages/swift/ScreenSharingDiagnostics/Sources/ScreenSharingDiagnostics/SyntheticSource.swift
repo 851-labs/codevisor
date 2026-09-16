@@ -7,7 +7,7 @@
 
   /// Diagnostic workload only. A bounded pool feeds a serial capture timer;
   /// each surface becomes immutable before it is handed to WebRTC.
-  package final class SyntheticSource: @unchecked Sendable {
+  public final class SyntheticSource: @unchecked Sendable {
     private let queue = DispatchQueue(label: "codevisor.screen-sharing.synthetic", qos: .userInteractive)
     private let pool: CVPixelBufferPool
     private let convertedPool: CVPixelBufferPool?
@@ -22,7 +22,7 @@
     private let burstNs: Int64 = 250_000_000
     private let gapNs: Int64?
 
-    package init(
+    public init(
       configuration: ScreenSharingVideoConfiguration, sender: ScreenSharingFrameSender,
       metrics: ScreenSharingMetrics, pixelFormat: SyntheticPixelFormat = .bgra,
       desktopPattern: Bool = false, gapMilliseconds: Int? = nil
@@ -75,7 +75,7 @@
 
     deinit { if let transfer { VTPixelTransferSessionInvalidate(transfer) } }
 
-    package func start() {
+    public func start() {
       let timer = DispatchSource.makeTimerSource(queue: queue)
       timer.schedule(
         deadline: .now(), repeating: .nanoseconds(1_000_000_000 / configuration.framesPerSecond),
@@ -85,7 +85,7 @@
       timer.resume()
     }
 
-    package func stop() {
+    public func stop() {
       timer?.cancel()
       timer = nil
       queue.sync {}

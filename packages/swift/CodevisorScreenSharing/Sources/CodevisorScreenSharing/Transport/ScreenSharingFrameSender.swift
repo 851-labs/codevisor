@@ -85,7 +85,7 @@ public final class ScreenSharingFrameSender: @unchecked Sendable {
   }
 
   /// Probe-only suspension keeps the same cached frame available for recovery.
-  package func suspendCaptureDelivery() { lock.withLock { captureSuspended = true } }
+  public func suspendCaptureDelivery() { lock.withLock { captureSuspended = true } }
 
   func stop() {
     lock.withLock {
@@ -97,7 +97,7 @@ public final class ScreenSharingFrameSender: @unchecked Sendable {
   }
 
   /// Whether the one-frame cache currently owns a buffer (diagnostic).
-  package var isHoldingCachedFrame: Bool { lock.withLock { refreshFrames.isHolding } }
+  public var isHoldingCachedFrame: Bool { lock.withLock { refreshFrames.isHolding } }
 
   private func submit(_ frame: ScreenSharingVideoFrame) {
     source.capturer(

@@ -6,25 +6,25 @@ import Foundation
 /// signal / timeout / cancellation; once it failed, the gate stays failed so a
 /// later wait can never let capture start.
 @MainActor
-package final class ScreenSharingFirstDrawGate {
-  package enum Failure: Error, Equatable { case timedOut, cancelled, tornDown }
+public final class ScreenSharingFirstDrawGate {
+  public enum Failure: Error, Equatable { case timedOut, cancelled, tornDown }
 
   private var continuation: CheckedContinuation<Void, any Error>?
-  package private(set) var isSignalled = false
-  package private(set) var failure: Failure?
-  package private(set) var resumeCount = 0
+  public private(set) var isSignalled = false
+  public private(set) var failure: Failure?
+  public private(set) var resumeCount = 0
 
-  package init() {}
+  public init() {}
 
   /// Called from the first completed draw. Ignored after a failure.
-  package func signal() {
+  public func signal() {
     guard failure == nil else { return }
     isSignalled = true
     resume(.success(()))
   }
 
   /// Waits for the first draw; the deadline is a deadlock guard only.
-  package func wait(timeout: Duration, sleep: @escaping @Sendable (Duration) async throws -> Void) async throws {
+  public func wait(timeout: Duration, sleep: @escaping @Sendable (Duration) async throws -> Void) async throws {
     if let failure { throw failure }
     if isSignalled { return }
     let deadline = Task { @MainActor [weak self] in
@@ -46,7 +46,7 @@ package final class ScreenSharingFirstDrawGate {
   /// Teardown by the owner (cleanup, error exit): resolves a pending wait
   /// once with `tornDown` and blocks any later wait, independent of task
   /// cancellation.
-  package func teardown() { fail(.tornDown) }
+  public func teardown() { fail(.tornDown) }
 
   private func fail(_ reason: Failure) {
     guard failure == nil, !isSignalled else { return }
@@ -72,25 +72,25 @@ package final class ScreenSharingFirstDrawGate {
 /// close; any failure or cancellation abandons the window (hidden exactly
 /// once) without inventing lifecycle evidence.
 @MainActor
-package final class ScreenSharingOwnedWindowSession {
-  package typealias Lifecycle = ScreenSharingOwnedWorkloadLifecycle
+public final class ScreenSharingOwnedWindowSession {
+  public typealias Lifecycle = ScreenSharingOwnedWorkloadLifecycle
 
-  package private(set) var lifecycle = Lifecycle()
-  package private(set) var hideCount = 0
-  package private(set) var startFailure: String?
-  package private(set) var stopSucceeded: Bool?
-  package private(set) var stopFailure: String?
-  package private(set) var cleanupOutcome: Lifecycle.CleanupOutcome?
+  public private(set) var lifecycle = Lifecycle()
+  public private(set) var hideCount = 0
+  public private(set) var startFailure: String?
+  public private(set) var stopSucceeded: Bool?
+  public private(set) var stopFailure: String?
+  public private(set) var cleanupOutcome: Lifecycle.CleanupOutcome?
   private let show: @MainActor () throws -> Void
   private let hide: @MainActor () -> Void
   private let stop: @MainActor () async throws -> Void
   private let now: @MainActor () -> Int64
-  package private(set) var stopAttempts = 0
+  public private(set) var stopAttempts = 0
 
   /// `stopCapture` is owned by the session so that every path on which the
   /// stream may have started — including cancellation right after a
   /// successful start — awaits a real stop before the window is hidden.
-  package init(
+  public init(
     show: @escaping @MainActor () throws -> Void, hide: @escaping @MainActor () -> Void,
     stopCapture: @escaping @MainActor () async throws -> Void,
     now: @escaping @MainActor () -> Int64 = { ScreenSharingMetrics.nowNs }
@@ -108,7 +108,7 @@ package final class ScreenSharingOwnedWindowSession {
   /// stream is live regardless of cancellation: that boundary is recorded
   /// first, and the error path then awaits the real stop before hiding. On any
   /// error the session cleans up once and rethrows.
-  package func start(ready: () async throws -> Void, startCapture: () async throws -> Void) async throws {
+  public func start(ready: () async throws -> Void, startCapture: () async throws -> Void) async throws {
     do {
       try lifecycle.apply(.show, atNs: now())
       try show()
@@ -127,12 +127,12 @@ package final class ScreenSharingOwnedWindowSession {
     }
   }
 
-  package func pauseWorkload(_ pause: () throws -> Void) throws {
+  public func pauseWorkload(_ pause: () throws -> Void) throws {
     try lifecycle.apply(.pauseWorkload, atNs: now())
     try pause()
   }
 
-  package private(set) var stopRetriesRefused = 0
+  public private(set) var stopRetriesRefused = 0
 
   /// Stops the stream, recording success or failure truthfully. Returns true
   /// only when the stop completed; the lifecycle advances only then. The first
@@ -141,7 +141,7 @@ package final class ScreenSharingOwnedWindowSession {
   /// return trivially — a no-op is not stop-completion evidence) and can never
   /// replace the recorded failure.
   @discardableResult
-  package func stopCapture() async -> Bool {
+  public func stopCapture() async -> Bool {
     guard lifecycle.state == .capturing || lifecycle.state == .workloadPaused else { return false }
     if stopSucceeded == false {
       stopRetriesRefused += 1
@@ -163,7 +163,7 @@ package final class ScreenSharingOwnedWindowSession {
   /// One cleanup on every exit path. Idempotent: the window is hidden at most
   /// once and the first outcome is kept.
   @discardableResult
-  package func finish() -> Lifecycle.CleanupOutcome {
+  public func finish() -> Lifecycle.CleanupOutcome {
     if let cleanupOutcome { return cleanupOutcome }
     let outcome = lifecycle.cleanUp(captureStopCompleted: stopSucceeded == true, atNs: now())
     switch outcome {
@@ -176,9 +176,9 @@ package final class ScreenSharingOwnedWindowSession {
     return outcome
   }
 
-  package var completedInOrder: Bool { lifecycle.completedInOrder && stopSucceeded == true }
+  public var completedInOrder: Bool { lifecycle.completedInOrder && stopSucceeded == true }
 
-  package var record: [String: Any] {
+  public var record: [String: Any] {
     [
       "state": lifecycle.state.rawValue, "completedInOrder": completedInOrder,
       "abandonedFrom": lifecycle.abandonedFrom?.rawValue ?? "none",
