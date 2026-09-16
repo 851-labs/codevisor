@@ -3,11 +3,11 @@ import Foundation
 
 /// W3C cumulative seconds/count pairs become weighted interval means, not
 /// per-frame percentiles. Baseline each stream independently across resets.
-public struct ScreenSharingRTCIntervalMetrics: Sendable {
+package struct ScreenSharingRTCIntervalMetrics: Sendable {
   private var previous: [String: String] = [:]
-  public init() {}
+  package init() {}
 
-  public mutating func update(_ statistics: [String: String]) -> [String: Double] {
+  package mutating func update(_ statistics: [String: String]) -> [String: Double] {
     defer { previous = statistics }
     let pairs = [
       ("inbound-rtp", "jitterBufferDelay", "jitterBufferEmittedCount", "jitterBufferMeanMs"),

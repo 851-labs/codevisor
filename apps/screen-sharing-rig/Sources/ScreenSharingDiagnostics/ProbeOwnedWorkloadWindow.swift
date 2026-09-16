@@ -12,22 +12,22 @@ import CoreGraphics
 /// The owned window can never become key or main, so showing it steals
 /// nothing from the console user's session.
 @MainActor
-public final class OwnedWorkloadWindow: NSWindow {
+package final class OwnedWorkloadWindow: NSWindow {
   /// Off by default: the workload never takes focus on a desktop someone uses. A rig host on a virtual
   /// display turns it on so injected key events can reach the workload's `keyDown`.
-  public var acceptsKeys = false
-  public override var canBecomeKey: Bool { acceptsKeys }
-  public override var canBecomeMain: Bool { acceptsKeys }
-  public override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+  package var acceptsKeys = false
+  package override var canBecomeKey: Bool { acceptsKeys }
+  package override var canBecomeMain: Bool { acceptsKeys }
+  package override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 @MainActor
-public final class ProbeOwnedWorkloadWindow {
-  public let window: OwnedWorkloadWindow
-  public let view: WorkloadView
-  public let rasterWidth: Int
-  public let rasterHeight: Int
-  public let recordDrawTimes: Bool
+package final class ProbeOwnedWorkloadWindow {
+  package let window: OwnedWorkloadWindow
+  package let view: WorkloadView
+  package let rasterWidth: Int
+  package let rasterHeight: Int
+  package let recordDrawTimes: Bool
   private let gate = ScreenSharingFirstDrawGate()
   public private(set) var session: ScreenSharingOwnedWindowSession!
   /// Bounded named snapshots: each label is stored once (overwritten if taken
@@ -39,7 +39,7 @@ public final class ProbeOwnedWorkloadWindow {
   /// `recordDrawTimes` is the explicit opt-in for the bounded first-draw-start
   /// record (off by default; nothing is retained otherwise).
   /// `screen` places the window on a specific display (for example a virtual one); the main display otherwise.
-  public init(
+  package init(
     configuration: ScreenSharingVideoConfiguration, recordDrawTimes: Bool = false, screen: NSScreen? = nil,
     stopCapture: @escaping @MainActor () async throws -> Void
   )
@@ -84,8 +84,8 @@ public final class ProbeOwnedWorkloadWindow {
       stopCapture: stopCapture)
   }
 
-  public var windowID: UInt32 { UInt32(max(0, window.windowNumber)) }
-  public var lifecycle: ScreenSharingOwnedWorkloadLifecycle { session.lifecycle }
+  package var windowID: UInt32 { UInt32(max(0, window.windowNumber)) }
+  package var lifecycle: ScreenSharingOwnedWorkloadLifecycle { session.lifecycle }
 
   /// Shows the window, waits for its first completed draw CALL — not a display
   /// presentation — (deadline = deadlock guard; cancellation, timeout or
@@ -93,7 +93,7 @@ public final class ProbeOwnedWorkloadWindow {
   /// then starts capture through `startCapture`. Any failure hides this window
   /// once and rethrows; no lifecycle evidence is invented. Returns the
   /// readiness record.
-  public func start(timeoutSeconds: Double, startCapture: () async throws -> Void) async throws -> [String: Any] {
+  package func start(timeoutSeconds: Double, startCapture: () async throws -> Void) async throws -> [String: Any] {
     var ready: [String: Any] = [:]
     try await session.start(
       ready: { [self] in
@@ -126,7 +126,7 @@ public final class ProbeOwnedWorkloadWindow {
 
   /// Stops the animation and freezes the frame code; the window and its last
   /// frame stay on screen and stay captured. Returns the boundary record.
-  public func pauseAnimation() throws -> [String: Any] {
+  package func pauseAnimation() throws -> [String: Any] {
     try session.pauseWorkload { view.pause() }
     return [
       "pausedAtSeconds": CACurrentMediaTime(), "pausedAtUptimeNs": session.lifecycle.timestampsNs[.pauseWorkload] ?? 0,
@@ -141,11 +141,11 @@ public final class ProbeOwnedWorkloadWindow {
 
   /// Stops the stream through the session so success or failure is preserved.
   @discardableResult
-  public func stopCapture() async -> Bool { await session.stopCapture() }
+  package func stopCapture() async -> Bool { await session.stopCapture() }
 
   /// The single cleanup used on every exit path; hides only this window, once.
   @discardableResult
-  public func cleanUp() -> ScreenSharingOwnedWorkloadLifecycle.CleanupOutcome {
+  package func cleanUp() -> ScreenSharingOwnedWorkloadLifecycle.CleanupOutcome {
     // Resolve a still-pending readiness wait by teardown (not task cancellation).
     gate.teardown()
     return session.finish()
@@ -159,7 +159,7 @@ public final class ProbeOwnedWorkloadWindow {
   /// display predicates are for the window's own screen (unknown if none).
   /// Coordinate conventions are kept raw and the single conversion is labelled.
   @discardableResult
-  public func observation(_ label: String) -> [String: Any] {
+  package func observation(_ label: String) -> [String: Any] {
     let record = takeObservation(label)
     snapshots[label] = record
     return record
@@ -252,7 +252,7 @@ public final class ProbeOwnedWorkloadWindow {
   /// its start (`WorkloadView.start()` sets `startedAt` before scheduling the
   /// first draw; the first draw start is recorded separately in the readiness
   /// record) to now, so the two origins are never mixed.
-  public func workloadTimesReport(mediaMeasuredSeconds: Double) -> [String: Any]? {
+  package func workloadTimesReport(mediaMeasuredSeconds: Double) -> [String: Any]? {
     guard recordDrawTimes else { return nil }
     let endedAt = CACurrentMediaTime()
     return [
@@ -275,7 +275,7 @@ public final class ProbeOwnedWorkloadWindow {
     ]
   }
 
-  public var lifecycleRecord: [String: Any] {
+  package var lifecycleRecord: [String: Any] {
     var record = session.record
     record["workloadFrozen"] = view.isPaused
     return record

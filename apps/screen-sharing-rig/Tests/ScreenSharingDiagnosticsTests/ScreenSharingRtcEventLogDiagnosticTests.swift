@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import CodevisorScreenSharing
+import CodevisorScreenSharing
 @testable import ScreenSharingDiagnostics
 
 /// Lifecycle of the receiver-only RTC event-log diagnostic with injected

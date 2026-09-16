@@ -18,7 +18,7 @@ let package = Package(
       name: "ScreenSharingRigKit",
       dependencies: [
         .product(name: "CodevisorScreenSharing", package: "CodevisorKit"),
-        .product(name: "ScreenSharingDiagnostics", package: "CodevisorKit"),
+        "ScreenSharingDiagnostics",
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -28,9 +28,17 @@ let package = Package(
         "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
         .product(name: "CodevisorClient", package: "CodevisorKit"),
         .product(name: "CodevisorScreenSharing", package: "CodevisorKit"),
-        .product(name: "ScreenSharingDiagnostics", package: "CodevisorKit"),
+        "ScreenSharingDiagnostics",
         .product(name: "ScreenSharingHostInput", package: "CodevisorKit"),
       ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // Diagnostics shared by the rig, its probe subcommand and their tests: workload window, painter,
+    // synthetic source, and experiment-only instrumentation (RTC event log, first-observation and
+    // interval records, encoder drop log, owned-window session) that product code never links.
+    .target(
+      name: "ScreenSharingDiagnostics",
+      dependencies: [.product(name: "CodevisorScreenSharing", package: "CodevisorKit")],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     // Private CoreGraphics virtual-display declarations; rig only, see the header.
@@ -38,6 +46,14 @@ let package = Package(
       name: "CGVirtualDisplayPrivate",
       publicHeadersPath: "include",
       linkerSettings: [.linkedFramework("CoreGraphics")]
+    ),
+    .testTarget(
+      name: "ScreenSharingDiagnosticsTests",
+      dependencies: ["ScreenSharingDiagnostics", .product(name: "CodevisorTestSupport", package: "CodevisorKit")],
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      linkerSettings: [
+        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
+      ]
     ),
     .testTarget(
       name: "ScreenSharingRigKitTests",

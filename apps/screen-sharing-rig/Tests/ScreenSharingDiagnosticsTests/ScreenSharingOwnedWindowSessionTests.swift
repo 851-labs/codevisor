@@ -1,7 +1,7 @@
 import Testing
 import CodevisorTestSupport
 
-@testable import CodevisorScreenSharing
+import CodevisorScreenSharing
 @testable import ScreenSharingDiagnostics
 
 @Suite struct ScreenSharingFirstDrawGateTests {

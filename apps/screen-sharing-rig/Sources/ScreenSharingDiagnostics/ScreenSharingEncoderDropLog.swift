@@ -3,8 +3,8 @@ import Foundation
 
 /// The pinned M152 encoder emits these aggregate counts periodically. Retain
 /// only the three numeric counters; WebRTC's other logs can contain addresses.
-public enum ScreenSharingEncoderDropLog {
-  public static func counters(in message: String) -> [String: Int] {
+package enum ScreenSharingEncoderDropLog {
+  package static func counters(in message: String) -> [String: Int] {
     let prefix = "Number of frames: captured "
     guard let start = message.range(of: prefix) else { return [:] }
     let pieces = message[start.upperBound...].components(separatedBy: ", ")
@@ -22,7 +22,7 @@ public enum ScreenSharingEncoderDropLog {
 
   /// Pinned M152 encoder-side drop or pause messages, with hexadecimal
   /// addresses removed and length bounded; anything else yields nil.
-  public static func dropDiagnostic(in message: String) -> String? {
+  package static func dropDiagnostic(in message: String) -> String? {
     let markers = [
       "Same/old NTP timestamp", "encoder is blocked", "Too large for target bitrate", "Drop Frame:",
       "encoder paused", "Video suspended", "Dropping frame",

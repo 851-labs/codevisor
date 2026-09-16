@@ -27,7 +27,6 @@ let package = Package(
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
     .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
     // Consumed by the dev-only executable under apps/screen-sharing-rig.
-    .library(name: "ScreenSharingDiagnostics", targets: ["ScreenSharingDiagnostics"]),
     .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
@@ -67,18 +66,9 @@ let package = Package(
       path: "CodevisorCoreMac/HostInput",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    // Diagnostics shared by the probe, the rig and the media tests: workload window, painter, synthetic
-    // source, and the experiment-only instrumentation (RTC event log, first-observation and interval
-    // records, encoder drop log, owned-window session) that product code never links.
-    .target(
-      name: "ScreenSharingDiagnostics",
-      dependencies: ["CodevisorScreenSharing"],
-      path: "ScreenSharingDiagnostics/Sources/ScreenSharingDiagnostics",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
     .testTarget(
       name: "CodevisorScreenSharingTests",
-      dependencies: ["CodevisorScreenSharing", "ScreenSharingDiagnostics", "CodevisorTestSupport"],
+      dependencies: ["CodevisorScreenSharing", "CodevisorTestSupport"],
       path: "CodevisorScreenSharing/Tests/CodevisorScreenSharingTests",
       swiftSettings: [.swiftLanguageMode(.v6)],
       // SwiftPM's macOS test bundle loader needs the sibling binary framework.

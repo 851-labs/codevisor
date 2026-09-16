@@ -6,25 +6,25 @@ import Foundation
 /// signal / timeout / cancellation; once it failed, the gate stays failed so a
 /// later wait can never let capture start.
 @MainActor
-public final class ScreenSharingFirstDrawGate {
-  public enum Failure: Error, Equatable { case timedOut, cancelled, tornDown }
+package final class ScreenSharingFirstDrawGate {
+  package enum Failure: Error, Equatable { case timedOut, cancelled, tornDown }
 
   private var continuation: CheckedContinuation<Void, any Error>?
   public private(set) var isSignalled = false
   public private(set) var failure: Failure?
   public private(set) var resumeCount = 0
 
-  public init() {}
+  package init() {}
 
   /// Called from the first completed draw. Ignored after a failure.
-  public func signal() {
+  package func signal() {
     guard failure == nil else { return }
     isSignalled = true
     resume(.success(()))
   }
 
   /// Waits for the first draw; the deadline is a deadlock guard only.
-  public func wait(timeout: Duration, sleep: @escaping @Sendable (Duration) async throws -> Void) async throws {
+  package func wait(timeout: Duration, sleep: @escaping @Sendable (Duration) async throws -> Void) async throws {
     if let failure { throw failure }
     if isSignalled { return }
     let deadline = Task { @MainActor [weak self] in
@@ -46,7 +46,7 @@ public final class ScreenSharingFirstDrawGate {
   /// Teardown by the owner (cleanup, error exit): resolves a pending wait
   /// once with `tornDown` and blocks any later wait, independent of task
   /// cancellation.
-  public func teardown() { fail(.tornDown) }
+  package func teardown() { fail(.tornDown) }
 
   private func fail(_ reason: Failure) {
     guard failure == nil, !isSignalled else { return }
@@ -72,8 +72,8 @@ public final class ScreenSharingFirstDrawGate {
 /// close; any failure or cancellation abandons the window (hidden exactly
 /// once) without inventing lifecycle evidence.
 @MainActor
-public final class ScreenSharingOwnedWindowSession {
-  public typealias Lifecycle = ScreenSharingOwnedWorkloadLifecycle
+package final class ScreenSharingOwnedWindowSession {
+  package typealias Lifecycle = ScreenSharingOwnedWorkloadLifecycle
 
   public private(set) var lifecycle = Lifecycle()
   public private(set) var hideCount = 0
@@ -90,7 +90,7 @@ public final class ScreenSharingOwnedWindowSession {
   /// `stopCapture` is owned by the session so that every path on which the
   /// stream may have started — including cancellation right after a
   /// successful start — awaits a real stop before the window is hidden.
-  public init(
+  package init(
     show: @escaping @MainActor () throws -> Void, hide: @escaping @MainActor () -> Void,
     stopCapture: @escaping @MainActor () async throws -> Void,
     now: @escaping @MainActor () -> Int64 = { ScreenSharingMetrics.nowNs }
@@ -108,7 +108,7 @@ public final class ScreenSharingOwnedWindowSession {
   /// stream is live regardless of cancellation: that boundary is recorded
   /// first, and the error path then awaits the real stop before hiding. On any
   /// error the session cleans up once and rethrows.
-  public func start(ready: () async throws -> Void, startCapture: () async throws -> Void) async throws {
+  package func start(ready: () async throws -> Void, startCapture: () async throws -> Void) async throws {
     do {
       try lifecycle.apply(.show, atNs: now())
       try show()
@@ -127,7 +127,7 @@ public final class ScreenSharingOwnedWindowSession {
     }
   }
 
-  public func pauseWorkload(_ pause: () throws -> Void) throws {
+  package func pauseWorkload(_ pause: () throws -> Void) throws {
     try lifecycle.apply(.pauseWorkload, atNs: now())
     try pause()
   }
@@ -141,7 +141,7 @@ public final class ScreenSharingOwnedWindowSession {
   /// return trivially — a no-op is not stop-completion evidence) and can never
   /// replace the recorded failure.
   @discardableResult
-  public func stopCapture() async -> Bool {
+  package func stopCapture() async -> Bool {
     guard lifecycle.state == .capturing || lifecycle.state == .workloadPaused else { return false }
     if stopSucceeded == false {
       stopRetriesRefused += 1
@@ -163,7 +163,7 @@ public final class ScreenSharingOwnedWindowSession {
   /// One cleanup on every exit path. Idempotent: the window is hidden at most
   /// once and the first outcome is kept.
   @discardableResult
-  public func finish() -> Lifecycle.CleanupOutcome {
+  package func finish() -> Lifecycle.CleanupOutcome {
     if let cleanupOutcome { return cleanupOutcome }
     let outcome = lifecycle.cleanUp(captureStopCompleted: stopSucceeded == true, atNs: now())
     switch outcome {
@@ -176,9 +176,9 @@ public final class ScreenSharingOwnedWindowSession {
     return outcome
   }
 
-  public var completedInOrder: Bool { lifecycle.completedInOrder && stopSucceeded == true }
+  package var completedInOrder: Bool { lifecycle.completedInOrder && stopSucceeded == true }
 
-  public var record: [String: Any] {
+  package var record: [String: Any] {
     [
       "state": lifecycle.state.rawValue, "completedInOrder": completedInOrder,
       "abandonedFrom": lifecycle.abandonedFrom?.rawValue ?? "none",
