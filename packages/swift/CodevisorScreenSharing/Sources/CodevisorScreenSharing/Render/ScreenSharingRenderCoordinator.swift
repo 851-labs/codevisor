@@ -347,13 +347,18 @@ package final class ScreenSharingRenderCoordinator {
           .presentedResult, auditIdentity, rtpTimestamp: rtpTimestamp,
           valueNs: presentedTime.isFinite && presentedTime > 0 ? Int64(presentedTime * 1_000_000_000) : 0)
       }
-      guard
-        metrics.recordPresentation(
-          isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: receivedAt)
-      else { return }
+      // The handler itself is the product signal: the drawable of a new frame
+      // reached Core Animation. Its `presentedTime` is a diagnostic — it reads
+      // 0 for a sparsely presented layer (a VNC desktop that repaints on
+      // change) although the frame is on screen — so only the latency
+      // metrics and the diagnostic notification depend on it.
+      let timed = metrics.recordPresentation(
+        isNewFrame: isNewFrame, presentedAt: presentedTime, submittedAt: submittedAt, receivedAt: receivedAt)
+      guard isNewFrame else { return }
       hop {
         guard let self, !self.stopped else { return }
         self.onPresented?(rtpTimestamp)
+        guard timed else { return }
         self.onFramePresented?(
           ScreenSharingPresentedFrame(
             presentedAtSeconds: presentedTime, submittedAtSeconds: submittedAt, receivedAtSeconds: receivedAt,

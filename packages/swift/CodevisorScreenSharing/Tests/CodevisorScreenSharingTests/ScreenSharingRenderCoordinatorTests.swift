@@ -356,6 +356,8 @@ extension ScreenSharingRenderCoordinatorTests {
     let f = Fixture(renderOnArrival: false)
     var presented: [ScreenSharingPresentedFrame] = []
     f.coordinator.onFramePresented = { presented.append($0) }
+    var notified = 0
+    f.coordinator.onPresented = { _ in notified += 1 }
     let submission = ControlledSubmission()
     let buffer = try makeBuffer()
     let frame = ScreenSharingVideoFrame(
@@ -366,8 +368,10 @@ extension ScreenSharingRenderCoordinatorTests {
       submission, retaining: Retained(selected.frame), frame: selected.frame, isNewFrame: true, submittedAt: 1)
     submission.complete()
     _ = f.queue.drain()
-    submission.present(at: 0)  // a skipped drawable: not a presentation
-    #expect(f.queue.drain() == 0 && presented.isEmpty)
+    // An untimed presentation (presentedTime 0, as a sparsely presented layer reports) still
+    // notifies the product — the frame is on screen — but carries no clocks for the diagnostic hook.
+    submission.present(at: 0)
+    #expect(f.queue.drain() == 1 && notified == 1 && presented.isEmpty)
     let second = ControlledSubmission()
     f.mailbox.put(frame)
     let again = try #require(f.coordinator.select())

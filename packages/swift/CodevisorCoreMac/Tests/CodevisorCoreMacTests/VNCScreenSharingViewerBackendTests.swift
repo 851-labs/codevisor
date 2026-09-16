@@ -103,11 +103,10 @@ struct VNCScreenSharingViewerBackendTests {
   }
 
   @Test func aRefusedConnectionEndsWithAReadableMessage() async throws {
-    let harness = try await Harness()
-    let port = harness.server.port
-    harness.stop()
+    // A privileged port nothing listens on: a stopped loopback server's ephemeral port could be
+    // reused by another test's server while this one connects.
     let backend = ScreenSharingViewerBackend.vnc(
-      target: ScreenSharingVNCTarget(host: "127.0.0.1", port: port), password: { nil })
+      target: ScreenSharingVNCTarget(host: "127.0.0.1", port: 1), password: { nil })
     let log = ScreenSharingEventLog()
     for await event in await backend.connect("vnc") { log.append(event) }
     expectNoDifference(log.events, [.ended("The VNC server refused the connection.")])
