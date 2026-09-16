@@ -52,6 +52,7 @@
 
     static func main(arguments: [String]) {
       if arguments.contains("--help") { print(usage); return }
+      setvbuf(stdout, nil, _IOLBF, 0)  // the input log is read live from a redirected stdout
       do {
         let options = try Options(arguments: arguments)
         Task { @MainActor in
