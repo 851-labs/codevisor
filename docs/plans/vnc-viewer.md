@@ -72,3 +72,13 @@ sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resourc
 Not yet: Apple Remote Desktop authentication (type 30), Tight encoding, cursor
 pseudo-encodings, ExtendedDesktopSize, a display size in the picker before the first
 connection.
+
+## Interop test box
+
+A Contabo Cloud VPS 4 (`164.68.121.169`, Ubuntu, monthly; credentials in
+1Password as "Contabo VNC test box") runs TigerVNC as a real, standard VNC
+server for interop testing. `scripts/vnc-test-box.sh provision root@164.68.121.169`
+installs it (idempotent, bound to localhost); `scripts/vnc-test-box.sh tunnel
+root@164.68.121.169` forwards `127.0.0.1:5901`, which the pane connects to.
+Contabo's own KVM console (VNC Information in the panel) is a second, QEMU-based
+server worth testing against.
