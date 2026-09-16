@@ -238,9 +238,16 @@ export const projectSessionAttention = (
   if (conversation?.role === "user") {
     sqlite
       .prepare(
-        "update session_attention set pending_plan_approval = 0, errored = 0 where session_id = ?"
+        `update session_attention set pending_plan_approval = 0, errored = 0,
+           turn_active = case when ? then 1 else turn_active end,
+           settle_due_at = case when ? then null else settle_due_at end
+         where session_id = ?`
       )
-      .run(event.session_id)
+      .run(
+        payload.startsTurn === true ? 1 : 0,
+        payload.startsTurn === true ? 1 : 0,
+        event.session_id
+      )
   }
 
   const terminal =

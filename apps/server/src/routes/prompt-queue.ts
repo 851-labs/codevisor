@@ -444,6 +444,7 @@ const runPromptInBackground = async (
         payload: {
           role: "user",
           messageId: queueItemId,
+          startsTurn: true,
           text,
           ...(refs.length === 0 ? {} : { attachments: refs })
         }

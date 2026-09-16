@@ -164,6 +164,45 @@ struct TranscriptRowSetTests {
 
   // MARK: transferActiveHeightIfNeeded
 
+  @Test func historyRefreshNeverTransfersWaitingHeightToReplacementUser() {
+    let user = settled(UUID(), height: 90)
+    let waiting = active(UUID(), height: 19.333)
+    let historyUser = settled(UUID(), height: 90)
+    var ledger = TranscriptMeasurementLedger()
+    ledger.setExact(90, for: user.layoutKey)
+    ledger.setExact(19.333, for: waiting.layoutKey)
+
+    TranscriptRowSet.transferActiveHeightIfNeeded(
+      from: [user, waiting], to: [historyUser], ledger: &ledger)
+
+    #expect(ledger[historyUser.layoutKey] == nil)
+    #expect(ledger[user.layoutKey] == 90)
+  }
+
+  @Test func doesNotTransferHeightToAnotherAssistantTurn() {
+    let waiting = active(UUID())
+    let unrelated = settledResult(UUID())
+    var ledger = TranscriptMeasurementLedger()
+    ledger.setExact(19.333, for: waiting.layoutKey)
+
+    TranscriptRowSet.transferActiveHeightIfNeeded(
+      from: [waiting], to: [unrelated], ledger: &ledger)
+
+    #expect(ledger[unrelated.layoutKey] == nil)
+  }
+
+  @Test func doesNotTreatOneActiveSliceAsTheWholeAssistantHeight() {
+    let turn = UUID()
+    let slice = activeMarkdown(turn, ordinal: 0)
+    let result = settledResult(turn)
+    var ledger = TranscriptMeasurementLedger()
+    ledger.setExact(19.333, for: slice.layoutKey)
+
+    TranscriptRowSet.transferActiveHeightIfNeeded(from: [slice], to: [result], ledger: &ledger)
+
+    #expect(ledger[result.layoutKey] == nil)
+  }
+
   @Test func transfersActiveHeightOntoSingleSettledReplacementAsProvisional() {
     let turn = UUID()
     let activeRow = active(turn)

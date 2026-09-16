@@ -147,18 +147,29 @@ struct NewChatPresentationReader: UIViewControllerRepresentable {
 }
 
 /// Expands the actual sheet hierarchy in its existing window. No image of
-/// the transcript, composer, navigation bar, or backdrop is retained: every
-/// pixel continues to come from the live controls and their current traits.
+/// the transcript, composer, or backdrop is retained. Only the outgoing
+/// navigation title is briefly retained while its replacement fades in.
 @MainActor
 final class NewChatPromotionSurface {
   private weak var sourceWindow: UIWindow?
   private var liveView: UIView?
   private let container = UIView()
   private var animator: UIViewPropertyAnimator?
+  private var navigationTitleTransition: NewChatNavigationTitleTransition?
   private(set) var didStartExpansion = false
   private let duration: TimeInterval
   private let editorHandoffID: UUID
   private var onExpanded: (() -> Void)?
+
+  var isAnimatingNavigationTitle: Bool { navigationTitleTransition?.isAnimating == true }
+
+  func transitionNavigationTitle(_ title: WorkspaceNavigationTitle, completion: @escaping () -> Void) {
+    guard let navigationBar = liveView?.firstDescendant(where: { $0 is UINavigationBar }) as? UINavigationBar
+    else { return }
+    let transition = NewChatNavigationTitleTransition()
+    navigationTitleTransition = transition
+    transition.animate(in: navigationBar, title: title, duration: duration, completion: completion)
+  }
 
   init(
     window: UIWindow,
@@ -256,6 +267,8 @@ final class NewChatPromotionSurface {
   }
 
   func remove() {
+    navigationTitleTransition?.cancel()
+    navigationTitleTransition = nil
     animator?.stopAnimation(true)
     animator = nil
     liveView?.removeFromSuperview()

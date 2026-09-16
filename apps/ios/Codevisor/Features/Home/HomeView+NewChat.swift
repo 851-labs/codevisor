@@ -56,6 +56,14 @@ extension HomeView {
     let workspace = ensureWorkspace(for: session)
     flow.promotionServerId = session.serverId
     flow.promotionWorkspaceId = workspace.id
+    let navigationTitle = WorkspaceNavigationTitle(
+      title: session.title.isEmpty ? "New Chat" : session.title,
+      subtitle: [workspace.name, environment.machines.fleetMachineName(for: session.serverId)]
+        .compactMap { $0 }
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    )
+    flow.promotionNavigationTitle = navigationTitle
     flow.phase = .animating
     flow.promotionWatchdog.start { [weak flow] in
       guard let flow else { return }
@@ -68,6 +76,10 @@ extension HomeView {
     // Normally already under way from `beginNewChatExpansion`; this is the
     // path for a bubble that took off after the session existed.
     expandPromotionSurfaceIfReady(flow)
+    flow.promotionSurface?.transitionNavigationTitle(navigationTitle) { [weak flow] in
+      guard let flow else { return }
+      finishNewChatPromotionIfReady(flow)
+    }
     // Mounting the second transcript is deferred until the flight lands.
     // The live sheet covers that work without blocking the animation.
     if flow.didFinishFirstSendAnimation { pushCanonicalNewChatRoute(flow) }
@@ -139,7 +151,7 @@ extension HomeView {
   /// Morph the live navigation controls as the sheet grows.
   private func beginPromotionChromeMorph(_ flow: NewChatFlow) {
     guard !flow.hasStartedExpansion else { return }
-    // Only the button's glyph animates. A transaction around the whole
+    // The toolbar owns its animations. A transaction around the whole
     // sheet also animates keyboard avoidance as the hosting view expands.
     flow.hasStartedExpansion = true
   }
@@ -223,6 +235,7 @@ extension HomeView {
 
   private func finishNewChatPromotionIfReady(_ flow: NewChatFlow) {
     guard newChatFlow === flow,
+      flow.promotionSurface?.isAnimatingNavigationTitle != true,
       NewChatPromotionLifecycleContract.canCommit(
         phase: flow.phase,
         canonicalWorkspaceReady: flow.isWorkspaceReady,
@@ -309,6 +322,7 @@ extension HomeView {
             serverId: liveFlow.requestedServerId,
             isNewChatPresentation: true,
             isPromotingNewChat: liveFlow.hasStartedExpansion,
+            promotionNavigationTitle: liveFlow.promotionNavigationTitle,
             initialComposerFocusRequest: liveFlow.composerFocusRequest,
             onInitialComposerFocusRequestFulfilled:
               liveFlow.consumeFocusRequest,

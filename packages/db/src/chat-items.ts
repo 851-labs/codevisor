@@ -140,7 +140,18 @@ export const ensureAssistantChatItem = (
     if (routed !== undefined) return routed
   }
   const current = chatState(sqlite, sessionId).current_item_id
-  if (current !== null) return current
+  if (current !== null) {
+    // Dispatch can create the waiting row before the provider allocates a turn
+    // id. Bind that id to the same row when startup finishes, including routing
+    // late terminal events after another turn has become current.
+    if (turnId !== undefined) {
+      const bound = sqlite
+        .prepare("update chat_items set turn_id = ? where id = ? and turn_id is null")
+        .run(turnId, current)
+      if (bound.changes > 0) setChatRoute(sqlite, sessionId, `turn:${turnId}`, current)
+    }
+    return current
+  }
   const id = createChatItem(sqlite, sessionId, "assistant", createdAt, {
     status: "streaming",
     ...(turnId === undefined ? {} : { turnId })

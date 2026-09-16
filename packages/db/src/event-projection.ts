@@ -79,6 +79,12 @@ export const projectChatEvent = (
               ? {}
               : { attachments: conversation.attachments })
           })
+        // Dispatch owns a response before harness initialization begins. Persist
+        // its waiting row atomically with the user echo so a history refresh can
+        // never observe the accepted prompt as a finished, user-only transcript.
+        if (conversation.role === "user" && payload.startsTurn === true) {
+          ensureAssistantChatItem(sqlite, sessionId, event.created_at)
+        }
       } else if (conversation?.role === "assistant") {
         itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
         sqlite

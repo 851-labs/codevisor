@@ -233,6 +233,9 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     sessionId: row.session_id,
     sequence: row.position,
     role: row.role,
+    // User identity must survive optimistic echo -> durable history. Assistant
+    // messageId belongs to the current answer candidate and is mapped separately.
+    ...(row.role === "user" && row.message_id !== null ? { messageId: row.message_id } : {}),
     text: row.text,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

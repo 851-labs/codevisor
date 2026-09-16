@@ -150,7 +150,7 @@ public struct TranscriptRowSet: Sendable {
     to newRows: [Row],
     ledger: inout TranscriptMeasurementLedger
   ) {
-    guard let oldActive = oldRows.first(where: { $0.id.isActiveRow }),
+    guard let oldActive = oldRows.first(where: { if case .active = $0.id { true } else { false } }),
       let activeHeight = ledger[oldActive.layoutKey],
       !newRows.contains(where: { $0.layoutKey == oldActive.layoutKey })
     else { return }
@@ -160,8 +160,12 @@ public struct TranscriptRowSet: Sendable {
     }
     guard insertedSettledRows.count == 1,
       let settledActive = insertedSettledRows.first,
+      settledActive.id.messageID == oldActive.id.messageID,
       ledger[settledActive.layoutKey] == nil
     else { return }
+    // A snapshot can replace an optimistic user row while removing the waiting
+    // assistant. Being the only insertion does not make it that assistant.
+    if case .message(.user, _) = settledActive.content { return }
     // The settled render (auto-collapsed worked section, answer hoisted
     // out of it) differs from the streaming render, so the streaming
     // height positions rows until the settled host measures — but it must

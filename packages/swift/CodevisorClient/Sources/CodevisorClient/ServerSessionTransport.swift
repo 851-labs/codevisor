@@ -247,7 +247,7 @@ extension ServerSessionTransport {
         conversation.append(
           .user(
             UserMessage(
-              id: uuid(from: item.id),
+              id: item.messageId.flatMap(UUID.init(uuidString:)) ?? uuid(from: item.id),
               text: item.text,
               attachments: (item.attachments ?? []).map(\.attachment)
             )))
@@ -281,7 +281,7 @@ extension ServerSessionTransport {
     case .user:
       return .user(
         UserMessage(
-          id: id,
+          id: item.messageId.flatMap(UUID.init(uuidString:)) ?? id,
           text: item.text,
           attachments: (item.attachments ?? []).map(\.attachment)
         ))

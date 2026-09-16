@@ -22,6 +22,7 @@ final class NewChatFlow: Identifiable {
   var didFinishSurfaceAnimation = false
   var promotionServerId: String?
   var promotionWorkspaceId: UUID?
+  var promotionNavigationTitle: WorkspaceNavigationTitle?
   var presentationSession: NewChatPresentationSession?
   @ObservationIgnored var promotionSurface: NewChatPromotionSurface?
   @ObservationIgnored let promotionWatchdog = NewChatPromotionWatchdog()
