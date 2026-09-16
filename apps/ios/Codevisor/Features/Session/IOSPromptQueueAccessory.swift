@@ -5,10 +5,11 @@ import SwiftUI
 /// A compact, touch-sized summary above the composer. Queue management lives
 /// in a sheet so editing and deletion never depend on tiny inline controls.
 struct IOSPromptQueueAccessory: View {
-  var cardStyle = ComposerCardStyle()
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Bindable var controller: SessionController
   let glassNamespace: Namespace.ID
   @Binding var isPresentingQueue: Bool
+  let sendAnimation: IOSQueueSendAnimation
 
   private var firstItem: ServerPromptQueueItem? {
     controller.queuedPrompts.first
@@ -40,22 +41,47 @@ struct IOSPromptQueueAccessory: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: true, vertical: false)
+            .contentTransition(.numericText())
         }
       }
       .padding(ComposerCardStyle.contentPadding)
       .frame(maxWidth: .infinity, minHeight: Typography.minimumInteractiveTargetSize, alignment: .leading)
       .contentShape(Rectangle())
+      .opacity(sendAnimation.isFormingQueue ? 0 : 1)
     }
     .buttonStyle(.plain)
-    .composerGlassSurface(
-      shape: cardStyle.shape,
-      id: .queue,
-      in: glassNamespace
+    .modifier(
+      QueueGlassSurface(
+        isFormingQueue: sendAnimation.isFormingQueue,
+        glassNamespace: glassNamespace
+      )
     )
+    .background { IOSQueueSendTarget(animation: sendAnimation) }
+    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendAnimation.arrival) { content, scale in
+      content.scaleEffect(reduceMotion ? 1 : scale)
+    } keyframes: { _ in
+      CubicKeyframe(1.025, duration: 0.12)
+      SpringKeyframe(1, duration: 0.3, spring: .smooth)
+    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Queue, \(countText)")
     .accessibilityValue(firstItem.map { "Next: \($0.text)" } ?? "")
     .accessibilityHint("Opens queued message management")
+  }
+}
+
+private struct QueueGlassSurface: ViewModifier {
+  var cardStyle = ComposerCardStyle()
+  let isFormingQueue: Bool
+  let glassNamespace: Namespace.ID
+
+  func body(content: Content) -> some View {
+    if isFormingQueue {
+      // The flying glass owns this surface until it becomes the queue card.
+      content
+    } else {
+      content.composerGlassSurface(shape: cardStyle.shape, id: .queue, in: glassNamespace)
+    }
   }
 }
 

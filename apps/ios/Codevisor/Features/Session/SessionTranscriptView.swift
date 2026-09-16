@@ -104,6 +104,7 @@ struct SessionTranscriptView: View {
   /// launch point for the optimistic user row instead of estimating from the
   /// transcript's bottom inset.
   @State var sendAnimationSourceFrame: CGRect?
+  @State var queueSendAnimation = IOSQueueSendAnimation()
 
   /// The complete resting bottom chrome above the safe-area margin. Every
   /// transcript inset and snapshot crop reads this single value.
@@ -384,7 +385,8 @@ struct SessionTranscriptView: View {
         controller: controller,
         isComposerExpanded: composerExpanded,
         maximumTodoHeight: max(132, min(240, availableHeight * 0.35)),
-        glassNamespace: composerGlassNamespace
+        glassNamespace: composerGlassNamespace,
+        queueSendAnimation: queueSendAnimation
       )
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -413,6 +415,19 @@ struct SessionTranscriptView: View {
           sendAnimationSourceFrame = frame
         },
         onWillSend: { text in
+          if controller.isSending {
+            UserSendMorphCoordinator.shared.cancelStagedProxy(for: ObjectIdentifier(controller))
+            if !reduceMotion {
+              queueSendAnimation.stage(
+                text: text,
+                queue: controller.queuedPrompts,
+                sourceFrame: sendAnimationSourceFrame ?? .zero,
+                in: UIWindow.codevisorKeyWindow
+              )
+            }
+            return
+          }
+          queueSendAnimation.cancel()
           // The text leaves the editor as a bubble in the same frame it
           // clears; the transcript flies this proxy into the real row.
           if !reduceMotion {
@@ -430,6 +445,27 @@ struct SessionTranscriptView: View {
       )
     }
     .animation(Motion.quick(reduceMotion: reduceMotion), value: composerExpanded)
+    .onChange(of: controller.queuedPrompts) { _, queue in
+      queueSendAnimation.queueDidChange(queue)
+    }
+    .onChange(of: controller.errorMessage) { _, error in
+      if error != nil { queueSendAnimation.cancel() }
+    }
+    .onChange(of: ObjectIdentifier(controller)) { _, _ in
+      queueSendAnimation.cancel()
+    }
+    .onChange(of: controller.userSendAnimationRequest) { _, _ in
+      // The active turn may finish while attachments are uploading. A send
+      // that ends up in the transcript must release its queued presentation.
+      queueSendAnimation.cancel()
+    }
+    .onChange(of: reduceMotion) { _, reduced in
+      if reduced { queueSendAnimation.cancel() }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase != .active { queueSendAnimation.cancel() }
+    }
+    .onDisappear { queueSendAnimation.cancel() }
   }
 
   var scrollToBottomButton: some View {

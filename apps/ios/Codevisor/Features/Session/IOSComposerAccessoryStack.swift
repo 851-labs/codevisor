@@ -13,6 +13,7 @@ struct IOSComposerAccessoryStack: View {
   let isComposerExpanded: Bool
   let maximumTodoHeight: CGFloat
   let glassNamespace: Namespace.ID
+  let queueSendAnimation: IOSQueueSendAnimation
   @State private var isPresentingQueue = false
 
   private var visibleGoal: SessionGoal? {
@@ -70,7 +71,8 @@ struct IOSComposerAccessoryStack: View {
           IOSPromptQueueAccessory(
             controller: controller,
             glassNamespace: glassNamespace,
-            isPresentingQueue: $isPresentingQueue
+            isPresentingQueue: $isPresentingQueue,
+            sendAnimation: queueSendAnimation
           )
           .transition(.opacity)
         }
