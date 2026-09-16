@@ -12,7 +12,7 @@
     private let pane: UUID
     private let viewer = UUID()
     private let metrics = ScreenSharingMetrics()
-    private var peer: ScreenSharingPeer?
+    private var peer: ScreenSharingReceiver?
     private var view: ScreenSharingMetalView?
     private var window: NSWindow?
     private var display: String?
@@ -65,8 +65,7 @@
         servers: reply.connectivity?.servers.map {
           try ScreenSharingICEServer(urls: $0.urls, username: $0.username, credential: $0.credential)
         } ?? [], relayOnly: reply.connectivity?.relayOnly ?? false)
-      let receiver = try ScreenSharingPeer(
-        sending: false, configuration: .init(), metrics: metrics, connectivity: connectivity)
+      let receiver = try ScreenSharingReceiver(configuration: .init(), metrics: metrics, connectivity: connectivity)
       peer = receiver
       let view = try ScreenSharingMetalView(mailbox: receiver.mailbox, metrics: metrics)
       self.view = view

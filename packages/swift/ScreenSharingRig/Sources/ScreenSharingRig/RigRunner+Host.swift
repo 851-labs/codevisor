@@ -83,13 +83,14 @@
       }
       reducer.reset()
       let metrics = ScreenSharingMetrics()
-      let peer = try ScreenSharingPeer(
-        sending: true, configuration: configuration.video, metrics: metrics,
-        useLowLatencyRateControl: useLowLatencyRateControl, codec: configuration.codec,
-        maximumPendingFrames: configuration.tuning.pendingFrames ?? 2,
-        staticCodecRate: configuration.tuning.staticCodecRate,
-        keyframeIntervalSeconds: configuration.tuning.keyframeIntervalSeconds ?? 2,
-        transportCeilingBps: configuration.tuning.transportCeilingBps)
+      var options = ScreenSharingPeerOptions()
+      options.useLowLatencyRateControl = useLowLatencyRateControl
+      options.codec = configuration.codec
+      options.maximumPendingFrames = configuration.tuning.pendingFrames ?? 2
+      options.staticCodecRate = configuration.tuning.staticCodecRate
+      options.keyframeIntervalSeconds = configuration.tuning.keyframeIntervalSeconds ?? 2
+      options.transportCeilingBps = configuration.tuning.transportCeilingBps
+      let peer = try ScreenSharingSender(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: offer.sessionID, peer: peer, metrics: metrics)
       self.session = session
       peerName = offer.name
@@ -115,7 +116,7 @@
       switch activeCapture {
       case .synthetic:
         let source = try SyntheticSource(
-          configuration: video, sender: session.peer.frameSender, metrics: session.metrics, pixelFormat: .nv12,
+          configuration: video, sender: session.frameSender, metrics: session.metrics, pixelFormat: .nv12,
           desktopPattern: true)
         session.synthetic = source
         session.metrics.label("captureSize", "\(video.width) × \(video.height)")
@@ -130,7 +131,7 @@
           width: width, height: height, framesPerSecond: fps, bitrate: video.bitrate)
         let workload = try ProbeOwnedWorkloadWindow(configuration: workloadConfiguration) { try await capture.stop() }
         session.workload = workload
-        let sender = session.peer.frameSender
+        let sender = session.frameSender
         let metrics = session.metrics
         _ = try await workload.start(timeoutSeconds: 10) {
           try await capture.start(
@@ -154,7 +155,7 @@
         // On a display nobody else uses, the workload may take clicks and keys: its Response counter proves injection.
         workload.window.ignoresMouseEvents = false
         workload.window.acceptsKeys = true
-        let sender = session.peer.frameSender
+        let sender = session.frameSender
         let metrics = session.metrics
         let displayID = virtualDisplay.displayID
         _ = try await workload.start(timeoutSeconds: 10) {
@@ -169,7 +170,7 @@
         let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
-          displayID: virtualDisplay.displayID, configuration: video, sender: session.peer.frameSender,
+          displayID: virtualDisplay.displayID, configuration: video, sender: session.frameSender,
           metrics: session.metrics)
         session.metrics.label("captureSelection", "bare virtual display \(virtualDisplay.displayID)")
         installHostControl(in: session, displayID: virtualDisplay.displayID)
@@ -189,7 +190,7 @@
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(display: display, including: [application], exceptingWindows: []),
-          configuration: video, sender: session.peer.frameSender, metrics: session.metrics)
+          configuration: video, sender: session.frameSender, metrics: session.metrics)
         session.metrics.label(
           "captureSelection", "application \(bundle) (\(application.applicationName)) on display \(display.displayID)")
         log("application \(bundle) captured on display \(display.displayID)")
@@ -203,7 +204,7 @@
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(desktopIndependentWindow: window), configuration: video,
-          sender: session.peer.frameSender, metrics: session.metrics)
+          sender: session.frameSender, metrics: session.metrics)
         session.metrics.label(
           "captureSelection",
           "window \(id) \"\(window.title ?? "")\" of \(window.owningApplication?.bundleIdentifier ?? "?")")
@@ -213,7 +214,7 @@
         let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
-          displayID: id, configuration: video, sender: session.peer.frameSender, metrics: session.metrics)
+          displayID: id, configuration: video, sender: session.frameSender, metrics: session.metrics)
         installHostControl(in: session, displayID: id)
         log("display \(id) captured")
       }
@@ -302,7 +303,7 @@
           return nil
         },
         inject: { injector.post($0) },
-        send: { [weak session] message in session?.peer.control.send(message) ?? false })
+        send: { [weak session] message in session?.peer.controlChannel.send(message) ?? false })
       control.onChanged = { [weak self, weak session] active in
         self?.log("control \(active ? "granted" : "released") on display \(displayID)")
         session?.metrics.label("controlActive", active ? "true" : "false")
@@ -317,7 +318,7 @@
           NSApplication.shared.deactivate()
         }
       }
-      session.peer.control.onMessage = { [weak control] message in control?.receive(message) }
+      session.peer.controlChannel.onMessage = { [weak control] message in control?.receive(message) }
       session.hostControl = control
       session.controlDeadlineTask = Task { @MainActor [weak control] in
         while !Task.isCancelled {

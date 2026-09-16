@@ -13,7 +13,7 @@ final class ScreenSharingHostService {
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   @MainActor private final class Session {
     let owner: ScreenSharingHostLease.Owner
-    let peer: ScreenSharingPeer
+    let peer: ScreenSharingSender
     let capture: ScreenSharingCapture
     /// The explicit experimental profile in force for this process, or nil when it is OFF (the default).
     let profile: ScreenSharingDiagnosticProfile?
@@ -54,9 +54,8 @@ final class ScreenSharingHostService {
           "diagnosticProfileCaptureRequest",
           "\(profile.captureIntervalFPSAtLevel0) fps at adaptive level 0, video rate below")
       }
-      peer = try ScreenSharingPeer(
-        sending: true, configuration: configuration, metrics: metrics,
-        connectivity: connectivity.native())
+      peer = try ScreenSharingSender(
+        configuration: configuration, metrics: metrics, connectivity: connectivity.native())
     }
   }
   private var current: Session?
@@ -245,12 +244,12 @@ final class ScreenSharingHostService {
     }
     let pasteboard = ScreenSharingPasteboard()
     let clipboard = ScreenSharingClipboardTransfer(
-      send: { [weak session] in session?.peer.clipboard.send($0) ?? false },
+      send: { [weak session] in session?.peer.clipboardChannel.send($0) ?? false },
       canReceiveUnsolicited: { [weak session] in session?.state == "viewing" && session?.stopping == false },
       read: { try pasteboard.read() }, write: { try pasteboard.write($0) })
     session.clipboard = clipboard
-    session.peer.clipboard.onMessage = { [weak clipboard] in clipboard?.receive($0) }
-    session.peer.clipboard.onAvailabilityChanged = { [weak clipboard] available in
+    session.peer.clipboardChannel.onMessage = { [weak clipboard] in clipboard?.receive($0) }
+    session.peer.clipboardChannel.onAvailabilityChanged = { [weak clipboard] available in
       if !available { clipboard?.cancel(reason: "The clipboard channel closed.") }
     }
     let injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
@@ -268,10 +267,10 @@ final class ScreenSharingHostService {
       },
       inject: { [weak session] in
         session?.metrics.increment("controlInputEvents"); injector.post($0)
-      }, send: { [weak session] in session?.peer.control.send($0) ?? false })
+      }, send: { [weak session] in session?.peer.controlChannel.send($0) ?? false })
     session.control = control
-    session.peer.control.onMessage = { [weak control] in control?.receive($0) }
-    session.peer.control.onAvailabilityChanged = { [weak control] available in
+    session.peer.controlChannel.onMessage = { [weak control] in control?.receive($0) }
+    session.peer.controlChannel.onAvailabilityChanged = { [weak control] available in
       if !available { control?.revoke("The control channel closed.") }
     }
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }

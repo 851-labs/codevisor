@@ -45,7 +45,7 @@ extension ScreenSharingViewerBackend {
   public static func native(client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID) -> Self {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: { try await Task.sleep(for: $0) },
-      makeSession: { try NativeScreenSharingViewingSession.process(connectivity: $0) },
+      makeSession: { try ScreenSharingReceiver.process(connectivity: $0) },
       makeSurface: { session in
         try ScreenSharingVideoSurface(
           mailbox: session.frames, metrics: session.metrics, profile: ScreenSharingDiagnosticProfile.process())

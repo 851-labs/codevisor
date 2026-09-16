@@ -35,6 +35,12 @@
     var frameSize: CGSize?
     var sourceStarted = false
 
+    /// The host role's frame sender; the host runner only creates sender sessions.
+    var frameSender: ScreenSharingFrameSender {
+      guard let sender = peer as? ScreenSharingSender else { preconditionFailure("Frame sender on a viewer session") }
+      return sender.frameSender
+    }
+
     init(id: String, peer: ScreenSharingPeer, metrics: ScreenSharingMetrics) {
       self.id = id
       self.peer = peer
@@ -56,7 +62,7 @@
       controlDeadlineTask = nil
       hostControl?.revoke("The source stopped.")
       hostControl = nil
-      peer.control.onMessage = nil
+      peer.controlChannel.onMessage = nil
       controlDisplayID = nil
       synthetic?.stop()
       synthetic = nil
@@ -264,7 +270,7 @@
         let sample = reducer.reduce(
           elapsed: elapsed, role: configuration.role.rawValue, connection: session.connection, sessionID: session.id,
           snapshot: session.metrics.snapshot(), statistics: statistics,
-          mailboxDrops: session.peer.mailbox.droppedFrames,
+          mailboxDrops: (session.peer as? ScreenSharingReceiver)?.mailbox.droppedFrames ?? 0,
           frameSize: session.frameSizeLabel, imageAge: imageAges.take(),
           clockErrorMilliseconds: clockOffset.map { $0.errorSeconds * 1000 })
         latestSample = sample

@@ -134,8 +134,8 @@ struct ScreenSharingOwnershipTests {
 
   @Test @MainActor func peerCloseReleasesCachedMediaAndRejectsLaterCaptureCallbacks() async throws {
     let metrics = ScreenSharingMetrics()
-    let peer = try ScreenSharingPeer(
-      sending: true, configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics)
+    let peer = try ScreenSharingSender(
+      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics)
     weak var weakCached: CVPixelBuffer?
     try autoreleasepool {
       let cached = try makeBuffer(width: 64)
@@ -154,15 +154,14 @@ struct ScreenSharingOwnershipTests {
       peer.frameSender.push(.init(pixelBuffer: late, timestampNs: 20))
     }
     #expect(weakLate == nil && metrics.snapshot().counters["capturedFrames"] == 1)
-    #expect(!peer.mailbox.isHolding)
     #expect(metrics.snapshot().counters["refreshCacheFills"] == 1)
     #expect(metrics.snapshot().counters["refreshCacheReleases"] == 1)
   }
 
   @Test @MainActor func closeBoundaryIsSharedByConcurrentWaitersAndAbsentBeforeClose() async throws {
     let metrics = ScreenSharingMetrics()
-    let peer = try ScreenSharingPeer(
-      sending: true, configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics)
+    let peer = try ScreenSharingSender(
+      configuration: try ScreenSharingVideoConfiguration(width: 64, height: 64), metrics: metrics)
     #expect(await peer.awaitClosed() == nil)
     // This peer-level check only establishes the boundary's shape on an
     // unnegotiated peer: nil before close, one identical answer for concurrent

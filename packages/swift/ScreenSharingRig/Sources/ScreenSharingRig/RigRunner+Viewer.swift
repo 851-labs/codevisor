@@ -44,9 +44,10 @@
     func connectViewer(base: URL) async throws -> RigSession {
       reducer.reset()
       let metrics = ScreenSharingMetrics()
-      let peer = try ScreenSharingPeer(
-        sending: false, configuration: configuration.video, metrics: metrics,
-        useLowLatencyRateControl: useLowLatencyRateControl, codec: configuration.codec)
+      var options = ScreenSharingPeerOptions()
+      options.useLowLatencyRateControl = useLowLatencyRateControl
+      options.codec = configuration.codec
+      let peer = try ScreenSharingReceiver(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: UUID().uuidString.lowercased(), peer: peer, metrics: metrics)
       self.session = session
       peer.onConnectionChanged = { [weak self, weak session] state in
@@ -160,7 +161,7 @@
         guard let session, session.connection == "connected" else { return .error(503, "not connected") }
         let base = configuration.hostBaseURL
         let token = configuration.token
-        let check = RigViewerControlCheck(channel: session.peer.control, request: body)
+        let check = RigViewerControlCheck(channel: session.peer.controlChannel, request: body)
         do {
           let result = try await check.run {
             guard let base,

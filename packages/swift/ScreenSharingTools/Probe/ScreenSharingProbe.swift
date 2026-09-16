@@ -64,8 +64,8 @@ import ScreenSharingDiagnostics
     let options: ProbeOptions
     let senderMetrics = ScreenSharingMetrics()
     let receiverMetrics = ScreenSharingMetrics()
-    var sender: ScreenSharingPeer?
-    var receiver: ScreenSharingPeer?
+    var sender: ScreenSharingSender?
+    var receiver: ScreenSharingReceiver?
     var synthetic: SyntheticSource?
     var capture: ScreenSharingCapture?
     var ownedWorkload: ProbeOwnedWorkloadWindow?
@@ -194,14 +194,19 @@ import ScreenSharingDiagnostics
           }
         }
         encoderLogger = logger
-        sender = try ScreenSharingPeer(
-          sending: true, configuration: options.configuration, metrics: senderMetrics,
-          useLowLatencyRateControl: !options.standardRateControl, codec: options.videoCodec,
-          disableLookAhead: options.disableLookAhead, maximumPendingFrames: options.encoderInFlight,
-          maintainSourceRate: options.maintainSourceRate, staticCodecRate: options.staticCodecRate,
-          completeEachFrame: options.completeEachFrame, prioritizeSpeed: options.prioritizeSpeed,
-          keyframeIntervalSeconds: options.keyframeIntervalSeconds,
-          sourceIdleThresholdNs: options.idleThresholdMs.map { Int64($0) * 1_000_000 })
+        var senderOptions = ScreenSharingPeerOptions()
+        senderOptions.useLowLatencyRateControl = !options.standardRateControl
+        senderOptions.codec = options.videoCodec
+        senderOptions.disableLookAhead = options.disableLookAhead
+        senderOptions.maximumPendingFrames = options.encoderInFlight
+        senderOptions.maintainSourceRate = options.maintainSourceRate
+        senderOptions.staticCodecRate = options.staticCodecRate
+        senderOptions.completeEachFrame = options.completeEachFrame
+        senderOptions.prioritizeSpeed = options.prioritizeSpeed
+        senderOptions.keyframeIntervalSeconds = options.keyframeIntervalSeconds
+        senderOptions.sourceIdleThresholdNs = options.idleThresholdMs.map { Int64($0) * 1_000_000 }
+        sender = try ScreenSharingSender(
+          configuration: options.configuration, metrics: senderMetrics, options: senderOptions)
         if let threshold = options.idleThresholdMs {
           senderMetrics.label("sourceIdleThresholdExperiment", "\(threshold) ms idle threshold")
         }
@@ -235,10 +240,13 @@ import ScreenSharingDiagnostics
             "window begin \(deliveryAudit.window.beginSeconds) s duration \(deliveryAudit.window.durationSeconds) s, capacity \(deliveryAudit.capacity) records × \(ScreenSharingFrameDeliveryAudit.recordByteStride) B"
           )
         }
-        let receiver = try ScreenSharingPeer(
-          sending: false, configuration: options.configuration, metrics: receiverMetrics, codec: options.videoCodec,
-          deliveryGrace: options.idleGraceMs.map { .milliseconds($0) },
-          deliveryGraceExtensions: options.idleGraceExtensions, frameDeliveryAudit: deliveryAudit)
+        var receiverOptions = ScreenSharingPeerOptions()
+        receiverOptions.codec = options.videoCodec
+        receiverOptions.deliveryGrace = options.idleGraceMs.map { .milliseconds($0) }
+        receiverOptions.deliveryGraceExtensions = options.idleGraceExtensions
+        let receiver = try ScreenSharingReceiver(
+          configuration: options.configuration, metrics: receiverMetrics, options: receiverOptions,
+          frameDeliveryAudit: deliveryAudit)
         if let grace = options.idleGraceMs {
           receiverMetrics.label("sourceIdleGraceExperiment", "\(grace) ms delivery grace")
         }
@@ -414,10 +422,10 @@ import ScreenSharingDiagnostics
         }
       }
       if let sender, let receiver {
-        try await ProbeControlCheck(host: sender.control, viewer: receiver.control).run()
+        try await ProbeControlCheck(host: sender.controlChannel, viewer: receiver.controlChannel).run()
         senderMetrics.label("controlChannel", "ordered input and release verified")
         print("Control channel: eight input events and release acknowledged; no OS input posted.")
-        try await ProbeClipboardCheck(host: sender.clipboard, viewer: receiver.clipboard).run()
+        try await ProbeClipboardCheck(host: sender.clipboardChannel, viewer: receiver.clipboardChannel).run()
         senderMetrics.label("clipboardChannel", "bidirectional chunked Unicode transfer verified")
         print("Clipboard channel: bidirectional Unicode transfer verified; no system clipboard accessed.")
       }
