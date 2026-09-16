@@ -10,6 +10,10 @@ public struct MessageCopyButton: View {
   /// shows the copy icon instead of a stale check.
   var isRevealed: Bool = true
   @State private var didCopy = false
+  /// Bumped on every copy so the haptic fires on each tap, including
+  /// re-copies while the checkmark is still showing (`didCopy` would not
+  /// change again in that window).
+  @State private var copyCount = 0
 
   public init(text: String, help: String = "Copy message", isRevealed: Bool = true) {
     self.text = text
@@ -20,10 +24,17 @@ public struct MessageCopyButton: View {
   public var body: some View {
     Button {
       PlatformPasteboard.copy(text)
-      didCopy = true
+      // Instant swap: on iOS the button action runs inside the press-release
+      // transaction, so an unguarded state change crossfades the glyph.
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        didCopy = true
+        copyCount += 1
+      }
       Task {
         try? await Task.sleep(for: .seconds(1.5))
-        didCopy = false
+        withTransaction(transaction) { didCopy = false }
       }
     } label: {
       Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
@@ -35,6 +46,9 @@ public struct MessageCopyButton: View {
     .foregroundStyle(.secondary)
     .help(help)
     .accessibilityLabel(help)
+    // HIG › Playing haptics: `.success` is the notification feedback for a
+    // task that completed, which is what a copy is. It is a no-op on macOS.
+    .sensoryFeedback(.success, trigger: copyCount)
     .onChange(of: isRevealed) { _, revealed in
       if !revealed { didCopy = false }
     }
