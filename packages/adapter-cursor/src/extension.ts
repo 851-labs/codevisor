@@ -6,6 +6,7 @@ import {
   type AcpConnectionExtensionContext,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
+import type { SessionConfigOption } from "@codevisor/api"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import {
@@ -264,16 +265,22 @@ export const makeCursorExtension: AcpStdioExtensionFactory = ({ emit, enqueueQue
       if (update.sessionUpdate !== "config_option_update" || !Array.isArray(update.configOptions)) {
         return normalizer.mapSessionNotification(notification)
       }
-      const normalized = {
-        ...notification,
-        update: {
-          ...update,
-          configOptions: normalizeCursorConfigOptions(
-            normalizeAcpConfigOptions(update.configOptions as never)
-          )
+      // ACP label canonicalization happens in runtimeEventFromNotification;
+      // Cursor then remaps its native `fast` toggle onto the speed chip.
+      const event = runtimeEventFromNotification(notification)
+      const payload = event.payload as Record<string, unknown>
+      if (!Array.isArray(payload.configOptions)) return [event]
+      return [
+        {
+          ...event,
+          payload: {
+            ...payload,
+            configOptions: normalizeCursorConfigOptions(
+              payload.configOptions as ReadonlyArray<SessionConfigOption>
+            )
+          }
         }
-      } as unknown as acp.SessionNotification
-      return [runtimeEventFromNotification(normalized)]
+      ]
     },
     sdkConnectionCustomization: {
       customizeSessionMetadata: (sessionId, _response, metadata) => {

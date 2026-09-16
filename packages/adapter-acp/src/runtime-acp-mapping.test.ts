@@ -119,6 +119,67 @@ describe("@codevisor/agent-runtime", () => {
     ).toBeUndefined()
   })
 
+  it("strips effort suffixes on streamed config_option_update the same as session metadata", () => {
+    const event = runtimeEventFromNotification({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "high",
+            id: "reasoning_effort",
+            name: "Reasoning Effort",
+            options: [
+              { name: "Extra High Effort", value: "xhigh" },
+              { name: "High Effort", value: "high" },
+              { name: "Medium Effort", value: "medium" },
+              { name: "Low Effort", value: "low" }
+            ],
+            type: "select"
+          },
+          {
+            category: "model",
+            currentValue: "grok-4.6",
+            id: "model",
+            name: "Model",
+            options: [{ name: "Grok 4.6", value: "grok-4.6" }],
+            type: "select"
+          }
+        ]
+      }
+    } as never)
+
+    expect(event).toEqual({
+      kind: "session.output",
+      subjectId: "session-1",
+      payload: {
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "high",
+            id: "reasoning_effort",
+            name: "Reasoning",
+            options: [
+              { name: "Extra High", value: "xhigh" },
+              { name: "High", value: "high" },
+              { name: "Medium", value: "medium" },
+              { name: "Low", value: "low" }
+            ]
+          },
+          {
+            category: "model",
+            currentValue: "grok-4.6",
+            id: "model",
+            name: "Model",
+            options: [{ name: "Grok 4.6", value: "grok-4.6" }]
+          }
+        ]
+      }
+    })
+  })
+
   it("removes redundant prefixes and effort suffixes from ACP reasoning choices only", () => {
     const options = normalizeAcpConfigOptions([
       {

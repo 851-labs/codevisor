@@ -221,3 +221,71 @@ describe("Cursor ACP recovery", () => {
     expect(outputText(events)).toBe("")
   })
 })
+
+describe("Cursor config_option_update mapping", () => {
+  it("keeps ACP thought-level labels concise and remaps Cursor's fast toggle", () => {
+    const { extension } = {
+      extension: makeCursorExtension({
+        emit: () => undefined,
+        enqueueQuestion: <Response>() =>
+          Promise.reject(new Error("Unexpected Cursor question")) as Promise<Response>
+      })
+    }
+    const mapped = extension.mapSessionNotification?.({
+      sessionId: SESSION_ID,
+      update: {
+        configOptions: [
+          {
+            category: "thought_level",
+            currentValue: "high",
+            id: "reasoning_effort",
+            name: "Reasoning Effort",
+            options: [{ name: "High Effort", value: "high" }],
+            type: "select"
+          },
+          {
+            category: "model_config",
+            currentValue: "false",
+            id: "fast",
+            name: "Fast",
+            options: [
+              { name: "Off", value: "false" },
+              { name: "On", value: "true" }
+            ],
+            type: "select"
+          }
+        ],
+        sessionUpdate: "config_option_update"
+      }
+    } as never)
+
+    expect(mapped).toEqual([
+      {
+        kind: "session.output",
+        subjectId: SESSION_ID,
+        payload: {
+          configOptions: [
+            {
+              category: "thought_level",
+              currentValue: "high",
+              id: "reasoning_effort",
+              name: "Reasoning",
+              options: [{ name: "High", value: "high" }]
+            },
+            {
+              category: "speed",
+              currentValue: "standard",
+              id: "speed",
+              name: "Speed",
+              options: [
+                { name: "Standard", value: "standard" },
+                { name: "Fast", value: "fast" }
+              ]
+            }
+          ],
+          sessionUpdate: "config_option_update"
+        }
+      }
+    ])
+  })
+})

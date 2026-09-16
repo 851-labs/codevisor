@@ -1,12 +1,29 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import type { DiffStat } from "@codevisor/api"
 import { diffStatsFromTexts, type RuntimeEvent } from "@codevisor/agent-runtime"
+import { normalizeAcpConfigOptions } from "./config-options.js"
+
+/// `config_option_update` is the live mirror of `session/new.configOptions`.
+/// Run the same label canonicalization here so streamed thought-level names
+/// stay concise ("High", not "High Effort") for every ACP agent.
+const withNormalizedConfigOptions = (
+  update: acp.SessionNotification["update"]
+): Record<string, unknown> => {
+  const raw = update as unknown as Record<string, unknown>
+  if (raw.sessionUpdate !== "config_option_update" || !Array.isArray(raw.configOptions)) {
+    return raw
+  }
+  return {
+    ...raw,
+    configOptions: normalizeAcpConfigOptions(raw.configOptions as never)
+  }
+}
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
 export const runtimeEventFromNotification = (
   notification: acp.SessionNotification
 ): RuntimeEvent => {
-  const update = notification.update
+  const update = withNormalizedConfigOptions(notification.update)
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk":
