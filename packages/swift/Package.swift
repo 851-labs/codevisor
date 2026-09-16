@@ -28,6 +28,7 @@ let package = Package(
     .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
     // Consumed by the dev-only executable under apps/screen-sharing-rig.
     .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
+    .library(name: "ScreenSharingRFB", targets: ["ScreenSharingRFB"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
@@ -42,6 +43,22 @@ let package = Package(
     // backend that is not the native WebRTC pipeline depends on this target only. See
     // docs/plans/screen-sharing-composable-architecture.md. The dev-only executable (the rig, whose `probe` subcommand is the
     // single-process diagnostic) is its own package under apps/ and consumes this package's products.
+    // The RFB (VNC) protocol: handshake, authentication, client/server messages and the
+    // Raw/CopyRect/ZRLE decoders into a BGRA framebuffer. Pure protocol over an abstract
+    // transport; no screen-sharing types, so it is testable byte for byte. See docs/plans/vnc-viewer.md.
+    .systemLibrary(name: "CZlib", path: "CZlib"),
+    .target(
+      name: "ScreenSharingRFB",
+      dependencies: ["CZlib"],
+      path: "ScreenSharingRFB/Sources/ScreenSharingRFB",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "ScreenSharingRFBTests",
+      dependencies: ["ScreenSharingRFB", "CodevisorTestSupport"],
+      path: "ScreenSharingRFB/Tests/ScreenSharingRFBTests",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .target(
       name: "ScreenSharingCore",
       path: "ScreenSharingCore/Sources/ScreenSharingCore",
