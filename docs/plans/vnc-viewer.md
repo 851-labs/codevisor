@@ -82,3 +82,22 @@ installs it (idempotent, bound to localhost); `scripts/vnc-test-box.sh tunnel
 root@164.68.121.169` forwards `127.0.0.1:5901`, which the pane connects to.
 Contabo's own KVM console (VNC Information in the panel) is a second, QEMU-based
 server worth testing against.
+
+### Interop results (TigerVNC 1.13 on the box, through the tunnel)
+
+Verified from the app: RFB 3.8 + VNC Authentication, a 1440 × 900 ZRLE desktop
+(23 rectangles in the first update, ~2 s over the tunnel), repaint on change,
+reconnection after the socket dropped, and input under the local lease — keys,
+modifiers (⌃C reached the shell as `^C`), Return; `ls` ran remotely. Two bugs
+came out of it and are fixed: the viewer read the previous Keychain password
+because the save and the connection ran concurrently, and the renderer never
+reported a presentation for a sparsely presented layer (`presentedTime` is 0
+for every drawable of a desktop that only repaints on change), so the pane
+never left "Connecting…". The env-gated tests `RFBInteropTests`,
+`VNCSessionInteropTests` (`VNC_TEST_HOST/PORT/PASSWORD`) and
+`ScreenSharingSurfacePresentationTests` (`SCREEN_SHARING_WINDOW_TESTS=1`)
+reproduce the setup.
+
+Caveat: synthesized typing (Computer Use `typeText`, key code 0 with a Unicode
+payload) reaches a VNC server as the `A` key — the surface forwards physical
+key codes by design; real keyboards and `pressKey` sequences are unaffected.
