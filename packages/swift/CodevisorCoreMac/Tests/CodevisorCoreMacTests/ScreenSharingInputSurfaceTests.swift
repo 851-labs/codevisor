@@ -20,7 +20,7 @@ struct ScreenSharingInputSurfaceTests {
         .key(code: code, down: false, repeatKey: false, modifiers: 8),
         .key(code: 55, down: false, repeatKey: false, modifiers: 0),
       ])
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
   }
 
   @Test func systemShortcutsStayLocalOutsideTheFocusedVideo() throws {
@@ -51,7 +51,7 @@ struct ScreenSharingInputSurfaceTests {
     fixture.notifications.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
     #expect(!fixture.keyboard.send(.keyDown, shortcut))
     #expect(fixture.events.isEmpty)
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
     activateVideo()
     #expect(fixture.keyboard.send(.keyDown, shortcut))
   }
@@ -64,7 +64,7 @@ struct ScreenSharingInputSurfaceTests {
     #expect(!fixture.keyboard.send(.keyDown, injected))
     #expect(fixture.events.isEmpty)
     #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 53, flags: [.maskControl, .maskAlternate])))
-    #expect(fixture.control.state == .viewing && !fixture.input.active)
+    #expect(!fixture.controlling && !fixture.input.active)
     #expect(fixture.keyboard.stops == 1)
     #expect(fixture.events.isEmpty)
     #expect(!fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 49, flags: .maskCommand)))
@@ -75,21 +75,21 @@ struct ScreenSharingInputSurfaceTests {
     defer { fixture.close() }
     #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12, flags: .maskCommand)))
     fixture.keyboard.interrupted?()
-    #expect(fixture.control.state == .viewing && !fixture.input.active)
+    #expect(!fixture.controlling && !fixture.input.active)
     #expect(
       fixture.events.suffix(2) == [
         .key(code: 12, down: false, repeatKey: false, modifiers: 8),
         .key(code: 55, down: false, repeatKey: false, modifiers: 0),
       ])
-    #expect(fixture.control.message?.contains("Keyboard capture stopped") == true)
+    #expect(fixture.releaseReason?.contains("Keyboard capture stopped") == true)
     #expect(fixture.keyboard.stops == 1)
   }
 
   @Test func unavailableKeyboardCaptureReleasesTheGrantWithAnActionableMessage() throws {
     let fixture = try InputSurfaceFixture(keyboardStarts: false)
     defer { fixture.close() }
-    #expect(fixture.control.state == .viewing && !fixture.input.active)
-    #expect(fixture.control.message?.contains("Accessibility") == true)
+    #expect(!fixture.controlling && !fixture.input.active)
+    #expect(fixture.releaseReason?.contains("Accessibility") == true)
     #expect(fixture.messages.contains { if case .release = $0 { true } else { false } })
     #expect(fixture.events.isEmpty)
   }
@@ -102,7 +102,7 @@ struct ScreenSharingInputSurfaceTests {
 
     let toolbarClick = try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 510))
     #expect(fixture.input.route(toolbarClick) === toolbarClick)
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
     #expect(fixture.input.active)
     #expect(fixture.window.firstResponder === fixture.view)  // A menu button need not take first responder.
     #expect(fixture.events.contains(.key(code: 0, down: false, repeatKey: false, modifiers: 8)))
@@ -119,7 +119,7 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.input.route(videoClick) === videoClick)
     #expect(fixture.input.route(try fixture.key(.keyDown, code: 1)) == nil)
     #expect(fixture.events.last == .key(code: 1, down: true, repeatKey: false, modifiers: 0))
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
     #expect(!fixture.messages.contains { if case .release = $0 { true } else { false } })
   }
 
@@ -132,11 +132,11 @@ struct ScreenSharingInputSurfaceTests {
     let localKey = try fixture.key(.keyDown, code: 0)
     #expect(fixture.input.route(localKey) === localKey)
     #expect(fixture.events.isEmpty)
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
 
     fixture.window.key = false
     fixture.notifications.post(name: NSWindow.didResignKeyNotification, object: fixture.window)
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
     #expect(fixture.input.route(localKey) === localKey)
     fixture.window.key = true
     let videoClick = try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100))
@@ -152,7 +152,7 @@ struct ScreenSharingInputSurfaceTests {
     _ = fixture.input.route(try fixture.key(.keyDown, code: 0))
     fixture.window.key = false
     fixture.notifications.post(name: NSApplication.didResignActiveNotification, object: nil)
-    #expect(fixture.control.state == .controlling)
+    #expect(fixture.controlling)
     #expect(fixture.events.last == .key(code: 0, down: false, repeatKey: false, modifiers: 0))
     let count = fixture.events.count
     let key = try fixture.key(.keyDown, code: 1)
@@ -170,7 +170,7 @@ struct ScreenSharingInputSurfaceTests {
     defer { fixture.close() }
     _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 510)))
     #expect(fixture.input.route(try fixture.key(.keyDown, code: 53, flags: [.control, .option])) == nil)
-    #expect(fixture.control.state == .viewing)
+    #expect(!fixture.controlling)
     #expect(!fixture.input.active)
     #expect(fixture.messages.contains { if case .release = $0 { true } else { false } })
     let localKey = try fixture.key(.keyDown, code: 0)
@@ -182,8 +182,8 @@ struct ScreenSharingInputSurfaceTests {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
     _ = fixture.input.route(try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 510)))
-    fixture.control.release()
-    #expect(fixture.control.state == .viewing)
+    fixture.release(reason: nil)
+    #expect(!fixture.controlling)
     #expect(!fixture.input.active)
     let click = try fixture.mouse(.leftMouseDown, at: .init(x: 100, y: 100))
     _ = fixture.input.route(click)
@@ -202,9 +202,24 @@ private final class InputSurfaceFixture {
   let application = InputTestApplication()
   var messages: [ScreenSharingControlMessage] = []
   var events: [ScreenSharingInputEvent] = []
-  lazy var control = ScreenSharingViewerControl(send: { [unowned self] in
+  /// The lease's data plane, wired exactly as the endpoint wires it.
+  lazy var forwarder = ScreenSharingInputForwarder(send: { [unowned self] in
     messages.append($0); return true
   })
+  /// The lease the host granted; the fixture plays the lease reducer's part around it.
+  private(set) var lease: UUID? = UUID()
+  /// The reason the lease was given back, as the lease reducer would receive it.
+  private(set) var releaseReason: String?
+  var controlling: Bool { forwarder.isActive }
+
+  /// What the lease reducer does on `.inputLost`: stop forwarding and capture, release the lease on the wire.
+  func release(reason: String?) {
+    releaseReason = reason
+    if let lease { messages.append(.release(lease: lease)) }
+    lease = nil
+    forwarder.end()
+    input.end()
+  }
 
   init(keyboardStarts: Bool = true) throws {
     _ = NSApplication.shared
@@ -217,24 +232,15 @@ private final class InputSurfaceFixture {
       view: view, notificationCenter: notifications, keyboardCapture: keyboard,
       applicationIsActive: { [application] in application.active })
     input.onInput = { [unowned self] in
-      events.append($0); control.input($0)
+      events.append($0); forwarder.forward($0)
     }
-    input.onRelease = { [unowned self] in control.release(reason: input.failureMessage) }
-    control.onActiveChanged = { [unowned self] active in
-      if active {
-        if !input.begin() { control.release(reason: input.failureMessage) }
-      } else {
-        input.end()
-      }
-    }
-    control.setAvailable(true)
-    control.request()
-    guard case .request(let id) = try #require(messages.last) else { throw FixtureError.noRequest }
-    control.receive(.grant(request: id, lease: UUID()))
-    #expect(control.state == (keyboardStarts ? .controlling : .viewing))
+    input.onRelease = { [unowned self] in release(reason: input.failureMessage) }
+    forwarder.onLost = { [unowned self] in release(reason: $0) }
+    if input.begin(), let lease { forwarder.begin(lease: lease) } else { release(reason: input.failureMessage) }
+    #expect(controlling == keyboardStarts)
   }
 
-  func close() { control.release(); input.end(); window.close() }
+  func close() { release(reason: nil); window.close() }
 
   func systemKey(code: UInt16, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
     let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
@@ -257,7 +263,6 @@ private final class InputSurfaceFixture {
         windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
   }
 
-  private enum FixtureError: Error { case noRequest }
 }
 
 @MainActor

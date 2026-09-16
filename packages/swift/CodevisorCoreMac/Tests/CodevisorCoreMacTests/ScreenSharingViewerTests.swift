@@ -1,16 +1,15 @@
 import CodevisorClient
 import CodevisorCore
 import CodevisorScreenSharing
-import CodevisorTestSupport
 import ComposableArchitecture
-import ConcurrencyExtras
 import Foundation
 import Testing
 @testable import CodevisorCoreMac
 
-/// The viewer's control plane against a scripted backend: every transition is
-/// asserted exhaustively, and the endpoint side effects (fit, control
-/// requests) are checked on the fake surface and channel they land on.
+/// The viewer's control plane against a scripted backend and endpoint client:
+/// every transition is asserted exhaustively, including the lease child's,
+/// and the endpoint calls (fit, control messages, input) are checked on the
+/// client they land on.
 @MainActor
 struct ScreenSharingViewerTests {
   private let display = ScreenSharingViewerFixtures.display
@@ -20,18 +19,21 @@ struct ScreenSharingViewerTests {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
       let store = makeStore(backend, preferences: .init(preferredDisplayId: "missing"))
-      await store.send(.setVisible(true)) {
-        $0.visible = true; $0.phase = .loading
+      await store.send(.paneAppeared) {
+        $0.visible = true
+        $0.phase = .loading
       }
-      await store.receive(.discovered([display])) {
+      await store.receive(\.discoveryResponse.success) {
         $0.displays = [self.display]
         $0.phase = .failed
         $0.message = "The selected display is unavailable. Choose another display to connect."
       }
-      #expect(backend.connections.isEmpty)
-      await store.send(.close) {
-        $0.visible = false; $0.phase = .suspended
+      expectNoDifference(backend.connections, [])
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.phase = .suspended
       }
+      await store.finish()
     }
   }
 
@@ -40,16 +42,19 @@ struct ScreenSharingViewerTests {
       let backend = FakeBackend(displays: [display])
       backend.discoveryFailure = "Screen Sharing is unavailable on this Mac."
       let store = makeStore(backend)
-      await store.send(.setVisible(true)) {
-        $0.visible = true; $0.phase = .loading
+      await store.send(.paneAppeared) {
+        $0.visible = true
+        $0.phase = .loading
       }
-      await store.receive(.discoveryFailed("Screen Sharing is unavailable on this Mac.")) {
+      await store.receive(\.discoveryResponse.failure) {
         $0.phase = .failed
         $0.message = "Screen Sharing is unavailable on this Mac."
       }
-      await store.send(.close) {
-        $0.visible = false; $0.phase = .suspended
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.phase = .suspended
       }
+      await store.finish()
     }
   }
 
@@ -61,52 +66,81 @@ struct ScreenSharingViewerTests {
   {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeReadyStore(backend)
-      await store.send(.setInteractionMode(.view)) { $0.interactionMode = .view }
-      await store.send(.connect) {
+      let client = FakeEndpointClient()
+      let store = await makeReadyStore(backend, client)
+      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
+      await store.send(.connectButtonTapped) {
         $0.preferences.preferredDisplayId = "display"
         $0.preferencesRevision = 1
         $0.wantsConnection = true
         $0.phase = .connecting
       }
-      await store.send(.setInteractionMode(.control)) { $0.interactionMode = .control }
-      if mode == .view { await store.send(.setInteractionMode(.view)) { $0.interactionMode = .view } }
-      await store.send(.setFitToWindow(false)) {
-        $0.preferences.fitToWindow = false; $0.preferencesRevision = 2
+      await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
+      if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
+      await store.send(.fitToWindowChanged(false)) {
+        $0.preferences.fitToWindow = false
+        $0.preferencesRevision = 2
       }
       let endpoint = backend.open()
-      await store.receive(.backend(.opened(endpoint))) { $0.endpoint = endpoint }
-      #expect(backend.surfaces[0].fitToWindow == false)
-      #expect(backend.sessions[0].controlChannel.sent.isEmpty)
-      backend.sessions[0].controlChannel.isAvailable = true
-      backend.emit(.ready)
-      await store.receive(.backend(.ready)) { $0.phase = .viewing }
-      #expect(endpoint.control.state == (mode == .control ? .requesting : .viewing))
-      #expect(backend.sessions[0].controlChannel.sent.count == (mode == .control ? 1 : 0))
-      #expect(store.state.interactionMode == mode)
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.endpoint = nil; $0.phase = .suspended
+      await store.receive(\.connectionEvent.opened) {
+        $0.endpoint = endpoint
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
       }
-      backend.closeAll()
+      expectNoDifference(client.fits.map(\.fit), [false])
+      client.emit(.availability(true), to: endpoint.id)
+      await store.receive(\.lease.event) { $0.lease?.available = true }
+      expectNoDifference(client.messages(to: endpoint.id), [])
+      backend.emit(.ready)
+      await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
+      if mode == .control {
+        await store.receive(\.lease.controlRequested) {
+          $0.lease?.wantsControl = true
+          $0.lease?.requestID = UUID(0)
+          $0.lease?.phase = .requesting
+        }
+        expectNoDifference(client.messages(to: endpoint.id), [.request(id: UUID(0))])
+      } else {
+        expectNoDifference(client.messages(to: endpoint.id), [])
+      }
+      #expect(store.state.interactionMode == mode)
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
     }
   }
 
   @Test func controlIsRequestedWhenTheChannelOpensAfterVideoUnlessViewWasChosen() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend, channelAvailable: false)
-      let channel = backend.sessions[0].controlChannel
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client, channelAvailable: false)
       let endpoint = backend.endpoints[0]
-      #expect(channel.sent.isEmpty && endpoint.control.state == .viewing)
-      await store.send(.setInteractionMode(.view)) { $0.interactionMode = .view }
-      channel.isAvailable = true
-      #expect(channel.sent.isEmpty)
-      await store.send(.setInteractionMode(.control)) { $0.interactionMode = .control }
-      #expect(endpoint.control.state == .requesting && channel.sent.count == 1)
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.endpoint = nil; $0.phase = .suspended
+      expectNoDifference(client.messages(to: endpoint.id), [])
+      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
+      await store.receive(\.lease.controlReleased) { $0.lease?.wantsControl = false }
+      client.emit(.availability(true), to: endpoint.id)
+      await store.receive(\.lease.event) { $0.lease?.available = true }
+      expectNoDifference(client.messages(to: endpoint.id), [])
+      await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
+      await store.receive(\.lease.controlRequested) {
+        $0.lease?.wantsControl = true
+        $0.lease?.requestID = UUID(0)
+        $0.lease?.phase = .requesting
       }
-      backend.closeAll()
+      expectNoDifference(client.messages(to: endpoint.id), [.request(id: UUID(0))])
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
     }
   }
 
@@ -114,30 +148,49 @@ struct ScreenSharingViewerTests {
   func deniedOrRevokedControlReturnsTheModeToView(grantFirst: Bool) async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend)
-      let channel = backend.sessions[0].controlChannel
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client)
       let endpoint = backend.endpoints[0]
-      guard case .request(let request)? = channel.sent.first else {
-        Issue.record("Missing control request"); backend.closeAll(); return
-      }
       if grantFirst {
         let lease = UUID()
-        channel.deliver(.grant(request: request, lease: lease))
-        #expect(endpoint.control.state == .controlling && backend.surfaces[0].inputActive)
-        channel.deliver(.revoked(lease: lease, reason: "Host ended control"))
+        client.emit(.message(.grant(request: UUID(0), lease: lease)), to: endpoint.id)
+        await store.receive(\.lease.event) {
+          $0.lease?.requestID = nil
+          $0.lease?.lease = lease
+          $0.lease?.phase = .controlling
+        }
+        expectNoDifference(client.beginInputs.map(\.lease), [lease])
+        client.emit(.message(.revoked(lease: lease, reason: "Host ended control")), to: endpoint.id)
+        await store.receive(\.lease.event) {
+          $0.lease?.wantsControl = false
+          $0.lease?.lease = nil
+          $0.lease?.phase = .viewing
+          $0.lease?.message = "Host ended control"
+        }
       } else {
-        channel.deliver(.denied(request: request, reason: "Host denied control"))
+        client.emit(.message(.denied(request: UUID(0), reason: "Host denied control")), to: endpoint.id)
+        await store.receive(\.lease.event) {
+          $0.lease?.wantsControl = false
+          $0.lease?.requestID = nil
+          $0.lease?.phase = .viewing
+          $0.lease?.message = "Host denied control"
+        }
       }
-      #expect(endpoint.control.state == .viewing && !backend.surfaces[0].inputActive)
-      await store.receive(.backend(.controlReleased)) { $0.interactionMode = .view }
-      await store.send(.setFitToWindow(false)) {
-        $0.preferences.fitToWindow = false; $0.preferencesRevision = 2
+      await store.receive(\.lease.delegate.released) { $0.interactionMode = .view }
+      expectNoDifference(client.endInputs, [endpoint.id])
+      await store.send(.fitToWindowChanged(false)) {
+        $0.preferences.fitToWindow = false
+        $0.preferencesRevision = 2
       }
       #expect(store.state.interactionMode == .view)
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.endpoint = nil; $0.phase = .suspended
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
       }
-      backend.closeAll()
+      await store.finish()
     }
   }
 
@@ -145,152 +198,191 @@ struct ScreenSharingViewerTests {
   func reconnectingReplacesTheEndpointAndPreservesTheMode(mode: ScreenSharingViewer.InteractionMode) async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend, mode: mode)
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client, mode: mode)
       backend.emit(.reconnecting)
-      await store.receive(.backend(.reconnecting)) {
+      await store.receive(\.connectionEvent.reconnecting) {
         $0.endpoint = nil
+        $0.lease = nil
         $0.phase = .reconnecting
         $0.message = "Reconnecting to this Mac…"
       }
       let replacement = backend.open()
-      await store.receive(.backend(.opened(replacement))) { $0.endpoint = replacement }
-      backend.sessions[1].controlChannel.isAvailable = true
+      await store.receive(\.connectionEvent.opened) {
+        $0.endpoint = replacement
+        $0.lease = ControlLease.State(endpoint: replacement.id)
+      }
+      client.emit(.availability(true), to: replacement.id)
+      await store.receive(\.lease.event) { $0.lease?.available = true }
       backend.emit(.ready)
-      await store.receive(.backend(.ready)) {
-        $0.phase = .viewing; $0.message = nil
+      await store.receive(\.connectionEvent.ready) {
+        $0.phase = .viewing
+        $0.message = nil
+      }
+      if mode == .control {
+        await store.receive(\.lease.controlRequested) {
+          $0.lease?.wantsControl = true
+          $0.lease?.requestID = UUID(1)
+          $0.lease?.phase = .requesting
+        }
+        expectNoDifference(client.messages(to: replacement.id), [.request(id: UUID(1))])
+      } else {
+        expectNoDifference(client.messages(to: replacement.id), [])
       }
       #expect(store.state.interactionMode == mode)
-      #expect(replacement.control.state == (mode == .control ? .requesting : .viewing))
-      #expect(backend.sessions[1].controlChannel.sent.count == (mode == .control ? 1 : 0))
-      #expect(backend.connections.count == 1)
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.endpoint = nil; $0.phase = .suspended
+      expectNoDifference(backend.connections.count, 1)
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
       }
-      backend.closeAll()
+      await store.finish()
     }
   }
 
   @Test func hidingSuspendsAndReshowingRediscoversThenReconnects() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend)
-      await store.send(.setVisible(false)) {
-        $0.visible = false; $0.endpoint = nil; $0.phase = .suspended
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client)
+      await store.send(.paneDisappeared) {
+        $0.visible = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
       }
-      #expect(backend.terminations.value == 1)
+      expectNoDifference(backend.terminations.value, 1)
       backend.emit(.ready)  // a late event from the cancelled stream is never delivered
-      await store.send(.setVisible(true)) {
-        $0.visible = true; $0.phase = .loading
+      await store.send(.paneAppeared) {
+        $0.visible = true
+        $0.phase = .loading
       }
-      await store.receive(.discovered([display])) { $0.phase = .connecting }
-      #expect(backend.connections == ["display", "display"])
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.phase = .suspended
+      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
+      expectNoDifference(backend.connections, ["display", "display"])
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.phase = .suspended
       }
-      #expect(backend.terminations.value == 2)
-      backend.closeAll()
+      await store.finish()
+      expectNoDifference(backend.terminations.value, 2)
     }
   }
 
   @Test func selectingAnotherDisplayWhileConnectedReconnectsToIt() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display, second])
-      let store = await makeViewingStore(backend)
-      await store.send(.selectDisplay("second")) {
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client)
+      await store.send(.displaySelected("second")) {
         $0.preferences.preferredDisplayId = "second"
         $0.selectedDisplayId = "second"
         $0.preferencesRevision = 2
         $0.endpoint = nil
+        $0.lease = nil
         $0.phase = .connecting
       }
-      #expect(backend.connections == ["display", "second"])
-      await store.send(.disconnect) {
-        $0.wantsConnection = false; $0.phase = .ready
+      expectNoDifference(backend.connections, ["display", "second"])
+      await store.send(.displaySelected("unknown"))
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.phase = .suspended
       }
-      await store.send(.selectDisplay("display")) {
-        $0.preferences.preferredDisplayId = "display"
-        $0.selectedDisplayId = "display"
-        $0.preferencesRevision = 3
-      }
-      #expect(backend.connections.count == 2)
-      await store.send(.close) {
-        $0.visible = false; $0.phase = .suspended
-      }
-      backend.closeAll()
+      await store.finish()
     }
   }
 
   @Test func theBackendEndingFailsWithItsMessage() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend)
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client)
       backend.emit(.ended("Screen sharing ended on the host Mac."))
       backend.end()
-      await store.receive(.backend(.ended("Screen sharing ended on the host Mac."))) {
+      await store.receive(\.connectionEvent.ended) {
         $0.endpoint = nil
+        $0.lease = nil
         $0.phase = .failed
         $0.message = "Screen sharing ended on the host Mac."
       }
-      await store.send(.refresh) {
-        $0.phase = .loading; $0.message = nil
+      await store.send(.retryButtonTapped) {
+        $0.phase = .loading
+        $0.message = nil
       }
-      await store.receive(.discovered([display])) { $0.phase = .connecting }
-      #expect(backend.connections.count == 2)
-      await store.send(.close) {
-        $0.visible = false; $0.wantsConnection = false; $0.phase = .suspended
+      await store.receive(\.discoveryResponse.success) { $0.phase = .connecting }
+      expectNoDifference(backend.connections.count, 2)
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.wantsConnection = false
+        $0.phase = .suspended
       }
-      backend.closeAll()
+      await store.finish()
     }
   }
 
-  @Test func appliedPreferencesUpdateTheLiveSurfaceWithoutEchoOrReconnect() async {
+  @Test func syncedPreferencesUpdateTheLiveSurfaceWithoutEchoOrReconnect() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
-      let store = await makeViewingStore(backend)
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client)
+      let endpoint = backend.endpoints[0]
       var preferences = store.state.preferences
       preferences.fitToWindow = false
-      await store.send(.applyPreferences(preferences)) { $0.preferences = preferences }
-      await store.send(.applyPreferences(preferences))
-      #expect(backend.surfaces[0].fitToWindow == false)
+      await store.send(.preferencesSynced(preferences)) { $0.preferences = preferences }
+      await store.send(.preferencesSynced(preferences))
+      expectNoDifference(client.fits.map(\.fit), [true, false])
+      expectNoDifference(client.fits.map(\.endpoint), [endpoint.id, endpoint.id])
       #expect(store.state.preferencesRevision == 1 && backend.connections.count == 1)
 
       preferences.preferredDisplayId = "missing"
-      await store.send(.applyPreferences(preferences)) {
+      await store.send(.preferencesSynced(preferences)) {
         $0.preferences = preferences
         $0.wantsConnection = false
         $0.endpoint = nil
+        $0.lease = nil
         $0.phase = .loading
       }
-      await store.receive(.discovered([display])) {
+      await store.receive(\.discoveryResponse.success) {
         $0.selectedDisplayId = nil
         $0.phase = .failed
         $0.message = "The selected display is unavailable. Choose another display to connect."
       }
       #expect(backend.connections.count == 1 && store.state.preferencesRevision == 1)
-      await store.send(.close) {
-        $0.visible = false; $0.phase = .suspended
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.phase = .suspended
       }
-      backend.closeAll()
+      await store.finish()
     }
   }
 
   private func makeStore(
-    _ backend: FakeBackend, preferences: ScreenSharingPanePreferences = .init()
+    _ backend: FakeBackend, _ client: FakeEndpointClient = FakeEndpointClient(),
+    preferences: ScreenSharingPanePreferences = .init()
   ) -> TestStoreOf<ScreenSharingViewer> {
     TestStore(initialState: ScreenSharingViewer.State(preferences: preferences)) {
       ScreenSharingViewer()
     } withDependencies: {
-      $0.screenSharingViewerBackend = backend.value
+      $0[ScreenSharingViewerBackend.self] = backend.value
+      $0[ScreenSharingEndpointClient.self] = client.value
+      $0.continuousClock = Clocks.TestClock()
+      $0.uuid = .incrementing
     }
   }
 
   /// Visible with the first display selected and nothing connected.
-  private func makeReadyStore(_ backend: FakeBackend) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = makeStore(backend)
-    await store.send(.setVisible(true)) {
-      $0.visible = true; $0.phase = .loading
+  private func makeReadyStore(
+    _ backend: FakeBackend, _ client: FakeEndpointClient
+  ) async -> TestStoreOf<ScreenSharingViewer> {
+    let store = makeStore(backend, client)
+    await store.send(.paneAppeared) {
+      $0.visible = true
+      $0.phase = .loading
     }
-    await store.receive(.discovered(backend.displays)) {
+    await store.receive(\.discoveryResponse.success) {
       $0.displays = backend.displays
       $0.selectedDisplayId = backend.displays.first?.id
       $0.phase = .ready
@@ -298,31 +390,47 @@ struct ScreenSharingViewerTests {
     return store
   }
 
-  /// Connected and viewing the first display in `mode`, control requested when the mode asks for it.
+  /// Connected and viewing the first display in `mode`; with an available
+  /// channel, `.control` has a request (id 0) pending.
   private func makeViewingStore(
-    _ backend: FakeBackend, mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true
+    _ backend: FakeBackend, _ client: FakeEndpointClient,
+    mode: ScreenSharingViewer.InteractionMode = .control, channelAvailable: Bool = true
   ) async -> TestStoreOf<ScreenSharingViewer> {
-    let store = await makeReadyStore(backend)
-    if mode == .view { await store.send(.setInteractionMode(.view)) { $0.interactionMode = .view } }
-    await store.send(.connect) {
+    let store = await makeReadyStore(backend, client)
+    if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
+    await store.send(.connectButtonTapped) {
       $0.preferences.preferredDisplayId = backend.displays.first?.id
       $0.preferencesRevision = 1
       $0.wantsConnection = true
       $0.phase = .connecting
     }
     let endpoint = backend.open()
-    await store.receive(.backend(.opened(endpoint))) { $0.endpoint = endpoint }
-    backend.sessions.last?.controlChannel.isAvailable = channelAvailable
+    await store.receive(\.connectionEvent.opened) {
+      $0.endpoint = endpoint
+      $0.lease = ControlLease.State(endpoint: endpoint.id)
+    }
+    if channelAvailable {
+      client.emit(.availability(true), to: endpoint.id)
+      await store.receive(\.lease.event) { $0.lease?.available = true }
+    }
     backend.emit(.ready)
-    await store.receive(.backend(.ready)) { $0.phase = .viewing }
+    await store.receive(\.connectionEvent.ready) { $0.phase = .viewing }
+    if mode == .control {
+      await store.receive(\.lease.controlRequested) {
+        $0.lease?.wantsControl = true
+        if channelAvailable {
+          $0.lease?.requestID = UUID(0)
+          $0.lease?.phase = .requesting
+        }
+      }
+    }
     return store
   }
 }
 
 /// A scripted backend: discovery answers from a list (or fails), and each
 /// connection hands the test the stream's continuation. Endpoints it opens
-/// are real, over fake sessions and surfaces, and their released control
-/// leases flow back as events exactly as the native backend reports them.
+/// are real, over fake sessions and surfaces.
 @MainActor
 private final class FakeBackend {
   var displays: [ServerScreenSharingDisplay]
@@ -338,18 +446,20 @@ private final class FakeBackend {
 
   var value: ScreenSharingViewerBackend {
     ScreenSharingViewerBackend(
+      connect: { [self] display in
+        await MainActor.run {
+          connections.append(display)
+          let terminations = terminations
+          return AsyncStream { continuation in
+            self.continuation = continuation
+            continuation.onTermination = { _ in terminations.withValue { $0 += 1 } }
+          }
+        }
+      },
       discover: { [self] in
         try await MainActor.run {
           if let failure = discoveryFailure { throw Failure(failure) }
           return displays
-        }
-      },
-      connect: { [self] display in
-        connections.append(display)
-        let terminations = terminations
-        return AsyncStream { continuation in
-          self.continuation = continuation
-          continuation.onTermination = { _ in terminations.withValue { $0 += 1 } }
         }
       })
   }
@@ -361,7 +471,6 @@ private final class FakeBackend {
     let surface = FakeSurface()
     session.surface = surface
     let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface)
-    endpoint.control.onReleased = { [weak self] in self?.continuation?.yield(.controlReleased) }
     sessions.append(session)
     surfaces.append(surface)
     endpoints.append(endpoint)
@@ -371,7 +480,6 @@ private final class FakeBackend {
 
   func emit(_ event: ScreenSharingViewerEvent) { continuation?.yield(event) }
   func end() { continuation?.finish() }
-  func closeAll() { for endpoint in endpoints { endpoint.close() } }
 
   private struct Failure: LocalizedError {
     let message: String

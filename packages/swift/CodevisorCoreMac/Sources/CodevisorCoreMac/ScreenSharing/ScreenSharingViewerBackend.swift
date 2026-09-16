@@ -8,53 +8,32 @@ import Foundation
 /// finishes after it. Cancelling the stream is the only way to stop early.
 @CasePathable
 public enum ScreenSharingViewerEvent: Equatable, Sendable {
+  /// Terminal, with the message to show.
+  case ended(String)
   /// New media to render; replaces any previous endpoint, which is already closed.
   case opened(ScreenSharingViewerEndpoint)
   /// The endpoint's first frame reached the screen.
   case ready
   /// Transport loss after video; a fresh `opened` follows, or `ended`.
   case reconnecting
-  /// The host revoked or the surface lost the control lease.
-  case controlReleased
-  /// Terminal, with the message to show.
-  case ended(String)
 }
 
 /// The seam between the viewer feature and whatever negotiates media. The
 /// native implementation talks to the Codevisor server; a future VNC
 /// implementation would open a socket. The reducer never learns which.
+/// Installed per pane with `withDependencies`: the native backend needs the
+/// pane's server client and identity, so there is no process-wide live value.
+@DependencyClient
 public struct ScreenSharingViewerBackend: Sendable {
-  public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
-  /// Main-actor because every backend owns main-actor endpoints; the reducer awaits it from its effect.
-  public var connect: @MainActor @Sendable (_ displayId: String) -> AsyncStream<ScreenSharingViewerEvent>
-
-  public init(
-    discover: @escaping @Sendable () async throws -> [ServerScreenSharingDisplay],
-    connect: @escaping @MainActor @Sendable (_ displayId: String) -> AsyncStream<ScreenSharingViewerEvent>
-  ) {
-    self.discover = discover
-    self.connect = connect
+  /// One connection's events, until it ends or the stream is cancelled.
+  public var connect: @Sendable (_ displayId: String) async -> AsyncStream<ScreenSharingViewerEvent> = { _ in
+    .finished
   }
+  public var discover: @Sendable () async throws -> [ServerScreenSharingDisplay]
 }
 
 extension ScreenSharingViewerBackend: TestDependencyKey {
-  public static let testValue = ScreenSharingViewerBackend(
-    discover: {
-      reportIssue("Unimplemented: ScreenSharingViewerBackend.discover")
-      return []
-    },
-    connect: { _ in
-      reportIssue("Unimplemented: ScreenSharingViewerBackend.connect")
-      return .finished
-    })
-}
-
-extension DependencyValues {
-  /// Installed per pane with `withDependencies`; there is no process-wide live value.
-  public var screenSharingViewerBackend: ScreenSharingViewerBackend {
-    get { self[ScreenSharingViewerBackend.self] }
-    set { self[ScreenSharingViewerBackend.self] = newValue }
-  }
+  public static var testValue: Self { Self() }
 }
 
 extension ScreenSharingViewerBackend {
@@ -83,7 +62,7 @@ extension ScreenSharingViewerBackend {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
       makeSurface: makeSurface)
-    return Self(discover: { try await runner.discover() }, connect: { display in runner.connect(display) })
+    return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
   }
 }
 
@@ -200,7 +179,6 @@ private final class NativeScreenSharingViewerRunner {
         endpoint.onReady = {
           attempt.ready = true; emit(.ready)
         }
-        endpoint.control.onReleased = { emit(.controlReleased) }
         session.onConnectionChanged = { transport in
           guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
           attempt.outcome =
@@ -247,8 +225,6 @@ private final class NativeScreenSharingViewerRunner {
     } onCancel: {
       body.cancel()
     }
-    // Teardown releases the lease; that is not a host revocation, so it is not reported.
-    attempt.endpoint?.control.onReleased = nil
     attempt.endpoint?.close()
     // A transport outcome recorded by a callback wins over the cancellation it
     // caused; the stream's own cancellation wins over anything else.
