@@ -11,11 +11,11 @@ struct ScreenSharingToolbar: ToolbarContent {
   @Bindable var store: StoreOf<ScreenSharingViewer>
 
   var body: some ToolbarContent {
-    ToolbarItem(id: "screenSharing.display", placement: .navigation) {
-      if !store.displays.isEmpty { displayMenu }
-    }
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
       if store.endpoint?.supportsControl != false { controlActions }
+    }
+    ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
+      if store.displays.count > 1 { displayMenu }
     }
     ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
       if store.endpoint?.supportsClipboard != false {
@@ -37,7 +37,8 @@ struct ScreenSharingToolbar: ToolbarContent {
     }
   }
 
-  /// The connected display; choosing another reconnects to it and remembers the choice.
+  /// The connected display; choosing another reconnects to it and remembers the
+  /// choice. Hidden unless this Mac has more than one display to switch between.
   private var displayMenu: some View {
     Picker(
       "Display",
@@ -48,7 +49,6 @@ struct ScreenSharingToolbar: ToolbarContent {
       ForEach(store.displays) { display in Text(display.name).tag(display.id) }
     }
     .pickerStyle(.menu).labelsHidden().fixedSize()
-    .disabled(store.displays.count < 2)
     .help("Switch to another display of this Mac")
   }
 
