@@ -59,6 +59,11 @@ toolbar. VNC is how a Linux VPS gets there and is never shown to the user.
   connects at once and streams the Xfce desktop; Xvnc sees one loopback
   client owned by codevisor-server. Pairing to production cloud waits for a
   release that carries the viewer.
+- Day to day the box is reached over Tailscale instead of the cloud relay:
+  `tailscale up --hostname contabo-vps` on the box, then the app adds it as a
+  direct machine (`contabo-vps.tail6fc9a.ts.net:49361`, token from
+  `codevisor token`); Screen Sharing then streams straight over WireGuard.
+  The dev-cloud pairing stays for relay testing (needs the `ssh -R` tunnel).
 
 ## Not in scope
 
