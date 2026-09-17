@@ -3,8 +3,15 @@ import { appendTranscriptText } from "./transcript-state.js"
 import { projectSetupState } from "./setup-state.js"
 
 /** Checkpoints inside a single imported message, as well as between messages.
- * Identity and text blocks commit together; interruption cannot duplicate text. */
-export const seedImportedTranscript = (db: Database.Database, report: () => void): void => {
+ * Identity and text blocks commit together; interruption cannot duplicate text.
+ * Tests can use smaller batches to exercise recovery without multi-megabyte fixtures. */
+export const seedImportedTranscript = (
+  db: Database.Database,
+  report: () => void,
+  blocksPerCheckpoint = 256
+): void => {
+  if (!Number.isSafeInteger(blocksPerCheckpoint) || blocksPerCheckpoint < 1)
+    throw new RangeError("blocksPerCheckpoint must be a positive safe integer")
   const key = "transcript-import-cursor-v1"
   const stored = db.prepare("select value from instance_meta where key = ?").get(key) as
     | { value: string }
@@ -53,7 +60,7 @@ export const seedImportedTranscript = (db: Database.Database, report: () => void
         )
         cursor.offset = 1
       }
-      const end = Math.min(part.size + 1, cursor.offset + 256 * 8192)
+      const end = Math.min(part.size + 1, cursor.offset + blocksPerCheckpoint * 8192)
       while (cursor.offset < end) {
         const block = db
           .prepare("select substr(text, ?, 8192) as text from chat_parts where rowid = ?")
