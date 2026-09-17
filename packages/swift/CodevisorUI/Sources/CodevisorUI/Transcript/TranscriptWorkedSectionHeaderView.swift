@@ -185,7 +185,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
         .buttonStyle(TranscriptWorkedSectionButtonStyle())
       }
       Divider()
-      if isExpanded { TranscriptMoreDetailsButton(turn: turn) }
     }
   }
 
@@ -215,9 +214,10 @@ public struct TranscriptWorkedSectionHeaderView: View {
   private func header(showsChevron: Bool) -> some View {
     HStack(spacing: 6) {
       label
-      if showsChevron {
+      if showsChevron || (turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails) {
         TranscriptWorkedDisclosureIndicator(
-          expanded: isExpanded,
+          expanded: isLiveAndFixedOpen || isExpanded,
+          showsChevron: showsChevron,
           deferredDetailItemID: turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails
             ? turn.deferredDetailItemId
             : nil
@@ -275,12 +275,14 @@ public struct TranscriptWorkedSectionButtonStyle: ButtonStyle {
 public struct TranscriptWorkedDisclosureIndicator: View {
   public let expanded: Bool
   public let deferredDetailItemID: String?
+  public let showsChevron: Bool
 
   @Environment(\.transcriptController) private var transcriptController
   @State private var loadingItemID: String?
 
-  public init(expanded: Bool, deferredDetailItemID: String?) {
+  public init(expanded: Bool, showsChevron: Bool = true, deferredDetailItemID: String?) {
     self.expanded = expanded
+    self.showsChevron = showsChevron
     self.deferredDetailItemID = deferredDetailItemID
   }
 
@@ -292,7 +294,7 @@ public struct TranscriptWorkedDisclosureIndicator: View {
           .controlSize(.mini)
           .tint(.secondary)
           .accessibilityLabel("Loading worked details")
-      } else {
+      } else if showsChevron {
         TranscriptDisclosureChevron(expanded: expanded)
       }
     }

@@ -107,6 +107,8 @@ public struct TranscriptRowContentView: View {
       TranscriptSettledWorkedHeaderRow(header: header)
     case let .activeWorkedHeader(header):
       TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
+    case let .workedDetailPage(request):
+      TranscriptDetailPageIndicator(request: request, controller: controller)
     case let .assistantWorkedItem(item):
       TranscriptSettledWorkedItemPresentation(item: item) {
         item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in

@@ -63,8 +63,11 @@ export const transcriptBodyResource = (
 ): TranscriptBodyResource | undefined => {
   const fields = db
     .prepare(
-      `select field as name, revision, encoding, size_bytes as sizeBytes from transcript_body_fields
-    where item_id = ? and entry_key = ? order by field`
+      `select field as name, revision, encoding, size_bytes as sizeBytes,
+      (select position + 1 from transcript_body_chunks c
+       where c.item_id = b.item_id and c.entry_key = b.entry_key and c.field = b.field
+       order by position desc limit 1) as pageCount
+    from transcript_body_fields b where item_id = ? and entry_key = ? order by field`
     )
     .all(itemId, key) as unknown as TranscriptBodyResource["fields"]
   return fields.length === 0 ? undefined : { itemId, entryKey: key, fields }

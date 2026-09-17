@@ -2,19 +2,16 @@ import ACPKit
 import CodevisorCore
 import SwiftUI
 
-/// Large tool bodies remain on the server. Only the selected page is resident.
+/// Tool output reads as one scrollable document. Only visible storage blocks
+/// fetch and retain their text; leaving a block releases its body.
 public struct TranscriptBodyView: View {
   let resource: ToolDetailResource
   public init(resource: ToolDetailResource) { self.resource = resource }
-  @Environment(\.transcriptController) private var controller
   @State private var field: String?
-  @State private var page: ServerTranscriptBodyPage?
-  @State private var loading = false
-  @State private var error: String?
-  @State private var requestID = UUID()
 
-  private var selectedField: String? {
-    field ?? resource.fields.first(where: { $0.name == "rawOutput" })?.name ?? resource.fields.first?.name
+  private var selectedField: ToolDetailResource.Field? {
+    resource.fields.first(where: { $0.name == field })
+      ?? resource.fields.first(where: { $0.name == "rawOutput" }) ?? resource.fields.first
   }
 
   public var body: some View {
@@ -23,34 +20,21 @@ public struct TranscriptBodyView: View {
         HStack {
           ForEach(resource.fields, id: \.name) { item in
             Button(label(for: item.name)) { field = item.name }
-              .disabled(selectedField == item.name)
+              .disabled(selectedField?.name == item.name)
           }
         }
       }
-      if let page {
-        ScrollView([.horizontal, .vertical]) {
-          Text(page.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+      if let selectedField {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<max(1, selectedField.pageCount ?? 1), id: \.self) { position in
+              TranscriptBodyBlock(resource: resource, field: selectedField, position: position)
+            }
+          }
         }
         .frame(maxHeight: 320)
-        HStack {
-          Button("Previous") { Task { await load(position: max(0, page.position - 1)) } }
-            .disabled(loading || page.position == 0)
-          Spacer()
-          if loading { ProgressView().controlSize(.small) }
-          Button("Next") { if let next = page.nextPosition { Task { await load(position: next) } } }
-            .disabled(loading || page.nextPosition == nil)
-        }
-      } else if loading {
-        ProgressView("Loading output…")
+        .id("\(selectedField.name):\(selectedField.revision)")
       }
-      if let error {
-        Text(error).foregroundStyle(.secondary)
-        Button("Retry") { Task { await load(position: page?.position ?? 0) } }
-      }
-    }
-    .task(id: selectedField) {
-      page = nil; await load(position: 0)
     }
   }
 
@@ -62,24 +46,49 @@ public struct TranscriptBodyView: View {
     default: field
     }
   }
+}
 
-  private func load(position: Int) async {
-    guard let controller, let selectedField else { return }
-    let request = UUID()
-    requestID = request
-    loading = true
-    error = nil
-    defer { if requestID == request { loading = false } }
-    do {
-      var result = try await controller.transcriptBodyPage(resource: resource, field: selectedField, position: position)
-      if let page, page.revision != result.revision, result.position != 0 {
-        result = try await controller.transcriptBodyPage(resource: resource, field: selectedField, position: 0)
+private struct TranscriptBodyBlock: View {
+  let resource: ToolDetailResource
+  let field: ToolDetailResource.Field
+  let position: Int
+  @Environment(\.transcriptController) private var controller
+  @State private var text: String?
+  @State private var height: CGFloat = 24
+  @State private var error: String?
+  @State private var retry = 0
+
+  var body: some View {
+    Group {
+      if let text {
+        Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            height = $0
+          }
+      } else if let error {
+        HStack {
+          Text(error).font(.caption).foregroundStyle(.secondary)
+          Button("Retry") { retry += 1 }
+        }
+      } else {
+        ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: height)
+          .accessibilityLabel("Loading output")
       }
-      try Task.checkCancellation()
-      guard self.selectedField == selectedField, requestID == request else { return }
-      page = result
-    } catch {
-      if requestID == request, !isTaskCancellation(error) { self.error = serverErrorMessage(error) }
     }
+    .task(id: retry) {
+      guard let controller else { return }
+      error = nil
+      do {
+        let page = try await controller.transcriptBodyPage(resource: resource, field: field.name, position: position)
+        try Task.checkCancellation()
+        text = page.text
+      } catch {
+        if !isTaskCancellation(error) { self.error = serverErrorMessage(error) }
+      }
+    }
+    .onDisappear { text = nil }
   }
 }

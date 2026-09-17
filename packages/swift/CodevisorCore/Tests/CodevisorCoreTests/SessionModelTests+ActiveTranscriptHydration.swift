@@ -6,7 +6,7 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("Opening a chat starts live updates before its deferred details are requested")
+  @Test("Reopening an active chat restores its latest work automatically without blocking live updates")
   func activeTurnHydrationPreservesSnapshotBoundary() async {
     let sessionId = UUID()
     let assistantId = UUID()
@@ -45,7 +45,7 @@ extension SessionModelTests {
             "sessionUpdate": .string("tool_call"), "toolCallId": .string("tool-before-open"),
             "title": .string("Read existing state"), "isSnapshot": .bool(true), "stateRevision": .number(2),
           ]))
-      ])
+      ], previousBefore: "older:2")
     let (detailGate, releaseDetails) = AsyncStream.makeStream(of: Void.self)
     client.holdTranscriptDetails(until: detailGate)
     let model = SessionModel(
@@ -55,9 +55,8 @@ extension SessionModelTests {
 
     defer { model.shutdown(); releaseDetails.finish() }
     await model.loadHistoryForInitialDisplay()
-    #expect(client.transcriptDetailRequestCount == 0)
-    let hydrate = Task { await model.loadTranscriptDetails(itemId: assistantId.uuidString) }
     await client.transcriptDetailRequests.wait()
+    #expect(client.transcriptDetailCursors == ["latest"])
     await client.eventReads.wait()
     client.emit(
       ServerEventEnvelope(
@@ -88,14 +87,41 @@ extension SessionModelTests {
 
     releaseDetails.yield()
     releaseDetails.finish()
-    #expect(await hydrate.value)
+    await awaitObserved {
+      guard case let .assistant(message) = model.activeItem else { return false }
+      return message.turn.hasHydratedWorkedDetails
+    }
 
     guard case let .assistant(hydratedMessage) = model.activeItem else {
       Issue.record("expected hydrated active assistant")
       return
     }
     #expect(hydratedMessage.turn.hasHydratedWorkedDetails)
-    #expect(await hydrate.value)
+    #expect(hydratedMessage.turn.isGenerating)
+    #expect(hydratedMessage.turn.startedAt == compactMessage.turn.startedAt)
+    #expect(Set(hydratedMessage.turn.toolCalls.map(\.toolCallId)) == ["tool-before-open", "tool-after-open"])
+    #expect(client.transcriptDetailRequestCount == 1)
+    #expect(!hydratedMessage.turn.isThinking)
+    client.transcriptDetailsByCursor["older:2"] = .init(
+      itemId: assistantId.uuidString, revision: 3, eventCursor: 3,
+      entries: [
+        .init(
+          key: "tool:oldest", position: 1, revision: 1,
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("oldest"),
+            "title": .string("Earlier activity"), "isSnapshot": .bool(true), "stateRevision": .number(1),
+          ]))
+      ], nextAfter: "newer:1")
+    let request = TranscriptDetailPageRequest(itemID: assistantId.uuidString, cursor: "older:2", previous: true)
+    #expect(model.requestTranscriptDetailPage(request))
+    #expect(!model.requestTranscriptDetailPage(request))
+    await awaitObserved {
+      guard case let .assistant(message) = model.activeItem else { return false }
+      return message.turn.toolCalls.contains { $0.toolCallId == "oldest" }
+    }
+    guard case let .assistant(paged) = model.activeItem else { return }
+    #expect(Set(paged.turn.toolCalls.map(\.toolCallId)) == ["oldest", "tool-before-open", "tool-after-open"])
+    #expect(!model.requestTranscriptDetailPage(request))
     model.shutdown()
   }
 }

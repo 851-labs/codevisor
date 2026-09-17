@@ -283,6 +283,7 @@ extension VirtualizedTranscriptScrollView {
   func checkForHistoryPrefetch(force: Bool = false) {
     guard presentationRole == .foreground else { return }
     let threshold = max(600, viewportHeight * 1.5)
+    checkForDetailPrefetch(threshold: threshold)
     if let gap = rows.firstIndex(where: { if case .historyGap = $0.content { true } else { false } }),
       gap > 0
     {

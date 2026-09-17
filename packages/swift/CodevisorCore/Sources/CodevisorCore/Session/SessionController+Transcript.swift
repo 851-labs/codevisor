@@ -259,6 +259,14 @@ extension SessionController {
     await model?.loadTranscriptDetails(itemId: itemId, previous: previous) ?? false
   }
 
+  public func requestTranscriptDetailPage(_ request: TranscriptDetailPageRequest) -> Bool {
+    model?.requestTranscriptDetailPage(request) ?? false
+  }
+
+  public func isLoadingTranscriptDetails(_ itemID: String) -> Bool {
+    model?.loadingTranscriptDetailItemIds.contains(itemID) ?? false
+  }
+
   public func transcriptBodyPage(
     resource: ToolDetailResource, field: String, position: Int
   ) async throws -> ServerTranscriptBodyPage {

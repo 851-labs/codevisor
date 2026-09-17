@@ -52,6 +52,7 @@ extension VirtualizedTranscriptScrollView {
       uninstallPresentationFrameDriver()
       sessionController = newSessionController
       historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
+      detailPrefetchPolicy = TranscriptDetailPrefetchPolicy()
       deferredActivePlaceholderKey = nil
       installPresentationFrameDriver()
     }

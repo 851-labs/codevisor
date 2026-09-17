@@ -199,6 +199,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   /// the clip size for a split or its newly inserted pane header.
   var lastViewportDistanceFromBottom: CGFloat = 0
   var historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
+  var detailPrefetchPolicy = TranscriptDetailPrefetchPolicy()
   var isDetaching = false
   /// Last position that was intentionally established by the user, an
   /// initial restore, or an explicit bottom command. AppKit sends bounds

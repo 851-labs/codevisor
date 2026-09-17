@@ -30,6 +30,20 @@ it("keeps parent tool headers across detail pages and respects the serialized by
     payload: { title: "p".repeat(512), detailResource: { entryKey: "tool:parent" } }
   })
   expect(second.entries).toHaveLength(4)
+  const latest = (await run(db.getTranscriptItemDetails(session.id, item.id, "latest")))!
+  expect(latest.entries).toHaveLength(33) // 32 entries plus the parent header.
+  expect(latest.entries.at(-1)?.key).toBe("tool:child33")
+  expect(latest.nextAfter).toBeUndefined()
+  expect(latest.previousBefore).toBeTypeOf("string")
+  const older = (await run(
+    db.getTranscriptItemDetails(session.id, item.id, latest.previousBefore)
+  ))!
+  expect(older.entries.map((entry) => entry.key)).toEqual([
+    "tool:parent",
+    "tool:child0",
+    "tool:child1"
+  ])
+  expect(older.previousBefore).toBeUndefined()
   await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
   for (const messageId of ["a", "b"])
     await run(

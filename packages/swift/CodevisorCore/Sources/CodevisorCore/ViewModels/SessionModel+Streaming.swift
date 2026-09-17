@@ -274,6 +274,8 @@ extension SessionModel {
     stopConnectionRecovery()
     for task in transcriptDetailLoadTasks.values { task.cancel() }
     transcriptDetailLoadTasks.removeAll(keepingCapacity: false)
+    loadingTranscriptDetailItemIds.removeAll()
+    transcriptDetailWindows.removeAll()
     consumerTask?.cancel()
     consumerTask = nil
     scheduledFlushTask?.cancel()

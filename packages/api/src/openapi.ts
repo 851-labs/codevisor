@@ -98,7 +98,8 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
       {
         name: "after",
         in: "query",
-        description: "Opaque nextAfter or previousBefore cursor from a detail page.",
+        description:
+          "Opaque nextAfter or previousBefore cursor, or latest to open the newest details.",
         schema: { type: "string" }
       }
     ]

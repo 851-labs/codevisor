@@ -19,6 +19,12 @@ it("serves a navigation snapshot and validates bidirectional transcript and body
   for (const before of ["after-id:bad", "before-id:bad"])
     expect((await jsonRequest(server, `${root}?before=${before}`)).status).toBe(400)
   const body = `${root}/${item.id}/body`
+  const latest = await jsonRequest(server, `${root}/${item.id}/details?after=latest`)
+  expect(latest.status).toBe(200)
+  expect(latest.body).toMatchObject({
+    itemId: item.id,
+    entries: [expect.objectContaining({ key: "message::message" })]
+  })
   expect((await jsonRequest(server, `${body}?key=message::message&field=text`)).body).toMatchObject(
     { text: "hello", position: 0 }
   )

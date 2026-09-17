@@ -17,6 +17,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activeResult(UUID)
     case assistantWorkedHeader(UUID, TranscriptWorkedSectionKind)
     case activeWorkedHeader(UUID, TranscriptWorkedSectionKind)
+    case workedDetailPage(UUID, previous: Bool)
     case assistantWorkedItem(UUID, TranscriptWorkedSectionKind, itemID: String)
     case activeWorkedItem(UUID, TranscriptWorkedSectionKind, itemID: String)
     case assistantChrome(UUID, TranscriptAssistantChromeSlice)
@@ -52,6 +53,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case let .assistantWorkedHeader(id, section),
         let .activeWorkedHeader(id, section):
         "message:\(id.uuidString):worked:\(section.layoutComponent):header"
+      case let .workedDetailPage(id, previous):
+        "message:\(id.uuidString):worked:page:\(previous)"
       case let .assistantWorkedItem(id, section, itemID),
         let .activeWorkedItem(id, section, itemID):
         "message:\(id.uuidString):worked:\(section.layoutComponent):item:\(itemID)"
@@ -90,7 +93,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         true
       case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .setup,
+        .activeMarkdown, .activeAttachment, .workedDetailPage, .setup,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
         .statusError, .historyGap, .bottomSpacer:
         false
@@ -126,7 +129,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .active, .message, .assistantPlanning, .plan, .planHeader,
         .planMarkdown, .assistantResult, .assistantWorkedHeader,
         .assistantWorkedItem, .assistantChrome, .assistantMarkdown,
-        .assistantAttachment, .setup, .backgroundTask, .updateGate,
+        .assistantAttachment, .workedDetailPage, .setup, .backgroundTask, .updateGate,
         .connecting, .serverWait, .error, .statusError, .historyGap, .bottomSpacer:
         false
       }
@@ -139,6 +142,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .planMarkdown(id, _, _), let .activePlanMarkdown(id, _, _),
         let .assistantResult(id), let .activeResult(id), let .active(id):
         id
+      case let .workedDetailPage(id, _): id
       case let .assistantWorkedHeader(id, _), let .activeWorkedHeader(id, _),
         let .assistantWorkedItem(id, _, _), let .activeWorkedItem(id, _, _):
         id
@@ -161,6 +165,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case assistantResult(AssistantMessage, waitingOnBackgroundTask: String?)
     case assistantWorkedHeader(TranscriptWorkedSectionHeader)
     case activeWorkedHeader(TranscriptActiveWorkedSectionHeader)
+    case workedDetailPage(TranscriptDetailPageRequest)
     case assistantWorkedItem(TranscriptSettledWorkedItem)
     case activeWorkedItem(TranscriptWorkedItemReference)
     case assistantChrome(

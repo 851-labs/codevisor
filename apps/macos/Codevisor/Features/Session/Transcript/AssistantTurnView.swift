@@ -404,7 +404,7 @@ struct AssistantTurnView: View {
   ) -> some View {
     let expanded = isExpanded(key)
     let deferredDetailItemID =
-      allowsDeferred && turn.hasDeferredWorkedDetails
+      allowsDeferred && turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails
       ? turn.deferredDetailItemId
       : nil
     return VStack(alignment: .leading, spacing: 12) {
@@ -416,7 +416,7 @@ struct AssistantTurnView: View {
           label: sectionLabel(timer: timerLabel),
           showsChevron: false,
           expanded: expanded,
-          deferredDetailItemID: nil
+          deferredDetailItemID: deferredDetailItemID
         )
       } else {
         Button {
@@ -445,7 +445,6 @@ struct AssistantTurnView: View {
       // contents, so a rendered Worked section keeps the line in both
       // its collapsed and expanded states.
       Divider()
-      if expanded { TranscriptMoreDetailsButton(turn: turn) }
 
       TranscriptDisclosureContentReveal(
         isExpanded: expanded && !items.isEmpty
@@ -475,9 +474,10 @@ struct AssistantTurnView: View {
   ) -> some View {
     HStack(spacing: 6) {
       label
-      if showsChevron {
+      if showsChevron || deferredDetailItemID != nil {
         TranscriptWorkedDisclosureIndicator(
           expanded: expanded,
+          showsChevron: showsChevron,
           deferredDetailItemID: deferredDetailItemID
         )
       }

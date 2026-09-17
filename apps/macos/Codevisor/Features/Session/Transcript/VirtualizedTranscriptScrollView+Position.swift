@@ -207,6 +207,7 @@ extension VirtualizedTranscriptScrollView {
     let isUserMovement = isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling
     if let lastObservedViewportTop, isUserMovement {
       historyPrefetchPolicy.observeUserScroll(delta: viewportTop - lastObservedViewportTop)
+      detailPrefetchPolicy.observeUserScroll(delta: viewportTop - lastObservedViewportTop)
       pendingWindowScrollDelta += viewportTop - lastObservedViewportTop
       runwayMotion.observe(
         viewportTop: viewportTop,
@@ -278,6 +279,7 @@ extension VirtualizedTranscriptScrollView {
 
   func checkForHistoryPrefetch(force: Bool = false) {
     let threshold = max(600, contentView.bounds.height * 1.5)
+    checkForDetailPrefetch(threshold: threshold)
     if let gap = rows.firstIndex(where: { if case .historyGap = $0.content { true } else { false } }),
       gap > 0
     {

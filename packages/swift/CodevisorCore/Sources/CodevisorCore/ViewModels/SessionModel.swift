@@ -200,10 +200,8 @@ public final class SessionModel {
   /// host. Closing or virtualizing the disclosure cannot cancel useful work,
   /// and remounts simply await the same request.
   @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
-  /// A compact active turn from another client must hydrate its worked
-  /// events before post-snapshot socket updates are reduced. The socket is
-  /// connected immediately, but its events remain buffered behind this
-  /// session-owned task so the snapshot boundary stays lossless.
+  @ObservationIgnored var transcriptDetailWindows: [String: TranscriptDetailWindow] = [:]
+  public internal(set) var loadingTranscriptDetailItemIds: Set<String> = []
   /// Constant-time routing for late/nested tool updates. Values are stable
   /// conversation ids, so prepending older pages cannot invalidate them.
   @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]

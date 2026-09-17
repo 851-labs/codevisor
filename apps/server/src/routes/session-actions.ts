@@ -167,7 +167,7 @@ export const routeSessionActions = async (
   if (transcriptDetails !== undefined && request.method === "GET") {
     const { id, itemId } = transcriptDetails as { readonly id: string; readonly itemId: string }
     const after = url.searchParams.get("after") ?? undefined
-    if (after !== undefined) {
+    if (after !== undefined && after !== "latest") {
       try {
         const cursor = JSON.parse(Buffer.from(after, "base64url").toString()) as {
           position?: unknown

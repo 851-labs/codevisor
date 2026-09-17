@@ -70,6 +70,7 @@ extension SessionModel {
     while residentDetailItemIds.count > 8 {
       let evicted = residentDetailItemIds.removeFirst()
       transcriptDetailsCache.removeValue(forKey: evicted)
+      transcriptDetailWindows.removeValue(forKey: evicted)
       guard
         let index = settledConversation.firstIndex(where: { $0.id.uuidString.lowercased() == evicted.lowercased() }),
         case .assistant(var message) = settledConversation[index]

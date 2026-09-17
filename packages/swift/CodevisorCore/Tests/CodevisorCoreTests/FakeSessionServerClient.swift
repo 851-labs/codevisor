@@ -80,6 +80,9 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var olderTranscriptPage: ServerTranscriptPage?
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
+  var transcriptDetailsByCursor: [String: ServerTranscriptItemDetails] = [:]
+  private var _transcriptDetailCursors: [String?] = []
+  var transcriptDetailCursors: [String?] { lock.withLock { _transcriptDetailCursors } }
   /// When false, prompts are accepted without the scripted assistant echo,
   /// leaving the turn generating so tests can emit their own events.
   var echoOnPrompt = true
@@ -324,6 +327,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   ) async throws -> ServerTranscriptItemDetails {
     let gate = lock.withLock {
       _transcriptDetailRequestCount += 1
+      _transcriptDetailCursors.append(after)
       _transcriptDetailThroughRevisions.append(nil)
       return _transcriptDetailGate
     }
@@ -331,7 +335,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     if let gate {
       for await _ in gate { break }
     }
-    guard let details = transcriptDetailsByItem[itemId] else {
+    guard let details = after.flatMap({ transcriptDetailsByCursor[$0] }) ?? transcriptDetailsByItem[itemId] else {
       throw CodevisorServerClientError.httpStatus(404, "")
     }
     return details

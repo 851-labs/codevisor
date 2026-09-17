@@ -35,9 +35,11 @@ export const readTranscriptStatePage = (
       .get(itemId, sessionId) as { revision: number; cursor: number } | undefined
     if (item === undefined) return undefined
     const cursor: Cursor =
-      after === undefined
-        ? { position: -1, key: "" }
-        : (JSON.parse(Buffer.from(after, "base64url").toString()) as Cursor)
+      after === "latest"
+        ? { position: Number.MAX_SAFE_INTEGER, key: "", reverse: true }
+        : after === undefined
+          ? { position: -1, key: "" }
+          : (JSON.parse(Buffer.from(after, "base64url").toString()) as Cursor)
     if (!Number.isSafeInteger(cursor.position) || typeof cursor.key !== "string") {
       throw new Error("Invalid transcript state cursor")
     }
