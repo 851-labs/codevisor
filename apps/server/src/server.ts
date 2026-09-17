@@ -190,8 +190,12 @@ export const makeCodevisorServerApp = (
     }).catch(swallowError)
     authSyncRefresh.request()
   })
+  // Retained so close() can drain it: reconcile writes credential files under
+  // the harness home, and a write landing after shutdown races whatever tears
+  // that directory down (a restarting server, or a test's temp-dir cleanup).
+  let sharedAccountReconcile: Promise<void> | undefined
   const reconcileSharedAccounts = () => {
-    void services.sharedAccounts?.reconcile().catch(swallowError)
+    sharedAccountReconcile = services.sharedAccounts?.reconcile().catch(swallowError)
   }
   reconcileSharedAccounts()
   const sharedAccountSweep = services.sharedAccounts
@@ -310,7 +314,7 @@ export const makeCodevisorServerApp = (
         clientControl
       )
     },
-    close: serverAttempt("closeApp", () => {
+    close: serverCloseAttempt(async () => {
       browserProxy.close()
       clientControl.close()
       clearInterval(staleTurnSweep)
@@ -333,6 +337,9 @@ export const makeCodevisorServerApp = (
       webSocketServer.close()
       services.plugins?.close()
       void services.mcp?.close().catch(swallowError)
+      // Every listener above is detached synchronously, so no new background
+      // work can start; awaiting the last reconcile drains what is in flight.
+      await sharedAccountReconcile
     })
   }
   return app
@@ -446,9 +453,10 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
   Effect.tryPromise({
     try: () =>
       new Promise<void>((resolve, reject) => {
-        void Effect.runPromise(app.close).catch(swallowError)
-        /* v8 ignore next -- normal test shutdown closes cleanly. */
-        server.close((error) => (error === undefined ? resolve() : reject(error)))
+        void Effect.runPromise(app.close)
+          .catch(swallowError)
+          /* v8 ignore next -- normal test shutdown closes cleanly. */
+          .finally(() => server.close((error) => (error === undefined ? resolve() : reject(error))))
       }),
     /* v8 ignore next -- normal test shutdown closes cleanly. */
     catch: (cause) =>
@@ -458,15 +466,13 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
       })
   })
 
-const serverAttempt = <A>(operation: string, runSync: () => A): Effect.Effect<A, ServerError> =>
-  Effect.try({
-    try: runSync,
+/// Shutdown must await background work before reporting the app closed, so
+/// this is promise-aware rather than the plain synchronous `Effect.try`.
+const serverCloseAttempt = (runClose: () => Promise<void>): Effect.Effect<void, ServerError> =>
+  Effect.tryPromise({
+    try: runClose,
     /* v8 ignore next -- app close only wraps defensive WebSocket close failures. */
-    catch: (cause) =>
-      new ServerError({
-        operation,
-        message: failureMessage(cause)
-      })
+    catch: (cause) => new ServerError({ operation: "closeApp", message: failureMessage(cause) })
   })
 
 export { defaultDatabasePath } from "./infra/data-dir.js"

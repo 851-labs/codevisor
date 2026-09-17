@@ -182,13 +182,12 @@ export const startWithApp = async (
       const address = httpServer.address()
       const port = typeof address === "object" && address !== null ? address.port : 0
       resolve({
-        close: Effect.promise(
-          () =>
-            new Promise<void>((closeResolve) => {
-              void run(app.close)
-              httpServer.close(() => closeResolve())
-            })
-        ),
+        close: Effect.promise(async () => {
+          // Await the app's own close so background work (the shared-account
+          // reconcile) is drained before a test removes its temp directories.
+          await run(app.close)
+          await new Promise<void>((closeResolve) => httpServer.close(() => closeResolve()))
+        }),
         host: "127.0.0.1",
         port,
         url: `http://127.0.0.1:${port}`
