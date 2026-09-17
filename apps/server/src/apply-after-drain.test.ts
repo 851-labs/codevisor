@@ -1,7 +1,8 @@
+import type { RestartDrainState } from "@codevisor/api"
 import { expect, it, vi } from "vitest"
+
 import { applyAfterDrain } from "./apply-after-drain.js"
 import { idleRestartCoordinator } from "./test-support.js"
-import type { RestartDrainState } from "@codevisor/api"
 
 it("does not install an update when its pending drain is cancelled", async () => {
   const drain = Promise.withResolvers<RestartDrainState>()

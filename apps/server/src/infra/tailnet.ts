@@ -4,6 +4,7 @@
 /// CLI) reports its view of the tailnet, and clients probe the peers'
 /// tokenless /v1/discovery manifests from their own side.
 import { execFile } from "node:child_process"
+
 import type { TailnetPeer } from "@codevisor/api"
 
 /// The CLI is the one interface every install variant exposes consistently:

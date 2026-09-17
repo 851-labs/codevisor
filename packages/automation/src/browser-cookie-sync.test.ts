@@ -7,6 +7,7 @@ import {
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { CdpConnection } from "./browser-cdp.js"
 import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
 

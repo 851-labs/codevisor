@@ -1,10 +1,12 @@
-import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import {
   jsonRequest,
   makeServices,

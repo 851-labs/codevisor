@@ -5,6 +5,7 @@ import type {
   SessionMode as AcpSessionMode,
   SessionModeState as AcpSessionModeState
 } from "@agentclientprotocol/sdk"
+import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
 import type {
   CanonicalModeId,
   SessionConfigOption,
@@ -12,7 +13,6 @@ import type {
   SessionConfigSelectOption,
   SessionModeState
 } from "@codevisor/api"
-import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
 
 export const acpConfigSelection = (
   configId: string,

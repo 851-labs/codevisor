@@ -1,9 +1,10 @@
-import { makeDatabase } from "@codevisor/db"
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { makeMcpManager } from "./mcp-manager.js"
+
+import { makeDatabase } from "@codevisor/db"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   cleanupMcpManagerTests,
   connectionStateSettles,
@@ -13,6 +14,7 @@ import {
   managers,
   testManager
 } from "./mcp-manager-test-support.js"
+import { makeMcpManager } from "./mcp-manager.js"
 
 afterEach(cleanupMcpManagerTests)
 

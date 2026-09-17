@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
 import { makeDatabase } from "./index.js"
 import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run } from "./test-support.js"

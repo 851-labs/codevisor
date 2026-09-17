@@ -1,9 +1,9 @@
+import { spawnSync } from "node:child_process"
 // Exercise the production native editor and focus policy without booting the
 // full app or server, following the transcript test harness.
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
-import { spawnSync } from "node:child_process"
-import { fileURLToPath } from "node:url"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const harness = join(root, "tmp/macos-composer-tests")

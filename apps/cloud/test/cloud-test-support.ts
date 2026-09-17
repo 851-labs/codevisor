@@ -10,9 +10,10 @@ import {
   type HubToMachine,
   type WireRelayEnvelope
 } from "@codevisor/api"
-import { afterEach, beforeEach, expect, vi } from "vitest"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
 import { env, runInDurableObject, SELF } from "cloudflare:test"
+import { afterEach, beforeEach, expect, vi } from "vitest"
+
 import type { UserHub } from "../src/user-hub.js"
 
 /// Shared scaffolding for the hub integration tests: dev login, sockets,

@@ -1,5 +1,7 @@
 import type { AttachmentRef, EventEnvelope, PromptQueueItem } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+
+import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-drain.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -12,7 +14,6 @@ import {
 } from "../server-context.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
-import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-drain.js"
 
 export const reconcileOrphanedSessionTurns = async (
   services: CodevisorServerServices,

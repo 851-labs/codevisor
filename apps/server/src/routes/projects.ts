@@ -1,3 +1,7 @@
+import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
+import type { IncomingMessage, ServerResponse } from "node:http"
+import { dirname } from "node:path"
+
 import type { Worktree, WorktreeSetupUpdate } from "@codevisor/api"
 import {
   CreateProjectRequest as CreateProjectRequestSchema,
@@ -11,9 +15,6 @@ import {
   scratchWorkspacesRoot,
   type CodevisorDatabaseService
 } from "@codevisor/db"
-import { mkdirSync, readdirSync, rmdirSync } from "node:fs"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { dirname } from "node:path"
 import {
   addWorktree,
   isGitWorkTree,
@@ -25,6 +26,7 @@ import {
 } from "@codevisor/worktrees"
 import { availableDevelopmentWorktreeName } from "@codevisor/worktrees"
 import { availableProductionWorktreeName } from "@codevisor/worktrees"
+
 import {
   appendAndPublish,
   applyCascadedSessionEffects,
@@ -46,8 +48,8 @@ import {
 } from "../server-context.js"
 import { routeProjectFromGit } from "./project-clone.js"
 import { isScratchProject, probeProject } from "./project-probe.js"
-import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
 import { projectRecommendationsForRequest } from "./project-recommendations.js"
+import { discoverRepoUrl, reconcileProjectRepoUrls } from "./project-repo-identity.js"
 
 export { probeProject } from "./project-probe.js"
 

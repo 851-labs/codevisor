@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+
 import { summarizeTranscriptPerformance } from "./transcript-performance-summary.mjs"
 
 test("reports independent timing distributions and the latest viewport", () => {

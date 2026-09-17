@@ -1,7 +1,9 @@
-import type { AgentSessionSummary } from "@codevisor/api"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+import type { AgentSessionSummary } from "@codevisor/api"
 import { afterEach, describe, expect, it } from "vitest"
+
 import { recommendProjectsFromSessions } from "./project-recommendations.js"
 
 const roots: string[] = []

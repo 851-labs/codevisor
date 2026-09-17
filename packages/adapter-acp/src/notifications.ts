@@ -1,6 +1,7 @@
 import type * as acp from "@agentclientprotocol/sdk"
-import type { DiffStat } from "@codevisor/api"
 import { diffStatsFromTexts, type RuntimeEvent } from "@codevisor/agent-runtime"
+import type { DiffStat } from "@codevisor/api"
+
 import { normalizeAcpConfigOptions } from "./config-options.js"
 
 /// `config_option_update` is the live mirror of `session/new.configOptions`.

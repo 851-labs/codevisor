@@ -1,5 +1,6 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import type { PluginSummary, WorkspacePane } from "@codevisor/api"
-import { filterPluginRegistryIndex } from "@codevisor/plugins"
 import {
   ApplyPluginUpdateRequest as ApplyPluginUpdateRequestSchema,
   DiscoverRemotePluginRequest as DiscoverRemotePluginRequestSchema,
@@ -9,7 +10,8 @@ import {
   PluginPaneTokenRequest as PluginPaneTokenRequestSchema,
   SetPluginEnabledRequest as SetPluginEnabledRequestSchema
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
+import { filterPluginRegistryIndex } from "@codevisor/plugins"
+
 import {
   appendAndPublish,
   HttpFailure,

@@ -1,11 +1,13 @@
-import type { PluginRegistryIndex } from "@codevisor/api"
-import { PluginsError, type PluginRegistryClient, type PluginStateEvent } from "@codevisor/plugins"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { connect } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { PluginRegistryIndex } from "@codevisor/api"
+import { PluginsError, type PluginRegistryClient, type PluginStateEvent } from "@codevisor/plugins"
 import { Effect } from "effect"
 import { describe, expect, it, onTestFinished } from "vitest"
+
 import {
   jsonRequest,
   makeServices,

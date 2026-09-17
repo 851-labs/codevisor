@@ -1,4 +1,5 @@
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+
 import { openCommandTerminal, settleCommandTerminal } from "./command-terminals.js"
 import {
   commandStatus,

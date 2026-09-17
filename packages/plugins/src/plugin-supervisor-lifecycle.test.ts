@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makePluginSupervisor } from "./plugin-supervisor.js"
 import { advancingClock, fakeSpawn, makeDataDir, plugin } from "./test-support.js"
 

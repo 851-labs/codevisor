@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest"
+
 import { loginGrok, makeGrokDeviceLogin, GROK_CLIENT_ID } from "./grok-device-auth.js"
 
 const device = {

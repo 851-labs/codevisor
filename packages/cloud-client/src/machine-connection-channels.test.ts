@@ -1,7 +1,9 @@
-import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
-import type { IncomingChannel } from "./index.js"
+
+import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
 import { describe, expect, it } from "vitest"
+
+import type { IncomingChannel } from "./index.js"
 import {
   machineKeys,
   harness,

@@ -1,7 +1,9 @@
+import { hostname } from "node:os"
+
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
 import { Command, Flag, Prompt } from "effect/unstable/cli"
-import { hostname } from "node:os"
+
 import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
 import type { CliDeps } from "./support.js"
 import { syncCommand } from "./sync.js"

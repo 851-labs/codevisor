@@ -1,20 +1,21 @@
-import { projectSetupState } from "./setup-state.js"
-import { materializeNavigationDelta } from "./navigation-delta.js"
-import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
-import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
-import { textPatchForEvent } from "./transcript-state.js"
 import type { EventKind } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
+
 import { attempt } from "./errors.js"
 import { isSessionShellEvent, withChatItemId, jsonRecord } from "./event-payloads.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
+import { materializeNavigationDelta } from "./navigation-delta.js"
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
 import type { EventRow, SessionEventRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
+import { projectSetupState } from "./setup-state.js"
+import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
+import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
+import { textPatchForEvent } from "./transcript-state.js"
 
 export const makeEventsService = (
   context: ServiceContext

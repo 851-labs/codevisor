@@ -1,8 +1,10 @@
+import { rmSync } from "node:fs"
 import { mkdtemp, readFile, writeFile, mkdir, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it } from "vitest"
-import { rmSync } from "node:fs"
+
 import { credentialFerrySources, canonicalCredentialJson } from "./credential-ferry.js"
 
 const roots: string[] = []

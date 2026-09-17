@@ -4,9 +4,9 @@ import { mkdir, realpath, access } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
+
 import { processIdentity } from "../packages/processes/src/index.mjs"
 import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
-import { openOwnedXcodeWindow } from "./xcode-window.mjs"
 import {
   parseSimulatorArguments,
   selectSimulatorConfiguration,
@@ -19,6 +19,7 @@ import {
   deleteOwnedSimulator,
   reapOrphanedSimulators
 } from "./ios-simulator-state.mjs"
+import { openOwnedXcodeWindow } from "./xcode-window.mjs"
 
 const exec = promisify(execFile)
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))

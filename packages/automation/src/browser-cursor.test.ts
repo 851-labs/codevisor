@@ -1,5 +1,6 @@
 import { parseExpression } from "@babel/parser"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
 import {
   BROWSER_CURSOR_PALETTE_COUNT,

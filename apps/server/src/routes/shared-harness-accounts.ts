@@ -1,5 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
+
+import { providerOAuthSupported } from "@codevisor/harness-manager"
 import { Schema } from "effect"
+
+import { sharedHarness } from "../infra/shared-account-store.js"
 import {
   HttpFailure,
   matchRoute,
@@ -8,8 +12,6 @@ import {
   run,
   type CodevisorServerServices
 } from "../server-context.js"
-import { sharedHarness } from "../infra/shared-account-store.js"
-import { providerOAuthSupported } from "@codevisor/harness-manager"
 
 const Action = Schema.Struct({
   action: Schema.Literals([

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
-import { appendTranscriptText } from "./transcript-state.js"
+
 import { projectSetupState } from "./setup-state.js"
+import { appendTranscriptText } from "./transcript-state.js"
 
 /** Checkpoints inside a single imported message, as well as between messages.
  * Identity and text blocks commit together; interruption cannot duplicate text.

@@ -1,4 +1,5 @@
 import type { PluginManifest } from "@codevisor/api"
+
 import type { PluginInstallReceipt, PluginInstallSourceReceipt } from "./plugin-receipt.js"
 
 export interface StagedPlugin {

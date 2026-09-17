@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { extractAllStringFields, extractStringField } from "./claude.js"
 import { definition, FakeQuery, initMessage, makeProvider, run } from "./test-support.js"
 

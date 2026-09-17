@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   CreateSkillRequest as CreateSkillRequestSchema,
   DiscoverRemoteSkillsRequest as DiscoverRemoteSkillsRequestSchema,
@@ -8,7 +10,7 @@ import {
   SyncSkillsRequest as SyncSkillsRequestSchema,
   UpdateSkillRequest as UpdateSkillRequestSchema
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   HttpFailure,
   matchRoute,

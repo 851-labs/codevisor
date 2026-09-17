@@ -5,6 +5,7 @@ import {
   PluginManifest as PluginManifestSchema,
   type PluginManifest
 } from "@codevisor/api"
+
 import { PluginsError } from "./plugins-error.js"
 
 export const PLUGIN_MANIFEST_FILENAME = "codevisor-plugin.json"

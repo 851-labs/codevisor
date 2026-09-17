@@ -15,8 +15,9 @@ import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { pathExists } from "./dev-shared.mjs"
+
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
+import { pathExists } from "./dev-shared.mjs"
 export { syncLinuxWorkspace }
 
 export function devRemoteHomeMounts(remoteRootHost) {

@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { EventEnvelope } from "@codevisor/api"
-import { makeEventFanout } from "../server.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { CodevisorServerServices } from "../server-context.js"
+import { makeEventFanout } from "../server.js"
 import { makeServices, run, tempDirs } from "../test-support.js"
-import { sessionEventSink } from "./session-events.js"
 import { localArtifactPath, markdownFileReferences } from "./markdown-artifacts.js"
+import { sessionEventSink } from "./session-events.js"
 
 afterEach(() => vi.restoreAllMocks())
 

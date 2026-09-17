@@ -1,7 +1,11 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+
+import type { HarnessAuthExec } from "./harness-auth-types.js"
+import type { SharedTokenBundle } from "./shared-credential-types.js"
 import {
   parseClaudeOAuth,
   parseCodexOAuth,
@@ -10,8 +14,6 @@ import {
   sharedApiKey,
   sharedOAuthIdentity
 } from "./shared-oauth-providers.js"
-import type { SharedTokenBundle } from "./shared-credential-types.js"
-import type { HarnessAuthExec } from "./harness-auth-types.js"
 
 const jwt = (value: object) =>
   `header.${Buffer.from(JSON.stringify(value)).toString("base64url")}.signature`

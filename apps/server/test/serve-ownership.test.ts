@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
+
 import { monitorAppOwner } from "../src/serve.js"
 
 describe("app-owned server lifecycle", () => {

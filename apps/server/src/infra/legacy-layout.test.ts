@@ -14,7 +14,9 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
 import { describe, expect, it } from "vitest"
+
 import { migrateLegacyLayout, migrateTmpDataDir } from "./legacy-layout.js"
 
 const execFileAsync = promisify(execFile)

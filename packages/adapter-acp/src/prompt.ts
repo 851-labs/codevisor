@@ -1,5 +1,6 @@
-import type { ContentBlock as AcpContentBlock } from "@agentclientprotocol/sdk"
 import { pathToFileURL } from "node:url"
+
+import type { ContentBlock as AcpContentBlock } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "@codevisor/agent-runtime"
 
 export interface AcpPromptCapabilities {

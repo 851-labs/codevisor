@@ -1,9 +1,9 @@
+import { spawnSync } from "node:child_process"
 // Exercise the production AppKit transcript without booting the full app or
 // its server. Stage sources in tmp so SwiftPM can test the app-owned surface.
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
-import { spawnSync } from "node:child_process"
-import { fileURLToPath } from "node:url"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
 const harness = join(root, "tmp/macos-transcript-tests")

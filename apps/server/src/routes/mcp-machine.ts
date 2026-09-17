@@ -1,6 +1,8 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import { SetMachineMcpEnabledRequest } from "@codevisor/api"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   MCP_OVERLAYS_NAMESPACE,
   mcpOverlayDisableKey,

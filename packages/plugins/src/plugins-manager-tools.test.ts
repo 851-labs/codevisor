@@ -1,7 +1,9 @@
 import { writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { PluginsError } from "./plugins-error.js"
 import { exampleManifest, makeDir, makeManager, toolManifest, writePlugin } from "./test-support.js"
 

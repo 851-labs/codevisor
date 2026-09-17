@@ -1,5 +1,6 @@
-import Database from "better-sqlite3"
 import { randomUUID } from "node:crypto"
+
+import Database from "better-sqlite3"
 
 /// Reads (or mints) the database's persisted machine identity before the full
 /// service opens. Remote servers derive their server id from this so a fleet

@@ -1,5 +1,6 @@
 import type { BackgroundTask, SessionSidebarState } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import { sessionGoalSnapshot } from "./chat-items.js"
 import type { JsonRecord } from "./event-payloads.js"
 import { backgroundTasksFromRaw, conversationEventPayload, jsonRecord } from "./event-payloads.js"

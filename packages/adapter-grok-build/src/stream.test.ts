@@ -1,6 +1,7 @@
 import type * as acp from "@agentclientprotocol/sdk"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
+
 import { GrokStreamNormalizer } from "./stream.js"
 
 const notification = (

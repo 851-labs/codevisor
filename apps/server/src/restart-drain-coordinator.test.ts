@@ -1,6 +1,7 @@
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+
 import { makeMemoryRestartSnapshotStore, makeRestartCoordinator } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"

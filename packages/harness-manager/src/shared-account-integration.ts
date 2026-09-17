@@ -1,5 +1,5 @@
-import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
+import type { HarnessAccount } from "@codevisor/api"
 
 export interface SharedAccountIntegration {
   readonly reconcile: () => Promise<void>

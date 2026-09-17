@@ -1,10 +1,35 @@
-import { BrowserProxy } from "./infra/browser-proxy.js"
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
-import { hasExistingListener } from "./infra/listener-probe.js"
 import type { AddressInfo, Socket } from "node:net"
+
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
+
+import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
+import { BrowserProxy } from "./infra/browser-proxy.js"
+import { ClientControlBroker } from "./infra/client-control.js"
+import { hasExistingListener } from "./infra/listener-probe.js"
+import { readMcpOverlays } from "./infra/mcp-fleet.js"
+import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
+import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
+import {
+  makeFileRestartSnapshotStore,
+  makeMemoryRestartSnapshotStore,
+  makeRestartCoordinator
+} from "./restart-drain.js"
+import { resumeSessionsAfterRestart } from "./restart-resume.js"
+import { handleUpgrade } from "./routes/events.js"
+import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
+import {
+  drainPromptQueue,
+  makeTurnDispatchListener,
+  reconcileOrphanedSessionTurns,
+  reconcileStaleStreamingTurns
+} from "./routes/sessions.js"
+import {
+  makeAuthSyncRefreshScheduler,
+  runBackgroundSyncReconcile
+} from "./routes/sync-reconcilers.js"
 import {
   appendAndPublish,
   failureMessage,
@@ -21,30 +46,7 @@ import type {
   RouteState,
   RunningCodevisorServer
 } from "./server-context.js"
-import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
-import { handleUpgrade } from "./routes/events.js"
-import { ClientControlBroker } from "./infra/client-control.js"
-import { backfillProjectRepoUrls } from "./routes/project-repo-identity.js"
-import { readMcpOverlays } from "./infra/mcp-fleet.js"
-import { adoptLegacySyncIdentity } from "./infra/sync-identity.js"
-import {
-  drainPromptQueue,
-  makeTurnDispatchListener,
-  reconcileOrphanedSessionTurns,
-  reconcileStaleStreamingTurns
-} from "./routes/sessions.js"
-import {
-  makeAuthSyncRefreshScheduler,
-  runBackgroundSyncReconcile
-} from "./routes/sync-reconcilers.js"
 import { handleRequest } from "./server-router.js"
-import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
-import {
-  makeFileRestartSnapshotStore,
-  makeMemoryRestartSnapshotStore,
-  makeRestartCoordinator
-} from "./restart-drain.js"
-import { resumeSessionsAfterRestart } from "./restart-resume.js"
 
 export * from "./server-context.js"
 export { reconcileOrphanedSessionTurns, reconcileStaleStreamingTurns }

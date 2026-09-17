@@ -1,14 +1,15 @@
-import { Effect } from "effect"
-import { makeSharedAccounts } from "./shared-accounts.js"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import {
   makeHarnessAuthManager,
   sharedOAuthIdentity,
   sharedApiKey
 } from "@codevisor/harness-manager"
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { TerminalManagerService } from "@codevisor/terminal"
+import { Effect } from "effect"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { fleet, native } from "./shared-accounts-test-support.js"
+import { makeSharedAccounts } from "./shared-accounts.js"
 afterEach(() => vi.useRealTimers())
 describe("automatic shared accounts", () => {
   it("hides pending sign-in profiles and imported aliases from cached catalog accounts", async () => {

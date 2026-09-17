@@ -1,8 +1,9 @@
 import type { EventEnvelope } from "@codevisor/api"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { attachEventSocket } from "./events.js"
+
 import { makeEventFanout, run } from "../server-context.js"
+import { attachEventSocket } from "./events.js"
 
 type Frame = Omit<EventEnvelope, "kind"> & { kind: string; previousEventId?: number }
 

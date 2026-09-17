@@ -1,11 +1,12 @@
+import { realpath } from "node:fs/promises"
 // Real swipe and long-press gestures against the production sidebar, with an
 // in-memory fleet fixture. No server or user account is required.
 import { fileURLToPath } from "node:url"
-import { realpath } from "node:fs/promises"
+
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const simulator = await requireIOSSimulator(root)

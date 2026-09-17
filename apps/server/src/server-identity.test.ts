@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { defaultServerConfig, startCodevisorServer } from "./server.js"
+
 import { MCPS_SYNC_NAMESPACE } from "./infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE, readMcpOverlays } from "./infra/mcp-fleet.js"
+import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import { makeServices, run, runningServers, waitFor } from "./test-support.js"
 
 describe("server boot identity", () => {

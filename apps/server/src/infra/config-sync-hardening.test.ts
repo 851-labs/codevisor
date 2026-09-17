@@ -5,6 +5,7 @@
 /// attempts via stale replays, and a simultaneous OAuth ownership claim.
 /// Pure LWW mechanics live in packages/sync/src/hardening.test.ts.
 import { describe, expect, it } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 

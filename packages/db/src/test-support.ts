@@ -1,13 +1,15 @@
-import type { Project, SessionSummary } from "@codevisor/api"
-import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
-import Database from "better-sqlite3"
-import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { Project, SessionSummary } from "@codevisor/api"
+import Database from "better-sqlite3"
+import { Effect } from "effect"
 import { afterEach, onTestFinished } from "vitest"
+
 import { createService } from "./create-service.js"
 import type { DatabaseError } from "./errors.js"
+import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 
 const tempDirs: Array<string> = []
 

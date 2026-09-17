@@ -8,6 +8,7 @@ import type {
   BackgroundTerminalIntegration,
   ProviderEnvironment
 } from "@codevisor/agent-runtime"
+
 import { makeCursorExtension } from "./extension.js"
 
 export interface CursorProviderConfig {

@@ -1,5 +1,7 @@
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import { randomBytes, timingSafeEqual } from "node:crypto"
+
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
+
 import type { makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"

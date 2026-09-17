@@ -1,10 +1,6 @@
-import { sessionSetupState } from "./setup-state.js"
-import { transcriptTextResource } from "./transcript-bodies.js"
-import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
-import { readTranscriptStatePage } from "./transcript-state-pages.js"
-import { readTranscriptBodyPage } from "./transcript-bodies.js"
-import { Effect } from "effect"
 import { isoTimestamp } from "@codevisor/api"
+import { Effect } from "effect"
+
 import {
   chatAssistantSummary,
   chatRoute,
@@ -22,8 +18,13 @@ import {
 import { canonicalUuid } from "./ids.js"
 import { listPromptQueueSync, transcriptFromChatRow } from "./row-mappers.js"
 import type { ChatItemRow, SessionActionRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
+import { sessionSetupState } from "./setup-state.js"
+import { transcriptTextResource } from "./transcript-bodies.js"
+import { readTranscriptBodyPage } from "./transcript-bodies.js"
+import { readTranscriptStatePage } from "./transcript-state-pages.js"
+import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
 
 // Turn-boundary events can legitimately leave behind completed item shells
 // when a harness emits no user payload or assistant output. They are useful to

@@ -1,6 +1,8 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { parseExpression } from "@babel/parser"
 import type { ChildProcess } from "node:child_process"
+
+import { parseExpression } from "@babel/parser"
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import { delay, evaluatedValue, type CdpConnection } from "./browser-cdp.js"
 
 export interface TargetInfo {

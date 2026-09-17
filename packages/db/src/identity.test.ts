@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest"
-import { makeDatabase } from "./index.js"
-import { resolveServerIdentity } from "./identity.js"
-import { run, tempDatabase } from "./test-support.js"
 import { Effect } from "effect"
+import { describe, expect, it } from "vitest"
+
+import { resolveServerIdentity } from "./identity.js"
+import { makeDatabase } from "./index.js"
+import { run, tempDatabase } from "./test-support.js"
 
 describe("resolveServerIdentity", () => {
   it("mints once and returns the same identity forever after", () => {

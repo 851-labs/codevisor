@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+
 import { handleSystemMessage } from "./background-tasks.js"
 import { authoritativeStatsFromInput, maybeEmitStreamStats } from "./diff-stats.js"
 import { isRecord } from "./internal.js"

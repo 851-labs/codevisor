@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
+
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
+
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import type { CdpConnection } from "./browser-cdp.js"
 import { browserResultValue } from "./browser-repl.js"

@@ -1,5 +1,6 @@
 import type { TranscriptBodyPage } from "@codevisor/api"
 import { expect, it } from "vitest"
+
 import { makeDatabase } from "./index.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { memoryDatabase, run, tempDatabase } from "./test-support.js"

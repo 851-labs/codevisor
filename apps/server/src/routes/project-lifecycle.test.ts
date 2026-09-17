@@ -3,9 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import { describe, expect, it } from "vitest"
-import { defaultServerConfig, startCodevisorServer } from "../server.js"
+
 import { foodWorktreeNames } from "@codevisor/worktrees"
+import { describe, expect, it } from "vitest"
+
+import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers, start, tempDirs } from "../test-support.js"
 
 describe("project lifecycle routes", () => {

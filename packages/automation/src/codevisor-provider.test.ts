@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
 

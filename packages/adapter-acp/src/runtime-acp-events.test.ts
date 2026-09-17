@@ -1,5 +1,3 @@
-import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
 import {
   toEventEnvelope,
   type QuestionAnswer,
@@ -7,6 +5,9 @@ import {
   type RuntimeEvent,
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
+import { describe, expect, it } from "vitest"
+
 import { acpProtocolVersion, type AcpConnector } from "./index.js"
 import {
   conversationEvent,

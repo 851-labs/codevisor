@@ -1,8 +1,10 @@
+import { stat } from "node:fs/promises"
+import { dirname } from "node:path"
+
 import type { Project } from "@codevisor/api"
 import { scratchWorkspacesRoot, type CodevisorDatabaseService } from "@codevisor/db"
 import { gitRemoteUrl, isGitWorkTree } from "@codevisor/worktrees"
-import { stat } from "node:fs/promises"
-import { dirname } from "node:path"
+
 import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
 
 /// A project's git remote is the machine-independent half of its identity:

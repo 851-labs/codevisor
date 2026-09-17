@@ -1,16 +1,17 @@
 import type { AttachmentRef } from "@codevisor/api"
-import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
-import {
-  localArtifactPath,
-  markdownFileReferences,
-  shouldCaptureFile
-} from "./markdown-artifacts.js"
+
 import {
   appendAndPublish,
   run,
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
+import {
+  localArtifactPath,
+  markdownFileReferences,
+  shouldCaptureFile
+} from "./markdown-artifacts.js"
 
 /// Internal attachment references in persisted Markdown. New tool results
 /// expose local paths; older transcripts already contain these URLs.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { commandSubtreePids, parseProcessTable } from "./process-kill.js"
 
 describe("codex process-tree kill", () => {

@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest"
 import { basename, dirname } from "node:path"
+
+import { describe, expect, it } from "vitest"
+
 import {
   assertGitAvailable,
   assertPluginRequirements,

@@ -1,5 +1,5 @@
-import { Effect } from "effect"
 import { trackProcessTree } from "@codevisor/processes"
+import { Effect } from "effect"
 
 import { PORTABLE_TERM } from "./shell.js"
 import type { TerminalSpawner } from "./types.js"

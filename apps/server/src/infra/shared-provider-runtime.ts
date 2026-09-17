@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto"
 import { mkdir, readFile, symlink, writeFile, chmod } from "node:fs/promises"
+import type { IncomingMessage, ServerResponse } from "node:http"
 import { dirname, join, isAbsolute, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import {
   atomicWriteJson,
@@ -16,6 +17,7 @@ import {
   type SharedCredentialVault,
   type ProviderOAuthHarness
 } from "@codevisor/harness-manager"
+
 import { providerDigest, providerSlot, type SharedProviderStore } from "./shared-provider-store.js"
 
 export const readProviderDocument = async (path: string): Promise<Record<string, unknown>> => {

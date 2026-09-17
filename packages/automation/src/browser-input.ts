@@ -1,5 +1,5 @@
-import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserRuntime, PageHandle, ResolvedElement } from "./browser-cdp-engine.js"
+import { delay, evaluatedValue } from "./browser-cdp.js"
 import type { BrowserCursor } from "./browser-cursor.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 

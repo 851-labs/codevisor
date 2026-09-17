@@ -2,7 +2,6 @@ import { spawn } from "node:child_process"
 import process from "node:process"
 
 import { ensureChromium } from "./chromium-artifact.mjs"
-
 import { ensureGhosttyFramework } from "./ghostty-artifact.mjs"
 
 export async function bootstrapDevelopment(repoRoot, options = {}) {

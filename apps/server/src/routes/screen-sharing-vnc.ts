@@ -1,9 +1,11 @@
-import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
 import { readFileSync } from "node:fs"
 import type { IncomingMessage } from "node:http"
 import { connect, type Socket } from "node:net"
 import { join } from "node:path"
+
+import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
 import { createWebSocketStream, type WebSocketServer } from "ws"
+
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 
 /// `~/.codevisor/data/screen-sharing.json`, written by whoever set the

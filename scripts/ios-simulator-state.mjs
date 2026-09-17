@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, writeFile, rename, rm } from "node:fs/promises"
-import { join, basename } from "node:path"
 import { homedir } from "node:os"
+import { join, basename } from "node:path"
 import { promisify } from "node:util"
+
 import { processIdentity, sameProcess } from "../packages/processes/src/index.mjs"
 
 const exec = promisify(execFile)

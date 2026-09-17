@@ -2,16 +2,18 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { onTestFinished, vi } from "vitest"
+
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
 import {
   makeSharedCredentialVault,
   type HarnessAuthManager,
   type SharedTokenBundle
 } from "@codevisor/harness-manager"
+import { onTestFinished, vi } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
-import { makeSharedAccounts } from "./shared-accounts.js"
 import { SHARED_ACCOUNTS_NAMESPACE } from "./shared-account-store.js"
+import { makeSharedAccounts } from "./shared-accounts.js"
 
 export const native = (subject: string): SharedTokenBundle => ({
   harnessId: "codex",

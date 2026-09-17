@@ -1,16 +1,16 @@
+import { spawn } from "node:child_process"
 // iOS development loop: starts the same isolated Dev Direct and Dev Cloud
 // machines as scripts/dev.mjs (Linux containers by default), starts a
 // development cloud, then builds and launches the iOS app in the visible
 // Simulator. No macOS app is built or launched — iOS is a pure client.
 import { createHash } from "node:crypto"
-import { spawn } from "node:child_process"
 import { cp, mkdir, readFile, realpath, rm } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import {
   launchDevRemoteServer,
   prepareDevContainers,
@@ -18,18 +18,17 @@ import {
   resolveContainerEngine
 } from "./dev-containers.mjs"
 import {
+  buildIOSDevelopmentApp,
+  launchIOSDevelopmentApp,
+  terminateIOSDevelopmentApp
+} from "./dev-ios-target.mjs"
+import {
   developmentLayout,
   ensureDevelopmentDirectories,
   iosDevelopmentBundleIdentifier,
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
-import {
-  buildIOSDevelopmentApp,
-  launchIOSDevelopmentApp,
-  terminateIOSDevelopmentApp
-} from "./dev-ios-target.mjs"
-import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import {
   colorFromHash,
   containsAnyPath,
@@ -43,6 +42,7 @@ import {
   waitForExit,
   waitForHealth
 } from "./dev-shared.mjs"
+import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const simulator = await requireIOSSimulator(repoRoot)

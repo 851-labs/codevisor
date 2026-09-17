@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { jsonRequest } from "../test-support.js"
 import { setUpWorkspace } from "./session-test-support.js"
 

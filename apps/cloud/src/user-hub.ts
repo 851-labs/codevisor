@@ -1,4 +1,3 @@
-import { DurableObject } from "cloudflare:workers"
 // @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import {
   CLOUD_PROTOCOL_VERSION,
@@ -12,6 +11,9 @@ import {
   type CloudMachinePresence,
   type WireRelayEnvelope
 } from "@codevisor/api"
+import { DurableObject } from "cloudflare:workers"
+
+import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 import type { CloudEnv } from "./env.js"
 import {
   deliverToMachine,
@@ -19,14 +21,13 @@ import {
   hasRoutableMachineSocket,
   type HubDeliveryPort
 } from "./hub-delivery.js"
-import { listHubMachines, removeHubMachine } from "./hub-registry.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { announceExpired, type HubNoticesPort } from "./hub-notices.js"
+import { listHubMachines, removeHubMachine } from "./hub-registry.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
-import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 
 /// One hub per account (`getByName(userId)`): the rendezvous point every one
 /// of the user's app and machine sockets dials into. The hub is a dumb router:

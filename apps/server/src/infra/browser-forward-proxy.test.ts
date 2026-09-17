@@ -1,10 +1,12 @@
 import { once } from "node:events"
 import { createServer, request, type Server, type ClientRequest } from "node:http"
 import { type AddressInfo, type Socket } from "node:net"
+
 import { afterEach, expect, it } from "vitest"
 import { WebSocket, WebSocketServer } from "ws"
-import { BrowserProxy } from "./browser-proxy.js"
+
 import { isBrowserProxyRequest } from "./browser-forward-proxy.js"
+import { BrowserProxy } from "./browser-proxy.js"
 
 const cleanups: (() => void | Promise<void>)[] = []
 afterEach(async () => {

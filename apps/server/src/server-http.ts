@@ -1,14 +1,16 @@
+import { statSync } from "node:fs"
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import type { EventEnvelope, Project, ProjectLocation, SessionSummary } from "@codevisor/api"
 import { decode } from "@codevisor/api"
 import { AttachmentStoreError } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { CloneError, GitError } from "@codevisor/worktrees"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { statSync } from "node:fs"
-import { Effect, Schema } from "effect"
 import { NativeMcpError } from "@codevisor/mcp"
-import { SkillsError } from "@codevisor/skills"
 import { PluginsError } from "@codevisor/plugins"
+import { SkillsError } from "@codevisor/skills"
+import { CloneError, GitError } from "@codevisor/worktrees"
+import { Effect, Schema } from "effect"
+
 import { EventFanout } from "./server-context-types.js"
 import type { CodevisorServerConfig } from "./server-context-types.js"
 

@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { describe, expect, it, vi } from "vitest"
+
 import {
   appendAndPublish,
   defaultServerConfig,
@@ -10,7 +12,6 @@ import {
   startCodevisorServer
 } from "../server.js"
 import type { RouteState } from "../server.js"
-import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
 import {
   jsonRequest,
   makeServices,
@@ -20,6 +21,7 @@ import {
   idleRestartCoordinator,
   waitFor
 } from "../test-support.js"
+import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
 
 describe("streaming turn sweeps and prompt gating", () => {
   it("sweeps quiet orphaned streaming turns while the server keeps running", async () => {

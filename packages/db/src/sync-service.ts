@@ -1,7 +1,8 @@
 import { mergeSyncEntries, type SyncEntryRecord } from "@codevisor/sync"
+
 import { attempt } from "./errors.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 interface SyncRow {
   readonly namespace: string

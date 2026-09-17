@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+
 import { HubSockets } from "../src/hub-sockets.js"
 
 describe("HubSockets delivery acknowledgement", () => {

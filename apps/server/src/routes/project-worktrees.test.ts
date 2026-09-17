@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import { describe, expect, it } from "vitest"
+
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
+import { describe, expect, it } from "vitest"
+
 import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)

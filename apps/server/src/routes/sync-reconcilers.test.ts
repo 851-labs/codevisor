@@ -1,8 +1,10 @@
-import { writePluginInstallReceipt } from "@codevisor/plugins"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { writePluginInstallReceipt } from "@codevisor/plugins"
 import { describe, expect, it, vi } from "vitest"
+
 import {
   makeEventFanout,
   type CodevisorServerConfig,

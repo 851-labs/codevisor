@@ -1,6 +1,7 @@
 import type { NavigationDelta } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { expect, it } from "vitest"
+
 import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 

@@ -1,5 +1,5 @@
-import type { QuestionSpec } from "@codevisor/api"
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import type { QuestionSpec } from "@codevisor/api"
 
 /// One `session/request_permission` held open while the human answers.
 export interface PendingAcpQuestion {

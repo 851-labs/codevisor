@@ -1,10 +1,11 @@
-import { Effect } from "effect"
 import type {
   HarnessDefinition,
   ProviderEnvironment,
   RuntimeEvent,
   ToolGatewayConfig
 } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
+
 import type { CodexClient, CodexSpawnRequest } from "./client.js"
 import { makeCodexProvider } from "./provider.js"
 

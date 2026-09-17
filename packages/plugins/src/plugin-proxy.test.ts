@@ -1,8 +1,10 @@
+import type { IncomingMessage } from "node:http"
 import * as net from "node:net"
 import { createServer } from "node:net"
 import { Socket } from "node:net"
-import type { IncomingMessage } from "node:http"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { spliceUpgrade } from "./plugin-proxy.js"
 
 vi.mock("node:net", async (importOriginal) => {

@@ -1,9 +1,10 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import type { MachineToHub } from "@codevisor/api"
 import { generateDeviceKeyPair, openChannel, openJson, sealJson } from "@codevisor/cloud-crypto"
+import { describe, expect, it } from "vitest"
+
 import { makePeerKeyPinStore } from "./index.js"
 import type { IncomingChannel } from "./index.js"
-import { describe, expect, it } from "vitest"
 import {
   FakeSocket,
   machineKeys,

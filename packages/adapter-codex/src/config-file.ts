@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
 import { parse as parseToml } from "smol-toml"
+
 import { isRecord } from "./internal.js"
 
 /// Codex's own bundled automation servers (written into the user's

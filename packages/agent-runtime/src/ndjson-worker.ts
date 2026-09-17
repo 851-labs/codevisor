@@ -1,4 +1,5 @@
 import { parentPort } from "node:worker_threads"
+
 import { JsonHistoryFilter } from "./json-history-filter.js"
 
 const port = parentPort!

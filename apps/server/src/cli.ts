@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import { execFile, spawn } from "node:child_process"
+import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { hostname } from "node:os"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+
 /// The `codevisor` CLI: control the server from a terminal (start, stop,
 /// status, token, update, logs) plus `codevisor serve` for the daemon itself.
 /// All command logic lives in cli/support.ts behind the CliDeps seam; this
@@ -7,20 +13,8 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Option } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/unstable/cli"
-import { execFile, spawn } from "node:child_process"
-import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { hostname } from "node:os"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+
 import { authLoginCommand } from "./cli/cloud-auth.js"
-import {
-  makeAuthCommand,
-  makeSyncCommand,
-  optionalString,
-  portFlag,
-  runPrompt,
-  syncConfigPrompt
-} from "./cli/wiring.js"
 import {
   pluginInstallCommand,
   pluginLinkCommand,
@@ -43,6 +37,14 @@ import {
   updateCommand,
   type CliDeps
 } from "./cli/support.js"
+import {
+  makeAuthCommand,
+  makeSyncCommand,
+  optionalString,
+  portFlag,
+  runPrompt,
+  syncConfigPrompt
+} from "./cli/wiring.js"
 import { resolveDataDir, resolveLogsDir } from "./infra/data-dir.js"
 import { bundledVersion, runServe } from "./serve.js"
 

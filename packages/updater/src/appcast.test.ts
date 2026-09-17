@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { parseAppcast, selectLatestAppcastItem } from "./appcast.js"
 
 /// Trimmed from the real codex-app-prod feed (arm64) — shape preserved:

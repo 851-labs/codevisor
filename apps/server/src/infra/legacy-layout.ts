@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import {
   cp,
@@ -16,6 +16,7 @@ import {
 import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
+
 import type { DataUpgradeProgress } from "@codevisor/api"
 
 const execFileAsync = promisify(execFile)

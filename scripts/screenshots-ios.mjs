@@ -1,12 +1,13 @@
 import { realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { createCapture } from "./screenshots-capture.mjs"
-import { selectedAppearances } from "./screenshots-lib.mjs"
 import { devices, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
+import { selectedAppearances } from "./screenshots-lib.mjs"
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const options = parseOptions(process.argv.slice(2), root)

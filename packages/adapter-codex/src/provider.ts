@@ -1,8 +1,3 @@
-/// Assembly surface for the Codex provider: the modules below were split out
-/// of the original monolithic provider.ts; everything previously public is
-/// re-exported here so index.ts and all consumers stay unchanged.
-import { isoTimestamp } from "@codevisor/api"
-import { Effect } from "effect"
 import {
   adapterPromise,
   listCodexAgentSessions,
@@ -19,6 +14,12 @@ import {
   type ProviderEnvironment,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
+/// Assembly surface for the Codex provider: the modules below were split out
+/// of the original monolithic provider.ts; everything previously public is
+/// re-exported here so index.ts and all consumers stay unchanged.
+import { isoTimestamp } from "@codevisor/api"
+import { Effect } from "effect"
+
 import { spawnCodexClient, type CodexClient, type CodexConnector } from "./client.js"
 import { defaultConfigFileReader } from "./config-file.js"
 import { isRecord } from "./internal.js"
@@ -26,8 +27,8 @@ import { configOptionsFor, modesFor } from "./models.js"
 import { codexThreadTitle } from "./notifications.js"
 import type { CodexCommandKiller } from "./process-kill.js"
 import { handleFor } from "./session-handle.js"
-import { makeStartSession } from "./start-session.js"
 import { connectSharedCodexAccount } from "./shared-oauth.js"
+import { makeStartSession } from "./start-session.js"
 import { codexUsageLimitsFrom } from "./usage.js"
 import { isCodexVersionNewer, readCodexVersion } from "./version.js"
 

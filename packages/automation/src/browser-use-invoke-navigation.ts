@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import {
   jsonResult,
   numberArgument,

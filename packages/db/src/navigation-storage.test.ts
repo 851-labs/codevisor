@@ -1,8 +1,9 @@
-import { expect, it } from "vitest"
-import { memoryDatabase, run } from "./test-support.js"
-import { createServiceContext } from "./service-context.js"
-import { materializeNavigationDelta } from "./navigation-delta.js"
 import type { EventEnvelope, NavigationDelta } from "@codevisor/api"
+import { expect, it } from "vitest"
+
+import { materializeNavigationDelta } from "./navigation-delta.js"
+import { createServiceContext } from "./service-context.js"
+import { memoryDatabase, run } from "./test-support.js"
 
 it("hydrates persisted runtime configuration and selects only durable work for resume", async () => {
   const { db, sqlite, session } = await memoryDatabase()

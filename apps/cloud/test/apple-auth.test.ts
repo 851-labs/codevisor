@@ -1,10 +1,10 @@
 import { env } from "cloudflare:test"
 import { generateKeyPair, jwtVerify, SignJWT } from "jose"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import { appleClientSecret } from "../src/apple-auth.js"
 import worker from "../src/index.js"
 import { CLOSE_REVOKED } from "../src/user-hub.js"
-import { authed, BASE, connectMachine, devLogin } from "./cloud-test-support.js"
 import {
   appleEnv,
   Browser,
@@ -17,6 +17,7 @@ import {
   signingKey,
   subject
 } from "./apple-auth-test-support.js"
+import { authed, BASE, connectMachine, devLogin } from "./cloud-test-support.js"
 
 describe("Apple Cloud authorization", () => {
   it("advertises Apple only when all four credentials exist", async () => {

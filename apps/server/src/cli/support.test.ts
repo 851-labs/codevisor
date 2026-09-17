@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+
+import { makeWorld, unit, systemCat, userCat, health, ok } from "./support-test-support.js"
 import {
   DEFAULT_PORT,
   detectServiceManager,
@@ -9,7 +11,6 @@ import {
   startCommand,
   stopCommand
 } from "./support.js"
-import { makeWorld, unit, systemCat, userCat, health, ok } from "./support-test-support.js"
 
 describe("codevisor CLI support", () => {
   it("detects system units, user units, and the pidfile fallback", async () => {

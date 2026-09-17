@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "./config-sync.js"
 

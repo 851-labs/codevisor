@@ -1,4 +1,5 @@
 import { backgroundTerminalKey, DEFAULT_PROMOTION_DELAY_MS } from "@codevisor/agent-runtime"
+
 import { firstLine } from "./internal.js"
 import type { CodexCommandTerminal, CodexSession } from "./session.js"
 

@@ -1,8 +1,10 @@
-import { makeTerminalManager, type TerminalProcess } from "@codevisor/terminal"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { makeTerminalManager, type TerminalProcess } from "@codevisor/terminal"
 import { afterEach, describe, expect, it } from "vitest"
+
 import { makeTerminalPersistence } from "./terminal-persistence.js"
 
 const noopProcess: TerminalProcess = {

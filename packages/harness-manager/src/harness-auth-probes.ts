@@ -1,7 +1,8 @@
-import type { GrokAuth } from "./grok-auth.js"
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
+
+import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import {
   AUTH_CACHE_MS,

@@ -1,7 +1,8 @@
 import type { DiscoverRemotePluginResult, PluginManifest } from "@codevisor/api"
-import type { PluginInstallSourceReceipt } from "./plugin-receipt.js"
+
 import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
 import { pluginConsentKey } from "./plugin-consent.js"
+import type { PluginInstallSourceReceipt } from "./plugin-receipt.js"
 
 export const describePlugin = (
   manifest: PluginManifest,

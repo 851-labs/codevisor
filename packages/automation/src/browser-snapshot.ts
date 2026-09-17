@@ -1,5 +1,7 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
+
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import { pageInformation, type BrowserRuntime, type PageHandle } from "./browser-cdp-engine.js"
 
 export interface AXValue {

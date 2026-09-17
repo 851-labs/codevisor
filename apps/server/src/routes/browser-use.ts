@@ -1,6 +1,8 @@
-import { UpdateBrowserUseConfigurationRequest as UpdateBrowserUseConfigurationRequestSchema } from "@codevisor/api"
 import { readFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
+
+import { UpdateBrowserUseConfigurationRequest as UpdateBrowserUseConfigurationRequestSchema } from "@codevisor/api"
+
 import {
   HttpFailure,
   readSchema,

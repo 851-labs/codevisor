@@ -1,7 +1,9 @@
 import { existsSync, statSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import { scratchWorkspacesRoot } from "./paths.js"
+
 import type Database from "better-sqlite3"
+
+import { scratchWorkspacesRoot } from "./paths.js"
 
 export const detectGitLocation = (folder: string): boolean => {
   try {

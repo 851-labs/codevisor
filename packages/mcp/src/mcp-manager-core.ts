@@ -1,6 +1,6 @@
-import type { McpConnectionState, McpServer } from "@codevisor/api"
-import type { McpServerRecord } from "@codevisor/db"
 import { createHash } from "node:crypto"
+
+import type { McpConnectionState, McpServer } from "@codevisor/api"
 import {
   makeBrowserSetupBroker,
   makeBrowserUseProvider,
@@ -9,6 +9,8 @@ import {
   makeComputerUseProvider,
   type AutomationToolProvider
 } from "@codevisor/automation"
+import type { McpServerRecord } from "@codevisor/db"
+
 import {
   BUILTIN_MCP_SERVERS,
   type BuiltinMcpId,

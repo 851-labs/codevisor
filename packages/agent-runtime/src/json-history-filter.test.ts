@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { JsonHistoryFilter } from "./json-history-filter.js"
 
 describe("Codex history filtering", () => {

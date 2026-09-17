@@ -3,16 +3,18 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
+
+import type { ScreenSharingVNCConfig } from "../server-context-types.js"
+import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
   vncDisplayId,
   vncScreenSharing
 } from "./screen-sharing-vnc.js"
-import type { ScreenSharingVNCConfig } from "../server-context-types.js"
-import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
 
 describe("VNC screen sharing configuration", () => {
   it("reads the operator's file and names the desktop by default", () => {

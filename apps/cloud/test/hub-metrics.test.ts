@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { HubMetrics } from "../src/hub-metrics.js"
 
 const capture = (): { lines: Record<string, unknown>[]; metrics: HubMetrics; tick: () => void } => {

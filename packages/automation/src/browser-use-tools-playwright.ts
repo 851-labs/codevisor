@@ -1,4 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+
 import { objectSchema, locatorProperty, locatorSchema, tool } from "./browser-use-tool-schema.js"
 
 /// Playwright-style locator operations.

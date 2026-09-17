@@ -1,6 +1,7 @@
+import { AgentRuntimeError, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { AgentRuntimeError, type RuntimeEmit } from "@codevisor/agent-runtime"
+
 import { testAcpConnection, type AcpHarnessLaunchRequest } from "./index.js"
 import { FakeConnection, makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 

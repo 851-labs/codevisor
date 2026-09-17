@@ -1,5 +1,6 @@
 import { readFile, realpath, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+
 import type { SkillsInstallContext } from "./skills-install-context.js"
 import { isPathSafe, parseFrontmatter, SkillsError } from "./skills-store.js"
 

@@ -1,11 +1,12 @@
 import type { Query } from "@anthropic-ai/claude-agent-sdk"
-import { isoTimestamp, type SessionGoal } from "@codevisor/api"
 import {
   adapterPromise,
   normalizePromptInput,
   type AgentSessionHandle,
   type CancelResult
 } from "@codevisor/agent-runtime"
+import { isoTimestamp, type SessionGoal } from "@codevisor/api"
+
 import { claudeContent } from "./attachments.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { pauseGoalForForcedCancellation, pushGoalCommand } from "./goals.js"

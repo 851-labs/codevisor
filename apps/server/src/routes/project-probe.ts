@@ -1,8 +1,10 @@
+import { dirname } from "node:path"
+
 import type { Project } from "@codevisor/api"
 import { repoIdentityKey } from "@codevisor/api"
 import { scratchWorkspacesRoot } from "@codevisor/db"
-import { dirname } from "node:path"
 import { isGitWorkTree } from "@codevisor/worktrees"
+
 import { existingDirectory } from "../server-context.js"
 
 /// Annotates this server's locations with whether their folder is a git

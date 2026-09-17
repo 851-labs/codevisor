@@ -3,16 +3,17 @@ import { createHash } from "node:crypto"
 import { mkdir, realpath, rm } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+
 import {
   readProcessTable,
   processIdentity,
   stopProcesses,
   trackProcessTree
 } from "../packages/processes/src/index.mjs"
-import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
-import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import { sweepStaleContainers } from "./dev-containers.mjs"
+import { developmentLayout, iosDevelopmentBundleIdentifier } from "./dev-layout.mjs"
+import { claimDevelopmentRunner, releaseDevelopmentRunner } from "./dev-runtime.mjs"
 import { requireIOSSimulator, simctl, readJSON } from "./ios-simulator-state.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))

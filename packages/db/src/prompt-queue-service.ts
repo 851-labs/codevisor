@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto"
+
 import type { PromptQueueItem } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { randomUUID } from "node:crypto"
+
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { listPromptQueueSync, promptQueueFromRow, serializeAttachments } from "./row-mappers.js"
 import type { PromptQueueRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makePromptQueueService = (
   context: ServiceContext

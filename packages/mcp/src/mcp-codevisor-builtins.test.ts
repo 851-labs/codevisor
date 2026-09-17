@@ -1,14 +1,15 @@
+import { createServer } from "node:http"
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
-import { createServer } from "node:http"
 import { afterEach, describe, expect, it } from "vitest"
+
 import {
   unavailableBrowserProvider,
   unavailableComputerProvider
 } from "./mcp-automation-builtins.js"
-import { makeMcpManager } from "./mcp-manager.js"
 import {
   cleanupMcpManagerTests,
   listen,
@@ -16,6 +17,7 @@ import {
   run,
   testManager
 } from "./mcp-manager-test-support.js"
+import { makeMcpManager } from "./mcp-manager.js"
 
 afterEach(cleanupMcpManagerTests)
 

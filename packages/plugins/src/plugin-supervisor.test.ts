@@ -1,7 +1,9 @@
-import * as http from "node:http"
 import { EventEmitter } from "node:events"
+import * as http from "node:http"
 import { createServer, type Server } from "node:http"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import type { InstalledPlugin } from "./plugin-store.js"
 import {
   makePluginSupervisor,

@@ -6,9 +6,10 @@ import {
   type AcpConnectionExtensionContext,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
-import type { SessionConfigOption } from "@codevisor/api"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
+
 import {
   cursorClientCapabilities,
   cursorConfigSelection,

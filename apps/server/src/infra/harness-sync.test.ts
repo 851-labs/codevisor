@@ -1,14 +1,14 @@
 import type { CustomHarnessSpec } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
+import { setHarnessOverride } from "./harness-preferences.js"
 import {
   HARNESSES_SYNC_NAMESPACE,
   reconcileHarnesses,
   type HarnessSyncDeps,
   type LocalHarnessState
 } from "./harness-sync.js"
-
-import { setHarnessOverride } from "./harness-preferences.js"
 
 const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 

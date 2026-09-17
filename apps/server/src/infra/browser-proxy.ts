@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { connect, type Socket } from "node:net"
+
 import {
   forwardBrowserHTTP,
   forwardBrowserUpgrade,

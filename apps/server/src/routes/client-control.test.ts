@@ -1,9 +1,11 @@
 import { once } from "node:events"
-import { WebSocket } from "ws"
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import { describe, expect, it } from "vitest"
+import { WebSocket } from "ws"
+
 import { jsonRequest, start } from "../test-support.js"
 import { routeClientControl } from "./client-control.js"
-import type { IncomingMessage, ServerResponse } from "node:http"
 
 describe("client control routes", () => {
   it("reports unavailable control infrastructure", async () => {

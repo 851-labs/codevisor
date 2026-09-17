@@ -1,12 +1,14 @@
-import { afterEach, expect, it } from "vitest"
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises"
+import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { makeBrowserUseProvider } from "@codevisor/automation"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { createServer } from "node:http"
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { makeBrowserUseProvider } from "@codevisor/automation"
+import { afterEach, expect, it } from "vitest"
+
 import {
   cleanupMcpManagerTests,
   directories,

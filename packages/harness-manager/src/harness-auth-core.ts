@@ -1,3 +1,8 @@
+import { chmod, mkdir, readFile } from "node:fs/promises"
+import { join } from "node:path"
+
+import { spawnClaudeAuthClient, type ClaudeAuthClient } from "@codevisor/adapter-claude"
+import type { spawnCodexClient } from "@codevisor/adapter-codex"
 import {
   clampFailureDetail,
   harnessCatalog,
@@ -6,12 +11,9 @@ import {
   type HarnessAccountContext,
   type HarnessDefinition
 } from "@codevisor/agent-runtime"
-import { spawnClaudeAuthClient, type ClaudeAuthClient } from "@codevisor/adapter-claude"
-import type { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount, HarnessAuthMethod } from "@codevisor/api"
 import type { HarnessAccountRecord, UpdateHarnessAccountAuthRequest } from "@codevisor/db"
-import { chmod, mkdir, readFile } from "node:fs/promises"
-import { join } from "node:path"
+
 import {
   defaultClaudeConfigPath,
   ensureSharedClaudeConversations

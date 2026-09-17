@@ -1,10 +1,12 @@
-import { nextRunningState } from "./test-support.js"
-import { advancingClock } from "./test-support.js"
 import { renameSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
-import type { PluginStateEvent } from "./plugins-manager.js"
+
 import { MANAGED_PLUGIN_MARKER, MANAGED_PLUGIN_MARKER_CONTENT } from "./plugin-store.js"
+import type { PluginStateEvent } from "./plugins-manager.js"
+import { nextRunningState } from "./test-support.js"
+import { advancingClock } from "./test-support.js"
 import {
   exampleManifest,
   fakeSpawn,

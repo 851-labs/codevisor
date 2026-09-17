@@ -1,14 +1,15 @@
 import type { Harness } from "@codevisor/api"
+
 import { makeBundledAppOperations } from "./harness-lifecycle-bundled-app.js"
 import { makeHarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { makeHarnessUpdateDetection } from "./harness-lifecycle-detection.js"
 import { makeHarnessOperationRunner } from "./harness-lifecycle-execution.js"
-import { makeHarnessUpdateGate } from "./harness-lifecycle-updates.js"
-import { makeHarnessUninstall } from "./harness-lifecycle-uninstall.js"
 import type {
   HarnessLifecycleManager,
   HarnessLifecycleManagerConfig
 } from "./harness-lifecycle-types.js"
+import { makeHarnessUninstall } from "./harness-lifecycle-uninstall.js"
+import { makeHarnessUpdateGate } from "./harness-lifecycle-updates.js"
 
 export { appBundlePath } from "./harness-lifecycle-support.js"
 export type {

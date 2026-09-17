@@ -1,3 +1,4 @@
+import { unlinkSync } from "node:fs"
 /// Unix-socket host for out-of-process background commands (see bg-wrap.ts).
 ///
 /// A wrapper process connects, introduces itself with a `hello` frame naming
@@ -5,7 +6,7 @@
 /// the process as an external terminal and forwards terminal input/kill
 /// back down the socket. One connection == one background process.
 import { createServer, type Server, type Socket } from "node:net"
-import { unlinkSync } from "node:fs"
+
 import { trackProcessTree } from "@codevisor/processes"
 
 /// Structural match for the agent-runtime's BackgroundTerminalRegistry —

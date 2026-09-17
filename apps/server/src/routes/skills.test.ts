@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
 import { SkillsError } from "@codevisor/skills"
+import { describe, expect, it } from "vitest"
+
 import {
   jsonRequest,
   makeServices,

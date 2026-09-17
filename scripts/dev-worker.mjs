@@ -4,9 +4,8 @@ import { join } from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
 
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
-import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
+import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
 import {
   applyCloudDevMigrations,
   prepareCloudSession,
@@ -41,9 +40,10 @@ import {
   localDevelopmentEnvironment,
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
+import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 import { delay, describeExit, waitForExit, waitForHealth } from "./dev-shared.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
 
 const repoRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const arguments_ = process.argv.slice(2)

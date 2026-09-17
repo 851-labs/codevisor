@@ -1,11 +1,12 @@
 // Exercise the production UIKit transcript with fixture rows and no app/server.
 // Stage the app-owned surface just as the macOS transcript harness does.
 import { cp, mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+
 import { developmentLayout } from "./dev-layout.mjs"
-import { runXcodebuild } from "./xcodebuild.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
 
 const root = await realpath(fileURLToPath(new URL("..", import.meta.url)))
 const simulator = await requireIOSSimulator(root)

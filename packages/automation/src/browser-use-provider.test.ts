@@ -1,9 +1,11 @@
-import { observeCdp } from "./browser-cdp-test-support.js"
-import { createServer } from "node:http"
 import { rmSync, existsSync, mkdtempSync, writeFileSync } from "node:fs"
+import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { pointerOverlayExpression } from "./browser-cursor.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 

@@ -2,17 +2,19 @@ import { createHash } from "node:crypto"
 import { rmSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it } from "vitest"
-import {
-  browserKeyDescription,
-  browserUseTools,
-  managedBrowserSandboxArguments
-} from "./browser-use-provider.js"
+
 import {
   browserExtensionInstallation,
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_ID
 } from "./browser-extension-relay.js"
+import {
+  browserKeyDescription,
+  browserUseTools,
+  managedBrowserSandboxArguments
+} from "./browser-use-provider.js"
 
 const directories: string[] = []
 

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest"
 import {
   normalizePromptInput,
   withAttachmentNotes,
   type PromptAttachmentInput
 } from "@codevisor/agent-runtime"
+import { describe, expect, it } from "vitest"
+
 import { acpPrompt } from "./index.js"
 
 describe("prompt attachments", () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { availableDevelopmentWorktreeName, foodWorktreeNames } from "./food-worktree-names.js"
 
 describe("development food worktree names", () => {

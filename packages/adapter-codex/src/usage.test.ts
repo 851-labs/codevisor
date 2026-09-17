@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { codexUsageLimitsFrom } from "./usage.js"
 
 describe("Codex account usage", () => {

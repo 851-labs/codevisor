@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process"
-import { processIdentity, stopProcessTree, trackProcessTree } from "@codevisor/processes"
+
 import { childStdioEndpoint, makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { NdjsonTransport } from "@codevisor/agent-runtime"
+import { processIdentity, stopProcessTree, trackProcessTree } from "@codevisor/processes"
 
 /// Minimal JSON-RPC 2.0 client over newline-delimited JSON, the codex
 /// app-server's stdio transport (the `jsonrpc` header is omitted on the wire).

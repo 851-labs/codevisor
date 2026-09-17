@@ -1,8 +1,10 @@
-import type { PluginManifestV2 } from "@codevisor/api"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
+
+import type { PluginManifestV2 } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
+
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
 import { PLUGIN_INSTALL_RECEIPT_FILENAME, readPluginInstallReceipt } from "./plugin-receipt.js"
 import { MANAGED_PLUGIN_MARKER, MANAGED_PLUGIN_MARKER_CONTENT } from "./plugin-store.js"

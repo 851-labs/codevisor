@@ -1,12 +1,11 @@
+import { execFile } from "node:child_process"
+import { readFileSync } from "node:fs"
+
 import {
   getSessionInfo as sdkGetSessionInfo,
   listSessions as sdkListSessions,
   query as sdkQuery
 } from "@anthropic-ai/claude-agent-sdk"
-import { isoTimestamp } from "@codevisor/api"
-import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { Effect } from "effect"
 import {
   adapterPromise,
   listClaudeAgentSessions,
@@ -20,6 +19,9 @@ import {
   type LoadedAgentSession,
   type ProviderEnvironment
 } from "@codevisor/agent-runtime"
+import { isoTimestamp } from "@codevisor/api"
+import { Effect } from "effect"
+
 import { metadataFor } from "./models.js"
 import { makeClaudeSessionHandle } from "./session-handle.js"
 import type { ClaudeQueryFn } from "./session.js"

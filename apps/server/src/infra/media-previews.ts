@@ -1,11 +1,13 @@
-import { Worker } from "node:worker_threads"
-import { trimMediaPreviewCache } from "./media-preview-cache.js"
-import { createHash, randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
+import { createHash, randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises"
 import { extname, join } from "node:path"
+import { Worker } from "node:worker_threads"
+
 import ffmpeg from "ffmpeg-static"
 import sharp from "sharp"
+
+import { trimMediaPreviewCache } from "./media-preview-cache.js"
 
 const inFlight = new Map<string, Promise<Buffer>>()
 const waiters: Array<() => void> = []

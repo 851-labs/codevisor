@@ -1,8 +1,9 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { attachEventSocket } from "./events.js"
+
 import { makeEventFanout } from "../server.js"
 import { run } from "../test-support.js"
+import { attachEventSocket } from "./events.js"
 
 describe("durable session checkpoints", () => {
   afterEach(() => vi.useRealTimers())

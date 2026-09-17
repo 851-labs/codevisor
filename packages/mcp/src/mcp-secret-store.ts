@@ -1,11 +1,12 @@
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+
+import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
   OAuthClientInformationMixed,
   OAuthTokens
 } from "@modelcontextprotocol/sdk/shared/auth.js"
-import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js"
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
 
 export interface StoredOAuth {
   readonly clientInformation?: OAuthClientInformationMixed | undefined

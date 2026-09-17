@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { resolveNativeConfigPath } from "./native-paths.js"
 
 describe("resolveNativeConfigPath", () => {

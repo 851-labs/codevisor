@@ -1,9 +1,11 @@
-import type { PluginManifest, PluginRegistryEntry, PluginRegistryIndex } from "@codevisor/api"
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+import type { PluginManifest, PluginRegistryEntry, PluginRegistryIndex } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
-import type { PluginInstaller } from "./plugin-install.js"
+
 import type { PreparedPluginUpdate, PreparePluginUpdateRequest } from "./plugin-install-types.js"
+import type { PluginInstaller } from "./plugin-install.js"
 import { PLUGIN_INSTALL_RECEIPT_FILENAME } from "./plugin-receipt.js"
 import type { InstalledPlugin } from "./plugin-store.js"
 import { makePluginUpdates } from "./plugin-updates.js"

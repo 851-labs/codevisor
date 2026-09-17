@@ -1,5 +1,4 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Effect } from "effect"
 import type {
   AgentRuntimeError,
   AgentSessionMetadata,
@@ -11,6 +10,7 @@ import type {
   ToolGatewayConfig
 } from "@codevisor/agent-runtime"
 import type { SessionGoal } from "@codevisor/api"
+import { Effect } from "effect"
 
 export const acpProtocolVersion = acp.PROTOCOL_VERSION
 

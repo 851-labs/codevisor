@@ -1,9 +1,11 @@
-import { makeGitRepo, testTempDir } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
+import { makeGitRepo, testTempDir } from "./git-test-support.js"
 import {
   CloneError,
   GitError,

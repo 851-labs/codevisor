@@ -1,6 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk"
 import type { NewSessionResponse } from "@agentclientprotocol/sdk"
-import type { SessionConfigOption } from "@codevisor/api"
 import {
   adapterPromise,
   clampFailureDetail,
@@ -11,6 +10,8 @@ import {
   type QuestionAnswer,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
+import type { SessionConfigOption } from "@codevisor/api"
+
 import {
   acpConfigSelection,
   normalizeAcpConfigOptions,

@@ -1,9 +1,11 @@
-import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import { Effect } from "effect"
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
+import { Effect } from "effect"
 import { afterEach, expect, it } from "vitest"
+
 import {
   reconcileSharedOpenCodeProfiles,
   sharedProfileCredentialSource

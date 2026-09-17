@@ -1,5 +1,6 @@
 import type { FetchLike } from "@codevisor/cloud-client"
 import { describe, expect, it, vi } from "vitest"
+
 import {
   authLoginCommand,
   authLogoutCommand,

@@ -1,6 +1,6 @@
-import { projectTranscriptState } from "./transcript-state.js"
 import type { AttachmentRef } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import {
   chatRoute,
   chatState,
@@ -19,6 +19,7 @@ import {
 } from "./event-payloads.js"
 import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import type { SessionEventRow } from "./rows.js"
+import { projectTranscriptState } from "./transcript-state.js"
 
 export const projectChatEvent = (
   sqlite: Database.Database,

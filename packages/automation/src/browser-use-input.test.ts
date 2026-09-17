@@ -1,8 +1,10 @@
-import { observeCdp } from "./browser-cdp-test-support.js"
 import { rmSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []

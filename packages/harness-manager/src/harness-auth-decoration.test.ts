@@ -1,12 +1,14 @@
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { harnessCatalog, type AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { Harness } from "@codevisor/api"
 import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { makeHarnessAuthManager } from "./harness-auth.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)

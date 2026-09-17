@@ -7,6 +7,7 @@ import {
   type SyncTimestampValue
 } from "@codevisor/sync"
 import { Effect } from "effect"
+
 import { effectiveHarnessPreference, readHarnessSettings } from "./harness-preferences.js"
 
 /// Shared desired settings are explicit. Machine overrides take precedence;

@@ -1,5 +1,7 @@
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto"
+
 import { describe, expect, it } from "vitest"
+
 import {
   applyAppBundleSwap,
   verifyEdDSASignature,

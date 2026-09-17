@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import {
   ClientControlFrame,
   decode,
@@ -5,8 +7,8 @@ import {
   type ClientControlCommand,
   type ConnectedClient
 } from "@codevisor/api"
-import { randomUUID } from "node:crypto"
 import type { WebSocket } from "ws"
+
 import { HttpFailure } from "../server-context.js"
 
 interface Pending {

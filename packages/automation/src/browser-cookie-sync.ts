@@ -1,6 +1,7 @@
 import { browserCookieKey, type BrowserCookie, type BrowserCookieMutation } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
+
 import type { CdpConnection } from "./browser-cdp.js"
 
 const normalize = (raw: Record<string, unknown>): BrowserCookie | undefined => {

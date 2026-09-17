@@ -1,6 +1,6 @@
-import { repoIdentityKey } from "@codevisor/api"
 import { dirname } from "node:path"
-import { scratchWorkspacesRoot } from "./paths.js"
+
+import { repoIdentityKey } from "@codevisor/api"
 import type {
   ArchivedWorktree,
   AttachmentRef,
@@ -17,7 +17,9 @@ import type {
   Worktree
 } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import { sessionConfigSelectionsFromRaw, withChatItemId } from "./event-payloads.js"
+import { scratchWorkspacesRoot } from "./paths.js"
 import { resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,

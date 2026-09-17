@@ -1,8 +1,10 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import sharp from "sharp"
 import { expect, it, onTestFinished } from "vitest"
+
 import { start } from "../test-support.js"
 
 it("serves bounded file and filesystem previews without changing original download bytes", async () => {

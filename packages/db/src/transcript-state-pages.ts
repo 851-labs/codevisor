@@ -1,13 +1,14 @@
-import { readTranscriptText } from "./transcript-state.js"
+import type { TranscriptItemDetails } from "@codevisor/api"
+import type Database from "better-sqlite3"
+
+import type { JsonRecord } from "./event-payloads.js"
 import {
   transcriptBodyResource,
   transcriptTextResource,
   readToolSnapshot,
   inlineTranscriptFields
 } from "./transcript-bodies.js"
-import type { TranscriptItemDetails } from "@codevisor/api"
-import type Database from "better-sqlite3"
-import type { JsonRecord } from "./event-payloads.js"
+import { readTranscriptText } from "./transcript-state.js"
 
 const maxPageBytes = 96 * 1024
 type Cursor = { position: number; key: string; reverse?: boolean }

@@ -1,7 +1,9 @@
-import { Effect } from "effect"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import { DatabaseError, makeDatabase, worktreePath } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 

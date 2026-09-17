@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   AnswerHarnessAuthRequest as AnswerHarnessAuthRequestSchema,
   AnswerOpenCodeAuthRequest as AnswerOpenCodeAuthRequestSchema,
@@ -8,7 +10,7 @@ import {
   StartPiAuthRequest as StartPiAuthRequestSchema,
   UpdateHarnessAccountRequest as UpdateHarnessAccountRequestSchema
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   HttpFailure,
   matchRoute,

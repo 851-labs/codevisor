@@ -1,11 +1,15 @@
-import type { DataUpgradeProgress } from "@codevisor/api"
-import { credentialFerrySources } from "@codevisor/harness-manager"
-import { makeAgentRuntime, resolveShellEnv } from "@codevisor/agent-runtime"
-import { makeAcpProvider, testAcpConnection } from "@codevisor/adapter-acp"
+import { execFile } from "node:child_process"
+import { hostname } from "node:os"
+import { dirname, join, resolve } from "node:path"
+import { promisify } from "node:util"
+
+import { makeAcpProvider } from "@codevisor/adapter-acp"
 import { makeClaudeProvider } from "@codevisor/adapter-claude"
 import { makeCodexProvider } from "@codevisor/adapter-codex"
 import { makeCursorProvider } from "@codevisor/adapter-cursor"
 import { makeGrokBuildProvider } from "@codevisor/adapter-grok-build"
+import { makeAgentRuntime, resolveShellEnv } from "@codevisor/agent-runtime"
+import type { DataUpgradeProgress } from "@codevisor/api"
 import {
   makeAttachmentStore,
   makeDatabase,
@@ -13,27 +17,10 @@ import {
   migrateAttachmentBlobs,
   worktreesRoot
 } from "@codevisor/db"
-import { makeTerminalManager } from "@codevisor/terminal"
-import { Effect } from "effect"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-import { hostname } from "node:os"
-import { dirname, join, resolve } from "node:path"
-import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
-import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
-import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
-import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
-import {
-  customHarnessDefinition,
-  loadCustomHarnesses,
-  saveCustomHarnesses
-} from "@codevisor/harness-manager"
-import type { CustomHarnessLoadResult, CustomHarnessStore } from "@codevisor/harness-manager"
+import { credentialFerrySources } from "@codevisor/harness-manager"
+import { loadCustomHarnesses } from "@codevisor/harness-manager"
+import type { CustomHarnessLoadResult } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
-import { defaultServerConfig, startCodevisorServer } from "./server.js"
-import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
-import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
-import { restoreTerminalPersistence, screenSharingProvider } from "./serve-boot.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager, makeNativeMcpManager } from "@codevisor/mcp"
 import {
@@ -43,8 +30,19 @@ import {
   resolvePluginRegistryUrl
 } from "@codevisor/plugins"
 import { makeSkillsManager, managedAttachmentSkill } from "@codevisor/skills"
-import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
 import { makeBlobStore } from "@codevisor/sync"
+import { makeTerminalManager } from "@codevisor/terminal"
+import { Effect } from "effect"
+
+import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
+import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
+import { makeCustomHarnessStore } from "./infra/custom-harness-store.js"
+import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
+import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
+import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
+import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
+import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
+import { restoreTerminalPersistence, screenSharingProvider } from "./serve-boot.js"
 import {
   SERVER_PROCESS_TITLE,
   stabilizeServerWorkingDirectory,
@@ -59,8 +57,9 @@ import {
   backgroundTerminalIntegration,
   resolveServeModes
 } from "./serve-boot.js"
-import { makeStartupReporter, type StartupReporter } from "./startup-progress.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
+import { defaultServerConfig, startCodevisorServer } from "./server.js"
+import { makeStartupReporter, type StartupReporter } from "./startup-progress.js"
 export {
   bundledBuildMetadata,
   bundledVersion,
@@ -369,26 +368,7 @@ export const runServe = (
               mcp
             })
           )
-    /// Custom-harness persistence + handshake probe for the /v1/harnesses/
-    /// custom routes. The file stays the source of truth; replace() swaps the
-    /// runtime catalog live so no restart is needed.
-    const customHarnessStore: CustomHarnessStore = {
-      list: async () => (await loadCustomHarnesses(codevisorRoot())).specs,
-      replace: async (specs) => {
-        await saveCustomHarnesses(codevisorRoot(), specs)
-        agents.setExtraHarnesses(specs.map(customHarnessDefinition))
-        await Effect.runPromise(agents.refreshEnvironment)
-      },
-      test: async (spec) =>
-        testAcpConnection(
-          {
-            args: spec.args === undefined ? [] : [...spec.args],
-            command: spec.command,
-            ...(spec.env === undefined ? {} : { env: spec.env })
-          },
-          { env: await resolveShellEnv() }
-        )
-    }
+    const customHarnessStore = makeCustomHarnessStore(agents)
     const lifecycle = initializeOptionalServerFeature("Harness lifecycle", () => {
       const manager = makeHarnessLifecycleManager({
         agents,

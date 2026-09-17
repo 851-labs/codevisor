@@ -1,6 +1,6 @@
-import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { GoalStatus, QuestionSpec, SessionGoal, SessionModeState } from "@codevisor/api"
 
 export type GrokMappedQuestion<Response> = AcpMappedQuestion<Response>
 

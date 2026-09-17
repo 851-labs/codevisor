@@ -1,8 +1,9 @@
 import type { EventEnvelope } from "@codevisor/api"
 import { makeDatabase } from "@codevisor/db"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { appendAndPublish, makeEventFanout, run } from "../server-context.js"
+
 import { publishPromptQueue } from "../routes/prompt-queue.js"
+import { appendAndPublish, makeEventFanout, run } from "../server-context.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
 describe("queue completion notifications", () => {

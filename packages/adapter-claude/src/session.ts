@@ -5,13 +5,14 @@ import type {
   SDKMessage,
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
-import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 import type {
   CancelResult,
   PromptInput,
   QuestionAnswer,
   RuntimeEmit
 } from "@codevisor/agent-runtime"
+import type { QuestionSpec, SessionGoal } from "@codevisor/api"
+
 import type { Deferred } from "./internal.js"
 
 /// A prompt accepted while another turn was still active. It is NOT bound to

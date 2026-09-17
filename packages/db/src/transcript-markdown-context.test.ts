@@ -1,5 +1,6 @@
 import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
+
 import { transcriptMarkdownContext } from "./transcript-markdown-context.js"
 
 describe("inline transcript code continuation", () => {

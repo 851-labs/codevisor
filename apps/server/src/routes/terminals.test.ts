@@ -1,5 +1,6 @@
-import { WebSocket } from "ws"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+import { WebSocket } from "ws"
+
 import { jsonRequest, start } from "../test-support.js"
 
 const recordMessages = (socket: WebSocket) => {

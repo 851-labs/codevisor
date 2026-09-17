@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { diffStatsFromTexts, diffStatsFromUnified, lineCount, sumDiffStats } from "./diff-stats.js"
 
 describe("diff-stats", () => {

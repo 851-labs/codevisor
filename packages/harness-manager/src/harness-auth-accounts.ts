@@ -1,7 +1,9 @@
-import type { HarnessAccount } from "@codevisor/api"
-import { chmod, mkdir, rm } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
+import { chmod, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
+
+import type { HarnessAccount } from "@codevisor/api"
+
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthDecoration } from "./harness-auth-decoration.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"

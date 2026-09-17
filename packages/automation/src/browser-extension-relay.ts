@@ -1,3 +1,4 @@
+import { spawn, spawnSync } from "node:child_process"
 import {
   cpSync,
   existsSync,
@@ -9,9 +10,10 @@ import {
   writeFileSync
 } from "node:fs"
 import { homedir } from "node:os"
-import { spawn, spawnSync } from "node:child_process"
 import { dirname, join, relative, sep } from "node:path"
+
 import type WebSocket from "ws"
+
 import { CdpConnection } from "./browser-cdp.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 

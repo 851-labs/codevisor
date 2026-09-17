@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
+
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
+import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
 
 function fixture(overrides = {}) {
   const calls = []

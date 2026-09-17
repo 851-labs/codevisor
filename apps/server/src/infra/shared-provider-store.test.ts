@@ -1,5 +1,6 @@
-import { describe, expect, it, afterEach, beforeEach, vi } from "vitest"
 import { parseProviderOAuth } from "@codevisor/harness-manager"
+import { describe, expect, it, afterEach, beforeEach, vi } from "vitest"
+
 import { fleet } from "./shared-accounts-test-support.js"
 import { providerRecord, providerSlot } from "./shared-provider-store.js"
 

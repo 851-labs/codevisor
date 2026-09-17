@@ -1,9 +1,11 @@
-import { advancingClock } from "./test-support.js"
 import { existsSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import type { PluginStateEvent } from "./plugins-manager.js"
+import { advancingClock } from "./test-support.js"
 import { exampleManifest, fakeSpawn, makeDir, makeManager } from "./test-support.js"
 
 /// Manager-level wiring for the install pipeline: the installer runs behind

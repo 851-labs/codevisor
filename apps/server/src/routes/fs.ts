@@ -1,12 +1,13 @@
-import { mediaPreview } from "../infra/media-previews.js"
-import { FsMkdirRequest, type FsListResponse } from "@codevisor/api"
 import { createReadStream, existsSync, statSync, type Stats } from "node:fs"
 import { mkdir, readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
-import { routeFileDocuments } from "./file-documents.js"
+
+import { FsMkdirRequest, type FsListResponse } from "@codevisor/api"
+
+import { mediaPreview } from "../infra/media-previews.js"
 import {
   HttpFailure,
   readSchema,
@@ -15,6 +16,7 @@ import {
   writeJson,
   type CodevisorServerServices
 } from "../server-context.js"
+import { routeFileDocuments } from "./file-documents.js"
 
 const filesystemMimeTypes: Readonly<Record<string, string>> = {
   ".aac": "audio/aac",

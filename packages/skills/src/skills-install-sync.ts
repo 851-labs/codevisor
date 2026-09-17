@@ -1,6 +1,8 @@
-import type { SkillsScan } from "@codevisor/api"
 import { lstat, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+
+import type { SkillsScan } from "@codevisor/api"
+
 import { resolveNativeConfigPath } from "./native-paths.js"
 import { assertSafeChild, safeRemove, type SkillsInstallContext } from "./skills-install-context.js"
 import type { ManagedSkillSpec } from "./skills-manager.js"

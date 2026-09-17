@@ -1,5 +1,6 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Schema } from "effect"
+
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
 import {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import type { CliDeps, ExecResult } from "./support.js"
 import { applySyncParticipation, syncCommand } from "./sync.js"
 

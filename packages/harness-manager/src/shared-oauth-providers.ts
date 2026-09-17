@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { readFile, realpath } from "node:fs/promises"
 import { join, resolve } from "node:path"
+
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 import {
   SharedCredentialError,

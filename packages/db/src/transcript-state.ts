@@ -1,7 +1,8 @@
-import { mergeTranscriptFields, transcriptTextResource } from "./transcript-bodies.js"
 import type Database from "better-sqlite3"
+
 import { jsonRecord, payloadText, type JsonRecord } from "./event-payloads.js"
 import type { SessionEventRow } from "./rows.js"
+import { mergeTranscriptFields, transcriptTextResource } from "./transcript-bodies.js"
 
 // Small, appendable blocks keep streaming writes independent of answer length.
 export const transcriptTextBlockSize = 8192

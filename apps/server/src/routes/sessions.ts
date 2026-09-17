@@ -1,11 +1,13 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import type { HarnessUsageLimits } from "@codevisor/api"
 import {
   MarkSessionReadRequest as MarkSessionReadRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
   UpdateSessionRequest as UpdateSessionRequestSchema
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
 import { gitBranchDiffTotals } from "@codevisor/worktrees"
+
 import {
   appendAndPublish,
   getProjectOrFail,
@@ -21,13 +23,13 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { routeSessionActions } from "./session-actions.js"
 import {
   applySessionUpdate,
   createSessionIfMissing,
   findSession,
   resolveSessionCwdOrFail
 } from "./session-workspace.js"
-import { routeSessionActions } from "./session-actions.js"
 import { withUpdateGate } from "./update-gate.js"
 
 export {

@@ -1,9 +1,10 @@
-/// <reference types="vite/client" />
-import type { ReactNode } from "react"
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router"
 import { RootProvider } from "fumadocs-ui/provider/tanstack"
+/// <reference types="vite/client" />
+import type { ReactNode } from "react"
 
 import { Analytics } from "../components/analytics"
+
 import appCss from "../styles/app.css?url"
 
 export const Route = createRootRoute({

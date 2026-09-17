@@ -2,7 +2,9 @@ import { execFile } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
 import { it, onTestFinished, expect } from "vitest"
+
 import { openCodeAuthPlugin, piAuthExtension } from "./provider-auth-runtime.js"
 
 it("routes native refresh hooks through the broker and never sends opaque grants upstream", async () => {

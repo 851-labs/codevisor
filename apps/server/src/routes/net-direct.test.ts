@@ -1,12 +1,14 @@
-import type { CloudSocket } from "@codevisor/cloud-client"
 import { EventEmitter } from "node:events"
 import type { ServerResponse } from "node:http"
+
+import type { CloudSocket } from "@codevisor/cloud-client"
 import { describe, expect, it } from "vitest"
 import { WebSocket } from "ws"
-import { adaptDirectSocket, directHosts, routeNetDirect } from "./net-direct.js"
-import { defaultServerConfig, startCodevisorServer } from "../server.js"
+
 import type { CodevisorServerConfig } from "../server-context.js"
+import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers } from "../test-support.js"
+import { adaptDirectSocket, directHosts, routeNetDirect } from "./net-direct.js"
 
 const interfaces = () => ({
   lo0: [{ address: "127.0.0.1", family: "IPv4", internal: true }],

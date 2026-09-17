@@ -1,5 +1,7 @@
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { createHash } from "node:crypto"
+
+import type { RuntimeEvent } from "@codevisor/agent-runtime"
+
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { attachmentRef, captureAssistantFile } from "./assistant-files.js"
 

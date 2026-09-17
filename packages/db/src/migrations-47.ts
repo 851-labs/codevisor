@@ -1,4 +1,5 @@
 import { initialWorkspacePosition } from "@codevisor/api"
+
 import type { Migration } from "./migration-types.js"
 
 export const migrations47: ReadonlyArray<Migration> = [

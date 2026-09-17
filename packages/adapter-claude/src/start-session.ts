@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto"
+
 import type {
   getSessionInfo as sdkGetSessionInfo,
   Options as ClaudeOptions
 } from "@anthropic-ai/claude-agent-sdk"
-import { randomUUID } from "node:crypto"
 import {
   runtimeError,
   type CreateSessionOptions,
@@ -12,6 +13,7 @@ import {
   type RuntimeEmit,
   type ToolGatewayConfig
 } from "@codevisor/agent-runtime"
+
 import { emitBackgroundTasks, wrapBackgroundBash } from "./background-tasks.js"
 import { emitAuthoritativeDiff } from "./diff-stats.js"
 import { handleMessage } from "./messages.js"

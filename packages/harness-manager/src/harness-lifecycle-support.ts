@@ -1,8 +1,10 @@
-import type { HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
 import { execFile, spawn } from "node:child_process"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
+import type { HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
+
 import type { LifecycleProcess } from "./harness-lifecycle-types.js"
 
 const execFileAsync = promisify(execFile)

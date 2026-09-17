@@ -1,3 +1,6 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
+import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
 import type {
   BrowserPreference,
   BrowserUseConfiguration,
@@ -7,12 +10,11 @@ import type {
   McpTool,
   UpdateMcpServerRequest
 } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
-import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import type WebSocket from "ws"
 import type { AutomationToolProvider, BrowserUseProvider } from "@codevisor/automation"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { ManagedSkillSpec } from "@codevisor/skills"
+import type WebSocket from "ws"
+
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
 

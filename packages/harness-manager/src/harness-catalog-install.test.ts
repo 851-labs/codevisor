@@ -1,6 +1,6 @@
 import { harnessCatalog, type HarnessDefinition } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it } from "vitest"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
+
 import { installCommand, upgradeCommand } from "./harness-lifecycle-support.js"
 import {
   agentsStub,
@@ -13,6 +13,7 @@ import {
   makeDb,
   waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 

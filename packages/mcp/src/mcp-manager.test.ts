@@ -1,12 +1,13 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { createServer } from "node:http"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { automationSkillPath, NodeStreamableHttpTransport } from "./mcp-manager.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   cleanupMcpManagerTests,
   run,
@@ -15,6 +16,7 @@ import {
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
+import { automationSkillPath, NodeStreamableHttpTransport } from "./mcp-manager.js"
 
 afterEach(cleanupMcpManagerTests)
 

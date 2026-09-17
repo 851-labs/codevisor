@@ -1,10 +1,10 @@
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
 import { mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import type { HarnessLifecycleManagerConfig } from "./harness-lifecycle-types.js"
+
+import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
+
 import {
   cleanupLifecycleTests,
   fakeSpawner,
@@ -15,6 +15,8 @@ import {
   makeDb,
   waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
+import type { HarnessLifecycleManagerConfig } from "./harness-lifecycle-types.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 afterEach(() => vi.useRealTimers())

@@ -1,11 +1,13 @@
+import { execFile } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { expect, it, onTestFinished } from "vitest"
+
 import ffmpeg from "ffmpeg-static"
 import sharp from "sharp"
+import { expect, it, onTestFinished } from "vitest"
+
 import { mediaPreview } from "./media-previews.js"
 
 it("creates bounded previews from image, video and PDF files without replacing originals", async () => {

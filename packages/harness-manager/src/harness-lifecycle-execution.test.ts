@@ -1,9 +1,9 @@
 import { harnessCatalog } from "@codevisor/agent-runtime"
 import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
-import { Effect } from "effect"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import type { FetchLike } from "@codevisor/updater"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   cleanupLifecycleTests,
   run,
@@ -17,6 +17,7 @@ import {
   installableDefinition,
   waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 afterEach(() => vi.useRealTimers())

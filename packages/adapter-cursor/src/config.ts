@@ -1,6 +1,6 @@
 import type * as acp from "@agentclientprotocol/sdk"
-import type { CanonicalModeId, SessionConfigOption } from "@codevisor/api"
 import type { AgentSessionMetadata } from "@codevisor/agent-runtime"
+import type { CanonicalModeId, SessionConfigOption } from "@codevisor/api"
 
 export const cursorClientCapabilities = (
   capabilities: acp.ClientCapabilities

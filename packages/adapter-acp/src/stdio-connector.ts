@@ -1,11 +1,10 @@
-import * as acp from "@agentclientprotocol/sdk"
-import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
-import { trackProcessTree } from "@codevisor/processes"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { Readable, Writable } from "node:stream"
-import { Effect } from "effect"
+
+import * as acp from "@agentclientprotocol/sdk"
 import {
   adapterPromise,
   summarizeProcessFailure,
@@ -13,12 +12,15 @@ import {
   type QuestionAnswer,
   type RuntimeEvent
 } from "@codevisor/agent-runtime"
+import { trackProcessTree } from "@codevisor/processes"
+import { Effect } from "effect"
+
 import { makeAcpTerminalHost } from "./acp-terminals.js"
 import { createClientApp, type ConfigureAcpClientApp } from "./client-app.js"
 import { acpClientCapabilities, type AcpConnector } from "./connection.js"
 import { isGenericConnectionClose } from "./internal.js"
-import { isPiStartupInfoNotification, readPiSessionError } from "./pi.js"
 import { runtimeEventFromNotification } from "./notifications.js"
+import { isPiStartupInfoNotification, readPiSessionError } from "./pi.js"
 import {
   acpPermissionOutcome,
   acpPermissionQuestion,

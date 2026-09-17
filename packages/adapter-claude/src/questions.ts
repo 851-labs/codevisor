@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto"
-import type { QuestionSpec } from "@codevisor/api"
+
 import type { QuestionAnswer } from "@codevisor/agent-runtime"
+import type { QuestionSpec } from "@codevisor/api"
+
 import { isRecord } from "./internal.js"
 import type { ClaudeSession, ClaudeToolDecision } from "./session.js"
 import { toolTitle } from "./tool-presentation.js"

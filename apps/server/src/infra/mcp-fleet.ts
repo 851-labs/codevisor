@@ -2,6 +2,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { McpManager } from "@codevisor/mcp"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
+
 import { publishMachineReadiness } from "./config-sync.js"
 
 /// Phase 17: the MCP plane's per-machine data. Two namespaces:

@@ -1,8 +1,10 @@
-import { nextRunningState } from "./test-support.js"
 import { ClientRequest } from "node:http"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
+
 import { makePluginsManager } from "./plugins-manager.js"
+import { nextRunningState } from "./test-support.js"
 import {
   cleanups,
   exampleManifest,

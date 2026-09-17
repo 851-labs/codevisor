@@ -1,21 +1,23 @@
+import type { ChildProcess } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
-import type { ChildProcess } from "node:child_process"
+
 import type { CodevisorDatabaseService } from "@codevisor/db"
+
 import type { AutomationProviderContext } from "./automation-provider.js"
-import { CdpConnection } from "./browser-cdp.js"
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
-import type { BrowserBackend } from "./browser-use-provider-types.js"
-import { connectNativeBrowser } from "./browser-native-connection.js"
-import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
-import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
-import { observeBrowserRuntime } from "./browser-runtime-events.js"
+import { CdpConnection } from "./browser-cdp.js"
 import {
   downloadedChromiumPath,
   launchManagedBrowser,
   systemChromePath
 } from "./browser-chromium.js"
+import { synchronizeManagedCookies } from "./browser-cookie-sync.js"
+import { connectNativeBrowser } from "./browser-native-connection.js"
+import { observeBrowserRuntime } from "./browser-runtime-events.js"
+import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
+import type { BrowserBackend } from "./browser-use-provider-types.js"
 
 export const makeBrowserRuntimeFactory = (options: {
   dataDir: string

@@ -8,6 +8,7 @@ import type {
   BackgroundTerminalIntegration,
   ProviderEnvironment
 } from "@codevisor/agent-runtime"
+
 import { makeGrokBuildExtension } from "./extension.js"
 
 export interface GrokBuildProviderConfig {

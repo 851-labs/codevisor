@@ -1,7 +1,9 @@
 import { EventEmitter } from "node:events"
 import { request, type IncomingMessage, type ServerResponse } from "node:http"
 import { connect, type Socket } from "node:net"
+
 import { afterEach, expect, it, vi } from "vitest"
+
 import { forwardBrowserHTTP, forwardBrowserUpgrade } from "./browser-forward-proxy.js"
 import { BrowserProxy } from "./browser-proxy.js"
 

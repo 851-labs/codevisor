@@ -1,6 +1,7 @@
 import { locateExecutableOnPath, type HarnessDefinition } from "@codevisor/agent-runtime"
 import type { HarnessInstallMethod, HarnessLifecycleState } from "@codevisor/api"
 import { applyAppBundleSwap, isNewerVersion } from "@codevisor/updater"
+
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import type { HarnessUpdateDetection } from "./harness-lifecycle-detection.js"
 import {

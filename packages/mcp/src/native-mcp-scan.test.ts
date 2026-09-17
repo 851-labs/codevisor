@@ -1,11 +1,13 @@
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
-import { makeDatabase } from "@codevisor/db"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { makeNativeMcpManager } from "./native-mcp-manager.js"
-import type { NativeConfigFileSystem } from "./native-config-files.js"
+
+import { makeAgentRuntime } from "@codevisor/agent-runtime"
+import { makeDatabase } from "@codevisor/db"
 import { afterEach, describe, expect, it } from "vitest"
+
+import type { NativeConfigFileSystem } from "./native-config-files.js"
+import { makeNativeMcpManager } from "./native-mcp-manager.js"
 import {
   cleanupNativeMcpTests,
   run,

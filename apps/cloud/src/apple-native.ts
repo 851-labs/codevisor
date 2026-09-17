@@ -2,6 +2,7 @@ import { APIError, createAuthEndpoint, getSessionFromCtx } from "better-auth/api
 import { setSessionCookie } from "better-auth/cookies"
 import { handleOAuthUserInfo } from "better-auth/oauth2"
 import { z } from "zod"
+
 import { appleUserInfo, exchangeNativeAppleCode, hasAppleAuth } from "./apple-auth.js"
 import type { CloudEnv } from "./env.js"
 

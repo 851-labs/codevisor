@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { Effect } from "effect"
+
 import { resolveShellEnv, type HarnessAccountContext } from "@codevisor/agent-runtime"
 import { isoTimestamp, type HarnessAccount } from "@codevisor/api"
 import type { CodevisorDatabaseService, HarnessAccountRecord } from "@codevisor/db"
@@ -18,12 +18,14 @@ import type {
   SharedTokenBundle
 } from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+import { Effect } from "effect"
+
+import { discoverNativeAccount, sharedAccountVault } from "./shared-account-storage.js"
 import {
   makeSharedAccountStore,
   sharedHarness,
   type SharedHarnessAccount
 } from "./shared-account-store.js"
-import { discoverNativeAccount, sharedAccountVault } from "./shared-account-storage.js"
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 

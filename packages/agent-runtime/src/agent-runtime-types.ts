@@ -1,6 +1,7 @@
 import type { Harness, HarnessUsageLimits, SessionConfigOption, SessionGoal } from "@codevisor/api"
-import type { AgentSessionSummary } from "./agent-sessions.js"
 import { Effect } from "effect"
+
+import type { AgentSessionSummary } from "./agent-sessions.js"
 import type { BackgroundTerminalIntegration } from "./background-terminals.js"
 import { AgentRuntimeError } from "./types.js"
 import type {

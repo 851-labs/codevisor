@@ -1,5 +1,6 @@
 import { adapterPromise, normalizePromptInput } from "@codevisor/agent-runtime"
 import type { AgentSessionHandle, SetGoalUpdate } from "@codevisor/agent-runtime"
+
 import { codexInput } from "./attachments.js"
 import { closeCommandTerminals } from "./command-terminals.js"
 import { emitGoalCleared, emitGoalSnapshot, sessionGoalFrom } from "./goals.js"

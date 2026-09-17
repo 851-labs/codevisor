@@ -3,6 +3,7 @@ import type { PluginRegistryEntry } from "@codevisor/api"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import type { ReactNode } from "react"
+
 import {
   CopyInstallCommand,
   InstallButton,

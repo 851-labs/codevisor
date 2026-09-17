@@ -1,6 +1,7 @@
-import lockfile from "proper-lockfile"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
+
+import lockfile from "proper-lockfile"
 
 export interface ServerLeaseOwner {
   readonly bootId: string

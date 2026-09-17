@@ -1,5 +1,7 @@
-import type { McpConnectionState } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+
+import type { McpConnectionState } from "@codevisor/api"
+
 import { detectMcpAuth } from "./mcp-auth-detection.js"
 import type { BuiltinMcpId } from "./mcp-automation-builtins.js"
 import type { CatalogServer, makeMcpGateway } from "./mcp-gateway.js"

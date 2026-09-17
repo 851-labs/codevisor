@@ -1,5 +1,6 @@
-import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
 import { randomUUID } from "node:crypto"
+
+import type { AgentSessionMetadata, HarnessAccountContext } from "@codevisor/agent-runtime"
 import type {
   CreateSessionRequest,
   UpdateSessionRequest,
@@ -8,6 +9,7 @@ import type {
   SessionSummary
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+
 import {
   appendAndPublish,
   archiveSessionRuntime,

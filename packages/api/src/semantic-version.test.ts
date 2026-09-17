@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
+
+import { isSupportedPluginProtocolVersion } from "./plugins.js"
 import {
   compareSemanticVersions,
   isSemanticVersion,
   parseSemanticVersion
 } from "./semantic-version.js"
-import { isSupportedPluginProtocolVersion } from "./plugins.js"
 
 describe("semantic versions", () => {
   it("accepts strict SemVer 2.0.0 versions", () => {

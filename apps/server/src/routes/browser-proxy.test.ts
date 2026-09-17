@@ -1,9 +1,11 @@
-import { request, createServer } from "node:http"
 import { once } from "node:events"
+import { request, createServer } from "node:http"
+
+import { describe, expect, it } from "vitest"
+
 import { handleRequest } from "../server-router.js"
 import { defaultServerConfig, makeEventFanout, type RouteState } from "../server.js"
 import { idleRestartCoordinator, makeServices, run } from "../test-support.js"
-import { describe, expect, it } from "vitest"
 import { jsonRequest, start } from "../test-support.js"
 
 const proxyRequest = (port: number, upgrade = false) =>

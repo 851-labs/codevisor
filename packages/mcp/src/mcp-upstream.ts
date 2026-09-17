@@ -1,7 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
+import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+
 import { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import { errorMessage, requireHttpUrl, type UpstreamConnection } from "./mcp-support.js"

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
 import { exampleManifest } from "./test-support.js"
 

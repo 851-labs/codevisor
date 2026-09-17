@@ -1,8 +1,10 @@
-import { Effect } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
+
 import { makeEventFanout, type RouteState } from "../server.js"
 import { idleRestartCoordinator, makeServices, run, tempDirs } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"

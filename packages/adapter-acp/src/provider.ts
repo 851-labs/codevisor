@@ -1,6 +1,5 @@
-import type { Harness, SessionConfigOption } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
-import { Effect } from "effect"
+
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import {
   adapterPromise,
@@ -19,6 +18,9 @@ import {
   type RuntimeEmit,
   type SetGoalUpdate
 } from "@codevisor/agent-runtime"
+import type { Harness, SessionConfigOption } from "@codevisor/api"
+import { Effect } from "effect"
+
 import type { AcpAgentConnection, AcpConnector } from "./connection.js"
 import { turnLifecycleEvent } from "./internal.js"
 import { makeStdioAcpConnector } from "./stdio-connector.js"

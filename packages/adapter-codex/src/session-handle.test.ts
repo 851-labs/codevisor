@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { describe, expect, it } from "vitest"
+
 import { run, setup } from "./test-support.js"
 
 describe("CodexProvider", () => {

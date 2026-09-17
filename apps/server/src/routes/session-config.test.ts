@@ -1,10 +1,12 @@
-import type { SessionConfigOption } from "@codevisor/api"
-import { Effect } from "effect"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+
+import type { SessionConfigOption } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
+import { Effect } from "effect"
+import { describe, expect, it, vi } from "vitest"
+
 import {
   configSelectionsFromTestOptions,
   jsonRequest,

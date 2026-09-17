@@ -7,9 +7,11 @@ import {
   readFileSync,
   rmSync
 } from "node:fs"
-import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 
 const fakeOpenCode = (directory: string): string => {

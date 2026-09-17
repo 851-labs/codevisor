@@ -1,4 +1,5 @@
 import type { Schema } from "effect"
+
 import { EventEnvelope, TerminalClientFrame, TerminalServerFrame } from "./index.js"
 import {
   accepted,

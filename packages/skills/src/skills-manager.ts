@@ -1,7 +1,9 @@
-import type { SkillsScan } from "@codevisor/api"
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { rename, symlink } from "node:fs/promises"
 import { homedir } from "node:os"
+
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+import type { SkillsScan } from "@codevisor/api"
+
 import { resolveNativeConfigPath } from "./native-paths.js"
 import { makeSkillsOperations } from "./skills-install.js"
 import { makeSkillsScanner } from "./skills-scan.js"

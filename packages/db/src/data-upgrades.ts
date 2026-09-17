@@ -1,12 +1,13 @@
-import { runTranscriptStateUpgrade } from "./transcript-state-upgrade.js"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import { chatState, createChatItem, setChatRoute } from "./chat-items.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { parseAttachments } from "./row-mappers.js"
 import type { ConversationRow, EventRow, TranscriptRow } from "./rows.js"
 import type { CodevisorDatabaseConfig } from "./service.js"
+import { runTranscriptStateUpgrade } from "./transcript-state-upgrade.js"
 
 const canonicalChatBackfillId = "canonical-session-chat-v1"
 

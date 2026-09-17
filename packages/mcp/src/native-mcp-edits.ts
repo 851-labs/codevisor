@@ -1,9 +1,11 @@
-import type { NativeMcpRemoval, NativeMcpScan, RemoveNativeMcpResult } from "@codevisor/api"
-import { isoTimestamp } from "@codevisor/api"
-import type { HarnessDefinition } from "@codevisor/agent-runtime"
-import type { NativeMcpRemovalRecord } from "@codevisor/db"
 import { createHash } from "node:crypto"
 import { basename, join } from "node:path"
+
+import type { HarnessDefinition } from "@codevisor/agent-runtime"
+import type { NativeMcpRemoval, NativeMcpScan, RemoveNativeMcpResult } from "@codevisor/api"
+import { isoTimestamp } from "@codevisor/api"
+import type { NativeMcpRemovalRecord } from "@codevisor/db"
+
 import { run } from "./mcp-support.js"
 import {
   appendTomlTable,

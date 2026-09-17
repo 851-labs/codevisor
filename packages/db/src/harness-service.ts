@@ -1,10 +1,12 @@
-import { isoTimestamp } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+
+import { isoTimestamp } from "@codevisor/api"
+
 import { attempt } from "./errors.js"
 import { harnessAccountFromRow } from "./row-mappers.js"
 import type { HarnessAccountRecord, HarnessAccountRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeHarnessService = (
   context: ServiceContext

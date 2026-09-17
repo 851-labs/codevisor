@@ -3,6 +3,7 @@
   "semi": false,
   "trailingComma": "none",
   "printWidth": 100,
+  "sortImports": true,
   "sortPackageJson": false,
   "ignorePatterns": [
     "apps/macos/",

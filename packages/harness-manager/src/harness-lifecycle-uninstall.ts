@@ -1,8 +1,10 @@
+import { realpathSync, existsSync } from "node:fs"
+import { join, dirname } from "node:path"
+
 import { locateExecutableOnPath } from "@codevisor/agent-runtime"
 import type { HarnessUninstallInfo } from "@codevisor/api"
 import { detectBrewPackage } from "@codevisor/updater"
-import { realpathSync, existsSync } from "node:fs"
-import { join, dirname } from "node:path"
+
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import type { HarnessOperationRunner } from "./harness-lifecycle-execution.js"
 import { run } from "./harness-lifecycle-support.js"

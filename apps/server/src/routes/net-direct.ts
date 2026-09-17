@@ -1,7 +1,9 @@
-import type { CloudSocket } from "@codevisor/cloud-client"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { networkInterfaces } from "node:os"
+
+import type { CloudSocket } from "@codevisor/cloud-client"
 import type { WebSocket } from "ws"
+
 import { writeJson, type CodevisorServerConfig } from "../server-context.js"
 
 /// The direct-path discovery surface: apps ask (over the E2E relay) where

@@ -1,6 +1,7 @@
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { renameSync } from "node:fs"
+import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+
 import { PluginsError } from "./plugins-error.js"
 
 export type PluginTransactionPhase =

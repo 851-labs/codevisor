@@ -1,9 +1,11 @@
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { createServer } from "node:http"
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { createServer } from "node:http"
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it } from "vitest"
+
 import {
   cleanupMcpManagerTests,
   run,

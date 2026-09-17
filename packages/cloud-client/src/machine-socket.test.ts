@@ -1,5 +1,6 @@
 import { decodeRelayEnvelopes } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
+
 import { RelayOutbox } from "./machine-socket.js"
 
 const makeOutbox = (coalesceMs: number, maxBufferedBytes?: number) => {

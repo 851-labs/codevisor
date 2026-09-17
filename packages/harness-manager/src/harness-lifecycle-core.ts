@@ -1,6 +1,7 @@
 import type { HarnessDefinition } from "@codevisor/agent-runtime"
 import type { HarnessLifecycleState, HarnessUpdateInfo } from "@codevisor/api"
 import type { FetchLike } from "@codevisor/updater"
+
 import {
   defaultReadBundleShortVersion,
   defaultSpawnShell,

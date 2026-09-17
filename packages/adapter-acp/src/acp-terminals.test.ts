@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { BackgroundTerminalRegistry } from "@codevisor/agent-runtime"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
 import {
   makeAcpTerminalHost,
   type AcpTerminalChild,

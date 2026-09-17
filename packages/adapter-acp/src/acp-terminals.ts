@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
-import { trackProcessTree } from "@codevisor/processes"
+import { randomUUID } from "node:crypto"
+
 import {
   backgroundTerminalKey,
   DEFAULT_PROMOTION_DELAY_MS,
@@ -8,6 +8,7 @@ import {
   type ExternalTerminalStream
 } from "@codevisor/agent-runtime"
 import type { RuntimeEmit } from "@codevisor/agent-runtime"
+import { trackProcessTree } from "@codevisor/processes"
 
 /// Client-side implementation of the ACP `terminal/*` methods, backed by the
 /// server's background-terminal registry.

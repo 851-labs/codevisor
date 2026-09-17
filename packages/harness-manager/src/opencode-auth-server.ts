@@ -1,7 +1,8 @@
-import type { OpenCodeAuthMethod, OpenCodeAuthPrompt } from "@codevisor/api"
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFile } from "node:fs/promises"
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+
+import type { OpenCodeAuthMethod, OpenCodeAuthPrompt } from "@codevisor/api"
 
 /// The control-plane side of OpenCode authentication: a short-lived
 /// `opencode serve` per operation, its authenticated HTTP requests, and the

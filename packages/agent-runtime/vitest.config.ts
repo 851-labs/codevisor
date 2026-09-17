@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url"
+
 import { defineConfig } from "vitest/config"
 
 // The runtime's integration tests live in @codevisor/adapter-acp

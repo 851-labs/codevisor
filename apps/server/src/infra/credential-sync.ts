@@ -1,12 +1,13 @@
-import type { CredentialSource } from "@codevisor/harness-manager"
+import { createHash } from "node:crypto"
+
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { CredentialSource } from "@codevisor/harness-manager"
 import {
   latestSyncTimestamp,
   nextSyncTimestamp,
   type SyncEntryRecord,
   type SyncTimestampValue
 } from "@codevisor/sync"
-import { createHash } from "node:crypto"
 import { Effect } from "effect"
 
 /// Phase 20: config-plane reconciliation for STATIC harness credentials.

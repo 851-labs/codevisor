@@ -1,5 +1,8 @@
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
+import { afterEach, describe, expect, it } from "vitest"
+
 import {
   isPathSafe,
   parseFrontmatter,
@@ -7,7 +10,6 @@ import {
   sanitizeName,
   skillContentHash
 } from "./skills-manager.js"
-import { afterEach, describe, expect, it } from "vitest"
 import { cleanupSkillsTests, makeHome, writeSkill } from "./skills-test-support.js"
 
 afterEach(cleanupSkillsTests)

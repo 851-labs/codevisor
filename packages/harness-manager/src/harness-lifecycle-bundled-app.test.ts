@@ -1,11 +1,12 @@
-import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
-import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
-import { Effect } from "effect"
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
+
+import type { AgentRuntimeService, HarnessDefinition } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
+
+import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
 import {
   cleanupLifecycleTests,
   directories,
@@ -16,6 +17,7 @@ import {
   appBundleDefinition,
   installableDefinition
 } from "./harness-lifecycle-test-support.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 

@@ -1,10 +1,12 @@
-import type { GrokAuth } from "./grok-auth.js"
+import { randomUUID } from "node:crypto"
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
-import { randomUUID } from "node:crypto"
-import { join } from "node:path"
+
+import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"
 import { run, runWithInput } from "./harness-auth-support.js"

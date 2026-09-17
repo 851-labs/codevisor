@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { couldBeCursorTerminalError, parseCursorTerminalError } from "./errors.js"
 
 describe("Cursor terminal errors", () => {

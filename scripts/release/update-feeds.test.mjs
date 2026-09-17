@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
+
 import { signSparkleUpdate } from "./sign-sparkle-update.mjs"
 import { verifyAppcast } from "./verify-appcast.mjs"
 

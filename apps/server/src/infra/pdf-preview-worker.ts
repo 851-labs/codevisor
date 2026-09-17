@@ -1,7 +1,8 @@
-import { workerData } from "node:worker_threads"
 import { writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { workerData } from "node:worker_threads"
+
 import { createCanvas } from "@napi-rs/canvas"
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs"
 

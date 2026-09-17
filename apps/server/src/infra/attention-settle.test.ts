@@ -1,10 +1,12 @@
-import type { EventEnvelope } from "@codevisor/api"
-import { makeDatabase } from "@codevisor/db"
-import Database from "better-sqlite3"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { EventEnvelope } from "@codevisor/api"
+import { makeDatabase } from "@codevisor/db"
+import Database from "better-sqlite3"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
 import { appendAndPublish, makeEventFanout } from "../server-context.js"
 import { run, tempDirs } from "../test-support.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"

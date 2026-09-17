@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { afterEach, describe, expect, it } from "vitest"
+
 import { makeComputerUseRepls } from "./computer-use-repl.js"
 
 const reply = (value: unknown): CallToolResult => ({

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
+
 import { latestMacOSDownloadURL } from "../lib/github-release"
 
 // GitHub Releases is the stable-release source of truth. `?arch=arm64|x64`

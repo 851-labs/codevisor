@@ -1,8 +1,10 @@
-import { observableFixture } from "./changes-test-support.js"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
+import { observableFixture } from "./changes-test-support.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
 import {
   jsonRequest,

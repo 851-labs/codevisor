@@ -1,9 +1,11 @@
-import type { McpServer } from "@codevisor/api"
-import { createServer } from "node:http"
 import { mkdtempSync } from "node:fs"
+import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { McpServer } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
+
 import { jsonRequest, run, runningServers, start, startWithApp, tempDirs } from "../test-support.js"
 
 describe("mcp installation routes", () => {

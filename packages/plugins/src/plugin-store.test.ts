@@ -1,14 +1,16 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it } from "vitest"
+
+import { writePluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import {
   MANAGED_PLUGIN_MARKER,
   defaultPluginsRoot,
   findPluginOrFail,
   scanPlugins
 } from "./plugin-store.js"
-import { writePluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import { PluginsError } from "./plugins-error.js"
 
 const roots: Array<string> = []

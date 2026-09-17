@@ -1,6 +1,8 @@
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
+
 import { Effect } from "effect"
+
 import type { HarnessAuthExec } from "./harness-auth-types.js"
 
 const execFileAsync = promisify(execFile)

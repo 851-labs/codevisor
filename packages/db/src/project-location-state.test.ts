@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+
 import { expect, it, vi, onTestFinished } from "vitest"
+
 import { detectGitLocation, migrateProjectLocationState } from "./project-location-state.js"
 import { memoryDatabase, run, tempDatabase } from "./test-support.js"
 

@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+
 import { describe, expect, it } from "vitest"
-import { makeDir } from "./test-support.js"
+
 import { makePluginTransactionEngine, type PluginTransactionPaths } from "./plugin-transaction.js"
+import { makeDir } from "./test-support.js"
 
 const write = (path: string, content: string): void => {
   mkdirSync(dirname(path), { recursive: true })

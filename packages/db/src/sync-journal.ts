@@ -1,5 +1,6 @@
 import type { EventEnvelope } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
 import type { EventRow, SessionEventRow } from "./rows.js"
 

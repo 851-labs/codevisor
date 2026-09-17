@@ -1,13 +1,15 @@
-import { detectGitLocation } from "./project-location-state.js"
+import { randomUUID } from "node:crypto"
+
 import type { CreateProjectRequest, Project, ProjectLocation } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
-import { randomUUID } from "node:crypto"
+
 import { attempt } from "./errors.js"
+import { detectGitLocation } from "./project-location-state.js"
 import { projectFromRow } from "./row-mappers.js"
 import type { ProjectRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeProjectsService = (
   context: ServiceContext

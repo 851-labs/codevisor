@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
+import { createHash, randomUUID } from "node:crypto"
+import { createWriteStream } from "node:fs"
 import {
   access,
   cp,
@@ -12,7 +13,6 @@ import {
   symlink,
   writeFile
 } from "node:fs/promises"
-import { createWriteStream } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join, relative } from "node:path"
 import process from "node:process"

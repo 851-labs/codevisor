@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+
 import type { Migration } from "./migration-types.js"
 
 /// Schema migrations 30–33.

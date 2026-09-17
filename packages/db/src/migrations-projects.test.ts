@@ -1,6 +1,7 @@
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import { DatabaseError, makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
 

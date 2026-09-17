@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto"
+
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { backgroundTerminalKey } from "@codevisor/agent-runtime"
-import { randomUUID } from "node:crypto"
+
 import { isRecord } from "./internal.js"
 import type { BackgroundTaskEntry, ClaudeSession } from "./session.js"
 

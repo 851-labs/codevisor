@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { setup } from "./test-support.js"
 
 describe("CodexProvider", () => {

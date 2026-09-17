@@ -1,9 +1,11 @@
+import { dirname, join } from "node:path"
+
 import { textToolResult, type AutomationToolProvider } from "@codevisor/automation"
 import { browserUseTools, type BrowserUseProvider } from "@codevisor/automation"
 import { computerUseTools } from "@codevisor/automation"
 import { requireServerResource, type ServerResourceOptions } from "@codevisor/automation"
 import type { ManagedSkillSpec } from "@codevisor/skills"
-import { dirname, join } from "node:path"
+
 import { errorMessage } from "./mcp-support.js"
 
 export const BUILTIN_MCP_SERVERS = [

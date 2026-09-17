@@ -1,5 +1,6 @@
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { setImmediate } from "node:timers/promises"
+
+import type { CodevisorDatabaseService } from "@codevisor/db"
 interface SyncEventSink {
   readonly bufferedAmount: number
   send(data: string): void

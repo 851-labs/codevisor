@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+
 import type { ServerUpdateChannel } from "./release-source.js"
 
 /// Files the host macOS app maintains next to an app-hosted server's
