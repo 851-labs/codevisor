@@ -15,7 +15,6 @@
     "test:coverage": "vitest run src --coverage"
   },
   "dependencies": {
-    "@codevisor/api": "workspace:*",
     "@noble/ciphers": "2.2.0",
     "@noble/curves": "2.3.0",
     "@noble/hashes": "2.3.0"

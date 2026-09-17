@@ -76,7 +76,6 @@
         "@codevisor/api": "workspace:*",
         "@codevisor/automation": "workspace:*",
         "@codevisor/cloud-client": "workspace:*",
-        "@codevisor/cloud-crypto": "workspace:*",
         "@codevisor/db": "workspace:*",
         "@codevisor/harness-manager": "workspace:*",
         "@codevisor/mcp": "workspace:*",
@@ -262,7 +261,6 @@
     "packages/cloud-crypto": {
       "name": "@codevisor/cloud-crypto",
       "dependencies": {
-        "@codevisor/api": "workspace:*",
         "@noble/ciphers": "2.2.0",
         "@noble/curves": "2.3.0",
         "@noble/hashes": "2.3.0",

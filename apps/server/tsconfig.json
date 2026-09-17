@@ -35,9 +35,6 @@
       "path": "../../packages/cloud-client"
     },
     {
-      "path": "../../packages/cloud-crypto"
-    },
-    {
       "path": "../../packages/db"
     },
     {
