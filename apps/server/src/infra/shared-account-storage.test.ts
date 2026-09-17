@@ -15,8 +15,11 @@ const execute = vi.hoisted(() =>
   )
 )
 vi.mock("node:child_process", () => ({ execFile: execute }))
+const platform = Object.getOwnPropertyDescriptor(process, "platform")!
 const dirs: string[] = []
 afterEach(async () => {
+  Object.defineProperty(process, "platform", platform)
+  vi.clearAllMocks()
   vi.unstubAllGlobals()
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
@@ -64,7 +67,7 @@ it("recovers a durable encrypted receipt after a lost commit response without re
     "when connected"
   )
 })
-it("uses the protected local coordinator and discovers native credentials with the supplied environment", async () => {
+it("uses the protected local coordinator and discovers API keys with the supplied environment", async () => {
   const path = await directory()
   const vault = sharedAccountVault(path)
   const reference = await vault.create({ ...bundle, expiresAt: Number.MAX_SAFE_INTEGER })
@@ -72,17 +75,42 @@ it("uses the protected local coordinator and discovers native credentials with t
   expect(
     await discoverNativeAccount("codex", path, true, false, { OPENAI_API_KEY: "test-key" })
   ).toMatchObject({ authMethod: "apiKey", accessToken: "test-key" })
-  await writeFile(
-    join(path, ".credentials.json"),
-    JSON.stringify({
-      claudeAiOauth: { accessToken: "native", refreshToken: "native-grant", expiresAt: 100000 }
-    })
-  )
-  await writeFile(
-    join(path, ".claude.json"),
-    JSON.stringify({ oauthAccount: { accountUuid: "user", organizationUuid: "org" } })
-  )
-  expect(
-    await discoverNativeAccount("claude-code", path, false, true, { HOME: path })
-  ).toMatchObject({ ownership: "managed", refreshToken: "native-grant" })
+  expect(execute).not.toHaveBeenCalled()
 })
+it.each(["darwin", "linux"])(
+  "discovers file credentials with unavailable Keychain on %s",
+  async (host) => {
+    Object.defineProperty(process, "platform", { value: host, configurable: true })
+    const path = await directory()
+    await writeFile(
+      join(path, ".credentials.json"),
+      JSON.stringify({
+        claudeAiOauth: { accessToken: "native", refreshToken: "native-grant", expiresAt: 100000 }
+      })
+    )
+    await writeFile(
+      join(path, ".claude.json"),
+      JSON.stringify({ oauthAccount: { accountUuid: "user", organizationUuid: "org" } })
+    )
+    expect(
+      await discoverNativeAccount("claude-code", path, false, true, { HOME: path, USER: "fixture" })
+    ).toMatchObject({ ownership: "managed", refreshToken: "native-grant" })
+    if (host === "darwin") {
+      expect(execute).toHaveBeenCalledExactlyOnceWith(
+        "/usr/bin/security",
+        [
+          "find-generic-password",
+          "-s",
+          expect.stringMatching(/^Claude Code-credentials-/),
+          "-a",
+          "fixture",
+          "-w"
+        ],
+        expect.objectContaining({ encoding: "utf8" }),
+        expect.any(Function)
+      )
+    } else {
+      expect(execute).not.toHaveBeenCalled()
+    }
+  }
+)
