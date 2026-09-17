@@ -192,8 +192,7 @@ describe("/v1/sync", () => {
 
   it("reconciles harnesses over HTTP with auth and lifecycle gates", async () => {
     const { services } = await makeServices("server-hsync")
-    // A custom-spec store rides along: the local spec publishes and the
-    // seeded fleet spec applies through one replace.
+    // The seeded global custom spec applies alongside the local definition.
     const replaced: Array<ReadonlyArray<unknown>> = []
     const customHarnesses = {
       list: () => Promise.resolve([{ id: "mybot", name: "My Bot", command: "mybot" }]),
@@ -214,11 +213,11 @@ describe("/v1/sync", () => {
     )
     const server = await startWithApp({ ...services, customHarnesses })
 
-    // Publish: the fake catalog's codex (ready, enabled) enters the plane.
+    // Local discoveries stay out of the shared catalog.
     const first = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
     expect(first.status).toBe(200)
     expect(first.body).toMatchObject({
-      published: ["codex", "custom:mybot"],
+      published: [],
       applied: ["custom:fleetbot"],
       blocked: []
     })
@@ -226,7 +225,7 @@ describe("/v1/sync", () => {
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
     expect(
       (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries[0]?.value
-    ).toEqual({ enabled: true, installed: true })
+    ).toEqual({ id: "fleetbot", name: "Fleet Bot", command: "fleetbot" })
 
     // A machine whose codex is NOT installed, told to install it, with no
     // lifecycle manager: blocked, never failed.
@@ -258,6 +257,18 @@ describe("/v1/sync", () => {
     expect(blocked.body).toMatchObject({
       blocked: [{ id: "codex", reason: "Harness install unavailable on this machine" }]
     })
+    const readiness = (await jsonRequest(blockedServer, "/v1/sync/harness-readiness")).body as {
+      entries: Array<{
+        value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
+      }>
+    }
+    expect(readiness.entries.flatMap((entry) => entry.value.harnesses)).toContainEqual(
+      expect.objectContaining({
+        id: "codex",
+        state: "blocked",
+        reason: "Harness install unavailable on this machine"
+      })
+    )
 
     // With a lifecycle manager present, the same want starts a real install.
     const { services: installable } = await makeServices("server-hsync-install")
@@ -281,6 +292,7 @@ describe("/v1/sync", () => {
     const lifecycle = {
       subscribe: () => () => {},
       onGateReleased: () => () => {},
+      decorateHarnesses: async (items: ReadonlyArray<unknown>) => items,
       beginInstall: (harnessId: string) => {
         installs.push(harnessId)
         return Promise.resolve({ terminalId: "t1" })
@@ -333,7 +345,7 @@ describe("/v1/sync", () => {
       return jsonRequest(authedServer, "/v1/sync/harnesses/reconcile", { method: "POST" })
     }
     expect((await reconcileWithAuth("loggedOut", "server-h1")).body).toMatchObject({
-      blocked: [{ id: "codex", reason: "Sign in before this harness can be enabled" }]
+      blocked: [{ id: "codex", reason: "Sign in required" }]
     })
     expect((await reconcileWithAuth("authenticated", "server-h2")).body).toMatchObject({
       applied: ["codex"]

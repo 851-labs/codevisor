@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 // @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import {
   CLOUD_PROTOCOL_VERSION,
+  type CredentialCommand,
   decodeAppToHub,
   decodeMachineToHub,
   decodeRelayEnvelopes,
@@ -25,6 +26,7 @@ import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } fr
 import { HubSockets } from "./hub-sockets.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
+import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 
 /// One hub per account (`getByName(userId)`): the rendezvous point every one
 /// of the user's app and machine sockets dials into. The hub is a dumb router:
@@ -104,14 +106,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   /// authorized just before account deletion cannot recreate it.
   async deleteAccount(): Promise<void> {
     this.#accountDeleted = true
-    await this.ctx.storage.put("account_deleted", true)
-    for (const socket of this.ctx.getWebSockets()) {
-      socket.close(CLOSE_REVOKED, "cloud account deleted")
-    }
-    this.ctx.storage.sql.exec(
-      "DELETE FROM session_buffers; DELETE FROM sessions; DELETE FROM machines"
-    )
-    await this.ctx.storage.deleteAlarm()
+    await deleteHubAccount(this.ctx, CLOSE_REVOKED)
   }
 
   /// Registry + live presence; used by the REST surface and app settings.
@@ -147,6 +142,10 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   // -- WebSocket lifecycle ---------------------------------------------------
+
+  credentialCommand(id: string, owner: string, command: CredentialCommand) {
+    return storeCredentialCommand(this.ctx.storage, this.#accountDeleted, id, owner, command)
+  }
 
   override async fetch(request: Request): Promise<Response> {
     if (this.#accountDeleted) return new Response("Account deleted", { status: 401 })

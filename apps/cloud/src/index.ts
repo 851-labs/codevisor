@@ -15,6 +15,7 @@ import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 import { pluginModeration } from "./plugin-moderation.js"
 import { notifyPluginReports } from "./plugin-reports.js"
+import { credentialRoutes } from "./credential-routes.js"
 
 // Note: the Worker entry module may only export handlers/DO classes — plain
 // value re-exports (strings, constants) crash workerd at startup.
@@ -49,6 +50,7 @@ const connectionUserId = async (env: CloudEnv, request: Request): Promise<string
 
 const app = new Hono<HonoEnv>()
 app.route("/", pluginModeration)
+app.route("/", credentialRoutes)
 
 // -- Discovery & liveness ----------------------------------------------------
 

@@ -1,14 +1,21 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// OpenCode credentials belong to providers inside a profile. iOS represents
 /// that hierarchy with profile navigation and a focused provider setup sheet.
 struct OpenCodeProviderAuthenticationScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.sharedHarnessAccounts) private var isShared
+  @Environment(\.harnessMachineSignIn) private var machineSignIn
 
   let serverId: String
   let harness: ServerHarness
   var onAuthenticated: () -> Void = {}
+  var signInRequest: HarnessMachineSignIn?
+  @State private var requestedAccount: ServerHarnessAccount?
+  @State private var showsRequestedAccount = false
+  @State private var didOpenRequestedAccount = false
 
   @State private var accounts: [ServerHarnessAccount] = []
   @State private var isLoading = true
@@ -20,8 +27,8 @@ struct OpenCodeProviderAuthenticationScreen: View {
   @State private var renameDraft = ""
   @State private var pendingRemoval: ServerHarnessAccount?
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: serverId)
+  private var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: serverId, isShared: isShared)
   }
 
   var body: some View {
@@ -45,39 +52,59 @@ struct OpenCodeProviderAuthenticationScreen: View {
                 serverId: serverId,
                 harness: harness,
                 initialAccount: account,
+                isShared: isShared,
+                machineSignIn: machineSignIn,
                 onChange: { Task { await catalogChanged() } }
               )
+              .environment(\.sharedHarnessAccounts, isShared)
+              .environment(\.harnessMachineSignIn, machineSignIn)
             } label: {
               profileRow(account)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
               if !account.isActive {
-                Button("Use") { Task { await activate(account) } }
+                Button("Use", systemImage: "checkmark") { Task { await activate(account) } }.labelStyle(.iconOnly)
                   .tint(.blue)
               }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
               if account.profileKind == "managed" {
-                Button("Remove", role: .destructive) {
+                Button("Remove", systemImage: "trash", role: .destructive) {
                   pendingRemoval = account
-                }
-                Button("Rename") { requestRename(account) }
+                }.labelStyle(.iconOnly)
+                Button("Rename", systemImage: "pencil") { requestRename(account) }.labelStyle(.iconOnly)
                   .tint(.blue)
               }
             }
           }
         }
 
-        Button {
-          newProfileName = "Profile \(accounts.filter { $0.profileKind == "managed" }.count + 1)"
-          showingNewProfile = true
-        } label: {
-          Label("Add Profile", systemImage: "plus")
-        }
-        .disabled(isWorking)
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Add Profile", systemImage: "plus") {
+          newProfileName = "Profile \(accounts.filter { $0.profileKind == "managed" }.count + 1)"
+          showingNewProfile = true
+        }.labelStyle(.iconOnly).disabled(isWorking)
+      }
+      HarnessAccountsCloseToolbar()
+    }
     .task { await loadAccounts() }
+    .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
+      if isShared { Task { await loadAccounts() } }
+    }
+    .navigationDestination(isPresented: $showsRequestedAccount) {
+      if let account = requestedAccount {
+        OpenCodeProfileScreen(
+          serverId: serverId, harness: harness, initialAccount: account,
+          isShared: isShared, machineSignIn: machineSignIn,
+          initialProviderId: signInRequest?.providerId, onChange: { Task { await catalogChanged() } }
+        )
+        .environment(\.sharedHarnessAccounts, isShared)
+        .environment(\.harnessMachineSignIn, machineSignIn)
+      }
+    }
     .alert("New Profile", isPresented: $showingNewProfile) {
       TextField("Name", text: $newProfileName)
       Button("Cancel", role: .cancel) {}
@@ -89,11 +116,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
       Button("Cancel", role: .cancel) { pendingRename = nil }
       Button("Rename") { Task { await renameProfile() } }
     }
-    .confirmationDialog(
-      "Remove Profile?",
-      isPresented: removalIsPresented,
-      titleVisibility: .visible
-    ) {
+    .alert("Remove Profile?", isPresented: removalIsPresented) {
       Button("Remove Profile", role: .destructive) { Task { await removeProfile() } }
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
@@ -106,12 +129,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
       Image(systemName: account.profileKind == "default" ? "desktopcomputer" : "person.crop.circle")
         .foregroundStyle(.secondary)
         .frame(width: 22)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(profileName(account))
-        Text(account.profileKind == "default" ? "Local OpenCode" : "Managed profile")
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
+      Text(profileName(account))
       Spacer()
       if account.isActive {
         Image(systemName: "checkmark.circle.fill")
@@ -139,6 +157,15 @@ struct OpenCodeProviderAuthenticationScreen: View {
     isLoading = true
     do {
       accounts = try await client.listHarnessAccounts(harnessId: "opencode")
+      if !didOpenRequestedAccount, let profileId = signInRequest?.profileId,
+        let account = accounts.first(where: {
+          profileId == "default" ? $0.profileKind == "default" : $0.id == profileId
+        })
+      {
+        didOpenRequestedAccount = true
+        requestedAccount = account
+        showsRequestedAccount = true
+      }
       errorMessage = nil
     } catch {
       errorMessage = serverErrorMessage(error)
@@ -197,6 +224,7 @@ struct OpenCodeProviderAuthenticationScreen: View {
 
   private func catalogChanged() async {
     await loadAccounts()
+    if isShared { return }
     guard
       let updated = try? await environment.refreshHarnessAuthentication(
         harnessId: "opencode",
@@ -223,17 +251,22 @@ struct OpenCodeProviderAuthenticationScreen: View {
   }
 
   private func profileName(_ account: ServerHarnessAccount) -> String {
-    account.profileKind == "default" ? "Local OpenCode" : account.label
+    account.profileKind == "default" ? "Default Profile" : account.label
   }
 }
 
 private struct OpenCodeProfileScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  let isShared: Bool
+  let machineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?
 
   let serverId: String
   let harness: ServerHarness
   @State private var account: ServerHarnessAccount
   let onChange: () -> Void
+  let initialProviderId: String?
+  @State private var pendingMachineSignIn: HarnessMachineSignIn?
+  @State private var didOpenRequestedProvider = false
 
   @State private var providers: [ServerOpenCodeAuthProvider] = []
   @State private var isLoading = true
@@ -245,20 +278,28 @@ private struct OpenCodeProfileScreen: View {
     serverId: String,
     harness: ServerHarness,
     initialAccount: ServerHarnessAccount,
+    isShared: Bool,
+    machineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?,
+    initialProviderId: String? = nil,
     onChange: @escaping () -> Void
   ) {
     self.serverId = serverId
+    self.isShared = isShared
+    self.machineSignIn = machineSignIn
     self.harness = harness
     _account = State(initialValue: initialAccount)
+    self.initialProviderId = initialProviderId
     self.onChange = onChange
   }
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: serverId)
+  private var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: serverId, isShared: isShared)
   }
 
   private var configuredProviders: [ServerOpenCodeAuthProvider] {
-    providers.filter { $0.credentialType != nil }
+    providers.filter {
+      $0.credentialType != nil && (isShared || account.profileKind != "default" || $0.credentialType == "oauth")
+    }
   }
 
   var body: some View {
@@ -270,24 +311,14 @@ private struct OpenCodeProfileScreen: View {
         }
       }
 
-      Section {
-        if account.isActive {
-          Label("Used for New Chats", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.secondary)
-        } else {
-          Button("Use for New Chats") { Task { await activate() } }
-            .disabled(isWorking)
-        }
-      }
-
       Section("Providers") {
+        if !isShared, account.profileKind == "default" {
+          HarnessSharedAccountRows(source: .opencode, excludingProviderIds: Set(configuredProviders.map(\.id)))
+        }
         if isLoading, providers.isEmpty {
           HStack {
             Spacer(); ProgressView(); Spacer()
           }
-        } else if configuredProviders.isEmpty {
-          Text("No providers configured.")
-            .foregroundStyle(.secondary)
         }
         ForEach(configuredProviders) { provider in
           Button {
@@ -310,22 +341,46 @@ private struct OpenCodeProfileScreen: View {
             }
           }
           .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Remove", role: .destructive) { Task { await remove(provider) } }
+            Button("Remove", systemImage: "trash", role: .destructive) { Task { await remove(provider) } }.labelStyle(
+              .iconOnly)
           }
         }
 
-        Button {
-          setupProvider = OpenCodeProviderSetupRequest(providerId: nil)
-        } label: {
-          Label("Add Provider", systemImage: "plus")
-        }
-        .disabled(isLoading || providers.isEmpty || isWorking)
       }
+    }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Add Provider", systemImage: "plus") {
+          setupProvider = OpenCodeProviderSetupRequest(providerId: nil)
+        }.labelStyle(.iconOnly).disabled(isLoading || providers.isEmpty || isWorking)
+      }
+      if !account.isActive {
+        ToolbarItem(placement: .topBarTrailing) {
+          Menu {
+            Button("Use for New Chats", systemImage: "checkmark") { Task { await activate() } }
+              .disabled(isWorking)
+          } label: {
+            Label("Profile Actions", systemImage: "ellipsis")
+          }
+        }
+      }
+      HarnessAccountsCloseToolbar()
     }
     .navigationTitle(profileName)
     .navigationBarTitleDisplayMode(.inline)
     .task { await load() }
-    .sheet(item: $setupProvider) { request in
+    .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
+      if isShared { Task { await load() } }
+    }
+    .sheet(
+      item: $setupProvider,
+      onDismiss: {
+        if let pendingMachineSignIn {
+          self.pendingMachineSignIn = nil
+          machineSignIn?(pendingMachineSignIn)
+        }
+      }
+    ) { request in
       OpenCodeProviderSetupSheet(
         serverId: serverId,
         accountId: account.id,
@@ -338,22 +393,42 @@ private struct OpenCodeProfileScreen: View {
           }
         }
       )
+      .environment(\.sharedHarnessAccounts, isShared)
+      .environment(
+        \.harnessMachineSignIn,
+        { request in
+          pendingMachineSignIn = request
+          setupProvider = nil
+        })
     }
   }
 
   private var profileName: String {
-    account.profileKind == "default" ? "Local OpenCode" : account.label
+    account.profileKind == "default" ? "Default Profile" : account.label
   }
 
   private func load() async {
     isLoading = true
     do {
       providers = try await client.listOpenCodeAuthProviders(accountId: account.id)
+      if !isShared, account.profileKind == "default" {
+        providers = providers.map { provider in
+          var local = provider
+          local.methods = provider.methods.filter { $0.type == "oauth" }
+          return local
+        }.filter { !$0.methods.isEmpty || $0.credentialType == "oauth" }
+      }
       errorMessage = nil
     } catch {
       errorMessage = serverErrorMessage(error)
     }
     isLoading = false
+    if !didOpenRequestedProvider, let initialProviderId,
+      providers.contains(where: { $0.id == initialProviderId })
+    {
+      didOpenRequestedProvider = true
+      setupProvider = OpenCodeProviderSetupRequest(providerId: initialProviderId)
+    }
   }
 
   private func activate() async {

@@ -7,56 +7,50 @@ import CodevisorUI
 
 extension OpenCodeProviderAuthenticationView {
   var providerSignInSheet: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text(flow == nil ? "Add Provider" : (selectedProvider?.name ?? "Sign In"))
-          .font(.title3)
-          .fontWeight(.semibold)
-        Spacer()
-        Button("Cancel") { showingProviderSignIn = false }
-          .settingsActionTint(theme)
-      }
-      .padding(20)
-
-      Divider()
-
-      if let flow {
-        Form {
-          Section(selectedProvider?.name ?? "Authentication") {
-            flowContent(flow)
-          }
-        }
-        .formStyle(.grouped)
-      } else {
-        VStack(spacing: 12) {
-          TextField("Search Providers", text: $providerSearch)
-            .textFieldStyle(.roundedBorder)
-
-          List(filteredProviders, selection: $selectedProviderId) { provider in
-            HStack {
-              Text(provider.name)
-              Spacer()
-              if provider.credentialType != nil {
-                Image(systemName: "checkmark.circle.fill")
-                  .foregroundStyle(.secondary)
-                  .accessibilityLabel("Configured")
-              }
+    NavigationStack {
+      Group {
+        if let flow {
+          Form { Section { flowContent(flow) } }.formStyle(.grouped)
+        } else {
+          VStack(spacing: 0) {
+            List(filteredProviders, selection: $selectedProviderId) { provider in
+              HStack {
+                Text(provider.name)
+                Spacer()
+                if provider.credentialType != nil {
+                  Image(systemName: "checkmark").accessibilityLabel("Configured")
+                }
+              }.tag(provider.id)
             }
-            .tag(provider.id)
-          }
-          .onChange(of: selectedProviderId) { _, _ in selectDefaultMethod() }
-          .frame(minHeight: 170)
-
-          Divider()
-
-          if let provider = selectedProvider {
-            authenticationControls(provider)
+            .searchable(text: $providerSearch, placement: .toolbar, prompt: "Search providers")
+            .onChange(of: selectedProviderId) { _, _ in selectDefaultMethod() }
+            if let provider = selectedProvider {
+              Divider()
+              authenticationControls(provider).padding(20)
+            }
           }
         }
-        .padding(20)
+      }
+      .navigationTitle(flow == nil ? "Add Provider" : (selectedProvider?.name ?? "Sign In"))
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      SheetFooter {
+        Button("Cancel", role: .cancel) { showingProviderSignIn = false }
+          .keyboardShortcut(.cancelAction)
+        if let flow {
+          if flow.state == "waiting" {
+            Button("Continue") { submitCode(flow) }
+              .keyboardShortcut(.defaultAction)
+              .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
+          }
+        } else if let method = selectedMethod {
+          Button(method.type == "api" ? "Save" : "Sign In") { Task { await beginLogin() } }
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canSubmit(method) || isWorking)
+        }
       }
     }
-    .frame(minWidth: 480, idealWidth: 500, minHeight: 430, idealHeight: 480)
+    .frame(width: 500, height: 480)
   }
 
   @ViewBuilder
@@ -83,15 +77,7 @@ extension OpenCodeProviderAuthenticationView {
             .textContentType(.password)
             .onSubmit { submitSelectedMethod() }
         }
-        HStack {
-          Spacer()
-          Button(method.type == "api" ? "Save API Key" : "Sign In") {
-            Task { await beginLogin() }
-          }
-          .settingsActionTint(theme)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!canSubmit(method) || isWorking)
-        }
+
       }
     }
   }
@@ -125,13 +111,7 @@ extension OpenCodeProviderAuthenticationView {
     if flow.state == "waiting" {
       TextField("Authorization Code", text: $authorizationCode)
         .onSubmit { submitCode(flow) }
-      HStack {
-        Spacer()
-        Button("Continue") { submitCode(flow) }
-          .settingsActionTint(theme)
-          .keyboardShortcut(.defaultAction)
-          .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
-      }
+
     } else if flow.state == "running" {
       HStack(spacing: 8) {
         ProgressView().controlSize(.small)

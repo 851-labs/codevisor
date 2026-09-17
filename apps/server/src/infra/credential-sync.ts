@@ -21,6 +21,7 @@ import { Effect } from "effect"
 /// rest.
 export const CREDENTIALS_SYNC_NAMESPACE = "harness-credentials"
 const APPLIED_NAMESPACE = "local.credentials-applied"
+const OVERRIDES_NAMESPACE = "local.credential-overrides"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -30,6 +31,9 @@ export interface CredentialSyncDeps {
   readonly db: CodevisorDatabaseService
   readonly serverId: string
   readonly sources: ReadonlyArray<CredentialSource>
+  readonly profileSources?:
+    | ((content?: string) => Promise<ReadonlyArray<CredentialSource>>)
+    | undefined
   readonly now?: () => number
   /// Fired after ferried content lands locally, so the caller can force
   /// an auth probe (and the roster republish that rides on it).
@@ -58,12 +62,18 @@ export const reconcileCredentials = async (
   const replica = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
   const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
+  const overrideEntries = await run(deps.db.getSyncEntries(OVERRIDES_NAMESPACE))
+  const previousOverrides = new Map(overrideEntries.map((entry) => [entry.key, entry.value]))
   const appliedByKey = new Map(
     appliedEntries
       .filter((entry) => entry.deleted !== true && typeof entry.value === "string")
       .map((entry) => [entry.key, entry.value as string])
   )
-  let clock: SyncTimestampValue | undefined = latestSyncTimestamp([...replica, ...appliedEntries])
+  let clock: SyncTimestampValue | undefined = latestSyncTimestamp([
+    ...replica,
+    ...appliedEntries,
+    ...overrideEntries
+  ])
   const stamp = (): SyncTimestampValue => {
     clock = nextSyncTimestamp(deps.serverId, clock, now())
     return clock
@@ -75,21 +85,53 @@ export const reconcileCredentials = async (
   const failed: Array<{ id: string; reason: string }> = []
   const replicaWrites: Array<SyncEntryRecord> = []
   const appliedWrites: Array<SyncEntryRecord> = []
+  const overrideWrites: Array<SyncEntryRecord> = []
+
+  const sources = [...deps.sources]
+  const profiles = replicaByKey.get("profiles:opencode")
+  if (profiles !== undefined && deps.profileSources !== undefined) {
+    try {
+      sources.push(
+        ...(await deps.profileSources(
+          profiles.deleted === true ? undefined : String(profiles.value)
+        ))
+      )
+    } catch (cause) {
+      failed.push({ id: "profiles:opencode", reason: reasonOf(cause) })
+    }
+  }
 
   // ── Publish: local files into the replica.
-  for (const source of deps.sources) {
-    let local: string | undefined
-    try {
-      local = await source.read()
-    } catch (cause) {
-      failed.push({ id: source.id, reason: reasonOf(cause) })
-      continue
-    }
+  for (const source of sources) {
     const entry = replicaByKey.get(source.id)
     const live =
       entry !== undefined && entry.deleted !== true && typeof entry.value === "string"
         ? entry.value
         : undefined
+    let local: string | undefined
+    let overrides: ReadonlyArray<string> = []
+    try {
+      overrides = (await source.localOverrides?.()) ?? []
+      const previous = previousOverrides.get(source.id)
+      if (
+        live !== undefined &&
+        Array.isArray(previous) &&
+        previous.some((key) => !overrides.includes(String(key)))
+      ) {
+        // Signing out of a machine-owned session returns to the shared key.
+        // Persisted IDs make this work after a server restart as well.
+        await source.apply(live)
+        applied.push(source.id)
+        deps.onApplied?.(source.id)
+      }
+      local = await source.read(live)
+      if (JSON.stringify(previous ?? []) !== JSON.stringify(overrides)) {
+        overrideWrites.push({ key: source.id, value: [...overrides], timestamp: stamp() })
+      }
+    } catch (cause) {
+      failed.push({ id: source.id, reason: reasonOf(cause) })
+      continue
+    }
     if (local !== undefined) {
       if (appliedByKey.get(source.id) === fingerprint(local)) continue
       if (!appliedByKey.has(source.id) && live !== undefined && live !== local) {
@@ -103,7 +145,12 @@ export const reconcileCredentials = async (
       }
       appliedWrites.push({ key: source.id, value: fingerprint(local), timestamp: stamp() })
       appliedByKey.set(source.id, fingerprint(local))
-    } else if (source.tombstoneOnAbsence && appliedByKey.has(source.id) && live !== undefined) {
+    } else if (
+      source.tombstoneOnAbsence &&
+      overrides.length === 0 &&
+      appliedByKey.has(source.id) &&
+      live !== undefined
+    ) {
       // The file was signed out here; propagate the deletion.
       replicaWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
       appliedWrites.push({ key: source.id, value: null, deleted: true, timestamp: stamp() })
@@ -119,7 +166,7 @@ export const reconcileCredentials = async (
   const merged = await run(deps.db.getSyncEntries(CREDENTIALS_SYNC_NAMESPACE))
 
   // ── Apply: replica entries into local files.
-  const sourceById = new Map(deps.sources.map((source) => [source.id, source]))
+  const sourceById = new Map(sources.map((source) => [source.id, source]))
   for (const entry of merged) {
     const source = sourceById.get(entry.key)
     if (source === undefined) continue
@@ -154,6 +201,9 @@ export const reconcileCredentials = async (
 
   if (appliedWrites.length > 0) {
     await run(deps.db.mergeSyncEntries(APPLIED_NAMESPACE, appliedWrites))
+  }
+  if (overrideWrites.length > 0) {
+    await run(deps.db.mergeSyncEntries(OVERRIDES_NAMESPACE, overrideWrites))
   }
   return { status: { published, applied, removed, failed }, changedEntries }
 }

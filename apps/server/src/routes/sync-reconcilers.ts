@@ -16,7 +16,12 @@ import {
   publishMcpReadiness,
   readMcpOverlays
 } from "../infra/mcp-fleet.js"
-import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
+import {
+  HARNESSES_SYNC_NAMESPACE,
+  reconcileHarnesses,
+  type HarnessSyncStatus
+} from "../infra/harness-sync.js"
+import { readHarnessSettings } from "../infra/harness-preferences.js"
 import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
 import type { PluginSyncStatus } from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"
@@ -83,8 +88,12 @@ export const reconcileForNamespace = async (
       return reconcileHarnesses({
         db: services.db,
         serverId: config.id,
-        listHarnesses: async () =>
-          (await discoverHarnesses(services)).map((harness) => ({
+        listHarnesses: async () => {
+          const raw = await run(
+            services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
+          )
+          const decorated = await discoverHarnesses(services, false, undefined, true)
+          return raw.map((harness) => ({
             id: harness.id,
             enabled: harness.enabled,
             installed: harness.readiness.state === "ready",
@@ -92,15 +101,21 @@ export const reconcileForNamespace = async (
             // is nothing to gate on; with one, signed-in or auth-free only.
             authenticated:
               services.auth === undefined ||
-              harness.auth?.state === "authenticated" ||
-              harness.auth?.state === "notRequired"
-          })),
+              decorated.find((item) => item.id === harness.id)?.auth?.state === "authenticated" ||
+              decorated.find((item) => item.id === harness.id)?.auth?.state === "notRequired",
+            phase: decorated.find((item) => item.id === harness.id)?.lifecycle?.phase
+          }))
+        },
         setEnabled: (harnessId, enabled) => run(services.db.setHarnessEnabled(harnessId, enabled)),
         beginInstall: async (harnessId) => {
           if (lifecycle === undefined) {
             throw new Error("Harness install unavailable on this machine")
           }
           await lifecycle.beginInstall(harnessId)
+        },
+        beginUninstall: async (harnessId) => {
+          if (lifecycle === undefined) throw new Error("Uninstall unavailable on this machine")
+          await lifecycle.beginUninstall(harnessId)
         },
         listCustomSpecs: async () => (custom === undefined ? [] : await custom.list()),
         replaceCustomSpecs: async (specs) => {
@@ -109,8 +124,8 @@ export const reconcileForNamespace = async (
       })
     }
     case "credentials": {
-      const sources = services.credentialFerry
-      if (sources === undefined) return undefined
+      await services.sharedAccounts?.reconcile()
+      if (services.credentialFerry === undefined) return undefined
       // Ferried content landing locally forces an auth probe; the account
       // state change then republishes the roster via the auth bridge.
       const harnessFor: Record<string, string> = {
@@ -121,9 +136,12 @@ export const reconcileForNamespace = async (
       return reconcileCredentials({
         db: services.db,
         serverId: config.id,
-        sources,
+        sources: services.credentialFerry,
+        profileSources: services.auth?.sharedOpenCodeProfiles,
         onApplied: (sourceId: string) => {
-          const harnessId = harnessFor[sourceId]
+          const harnessId = sourceId.startsWith("opencode-profile:")
+            ? "opencode"
+            : harnessFor[sourceId]
           if (harnessId !== undefined) void services.auth?.refresh(harnessId).catch(swallowError)
         }
       })
@@ -243,9 +261,12 @@ export const refreshMcpReadiness = async (
 export const refreshHarnessReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
-  fanout: EventFanout
+  fanout: EventFanout,
+  blocked: HarnessSyncStatus["blocked"] = []
 ): Promise<void> => {
   try {
+    const blockedById = new Map(blocked.map(({ id, reason }) => [id, reason]))
+    const preferences = await readHarnessSettings(services.db)
     const rows: HarnessReadinessRow[] = (await discoverHarnessesFromStoredAuthState(services)).map(
       (harness) => {
         const authed =
@@ -254,15 +275,33 @@ export const refreshHarnessReadiness = async (
           harness.auth?.state === "notRequired"
         const installed = harness.readiness.state === "ready"
         const desired = harness.desiredEnabled ?? harness.enabled
-        const state: HarnessReadinessRow["state"] = !desired
-          ? "disabled"
-          : !installed
-            ? "notInstalled"
-            : authed
-              ? "ready"
-              : "signInRequired"
-        const reason = state === "notInstalled" ? harness.readiness.detail : undefined
-        return { id: harness.id, state, ...(reason ? { reason } : {}) }
+        const phase = harness.lifecycle?.phase
+        const refusal = blockedById.get(harness.id)
+        const state: HarnessReadinessRow["state"] =
+          phase === "failed" || (refusal !== undefined && refusal !== "Sign in required")
+            ? "blocked"
+            : phase === "installing" || phase === "uninstalling"
+              ? phase
+              : !desired
+                ? "disabled"
+                : !installed
+                  ? "notInstalled"
+                  : authed
+                    ? "ready"
+                    : "signInRequired"
+        const reason =
+          state === "blocked"
+            ? (refusal ?? harness.lifecycle?.error)
+            : state === "notInstalled"
+              ? harness.readiness.detail
+              : undefined
+        return {
+          id: harness.id,
+          state,
+          overridden: preferences.get(harness.id)?.override !== undefined,
+          installed,
+          ...(reason ? { reason } : {})
+        }
       }
     )
     const result = await publishMachineReadiness({
@@ -403,7 +442,14 @@ export const runBackgroundSyncReconcile = async (
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
     if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
-    if (namespace === "harnesses") await refreshHarnessReadiness(services, config, fanout)
+    if (namespace === "harnesses") {
+      await refreshHarnessReadiness(
+        services,
+        config,
+        fanout,
+        (result.status as HarnessSyncStatus).blocked
+      )
+    }
     if (namespace === "plugins") {
       await refreshPluginReadiness(
         services,

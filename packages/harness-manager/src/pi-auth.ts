@@ -15,6 +15,12 @@ import lockfile from "proper-lockfile"
 
 type AuthFile = Record<string, Credential>
 
+export const piAuthPath = (env: NodeJS.ProcessEnv): string => {
+  const home = env.HOME ?? homedir()
+  const custom = env.PI_CODING_AGENT_DIR?.trim()
+  return join(custom ? custom.replace(/^~(?=$|\/)/, home) : join(home, ".pi", "agent"), "auth.json")
+}
+
 interface PendingPrompt {
   readonly id: string
   readonly resolve: (value: string) => void
@@ -30,6 +36,11 @@ interface InternalFlow {
 }
 
 export interface PiAuthManagerConfig {
+  readonly saveCredential?: (
+    providerId: string,
+    credential: Credential,
+    shared: boolean
+  ) => Promise<boolean>
   readonly onFlowChanged?: (flow: PiAuthProviderFlow) => void
   readonly resolveEnv: () => Promise<NodeJS.ProcessEnv>
   readonly providers?: ReadonlyArray<Provider>
@@ -37,7 +48,11 @@ export interface PiAuthManagerConfig {
 
 export interface PiAuthManager {
   readonly providers: () => Promise<ReadonlyArray<PiAuthProvider>>
-  readonly beginLogin: (providerId: string, method: PiAuthMethod) => Promise<PiAuthProviderFlow>
+  readonly beginLogin: (
+    providerId: string,
+    method: PiAuthMethod,
+    shared?: boolean
+  ) => Promise<PiAuthProviderFlow>
   readonly flow: (flowId: string) => PiAuthProviderFlow
   readonly answer: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
   readonly cancel: (flowId: string) => void
@@ -51,11 +66,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
   const flows = new Map<string, InternalFlow>()
 
   const authPath = async (): Promise<string> => {
-    const env = await config.resolveEnv()
-    const custom = env.PI_CODING_AGENT_DIR?.trim()
-    return custom && custom.length > 0
-      ? join(custom.replace(/^~(?=$|\/)/, env.HOME ?? homedir()), "auth.json")
-      : join(env.HOME ?? homedir(), ".pi", "agent", "auth.json")
+    return piAuthPath(await config.resolveEnv())
   }
 
   const ensureAuthFile = async (path: string): Promise<void> => {
@@ -167,7 +178,8 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
   const runLogin = async (
     flow: InternalFlow,
     provider: Provider,
-    method: PiAuthMethod
+    method: PiAuthMethod,
+    shared: boolean
   ): Promise<void> => {
     try {
       const login = method === "oauth" ? provider.auth.oauth?.login : provider.auth.apiKey?.login
@@ -204,7 +216,8 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
         }
       })
       if (flow.abort.signal.aborted) throw new Error("Login cancelled")
-      await modifyCredentials((current) => ({ ...current, [provider.id]: credential }))
+      if (!(await config.saveCredential?.(provider.id, credential, shared)))
+        await modifyCredentials((current) => ({ ...current, [provider.id]: credential }))
       flow.pending = undefined
       update(flow, { id: flow.value.id, providerId: provider.id, state: "complete" })
     } catch (cause) {
@@ -238,7 +251,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
         .filter((provider): provider is PiAuthProvider => provider !== undefined)
         .sort((left, right) => left.name.localeCompare(right.name))
     },
-    beginLogin: async (providerId, method) => {
+    beginLogin: async (providerId, method, shared = false) => {
       const provider = findProvider(providerId)
       const id = randomUUID()
       const flow: InternalFlow = {
@@ -250,7 +263,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
       }
       flows.set(id, flow)
       const revision = flow.revision
-      void runLogin(flow, provider, method)
+      void runLogin(flow, provider, method, shared)
       await waitForUpdate(flow, revision)
       return publicFlow(flow)
     },

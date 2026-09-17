@@ -2,20 +2,41 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// The Harnesses pane: a native machine list that pushes each machine's
-/// harnesses — installs, sign-ins, and updates are all genuinely per
-/// machine.
+/// Shared desired settings, with machine overrides beneath.
 struct HarnessesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
+  @State private var globalModel = HarnessGlobalModel()
+  @State private var accountsSetting: HarnessFleet.Setting?
 
   var body: some View {
     Form {
-      MachineListSection(pane: .harnesses, badge: badge) { machine in
-        HarnessMachinePane(machine: machine)
+      HarnessGlobalSection(model: globalModel, onAccounts: { accountsSetting = $0 }) { id, symbol in
+        HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
+      }
+      Section("Machines") {
+        ForEach(environment.machines.allMachines) { machine in
+          NavigationLink(value: SettingsPaneRoute.machine(MachinePaneRoute(pane: .harnesses, machineId: machine.id))) {
+            HStack {
+              Text(machine.name)
+              Spacer()
+              badge(machine).view.font(.callout)
+            }
+          }
+        }
       }
     }
     .settingsPaneFormStyle(theme)
+    .sheet(item: $accountsSetting) { setting in
+      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name) { machineId, harness, request in
+        HarnessAuthenticationView(
+          harness: harness, onChange: { _ in },
+          showsHeader: false,
+          signInRequest: request
+        )
+        .environment(\.settingsMachineId, machineId)
+      }
+    }
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
@@ -34,6 +55,10 @@ struct HarnessesSettingsView: View {
     if rows.contains(where: { $0.state == "signInRequired" }) {
       return .attention("Sign in required")
     }
+    if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+    if !HarnessFleet.pendingChanges(environment.configSync, machineKey: key).isEmpty { return .syncing }
+    let count = HarnessFleet.overrideCount(environment.configSync, machineKey: key)
+    if count > 0 { return .overrides(count) }
     return .synced
   }
 }

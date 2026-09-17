@@ -94,9 +94,26 @@ struct SkillRemoteImportSheet: View {
   @State private var errorMessage: String?
 
   var body: some View {
+    NavigationStack {
+      sheetContent
+        .navigationDestination(
+          isPresented: Binding(
+            get: { candidates != nil },
+            set: { if !$0 { candidates = nil; selection = []; errorMessage = nil } }
+          )
+        ) {
+          sheetContent
+            .navigationBarBackButtonHidden(isWorking)
+        }
+    }
+    .frame(width: 480, height: candidates == nil ? 220 : 420)
+    .themedSurface(.sheet)
+  }
+
+  private var sheetContent: some View {
     VStack(spacing: 0) {
       Form {
-        Section("Import Skills") {
+        Section {
           // Same labeled-field pattern as the MCP editor's Server
           // URL row; verbatim because the LocalizedStringKey
           // initializer would markdown-link a bare URL prompt.
@@ -142,18 +159,7 @@ struct SkillRemoteImportSheet: View {
       }
       .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
-      Divider()
-        .overlay(theme.isSystem ? Color.clear : theme.separator)
-      HStack {
-        if candidates != nil {
-          Button("Back") {
-            candidates = nil
-            selection = []
-            errorMessage = nil
-          }
-          .settingsActionTint(theme)
-        }
-        Spacer()
+      SheetFooter {
         Button("Cancel") { dismiss() }
           .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
@@ -173,11 +179,9 @@ struct SkillRemoteImportSheet: View {
           .disabled(selection.isEmpty || isWorking)
         }
       }
-      .padding()
       .themedSurface(.sheet)
     }
-    .frame(width: 480, height: candidates == nil ? 220 : 420)
-    .themedSurface(.sheet)
+    .navigationTitle("Import Skills")
   }
 
   private var importLabel: String {

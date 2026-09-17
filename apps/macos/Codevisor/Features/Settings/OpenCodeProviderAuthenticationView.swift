@@ -5,6 +5,8 @@ import CodevisorUI
 
 struct OpenCodeProviderAuthenticationView: View {
   @Environment(AppEnvironment.self) var environment
+  @Environment(\.sharedHarnessAccounts) var isShared
+  @Environment(\.harnessMachineSignIn) var machineSignIn
   @Environment(\.settingsMachineId) private var settingsMachineId
 
   /// The machine this view operates on — pinned by the machine-scoped
@@ -14,8 +16,8 @@ struct OpenCodeProviderAuthenticationView: View {
     settingsMachineId ?? environment.defaultComposerServerId
   }
 
-  var client: any CodevisorServerClienting {
-    environment.machines.client(for: scopedServerId)
+  var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: scopedServerId, isShared: isShared)
   }
 
   @Environment(\.dismiss) private var dismiss
@@ -26,6 +28,8 @@ struct OpenCodeProviderAuthenticationView: View {
   /// Hidden when hosted inside the composer's sign-in sheet, which
   /// carries its own title bar.
   var showsHeader = true
+  var signInRequest: HarnessMachineSignIn?
+  @State var didOpenRequestedProvider = false
 
   @State var accounts: [ServerHarnessAccount] = []
   @State var providers: [ServerOpenCodeAuthProvider] = []
@@ -44,6 +48,7 @@ struct OpenCodeProviderAuthenticationView: View {
   @State var isLoadingProviders = false
   @State var errorMessage: String?
   @State var showingProviderSignIn = false
+  @State var pendingMachineSignIn: HarnessMachineSignIn?
   @State private var showingNewProfile = false
   @State var newProfileName = ""
   @State var profilePendingRename: ServerHarnessAccount?
@@ -53,37 +58,30 @@ struct OpenCodeProviderAuthenticationView: View {
   @State var showingRemoveProfileAlert = false
 
   var body: some View {
-    VStack(spacing: 0) {
+    Group {
       if showsHeader {
-        HStack(spacing: 12) {
-          HarnessIcon(harnessId: "opencode", fallbackSymbolName: harness.symbolName, size: 30)
-          Text("OpenCode Accounts")
-            .font(.title2)
-            .fontWeight(.semibold)
-          Spacer()
-          Button("Done") { dismiss() }
-            .settingsActionTint(theme)
-            .keyboardShortcut(.defaultAction)
+        NavigationStack {
+          profiles.navigationTitle("OpenCode Accounts")
         }
-        .padding(20)
-
-        Divider()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          SheetFooter {
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+          }
+        }
+        .frame(width: 760, height: 540)
+      } else {
+        profiles
       }
-
-      NavigationSplitView {
-        profileSidebar
-      } detail: {
-        profileDetail
-      }
-      .navigationSplitViewStyle(.balanced)
     }
-    .frame(
-      minWidth: showsHeader ? 720 : nil,
-      idealWidth: showsHeader ? 760 : nil,
-      minHeight: showsHeader ? 500 : nil,
-      idealHeight: showsHeader ? 540 : nil
-    )
     .task { await loadAccounts() }
+    .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
+      if isShared {
+        Task {
+          await loadAccounts()
+          if !showingProviderSignIn, let id = selectedAccountId { await loadProviders(accountId: id) }
+        }
+      }
+    }
     .task(id: selectedAccountId) {
       guard let accountId = selectedAccountId else {
         providers = []
@@ -122,6 +120,14 @@ struct OpenCodeProviderAuthenticationView: View {
       Text(errorMessage ?? "OpenCode authentication failed.")
     }
     .onDisappear { cancelPendingFlow() }
+  }
+
+  private var profiles: some View {
+    HStack(spacing: 0) {
+      profileSidebar
+      Divider()
+      profileDetail.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
   }
 
   private var profileSidebar: some View {
@@ -175,49 +181,25 @@ struct OpenCodeProviderAuthenticationView: View {
       .settingsActionTint(theme)
       .padding(10)
     }
-    .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
+    .frame(width: 220)
   }
 
   @ViewBuilder
   private var profileDetail: some View {
     if let account = selectedAccount {
       VStack(spacing: 0) {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 3) {
-            Text(profileName(account))
-              .font(.title3)
-              .fontWeight(.semibold)
-            Text(account.profileKind == "default" ? "Local OpenCode" : "Managed Profile")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          }
-          Spacer()
-          if account.isActive {
-            Label("New Chats", systemImage: "checkmark.circle.fill")
-              .font(.callout)
-              .foregroundStyle(.secondary)
-          } else {
-            Button("Use for New Chats") { Task { await activate(account) } }
-              .settingsActionTint(theme)
-              .disabled(isWorking)
-          }
-        }
-        .padding(20)
-
-        Divider()
-
         Group {
           if isProviderContentLoading {
             ProgressView()
               .controlSize(.small)
               .accessibilityLabel("Loading providers")
               .frame(maxWidth: .infinity, maxHeight: .infinity)
-          } else if configuredProviders.isEmpty {
-            ContentUnavailableView("No Providers", systemImage: "key")
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
           } else {
             List(selection: $selectedProviderId) {
               Section("Providers") {
+                if !isShared, account.profileKind == "default" {
+                  HarnessSharedAccountRows(source: .opencode, excludingProviderIds: Set(configuredProviders.map(\.id)))
+                }
                 ForEach(configuredProviders) { provider in
                   providerRow(provider)
                     .tag(provider.id)
@@ -302,7 +284,10 @@ struct OpenCodeProviderAuthenticationView: View {
   }
 
   private var configuredProviders: [ServerOpenCodeAuthProvider] {
-    providers.filter { $0.credentialType != nil }
+    providers.filter {
+      $0.credentialType != nil
+        && (isShared || selectedAccount?.profileKind != "default" || $0.credentialType == "oauth")
+    }
   }
 
   var selectedProvider: ServerOpenCodeAuthProvider? {

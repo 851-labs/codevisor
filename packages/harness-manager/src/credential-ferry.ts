@@ -24,8 +24,8 @@ import { openCodeAuthPath } from "./opencode-auth.js"
 ///              endpoint URLs, no token family at all.
 ///
 /// Recon'd and deliberately NOT ferried (Phase 21 close-out):
-/// - grok-build: ~/.grok/auth.json is an OIDC session (refresh_token +
-///              expires_at) — rotating, single-owner, relayed re-auth only.
+/// - grok-build: rotating OIDC credentials use the shared credential vault
+///              and native external-token command, never this static ferry.
 /// - github-copilot-cli: no standalone credential file (auth rides GitHub's
 ///              keyring/session store); nothing honestly static to ferry.
 /// - gemini / qwen-code: browser OAuth session stores; rotating families,
@@ -35,7 +35,9 @@ export interface CredentialSource {
   readonly id: string
   /// Canonical static content, or undefined when there is nothing to
   /// publish from this machine (missing file, or rotating-only content).
-  readonly read: () => Promise<string | undefined>
+  readonly read: (sharedContent?: string) => Promise<string | undefined>
+  /// Provider IDs owned by local sign-ins; "*" shadows a whole auth file.
+  readonly localOverrides?: () => Promise<ReadonlyArray<string>>
   readonly apply: (content: string) => Promise<void>
   /// Applies a deletion for sources where file absence means "signed
   /// out" (tombstoneOnAbsence) rather than "never had it".
@@ -45,6 +47,7 @@ export interface CredentialSource {
 
 export interface CredentialFerryConfig {
   readonly resolveEnv: () => Promise<NodeJS.ProcessEnv>
+  readonly localProviders?: (harness: "pi" | "opencode") => Promise<ReadonlyArray<string>>
 }
 
 /// Stable output for change detection: identical logical content must
@@ -54,7 +57,7 @@ export const canonicalCredentialJson = (value: Record<string, unknown>): string 
     Object.fromEntries(Object.entries(value).toSorted(([a], [b]) => a.localeCompare(b)))
   )
 
-const readJsonFile = async (path: string): Promise<Record<string, unknown> | undefined> => {
+export const readJsonFile = async (path: string): Promise<Record<string, unknown> | undefined> => {
   let raw: string
   try {
     raw = await readFile(path, "utf8")
@@ -69,7 +72,10 @@ const readJsonFile = async (path: string): Promise<Record<string, unknown> | und
   return parsed as Record<string, unknown>
 }
 
-const atomicWriteJson = async (path: string, value: Record<string, unknown>): Promise<void> => {
+export const atomicWriteJson = async (
+  path: string,
+  value: Record<string, unknown>
+): Promise<void> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = `${path}.codevisor-${process.pid}.tmp`
   await writeFile(temporary, JSON.stringify(value, null, 2), { encoding: "utf8", mode: 0o600 })
@@ -80,7 +86,7 @@ const atomicWriteJson = async (path: string, value: Record<string, unknown>): Pr
 /// Serializes our read-modify-write against the harness CLI's own file
 /// access (pi cooperates with proper-lockfile; for others the lock is a
 /// harmless extra). The file must exist for proper-lockfile to lock.
-const withFileLock = async (path: string, body: () => Promise<void>): Promise<void> => {
+export const withFileLock = async (path: string, body: () => Promise<void>): Promise<void> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   try {
     await writeFile(path, "{}", { encoding: "utf8", flag: "wx", mode: 0o600 })
@@ -107,28 +113,51 @@ const credentialType = (value: unknown): string | undefined =>
 const mergeClassSource = (
   id: string,
   pathFor: () => Promise<string>,
-  travels: (type: string | undefined) => boolean
+  travels: (type: string | undefined) => boolean,
+  localProviders: () => Promise<ReadonlyArray<string>> = async () => []
 ): CredentialSource => ({
   id,
   tombstoneOnAbsence: false,
-  read: async () => {
+  localOverrides: async () => [
+    ...(await localProviders()),
+    ...Object.entries((await readJsonFile(await pathFor())) ?? {})
+      .filter(([, value]) => !travels(credentialType(value)))
+      .map(([id]) => id)
+  ],
+  read: async (sharedContent) => {
     const current = await readJsonFile(await pathFor())
     if (current === undefined) return undefined
+    const local = new Set(await localProviders())
     const subset = Object.fromEntries(
-      Object.entries(current).filter(([, value]) => travels(credentialType(value)))
+      Object.entries(current).filter(
+        ([id, value]) => !local.has(id) && travels(credentialType(value))
+      )
     )
+    // A local OAuth sign-in shadows the shared key for the same provider.
+    // Its absence from the file's static subset is not a global sign-out.
+    const shared =
+      sharedContent === undefined ? {} : (JSON.parse(sharedContent) as Record<string, unknown>)
+    for (const [id, value] of Object.entries(current)) {
+      if ((local.has(id) || !travels(credentialType(value))) && id in shared)
+        subset[id] = shared[id]
+    }
+    for (const id of local) if (id in shared) subset[id] = shared[id]
     return canonicalCredentialJson(subset)
   },
   apply: async (content) => {
     const incoming = JSON.parse(content) as Record<string, unknown>
+    const local = new Set(await localProviders())
+    for (const id of local) delete incoming[id]
     const path = await pathFor()
     await withFileLock(path, async () => {
       /* v8 ignore next -- withFileLock creates the file before this read. */
       const current = (await readJsonFile(path)) ?? {}
       const preserved = Object.fromEntries(
-        Object.entries(current).filter(([, value]) => !travels(credentialType(value)))
+        Object.entries(current).filter(
+          ([id, value]) => local.has(id) || !travels(credentialType(value))
+        )
       )
-      await atomicWriteJson(path, { ...preserved, ...incoming })
+      await atomicWriteJson(path, { ...incoming, ...preserved })
     })
   }
 })
@@ -156,6 +185,8 @@ export const credentialFerrySources = (
   const codex: CredentialSource = {
     id: "codex-auth-file",
     tombstoneOnAbsence: true,
+    localOverrides: async () =>
+      codexHasRotatingTokens(await readJsonFile(await codexPath())) ? ["*"] : [],
     read: async () => {
       const current = await readJsonFile(await codexPath())
       if (current === undefined || codexHasRotatingTokens(current)) return undefined
@@ -211,8 +242,18 @@ export const credentialFerrySources = (
   }
 
   return [
-    mergeClassSource("pi-auth", piPath, (type) => type === "api_key"),
-    mergeClassSource("opencode-auth", openCodePath, (type) => type !== "oauth"),
+    mergeClassSource(
+      "pi-auth",
+      piPath,
+      (type) => type === "api_key",
+      config.localProviders && (() => config.localProviders!("pi"))
+    ),
+    mergeClassSource(
+      "opencode-auth",
+      openCodePath,
+      (type) => type !== "oauth",
+      config.localProviders && (() => config.localProviders!("opencode"))
+    ),
     codex,
     devin
   ]

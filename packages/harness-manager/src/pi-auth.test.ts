@@ -1,9 +1,9 @@
 import type { AuthInteraction, OAuthCredential, Provider } from "@earendil-works/pi-ai"
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
-import { makePiAuthManager } from "./pi-auth.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { makePiAuthManager, piAuthPath } from "./pi-auth.js"
 
 const directories: string[] = []
 
@@ -14,6 +14,70 @@ afterEach(() => {
 })
 
 describe("Pi provider authentication", () => {
+  it("saves a managed login before completing and never writes its refresh token to the native file", async () => {
+    const home = mkdtempSync(join(tmpdir(), "codevisor-pi-managed-"))
+    directories.push(home)
+    const credential = { type: "oauth", access: "access", refresh: "refresh", expires: 3_600_000 }
+    const provider = {
+      id: "test",
+      name: "Test",
+      auth: {
+        oauth: {
+          login: async () => credential,
+          refresh: async () => credential,
+          toAuth: async () => ({ apiKey: "access" })
+        }
+      },
+      getModels: () => []
+    } as unknown as Provider
+    const saved = Promise.withResolvers<boolean>()
+    const called = Promise.withResolvers<void>()
+    const completed = Promise.withResolvers<void>()
+    const saveCredential = vi.fn(async () => {
+      called.resolve()
+      return saved.promise
+    })
+    const manager = makePiAuthManager({
+      resolveEnv: async () => ({ HOME: home }),
+      providers: [provider],
+      saveCredential,
+      onFlowChanged: (flow) => {
+        if (flow.state === "complete") completed.resolve()
+      }
+    })
+    const pending = manager.beginLogin("test", "oauth", true)
+    await called.promise
+    expect(saveCredential).toHaveBeenCalledWith("test", credential, true)
+    expect(existsSync(piAuthPath({ HOME: home }))).toBe(false)
+    saved.resolve(true)
+    await pending
+    await completed.promise
+    expect(existsSync(piAuthPath({ HOME: home }))).toBe(false)
+    expect(piAuthPath({ HOME: home, PI_CODING_AGENT_DIR: " ~/custom " })).toBe(
+      join(home, "custom", "auth.json")
+    )
+  })
+
+  it("reports a vault failure without saving or completing the login", async () => {
+    const home = mkdtempSync(join(tmpdir(), "codevisor-pi-failed-"))
+    directories.push(home)
+    const finished = Promise.withResolvers<void>()
+    const manager = makePiAuthManager({
+      resolveEnv: async () => ({ HOME: home }),
+      saveCredential: async () => {
+        throw new Error("Unable to save account")
+      },
+      onFlowChanged: (flow) => {
+        if (flow.state === "error") finished.resolve()
+      }
+    })
+    const flow = await manager.beginLogin("openai", "api_key")
+    await manager.answer(flow.id, "fixture-key")
+    await finished.promise
+    expect(manager.flow(flow.id).state).toBe("error")
+    expect(existsSync(piAuthPath({ HOME: home }))).toBe(false)
+  })
+
   it("manages Pi's auth.json through a native prompt flow", async () => {
     const home = mkdtempSync(join(tmpdir(), "codevisor-pi-providers-"))
     directories.push(home)

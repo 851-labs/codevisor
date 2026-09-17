@@ -149,11 +149,14 @@ export const makeHarnessAuthDecoration = (
   ): Promise<ReadonlyArray<Harness>> =>
     Promise.all(
       harnesses.map(async (harness) => {
-        const desiredEnabled = harness.enabled
+        const desiredEnabled = harness.desiredEnabled ?? harness.enabled
         if (harness.readiness.state !== "ready") {
           return { ...harness, desiredEnabled, enabled: false }
         }
-        const account = await ensureDefault(harness)
+        const fallback = await ensureDefault(harness)
+        const account =
+          (await run(config.db.listHarnessAccounts(harness.id))).find((row) => row.isActive) ??
+          fallback
         if (mode === "force") {
           await refreshAccount(account, true)
         } else if (mode === "passive") {

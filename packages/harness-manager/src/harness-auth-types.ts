@@ -16,6 +16,9 @@ import type {
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
+import type { CredentialSource } from "./credential-ferry.js"
+import type { SharedAccountIntegration } from "./shared-account-integration.js"
+import type { SharedProviderIntegration } from "./shared-provider-integration.js"
 
 export interface HarnessAuthExecOptions {
   readonly cwd?: string
@@ -42,6 +45,8 @@ export interface HarnessAuthEvent {
 }
 
 export interface HarnessAuthManagerConfig {
+  readonly sharedAccounts?: () => SharedAccountIntegration | undefined
+  readonly sharedProviders?: () => SharedProviderIntegration | undefined
   readonly dataDir: string
   readonly db: CodevisorDatabaseService
   readonly agents: AgentRuntimeService
@@ -60,6 +65,7 @@ export interface HarnessAuthManagerConfig {
 }
 
 export interface HarnessAuthManager {
+  readonly sharedOpenCodeProfiles?: (content?: string) => Promise<ReadonlyArray<CredentialSource>>
   readonly decorateHarnesses: (
     harnesses: ReadonlyArray<Harness>,
     force?: boolean
@@ -88,7 +94,11 @@ export interface HarnessAuthManager {
   readonly activeAccountContext: (harnessId: string) => Promise<HarnessAccountContext | undefined>
   readonly markAccountExpired: (accountId: string, detail?: string) => Promise<void>
   readonly piProviders?: () => Promise<ReadonlyArray<PiAuthProvider>>
-  readonly beginPiLogin?: (providerId: string, method: PiAuthMethod) => Promise<PiAuthProviderFlow>
+  readonly beginPiLogin?: (
+    providerId: string,
+    method: PiAuthMethod,
+    shared?: boolean
+  ) => Promise<PiAuthProviderFlow>
   readonly piLoginFlow?: (flowId: string) => PiAuthProviderFlow
   readonly answerPiLogin?: (flowId: string, value: string) => Promise<PiAuthProviderFlow>
   readonly cancelPiLogin?: (flowId: string) => void
@@ -99,7 +109,8 @@ export interface HarnessAuthManager {
     providerId: string,
     methodId: string,
     inputs?: Readonly<Record<string, string>>,
-    apiKey?: string
+    apiKey?: string,
+    shared?: boolean
   ) => Promise<OpenCodeAuthFlow>
   readonly openCodeLoginFlow?: (flowId: string) => OpenCodeAuthFlow
   readonly answerOpenCodeLogin?: (flowId: string, code: string) => Promise<OpenCodeAuthFlow>

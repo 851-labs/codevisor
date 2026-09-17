@@ -23,6 +23,7 @@ public protocol CloudMachineProviding: AnyObject {
   /// Nudged from local status refreshes so a server that starts after
   /// sign-in still registers.
   func registerLocalMachineIfNeeded()
+  func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool
 }
 
 public extension CloudMachineProviding {
@@ -30,6 +31,7 @@ public extension CloudMachineProviding {
   func loopbackRevision(for machine: CloudMachine) -> UInt64 { 0 }
   func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }
   func registerLocalMachineIfNeeded() {}
+  func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool { false }
 }
 
 extension CodevisorMachine {

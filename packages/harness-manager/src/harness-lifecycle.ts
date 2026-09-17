@@ -4,6 +4,7 @@ import { makeHarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { makeHarnessUpdateDetection } from "./harness-lifecycle-detection.js"
 import { makeHarnessOperationRunner } from "./harness-lifecycle-execution.js"
 import { makeHarnessUpdateGate } from "./harness-lifecycle-updates.js"
+import { makeHarnessUninstall } from "./harness-lifecycle-uninstall.js"
 import type {
   HarnessLifecycleManager,
   HarnessLifecycleManagerConfig
@@ -79,6 +80,7 @@ export const makeHarnessLifecycleManager = (
   return {
     ...gate,
     ...bundledApp,
+    ...makeHarnessUninstall(core, runner),
     beginInstall: runner.beginInstall,
     checkForUpdates: async (force = false) => {
       // Explicit checks reset failed operations. Periodic checks call

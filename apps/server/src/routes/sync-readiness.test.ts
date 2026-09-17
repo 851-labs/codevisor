@@ -1,7 +1,8 @@
 import type { Harness } from "@codevisor/api"
+import type { CodevisorServerServices } from "../server-context.js"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
-import { jsonRequest, makeServices, pluginsStub, startWithApp } from "../test-support.js"
+import { jsonRequest, makeServices, pluginsStub, run, startWithApp } from "../test-support.js"
 
 /// Phase 17: the mcp-readiness surface over HTTP — the on-demand publish
 /// endpoint plus the reconcile pass keeping the machine's entry fresh.
@@ -100,6 +101,74 @@ describe("/v1/sync/harness-readiness", () => {
     for (const row of rows) {
       expect(["ready", "signInRequired", "notInstalled", "disabled"]).toContain(row.state)
     }
+  })
+
+  it("applies global uninstalls and reports their lifecycle state", async () => {
+    for (const available of [false, true]) {
+      const { services } = await makeServices(`uninstall-${available}`)
+      await run(
+        services.db.mergeSyncEntries("harnesses", [
+          {
+            key: "codex",
+            value: { enabled: false, installed: false, uninstall: true },
+            timestamp: { wallMs: 1, counter: 0, deviceId: "test" }
+          }
+        ])
+      )
+      let started = false
+      const lifecycle = {
+        subscribe: () => () => {},
+        onGateReleased: () => () => {},
+        decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
+        beginUninstall: async () => {
+          started = true
+          return { terminalId: "remove" }
+        }
+      } as unknown as NonNullable<CodevisorServerServices["lifecycle"]>
+      const server = await startWithApp({ ...services, ...(available ? { lifecycle } : {}) })
+      const result = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
+      expect(started).toBe(available)
+      expect(result.body).toMatchObject({
+        blocked: available ? [] : [{ id: "codex", reason: "Uninstall unavailable on this machine" }]
+      })
+    }
+  })
+
+  it("reports operation progress, errors, and machine overrides", async () => {
+    const { services } = await makeServices("operation-report")
+    const lifecycle = {
+      subscribe: () => () => {},
+      onGateReleased: () => () => {},
+      decorateHarnesses: async (list: ReadonlyArray<Harness>) =>
+        ["installing", "uninstalling", "failed"].flatMap((phase) => [
+          {
+            ...list[0]!,
+            id: phase,
+            lifecycle: {
+              phase,
+              ...(phase === "failed" ? { error: "Package manager unavailable" } : {})
+            }
+          },
+          { ...list[0]!, id: `${phase}-empty`, lifecycle: { phase } }
+        ])
+    } as unknown as NonNullable<CodevisorServerServices["lifecycle"]>
+    const server = await startWithApp({ ...services, lifecycle }, undefined, {
+      id: "operation-report"
+    })
+    await jsonRequest(server, "/v1/sync/harness-readiness/publish", { method: "POST" })
+    const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
+      entries: Array<{
+        value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
+      }>
+    }
+    const rows = document.entries[0]!.value.harnesses
+    expect(rows.find((row) => row.id === "uninstalling")?.state).toBe("uninstalling")
+    expect(rows.find((row) => row.id === "installing")?.state).toBe("installing")
+    expect(rows.find((row) => row.id === "failed")).toMatchObject({
+      state: "blocked",
+      reason: "Package manager unavailable"
+    })
+    expect(rows.find((row) => row.id === "failed-empty")).toMatchObject({ state: "blocked" })
   })
 
   it("reports sign-in-required for installed-but-unauthenticated harnesses", async () => {

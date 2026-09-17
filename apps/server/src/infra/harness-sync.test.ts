@@ -8,6 +8,8 @@ import {
   type LocalHarnessState
 } from "./harness-sync.js"
 
+import { setHarnessOverride } from "./harness-preferences.js"
+
 const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
 
 interface World {
@@ -15,6 +17,7 @@ interface World {
   readonly calls: {
     readonly enabled: Array<readonly [string, boolean]>
     readonly installs: Array<string>
+    readonly uninstalls: Array<string>
     readonly replaced: Array<ReadonlyArray<CustomHarnessSpec>>
   }
   readonly state: {
@@ -26,11 +29,15 @@ interface World {
 
 const makeWorld = async (serverId: string): Promise<World> => {
   const { services } = await makeServices(serverId)
-  const calls: World["calls"] = { enabled: [], installs: [], replaced: [] }
+  const calls: World["calls"] = { enabled: [], installs: [], uninstalls: [], replaced: [] }
   const state: World["state"] = { harnesses: [], customs: [], installFailures: {} }
   const deps: HarnessSyncDeps = {
     db: services.db,
     serverId,
+    now: () => 1000,
+    beginUninstall: async (id) => {
+      calls.uninstalls.push(id)
+    },
     listHarnesses: () => Promise.resolve([...state.harnesses]),
     setEnabled: (harnessId, enabled) => {
       calls.enabled.push([harnessId, enabled])
@@ -56,7 +63,7 @@ const makeWorld = async (serverId: string): Promise<World> => {
 }
 
 describe("harness sync", () => {
-  it("publishes local catalog state and custom specs, idempotently", async () => {
+  it("keeps detected installations and local custom definitions out of global settings", async () => {
     const world = await makeWorld("server-a")
     world.state.harnesses = [
       { id: "claude", enabled: true, installed: true, authenticated: true },
@@ -68,19 +75,9 @@ describe("harness sync", () => {
     ]
 
     const first = await reconcileHarnesses(world.deps)
-    expect([...first.status.published].sort()).toEqual([
-      "claude",
-      "codex",
-      "custom:mybot",
-      "custom:tinybot"
-    ])
-    // Env keys serialize sorted, so fingerprints are author-independent.
-    const mybot = first.changedEntries.find((entry) => entry.key === "custom:mybot")
-    expect(JSON.stringify(mybot?.value)).toContain('"env":{"A":"1","B":"2"}')
-    expect(first.changedEntries.find((entry) => entry.key === "claude")?.value).toEqual({
-      enabled: true,
-      installed: true
-    })
+    expect(first.status.published).toEqual([])
+    expect(first.changedEntries).toEqual([])
+    expect(await run(world.deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))).toEqual([])
 
     expect((await reconcileHarnesses(world.deps)).status).toEqual({
       published: [],
@@ -110,13 +107,12 @@ describe("harness sync", () => {
       { id: "codex", enabled: true, installed: false, authenticated: true }
     ]
 
-    // Pass 1: nothing publishes (the fleet wins first contact); the enabled
-    // set applies, installs start, the custom spec lands.
+    // Pass 1: shared settings apply without publishing local discoveries.
     const first = await reconcileHarnesses(world.deps)
     expect(first.status.published).toEqual([])
     expect(world.calls.enabled).toEqual([["claude", false]])
     expect([...first.status.installing].sort()).toEqual(["claude", "codex"])
-    expect(first.status.applied).toEqual(["custom:mybot"])
+    expect(first.status.applied).toEqual(["claude", "custom:mybot"])
     expect(world.calls.replaced.at(-1)?.map((spec) => spec.id)).toEqual(["mybot"])
 
     // Pass 2: installs still running — refusals surface as blocked (Error
@@ -132,20 +128,19 @@ describe("harness sync", () => {
       "no runnable method"
     ])
 
-    // Pass 3: binaries arrived — the applied record finally lands, and
-    // still nothing publishes back.
+    // Pass 3: installed binaries satisfy the desired state.
     world.state.installFailures = {}
     world.state.harnesses = world.state.harnesses.map((harness) => ({
       ...harness,
       installed: true
     }))
     const third = await reconcileHarnesses(world.deps)
-    expect([...third.status.applied].sort()).toEqual(["claude", "codex"])
+    expect(third.status.applied).toEqual([])
     expect(third.status.published).toEqual([])
     expect(third.changedEntries).toEqual([])
   })
 
-  it("auth-gates enables until the machine signs in", async () => {
+  it("retains desired enablement while authentication is pending", async () => {
     const world = await makeWorld("server-c")
     await run(
       world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
@@ -155,42 +150,141 @@ describe("harness sync", () => {
     world.state.harnesses = [
       { id: "claude", enabled: false, installed: true, authenticated: false }
     ]
-
     const first = await reconcileHarnesses(world.deps)
-    expect(first.status.blocked).toEqual([
-      { id: "claude", reason: "Sign in before this harness can be enabled" }
-    ])
-    expect(world.calls.enabled).toEqual([])
-
-    world.state.harnesses = [{ id: "claude", enabled: false, installed: true, authenticated: true }]
-    const second = await reconcileHarnesses(world.deps)
+    expect(first.status.blocked).toEqual([{ id: "claude", reason: "Sign in required" }])
     expect(world.calls.enabled).toEqual([["claude", true]])
-    expect(second.status.applied).toEqual(["claude"])
-
-    // A local edit after adoption publishes — with the fleet's installed
-    // flag preserved even if the local binary state disagrees.
-    world.state.harnesses = [
-      { id: "claude", enabled: false, installed: false, authenticated: true }
-    ]
-    const third = await reconcileHarnesses(world.deps)
-    expect(third.status.published).toEqual(["claude"])
-    expect(third.changedEntries.find((entry) => entry.key === "claude")?.value).toEqual({
-      enabled: false,
-      installed: true
-    })
+    world.state.harnesses[0] = { id: "claude", enabled: true, installed: true, authenticated: true }
+    expect((await reconcileHarnesses(world.deps)).status.blocked).toEqual([])
+    expect(await run(world.deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))).toMatchObject([
+      { value: { enabled: true, installed: true } }
+    ])
   })
 
-  it("tombstones custom deletions and applies fleet tombstones", async () => {
+  it("keeps an override through global changes, then restores inheritance", async () => {
+    const world = await makeWorld("server-local")
+    world.state.harnesses = [{ id: "claude", enabled: true, installed: true, authenticated: true }]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        { key: "claude", value: { enabled: true, installed: true }, timestamp: at(10) }
+      ])
+    )
+    await setHarnessOverride(world.deps.db, "claude", { enabled: false })
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.enabled).toEqual([["claude", false]])
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        {
+          key: "claude",
+          value: { enabled: false, installed: false, uninstall: true },
+          timestamp: at(20)
+        }
+      ])
+    )
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.uninstalls).toEqual([])
+    await setHarnessOverride(world.deps.db, "claude", undefined)
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.uninstalls).toEqual(["claude"])
+  })
+
+  it("keeps a local uninstall across reconnects without changing another machine", async () => {
+    const local = await makeWorld("local")
+    const other = await makeWorld("other")
+    const entries = [
+      { key: "claude", value: { enabled: true, installed: true }, timestamp: at(10) }
+    ]
+    for (const world of [local, other]) {
+      await run(world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, entries))
+      world.state.harnesses = [
+        { id: "claude", enabled: false, installed: false, authenticated: true }
+      ]
+    }
+    await setHarnessOverride(local.deps.db, "claude", { enabled: false, installed: false })
+    await reconcileHarnesses(local.deps)
+    await reconcileHarnesses(local.deps)
+    await reconcileHarnesses(other.deps)
+    expect(local.calls.installs).toEqual([])
+    expect(other.calls.installs).toEqual(["claude"])
+    await setHarnessOverride(local.deps.db, "claude", undefined)
+    await reconcileHarnesses(local.deps)
+    expect(local.calls.installs).toEqual(["claude"])
+  })
+
+  it("reports unavailable uninstall and preserves locally edited custom definitions", async () => {
+    const world = await makeWorld("uninstall-blocked")
+    world.state.harnesses = [{ id: "claude", enabled: false, installed: true, authenticated: true }]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        {
+          key: "claude",
+          value: { enabled: false, installed: false, uninstall: true },
+          timestamp: at(10)
+        },
+        {
+          key: "custom:bot",
+          value: { id: "bot", name: "Global", command: "global" },
+          timestamp: at(10)
+        }
+      ])
+    )
+    world.state.customs = [{ id: "bot", name: "Local", command: "local" }]
+    await run(
+      world.deps.db.mergeSyncEntries("local.harness-custom-overrides", [
+        { key: "bot", value: true, timestamp: at(10) }
+      ])
+    )
+    const { beginUninstall: _omitted, ...withoutUninstall } = world.deps
+    expect((await reconcileHarnesses(withoutUninstall)).status.blocked).toEqual([
+      { id: "claude", reason: "Uninstall unavailable on this machine" }
+    ])
+    expect(
+      (await reconcileHarnesses({ ...world.deps, beginUninstall: () => Promise.reject("Busy") }))
+        .status.blocked
+    ).toEqual([{ id: "claude", reason: "Busy" }])
+    expect(world.state.customs[0]?.name).toBe("Local")
+    await setHarnessOverride(world.deps.db, "bot", undefined)
+    await reconcileHarnesses(world.deps)
+    expect(world.state.customs[0]?.name).toBe("Global")
+  })
+
+  it("never treats legacy absence as permission to uninstall", async () => {
+    const world = await makeWorld("legacy")
+    world.state.harnesses = [{ id: "claude", enabled: true, installed: true, authenticated: true }]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        { key: "claude", value: { enabled: false, installed: false }, timestamp: at(10) }
+      ])
+    )
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.uninstalls).toEqual([])
+    expect(world.calls.enabled).toEqual([])
+  })
+
+  it("does not start operations while a lifecycle operation is running", async () => {
+    const world = await makeWorld("busy")
+    world.state.harnesses = [
+      { id: "claude", enabled: true, installed: false, authenticated: true, phase: "installing" }
+    ]
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        { key: "claude", value: { enabled: true, installed: true }, timestamp: at(10) }
+      ])
+    )
+    await reconcileHarnesses(world.deps)
+    expect(world.calls.installs).toEqual([])
+  })
+
+  it("keeps local custom deletions local and applies explicit global tombstones", async () => {
     const world = await makeWorld("server-d")
     world.state.customs = [{ id: "mybot", name: "My Bot", command: "mybot" }]
     await reconcileHarnesses(world.deps)
 
     world.state.customs = []
     const deleted = await reconcileHarnesses(world.deps)
-    expect(deleted.status.published).toEqual(["custom:mybot"])
-    expect(deleted.changedEntries.find((entry) => entry.key === "custom:mybot")?.deleted).toBe(true)
+    expect(deleted.status.published).toEqual([])
+    expect(deleted.changedEntries).toEqual([])
 
-    // On another machine: the live spec applies, then the tombstone removes.
+    // On another machine: the live spec applies, then the tombstone stops managing it.
     const other = await makeWorld("server-e")
     await run(
       other.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
@@ -210,8 +304,8 @@ describe("harness sync", () => {
     )
     const removed = await reconcileHarnesses(other.deps)
     expect(removed.status.removed).toEqual(["custom:mybot"])
-    expect(other.state.customs).toEqual([])
-    expect(other.calls.replaced.at(-1)).toEqual([])
+    expect(other.state.customs.map((spec) => spec.id)).toEqual(["mybot"])
+    expect(other.calls.replaced).toHaveLength(1)
   })
 
   it("adopts the fleet's spec on a first-contact custom collision", async () => {
@@ -246,17 +340,16 @@ describe("harness sync", () => {
     world.state.customs = []
     await run(
       world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        // Malformed catalog value for a LOCAL harness, stamped far future so
-        // the local publish loses and the apply loop must skip it.
+        // Malformed catalog values cannot authorize changes.
         { key: "codex", value: "junk", timestamp: at(future) },
         { key: "half", value: { enabled: true }, timestamp: at(10) },
         { key: "bad-enabled", value: { enabled: "yes", installed: true }, timestamp: at(10) },
         { key: "nothing", value: null, timestamp: at(10) },
         // A harness this machine has never heard of: valid, but skipped.
         { key: "unknown-harness", value: { enabled: true, installed: true }, timestamp: at(10) },
-        // A tombstoned catalog id for a local harness: publishes right over.
+        // Tombstones stop managing installed local harnesses.
         { key: "ghost", value: null, deleted: true, timestamp: at(10) },
-        // One whose tombstone outlives the republish attempt entirely.
+        // Future timestamps never resurrect deleted settings.
         { key: "zombie", value: null, deleted: true, timestamp: at(future) },
         // A tombstone for a harness this machine does not even have.
         { key: "departed", value: null, deleted: true, timestamp: at(10) },
@@ -302,9 +395,8 @@ describe("harness sync", () => {
     )
 
     const result = await reconcileHarnesses(world.deps)
-    // ghost resurrects over its tombstone; codex and zombie republish
-    // attempts lose to the future stamps, so nothing actually changed.
-    expect([...result.status.published].sort()).toEqual(["bad-enabled", "ghost", "half", "zombie"])
+    // Only the valid custom definition applies; nothing publishes back.
+    expect(result.status.published).toEqual([])
     expect(result.status.applied).toEqual(["custom:messy"])
     expect(result.status.removed).toEqual([])
     // The messy-but-valid spec applied with junk fields filtered.

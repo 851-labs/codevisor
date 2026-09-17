@@ -11,6 +11,7 @@ import {
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
+import type { HarnessSyncStatus } from "../infra/harness-sync.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
@@ -139,7 +140,14 @@ export const routeSync = async (
     }
     publishSyncChanged(services, fanout, reconcilePlane, result.changedEntries)
     if (reconcilePlane === "mcps") await refreshMcpReadiness(services, config, fanout)
-    if (reconcilePlane === "harnesses") await refreshHarnessReadiness(services, config, fanout)
+    if (reconcilePlane === "harnesses") {
+      await refreshHarnessReadiness(
+        services,
+        config,
+        fanout,
+        (result.status as HarnessSyncStatus).blocked
+      )
+    }
     if (reconcilePlane === "plugins") {
       await refreshPluginReadiness(
         services,
@@ -202,6 +210,7 @@ export const routeSync = async (
   if (request.method === "PUT") {
     const body = await readSchema(request, PutSyncRequestSchema)
     const result = await run(services.db.mergeSyncEntries(namespace, body.entries))
+    if (namespace === "harness-shared-accounts") await services.sharedAccounts?.reconcile()
     if (result.changed.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", namespace, {
         namespace,

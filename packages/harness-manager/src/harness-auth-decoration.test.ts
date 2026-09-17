@@ -195,3 +195,65 @@ describe("harness authentication decoration", () => {
     })
   })
 })
+
+it("probes the selected shared account and publishes readiness when its credentials arrive", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-shared-readiness-"))
+  directories.push(directory)
+  const db = await run(makeDatabase({ filename: join(directory, "db.sqlite"), serverId: "test" }))
+  databases.push(db)
+  for (const [id, profileKind] of [
+    ["default", "default"],
+    ["shared-selected", "managed"]
+  ] as const)
+    await run(
+      db.saveHarnessAccount({
+        id,
+        harnessId: "codex",
+        label: id,
+        profileKind,
+        authState: "checking",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+  await run(db.setActiveHarnessAccount("codex", "shared-selected"))
+  const probe = vi.fn(async (id: string) => {
+    expect(id).toBe("shared-selected")
+    return run(
+      db.updateHarnessAccountAuth(id, { authState: "authenticated", canLogout: true, detail: null })
+    )
+  })
+  const manager = makeHarnessAuthManager({
+    db,
+    dataDir: directory,
+    agents: {} as AgentRuntimeService,
+    terminal: {} as TerminalManagerService,
+    resolveEnv: async () => ({ HOME: directory }),
+    sharedAccounts: () =>
+      ({
+        reconcile: async () => {},
+        probe
+      }) as unknown as import("./shared-account-integration.js").SharedAccountIntegration
+  })
+  const events: string[] = [],
+    stop = manager.subscribe((event) => {
+      events.push(event.kind)
+    })
+  const harness: Harness = {
+    id: "codex",
+    name: "Codex",
+    symbolName: "terminal",
+    source: "registry",
+    launchKind: "executable",
+    enabled: true,
+    readiness: { state: "ready", path: "/fixture/codex" }
+  }
+  expect((await manager.decorateHarnesses([harness], true))[0]).toMatchObject({
+    enabled: true,
+    auth: { activeAccountId: "shared-selected", state: "authenticated" }
+  })
+  expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
+  await manager.decorateHarnesses([harness], true)
+  expect(events).toHaveLength(2)
+  stop()
+})

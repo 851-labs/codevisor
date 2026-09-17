@@ -88,6 +88,18 @@ extension CodevisorServerClient {
     )
   }
 
+  public func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo {
+    try await get("/v1/harnesses/\(id)/uninstall")
+  }
+
+  public func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted {
+    try await send("/v1/harnesses/\(id)/uninstall", method: "POST", body: Optional<EmptyBody>.none)
+  }
+
+  public func resetHarnessOverride(id: String) async throws -> ServerHarness {
+    try await send("/v1/harnesses/\(id)/override", method: "DELETE", body: Optional<EmptyBody>.none)
+  }
+
   public func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
     return try await send(

@@ -42,11 +42,11 @@ export const makeHarnessUpdateGate = (
   const { runOperation, startBundleSwap } = runner
 
   const gateEnabled = config.gateEnabled ?? process.env.CODEVISOR_HARNESS_UPDATE_GATE !== "0"
-  const gateListeners = new Set<(harnessId: string) => void>()
+  const gateListeners = core.gateListeners
   /// In-memory mirror of harness_pending_updates, hydrated by reconcile.
   const pendingUpdates = new Map<string, HarnessPendingUpdateRecord>()
   /// In-flight turn count per harness (from the prompt dispatcher).
-  const busyCounts = new Map<string, number>()
+  const busyCounts = core.busyCounts
 
   const isHarnessBusy = (harnessId: string): boolean => (busyCounts.get(harnessId) ?? 0) > 0
 
@@ -164,6 +164,7 @@ export const makeHarnessUpdateGate = (
 
   const beginUpdate: HarnessLifecycleManager["beginUpdate"] = async (harnessId) => {
     definitionOrThrow(harnessId)
+    if (core.uninstallRequests.has(harnessId)) throw new Error("Uninstall in progress")
     if (gateEnabled && isHarnessBusy(harnessId) && !pendingUpdates.has(harnessId)) {
       // Chats are mid-turn on this harness: arm a durable pending update that
       // executes when the last turn ends.
@@ -201,7 +202,8 @@ export const makeHarnessUpdateGate = (
   }
 
   const isGated = (harnessId: string): boolean =>
-    gateEnabled && pendingUpdates.get(harnessId)?.state === "running"
+    core.uninstallRequests.has(harnessId) ||
+    (gateEnabled && pendingUpdates.get(harnessId)?.state === "running")
 
   const forcePendingUpdate = async (harnessId: string): Promise<void> => {
     if (pendingUpdates.get(harnessId)?.state !== "pending") {

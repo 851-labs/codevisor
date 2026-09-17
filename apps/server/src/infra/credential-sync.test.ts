@@ -50,6 +50,78 @@ const makeMachine = async (serverId: string, nowMs: number) => {
 }
 
 describe("credential sync", () => {
+  it("applies shared profile metadata before credentials and reports profile failures independently", async () => {
+    const machine = await makeMachine("profiles", 1000)
+    const profile = makeFakeSource("opencode-profile:work")
+    const seen: Array<string | undefined> = []
+    const profileSources = async (content?: string) => {
+      seen.push(content)
+      return [profile.source]
+    }
+    await reconcileCredentials({ ...machine.deps, profileSources })
+    expect(seen).toEqual([])
+    await run(
+      machine.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, [
+        {
+          key: "profiles:opencode",
+          value: "profiles",
+          timestamp: { wallMs: 1, counter: 0, deviceId: "global" }
+        },
+        {
+          key: profile.source.id,
+          value: "key",
+          timestamp: { wallMs: 1, counter: 0, deviceId: "global" }
+        }
+      ])
+    )
+    await reconcileCredentials(machine.deps)
+    expect(profile.state.content).toBeUndefined()
+    await reconcileCredentials({ ...machine.deps, profileSources })
+    expect(seen).toEqual(["profiles"])
+    expect(profile.state.content).toBe("key")
+    const failed = await reconcileCredentials({
+      ...machine.deps,
+      profileSources: async () => {
+        throw new Error("Profile in use")
+      }
+    })
+    expect(failed.status.failed).toEqual([{ id: "profiles:opencode", reason: "Profile in use" }])
+    await run(
+      machine.services.db.mergeSyncEntries(CREDENTIALS_SYNC_NAMESPACE, [
+        {
+          key: "profiles:opencode",
+          value: null,
+          deleted: true,
+          timestamp: { wallMs: 2, counter: 0, deviceId: "global" }
+        }
+      ])
+    )
+    await reconcileCredentials({ ...machine.deps, profileSources })
+    expect(seen).toEqual(["profiles", undefined])
+  })
+
+  it("keeps shared credentials when a machine signs in locally and restores them after local sign-out", async () => {
+    const machine = await makeMachine("local-auth", 1000)
+    let overrides: string[] = []
+    Object.assign(machine.codex.source, { localOverrides: () => Promise.resolve(overrides) })
+    machine.codex.state.content = '{"OPENAI_API_KEY":"shared"}'
+    await reconcileCredentials(machine.deps)
+    overrides = ["*"]
+    machine.codex.state.content = undefined
+    const localLogin = await reconcileCredentials(machine.deps)
+    expect(localLogin.status.published).toEqual([])
+    expect(localLogin.status.removed).toEqual([])
+    expect((await reconcileCredentials(machine.deps)).changedEntries).toEqual([])
+
+    // Reconciliation is stateless; the database retains the local ownership IDs.
+    overrides = []
+    const signedOut = await reconcileCredentials({ ...machine.deps })
+    expect(signedOut.status.published).toEqual([])
+    expect(signedOut.status.applied).toEqual(["codex-auth-file"])
+    expect(machine.codex.state.content).toBe('{"OPENAI_API_KEY":"shared"}')
+    expect((await reconcileCredentials(machine.deps)).status.applied).toEqual([])
+  })
+
   it("ferries static credentials across machines with fleet-first joins", async () => {
     const a = await makeMachine("cred-a", 1_000)
     const b = await makeMachine("cred-b", 2_000)

@@ -25,10 +25,24 @@ interface InternalFlow {
   readonly workspaceQuery: string
   readonly release: () => void
   cancelled: boolean
+  readonly profile: OpenCodeProfile
+  readonly shared: boolean
+  readonly managed: boolean
 }
 
 export interface OpenCodeAuthManagerConfig {
   readonly profile: (accountId: string) => Promise<OpenCodeProfile>
+  readonly loginProfile?: (
+    accountId: string,
+    providerId: string
+  ) => Promise<OpenCodeProfile | undefined>
+  readonly captureOAuth?: (
+    accountId: string,
+    providerId: string,
+    path: string,
+    shared: boolean
+  ) => Promise<void>
+  readonly savedApiKey?: (accountId: string, providerId: string, shared: boolean) => Promise<void>
 }
 
 export interface OpenCodeAuthManager {
@@ -38,7 +52,8 @@ export interface OpenCodeAuthManager {
     providerId: string,
     methodId: string,
     inputs?: Readonly<Record<string, string>>,
-    apiKey?: string
+    apiKey?: string,
+    shared?: boolean
   ) => Promise<OpenCodeAuthFlow>
   readonly flow: (flowId: string) => OpenCodeAuthFlow
   readonly answer: (flowId: string, code: string) => Promise<OpenCodeAuthFlow>
@@ -106,6 +121,14 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
         }
       )
       if (flow.cancelled) return
+      if (flow.managed)
+        await config.captureOAuth!(
+          flow.value.accountId,
+          flow.value.providerId,
+          flow.profile.authPath,
+          flow.shared
+        )
+      if (flow.cancelled) return
       finish(flow, {
         id: flow.value.id,
         accountId: flow.value.accountId,
@@ -147,7 +170,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
         release()
       }
     },
-    beginLogin: async (accountId, providerId, methodId, inputs, rawApiKey) => {
+    beginLogin: async (accountId, providerId, methodId, inputs, rawApiKey, shared = false) => {
       const methodIndex = Number(methodId)
       if (!Number.isSafeInteger(methodIndex) || methodIndex < 0) {
         throw new Error("Unknown OpenCode authentication method")
@@ -155,8 +178,12 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       const release = await acquire(accountId)
       let profile: OpenCodeProfile
       let server: OpenCodeServer
+      let managed = false
       try {
-        profile = await config.profile(accountId)
+        const isolated =
+          rawApiKey === undefined ? await config.loginProfile?.(accountId, providerId) : undefined
+        managed = isolated !== undefined
+        profile = isolated ?? (await config.profile(accountId))
         server = await startServer(profile)
       } catch (cause) {
         release()
@@ -169,7 +196,10 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
         server,
         workspaceQuery: workspaceQuery(profile),
         release,
-        cancelled: false
+        cancelled: false,
+        profile,
+        shared,
+        managed
       }
       flows.set(id, flow)
       try {
@@ -199,6 +229,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
                 : { metadata: inputs })
             })
           })
+          await config.savedApiKey?.(accountId, providerId, shared)
           finish(flow, { id, accountId, providerId, state: "complete" })
           return structuredClone(flow.value)
         }

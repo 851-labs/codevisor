@@ -119,7 +119,10 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     return claudeStoragePreparation
   }
 
-  const contextFor = async (account: HarnessAccountRecord): Promise<HarnessAccountContext> => {
+  const contextFor = async (
+    account: HarnessAccountRecord,
+    shared = true
+  ): Promise<HarnessAccountContext> => {
     const path = profilePath(account)
     if (path !== undefined) {
       await mkdir(path, { recursive: true, mode: 0o700 })
@@ -140,12 +143,15 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       if (account.harnessId === "codex") env.OPENAI_API_KEY = apiKey
       if (account.harnessId === "claude-code") env.ANTHROPIC_API_KEY = apiKey
     }
-    return {
+    const context: HarnessAccountContext = {
       id: account.id,
       profileKind: account.profileKind,
       ...(path === undefined ? {} : { profilePath: path }),
       ...(Object.keys(env).length === 0 ? {} : { env })
     }
+    return shared
+      ? (config.sharedProviders?.()?.context(publicAccount(account), context) ?? context)
+      : context
   }
 
   const executable = async (harnessId: string): Promise<string> => {
@@ -160,7 +166,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
 
   const accountEnv = async (account: HarnessAccountRecord): Promise<NodeJS.ProcessEnv> => {
     const base = { ...(await environment()) }
-    const accountContext = await contextFor(account)
+    const accountContext = await contextFor(account, false)
     if (account.profileKind === "managed" && account.harnessId === "claude-code") {
       for (const name of CLAUDE_AUTH_OVERRIDE_ENV_VARS) delete base[name]
     }
@@ -214,6 +220,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     executable,
     listeners,
     persistProbe,
+    prepareClaudeStorage,
     probes,
     profilePath,
     publicAccount,

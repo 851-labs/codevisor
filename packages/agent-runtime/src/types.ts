@@ -263,6 +263,14 @@ export interface HarnessAccountContext {
   readonly profileKind: "default" | "managed"
   readonly profilePath?: string
   readonly env?: Readonly<Record<string, string>>
+  /// Host-owned credentials: adapters never receive the rotating refresh token.
+  readonly oauth?: {
+    readonly token: (rejectedAccessToken?: string) => Promise<{
+      readonly accessToken: string
+      readonly accountId?: string
+      readonly planType?: string
+    }>
+  }
 }
 
 /// A session-scoped credential for Codevisor's single MCP tool gateway. It is

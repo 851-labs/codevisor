@@ -4,34 +4,26 @@ import SwiftUI
 
 // MARK: - Harnesses
 
-/// Harness management starts with machines, then separates installed
-/// harnesses from the catalog available on each machine.
+/// Shared desired settings, with machine overrides beneath.
 struct HarnessesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @State private var refreshToken = UUID()
-  @State private var isRefreshing = false
+  @State private var globalModel = HarnessGlobalModel()
+  @State private var accountsSetting: HarnessFleet.Setting?
 
   var body: some View {
     List {
-      let machines = environment.machines.allMachines
-      if machines.count == 1, let machine = machines.first {
-        HarnessMachineSections(
-          machine: machine,
-          refreshToken: refreshToken,
-          isRefreshing: $isRefreshing
-        )
-      } else {
-        Section {
-          ForEach(machines) { machine in
-            NavigationLink {
-              HarnessMachineSettingsScreen(machine: machine)
-            } label: {
-              HStack {
-                Text(machine.name)
-                Spacer(minLength: 12)
-                badge(machine).view
-                  .font(.footnote)
-              }
+      HarnessGlobalSection(model: globalModel, onAccounts: { accountsSetting = $0 }) { id, symbol in
+        HarnessIconView(harnessId: id, fallbackSymbolName: symbol, size: 22)
+      }
+      Section("Machines") {
+        ForEach(environment.machines.allMachines) { machine in
+          NavigationLink {
+            HarnessMachineSettingsScreen(machine: machine)
+          } label: {
+            HStack {
+              Text(machine.name)
+              Spacer(minLength: 12)
+              badge(machine).view.font(.footnote)
             }
           }
         }
@@ -39,13 +31,17 @@ struct HarnessesSettingsScreen: View {
     }
     .navigationTitle("Harnesses")
     .navigationBarTitleDisplayMode(.inline)
+    .sheet(item: $accountsSetting) { setting in
+      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name) { machineId, harness, request in
+        HarnessAuthenticationScreen(serverId: machineId ?? "", harness: harness, signInRequest: request)
+      }
+    }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        if environment.machines.allMachines.count == 1 {
-          HarnessRefreshButton(isRefreshing: $isRefreshing) {
-            refreshToken = UUID()
-          }
+        HarnessAddButton(model: globalModel) { id, symbol in
+          HarnessIconView(harnessId: id, fallbackSymbolName: symbol, size: 22)
         }
+        .labelStyle(.iconOnly)
       }
     }
   }
@@ -60,6 +56,10 @@ struct HarnessesSettingsScreen: View {
     if rows.contains(where: { $0.state == "signInRequired" }) {
       return .attention("Sign in required")
     }
+    if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
+    if !HarnessFleet.pendingChanges(environment.configSync, machineKey: key).isEmpty { return .syncing }
+    let count = HarnessFleet.overrideCount(environment.configSync, machineKey: key)
+    if count > 0 { return .overrides(count) }
     return .synced
   }
 }
@@ -73,13 +73,14 @@ struct HarnessMachineSettingsScreen: View {
 
   var body: some View {
     List {
+      HarnessSyncSection(machineId: machine.id)
       HarnessMachineSections(
         machine: machine,
         refreshToken: refreshToken,
         isRefreshing: $isRefreshing
       )
     }
-    .navigationTitle("Harnesses")
+    .navigationTitle(machine.name)
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -216,12 +217,25 @@ private struct HarnessMachineSections: View {
           .controlSize(.small)
       }
     } else {
-      NavigationLink {
-        HarnessInstallScreen(harness: harness, machine: machine) { started, methodId in
-          noteInstallStarted(started, harness: harness, methodId: methodId)
+      VStack(alignment: .leading, spacing: 8) {
+        NavigationLink {
+          HarnessInstallScreen(harness: harness, machine: machine) { started, methodId in
+            noteInstallStarted(started, harness: harness, methodId: methodId)
+          }
+        } label: {
+          harnessLabel(harness)
         }
-      } label: {
-        harnessLabel(harness)
+        if harness.hasOverride {
+          Button("Use Global Setting") {
+            Task {
+              do {
+                updateHarness(try await client.resetHarnessOverride(id: harness.id))
+                environment.harnessCatalogDidChange(onServer: machine.id)
+              } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+            }
+          }
+          .font(.callout)
+        }
       }
     }
   }
@@ -233,7 +247,11 @@ private struct HarnessMachineSections: View {
         fallbackSymbolName: harness.symbolName,
         size: 22
       )
-      Text(harness.name)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(harness.name)
+        Text(harness.lifecycle?.resolvedPhase == .uninstalling ? "Uninstalling…" : harness.settingsSummary)
+          .font(.caption).foregroundStyle(.secondary)
+      }
     }
     .padding(.vertical, 2)
   }
@@ -299,6 +317,8 @@ private struct HarnessDetailScreen: View {
   @State private var isChangingEnabled = false
   @State private var errorMessage: String?
   @State private var showsAuthentication = false
+  @State private var confirmsUninstall = false
+  @State private var confirmsReset = false
 
   init(
     machine: CodevisorMachine,
@@ -331,7 +351,19 @@ private struct HarnessDetailScreen: View {
             set: { enabled in Task { await setEnabled(enabled) } }
           )
         )
-        .disabled(isChangingEnabled)
+        .disabled(isChangingEnabled || harness.isLifecycleBusy)
+        if harness.hasOverride {
+          Button("Use Global Setting") {
+            if harness.settings?.global?.installed == false && harness.isReady {
+              confirmsReset = true
+            } else {
+              Task { await resetOverride() }
+            }
+          }
+          .disabled(isChangingEnabled || harness.isLifecycleBusy)
+        }
+      } footer: {
+        Text(harness.settingsSummary)
       }
 
       if let auth = harness.auth, auth.resolvedState != .notRequired {
@@ -341,7 +373,7 @@ private struct HarnessDetailScreen: View {
           } label: {
             HStack {
               Label(
-                auth.isSatisfied ? "Manage Accounts" : "Sign In",
+                "Accounts",
                 systemImage: "person.crop.circle"
               )
               Spacer()
@@ -354,23 +386,68 @@ private struct HarnessDetailScreen: View {
           .disabled(auth.resolvedState == .checking)
         }
       }
+      Section {
+        if harness.lifecycle?.resolvedPhase == .uninstalling {
+          HStack {
+            Text("Uninstalling…")
+            Spacer()
+            ProgressView()
+          }
+        } else if harness.isReady {
+          Button("Uninstall…", role: .destructive) { confirmsUninstall = true }
+            .disabled(isChangingEnabled || harness.isLifecycleBusy)
+        } else {
+          Text("Not installed").foregroundStyle(.secondary)
+        }
+      }
     }
     .navigationTitle(harness.name)
     .navigationBarTitleDisplayMode(.inline)
-    .navigationDestination(isPresented: $showsAuthentication) {
-      HarnessAuthenticationScreen(
-        serverId: machine.id,
-        harness: harness,
-        onAuthenticated: {
-          showsAuthentication = false
-          Task { await load() }
-        }
+    .sheet(isPresented: $showsAuthentication, onDismiss: { Task { await load() } }) {
+      HarnessSignInSheet(
+        request: HarnessSignInRequest(serverId: machine.id, harnessId: harness.id, initialHarness: harness)
       )
-      .navigationTitle(harness.name)
-      .navigationBarTitleDisplayMode(.inline)
-      .onDisappear { Task { await load() } }
     }
     .task(id: "\(machine.id):\(harness.id)") { await load() }
+    .onChange(of: environment.harnessCatalogRevision(for: machine.id)) { _, _ in Task { await load() } }
+    .alert("Uninstall \(harness.name)?", isPresented: $confirmsUninstall) {
+      Button("Uninstall", role: .destructive) { Task { await uninstall() } }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Removes the CLI from \(machine.name). Chats and accounts are kept.")
+    }
+    .alert("Use Global Setting?", isPresented: $confirmsReset) {
+      Button("Uninstall", role: .destructive) { Task { await resetOverride() } }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("The global setting will uninstall \(harness.name) here.")
+    }
+  }
+
+  private func resetOverride() async {
+    isChangingEnabled = true
+    defer { isChangingEnabled = false }
+    do {
+      harness = try await client.resetHarnessOverride(id: harness.id)
+      errorMessage = nil
+      onChanged(harness)
+      environment.harnessCatalogDidChange(onServer: machine.id)
+    } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
+  }
+
+  private func uninstall() async {
+    isChangingEnabled = true
+    defer { isChangingEnabled = false }
+    do {
+      let started = try await client.uninstallHarness(id: harness.id)
+      harness.lifecycle = started.lifecycle
+      errorMessage = nil
+      onChanged(harness)
+      if let lifecycle = started.lifecycle {
+        environment.setHarnessLifecycle(lifecycle, harnessId: harness.id, onServer: machine.id)
+      }
+      environment.harnessCatalogDidChange(onServer: machine.id)
+    } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
   }
 
   private func setEnabled(_ enabled: Bool) async {

@@ -1,7 +1,15 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  rmSync
+} from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
 
 const fakeOpenCode = (directory: string): string => {
@@ -46,6 +54,48 @@ server.listen(0, "127.0.0.1", () => { const address = server.address(); console.
 }
 
 describe("OpenCode provider authentication", () => {
+  it("captures isolated OAuth before completing and releases the flow after capture failure", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codevisor-opencode-managed-"))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    const command = fakeOpenCode(root)
+    const profile = (name: string) => ({
+      command,
+      cwd: root,
+      env: { PATH: process.env.PATH, HOME: root, XDG_DATA_HOME: join(root, name) },
+      authPath: join(root, name, "opencode", "auth.json")
+    })
+    const captureOAuth = vi.fn(async (_account: string, _provider: string, path: string) => {
+      expect(JSON.parse(readFileSync(path, "utf8")).openai.refresh).toBe("r")
+    })
+    const savedApiKey = vi.fn(async () => {})
+    const manager = makeOpenCodeAuthManager({
+      profile: async () => profile("native"),
+      loginProfile: async () => profile("isolated"),
+      captureOAuth,
+      savedApiKey
+    })
+    const first = await manager.beginLogin("account", "openai", "0", undefined, undefined, true)
+    expect((await manager.answer(first.id, "right-code")).state).toBe("complete")
+    expect(captureOAuth).toHaveBeenCalledWith(
+      "account",
+      "openai",
+      profile("isolated").authPath,
+      true
+    )
+    expect(existsSync(profile("native").authPath)).toBe(false)
+    captureOAuth.mockRejectedValueOnce(new Error("Unable to save account"))
+    const failed = await manager.beginLogin("account", "openai", "0")
+    expect(await manager.answer(failed.id, "right-code")).toMatchObject({
+      state: "error",
+      error: "Unable to save account"
+    })
+    const api = await manager.beginLogin("account", "openai", "1", undefined, "fixture-key")
+    expect(api.state).toBe("complete")
+    expect(savedApiKey).toHaveBeenCalledWith("account", "openai", false)
+    expect(captureOAuth).toHaveBeenCalledTimes(2)
+    // providers acquires the same lock, acknowledging process cleanup.
+    expect((await manager.providers("account"))[0]?.credentialType).toBe("api")
+  })
   it("uses the profile XDG data directory", () => {
     expect(openCodeAuthPath({ HOME: "/home/test" })).toBe(
       "/home/test/.local/share/opencode/auth.json"

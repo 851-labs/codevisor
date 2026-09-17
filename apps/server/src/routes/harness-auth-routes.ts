@@ -18,6 +18,7 @@ import {
 } from "../server-context.js"
 import type { CodevisorServerServices } from "../server-context.js"
 import { discoverHarnesses } from "./harnesses.js"
+import { routeSharedHarnessAccounts } from "./shared-harness-accounts.js"
 
 /// Harness authentication routes: OpenCode and Pi provider flows, auth
 /// refresh, and per-harness account management.
@@ -28,6 +29,7 @@ export const routeHarnessAuth = async (
   response: ServerResponse,
   url: URL
 ): Promise<boolean> => {
+  if (await routeSharedHarnessAccounts(services, request, response, url)) return true
   const openCodeProviders = matchRouteParams(
     url.pathname,
     "/v1/harnesses/opencode/accounts/:accountId/providers"

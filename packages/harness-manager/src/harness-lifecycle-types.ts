@@ -45,6 +45,7 @@ export interface HarnessLifecycleManagerConfig {
   readonly arch?: string
   readonly home?: string
   readonly realpath?: (path: string) => string
+  readonly pathExists?: ((path: string) => boolean) | undefined
   /// Spawns a shell command for an install/update run; defaults to
   /// `$SHELL -lc` (falling back to /bin/sh) with the resolved env.
   readonly spawnShell?: (command: string, env: NodeJS.ProcessEnv) => LifecycleProcess
@@ -81,6 +82,12 @@ export interface HarnessUpdateCheckOutcome {
 }
 
 export interface HarnessLifecycleManager {
+  readonly uninstallInfo: (
+    harnessId: string
+  ) => Promise<import("@codevisor/api").HarnessUninstallInfo>
+  readonly beginUninstall: (
+    harnessId: string
+  ) => Promise<{ readonly terminalId: string; readonly lifecycle: HarnessLifecycleState }>
   /// Merges persisted update knowledge, live operation state, and resolved
   /// install methods onto discovered harnesses.
   readonly decorateHarnesses: (harnesses: ReadonlyArray<Harness>) => Promise<ReadonlyArray<Harness>>

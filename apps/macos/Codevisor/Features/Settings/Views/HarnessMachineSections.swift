@@ -10,6 +10,8 @@ struct HarnessMachineSections: View {
   let onScan: () -> Void
   let onAuthenticate: (ServerHarness) -> Void
   let onShowDetail: (ServerHarness) -> Void
+  let onUninstall: (ServerHarness) -> Void
+  let onReset: (ServerHarness) -> Void
   let onEditCustom: (String?) -> Void
 
   var body: some View {
@@ -70,7 +72,13 @@ struct HarnessMachineSections: View {
           .foregroundStyle(.secondary)
           .frame(width: 20)
         VStack(alignment: .leading, spacing: 2) {
-          Text(harness.name)
+          HStack(spacing: 6) {
+            Text(harness.name)
+            Text(harness.settingsSource)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .help(harness.settingsSummary)
+          }
           Text(rowSubtitle(harness))
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -93,7 +101,7 @@ struct HarnessMachineSections: View {
       .labelsHidden()
       .toggleStyle(.switch)
       .controlSize(.small)
-      .disabled(model.isChangingPreference(for: harness.id))
+      .disabled(model.isChangingPreference(for: harness.id) || harness.isLifecycleBusy)
       rowMenu(harness)
     }
     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -101,7 +109,9 @@ struct HarnessMachineSections: View {
 
   @ViewBuilder
   private func primaryAction(_ harness: ServerHarness) -> some View {
-    if harness.requiresAuthentication {
+    if harness.lifecycle?.resolvedPhase == .uninstalling {
+      ProgressView().controlSize(.small)
+    } else if harness.requiresAuthentication {
       // Sign-in and fleet enablement are independent controls.
       Button("Sign In…") { onAuthenticate(harness) }
         .settingsActionTint(theme)
@@ -125,14 +135,22 @@ struct HarnessMachineSections: View {
   /// The row's secondary actions stay behind one quiet control.
   private func rowMenu(_ harness: ServerHarness) -> some View {
     Menu {
+      if harness.hasOverride {
+        Button("Use Global Setting") { onReset(harness) }
+          .disabled(harness.isLifecycleBusy)
+        Divider()
+      }
       if harness.source == "custom" {
         Button("Edit…") { onEditCustom(harness.id) }
       } else {
         Button("Get Info…") { onShowDetail(harness) }
       }
       if harness.auth != nil {
-        Button("Manage Accounts…") { onAuthenticate(harness) }
+        Button("Accounts…") { onAuthenticate(harness) }
       }
+      Divider()
+      Button("Uninstall…", role: .destructive) { onUninstall(harness) }
+        .disabled(harness.isLifecycleBusy)
     } label: {
       Image(systemName: "ellipsis.circle")
         .foregroundStyle(.secondary)
@@ -145,6 +163,7 @@ struct HarnessMachineSections: View {
   }
 
   private func rowSubtitle(_ harness: ServerHarness) -> String {
+    if harness.lifecycle?.resolvedPhase == .uninstalling { return "Uninstalling…" }
     if harness.lifecycle?.resolvedPhase == .updating {
       let target = harness.lifecycle?.targetVersion
       return target.map { "Updating to \($0)…" } ?? "Updating…"
@@ -152,7 +171,7 @@ struct HarnessMachineSections: View {
     if harness.lifecycle?.resolvedPhase == .failed {
       let reason = harness.lifecycle?.error?
         .split(whereSeparator: \.isNewline).first.map(String.init)
-      return reason.map { "Update failed: \($0)" } ?? "Update failed"
+      return reason.map { "\($0)" } ?? "Operation failed"
     }
     return authStatus(harness)
   }
@@ -187,7 +206,17 @@ struct HarnessMachineSections: View {
           .settingsActionTint(theme)
       }
     } else {
-      HarnessInstallHintRow(harness: harness)
+      VStack(alignment: .leading, spacing: 4) {
+        HarnessInstallHintRow(harness: harness)
+        if harness.hasOverride {
+          HStack {
+            Text(harness.settingsSummary).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Use Global Setting") { onReset(harness) }
+              .disabled(harness.isLifecycleBusy)
+          }
+        }
+      }
     }
   }
 }

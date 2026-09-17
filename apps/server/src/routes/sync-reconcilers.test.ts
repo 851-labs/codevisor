@@ -367,6 +367,7 @@ describe("credentials plane", () => {
       ...services,
       credentialFerry: ferrySources,
       auth: {
+        sharedOpenCodeProfiles: async () => [makeSource("opencode-profile:work")],
         refresh: (harnessId?: string) => {
           refreshed.push(harnessId)
           return Promise.resolve()
@@ -378,6 +379,16 @@ describe("credentials plane", () => {
     // the unmapped source applies too but probes nothing.
     await run(
       withFerry.db.mergeSyncEntries("harness-credentials", [
+        {
+          key: "profiles:opencode",
+          value: "profiles",
+          timestamp: { wallMs: 9, counter: 0, deviceId: "elsewhere" }
+        },
+        {
+          key: "opencode-profile:work",
+          value: "key",
+          timestamp: { wallMs: 9, counter: 1, deviceId: "elsewhere" }
+        },
         {
           key: "pi-auth",
           value: '{"openai":{"key":"fleet","type":"api_key"}}',
@@ -394,9 +405,10 @@ describe("credentials plane", () => {
     expect(result).toBeDefined()
     expect((result?.status as { applied: string[] }).applied.toSorted()).toEqual([
       "mystery-source",
+      "opencode-profile:work",
       "pi-auth"
     ])
-    expect(refreshed).toEqual(["pi"])
+    expect(refreshed.toSorted()).toEqual(["opencode", "pi"])
     expect(contents.get("pi-auth")).toContain("fleet")
 
     // The harnesses trigger re-runs the ferry: a local edit publishes into

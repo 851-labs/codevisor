@@ -7,6 +7,7 @@ public enum MachineSyncBadge {
   case syncing
   case synced
   case attention(String)
+  case overrides(Int)
 
   @ViewBuilder
   public var view: some View {
@@ -24,6 +25,9 @@ public enum MachineSyncBadge {
         Text("Synced")
           .foregroundStyle(.secondary)
       }
+    case .overrides(let count):
+      Label("\(count) \(count == 1 ? "override" : "overrides")", systemImage: "slider.horizontal.3")
+        .foregroundStyle(.secondary)
     case .attention(let label):
       HStack(spacing: 5) {
         Image(systemName: "exclamationmark.circle.fill")

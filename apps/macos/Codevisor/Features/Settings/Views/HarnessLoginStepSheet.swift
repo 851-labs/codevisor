@@ -34,24 +34,19 @@ struct HarnessLoginStepSheet: View {
   @State private var copiedCode = false
 
   var body: some View {
-    VStack(spacing: 16) {
-      HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 36)
-      Text("Sign in to \(harness.name)")
-        .font(.title3.weight(.semibold))
-
-      content
-
-      if let errorText {
-        Text(errorText)
-          .font(.callout)
-          .foregroundStyle(theme.statusError)
-          .frame(maxWidth: .infinity, alignment: .leading)
+    NavigationStack {
+      VStack(spacing: 16) {
+        content
+        if let errorText {
+          Text(errorText).font(.callout).foregroundStyle(theme.statusError)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
       }
-
-      actions
+      .padding(20)
+      .navigationTitle("Sign in to \(harness.name)")
     }
-    .padding(24)
-    .frame(width: 400)
+    .safeAreaInset(edge: .bottom, spacing: 0) { SheetFooter { actions } }
+    .frame(width: 440)
   }
 
   @ViewBuilder
@@ -110,13 +105,11 @@ struct HarnessLoginStepSheet: View {
   }
 
   private var actions: some View {
-    HStack {
-      Spacer()
+    Group {
       Button("Cancel", role: .cancel) { cancel() }
         .keyboardShortcut(.cancelAction)
       if needsSubmit {
         Button(isSubmitting ? "Verifying…" : "Continue") { submit() }
-          .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(
             input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

@@ -16,23 +16,36 @@ struct HarnessMachinePane: View {
   @State private var catalogReadyServerId: String?
   @State private var detailHarness: ServerHarness?
   @State private var showsCustomEditor = false
+  @State private var uninstallHarness: ServerHarness?
+  @State private var resetHarness: ServerHarness?
   @State private var editingCustomHarnessId: String?
 
   private var serverId: String { machine.id }
 
   var body: some View {
-    HarnessMachineSections(
-      model: model,
-      onScan: {
-        Task { presentAuthentication(await model.scan()) }
-      },
-      onAuthenticate: { authenticationHarness = $0 },
-      onShowDetail: { detailHarness = $0 },
-      onEditCustom: { id in
-        editingCustomHarnessId = id
-        showsCustomEditor = true
-      }
-    )
+    Group {
+      HarnessSyncSection(machineId: serverId)
+      HarnessMachineSections(
+        model: model,
+        onScan: {
+          Task { presentAuthentication(await model.scan()) }
+        },
+        onAuthenticate: { authenticationHarness = $0 },
+        onShowDetail: { detailHarness = $0 },
+        onUninstall: { uninstallHarness = $0 },
+        onReset: { harness in
+          if harness.settings?.global?.installed == false && harness.isReady {
+            resetHarness = harness
+          } else {
+            Task { await model.resetOverride(id: harness.id) }
+          }
+        },
+        onEditCustom: { id in
+          editingCustomHarnessId = id
+          showsCustomEditor = true
+        }
+      )
+    }
     .task(id: serverId) {
       catalogReadyServerId = nil
       model.configure(for: serverId, dependencies: modelDependencies)
@@ -80,6 +93,26 @@ struct HarnessMachinePane: View {
     } message: { error in
       Text(error.message)
     }
+    .confirmationDialog(
+      "Uninstall \(uninstallHarness?.name ?? "harness")?",
+      isPresented: Binding(get: { uninstallHarness != nil }, set: { if !$0 { uninstallHarness = nil } }),
+      titleVisibility: .visible, presenting: uninstallHarness
+    ) { harness in
+      Button("Uninstall", role: .destructive) { Task { await model.uninstallHarness(id: harness.id) } }
+      Button("Cancel", role: .cancel) {}
+    } message: { _ in
+      Text("Removes the CLI from \(machine.name). Chats and accounts are kept.")
+    }
+    .confirmationDialog(
+      "Use Global Setting?",
+      isPresented: Binding(get: { resetHarness != nil }, set: { if !$0 { resetHarness = nil } }),
+      titleVisibility: .visible, presenting: resetHarness
+    ) { harness in
+      Button("Uninstall", role: .destructive) { Task { await model.resetOverride(id: harness.id) } }
+      Button("Cancel", role: .cancel) {}
+    } message: { harness in
+      Text("The global setting will uninstall \(harness.name) here.")
+    }
     .environment(\.settingsMachineId, machine.id)
   }
 
@@ -99,6 +132,12 @@ struct HarnessMachinePane: View {
       },
       startUpdate: { id in
         try await environment.machines.client(for: serverId).updateHarness(id: id)
+      },
+      startUninstall: { id in
+        try await environment.machines.client(for: serverId).uninstallHarness(id: id)
+      },
+      resetOverride: { id in
+        try await environment.machines.client(for: serverId).resetHarnessOverride(id: id)
       },
       catalogDidChange: {
         environment.harnessCatalogDidChange(onServer: serverId)

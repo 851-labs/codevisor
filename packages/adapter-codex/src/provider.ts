@@ -27,6 +27,7 @@ import { codexThreadTitle } from "./notifications.js"
 import type { CodexCommandKiller } from "./process-kill.js"
 import { handleFor } from "./session-handle.js"
 import { makeStartSession } from "./start-session.js"
+import { connectSharedCodexAccount } from "./shared-oauth.js"
 import { codexUsageLimitsFrom } from "./usage.js"
 import { isCodexVersionNewer, readCodexVersion } from "./version.js"
 
@@ -108,11 +109,13 @@ export const makeCodexProvider = (
     toolGateway?: ToolGatewayConfig
   ): Promise<CodexClient> => {
     const command = locateCodex(definition)
+    const parentEnv = { ...environment.env }
+    if (account?.oauth) delete parentEnv.OPENAI_API_KEY
     const client = await connector({
       command,
       cwd,
       env: {
-        ...environment.env,
+        ...parentEnv,
         ...account?.env,
         ...(toolGateway === undefined
           ? {}
@@ -131,6 +134,14 @@ export const makeCodexProvider = (
     })
     // The server rejects all other requests until this lands.
     client.notify("initialized")
+    if (account?.oauth) {
+      try {
+        return await connectSharedCodexAccount(client, account.oauth)
+      } catch (cause) {
+        client.close()
+        throw cause
+      }
+    }
     return client
   }
 

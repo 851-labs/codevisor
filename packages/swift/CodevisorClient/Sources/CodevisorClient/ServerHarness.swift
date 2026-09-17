@@ -43,6 +43,7 @@ public enum ServerHarnessAuthenticationState: Equatable, Sendable {
 public enum ServerHarnessLifecyclePhase: Equatable, Sendable {
   case idle
   case installing
+  case uninstalling
   case updating
   case pendingUpdate
   case failed
@@ -52,6 +53,7 @@ public enum ServerHarnessLifecyclePhase: Equatable, Sendable {
     switch rawValue {
     case "idle": self = .idle
     case "installing": self = .installing
+    case "uninstalling": self = .uninstalling
     case "updating": self = .updating
     case "pendingUpdate": self = .pendingUpdate
     case "failed": self = .failed
@@ -262,6 +264,7 @@ public struct ServerHarness: Codable, Equatable, Sendable {
   public var launchKind: String
   public var enabled: Bool
   public var desiredEnabled: Bool?
+  public var settings: ServerHarnessSettings?
   public var readiness: ServerHarnessReadiness
   public var auth: ServerHarnessAuth?
   /// Copyable shell command that installs the harness CLI; present only for
@@ -288,8 +291,10 @@ public struct ServerHarness: Codable, Equatable, Sendable {
     auth: ServerHarnessAuth? = nil,
     installMethods: [ServerHarnessInstallMethod]? = nil,
     updateInfo: ServerHarnessUpdateInfo? = nil,
-    lifecycle: ServerHarnessLifecycleState? = nil
+    lifecycle: ServerHarnessLifecycleState? = nil,
+    settings: ServerHarnessSettings? = nil
   ) {
+    self.settings = settings
     self.id = id
     self.name = name
     self.symbolName = symbolName
@@ -323,6 +328,7 @@ public struct ServerHarnessAccount: Codable, Equatable, Identifiable, Sendable {
   public var authMethod: String?
   public var authState: String
   public var isActive: Bool
+  public var selectionScope: String?
   public var canLogin: Bool
   public var canLogout: Bool
   public var lastCheckedAt: String?
@@ -354,7 +360,7 @@ public extension ServerHarnessAuth {
 }
 
 public extension ServerHarness {
-  /// The user's persisted fleet preference. Older servers only return the
+  /// The user's effective machine preference. Older servers only return the
   /// effective value, so preserve that as a compatibility fallback.
   var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
 

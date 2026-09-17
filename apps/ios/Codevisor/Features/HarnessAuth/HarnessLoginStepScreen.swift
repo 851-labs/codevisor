@@ -46,48 +46,31 @@ struct HarnessLoginStepScreen: View {
       .disabled(isSubmitting)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel", role: .cancel) { cancel() }
+          Button("Cancel", systemImage: "xmark", role: .cancel) { cancel() }.labelStyle(.iconOnly)
         }
 
+        if let browserURL {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Open Sign-In Page", systemImage: "safari") { openURL(browserURL) }.labelStyle(.iconOnly)
+          }
+        }
         if needsSubmit {
           ToolbarItem(placement: .confirmationAction) {
             if isSubmitting {
               ProgressView()
             } else {
-              Button("Continue") { submit() }
-                .disabled(trimmedInput.isEmpty)
+              Button(role: .confirm) {
+                submit()
+              } label: {
+                Label("Continue", systemImage: "checkmark")
+              }
+              .labelStyle(.iconOnly).disabled(trimmedInput.isEmpty)
             }
           }
         }
       }
     }
-    .safeAreaInset(edge: .bottom) {
-      if let browserURL {
-        VStack(spacing: 12) {
-          HStack(spacing: 8) {
-            ProgressView()
-              .controlSize(.small)
-            Text("Waiting for sign-in…")
-          }
-          .font(.callout)
-          .foregroundStyle(.secondary)
-
-          Button {
-            openURL(browserURL)
-          } label: {
-            Label("Open \(harness.name) Sign-in", systemImage: "safari")
-              .fontWeight(.semibold)
-              .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.borderedProminent)
-          .buttonBorderShape(.capsule)
-          .controlSize(.large)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-      }
-    }
-    .presentationDetents([.medium])
+    .presentationDetents([.medium, .large])
     .interactiveDismissDisabled(isSubmitting)
   }
 

@@ -1,7 +1,7 @@
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, rm, writeFile, readFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
@@ -78,33 +78,37 @@ export const makeHarnessLoginOperations = (
       const payload = params as { loginId?: string; success?: boolean; error?: string | null }
       if (payload.loginId !== undefined && payload.loginId !== response.loginId) return
       void (async () => {
+        let success = payload.success === true
         try {
-          if (payload.success === true) {
-            await probeAccount(account.id, true)
-            await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
-          } else {
-            await persistProbe(account, {
-              authState: "unauthenticated",
-              canLogin: true,
-              canLogout: false,
-              detail: payload.error ?? "Codex sign-in was not completed"
-            })
-          }
+          if (success) {
+            if (client.closeAndWait) await client.closeAndWait()
+            else client.close()
+            const shared = config.sharedAccounts?.()
+            if (shared) await shared.captureLogin(account.id)
+            else {
+              await probeAccount(account.id, true)
+              await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
+            }
+          } else throw new Error("Codex sign-in was not completed")
+        } catch {
+          success = false
+          await config.sharedAccounts?.()?.loginFailed(account.id)
+          await persistProbe(account, {
+            authState: "error",
+            canLogin: true,
+            canLogout: false,
+            detail: "Sign-in could not be saved. Try signing in again."
+          })
         } finally {
           codexLogins.delete(flowId)
           client.close()
           emit({
             kind: "harness.authFlow.updated",
             subjectId: account.harnessId,
-            payload: {
-              id: flowId,
-              accountId: account.id,
-              completed: true,
-              success: payload.success
-            }
+            payload: { id: flowId, accountId: account.id, completed: true, success }
           })
         }
-      })()
+      })().catch(() => undefined)
     })
     const flow: HarnessAuthFlow =
       requested === "chatgptDeviceCode"
@@ -156,13 +160,25 @@ export const makeHarnessLoginOperations = (
     if (account === undefined) throw new Error("Harness account not found")
     try {
       await entry.client.submit(code)
+    } catch (cause) {
+      await config.sharedAccounts?.()?.loginFailed(account.id)
+      throw cause
     } finally {
       claudeLogins.delete(flowId)
       entry.client.close()
     }
-    const probed = await probeAccount(account.id, true)
-    if (probed.authState === "authenticated" || probed.authState === "notRequired") {
-      await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
+    try {
+      const shared = config.sharedAccounts?.()
+      if (shared) await shared.captureLogin(account.id)
+      else {
+        const probed = await probeAccount(account.id, true)
+        if (probed.authState === "authenticated" || probed.authState === "notRequired") {
+          await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
+        }
+      }
+    } catch (cause) {
+      await config.sharedAccounts?.()?.loginFailed(account.id)
+      throw cause
     }
     const done: HarnessAuthFlow = { id: flowId, accountId: account.id, kind: "complete" }
     emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: done })
@@ -209,7 +225,9 @@ export const makeHarnessLoginOperations = (
     if (result.authState !== "authenticated" && result.authState !== "notRequired") {
       throw new Error(result.detail ?? "The API key could not be verified")
     }
-    await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
+    const shared = config.sharedAccounts?.()
+    if (shared) await shared.saveApiKey(account.id, apiKey)
+    else await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
     return { id: randomUUID(), accountId: account.id, kind: "complete" }
   }
 
@@ -218,11 +236,20 @@ export const makeHarnessLoginOperations = (
     methodId?: string,
     apiKey?: string
   ): Promise<HarnessAuthFlow> => {
+    accountId = (await config.sharedAccounts?.()?.prepareLogin(accountId, methodId)) ?? accountId
     const account = await run(config.db.getHarnessAccount(accountId))
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
-    if (account.harnessId === "codex") return beginCodexLogin(account, methodId)
-    if (account.harnessId === "claude-code") return beginClaudeLogin(account)
+    if (account.harnessId === "codex" || account.harnessId === "claude-code") {
+      try {
+        return await (account.harnessId === "codex"
+          ? beginCodexLogin(account, methodId)
+          : beginClaudeLogin(account))
+      } catch (cause) {
+        await config.sharedAccounts?.()?.loginFailed(account.id)
+        throw cause
+      }
+    }
     if (account.harnessId === "pi") {
       throw new Error("Choose and authenticate a Pi provider in Codevisor settings")
     }
@@ -231,13 +258,38 @@ export const makeHarnessLoginOperations = (
     if (selectedMethod === undefined) {
       throw new Error("This ACP agent does not advertise an authentication method")
     }
-    await run(
-      config.agents.authenticateHarness(
-        account.harnessId,
-        selectedMethod,
-        await contextFor(account)
-      )
-    )
+    const sharedGrok =
+      account.harnessId === "grok-build" &&
+      selectedMethod === "grok.com" &&
+      config.sharedProviders?.()
+    const grokLoginPath = sharedGrok
+      ? join(config.dataDir, "harness-logins", "grok-build", randomUUID())
+      : undefined
+    if (grokLoginPath) await mkdir(grokLoginPath, { recursive: true, mode: 0o700 })
+    const loginContext = grokLoginPath
+      ? {
+          id: account.id,
+          profileKind: "managed" as const,
+          profilePath: grokLoginPath,
+          env: { GROK_HOME: grokLoginPath }
+        }
+      : await contextFor(account)
+    try {
+      await run(config.agents.authenticateHarness(account.harnessId, selectedMethod, loginContext))
+      if (grokLoginPath && sharedGrok) {
+        const credentials = JSON.parse(
+          await readFile(join(grokLoginPath, "auth.json"), "utf8")
+        ) as Record<string, unknown>
+        let captured = false
+        for (const credential of Object.values(credentials))
+          captured =
+            (await sharedGrok.capture("grok-build", "default", "xai", credential)) || captured
+        if (!captured)
+          throw new Error("This Grok sign-in cannot be shared. Use a first-party xAI account.")
+      }
+    } finally {
+      if (grokLoginPath) await rm(grokLoginPath, { recursive: true, force: true })
+    }
     const result = await probeAccount(account.id, true)
     if (result.authState === "authenticated" || result.authState === "notRequired") {
       await run(config.db.setActiveHarnessAccount(account.harnessId, account.id))
@@ -259,17 +311,21 @@ export const makeHarnessLoginOperations = (
       }
       codex.client.close()
       codexLogins.delete(flowId)
+      await config.sharedAccounts?.()?.loginFailed(codex.accountId)
       return
     }
     const claude = claudeLogins.get(flowId)
     if (claude !== undefined) {
       claude.client.close()
       claudeLogins.delete(flowId)
+      await config.sharedAccounts?.()?.loginFailed(claude.accountId)
       return
     }
   }
 
   const logout = async (accountId: string): Promise<HarnessAccount> => {
+    const shared = await config.sharedAccounts?.()?.logout(accountId)
+    if (shared !== undefined) return shared
     const account = await run(config.db.getHarnessAccount(accountId))
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     await rm(apiKeyPath(account), { force: true })
@@ -288,6 +344,12 @@ export const makeHarnessLoginOperations = (
         env: execution.env,
         timeout: 30_000
       })
+    } else if (
+      account.harnessId === "grok-build" &&
+      (await config.sharedProviders?.()?.remove("grok-build", "default", "xai"))
+    ) {
+      // The terminal's native login is independently owned. Disabling the
+      // managed account prevents it from being rediscovered on this machine.
     } else {
       await run(config.agents.logoutHarness(account.harnessId, await contextFor(account)))
     }

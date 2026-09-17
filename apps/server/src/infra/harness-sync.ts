@@ -7,20 +7,11 @@ import {
   type SyncTimestampValue
 } from "@codevisor/sync"
 import { Effect } from "effect"
+import { effectiveHarnessPreference, readHarnessSettings } from "./harness-preferences.js"
 
-/// Config-plane reconciliation for harnesses (agents). Two kinds of entry
-/// share the "harnesses" namespace: catalog harnesses keyed by their id,
-/// valued { enabled, installed } (the fleet's enabled set plus "the fleet
-/// wants this installed"), and user-defined custom ACP harnesses keyed
-/// "custom:<id>", valued as their full spec. Same three-way shape as the
-/// other planes — a private dot-named applied namespace tells local edits
-/// apart from replica lag — with one deliberate asymmetry: FIRST CONTACT
-/// DEFERS TO THE FLEET. A fresh machine discovers every harness
-/// default-enabled; letting that publish would re-enable a fleet's curated
-/// set, so a never-applied key with a live replica entry adopts instead of
-/// publishing. Enables are auth-gated (sign in first, retried each pass),
-/// and desired installs run through the machine's own install methods —
-/// missing methods report as blocked, never as failure.
+/// Shared desired settings are explicit. Machine overrides take precedence;
+/// local discovery never edits the shared catalog. Custom definitions follow
+/// the same inheritance rule, with local edits retained on their machine.
 export const HARNESSES_SYNC_NAMESPACE = "harnesses"
 const APPLIED_NAMESPACE = "local.harnesses-applied"
 const CUSTOM_PREFIX = "custom:"
@@ -33,6 +24,7 @@ export interface LocalHarnessState {
   readonly installed: boolean
   /// Whether an enable may apply right now (signed in, or auth not needed).
   readonly authenticated: boolean
+  readonly phase?: string | undefined
 }
 
 export interface HarnessSyncDeps {
@@ -44,6 +36,7 @@ export interface HarnessSyncDeps {
   /// Starts a vendor install in the background; throws when no runnable
   /// method exists (surfaced as blocked and retried on a later pass).
   readonly beginInstall: (harnessId: string) => Promise<void>
+  readonly beginUninstall?: (harnessId: string) => Promise<void>
   readonly listCustomSpecs: () => Promise<ReadonlyArray<CustomHarnessSpec>>
   readonly replaceCustomSpecs: (specs: ReadonlyArray<CustomHarnessSpec>) => Promise<void>
 }
@@ -63,19 +56,6 @@ export interface HarnessSyncStatus {
 export interface HarnessSyncResult {
   readonly status: HarnessSyncStatus
   readonly changedEntries: ReadonlyArray<SyncEntryRecord>
-}
-
-interface CatalogValue {
-  readonly enabled: boolean
-  readonly installed: boolean
-}
-
-const catalogValue = (value: unknown): CatalogValue | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const candidate = value as Partial<CatalogValue>
-  if (typeof candidate.enabled !== "boolean") return undefined
-  if (typeof candidate.installed !== "boolean") return undefined
-  return { enabled: candidate.enabled, installed: candidate.installed }
 }
 
 /// One canonical field order (and sorted env keys) so fingerprints compare
@@ -123,9 +103,7 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
   const locals = await deps.listHarnesses()
   const localById = new Map(locals.map((harness) => [harness.id, harness]))
   const customs = (await deps.listCustomSpecs()).map(normalizedSpec)
-  const customByKey = new Map(customs.map((spec) => [`${CUSTOM_PREFIX}${spec.id}`, spec]))
   const replica = await run(deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
-  const replicaByKey = new Map(replica.map((entry) => [entry.key, entry]))
   const appliedEntries = await run(deps.db.getSyncEntries(APPLIED_NAMESPACE))
   const appliedByKey = new Map(
     appliedEntries
@@ -138,114 +116,67 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
   const removed: Array<string> = []
   const installing: Array<string> = []
   const blocked: Array<{ id: string; reason: string }> = []
-  const replicaWrites: Array<SyncEntryRecord> = []
   const appliedWrites: Array<SyncEntryRecord> = []
   let clock: SyncTimestampValue | undefined = latestSyncTimestamp([...replica, ...appliedEntries])
   const stamp = (): SyncTimestampValue => {
     clock = nextSyncTimestamp(deps.serverId, clock, now())
     return clock
   }
-  const liveReplicaValue = (key: string): unknown => {
-    const entry = replicaByKey.get(key)
-    return entry === undefined || entry.deleted === true ? undefined : entry.value
-  }
-
-  // ── Publish: catalog state. Local edits after adoption publish; first
-  // contact with a live replica entry adopts below instead.
-  for (const [id, local] of localById) {
-    const replicaValue = catalogValue(liveReplicaValue(id))
-    const value: CatalogValue = {
-      enabled: local.enabled,
-      // "Installed" is a fleet-desired flag: once any machine had it, it
-      // stays wanted — there is no uninstall to publish.
-      installed: local.installed || replicaValue?.installed === true
-    }
-    const fingerprint = JSON.stringify(value)
-    if (appliedByKey.get(id) === fingerprint) continue
-    if (!appliedByKey.has(id) && replicaValue !== undefined) continue
-    replicaWrites.push({ key: id, value, timestamp: stamp() })
-    appliedWrites.push({ key: id, value: fingerprint, timestamp: stamp() })
-    appliedByKey.set(id, fingerprint)
-    published.push(id)
-  }
-
-  // ── Publish: custom specs (creations and edits, same first-contact rule).
-  for (const [key, spec] of customByKey) {
-    const replicaSpec = specValue(liveReplicaValue(key))
-    const fingerprint = JSON.stringify(spec)
-    if (appliedByKey.get(key) === fingerprint) continue
-    if (!appliedByKey.has(key) && replicaSpec !== undefined) continue
-    replicaWrites.push({ key, value: spec, timestamp: stamp() })
-    appliedWrites.push({ key, value: fingerprint, timestamp: stamp() })
-    appliedByKey.set(key, fingerprint)
-    published.push(key)
-  }
-  // Custom specs this machine once had that are gone were deleted here.
-  for (const [key] of appliedByKey) {
-    if (!key.startsWith(CUSTOM_PREFIX)) continue
-    if (customByKey.has(key)) continue
-    if (replicaByKey.get(key)?.deleted === true) continue
-    replicaWrites.push({ key, value: null, deleted: true, timestamp: stamp() })
-    appliedWrites.push({ key, value: null, deleted: true, timestamp: stamp() })
-    published.push(key)
-  }
-
-  const changedEntries =
-    replicaWrites.length > 0
-      ? (await run(deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, replicaWrites))).changed
-      : []
-  const merged = await run(deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
-
-  // ── Apply: catalog entries. The applied record only lands once the local
-  // machine fully matches the wanted value — auth-gated enables and
-  // still-running installs stay pending and retry on later passes.
-  for (const entry of merged) {
-    if (entry.key.startsWith(CUSTOM_PREFIX)) continue
-    if (entry.deleted === true) continue
-    const local = localById.get(entry.key)
+  // The shared catalog is authored explicitly by the global Settings page.
+  // Discovery and machine mutations never publish shared preferences.
+  const changedEntries: ReadonlyArray<SyncEntryRecord> = []
+  const merged = replica
+  const preferences = await readHarnessSettings(deps.db)
+  for (const [id, settings] of preferences) {
+    const local = localById.get(id)
     if (local === undefined) continue
-    const wanted = catalogValue(entry.value)
-    if (wanted === undefined) continue
-    const fingerprint = JSON.stringify(wanted)
-    if (appliedByKey.get(entry.key) === fingerprint) continue
-    let pending = false
-    if (wanted.enabled !== local.enabled) {
-      if (wanted.enabled && !local.authenticated) {
-        blocked.push({ id: entry.key, reason: "Sign in before this harness can be enabled" })
-        pending = true
-      } else {
-        await deps.setEnabled(entry.key, wanted.enabled)
-      }
+    const wanted = effectiveHarnessPreference(settings)
+    if (wanted.enabled !== undefined && wanted.enabled !== local.enabled) {
+      await deps.setEnabled(id, wanted.enabled)
+      applied.push(id)
     }
-    if (wanted.installed && !local.installed) {
+    if (
+      local.phase === "installing" ||
+      local.phase === "updating" ||
+      local.phase === "uninstalling"
+    )
+      continue
+    if (wanted.installed === true && !local.installed) {
       try {
-        await deps.beginInstall(entry.key)
-        installing.push(entry.key)
+        await deps.beginInstall(id)
+        installing.push(id)
       } catch (cause) {
-        blocked.push({
-          id: entry.key,
-          reason: cause instanceof Error ? cause.message : String(cause)
-        })
+        blocked.push({ id, reason: cause instanceof Error ? cause.message : String(cause) })
       }
-      pending = true
-    }
-    if (!pending) {
-      appliedWrites.push({ key: entry.key, value: fingerprint, timestamp: stamp() })
-      appliedByKey.set(entry.key, fingerprint)
-      applied.push(entry.key)
+    } else if (wanted.installed === false && local.installed) {
+      try {
+        if (deps.beginUninstall === undefined)
+          throw new Error("Uninstall unavailable on this machine")
+        await deps.beginUninstall(id)
+        applied.push(id)
+      } catch (cause) {
+        blocked.push({ id, reason: cause instanceof Error ? cause.message : String(cause) })
+      }
+    } else if (wanted.enabled && local.installed && !local.authenticated) {
+      blocked.push({ id, reason: "Sign in required" })
     }
   }
 
   // ── Apply: custom specs, folded into one replace when anything changed.
+  const localCustom = new Set(
+    (await run(deps.db.getSyncEntries("local.harness-custom-overrides")))
+      .filter((entry) => !entry.deleted)
+      .map((entry) => entry.key)
+  )
   let customChanged = false
   const nextCustom = new Map(customs.map((spec) => [spec.id, spec]))
   for (const entry of merged) {
     if (!entry.key.startsWith(CUSTOM_PREFIX)) continue
     const id = entry.key.slice(CUSTOM_PREFIX.length)
+    if (localCustom.has(id)) continue
     if (entry.deleted === true) {
       if (nextCustom.has(id) && appliedByKey.has(entry.key)) {
-        nextCustom.delete(id)
-        customChanged = true
+        // Stop managing the definition; keep this machine’s registration.
         appliedWrites.push({ key: entry.key, value: null, deleted: true, timestamp: stamp() })
         appliedByKey.delete(entry.key)
         removed.push(entry.key)

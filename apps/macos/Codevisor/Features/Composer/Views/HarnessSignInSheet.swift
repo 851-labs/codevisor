@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 /// The in-flow sign-in surface: presents the full harness authentication
@@ -16,18 +17,13 @@ struct HarnessSignInSheet: View {
   @State private var loadFailed = false
 
   var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text(title)
-          .font(.headline)
-        Spacer()
-        Button("Done") { finish() }
-          .keyboardShortcut(.cancelAction)
+    NavigationStack {
+      content.navigationTitle(title)
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      SheetFooter {
+        Button("Done") { finish() }.keyboardShortcut(.defaultAction)
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
-      Divider()
-      content
     }
     .frame(minWidth: 520, idealWidth: 560, minHeight: 420, idealHeight: 500)
     .environment(\.settingsMachineId, serverId)

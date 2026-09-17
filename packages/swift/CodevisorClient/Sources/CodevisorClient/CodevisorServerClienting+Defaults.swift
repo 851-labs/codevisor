@@ -322,6 +322,15 @@ public extension CodevisorServerClienting {
   func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }
+  func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted {
+    throw CodevisorServerClientError.invalidResponse
+  }
+  func resetHarnessOverride(id: String) async throws -> ServerHarness {
+    throw CodevisorServerClientError.invalidResponse
+  }
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -617,5 +626,12 @@ public extension CodevisorServerClienting {
 
   func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
     ServerSyncParticipation(enabled: enabled)
+  }
+}
+extension CodevisorServerClienting {
+  public func sharedHarnessAccount(
+    harnessId: String, request: ServerSharedHarnessAccountRequest
+  ) async throws -> ServerSharedHarnessAccountResponse {
+    throw CodevisorServerClientError.httpStatus(501, "Update this machine to sync accounts.")
   }
 }

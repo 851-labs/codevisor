@@ -376,7 +376,16 @@ export const HARNESS_READINESS_NAMESPACE = "harness-readiness"
 
 export interface HarnessReadinessRow {
   readonly id: string
-  readonly state: "ready" | "signInRequired" | "notInstalled" | "disabled"
+  readonly overridden?: boolean
+  readonly installed?: boolean
+  readonly state:
+    | "ready"
+    | "signInRequired"
+    | "notInstalled"
+    | "disabled"
+    | "blocked"
+    | "installing"
+    | "uninstalling"
   readonly reason?: string | undefined
 }
 

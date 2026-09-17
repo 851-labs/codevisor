@@ -31,8 +31,8 @@ import {
 import type { CustomHarnessLoadResult, CustomHarnessStore } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
-import { acquireServerLease } from "./infra/server-lease.js"
-import type { ServerLease } from "./infra/server-lease.js"
+import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
+import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
 import { restoreTerminalPersistence, screenSharingProvider } from "./serve-boot.js"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
 import { makeMcpManager, makeNativeMcpManager } from "@codevisor/mcp"
@@ -280,8 +280,11 @@ export const runServe = (
       resolveEnv: () => resolveShellEnv()
     })
     const sessionActivity = makeActiveWorkSleepInhibitor()
+    let sharedAccounts: SharedAccounts | undefined
     const auth = initializeOptionalServerFeature("Harness authentication", () =>
       makeHarnessAuthManager({
+        sharedAccounts: () => sharedAccounts,
+        sharedProviders: () => sharedAccounts?.providers,
         dataDir: dirname(databasePath),
         db,
         agents,
@@ -289,10 +292,21 @@ export const runServe = (
         preferDeviceCode: resolvedKind === "remote"
       })
     )
-    // The static credential ferry's file layer (Phase 20): which harness
-    // credential surfaces are honestly static enough to travel the fleet.
+    if (auth)
+      sharedAccounts = makeSharedAccounts({
+        db,
+        auth,
+        dataDir: dirname(databasePath),
+        serverId,
+        baseUrl: `http://127.0.0.1:${port}`
+      })
+    // Sync static credentials without overwriting machine-specific providers.
     const credentialFerry = initializeOptionalServerFeature("Credential ferry", () =>
-      credentialFerrySources({ resolveEnv: () => Promise.resolve(process.env) })
+      credentialFerrySources({
+        resolveEnv: () => Promise.resolve(process.env),
+        localProviders: async (harness) =>
+          (await sharedAccounts?.providers.staticOverrides(harness)) ?? []
+      })
     )
     const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
     // Content-addressed archives the config plane replicates skills through.
@@ -404,6 +418,7 @@ export const runServe = (
         resolveGitEnvironment: () => gitEnvironment,
         terminal,
         ...(auth === undefined ? {} : { auth }),
+        ...(sharedAccounts === undefined ? {} : { sharedAccounts }),
         ...(lifecycle === undefined ? {} : { lifecycle }),
         ...(credentialFerry === undefined ? {} : { credentialFerry }),
         ...(mcp === undefined ? {} : { mcp }),
@@ -478,9 +493,8 @@ export const runServe = (
       await startupLease?.release().catch(() => undefined)
     }
     console.error(failureMessage(cause))
-    // This is a dedicated server process. Startup may already have opened
-    // long-lived helpers (for example the background-terminal Unix socket), so
-    // exitCode alone can leave an inert process alive indefinitely.
+    // Startup may have opened long-lived helpers; setting exitCode alone
+    // would leave this dedicated server process alive indefinitely.
     process.exit(1)
   })
 }

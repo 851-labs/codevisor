@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 extension Notification.Name {
@@ -60,11 +61,12 @@ struct HarnessSignInSheet: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") { finish() }
+          if harness == nil {
+            HarnessAccountsCloseToolbar()
           }
         }
     }
+    .environment(\.harnessAccountsDismiss, { finish() })
     .task {
       guard harness == nil else { return }
       if let initial = request.initialHarness {

@@ -80,4 +80,18 @@ struct ServerHarnessSemanticsTests {
     let data = try JSONSerialization.data(withJSONObject: value)
     return try JSONDecoder().decode(ServerHarness.self, from: data)
   }
+
+  @Test("Overrides describe their global setting and uninstall is busy")
+  func overrideSemantics() throws {
+    var item = try harness(enabled: false, desiredEnabled: false, authState: nil)
+    item.settings = ServerHarnessSettings(
+      global: .init(enabled: true, installed: true), override: .init(enabled: false))
+    #expect(item.hasOverride)
+    #expect(item.settingsSummary == "Override · Globally enabled")
+    item.lifecycle = ServerHarnessLifecycleState(phase: "uninstalling")
+    #expect(item.isLifecycleBusy)
+    item.settings?.override = nil
+    #expect(item.settingsSource == "Global")
+    #expect(!item.hasOverride)
+  }
 }

@@ -1,4 +1,6 @@
 export * from "./cloud-protocol.js"
+export * from "./credential-coordination.js"
+export * from "./credential-state.js"
 export * from "./session-updates.js"
 export * from "./protocol.js"
 export * from "./harnesses.js"

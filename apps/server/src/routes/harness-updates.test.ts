@@ -1,5 +1,6 @@
 import { observableFixture } from "../changes-test-support.js"
 import type { Harness } from "@codevisor/api"
+import { Effect } from "effect"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -34,6 +35,11 @@ describe("harness update checks", () => {
         })),
       forcePendingUpdate: async () => {},
       installMethods: async () => [],
+      uninstallInfo: async () => ({ available: true }),
+      beginUninstall: async (id: string) => {
+        if (id !== "codex") throw new Error("Uninstall unavailable")
+        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
+      },
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -101,6 +107,11 @@ describe("harness update checks", () => {
         calls.push(`force ${id}`)
       },
       installMethods: async () => [],
+      uninstallInfo: async () => ({ available: true }),
+      beginUninstall: async (id: string) => {
+        if (id !== "codex") throw new Error("Uninstall unavailable")
+        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
+      },
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -180,6 +191,23 @@ describe("harness update checks", () => {
     })
     expect(badBundled.status).toBe(409)
 
+    const info = await jsonRequest(server, "/v1/harnesses/codex/uninstall")
+    expect(info.body).toEqual({ available: true })
+    const uninstall = await jsonRequest(server, "/v1/harnesses/codex/uninstall", { method: "POST" })
+    expect(uninstall.status).toBe(202)
+    expect(uninstall.body).toMatchObject({
+      accepted: true,
+      terminalId: "uninstall-terminal",
+      lifecycle: { phase: "uninstalling" }
+    })
+    expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
+      { settings: { override: { enabled: false, installed: false } } }
+    ])
+    expect(
+      (await jsonRequest(server, "/v1/harnesses/unknown/uninstall", { method: "POST" })).status
+    ).toBe(409)
+    expect(await run(services.db.getSyncEntries("harnesses"))).toEqual([])
+
     expect(calls).toEqual([
       "install codex brew",
       "install codex auto",
@@ -190,12 +218,67 @@ describe("harness update checks", () => {
     ])
   })
 
+  it("changes and resets only this machine’s override", async () => {
+    const { services } = await makeServices("overrides")
+    await run(
+      services.db.mergeSyncEntries("harnesses", [
+        {
+          key: "codex",
+          value: { enabled: true, installed: true },
+          timestamp: { wallMs: 1, counter: 0, deviceId: "test" }
+        }
+      ])
+    )
+    const server = await startWithApp(services)
+    const changed = await jsonRequest(server, "/v1/harnesses/codex/override", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false })
+    })
+    expect(changed.status).toBe(200)
+    expect(changed.body).toMatchObject({
+      enabled: false,
+      settings: { global: { enabled: true }, override: { enabled: false } }
+    })
+    const reset = await jsonRequest(server, "/v1/harnesses/codex/override", { method: "DELETE" })
+    expect(reset.status).toBe(200)
+    expect(reset.body).toMatchObject({
+      desiredEnabled: true,
+      settings: { global: { enabled: true } }
+    })
+    expect((reset.body as Harness).settings?.override).toBeUndefined()
+    expect(
+      (await jsonRequest(server, "/v1/harnesses/unknown/override", { method: "DELETE" })).status
+    ).toBe(404)
+    expect(
+      (
+        await jsonRequest(server, "/v1/harnesses/unknown", {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true })
+        })
+      ).status
+    ).toBe(404)
+  })
+
+  it("returns not found if a harness disappears during a machine edit", async () => {
+    const { services } = await makeServices("disappeared")
+    const server = await startWithApp({
+      ...services,
+      agents: { ...services.agents, discoverHarnesses: Effect.succeed([]) }
+    })
+    const response = await jsonRequest(server, "/v1/harnesses/codex", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false })
+    })
+    expect(response.status).toBe(404)
+  })
+
   it("returns 501 without a lifecycle manager", async () => {
     const { services } = await makeServices("server-a")
     const server = await startWithApp(services)
     runningServers.push(server)
 
     for (const [path, method] of [
+      ["/v1/harnesses/codex/uninstall", "GET"],
       ["/v1/harnesses/check-updates", "POST"],
       ["/v1/harnesses/codex/install", "POST"],
       ["/v1/harnesses/codex/update", "POST"],
@@ -225,6 +308,11 @@ describe("harness update checks", () => {
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
       forcePendingUpdate: async () => {},
       installMethods: async () => [],
+      uninstallInfo: async () => ({ available: true }),
+      beginUninstall: async (id: string) => {
+        if (id !== "codex") throw new Error("Uninstall unavailable")
+        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
+      },
       isGated: (harnessId: string) => gated.has(harnessId),
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),

@@ -12,12 +12,13 @@ import {
 
 export interface RunOperationOptions {
   readonly harnessId: string
-  readonly phase: "installing" | "updating"
+  readonly phase: "installing" | "updating" | "uninstalling"
   readonly command: string
   readonly extraEnv?: Readonly<Record<string, string>>
   readonly methodId?: string
   readonly targetVersion?: string
   readonly onSettled?: (success: boolean) => void
+  readonly verify?: () => Promise<void>
 }
 
 export interface StartBundleSwapOptions {
@@ -90,86 +91,100 @@ export const makeHarnessOperationRunner = (
       throw new Error("Harness install/update is unavailable on this server")
     }
     const runningPhase = operations.get(options.harnessId)?.phase
-    if (runningPhase === "installing" || runningPhase === "updating") {
+    if (
+      core.startingOperations.has(options.harnessId) ||
+      runningPhase === "installing" ||
+      runningPhase === "updating" ||
+      runningPhase === "uninstalling" ||
+      (options.phase !== "uninstalling" && core.uninstallRequests.has(options.harnessId))
+    ) {
       throw new Error(`An operation is already running for ${options.harnessId}`)
     }
-    const env = { ...(await resolveEnv()), ...options.extraEnv }
-    const handle = terminal.registerExternalTerminal(
-      { normalizeNewlines: true, sessionId: `harness-lifecycle:${options.harnessId}` },
-      { kill: () => child.kill(), resize: () => {}, write: () => {} }
-    )
-    handle.output(`$ ${options.command}\r\n`)
-    const child = spawnShell(options.command, env)
-    let outputTail = ""
-    child.onOutput((data) => {
-      handle.output(data)
-      outputTail = (outputTail + data).slice(-2_000)
-    })
-    let settled = false
-    const settle = async (exitCode: number | undefined, timedOut: boolean): Promise<void> => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      handle.exit(exitCode)
-      if (exitCode === 0 && !timedOut) {
-        try {
-          // Keep the operation visibly updating until the requested version
-          // is actually observable. Some native updaters return after handing
-          // replacement work to a descendant process.
-          invalidateEnvCache()
-          const installedVersion =
-            options.phase === "updating" && options.targetVersion !== undefined
-              ? await waitForInstalledTarget(options.harnessId, options.targetVersion)
-              : undefined
-          if (installedVersion === undefined) {
-            await run(config.agents.refreshEnvironment).catch(() => undefined)
+    core.startingOperations.add(options.harnessId)
+    try {
+      const env = { ...(await resolveEnv()), ...options.extraEnv }
+      const handle = terminal.registerExternalTerminal(
+        { normalizeNewlines: true, sessionId: `harness-lifecycle:${options.harnessId}` },
+        { kill: () => child.kill(), resize: () => {}, write: () => {} }
+      )
+      handle.output(`$ ${options.command}\r\n`)
+      const child = spawnShell(options.command, env)
+      let outputTail = ""
+      child.onOutput((data) => {
+        handle.output(data)
+        outputTail = (outputTail + data).slice(-2_000)
+      })
+      let settled = false
+      const settle = async (exitCode: number | undefined, timedOut: boolean): Promise<void> => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        handle.exit(exitCode)
+        if (exitCode === 0 && !timedOut) {
+          try {
+            // Keep the operation visibly updating until the requested version
+            // is actually observable. Some native updaters return after handing
+            // replacement work to a descendant process.
+            invalidateEnvCache()
+            await options.verify?.()
+            const installedVersion =
+              options.phase === "updating" && options.targetVersion !== undefined
+                ? await waitForInstalledTarget(options.harnessId, options.targetVersion)
+                : undefined
+            if (installedVersion === undefined) {
+              await run(config.agents.refreshEnvironment).catch(() => undefined)
+            }
+            await checkForUpdatesFresh()
+            if (installedVersion !== undefined) {
+              await recordVerifiedInstalledVersion(options.harnessId, installedVersion)
+            }
+            setOperation(options.harnessId, undefined)
+            options.onSettled?.(true)
+          } catch (cause) {
+            setOperation(options.harnessId, {
+              error:
+                `${cause instanceof Error ? cause.message : String(cause)}\n${outputTail.trim()}`.trim(),
+              phase: "failed",
+              terminalId: handle.terminalId,
+              ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
+              ...(options.targetVersion === undefined
+                ? {}
+                : { targetVersion: options.targetVersion })
+            })
+            options.onSettled?.(false)
           }
-          await checkForUpdatesFresh()
-          if (installedVersion !== undefined) {
-            await recordVerifiedInstalledVersion(options.harnessId, installedVersion)
-          }
-          setOperation(options.harnessId, undefined)
-          options.onSettled?.(true)
-        } catch (cause) {
-          setOperation(options.harnessId, {
-            error:
-              `${cause instanceof Error ? cause.message : String(cause)}\n${outputTail.trim()}`.trim(),
-            phase: "failed",
-            terminalId: handle.terminalId,
-            ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
-            ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
-          })
-          options.onSettled?.(false)
+          return
         }
-        return
+        const reason = timedOut
+          ? `Timed out after ${Math.round(operationTimeoutMs / 60_000)} minutes`
+          : `Exited with status ${exitCode ?? "unknown"}`
+        setOperation(options.harnessId, {
+          error: `${reason}\n${outputTail.trim()}`.trim(),
+          phase: "failed",
+          terminalId: handle.terminalId,
+          ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
+          ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
+        })
+        options.onSettled?.(false)
       }
-      const reason = timedOut
-        ? `Timed out after ${Math.round(operationTimeoutMs / 60_000)} minutes`
-        : `Exited with status ${exitCode ?? "unknown"}`
-      setOperation(options.harnessId, {
-        error: `${reason}\n${outputTail.trim()}`.trim(),
-        phase: "failed",
+      const timeout = setTimeout(() => {
+        child.kill()
+        void settle(undefined, true)
+      }, operationTimeoutMs)
+      timeout.unref()
+      child.onExit((exitCode) => void settle(exitCode, false))
+      const lifecycle: HarnessLifecycleState = {
+        phase: options.phase,
+        startedAt: new Date(now()).toISOString(),
         terminalId: handle.terminalId,
         ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
         ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
-      })
-      options.onSettled?.(false)
+      }
+      setOperation(options.harnessId, lifecycle)
+      return { lifecycle, terminalId: handle.terminalId }
+    } finally {
+      core.startingOperations.delete(options.harnessId)
     }
-    const timeout = setTimeout(() => {
-      child.kill()
-      void settle(undefined, true)
-    }, operationTimeoutMs)
-    timeout.unref()
-    child.onExit((exitCode) => void settle(exitCode, false))
-    const lifecycle: HarnessLifecycleState = {
-      phase: options.phase,
-      startedAt: new Date(now()).toISOString(),
-      terminalId: handle.terminalId,
-      ...(options.methodId === undefined ? {} : { methodId: options.methodId }),
-      ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
-    }
-    setOperation(options.harnessId, lifecycle)
-    return { lifecycle, terminalId: handle.terminalId }
   }
 
   const beginInstall = async (

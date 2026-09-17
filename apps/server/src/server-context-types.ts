@@ -19,6 +19,7 @@ import type { NativeMcpManager } from "@codevisor/mcp"
 import type { SkillsManager } from "@codevisor/skills"
 import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
 import type { RestartCoordinator } from "./restart-drain.js"
+import type { SharedAccounts } from "./infra/shared-accounts.js"
 
 /// The server's service/config contracts, the Effect service tag, and the
 /// event fanout every route publishes through.
@@ -132,6 +133,7 @@ export interface CodevisorServerServices {
   /// that omits Homebrew tools such as git-lfs.
   readonly resolveGitEnvironment?: () => Promise<NodeJS.ProcessEnv>
   readonly auth?: HarnessAuthManager
+  readonly sharedAccounts?: SharedAccounts
   readonly credentialFerry?: ReadonlyArray<CredentialSource>
   readonly mcp?: McpManager
   /// User-defined custom ACP harness persistence + handshake probe. Absent on

@@ -1,4 +1,7 @@
+import ACPKit
 import Foundation
+import Observation
+import Synchronization
 import Testing
 
 @testable import CodevisorCore
@@ -7,6 +10,28 @@ import Testing
 @MainActor
 @Suite("HarnessFleetStatus")
 struct HarnessFleetStatusTests {
+  @Test("Global edits and readiness changes invalidate observed settings")
+  func liveSettings() throws {
+    let sync = try makeSync()
+    let desiredChanged = Mutex(false)
+    withObservationTracking {
+      _ = HarnessFleet.settings(sync)
+    } onChange: {
+      desiredChanged.withLock { $0 = true }
+    }
+    HarnessFleet.set(
+      .init(id: "codex", name: "Codex", symbolName: "terminal", enabled: true, installed: true), in: sync)
+    #expect(desiredChanged.withLock { $0 })
+    let reportChanged = Mutex(false)
+    withObservationTracking {
+      _ = HarnessFleet.readiness(sync)
+    } onChange: {
+      reportChanged.withLock { $0 = true }
+    }
+    sync.set(namespace: "harness-readiness", key: "local", value: .object(["harnesses": .array([])]))
+    #expect(reportChanged.withLock { $0 })
+  }
+
   private func makeSync() throws -> ConfigSync {
     let store = InMemoryStore()
     try store.saveData(
@@ -62,5 +87,96 @@ struct HarnessFleetStatusTests {
     #expect(rows.map(\.harnessId) == ["claude-code", "codex", "gemini"])
     #expect(rows[1].state == "signInRequired")
     #expect(rows[2].reason == "CLI not found on PATH")
+  }
+
+  @Test("Global settings distinguish managed installations from legacy absence")
+  func globalSettings() throws {
+    let sync = try makeSync()
+    let stamp = ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio")
+    sync.apply(
+      namespace: "harnesses",
+      incoming: [
+        ServerSyncEntry(
+          key: "legacy-missing", value: .object(["enabled": .bool(false), "installed": .bool(false)]), timestamp: stamp),
+        ServerSyncEntry(
+          key: "codex", value: .object(["name": .string("Codex"), "enabled": .bool(true), "installed": .bool(true)]),
+          timestamp: stamp),
+        ServerSyncEntry(
+          key: "claude",
+          value: .object([
+            "name": .string("Claude"), "enabled": .bool(false), "installed": .bool(false), "uninstall": .bool(true),
+          ]), timestamp: stamp),
+      ])
+    let settings = HarnessFleet.settings(sync)
+    #expect(settings.map(\.id) == ["codex"])
+    #expect(settings[0].enabled)
+    #expect(HarnessFleet.settings(sync, includingUninstalled: true).map(\.id) == ["claude", "codex"])
+  }
+
+  @Test("Uninstall hides a harness while retaining its instruction for offline machines; Add restores it")
+  func uninstallAndReadd() throws {
+    let sync = try makeSync()
+    var setting = HarnessFleet.Setting(
+      id: "codex", name: "Codex", symbolName: "terminal", enabled: true, installed: true)
+    HarnessFleet.set(setting, in: sync)
+    setting.installed = false
+    setting.enabled = false
+    HarnessFleet.set(setting, in: sync)
+    #expect(HarnessFleet.settings(sync).isEmpty)
+    let entry = try #require(sync.entries(namespace: "harnesses").first { $0.key == "codex" })
+    #expect(entry.deleted != true)
+    guard case .object(let fields) = entry.value else { Issue.record("Expected uninstall instruction"); return }
+    #expect(fields["uninstall"] == .bool(true))
+    setting.installed = true
+    setting.enabled = true
+    HarnessFleet.set(setting, in: sync)
+    #expect(HarnessFleet.settings(sync) == [setting])
+  }
+
+  @Test("Pending machine changes include failures and removals, honor overrides, and ignore unmanaged absence")
+  func pendingChanges() throws {
+    let sync = try makeSync()
+    for (id, installed) in [("missing", true), ("remove", false), ("override", true), ("done", true)] {
+      HarnessFleet.set(
+        .init(id: id, name: id, symbolName: "terminal", enabled: installed, installed: installed), in: sync)
+    }
+    let rows: [JSONValue] = [
+      .object(["id": .string("missing"), "state": .string("disabled"), "installed": .bool(false)]),
+      .object(["id": .string("remove"), "state": .string("disabled"), "installed": .bool(true)]),
+      .object([
+        "id": .string("override"), "state": .string("disabled"), "installed": .bool(false), "overridden": .bool(true),
+      ]),
+      .object(["id": .string("done"), "state": .string("ready"), "installed": .bool(true)]),
+      .object(["id": .string("unmanaged"), "state": .string("notInstalled"), "installed": .bool(false)]),
+      .object(["id": .string("failed"), "state": .string("blocked"), "reason": .string("Package manager unavailable")]),
+      .object(["id": .string("working"), "state": .string("installing")]),
+    ]
+    sync.set(namespace: "harness-readiness", key: "studio", value: .object(["harnesses": .array(rows)]))
+    #expect(
+      HarnessFleet.pendingChanges(sync, machineKey: "studio").map(\.harnessId) == [
+        "missing", "remove", "failed", "working",
+      ])
+    #expect(HarnessFleet.pendingChanges(sync, machineKey: "offline").isEmpty)
+  }
+
+  @Test("Machine overrides remain informational reports")
+  func overrides() throws {
+    let sync = try makeSync()
+    sync.apply(
+      namespace: "harness-readiness",
+      incoming: [
+        ServerSyncEntry(
+          key: "studio",
+          value: .object([
+            "harnesses": .array([
+              .object([
+                "id": .string("codex"), "state": .string("disabled"), "overridden": .bool(true),
+                "installed": .bool(true),
+              ])
+            ])
+          ]), timestamp: ServerSyncTimestamp(wallMs: 1, counter: 0, deviceId: "studio"))
+      ])
+    #expect(HarnessFleet.overrideCount(sync, machineKey: "studio") == 1)
+    #expect(HarnessFleet.settings(sync).isEmpty)
   }
 }

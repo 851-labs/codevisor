@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import UIKit
 
@@ -9,11 +10,15 @@ import UIKit
 /// Mirrors the macOS HarnessAuthenticationView's standard flow.
 struct HarnessAuthenticationScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.sharedHarnessAccounts) private var isShared
+  @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.openURL) private var openURL
+  @Environment(\.dismiss) private var dismiss
 
   let serverId: String
   @State var harness: ServerHarness
   var onAuthenticated: () -> Void = {}
+  var signInRequest: HarnessMachineSignIn?
 
   @State private var accounts: [ServerHarnessAccount] = []
   @State private var methods: [ServerHarnessAuthMethod] = []
@@ -21,9 +26,16 @@ struct HarnessAuthenticationScreen: View {
   @State private var isWorking = false
   @State private var errorMessage: String?
   @State private var loginStep: HarnessLoginStep?
+  @State private var pendingAccountId: String?
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: serverId)
+  private var isAccountPicker: Bool { harness.auth?.supportsMultipleAccounts == true }
+  private var selectedAccountId: String? { pendingAccountId ?? accounts.first(where: \.isActive)?.id }
+  private var canConfirmSelection: Bool {
+    accounts.contains { $0.id == selectedAccountId && canSelect($0) }
+  }
+
+  private var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: serverId, isShared: isShared)
   }
 
   @ViewBuilder
@@ -32,13 +44,15 @@ struct HarnessAuthenticationScreen: View {
       PiProviderAuthenticationScreen(
         serverId: serverId,
         harness: harness,
-        onAuthenticated: onAuthenticated
+        onAuthenticated: onAuthenticated,
+        signInRequest: signInRequest
       )
     } else if harness.id == "opencode" {
       OpenCodeProviderAuthenticationScreen(
         serverId: serverId,
         harness: harness,
-        onAuthenticated: onAuthenticated
+        onAuthenticated: onAuthenticated,
+        signInRequest: signInRequest
       )
     } else {
       standardAuthentication
@@ -47,6 +61,34 @@ struct HarnessAuthenticationScreen: View {
 
   private var standardAuthentication: some View {
     accountsForm
+      .navigationBarBackButtonHidden(isAccountPicker)
+      .interactiveDismissDisabled(isWorking)
+      .toolbar {
+        if isAccountPicker {
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Cancel") { dismiss() }.disabled(isWorking)
+          }
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Add Account", systemImage: "plus") {
+              Task { await addAccount() }
+            }
+            .labelStyle(.iconOnly)
+            .disabled(isWorking)
+          }
+          ToolbarSpacer(.fixed, placement: .topBarTrailing)
+          ToolbarItem(placement: .confirmationAction) {
+            Button(role: .confirm) {
+              Task { await confirmSelection() }
+            } label: {
+              Label("Confirm Selection", systemImage: "checkmark")
+            }
+            .labelStyle(.iconOnly)
+            .disabled(isWorking || !canConfirmSelection)
+          }
+        } else {
+          HarnessAccountsCloseToolbar()
+        }
+      }
       .sheet(item: $loginStep) { step in
         HarnessLoginStepScreen(
           harness: harness,
@@ -62,6 +104,12 @@ struct HarnessAuthenticationScreen: View {
         )
       }
       .task { await load() }
+      .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
+        if isShared { Task { await load() } }
+      }
+      .onChange(of: environment.configSync.revisionsByNamespace["harness-shared-accounts"]) { _, _ in
+        Task { await load() }
+      }
       .onDisappear {
         guard let flow else { return }
         Task {
@@ -86,53 +134,77 @@ struct HarnessAuthenticationScreen: View {
       }
 
       Section(accountSectionTitle) {
-        ForEach(accounts) { account in accountRow(account) }
-        if harness.auth?.supportsMultipleAccounts == true {
-          Button {
-            Task { await addAccount() }
-          } label: {
-            Label("Add Account", systemImage: "plus")
-          }
-          .disabled(isWorking)
+        if !isShared, !["claude-code", "codex"].contains(harness.id),
+          let source = HarnessSharedCredentials(rawValue: harness.id)
+        {
+          HarnessSharedAccountRows(source: source)
         }
+        ForEach(accounts) { account in accountRow(account) }
       }
 
-    }
+    }.disabled(isWorking)
   }
 
   @ViewBuilder
   private func accountRow(_ account: ServerHarnessAccount) -> some View {
-    HStack(spacing: 10) {
-      Image(systemName: account.isActive ? "checkmark.circle.fill" : "circle")
-        .foregroundStyle(account.isActive ? Color.primary : Color.secondary)
-        .accessibilityLabel(account.isActive ? "Selected" : "Not selected")
-      VStack(alignment: .leading, spacing: 2) {
-        Text(account.label)
-        Text(accountStatus(account))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-      }
-      Spacer()
-      if account.authState == "authenticated" || account.authState == "notRequired" {
-        if !account.isActive {
-          Button("Use") { Task { await activate(account) } }
-            .buttonStyle(.borderless)
+    Group {
+      if isAccountPicker, canSelect(account) {
+        Button {
+          pendingAccountId = account.id
+        } label: {
+          accountRowContent(account)
         }
-      } else if account.canLogin {
-        loginControl(account)
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(account.id == selectedAccountId ? [.isSelected] : [])
+      } else {
+        accountRowContent(account)
       }
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      if account.canLogout,
-        account.authState == "authenticated" || account.authState == "notRequired"
-      {
-        Button("Sign Out") { Task { await logout(account) } }
+      if account.canLogout, canSelect(account) {
+        Button {
+          Task { await logout(account) }
+        } label: {
+          Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+            .labelStyle(.iconOnly)
+        }
+        .tint(.blue)
       }
       if account.profileKind == "managed" {
-        Button("Remove", role: .destructive) { Task { await remove(account) } }
+        Button(role: .destructive) {
+          Task { await remove(account) }
+        } label: {
+          Label("Remove", systemImage: "trash")
+            .labelStyle(.iconOnly)
+        }
       }
     }
+  }
+
+  private func accountRowContent(_ account: ServerHarnessAccount) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: account.id == selectedAccountId ? "checkmark.circle.fill" : "circle")
+        .foregroundStyle(account.id == selectedAccountId ? Color.primary : Color.secondary)
+        .accessibilityLabel(account.id == selectedAccountId ? "Selected" : "Not selected")
+      VStack(alignment: .leading, spacing: 2) {
+        Text(account.label)
+        if let status = accountStatus(account) {
+          Text(status)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+      }
+      Spacer()
+      if !canSelect(account), account.canLogin {
+        loginControl(account)
+      }
+    }
+    .contentShape(Rectangle())
+  }
+
+  private func canSelect(_ account: ServerHarnessAccount) -> Bool {
+    account.authState == "authenticated" || account.authState == "notRequired"
   }
 
   @ViewBuilder
@@ -169,12 +241,11 @@ struct HarnessAuthenticationScreen: View {
     harness.auth?.supportsMultipleAccounts == true ? "Accounts" : "Configuration"
   }
 
-  private func accountStatus(_ account: ServerHarnessAccount) -> String {
+  private func accountStatus(_ account: ServerHarnessAccount) -> String? {
     switch account.authState {
-    case "authenticated": return account.email.map { "Signed in as \($0)" } ?? "Signed in"
-    case "notRequired": return "No sign-in required"
+    case "authenticated", "notRequired": return nil
     case "checking": return "Checking sign-in…"
-    case "expired": return "Sign-in expired"
+    case "expired": return account.id.hasPrefix("shared-") ? (account.detail ?? "Sign-in expired") : "Sign-in expired"
     // Plain language, never the probe's `detail` — that carries a crashed
     // CLI's stderr. The cause is summarized and persisted server-side.
     case "error": return "Something went wrong starting the CLI"
@@ -182,12 +253,18 @@ struct HarnessAuthenticationScreen: View {
     }
   }
 
-  // MARK: - Actions
+}
 
+// MARK: - Actions
+
+extension HarnessAuthenticationScreen {
   private func load() async {
     methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
     do {
       accounts = try await client.listHarnessAccounts(harnessId: harness.id)
+      if let pendingAccountId, !accounts.contains(where: { $0.id == pendingAccountId && canSelect($0) }) {
+        self.pendingAccountId = nil
+      }
       errorMessage = nil
     } catch { errorMessage = serverErrorMessage(error) }
   }
@@ -199,11 +276,17 @@ struct HarnessAuthenticationScreen: View {
     }
   }
 
-  private func activate(_ account: ServerHarnessAccount) async {
-    await perform {
-      accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id)
+  private func confirmSelection() async {
+    guard !isWorking, canConfirmSelection, let selectedAccountId else { return }
+    isWorking = true
+    defer { isWorking = false }
+    do {
+      accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: selectedAccountId)
+      await refreshHarness()
+      dismiss()
+    } catch {
+      errorMessage = serverErrorMessage(error)
     }
-    await refreshHarness()
   }
 
   private func logout(_ account: ServerHarnessAccount) async {
@@ -223,6 +306,10 @@ struct HarnessAuthenticationScreen: View {
   }
 
   private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
+    if isShared, !["claude-code", "codex"].contains(harness.id), method.kind != "apiKey" {
+      machineSignIn?(HarnessMachineSignIn())
+      return
+    }
     if method.kind == "apiKey" {
       loginStep = .apiKey(account: account, method: method)
     } else {
@@ -331,6 +418,14 @@ struct HarnessAuthenticationScreen: View {
   }
 
   private func finishAuthentication(accountId: String) async {
+    if isAccountPicker {
+      let account = try? await client.probeHarnessAccount(harnessId: harness.id, accountId: accountId)
+      await load()
+      if let account, canSelect(account), accounts.contains(where: { $0.id == account.id }) {
+        pendingAccountId = account.id
+      }
+      return
+    }
     if let activated = try? await client.activateHarnessAccount(
       harnessId: harness.id,
       accountId: accountId
@@ -356,6 +451,7 @@ struct HarnessAuthenticationScreen: View {
   }
 
   private func refreshHarness() async {
+    if isShared { return }
     if let updated = try? await environment.refreshHarnessAuthentication(
       harnessId: harness.id, onServer: serverId)
     {

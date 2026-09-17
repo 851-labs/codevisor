@@ -18,6 +18,29 @@ struct PluginInstallSheet: View {
   @State private var errorMessage: String?
 
   var body: some View {
+    NavigationStack {
+      sheetContent
+        .navigationDestination(
+          isPresented: Binding(
+            get: { discovery != nil },
+            set: { if !$0 { discovery = nil; errorMessage = nil } }
+          )
+        ) {
+          sheetContent
+            .navigationBarBackButtonHidden(isWorking)
+        }
+    }
+    .frame(width: 480, height: discovery == nil ? 220 : 480)
+    .themedSurface(.sheet)
+    .task {
+      if let initialSource, discovery == nil {
+        source = initialSource
+        await find()
+      }
+    }
+  }
+
+  private var sheetContent: some View {
     VStack(spacing: 0) {
       Form {
         // The source field only exists while typing one — once a
@@ -30,8 +53,6 @@ struct PluginInstallSheet: View {
               prompt: Text(verbatim: "owner/repo, a git URL, or a local path")
             )
             .onSubmit { Task { await find() } }
-          } header: {
-            Text("Install Plugin")
           } footer: {
             Text("A public GitHub repo, a git URL, or a path on this machine.")
           }
@@ -47,21 +68,11 @@ struct PluginInstallSheet: View {
       .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
       .disabled(isWorking)
-      Divider().overlay(theme.isSystem ? Color.clear : theme.separator)
       if let discovery {
         PluginConsentNotice(name: discovery.name)
           .padding([.horizontal, .top])
       }
-      HStack {
-        if discovery != nil {
-          Button("Back") {
-            discovery = nil
-            errorMessage = nil
-          }
-          .settingsActionTint(theme)
-          .disabled(isWorking)
-        }
-        Spacer()
+      SheetFooter {
         Button("Cancel") { dismiss() }
           .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
@@ -82,17 +93,9 @@ struct PluginInstallSheet: View {
             .keyboardShortcut(.defaultAction)
         }
       }
-      .padding()
       .themedSurface(.sheet)
     }
-    .frame(width: 480, height: discovery == nil ? 220 : 480)
-    .themedSurface(.sheet)
-    .task {
-      if let initialSource, discovery == nil {
-        source = initialSource
-        await find()
-      }
-    }
+    .navigationTitle("Install Plugin")
   }
 
   @ViewBuilder

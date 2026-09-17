@@ -3,6 +3,9 @@ import CodevisorProtocol
 import Foundation
 
 public protocol CodevisorServerClienting: BrowserStateClienting {
+  func sharedHarnessAccount(
+    harnessId: String, request: ServerSharedHarnessAccountRequest
+  ) async throws -> ServerSharedHarnessAccountResponse
   func screenSharing(_ request: ServerScreenSharingRequest) async throws -> ServerScreenSharingReply
   func screenSharingVNCSocket(displayId: String) throws -> any ServerWebSocketConnecting
   func exchangeBrowserCookies(_ mutations: [BrowserCookieMutation]) async throws -> BrowserCookieSnapshot
@@ -98,6 +101,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Starts a one-click update via the harness's origin-matched flow.
   /// Returns `queued: true` when chats are mid-turn — the update runs when
   /// they finish.
+  func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo
+  func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted
+  func resetHarnessOverride(id: String) async throws -> ServerHarness
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted
   /// Dual-install: the bundled desktop app's version/update state (nil
   /// when the harness has no bundled app). Computed server-side on demand.

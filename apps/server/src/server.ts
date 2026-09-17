@@ -38,6 +38,7 @@ import {
   runBackgroundSyncReconcile
 } from "./routes/sync-reconcilers.js"
 import { handleRequest } from "./server-router.js"
+import { SHARED_ACCOUNTS_NAMESPACE } from "./infra/shared-account-store.js"
 import {
   makeFileRestartSnapshotStore,
   makeMemoryRestartSnapshotStore,
@@ -174,6 +175,21 @@ export const makeCodevisorServerApp = (
       })
     : undefined
   const authSyncRefresh = makeAuthSyncRefreshScheduler(services, config, fanout)
+  const unsubscribeSharedAccounts = services.sharedAccounts?.subscribe((entries) => {
+    void appendAndPublish(services.db, fanout, "sync.changed", SHARED_ACCOUNTS_NAMESPACE, {
+      namespace: SHARED_ACCOUNTS_NAMESPACE,
+      entries
+    }).catch(swallowError)
+    authSyncRefresh.request()
+  })
+  const reconcileSharedAccounts = () => {
+    void services.sharedAccounts?.reconcile().catch(swallowError)
+  }
+  reconcileSharedAccounts()
+  const sharedAccountSweep = services.sharedAccounts
+    ? setInterval(reconcileSharedAccounts, 30_000)
+    : undefined
+  sharedAccountSweep?.unref()
   /* v8 ignore next 9 -- the auth manager invokes this thin event-forwarding callback. */
   const unsubscribeAuth = services.auth?.subscribe((event) => {
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
@@ -191,6 +207,7 @@ export const makeCodevisorServerApp = (
     void appendAndPublish(services.db, fanout, event.kind, event.subjectId, event.payload).catch(
       () => undefined
     )
+    authSyncRefresh.request()
   })
   // Plugin runtime transitions ride the same fanout so Settings chips and
   // pane error cards update live on every client.
@@ -296,6 +313,9 @@ export const makeCodevisorServerApp = (
       activeSessionIds.clear()
       config.sessionActivity?.stop()
       unsubscribeAuth?.()
+      unsubscribeSharedAccounts?.()
+      clearInterval(sharedAccountSweep)
+      services.sharedAccounts?.gateway.close()
       authSyncRefresh.close()
       unsubscribeLifecycle?.()
       unsubscribePlugins?.()

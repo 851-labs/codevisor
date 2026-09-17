@@ -11,7 +11,10 @@ extension OpenCodeProviderAuthenticationView {
       let loaded = try await client.listHarnessAccounts(harnessId: "opencode")
       accounts = loaded
       if !loaded.contains(where: { $0.id == selectedAccountId }) {
-        selectedAccountId = loaded.first(where: \.isActive)?.id ?? loaded.first?.id
+        selectedAccountId =
+          loaded.first(where: {
+            signInRequest?.profileId == "default" ? $0.profileKind == "default" : $0.id == signInRequest?.profileId
+          })?.id ?? loaded.first(where: \.isActive)?.id ?? loaded.first?.id
       }
     }
   }
@@ -19,8 +22,15 @@ extension OpenCodeProviderAuthenticationView {
   func loadProviders(accountId: String) async {
     isLoadingProviders = true
     do {
-      let loaded = try await client.listOpenCodeAuthProviders(accountId: accountId)
+      var loaded = try await client.listOpenCodeAuthProviders(accountId: accountId)
       guard selectedAccountId == accountId else { return }
+      if !isShared, selectedAccount?.profileKind == "default" {
+        loaded = loaded.map { provider in
+          var local = provider
+          local.methods = provider.methods.filter { $0.type == "oauth" }
+          return local
+        }.filter { !$0.methods.isEmpty || $0.credentialType == "oauth" }
+      }
       providers = loaded
       providerAccountId = accountId
       if !loaded.contains(where: { $0.id == selectedProviderId }) {
@@ -34,7 +44,15 @@ extension OpenCodeProviderAuthenticationView {
       selectedProviderId = nil
       errorMessage = serverErrorMessage(error)
     }
-    if selectedAccountId == accountId { isLoadingProviders = false }
+    if selectedAccountId == accountId {
+      isLoadingProviders = false
+      if !didOpenRequestedProvider, let providerId = signInRequest?.providerId,
+        let provider = providers.first(where: { $0.id == providerId })
+      {
+        didOpenRequestedProvider = true
+        prepareProviderSignIn(provider)
+      }
+    }
   }
 
   func addProfile() async {
@@ -175,6 +193,10 @@ extension OpenCodeProviderAuthenticationView {
     cancelPendingFlow()
     providerSearch = ""
     authorizationCode = ""
+    if let pendingMachineSignIn {
+      self.pendingMachineSignIn = nil
+      machineSignIn?(pendingMachineSignIn)
+    }
   }
 
   func cancelPendingFlow() {
@@ -194,6 +216,7 @@ extension OpenCodeProviderAuthenticationView {
   }
 
   private func refreshHarness() async {
+    if isShared { await loadAccounts(); return }
     if let updated = try? await environment.refreshHarnessAuthentication(
       harnessId: "opencode", onServer: scopedServerId)
     {
@@ -222,7 +245,7 @@ extension OpenCodeProviderAuthenticationView {
   }
 
   func profileName(_ account: ServerHarnessAccount) -> String {
-    if account.profileKind == "default" { return "Local OpenCode" }
+    if account.profileKind == "default" { return "Default Profile" }
     if account.label.hasPrefix("OpenCode profile "),
       let index = accounts.filter({ $0.profileKind == "managed" }).firstIndex(where: { $0.id == account.id })
     {

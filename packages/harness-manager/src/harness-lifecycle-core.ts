@@ -62,6 +62,10 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
   /// Success clears the entry (idle). In-memory on purpose: an interrupted
   /// operation dies with the process and readiness re-probes the truth.
   const operations = new Map<string, HarnessLifecycleState>()
+  const busyCounts = new Map<string, number>()
+  const uninstallRequests = new Set<string>()
+  const gateListeners = new Set<(harnessId: string) => void>()
+  const startingOperations = new Set<string>()
 
   const setOperation = (harnessId: string, state: HarnessLifecycleState | undefined): void => {
     if (state === undefined) operations.delete(harnessId)
@@ -104,6 +108,10 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
   }
 
   return {
+    busyCounts,
+    uninstallRequests,
+    gateListeners,
+    startingOperations,
     arch,
     checkCacheMs,
     checkIntervalMs,

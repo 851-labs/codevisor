@@ -15,7 +15,7 @@ public final class ConfigSync {
   /// The namespaces this client gossips. Grows as stores onboard.
   public static let namespaces = [
     "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses", "plugins",
-    "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-readiness",
+    "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
     "plugin-readiness",
   ]
 
@@ -122,6 +122,11 @@ public final class ConfigSync {
   /// anything newer it held.
   public func synchronize(machineId: String, namespaces: [String] = ConfigSync.namespaces) async {
     let client = machines.client(for: machineId)
+    if namespaces.contains("harness-shared-accounts"),
+      await machines.cloudProvider?.prepareAccountSync(on: client, machineId: machineId) == true
+    {
+      await machines.refreshStatus(for: machineId)
+    }
     for namespace in namespaces {
       guard
         let document = try? await client.mergeSyncDocument(
@@ -266,7 +271,7 @@ public final class ConfigSync {
         onHarnessCatalogChanged?(machineId)
       }
     case "plugins": _ = try? await client.reconcilePluginsSync()
-    case "harness-credentials":
+    case "harness-credentials", "harness-shared-accounts":
       // Ferried credentials flip auth state — the catalog's gates.
       guard let value = try? await client.reconcileCredentialsSync() else { return }
       if case .object(let fields) = value,

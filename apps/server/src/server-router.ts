@@ -64,6 +64,16 @@ export const handleRequest = async (
       return
     }
     const url = parseRequestUrl(request)
+    if (url.pathname === "/harness/provider-token") {
+      if (!services.sharedAccounts) throw new HttpFailure(501, "Account gateway unavailable")
+      await services.sharedAccounts.providers.runtime.handle(request, response)
+      return
+    }
+    if (url.pathname.startsWith("/harness/claude/")) {
+      if (!services.sharedAccounts) throw new HttpFailure(501, "Account gateway unavailable")
+      await services.sharedAccounts.gateway.handle(request, response, url)
+      return
+    }
     // Config mutations propagate instantly: after a successful response
     // goes out, the matching sync plane reconciles in the background so
     // the change enters the replica and publishes sync.changed within a

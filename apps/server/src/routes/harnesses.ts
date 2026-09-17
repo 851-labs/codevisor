@@ -1,5 +1,10 @@
 import type { Harness, HarnessCapability } from "@codevisor/api"
-import { UpdateHarnessRequest as UpdateHarnessRequestSchema } from "@codevisor/api"
+import {
+  HarnessPreference,
+  UpdateHarnessRequest as UpdateHarnessRequestSchema
+} from "@codevisor/api"
+import { decorateHarnessSettings, setHarnessOverride } from "../infra/harness-preferences.js"
+import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 import { parseCustomHarnessDocument } from "@codevisor/harness-manager"
@@ -23,6 +28,34 @@ export const routeHarnesses = async (
   url: URL
 ): Promise<boolean> => {
   if (await routeHarnessAuth(services, request, response, url)) {
+    return true
+  }
+
+  const overrideId = matchRoute(url.pathname, "/v1/harnesses/:id/override")
+  if (overrideId !== undefined && (request.method === "PATCH" || request.method === "DELETE")) {
+    if (!services.agents.catalog.some((item) => item.id === overrideId))
+      throw new HttpFailure(404, "Harness not found")
+    const preference =
+      request.method === "DELETE" ? undefined : await readSchema(request, HarnessPreference)
+    await setHarnessOverride(services.db, overrideId, preference)
+    writeJson(response, 200, (await discoverHarnesses(services, false, overrideId, true))[0])
+    return true
+  }
+
+  const uninstallId = matchRoute(url.pathname, "/v1/harnesses/:id/uninstall")
+  if (uninstallId !== undefined && (request.method === "GET" || request.method === "POST")) {
+    if (services.lifecycle === undefined) throw new HttpFailure(501, "Uninstall unavailable")
+    try {
+      if (request.method === "GET") {
+        writeJson(response, 200, await services.lifecycle.uninstallInfo(uninstallId))
+      } else {
+        const outcome = await services.lifecycle.beginUninstall(uninstallId)
+        await setHarnessOverride(services.db, uninstallId, { installed: false, enabled: false })
+        writeJson(response, 202, { accepted: true, ...outcome })
+      }
+    } catch (cause) {
+      throw conflictFrom(cause)
+    }
     return true
   }
 
@@ -59,6 +92,7 @@ export const routeHarnesses = async (
     const methodId = typeof body.methodId === "string" ? body.methodId : undefined
     try {
       const { terminalId } = await services.lifecycle.beginInstall(installHarnessId, methodId)
+      await setHarnessOverride(services.db, installHarnessId, { installed: true, enabled: true })
       writeJson(response, 202, { accepted: true, terminalId })
     } catch (cause) {
       throw conflictFrom(cause)
@@ -149,7 +183,24 @@ export const routeHarnesses = async (
         // next boot would drop.
         throw new HttpFailure(400, parsed.warnings.join("; "))
       }
+      const before = await services.customHarnesses.list()
+      const overrides = await run(services.db.getSyncEntries("local.harness-custom-overrides"))
+      const changed = [...new Set([...before, ...parsed.specs].map((item) => item.id))].filter(
+        (id) =>
+          JSON.stringify(before.find((item) => item.id === id)) !==
+          JSON.stringify(parsed.specs.find((item) => item.id === id))
+      )
       await services.customHarnesses.replace(parsed.specs)
+      await run(
+        services.db.mergeSyncEntries(
+          "local.harness-custom-overrides",
+          changed.map((id) => ({
+            key: id,
+            value: true,
+            timestamp: nextSyncTimestamp("local", latestSyncTimestamp(overrides), Date.now())
+          }))
+        )
+      )
       writeJson(response, 200, await discoverHarnesses(services, true, undefined, true))
       return true
     }
@@ -188,6 +239,12 @@ export const routeHarnesses = async (
   const harnessId = matchRoute(url.pathname, "/v1/harnesses/:id")
   if (harnessId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateHarnessRequestSchema)
+    if (!services.agents.catalog.some((item) => item.id === harnessId))
+      throw new HttpFailure(404, "Harness not found")
+    await setHarnessOverride(services.db, harnessId, {
+      enabled: payload.enabled,
+      ...(payload.enabled ? { installed: true } : {})
+    })
     await run(services.db.setHarnessEnabled(harnessId, payload.enabled))
     const harness = (await discoverHarnesses(services)).find(
       (candidate) => candidate.id === harnessId
@@ -280,8 +337,9 @@ const discoverHarnessesWithAuthMode = async (
   /// list stays as light as possible for the composer's harness picker.
   includeLifecycle = false
 ): Promise<ReadonlyArray<Harness>> => {
-  const discovered = await run(
-    services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses))
+  const discovered = await decorateHarnessSettings(
+    services.db,
+    await run(services.db.applyHarnessSettings(await run(services.agents.discoverHarnesses)))
   )
   const filtered =
     harnessId === undefined ? discovered : discovered.filter((harness) => harness.id === harnessId)
@@ -314,4 +372,5 @@ export const discoverHarnesses = (
 /// probe failure into a feedback loop.
 export const discoverHarnessesFromStoredAuthState = (
   services: CodevisorServerServices
-): Promise<ReadonlyArray<Harness>> => discoverHarnessesWithAuthMode(services, "stored")
+): Promise<ReadonlyArray<Harness>> =>
+  discoverHarnessesWithAuthMode(services, "stored", undefined, true)

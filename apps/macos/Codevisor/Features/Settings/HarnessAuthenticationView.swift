@@ -5,6 +5,8 @@ import CodevisorUI
 
 struct HarnessAuthenticationView: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.sharedHarnessAccounts) private var isShared
+  @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.settingsMachineId) private var settingsMachineId
 
   /// The machine this view operates on — pinned by the machine-scoped
@@ -14,8 +16,8 @@ struct HarnessAuthenticationView: View {
     settingsMachineId ?? environment.defaultComposerServerId
   }
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: scopedServerId)
+  private var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: scopedServerId, isShared: isShared)
   }
 
   @Environment(\.dismiss) private var dismiss
@@ -24,9 +26,10 @@ struct HarnessAuthenticationView: View {
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
   /// Settings/onboarding render this view standalone and want its own
-  /// title + Done header. The composer's sign-in sheet brings its own
+  /// title and Done footer. The composer's sign-in sheet brings its own
   /// chrome (with machine context) and turns this off.
   var showsHeader = true
+  var signInRequest: HarnessMachineSignIn?
 
   @State private var accounts: [ServerHarnessAccount] = []
   @State private var methods: [ServerHarnessAuthMethod] = []
@@ -39,66 +42,39 @@ struct HarnessAuthenticationView: View {
   @ViewBuilder
   var body: some View {
     if harness.id == "pi" {
-      PiProviderAuthenticationView(harness: harness, onChange: onChange, showsHeader: showsHeader)
+      PiProviderAuthenticationView(
+        harness: harness, onChange: onChange, showsHeader: showsHeader, signInRequest: signInRequest)
     } else if harness.id == "opencode" {
       OpenCodeProviderAuthenticationView(
-        harness: harness, onChange: onChange, showsHeader: showsHeader)
+        harness: harness, onChange: onChange, showsHeader: showsHeader, signInRequest: signInRequest)
     } else {
       standardAuthentication
     }
   }
 
   private var standardAuthentication: some View {
-    VStack(spacing: 0) {
+    Group {
       if showsHeader {
-        HStack {
-          VStack(alignment: .leading, spacing: 3) {
-            Text(authenticationTitle).font(.title2).fontWeight(.semibold)
-            Text(authenticationSubtitle)
-              .foregroundStyle(.secondary)
-          }
-          Spacer()
-          Button("Done") { dismiss() }
-            .settingsActionTint(theme)
-            .keyboardShortcut(.defaultAction)
-        }
-        .padding(20)
-
-        Divider()
-      }
-
-      Form {
-        if let errorMessage {
-          Section {
-            Label(errorMessage, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(.secondary)
-          }
-        }
-
-        Section(accountSectionTitle) {
-          ForEach(accounts) { account in accountRow(account) }
-          if harness.auth?.supportsMultipleAccounts == true {
-            Button {
-              Task { await addAccount() }
-            } label: {
-              Label("Add Account", systemImage: "plus")
+        NavigationStack {
+          VStack(spacing: 0) {
+            accountsForm
+            SheetFooter {
+              Button("Done") { dismiss() }
+                .settingsActionTint(theme)
+                .keyboardShortcut(.defaultAction)
             }
-            .settingsActionTint(theme)
-            .disabled(isWorking)
           }
+          .navigationTitle(authenticationTitle)
         }
+        .frame(width: 560, height: 380)
+      } else {
+        accountsForm
       }
-      .formStyle(.grouped)
     }
-    // Standalone (settings/onboarding) sizes itself; hosted in the
-    // composer sheet the SHEET owns the frame.
-    .frame(
-      minWidth: showsHeader ? 520 : nil,
-      idealWidth: showsHeader ? 520 : nil,
-      maxWidth: showsHeader ? 520 : .infinity,
-      minHeight: showsHeader ? 390 : nil
-    )
     .task { await load() }
+    .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
+      if isShared { Task { await load() } }
+    }
     // Each sign-in attempt is one focused task in its own sheet — the
     // accounts list never grows inline flow UI.
     .sheet(item: $loginStep) { step in
@@ -115,6 +91,9 @@ struct HarnessAuthenticationView: View {
         }
       )
     }
+    .onChange(of: environment.configSync.revisionsByNamespace["harness-shared-accounts"]) { _, _ in
+      Task { await load() }
+    }
     .onDisappear {
       guard let flow else { return }
       Task {
@@ -127,6 +106,37 @@ struct HarnessAuthenticationView: View {
     }
   }
 
+  private var accountsForm: some View {
+    Form {
+      if let errorMessage {
+        Section {
+          Label(errorMessage, systemImage: "exclamationmark.triangle")
+            .foregroundStyle(.secondary)
+        }
+      }
+      Section {
+        if !isShared, !["claude-code", "codex"].contains(harness.id),
+          let source = HarnessSharedCredentials(rawValue: harness.id)
+        {
+          HarnessSharedAccountRows(source: source)
+        }
+        ForEach(accounts) { account in accountRow(account) }
+      } footer: {
+        if harness.auth?.supportsMultipleAccounts == true {
+          Button {
+            Task { await addAccount() }
+          } label: {
+            Label("Add Account", systemImage: "plus")
+          }
+          .font(.body)
+          .settingsActionTint(theme)
+          .disabled(isWorking)
+        }
+      }
+    }
+    .formStyle(.grouped)
+  }
+
   @ViewBuilder
   private func accountRow(_ account: ServerHarnessAccount) -> some View {
     HStack(spacing: 10) {
@@ -134,13 +144,20 @@ struct HarnessAuthenticationView: View {
         .foregroundStyle(account.isActive ? theme.textPrimary : theme.textSecondary)
         .accessibilityLabel(account.isActive ? "Selected" : "Not selected")
       VStack(alignment: .leading, spacing: 2) {
-        Text(account.label)
-        Text(accountStatus(account))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-          .truncationMode(.tail)
-          .help(accountStatus(account))
+        HStack {
+          Text(account.label)
+          if !isShared, account.isActive, let scope = account.selectionScope {
+            Text(scope == "machine" ? "Override" : "Shared").font(.caption).foregroundStyle(.secondary)
+          }
+        }
+        if let status = accountStatus(account) {
+          Text(status)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .help(status)
+        }
       }
       Spacer()
       if account.authState == "authenticated" || account.authState == "notRequired" {
@@ -195,25 +212,11 @@ struct HarnessAuthenticationView: View {
     harness.auth?.supportsMultipleAccounts == true ? "\(harness.name) Accounts" : "\(harness.name) Setup"
   }
 
-  private var authenticationSubtitle: String {
-    if harness.id == "pi" {
-      return "Configure the model providers Pi can use for new chats."
-    }
-    return harness.auth?.supportsMultipleAccounts == true
-      ? "Choose the active account Codevisor uses."
-      : "Configure the credentials Codevisor uses for new chats."
-  }
-
-  private var accountSectionTitle: String {
-    harness.auth?.supportsMultipleAccounts == true ? "Accounts" : "Configuration"
-  }
-
-  private func accountStatus(_ account: ServerHarnessAccount) -> String {
+  private func accountStatus(_ account: ServerHarnessAccount) -> String? {
     switch account.authState {
-    case "authenticated": return account.email.map { "Signed in as \($0)" } ?? "Signed in"
-    case "notRequired": return "No sign-in required"
+    case "authenticated", "notRequired": return nil
     case "checking": return "Checking sign-in…"
-    case "expired": return "Sign-in expired"
+    case "expired": return account.id.hasPrefix("shared-") ? (account.detail ?? "Sign-in expired") : "Sign-in expired"
     // Plain language, never the probe's `detail` — that carries a crashed
     // CLI's stderr. The cause is summarized and persisted server-side.
     case "error": return "Something went wrong starting the CLI"
@@ -262,6 +265,10 @@ extension HarnessAuthenticationView {
   }
 
   private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
+    if isShared, !["claude-code", "codex"].contains(harness.id), method.kind != "apiKey" {
+      machineSignIn?(HarnessMachineSignIn())
+      return
+    }
     if method.kind == "apiKey" {
       loginStep = .apiKey(account: account, method: method)
     } else {
@@ -380,6 +387,7 @@ extension HarnessAuthenticationView {
   }
 
   private func refreshHarness() async {
+    if isShared { return }
     if let updated = try? await environment.refreshHarnessAuthentication(
       harnessId: harness.id, onServer: scopedServerId)
     {

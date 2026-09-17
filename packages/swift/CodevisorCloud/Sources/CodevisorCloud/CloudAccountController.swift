@@ -106,6 +106,7 @@ public final class CloudAccountController {
   /// Reentrancy guard for registration: one probe/connect in flight at a
   /// time; failed attempts retry on the next refresh. Internal so tests can
   /// await completion.
+  @ObservationIgnored var accountSyncRegistrations: [String: Task<Bool, Never>] = [:]
   @ObservationIgnored var localRegistrationTask: Task<LocalRegistrationResolution?, Never>?
   /// The best-effort sign-out deregistration, kept so tests can await it.
   @ObservationIgnored var localDeregistrationTask: Task<Void, Never>?

@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 
 struct OpenCodeProviderSetupRequest: Identifiable {
@@ -8,6 +9,8 @@ struct OpenCodeProviderSetupRequest: Identifiable {
 
 struct OpenCodeProviderSetupSheet: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.sharedHarnessAccounts) private var isShared
+  @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
 
@@ -48,8 +51,8 @@ struct OpenCodeProviderSetupSheet: View {
     _selectedProviderId = State(initialValue: choice)
   }
 
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: serverId)
+  private var client: HarnessAccountsStore {
+    HarnessAccountsStore(environment: environment, machineId: serverId, isShared: isShared)
   }
 
   private var selectedProvider: ServerOpenCodeAuthProvider? {
@@ -76,10 +79,12 @@ struct OpenCodeProviderSetupSheet: View {
           }
         } else {
           Section("Provider") {
-            Picker("Provider", selection: $selectedProviderId) {
-              ForEach(providers) { provider in
-                Text(provider.name).tag(provider.id)
-              }
+            NavigationLink {
+              HarnessProviderPicker(
+                providers: providers.map { .init(id: $0.id, name: $0.name) },
+                selection: $selectedProviderId)
+            } label: {
+              LabeledContent("Provider", value: selectedProvider?.name ?? "Choose…")
             }
             .onChange(of: selectedProviderId) { _, _ in selectDefaultMethod() }
           }
@@ -93,8 +98,6 @@ struct OpenCodeProviderSetupSheet: View {
                   }
                 }
                 .onChange(of: selectedMethodId) { _, _ in resetInputs() }
-              } else if let method = selectedMethod {
-                LabeledContent("Method", value: method.label)
               }
 
               if let method = selectedMethod {
@@ -104,11 +107,9 @@ struct OpenCodeProviderSetupSheet: View {
                 if method.type == "api" {
                   SecureField("API Key", text: $apiKey)
                     .textContentType(.password)
+                    .privacySensitive()
                 }
-                Button(method.type == "api" ? "Save API Key" : "Sign In") {
-                  Task { await beginLogin() }
-                }
-                .disabled(!canSubmit(method) || isWorking)
+
               }
             }
           }
@@ -118,12 +119,33 @@ struct OpenCodeProviderSetupSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
+          Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() }.labelStyle(.iconOnly)
+        }
+        if let flow {
+          if flow.state == "waiting" {
+            ToolbarItem(placement: .confirmationAction) {
+              Button(role: .confirm) {
+                submitCode(flow)
+              } label: {
+                Label("Continue", systemImage: "checkmark")
+              }.labelStyle(.iconOnly)
+                .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
+            }
+          }
+        } else if let method = selectedMethod {
+          ToolbarItem(placement: .confirmationAction) {
+            Button(role: .confirm) {
+              Task { await beginLogin() }
+            } label: {
+              Label(
+                method.type == "api" ? "Save" : "Sign In",
+                systemImage: method.type == "api" ? "checkmark" : "arrow.right")
+            }.labelStyle(.iconOnly).disabled(!canSubmit(method) || isWorking)
+          }
         }
       }
     }
-    .presentationDetents([.medium, .large])
-    .presentationDragIndicator(.visible)
+    .interactiveDismissDisabled(isWorking)
     .task { selectDefaultMethod() }
     .onDisappear { cancelPendingFlow() }
   }
@@ -164,15 +186,12 @@ struct OpenCodeProviderSetupSheet: View {
       TextField("Authorization Code", text: $authorizationCode)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
-      Button("Continue") { submitCode(flow) }
-        .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     } else if flow.state == "running" {
       HStack(spacing: 8) {
         ProgressView().controlSize(.small)
         Text("Waiting for sign-in…").foregroundStyle(.secondary)
       }
     }
-    Button("Cancel", role: .cancel) { cancelPendingFlow() }
   }
 
   private func inputBinding(_ key: String) -> Binding<String> {

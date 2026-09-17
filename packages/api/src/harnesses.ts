@@ -40,6 +40,7 @@ export const HarnessAccount = Schema.Struct({
   authMethod: Schema.optional(Schema.String),
   authState: HarnessAuthState,
   isActive: Schema.Boolean,
+  selectionScope: Schema.optional(Schema.Literals(["shared", "machine"])),
   canLogin: Schema.Boolean,
   canLogout: Schema.Boolean,
   lastCheckedAt: Schema.optional(Schema.String),
@@ -92,7 +93,14 @@ export type HarnessUpdateInfo = typeof HarnessUpdateInfo.Type
 
 /// Live install/update state machine for one harness.
 export const HarnessLifecycleState = Schema.Struct({
-  phase: Schema.Literals(["idle", "installing", "updating", "pendingUpdate", "failed"]),
+  phase: Schema.Literals([
+    "idle",
+    "installing",
+    "uninstalling",
+    "updating",
+    "pendingUpdate",
+    "failed"
+  ]),
   targetVersion: Schema.optional(Schema.String),
   /// Install method the current/last operation used.
   methodId: Schema.optional(Schema.String),
@@ -135,6 +143,23 @@ export const CustomHarnessTestResult = Schema.Struct({
 })
 export type CustomHarnessTestResult = typeof CustomHarnessTestResult.Type
 
+export const HarnessPreference = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  installed: Schema.optional(Schema.Boolean)
+})
+export type HarnessPreference = typeof HarnessPreference.Type
+export const HarnessSettings = Schema.Struct({
+  global: Schema.optional(HarnessPreference),
+  override: Schema.optional(HarnessPreference)
+})
+export type HarnessSettings = typeof HarnessSettings.Type
+export const HarnessUninstallInfo = Schema.Struct({
+  available: Schema.Boolean,
+  detail: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String)
+})
+export type HarnessUninstallInfo = typeof HarnessUninstallInfo.Type
+
 export const Harness = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -146,6 +171,7 @@ export const Harness = Schema.Struct({
   /// installation and authentication gates have been applied. Optional for
   /// compatibility with older Codevisor servers and cached client models.
   desiredEnabled: Schema.optional(Schema.Boolean),
+  settings: Schema.optional(HarnessSettings),
   readiness: HarnessReadiness,
   /// Harness-owned authentication state. Optional while talking to servers
   /// that predate account management.

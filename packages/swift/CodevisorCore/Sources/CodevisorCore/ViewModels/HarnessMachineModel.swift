@@ -34,6 +34,8 @@ public final class HarnessMachineModel {
     public var rescanCatalog: CatalogLoader
     public var setDesiredEnabled: PreferenceSetter
     public var startUpdate: UpdateStarter
+    public var startUninstall: UpdateStarter
+    public var resetOverride: @MainActor (String) async throws -> ServerHarness
     public var catalogDidChange: @MainActor () -> Void
     public var lifecycleDidChange: @MainActor (_ lifecycle: ServerHarnessLifecycleState, _ id: String) -> Void
 
@@ -42,6 +44,10 @@ public final class HarnessMachineModel {
       rescanCatalog: @escaping CatalogLoader,
       setDesiredEnabled: @escaping PreferenceSetter,
       startUpdate: @escaping UpdateStarter,
+      startUninstall: @escaping UpdateStarter = { _ in throw CodevisorServerClientError.invalidResponse },
+      resetOverride: @escaping @MainActor (String) async throws -> ServerHarness = { _ in
+        throw CodevisorServerClientError.invalidResponse
+      },
       catalogDidChange: @escaping @MainActor () -> Void = {},
       lifecycleDidChange:
         @escaping @MainActor (
@@ -53,6 +59,8 @@ public final class HarnessMachineModel {
       self.rescanCatalog = rescanCatalog
       self.setDesiredEnabled = setDesiredEnabled
       self.startUpdate = startUpdate
+      self.startUninstall = startUninstall
+      self.resetOverride = resetOverride
       self.catalogDidChange = catalogDidChange
       self.lifecycleDidChange = lifecycleDidChange
     }
@@ -216,7 +224,32 @@ public final class HarnessMachineModel {
     }
   }
 
+  public func resetOverride(id: String) async {
+    guard let dependencies, preferenceMutationIds[id] == nil else { return }
+    let mutationId = UUID()
+    preferenceMutationIds[id] = mutationId
+    defer { if preferenceMutationIds[id] == mutationId { preferenceMutationIds[id] = nil } }
+    do {
+      let updated = try await dependencies.resetOverride(id)
+      guard preferenceMutationIds[id] == mutationId else { return }
+      replaceHarness(updated)
+      dependencies.catalogDidChange()
+    } catch {
+      guard preferenceMutationIds[id] == mutationId else { return }
+      operationError = OperationError(
+        title: "Couldn't use global setting", message: ErrorReporter.userFacingMessage(for: error))
+    }
+  }
+
+  public func uninstallHarness(id: String) async {
+    await startOperation(id: id, uninstall: true)
+  }
+
   public func updateHarness(id: String) async {
+    await startOperation(id: id, uninstall: false)
+  }
+
+  private func startOperation(id: String, uninstall: Bool) async {
     guard let dependencies,
       startingUpdateIds[id] == nil,
       let harness = harness(id: id)
@@ -232,7 +265,7 @@ public final class HarnessMachineModel {
     }
 
     do {
-      let started = try await dependencies.startUpdate(id)
+      let started = try await (uninstall ? dependencies.startUninstall(id) : dependencies.startUpdate(id))
       guard startingUpdateIds[id] == updateId else { return }
       if let lifecycle = started.lifecycle,
         let index = harnesses.firstIndex(where: { $0.id == id })
@@ -247,7 +280,7 @@ public final class HarnessMachineModel {
     } catch {
       guard startingUpdateIds[id] == updateId else { return }
       operationError = OperationError(
-        title: "Couldn't update \(harness.name)",
+        title: uninstall ? "Couldn't uninstall \(harness.name)" : "Couldn't update \(harness.name)",
         message: ErrorReporter.userFacingMessage(for: error)
       )
     }

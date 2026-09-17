@@ -24,6 +24,7 @@ export default defineConfig({
         "src/test-support-stubs.ts",
         "src/cli/support-test-support.ts",
         "src/routes/harness-auth-test-support.ts",
+        "src/infra/shared-accounts-test-support.ts",
         "src/routes/session-test-support.ts",
         // Process entry points and daemon bootstrap wiring: exercised by the
         // release smoke tests, not unit tests.
