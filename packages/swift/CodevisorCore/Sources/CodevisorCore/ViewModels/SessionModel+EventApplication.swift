@@ -354,13 +354,31 @@ extension SessionModel {
       // quiet turn reloads to the same state. Without this, a missed
       // terminal event spins forever on platforms that render no stall
       // affordance.
+      let cursorBeforeReload = self.serverEventCursor
       await self.reconcileFromServer()
       // Reloading notes synthetic activity, which clears the flag,
       // re-arms the quiet window, and cancels this task — deliberately
-      // not guarded on cancellation here. A turn still live after the
-      // reload is still stalled: keep the notice up instead of blinking
-      // it off for a full window each cycle. Real activity clears it.
-      if self.isSending { self.isTakingLongerThanExpected = true }
+      // not guarded on cancellation here.
+      //
+      // The timer measures CLIENT-observed silence, and that is not the
+      // same as a stalled turn: a phone in a pocket or a closed laptop
+      // lid stops delivering events just as thoroughly as a hung
+      // provider does. The reload tells the two apart. A cursor that
+      // moved past the pre-reload one means the server kept producing
+      // events while this client was not listening — the turn is
+      // healthy, so let the freshly re-armed window run instead of
+      // greeting a normal reconnect with a stall notice. A cursor that
+      // did not move is a turn still live and still quiet on the SERVER:
+      // keep the notice up instead of blinking it off for a full window
+      // each cycle. Real activity clears it either way.
+      guard self.isSending else { return }
+      let advanced: Bool
+      if let before = cursorBeforeReload, let after = self.serverEventCursor {
+        advanced = after > before
+      } else {
+        advanced = false
+      }
+      if !advanced { self.isTakingLongerThanExpected = true }
     }
   }
 
