@@ -53,9 +53,7 @@
     "ios-simulator": "bun scripts/ios-simulator.mjs"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "7.6.13",
     "@types/node": "26.0.0",
-    "@types/ws": "8.5.13",
     "@vitest/coverage-v8": "4.1.6",
     "node-gyp": "13.0.0",
     "oxlint": "1.42.0",
@@ -63,17 +61,6 @@
     "turbo": "2.6.1",
     "typescript": "6.0.2",
     "vitest": "4.1.6"
-  },
-  "dependencies": {
-    "@agentclientprotocol/sdk": "1.1.0",
-    "@effect/platform-node": "4.0.0-beta.92",
-    "@effect/sql-sqlite-node": "4.0.0-beta.92",
-    "@effect/vitest": "4.0.0-beta.92",
-    "better-sqlite3": "12.9.0",
-    "effect": "4.0.0-beta.92",
-    "node-pty": "1.1.0-beta34",
-    "ws": "8.18.3",
-    "zod": "4.4.3"
   },
   "trustedDependencies": [
     "better-sqlite3",

@@ -22,6 +22,7 @@
     "@jitl/quickjs-ng-wasmfile-release-sync": "0.32.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "effect": "4.0.0-beta.92",
+    "playwright": "1.62.0-alpha-1783623505000",
     "quickjs-emscripten": "0.32.0",
     "sucrase": "3.35.1",
     "ws": "8.18.3"

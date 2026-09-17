@@ -18,11 +18,9 @@
     "fumadocs-mdx": "15.1.0",
     "fumadocs-openapi": "11.1.1",
     "fumadocs-ui": "16.11.2",
-    "lucide-react": "^1.23.0",
     "posthog-js": "1.315.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "shiki": "^4.3.1"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.44.0",
