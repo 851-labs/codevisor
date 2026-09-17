@@ -20,7 +20,7 @@
     "dev:scripts:test": "node --test scripts/*.test.mjs",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --report-unused-disable-directives-severity=error --ignore-pattern '.repos/**' --ignore-pattern 'tmp/**' --ignore-pattern '.codevisor/**' .",
+    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --report-unused-disable-directives-severity=error .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "turbo run test --concurrency=4",

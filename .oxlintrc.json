@@ -4,15 +4,11 @@
     ".repos/**",
     "apps/macos/**",
     "packages/swift/**",
-    "coverage/**",
-    "dist/**",
-    "node_modules/**",
     "**/routeTree.gen.ts",
     "**/worker-configuration.d.ts"
   ],
   "plugins": ["typescript", "import", "unicorn", "oxc"],
   "categories": {
-    "correctness": "error",
     "suspicious": "error",
     "perf": "warn"
   },
@@ -43,6 +39,5 @@
     "unicorn/no-useless-spread": "warn",
     "unicorn/prefer-add-event-listener": "warn",
     "unicorn/require-module-specifiers": "warn"
-  },
-  "overrides": []
+  }
 }
