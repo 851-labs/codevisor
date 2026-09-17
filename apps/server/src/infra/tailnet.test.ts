@@ -71,6 +71,29 @@ describe("parseTailnetPeers", () => {
 })
 
 describe("readTailnetPeers", () => {
+  it("forces CLI mode when the macOS app binary runs without a terminal", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-tailnet-"))
+    const binary = join(directory, "Tailscale")
+    try {
+      writeFileSync(
+        binary,
+        `#!/bin/sh
+if [ "$TAILSCALE_BE_CLI" != "1" ]; then
+  printf '%s\\n' 'The Tailscale GUI failed to start'
+  exit 0
+fi
+/bin/cat "$0.json"
+`
+      )
+      writeFileSync(`${binary}.json`, statusFixture)
+      chmodSync(binary, 0o755)
+
+      expect(await readTailnetPeers([binary])).toEqual(parseTailnetPeers(statusFixture))
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it("returns undefined when no candidate binary exists", async () => {
     const peers = await readTailnetPeers(["/nonexistent/tailscale-binary"])
     expect(peers).toBeUndefined()

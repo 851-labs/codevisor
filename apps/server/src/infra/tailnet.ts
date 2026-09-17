@@ -63,7 +63,13 @@ export const readTailnetPeers = async (
       execFile(
         binary,
         ["status", "--json"],
-        { timeout: 5_000, maxBuffer: 8 * 1024 * 1024 },
+        {
+          timeout: 5_000,
+          maxBuffer: 8 * 1024 * 1024,
+          // App-hosted servers lack the terminal environment that selects CLI
+          // mode in the macOS Tailscale app binary.
+          env: { ...process.env, TAILSCALE_BE_CLI: "1" }
+        },
         (error, out) => resolve(error === null ? out : undefined)
       )
     })

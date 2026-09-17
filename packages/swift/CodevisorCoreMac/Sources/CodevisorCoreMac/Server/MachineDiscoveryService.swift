@@ -81,6 +81,11 @@ public enum TailscaleStatusReader {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: binary)
       process.arguments = ["status", "--json"]
+      // The macOS app binary otherwise enters GUI mode when launched without
+      // terminal environment variables, returning an error message instead of JSON.
+      var environment = ProcessInfo.processInfo.environment
+      environment["TAILSCALE_BE_CLI"] = "1"
+      process.environment = environment
       let stdout = Pipe()
       process.standardOutput = stdout
       process.standardError = FileHandle.nullDevice

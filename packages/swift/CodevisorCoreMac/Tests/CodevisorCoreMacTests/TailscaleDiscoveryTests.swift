@@ -71,6 +71,30 @@ struct TailscaleDiscoveryTests {
     #expect(peers == nil)
   }
 
+  @Test("Runs the app-bundled binary in CLI mode without a terminal")
+  func readerForcesCLIMode() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("codevisor-tailnet-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let binary = directory.appendingPathComponent("Tailscale")
+    try statusFixture.write(to: binary.appendingPathExtension("json"))
+    // The macOS app can exit successfully with a GUI error instead of JSON.
+    let script = """
+      #!/bin/sh
+      if [ "$TAILSCALE_BE_CLI" != "1" ]; then
+        printf '%s\\n' 'The Tailscale GUI failed to start'
+        exit 0
+      fi
+      /bin/cat "$0.json"
+      """
+    try script.write(to: binary, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+
+    let peers = await TailscaleStatusReader.readPeers(candidates: [binary.path])
+    #expect(peers == TailscaleStatusReader.peers(fromStatusJSON: statusFixture))
+  }
+
   @Test("Probes online unregistered peers and sorts results")
   @MainActor
   func discoversUnregisteredServers() async {
