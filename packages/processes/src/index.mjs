@@ -6,17 +6,18 @@ export { trackProcessTree } from "./tracker.mjs"
 
 const exec = promisify(execFile)
 
-/** @typedef {{pid: number, ppid: number, pgid: number, startedAt: string, state: string, command: string}} ProcessIdentity */
+/** @typedef {{pid: number, ppid: number, pgid: number, startedAt: string, state: string}} ProcessIdentity */
+/** @typedef {ProcessIdentity & {command: string}} ProcessTableEntry */
 /** @typedef {{list: () => Promise<ProcessIdentity[]>, signal: (pid: number, signal: NodeJS.Signals) => void, now: () => number, sleep: (ms: number) => Promise<unknown>}} ProcessSystem */
 
 /** Parse a locale-independent `ps` snapshot, including birth time to reject reused PIDs.
  * @param {string} output
- * @returns {ProcessIdentity[]}
+ * @returns {ProcessTableEntry[]}
  */
 export function parseProcessTable(output) {
   return output.split("\n").flatMap((line) => {
     const match = line.match(
-      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s+(\S+)\s+(.*)$/
+      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s+(\S+)(?:\s+(.*))?$/
     )
     if (!match) return []
     return [
@@ -24,17 +25,21 @@ export function parseProcessTable(output) {
         pid: Number(match[1]),
         ppid: Number(match[2]),
         pgid: Number(match[3]),
-        startedAt: (match[4] ?? "").replace(/\s+/g, " "),
-        state: match[5] ?? "",
-        command: match[6] ?? ""
+        // RegExp captures can be slices of the entire ps snapshot. A caller
+        // retaining one process must not keep every other process's argv alive.
+        startedAt: Buffer.from((match[4] ?? "").replace(/\s+/g, " ")).toString(),
+        state: Buffer.from(match[5] ?? "").toString(),
+        command: Buffer.from(match[6] ?? "").toString()
       }
     ]
   })
 }
 
-/** @returns {Promise<ProcessIdentity[]>} */
-export async function readProcessTable() {
-  const { stdout } = await exec("ps", ["-axo", "pid=,ppid=,pgid=,lstart=,stat=,command="], {
+/** @param {{includeCommand?: boolean}} [options]
+ * @returns {Promise<ProcessTableEntry[]>} */
+export async function readProcessTable({ includeCommand = true } = {}) {
+  const fields = `pid=,ppid=,pgid=,lstart=,stat=${includeCommand ? ",command=" : ""}`
+  const { stdout } = await exec("ps", ["-axo", fields], {
     env: { ...process.env, LC_ALL: "C" },
     maxBuffer: 16 * 1024 * 1024
   })
@@ -43,7 +48,7 @@ export async function readProcessTable() {
 
 /** @type {ProcessSystem} */
 const nativeSystem = {
-  list: readProcessTable,
+  list: () => readProcessTable({ includeCommand: false }),
   signal: (pid, signal) => {
     process.kill(pid, signal)
   },
@@ -70,7 +75,8 @@ export async function processIdentity(pid) {
 }
 
 /** Include descendants before signalling any parent so reparenting cannot lose them.
- * @param {ProcessIdentity[]} table @param {number[]} roots @param {boolean} includeRoots
+ * @template {ProcessIdentity} T
+ * @param {T[]} table @param {number[]} roots @param {boolean} includeRoots
  */
 export function processTree(table, roots, includeRoots = true) {
   const selected = new Set(roots)

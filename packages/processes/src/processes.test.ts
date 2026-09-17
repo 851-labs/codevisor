@@ -5,6 +5,7 @@ import {
   parseProcessTable,
   processIdentity,
   processTree,
+  readProcessTable,
   sameProcess,
   stopProcesses,
   stopProcessTree,
@@ -70,7 +71,10 @@ describe("owned process shutdown", () => {
     try {
       await vi.advanceTimersByTimeAsync(500)
       await tree.stop({ includeRoot: false })
-      expect(stop).toHaveBeenCalledWith([entry(31, 1, 30), entry(32, 1, 30)], expect.anything())
+      expect(stop).toHaveBeenCalledWith(
+        [31, 32].map((pid) => ({ pid, ppid: 1, pgid: 30, startedAt: "first", state: "S" })),
+        expect.anything()
+      )
     } finally {
       tree.dispose()
       vi.useRealTimers()
@@ -87,6 +91,20 @@ describe("owned process shutdown", () => {
     expect(sameProcess(entry(20), { ...entry(20), state: "Z+" })).toBe(false)
     expect(sameProcess(undefined, entry(20))).toBe(false)
     expect(sameProcess(entry(20), undefined)).toBe(false)
+  })
+
+  it("reads identities without argv and still supports full command snapshots", async () => {
+    const compact = await readProcessTable({ includeCommand: false })
+    expect(compact.find((entry) => entry.pid === process.pid)).toMatchObject({ command: "" })
+    expect(compact.every((entry) => entry.command === "")).toBe(true)
+    const full = await readProcessTable()
+    expect(full.find((entry) => entry.pid === process.pid)?.command).not.toBe("")
+    expect(parseProcessTable("20 1 20 Thu Sep 17 12:00:00 2026 S")).toEqual([
+      { ...entry(20), startedAt: "Thu Sep 17 12:00:00 2026", command: "" }
+    ])
+    expect(parseProcessTable("20 1 20 Thu Sep 17 12:00:00 2026 S echo café 🦊")[0]?.command).toBe(
+      "echo café 🦊"
+    )
   })
 
   it("captures descendants regardless of table order, excluding other workspaces", async () => {
