@@ -1,3 +1,4 @@
+import AppKit
 import CodevisorClient
 import CodevisorUI
 import SwiftUI
@@ -64,6 +65,15 @@ struct FileCommands: Commands {
     CommandGroup(replacing: .newItem) {
       NewChatMenuItem()
       NewProjectMenuItem()
+
+      Divider()
+
+      // Lives in THIS group, not a `CommandGroup(after: .newItem)` of its own:
+      // a sibling group at the same placement holds a conditional item, and the
+      // resulting `_ConditionalContent` costs every item in the sibling group
+      // its key equivalent — the item renders, but ⌘W never attaches to it. See
+      // the note on `View.shortcut(_:)` in ShortcutButton.swift.
+      CloseWindowMenuItem()
     }
     CommandGroup(after: .newItem) {
       if let file {
@@ -89,6 +99,35 @@ struct FileCommands: Commands {
           .keyboardShortcut("g", modifiers: .control)
       }
     }
+  }
+}
+
+/// File > Close.
+///
+/// Replacing `.newItem` above drops the standard Close along with "New Window",
+/// which left ⌘W bound only to Tabs & Splits > Close Split. That item is
+/// disabled wherever no workspace is focused, so ⌘W did nothing at all in the
+/// Settings window.
+///
+/// Stays ENABLED even while a workspace is focused. A disabled menu item
+/// SWALLOWS its key equivalent — AppKit does not fall through to the next
+/// matching item — so gating this on `workspace == nil` silently kills ⌘W
+/// inside workspaces instead of deferring to Close Split. Enabled, the Tabs &
+/// Splits item wins the shortcut whenever it is itself enabled; the workspace
+/// branch here is the fallback if that precedence ever shifts, so ⌘W closes a
+/// pane rather than the whole window either way.
+private struct CloseWindowMenuItem: View {
+  @FocusedValue(\.workspaceLayoutActions) private var workspace
+
+  var body: some View {
+    Button("Close") {
+      if let workspace {
+        workspace.closeSplit()
+      } else {
+        NSApp.keyWindow?.performClose(nil)
+      }
+    }
+    .keyboardShortcut("w", modifiers: .command)
   }
 }
 
