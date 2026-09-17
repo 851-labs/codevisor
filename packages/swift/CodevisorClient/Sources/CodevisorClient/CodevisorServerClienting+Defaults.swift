@@ -477,6 +477,11 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func filePreview(id: String) async throws -> Data { throw CodevisorServerClientError.invalidResponse }
+  func filePreview(path: String, sessionId: UUID?) async throws -> Data {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func fileData(id: String) async throws -> Data {
     throw CodevisorServerClientError.invalidResponse
   }

@@ -263,6 +263,7 @@ public enum ContextCompactionStatus: String, Sendable, Codable, Equatable {
 /// Discriminated by the `sessionUpdate` field. For `tool_call` and
 /// `tool_call_update` the payload fields are inline alongside the discriminator.
 public enum SessionUpdate: Sendable, Codable, Equatable {
+  case agentMessagePatch(AgentMessagePatch)
   case agentMessageChunk(
     ContentBlock, messageId: String?, parentToolCallId: String?, phase: MessagePhase?
   )
@@ -281,7 +282,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   /// A free-form markdown plan the agent proposes before implementing
   /// (Claude plan mode's ExitPlanMode, codex plan-mode plan items) —
   /// distinct from the `plan` step checklist. Replaces per turn.
-  case planDocument(markdown: String)
+  case planDocument(markdown: String, detailResource: ToolDetailResource? = nil, stateRevision: Int? = nil)
   /// A blocking agent question awaiting the user's answer.
   case question(QuestionRequest)
   /// Terminal pair for a `question` event, matched by questionId.
@@ -291,7 +292,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case sessionUpdate, messageId, parentToolCallId, phase, content, entries, availableCommands
     case currentModeId, configOptions
     case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
-    case cost, compactionId, status, goal, markdown
+    case cost, compactionId, status, goal, markdown, detailResource, stateRevision
     case questionId, message, questions, autoResolutionMs, outcome, answers
   }
 
@@ -299,6 +300,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     let container = try decoder.container(keyedBy: Keys.self)
     let kind = try container.decode(String.self, forKey: .sessionUpdate)
     switch kind {
+    case "agent_message_patch":
+      self = .agentMessagePatch(try AgentMessagePatch(from: decoder))
     case "agent_message_chunk":
       self = .agentMessageChunk(
         try container.decode(ContentBlock.self, forKey: .content),
@@ -358,7 +361,10 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case "goal_cleared":
       self = .goalCleared
     case "plan_document":
-      self = .planDocument(markdown: try container.decode(String.self, forKey: .markdown))
+      self = .planDocument(
+        markdown: try container.decode(String.self, forKey: .markdown),
+        detailResource: try container.decodeIfPresent(ToolDetailResource.self, forKey: .detailResource),
+        stateRevision: try container.decodeIfPresent(Int.self, forKey: .stateRevision))
     case "question":
       self = .question(
         QuestionRequest(
@@ -407,6 +413,9 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: Keys.self)
     switch self {
+    case let .agentMessagePatch(patch):
+      try container.encode("agent_message_patch", forKey: .sessionUpdate)
+      try patch.encode(to: encoder)
     case let .agentMessageChunk(content, messageId, parentToolCallId, phase):
       try container.encode("agent_message_chunk", forKey: .sessionUpdate)
       try container.encodeIfPresent(messageId, forKey: .messageId)
@@ -459,9 +468,11 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       try container.encode(goal, forKey: .goal)
     case .goalCleared:
       try container.encode("goal_cleared", forKey: .sessionUpdate)
-    case let .planDocument(markdown):
+    case let .planDocument(markdown, resource, revision):
       try container.encode("plan_document", forKey: .sessionUpdate)
       try container.encode(markdown, forKey: .markdown)
+      try container.encodeIfPresent(resource, forKey: .detailResource)
+      try container.encodeIfPresent(revision, forKey: .stateRevision)
     case let .question(request):
       try container.encode("question", forKey: .sessionUpdate)
       try container.encode(request.questionId, forKey: .questionId)

@@ -38,7 +38,7 @@ extension SessionModelTests {
               "createdAt": "2026-09-16T20:16:13.000Z", "updatedAt": "2026-09-16T20:16:13.000Z",
               "revision": 1
             }
-          ], "hasMore": false, "eventCursor": 3
+          ], "setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore": false, "eventCursor": 3
         }
         """.utf8))
 

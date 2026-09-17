@@ -379,15 +379,8 @@ extension SessionController {
       }
     }
 
-    // One round-trip replaces the discrete listProjects → upsertProject →
-    // listSessions → create/update → transcript sequence: the server
-    // ensures both records exist (creating the project only when missing —
-    // this controller's copy is a snapshot from when the draft was
-    // created, and pushing it used to revert changes made in the
-    // meantime, e.g. un-archiving) and returns the first transcript page
-    // for an instant paint. Older servers lack the endpoint (nil) and
-    // keep the discrete path; loadHistory then fetches the page itself.
     var preloadedTranscript: ServerTranscriptPage?
+    var persistedRuntime: ServerSessionRuntimeMetadata?
     let workspaceId: UUID? =
       switch resolvedComposerDefaultsScope {
       case let .workspace(id, _): id
@@ -401,16 +394,9 @@ extension SessionController {
     ) {
       session = try opened.session.chatSession(serverId: scopedServerId)
       preloadedTranscript = opened.transcript
+      persistedRuntime = opened.runtime
     } else {
-      let remoteProjects = try await serverClient.listProjects()
-      if !remoteProjects.contains(where: { UUID(uuidString: $0.id) == project.id }) {
-        _ = try await serverClient.upsertProject(project)
-      }
-      let remoteSession = try await serverClient.upsertSession(
-        session,
-        workspaceId: workspaceId
-      )
-      session = try remoteSession.chatSession(serverId: scopedServerId)
+      throw CodevisorServerClientError.invalidResponse
     }
     self.serverSession = session
 
@@ -420,24 +406,9 @@ extension SessionController {
       onAgentSessionCreated?(agentSessionId)
     }
 
-    // Start the runtime connect without blocking on it: for a resumed
-    // thread this can cold-spawn the agent process server-side, which
-    // takes multiple seconds on the first open after a server start. The
-    // transcript reads straight from the server database and needs no
-    // agent, so history loads — and paints — in parallel. The metadata is
-    // awaited below, before anything runtime-dependent runs.
-    let sessionId = session.id
-    let runtimeConnectStartedAt = ProcessInfo.processInfo.systemUptime
-    let runtimeConnect: Task<ServerSessionRuntimeMetadata?, Error>? =
-      session.hasAgentSession
-      ? Task { try await serverClient.connectSession(id: sessionId) }
-      : nil
-
     let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
-    // Paint the persisted selections over cached option definitions while
-    // the live runtime validates them. The runtime snapshot below remains
-    // authoritative and replaces removed models/options before Send is
-    // enabled.
+    // Build the composer from saved option definitions. Opening history
+    // never starts the provider; explicit runtime actions validate selections.
     let initialConfigOptions =
       configOptionsByHarness[harnessId]
       ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
@@ -473,14 +444,6 @@ extension SessionController {
     model.onPlanApprovalChanged = { [weak self] required in
       self?.pendingPlanApproval = required
     }
-    // Negotiate the canonical transcript + session-scoped event stream
-    // for every server-backed model, including a brand-new empty chat.
-    // Skipping this on first send leaves `usesPaginatedHistory` false, so
-    // SessionModel falls back to the global compatibility stream. Current
-    // servers deliberately exclude session runtime traffic from that
-    // stream, which means the answer is persisted but its chunks and
-    // terminal event never reach the live UI. Older servers still fall
-    // back inside loadHistory() when the transcript endpoint returns 404.
     await model.loadHistoryForInitialDisplay(
       preloaded: preloadedTranscript.map(transport.historyPage(from:))
     )
@@ -490,118 +453,24 @@ extension SessionController {
     }
     analyticsUsageBaseline = model.usage
 
-    // Publish the model as soon as history is loaded so an established
-    // transcript paints while the agent is still spawning — but never
-    // during pre-chat setup. A setup failure must leave no half-connected
-    // model behind for Retry to mistake for a ready conversation.
+    // Publish established history immediately. First-send setup keeps its
+    // model private until setup succeeds so Retry can start cleanly.
     if setupPhases.isEmpty, self.model == nil {
       self.model = model
     }
 
-    // Capability discovery describes a fresh harness session. A resumed
-    // thread can have a different current model and model-specific effort
-    // list, so let the loaded runtime replace the generic/cache snapshot.
-    // (Stream events that arrive after this still overwrite as usual.)
-    do {
-      if let runtimeConnect {
-        let metadata = try await withTaskCancellationHandler(
-          operation: { try await runtimeConnect.value },
-          onCancel: { runtimeConnect.cancel() }
-        )
-        if let metadata {
-          if !metadata.configOptions.isEmpty {
-            configOptionsByHarness[harnessId] = metadata.configOptions
-          }
-          if let modes = metadata.modes {
-            modeStateByHarness[harnessId] = modes
-          }
-          if let supportsGoals = metadata.supportsGoals {
-            supportsGoalsByHarness[harnessId] = supportsGoals
-          }
-          // Only a populated snapshot can be compared against: an
-          // empty option list would make every saved key look lost.
-          if !metadata.configOptions.isEmpty {
-            configurationAdjustmentMessage = Self.configurationAdjustmentMessage(
-              saved: session.configSelections,
-              validated: metadata.configOptions
-            )
-          }
-          didLoadExistingRuntimeConfiguration = true
-          model.applyRuntimeMetadata(
-            modeState: metadata.modes,
-            configOptions: metadata.configOptions
-          )
-        }
-        logExistingChatPhase(
-          "runtime_ready",
-          harnessId: harnessId,
-          startedAt: runtimeConnectStartedAt
-        )
-      }
-      didFinishExistingRuntimeConfiguration = runtimeConnect != nil
-      updateConfigurationValidationState()
-    } catch {
-      logExistingChatPhase(
-        "runtime_failed",
-        harnessId: harnessId,
-        startedAt: runtimeConnectStartedAt
-      )
-      didFinishExistingRuntimeConfiguration = runtimeConnect != nil
-      let message = serverErrorMessage(error)
-      existingConfigurationError = message
-      updateConfigurationValidationState()
-      // History is durable and useful even when the live harness cannot
-      // be restored. Keep the loaded model published so reopening a chat
-      // never replaces its transcript with an empty error screen.
-      model.recordSessionFailure(
-        message,
-        requiresHarnessAuthentication: message.localizedCaseInsensitiveContains(
-          "signed-in harness account"
-        )
-      )
-      if self.model == nil { self.model = model }
-      throw error
+    if let metadata = persistedRuntime {
+      model.applyRuntimeMetadata(modeState: metadata.modes, configOptions: metadata.configOptions)
+      if !metadata.configOptions.isEmpty { configOptionsByHarness[harnessId] = metadata.configOptions }
+      if let modes = metadata.modes { modeStateByHarness[harnessId] = modes }
+      if let supportsGoals = metadata.supportsGoals { supportsGoalsByHarness[harnessId] = supportsGoals }
     }
-
-    if let pendingModeId {
-      await model.setMode(pendingModeId)
-    }
-    pendingModeId = nil
-
-    // Model changes can replace the model-specific thinking and speed
-    // options. Apply dependent selections afterward so a remembered fast
-    // tier is available by the time it is restored.
-    let pendingConfig = pendingConfigByHarness[harnessId] ?? [:]
-    let optionCategories = Dictionary(
-      uniqueKeysWithValues: model.configOptions.map { ($0.id, $0.category ?? "") }
-    )
-    let categoryOrder = [
-      SessionConfigOption.Category.model: 0,
-      SessionConfigOption.Category.thoughtLevel: 1,
-      SessionConfigOption.Category.speed: 2,
-    ]
-    // Cached options can disappear after an agent update or a model
-    // change. Never replay a stale selection the runtime no longer
-    // advertises (especially a hidden model-specific control).
-    let supportedPendingConfig = pendingConfig.filter { optionCategories[$0.key] != nil }
-    let orderedPendingConfig = supportedPendingConfig.sorted { left, right in
-      func priority(_ configId: String) -> Int {
-        if configId == "model" { return 0 }
-        if configId == "speed" { return 2 }
-        return categoryOrder[optionCategories[configId] ?? ""] ?? 99
-      }
-      let leftPriority = priority(left.key)
-      let rightPriority = priority(right.key)
-      if leftPriority == rightPriority { return left.key < right.key }
-      return leftPriority < rightPriority
-    }
-    for (configId, value) in orderedPendingConfig {
-      await model.setConfigOption(configId: configId, value: value)
-    }
-    pendingConfigByHarness[harnessId] = nil
+    // Saved selections are validated when the next prompt resumes the provider.
+    didLoadExistingRuntimeConfiguration = true
+    didFinishExistingRuntimeConfiguration = true
+    updateConfigurationValidationState()
 
     captureChatCreatedIfNeeded(model: model, harnessId: harnessId)
-    await applyPendingGoal(to: model)
 
     // A runtime that reported no options (see `configOptions`) must not
     // erase the cached catalog the composer is falling back to.
@@ -610,18 +479,6 @@ extension SessionController {
       configOptionsByHarness[harnessId] = model.configOptions
     }
 
-    // This connect created the agent session (there was no id to resume
-    // when it started), so there is no prior runtime configuration to
-    // validate — the just-created runtime is authoritative and its config
-    // was written by the replay above. Settle the flags so any later
-    // recompute (a mid-connect `session.updated` refresh, a pane remount
-    // re-running `prepareExistingSessionCapabilities`) resolves to
-    // `.ready` instead of wedging the composer in `.connecting`.
-    if runtimeConnect == nil {
-      didLoadExistingRuntimeConfiguration = true
-      didFinishExistingRuntimeConfiguration = true
-      updateConfigurationValidationState()
-    }
     return model
   }
 }

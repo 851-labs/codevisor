@@ -13,16 +13,9 @@ extension SessionModel {
   /// while a turn is running.
   func startConsumer() async {
     guard consumerTask == nil else { return }
-    let events: AsyncThrowingStream<ServerSessionStreamEnvelope, any Error>
-    if usesPaginatedHistory {
-      events =
-        serverEventCursor.map { transport.streamEnvelopes(since: $0) }
-        ?? transport.streamEnvelopes()
-    } else {
-      events = transport.legacyStreamEnvelopes(
-        since: serverEventCursor ?? ServerSessionTransport.liveOnlyEventCursor
-      )
-    }
+    let events =
+      serverEventCursor.map { transport.streamEnvelopes(since: $0) }
+      ?? transport.streamEnvelopes()
     let pendingEvents = self.pendingEvents
     let consumerGeneration = pendingEvents.beginConsumer()
     consumerTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -35,12 +28,13 @@ extension SessionModel {
             await self?.noteStreamRecovery(state, generation: consumerGeneration)
           }
           if pendingEvents.append(
-            envelope.event, cursor: envelope.cursor, generation: consumerGeneration
+            envelope.event, cursor: envelope.cursor, generation: consumerGeneration, byteCount: envelope.byteCount
           ) {
             Task { @MainActor [weak self] in
               self?.scheduleFlush()
             }
           }
+          if pendingEvents.overflowed { throw CodevisorServerClientError.invalidResponse }
         }
         await self?.flushPendingEventsAtPresentationBoundary()
       } catch {
@@ -79,13 +73,7 @@ extension SessionModel {
     Log.session.notice(
       "Adopting a new session transport; resuming the event stream from cursor \(String(describing: self.serverEventCursor), privacy: .public)"
     )
-    if usesPaginatedHistory {
-      await startConsumer()
-    } else {
-      // A legacy global stream cannot certify a session checkpoint. Get a
-      // snapshot instead, upgrading to scoped replay when the server supports it.
-      await reconcileFromServer()
-    }
+    await startConsumer()
   }
 
   private func handleEventStreamFailure(_ error: any Error) async {
@@ -116,7 +104,7 @@ extension SessionModel {
   /// display clock; hidden transcripts use a coarse timer because they have
   /// no pixels to present.
   func scheduleFlush() {
-    guard !isActiveTranscriptHydrationPending, !isFlushScheduled,
+    guard !isFlushScheduled,
       !pendingEvents.isEmpty
     else { return }
     isFlushScheduled = true
@@ -172,7 +160,6 @@ extension SessionModel {
   /// Applies every buffered stream event in one synchronous pass — a single
   /// run-loop turn, so SwiftUI renders the whole batch once.
   func flushPendingEvents() {
-    guard !isActiveTranscriptHydrationPending else { return }
     scheduledFlushTask?.cancel()
     scheduledFlushTask = nil
     isFlushScheduled = false
@@ -199,7 +186,7 @@ extension SessionModel {
   /// frame; only fall back to an immediate flush if a registered surface has
   /// stopped producing frames (for example while the app is suspended).
   func flushPendingEventsAtPresentationBoundary() async {
-    guard !isActiveTranscriptHydrationPending, !pendingEvents.isEmpty else { return }
+    guard !pendingEvents.isEmpty else { return }
     if isViewVisible, presentationFrameRequester?() == true {
       if !isFlushScheduled {
         scheduleFlush()
@@ -231,6 +218,22 @@ extension SessionModel {
     var result: [SessionPendingStreamEvent] = []
     result.reserveCapacity(events.count)
     for pending in events {
+      if case let .update(.agentMessagePatch(patch)) = pending.event,
+        let last = result.last, case .update(.agentMessagePatch(var previous)) = last.event,
+        previous.chatItemId == patch.chatItemId, previous.messageId == patch.messageId,
+        previous.parentToolCallId == patch.parentToolCallId, previous.generation == patch.generation,
+        previous.offset + previous.text.utf16.count == patch.offset,
+        previous.text.utf16.count + patch.text.utf16.count <= 24_000
+      {
+        previous.text += patch.text
+        previous.totalLength = patch.totalLength
+        previous.stateRevision = patch.stateRevision
+        previous.phase = patch.phase ?? previous.phase
+        previous.detailResource = patch.detailResource
+        result[result.count - 1] = SessionPendingStreamEvent(
+          .update(.agentMessagePatch(previous)), cursor: pending.cursor)
+        continue
+      }
       if case let .update(.agentMessageChunk(block, messageId, parent, phase)) = pending.event,
         case let .text(text, annotations) = block, annotations == nil, !text.isEmpty,
         let previous = result.last,
@@ -269,7 +272,6 @@ extension SessionModel {
   /// stream from its cursor.
   public func shutdown() {
     stopConnectionRecovery()
-    cancelActiveTranscriptHydration()
     for task in transcriptDetailLoadTasks.values { task.cancel() }
     transcriptDetailLoadTasks.removeAll(keepingCapacity: false)
     consumerTask?.cancel()

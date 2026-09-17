@@ -55,11 +55,17 @@ extension SessionController {
     case let .failed(message):
       projectionStatus = .failed(message)
     }
-    return TranscriptProjectionInput(
+    var input = TranscriptProjectionInput(
       settledConversation: settledConversation,
       pendingUserMessage: pendingUserMessage,
       activeItem: activeItem,
-      setupPhases: setupPhases,
+      setupPhases: setupPhases
+        + (model?.persistedSetupPhases ?? []).filter { persisted in
+          !setupPhases.contains {
+            $0.id == persisted.id
+              || ($0.id == SessionSetupPhase.worktreePhaseId && persisted.id.hasPrefix("worktree.setup:"))
+          }
+        },
       waitingBackgroundTaskDescription: waitingBackgroundTaskDescription,
       waitingHarnessUpdateName: waitingHarnessUpdateName,
       isLoadingInitialHistory: isLoadingInitialHistory,
@@ -68,6 +74,13 @@ extension SessionController {
       status: projectionStatus,
       activityMessage: transcriptActivityOverride
     )
+    input.hasNewerHistory = model?.hasNewerHistory ?? false
+    return input
+  }
+  public var hasNewerHistory: Bool { model?.hasNewerHistory ?? false }
+  public var isLoadingNewerHistory: Bool { model?.isLoadingNewerHistory ?? false }
+  public func loadNewerHistory(latest: Bool = false) async -> Int {
+    await model?.loadNewerHistory(latest: latest) ?? 0
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
@@ -242,8 +255,15 @@ extension SessionController {
   }
 
   @discardableResult
-  public func loadTranscriptDetails(_ itemId: String) async -> Bool {
-    await model?.loadTranscriptDetails(itemId: itemId) ?? false
+  public func loadTranscriptDetails(_ itemId: String, previous: Bool = false) async -> Bool {
+    await model?.loadTranscriptDetails(itemId: itemId, previous: previous) ?? false
+  }
+
+  public func transcriptBodyPage(
+    resource: ToolDetailResource, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage {
+    guard let model else { throw SessionControllerError.serverUnavailable }
+    return try await model.transcriptBodyPage(resource: resource, field: field, position: position)
   }
 
   /// The harness this chat is (or will be) running on: the connected

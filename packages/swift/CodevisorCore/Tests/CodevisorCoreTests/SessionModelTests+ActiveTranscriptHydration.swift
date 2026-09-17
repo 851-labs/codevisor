@@ -1,11 +1,12 @@
 import Foundation
+import CodevisorTestSupport
 import Testing
 import ACPKit
 
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("A client joining an active turn hydrates worked details before newer live events")
+  @Test("Opening a chat starts live updates before its deferred details are requested")
   func activeTurnHydrationPreservesSnapshotBoundary() async {
     let sessionId = UUID()
     let assistantId = UUID()
@@ -36,40 +37,15 @@ extension SessionModelTests {
       eventCursor: 2
     )
     client.transcriptDetailsByItem[assistantId.uuidString] = ServerTranscriptItemDetails(
-      itemId: assistantId.uuidString,
-      revision: 2,
-      events: [
-        ServerEventEnvelope(
-          id: 2,
-          subjectRevision: 2,
-          serverId: "local",
-          kind: "session.output",
-          subjectId: sessionId.uuidString,
-          createdAt: "2026-08-31T00:00:02.000Z",
+      itemId: assistantId.uuidString, revision: 2, eventCursor: 2,
+      entries: [
+        ServerTranscriptEntry(
+          key: "tool:tool-before-open", position: 2, revision: 2,
           payload: .object([
-            "sessionUpdate": .string("tool_call"),
-            "toolCallId": .string("tool-before-open"),
-            "title": .string("Read existing state"),
-          ])
-        ),
-        // Older servers may ignore the additive `through` query and
-        // return their current item state. The transport still clips
-        // the response locally to the page cursor.
-        ServerEventEnvelope(
-          id: 4,
-          subjectRevision: 4,
-          serverId: "local",
-          kind: "session.output",
-          subjectId: sessionId.uuidString,
-          createdAt: "2026-08-31T00:00:04.000Z",
-          payload: .object([
-            "sessionUpdate": .string("tool_call"),
-            "toolCallId": .string("tool-beyond-snapshot"),
-            "title": .string("Must arrive through the live stream"),
-          ])
-        ),
-      ]
-    )
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("tool-before-open"),
+            "title": .string("Read existing state"), "isSnapshot": .bool(true), "stateRevision": .number(2),
+          ]))
+      ])
     let (detailGate, releaseDetails) = AsyncStream.makeStream(of: Void.self)
     client.holdTranscriptDetails(until: detailGate)
     let model = SessionModel(
@@ -77,11 +53,11 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
+    defer { model.shutdown(); releaseDetails.finish() }
     await model.loadHistoryForInitialDisplay()
-    await settleUntil {
-      client.transcriptDetailRequestCount == 1
-        && client.sessionEventSinceValues == [2]
-    }
+    #expect(client.transcriptDetailRequestCount == 0)
+    let hydrate = Task { await model.loadTranscriptDetails(itemId: assistantId.uuidString) }
+    await client.transcriptDetailRequests.wait()
     await client.eventReads.wait()
     client.emit(
       ServerEventEnvelope(
@@ -95,6 +71,7 @@ extension SessionModelTests {
           "sessionUpdate": .string("tool_call"),
           "toolCallId": .string("tool-after-open"),
           "title": .string("Inspect live state"),
+          "stateRevision": .number(3),
         ])
       ))
     await client.eventReads.wait(for: 2)
@@ -103,21 +80,22 @@ extension SessionModelTests {
       Issue.record("expected compact active assistant")
       return
     }
-    #expect(compactMessage.turn.allToolCalls.isEmpty)
+    await awaitObserved {
+      guard case let .assistant(message) = model.activeItem else { return false }
+      return message.turn.toolCalls.contains { $0.toolCallId == "tool-after-open" }
+    }
+    #expect(compactMessage.turn.isGenerating)
 
     releaseDetails.yield()
     releaseDetails.finish()
-    await settleUntil {
-      guard case let .assistant(message) = model.activeItem else { return false }
-      return Set(message.turn.allToolCalls.map(\.toolCallId))
-        == ["tool-before-open", "tool-after-open"]
-    }
+    #expect(await hydrate.value)
 
     guard case let .assistant(hydratedMessage) = model.activeItem else {
       Issue.record("expected hydrated active assistant")
       return
     }
     #expect(hydratedMessage.turn.hasHydratedWorkedDetails)
-    #expect(client.transcriptDetailThroughRevisions == [2])
+    #expect(await hydrate.value)
+    model.shutdown()
   }
 }

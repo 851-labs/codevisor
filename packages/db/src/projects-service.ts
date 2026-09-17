@@ -1,3 +1,4 @@
+import { detectGitLocation } from "./project-location-state.js"
 import type { CreateProjectRequest, Project, ProjectLocation } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
@@ -12,7 +13,12 @@ export const makeProjectsService = (
   context: ServiceContext
 ): Pick<
   CodevisorDatabaseService,
-  "createProject" | "listProjects" | "updateProject" | "deleteProject" | "setProjectRepoUrl"
+  | "createProject"
+  | "listProjects"
+  | "updateProject"
+  | "deleteProject"
+  | "setProjectRepoUrl"
+  | "setProjectLocationGitState"
 > => {
   const { sqlite, config, locationRowsFor, getProject } = context
 
@@ -121,6 +127,7 @@ export const makeProjectsService = (
         projectId,
         serverId: config.serverId,
         folderPath: request.folderPath,
+        isGitRepository: detectGitLocation(request.folderPath),
         createdAt
       }
       const project: Project = {
@@ -153,15 +160,16 @@ export const makeProjectsService = (
         sqlite
           .prepare(
             `insert into project_locations (
-              id, project_id, server_id, folder_path, created_at
-            ) values (?, ?, ?, ?, ?)`
+              id, project_id, server_id, folder_path, created_at, is_git_repository
+            ) values (?, ?, ?, ?, ?, ?)`
           )
           .run(
             location.id,
             location.projectId,
             location.serverId,
             location.folderPath,
-            location.createdAt
+            location.createdAt,
+            Number(location.isGitRepository)
           )
       })
       transaction()
@@ -216,6 +224,14 @@ export const makeProjectsService = (
           }
         })()
         return getProject(id)
+      }),
+    setProjectLocationGitState: (id, isGitRepository) =>
+      attempt("setProjectLocationGitState", () => {
+        sqlite
+          .prepare(
+            "update project_locations set is_git_repository = ? where id = ? and is_git_repository is not ?"
+          )
+          .run(Number(isGitRepository), id, Number(isGitRepository))
       }),
     setProjectRepoUrl: (id, repoUrl) =>
       attempt("setProjectRepoUrl", () => {

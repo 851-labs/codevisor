@@ -12,6 +12,7 @@ const makeSocket = () => {
   const listeners = new Set<() => void>()
   const socket = {
     readyState: 1,
+    bufferedAmount: 0,
     send: (raw: string) => {
       frames.push(JSON.parse(raw) as Frame)
       for (const listener of listeners) listener()
@@ -25,7 +26,7 @@ const makeSocket = () => {
   const checkpoint = (id: number) =>
     new Promise<void>((resolve) => {
       const check = () => {
-        if (frames.some((frame) => frame.kind === "keepalive" && frame.id === id)) {
+        if (frames.some((frame) => frame.id === id)) {
           listeners.delete(check)
           resolve()
         }
@@ -62,7 +63,14 @@ describe("durable shell subscriptions", () => {
       const client = makeSocket()
       sockets.push(client)
       await attachEventSocket(
-        { listEvents } as never,
+        {
+          readSyncBatch: (cursor: number) =>
+            Effect.map(listEvents(cursor), (events) => ({
+              events,
+              cursor: Math.max(cursor, ...events.map((event) => event.id)),
+              requiresSnapshot: false
+            }))
+        } as never,
         fanout,
         since,
         client.socket as never,
@@ -125,7 +133,7 @@ describe("durable shell subscriptions", () => {
       ])
       const reads = f.listEvents.mock.calls.length
       await run(f.fanout.publish({ ...attention(4, "idle"), globalEventId: undefined }))
-      expect(f.listEvents).toHaveBeenCalledTimes(reads)
+      expect(f.listEvents).toHaveBeenCalledTimes(reads + 1)
       const project: EventEnvelope = {
         id: 4,
         kind: "project.updated",
@@ -137,7 +145,7 @@ describe("durable shell subscriptions", () => {
       f.log.push(project)
       await run(f.fanout.publish(project))
       await client.checkpoint(4)
-      expect(client.frames.at(-2)).toEqual({ ...project, previousEventId: 3 })
+      expect(client.frames.at(-1)).toEqual({ ...project, previousEventId: 3 })
     } finally {
       f.close()
     }

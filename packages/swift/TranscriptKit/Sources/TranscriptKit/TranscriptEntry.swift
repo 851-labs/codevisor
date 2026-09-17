@@ -81,6 +81,8 @@ public struct AssistantTurn: Sendable, Equatable {
   /// A proposed plan document (markdown) from plan mode — distinct from the
   /// step checklist in `plan`. Replaced wholesale per update.
   public var planDocument: String?
+  public var planResource: ToolDetailResource? = nil
+  public var planRevision: Int = 0
   /// The `entries` count at the moment the plan document was (last) proposed.
   /// Splits the worked section into planning (before) and the implementation
   /// that follows approval (after), so the latter renders below the plan card
@@ -98,11 +100,17 @@ public struct AssistantTurn: Sendable, Equatable {
   /// chunk `phase` — codex tags whole messages, Claude retro-tags preamble
   /// once a tool call proves it wasn't the answer.
   public var textPhases: [String: MessagePhase]
+  public var entryPositions: [String: Int] = [:]
+  public var textStates: [String: TranscriptTextState] = [:]
   /// Server transcript item whose hidden worked details have not been fetched
   /// yet. Summary/final text renders immediately; expansion hydrates only this
   /// turn's bounded event set.
   public var deferredDetailItemId: String?
   public var hasDeferredWorkedDetails: Bool
+  public var detailNextAfter: String? = nil
+  public var detailPreviousBefore: String? = nil
+  public var detailPageCursor: String? = nil
+  public var detailAnswerPreview: TranscriptEntry? = nil
   public var detailRevision: Int
   /// True after deferred worked details were restored from durable history.
   /// Renderers use this provenance to settle the restored text even when the
@@ -178,8 +186,17 @@ extension AssistantTurn {
   /// live candidate render final-styled from its first chunk and demote the
   /// moment a provider proves it was narration.
   public var finalText: TranscriptEntry? {
-    guard let index = finalTextIndex else { return nil }
-    return entries[index]
+    let candidate = finalTextIndex.map { entries[$0] }
+    if let preview = detailAnswerPreview {
+      if case let .text(candidateID, candidateText) = candidate,
+        case let .text(previewID, previewText) = preview,
+        candidateID == previewID, candidateText.count >= previewText.count
+      {
+        return candidate
+      }
+      return preview
+    }
+    return candidate
   }
 
   /// True when the current final-answer candidate is provider-asserted
@@ -194,9 +211,9 @@ extension AssistantTurn {
   /// Everything except the final answer — intermediate text and all tool
   /// calls — collapsed into the "Worked for…" disclosure.
   public var workedEntries: [TranscriptEntry] {
-    let finalTextIndex = self.finalTextIndex
-    return entries.enumerated().compactMap { offset, entry in
-      if offset == finalTextIndex { return nil }
+    let finalID = finalText?.id
+    return entries.compactMap { entry in
+      if entry.id == finalID { return nil }
       if case let .tool(call) = entry, call.kind == .imageGeneration { return nil }
       return entry
     }
@@ -379,10 +396,13 @@ public struct UserMessage: Identifiable, Sendable, Equatable {
   public let id: UUID
   public var text: String
   public var attachments: [Attachment]
+  public var textResource: ToolDetailResource?
 
-  public init(id: UUID = UUID(), text: String, attachments: [Attachment] = []) {
+  public init(id: UUID = UUID(), text: String, attachments: [Attachment] = [], textResource: ToolDetailResource? = nil)
+  {
     self.id = id
     self.text = text
+    self.textResource = textResource
     self.attachments = attachments
   }
 }

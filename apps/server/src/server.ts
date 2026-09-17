@@ -142,6 +142,12 @@ export const makeCodevisorServerApp = (
   /* v8 ignore next 3 -- timer-driven: the sweep itself is tested directly. */
   const staleTurnSweep = setInterval(() => {
     void reconcileStaleStreamingTurns(services, fanout, routeState, config.id).catch(swallowError)
+    void backfillProjectRepoUrls(
+      services.db,
+      config.id,
+      fanout,
+      services.resolveGitEnvironment
+    ).catch(swallowError)
   }, 60_000)
   staleTurnSweep.unref()
   // Deferred attention settling: a turn that ended while a subagent was

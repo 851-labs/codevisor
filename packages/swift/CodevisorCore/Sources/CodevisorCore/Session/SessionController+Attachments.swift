@@ -36,10 +36,22 @@ extension SessionController {
     guard composerAttachments.contains(where: { $0.id == id && $0.state == .loading }) else {
       return
     }
+    let readLimit = Self.maxAttachmentUploadBytes + 1
     Task { [weak self] in
       let result: (data: Data?, readError: String?) = await Task.detached(priority: .userInitiated) {
         do {
-          return (try Data(contentsOf: url), nil)
+          // Read only enough to enforce the existing upload limit. A dropped
+          // multi-GB video must not enter memory before size validation.
+          let handle = try FileHandle(forReadingFrom: url)
+          defer { try? handle.close() }
+          var data = Data()
+          while data.count < readLimit {
+            guard let chunk = try handle.read(upToCount: min(1024 * 1024, readLimit - data.count)),
+              !chunk.isEmpty
+            else { break }
+            data.append(chunk)
+          }
+          return (data, nil)
         } catch {
           return (nil, String(describing: error))
         }
@@ -221,6 +233,14 @@ extension SessionController {
 
   /// Fetches either immutable attachment bytes or a live path from the
   /// machine that owns this session.
+  public func filePreview(for source: PreviewFile.Source) async throws -> Data {
+    guard let serverClient else { throw SessionControllerError.serverUnavailable }
+    switch source {
+    case let .attachment(fileId): return try await serverClient.filePreview(id: fileId)
+    case let .serverPath(path): return try await serverClient.filePreview(path: path, sessionId: serverSession?.id)
+    }
+  }
+
   public func fileData(for source: PreviewFile.Source) async throws -> Data {
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
     switch source {

@@ -46,15 +46,33 @@ public final class MarkdownImageLoader: Sendable {
 
   public static let remote = MarkdownImageLoader(id: "http", fetch: fetchRemote)
 
+  @MainActor private static var activeDownloads = 0
+  @MainActor private static var downloadWaiters: [CheckedContinuation<Bool, Never>] = []
+
+  @MainActor private static func acquireDownload() async -> Bool {
+    if activeDownloads < 4 { activeDownloads += 1; return true }
+    guard downloadWaiters.count < 64 else { return false }
+    return await withCheckedContinuation { downloadWaiters.append($0) }
+  }
+
+  @MainActor private static func releaseDownload() {
+    if downloadWaiters.isEmpty { activeDownloads -= 1 } else { downloadWaiters.removeFirst().resume(returning: true) }
+  }
+
   @MainActor private static func fetchRemote(_ source: String) async -> MarkdownImage? {
     guard let url = URL(string: source), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
       return nil
     }
+    guard await acquireDownload() else { return nil }
+    defer { releaseDownload() }
     do {
-      let (data, response) = try await URLSession.shared.data(from: url)
+      try Task.checkCancellation()
+      let (file, response) = try await URLSession.shared.download(from: url)
+      defer { try? FileManager.default.removeItem(at: file) }
       guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else { return nil }
       return await Task.detached(priority: .userInitiated) {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+        guard
+          let source = CGImageSourceCreateWithURL(file as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
           let pixels = CGImageSourceCreateThumbnailAtIndex(
             source, 0,
             [

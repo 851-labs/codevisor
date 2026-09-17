@@ -111,11 +111,16 @@ struct AssistantTurnBody: View {
           ImageGenerationActivityView(call: call)
         }
         if case let .text(entryID, markdown) = finalText {
-          assistantResponse(
-            entryID: entryID,
-            markdown: markdown,
-            animationEnabled: animationEnabled
-          )
+          if let resource = turn.textStates[":\(entryID)"]?.resource {
+            TranscriptInlineTextView(resource: resource, preview: markdown)
+          } else {
+            assistantResponse(
+              entryID: entryID,
+              markdown: markdown,
+              animationEnabled: animationEnabled
+            )
+          }
+
         }
         if finalText == nil, !turn.attachments.isEmpty {
           assistantResponse(
@@ -126,9 +131,9 @@ struct AssistantTurnBody: View {
         }
       }
       if presentation.showsEpilogue {
-        if case let .text(_, markdown) = finalText {
+        if case let .text(entryID, markdown) = finalText {
           if !isGenerating {
-            MessageCopyButton(text: markdown, help: "Copy response")
+            MessageCopyButton(text: markdown, help: "Copy response", resource: turn.textStates[":\(entryID)"]?.resource)
           }
         }
         if let activity, activity.followsResponse {
@@ -368,6 +373,7 @@ struct AssistantTurnBody: View {
         // keeps the line collapsed and expanded alike.
         Divider()
 
+        if isExpanded { TranscriptMoreDetailsButton(turn: turn) }
         TranscriptDisclosureContentReveal(isExpanded: isExpanded && !items.isEmpty) {
           VStack(alignment: .leading, spacing: 12) {
             TurnItemsView(

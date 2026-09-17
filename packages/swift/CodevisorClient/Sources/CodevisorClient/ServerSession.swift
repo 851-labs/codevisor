@@ -443,6 +443,11 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   /// Provider-asserted finality of the candidate. `nil` remains optimistic
   /// and must not settle the worked section during a mid-stream restore.
   public var phase: MessagePhase?
+  public var textGeneration: Int?
+  public var textPosition: Int? = nil
+  public var textRevision: Int?
+  public var textResource: ToolDetailResource?
+  public var planResource: ToolDetailResource?
   public var revision: Int
 
   public init(
@@ -466,7 +471,9 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     attachments: [ServerAttachmentRef]? = nil,
     messageId: String? = nil,
     phase: MessagePhase? = nil,
-    revision: Int
+    revision: Int,
+    textGeneration: Int? = nil, textRevision: Int? = nil,
+    textResource: ToolDetailResource? = nil, planResource: ToolDetailResource? = nil
   ) {
     self.id = id
     self.sessionId = sessionId
@@ -488,6 +495,10 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
     self.attachments = attachments
     self.messageId = messageId
     self.phase = phase
+    self.textGeneration = textGeneration
+    self.textRevision = textRevision
+    self.textResource = textResource
+    self.planResource = planResource
     self.revision = revision
   }
 }
@@ -498,20 +509,50 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
 public struct ServerSessionOpenResponse: Decodable, Sendable {
   public var session: ServerSession
   public var transcript: ServerTranscriptPage
+  public var runtime: ServerSessionRuntimeMetadata?
+}
+
+public struct ServerTranscriptEntry: Decodable, Equatable, Sendable {
+  public var key: String
+  public var position: Int
+  public var revision: Int
+  public var payload: JSONValue
+
+  public init(key: String, position: Int, revision: Int, payload: JSONValue) {
+    self.key = key
+    self.position = position
+    self.revision = revision
+    self.payload = payload
+  }
 }
 
 public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {
   public var itemId: String
   public var revision: Int
-  public var events: [ServerEventEnvelope]
+  public var eventCursor: Int
+  public var entries: [ServerTranscriptEntry]
+  public var nextAfter: String?
+  public var previousBefore: String?
 
   public init(
-    itemId: String,
-    revision: Int,
-    events: [ServerEventEnvelope]
+    itemId: String, revision: Int, eventCursor: Int, entries: [ServerTranscriptEntry], nextAfter: String? = nil,
+    previousBefore: String? = nil
   ) {
     self.itemId = itemId
     self.revision = revision
-    self.events = events
+    self.eventCursor = eventCursor
+    self.entries = entries
+    self.nextAfter = nextAfter
+    self.previousBefore = previousBefore
   }
+}
+
+public struct ServerTranscriptBodyPage: Decodable, Sendable {
+  public var markdownPrefix: String? = nil
+  public var leadingText: String? = nil
+  public var revision: Int
+  public var encoding: String
+  public var text: String
+  public var position: Int
+  public var nextPosition: Int?
 }

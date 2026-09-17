@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import type {
   CreateSessionRequest,
   UpdateSessionRequest,
-  EventEnvelope,
   Project,
   SessionConfigOption,
   SessionSummary
@@ -286,30 +285,6 @@ export const findSession = async (
   }
 }
 
-export const sessionHistoryEventsWithSetup = async (
-  db: CodevisorDatabaseService,
-  serverId: string,
-  sessionId: string
-): Promise<ReadonlyArray<EventEnvelope>> => {
-  const sessionEvents = await run(db.listSubjectEvents(sessionId))
-  if (sessionEvents.some((event) => event.kind === "worktree.setup")) {
-    return sessionEvents
-  }
-  const session = await run(db.getSessionSummary(sessionId))
-  const worktreeName = session.worktreeName
-  if (worktreeName === undefined) {
-    return sessionEvents
-  }
-  const worktree = (await run(db.listWorktrees(session.projectId))).find(
-    (candidate) => candidate.serverId === serverId && candidate.name === worktreeName
-  )
-  if (worktree === undefined) {
-    return sessionEvents
-  }
-  const setupEvents = await run(db.listSubjectEvents(worktree.id))
-  return [...sessionEvents, ...setupEvents].sort((left, right) => left.id - right.id)
-}
-
 export const ensureAgentSessionFor = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -432,6 +407,7 @@ const restoreSessionConfigSelections = async (
   // wipe the chat's saved model/effort. Leave the saved selections untouched
   // so the next reconnect (or a late config update) can still restore them.
   if (metadata.configOptions.length === 0) {
+    await run(services.db.saveSessionRuntimeState(sessionId, metadata))
     return metadata
   }
   const saved = await run(services.db.getSessionConfigSelections(sessionId))
@@ -472,5 +448,7 @@ const restoreSessionConfigSelections = async (
       restoreFailed ? { ...resolvedSelections, ...saved } : resolvedSelections
     )
   )
-  return { ...metadata, configOptions }
+  const current = { ...metadata, configOptions }
+  await run(services.db.saveSessionRuntimeState(sessionId, current))
+  return current
 }

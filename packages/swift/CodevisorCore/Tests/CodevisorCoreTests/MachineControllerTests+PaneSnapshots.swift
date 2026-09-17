@@ -112,9 +112,8 @@ extension MachineControllerTests {
       materialized.centerTabs.flatMap { $0.root.allGroups }.flatMap(\.state.panes)
         .filter { $0.chatSessionId == sessionId }.count == 1
     )
-    // A coherent current-server snapshot is authoritative: hydration does
-    // not upload a local-only fallback pane.
-    #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == false)
+    // The one-time upgrade preserves a legacy local tab alongside remote panes.
+    #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == true)
 
     controller.startEventSync(for: "local")
     fake.setPanes([chatPane])

@@ -1,4 +1,5 @@
 import Foundation
+import ACPKit
 
 /// One output line captured while a pre-chat setup step runs (e.g. `git
 /// worktree add` and its checkout hooks, streamed as `worktree.setup` events).
@@ -37,6 +38,8 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   public private(set) var endedAt: Date?
   public private(set) var outcome: Outcome
   public private(set) var logs: [SessionSetupLogLine]
+  public var logResource: ToolDetailResource? = nil
+  private var nextLogId = 0
 
   public init(
     id: String,
@@ -68,7 +71,9 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   }
 
   public mutating func appendLog(stream: String, line: String) {
-    logs.append(SessionSetupLogLine(id: logs.count, stream: stream, text: line))
+    logs.append(SessionSetupLogLine(id: nextLogId, stream: stream, text: String(line.prefix(8192))))
+    nextLogId += 1
+    if logs.count > 256 { logs.removeFirst(logs.count - 256) }
   }
 
   /// Marks success. A server-measured duration (ms) wins over local clocks

@@ -8,7 +8,8 @@ describe("@codevisor/db", () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/session-revisions" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    expect(await run(db.latestEventCursor)).toBe(0)
+    const initialCursor = await run(db.latestEventCursor)
+    expect(initialCursor).toBeGreaterThan(0)
 
     const first = await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
     await run(db.appendEvent("project.updated", project.id, { title: "unrelated" }))
@@ -34,8 +35,12 @@ describe("@codevisor/db", () => {
     expect((await run(db.listSubjectEvents(session.id)))[0]?.payload).toMatchObject({
       chatItemId: assistantItem?.id
     })
-    expect((await run(db.listEvents(0))).map((event) => event.kind)).toEqual(["project.updated"])
-    expect(await run(db.latestEventCursor)).toBe(1)
+    expect(
+      (await run(db.listEvents(0)))
+        .filter((event) => event.kind !== "navigation.changed")
+        .map((event) => event.kind)
+    ).toEqual(["project.updated"])
+    expect(await run(db.latestEventCursor)).toBeGreaterThan(initialCursor)
     expect((await run(db.getTranscriptPage(session.id, undefined, 8))).eventCursor).toBe(2)
     await Effect.runPromise(db.close)
   })
@@ -108,8 +113,8 @@ describe("@codevisor/db", () => {
       ["user", "user-1", "tell me", false],
       ["assistant", "msg-1", "Hello world", false],
       ["assistant", "msg-2", "Next", false],
-      ["assistant", undefined, "loose", false],
-      ["assistant", undefined, "loose2", false],
+      ["assistant", "imported-text", "loose", false],
+      ["assistant", "imported-text", "loose2", false],
       ["user", "msg-2", "reply", false]
     ])
   })
@@ -173,11 +178,11 @@ describe("@codevisor/db", () => {
 
     const details = await run(db.getTranscriptItemDetails(session.id, newest.items[0]!.id))
     expect(details?.itemId).toBe(newest.items[0]!.id)
-    expect(details?.events.map((event) => event.id)).toEqual([2, 3, 4, 5, 6])
-    const snapshotDetails = await run(
-      db.getTranscriptItemDetails(session.id, newest.items[0]!.id, 4)
-    )
-    expect(snapshotDetails?.events.map((event) => event.id)).toEqual([2, 3, 4])
+    expect(details?.entries.map((entry) => entry.payload)).toMatchObject([
+      { sessionUpdate: "agent_message_patch", text: "Hello world", offset: 0 },
+      { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Read a file" }
+    ])
+    expect(details?.eventCursor).toBe(6)
     expect(await run(db.getTranscriptItemDetails(session.id, "missing"))).toBeUndefined()
   })
 

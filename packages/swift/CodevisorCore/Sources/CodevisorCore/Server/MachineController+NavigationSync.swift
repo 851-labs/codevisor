@@ -6,12 +6,7 @@ extension MachineController {
   /// streaming session — is filtered inside the client's stream task so it
   /// never pays a main-actor hop just to hit the `default:` case below.
   static let shellSyncEventKinds: Set<String> = [
-    "project.created", "project.updated", "project.deleted",
-    "worktree.created",
-    "session.created", "session.updated", "session.deleted",
-    "session.attention.updated", "session.archived", "session.unarchived",
-    "workspace.updated", "workspace.deleted",
-    "workspace.pane.updated", "workspace.pane.deleted",
+    "navigation.changed",
     "harness.lifecycle.updated",
     "plugin.state.updated",
     "plugin.updated",
@@ -120,54 +115,27 @@ extension MachineController {
       kind: event.kind
     )
     switch event.kind {
-    case "project.deleted":
-      if let id = UUID(uuidString: event.subjectId) {
-        projectList.removeProjectLocally(id: id, serverId: serverId)
-        workspaceSync?.removeWorkspaces(projectId: id, serverId: serverId)
-      }
-    case "session.deleted":
-      if let id = UUID(uuidString: event.subjectId) {
-        projectList.removeSessionLocally(
-          id: id,
-          serverId: serverId
-        )
-        workspaceSync?.removeSessionPanes(id: id, serverId: serverId)
-        await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
-      }
-    case "workspace.deleted":
-      if let id = UUID(uuidString: event.subjectId) {
-        workspaceSync?.removeWorkspace(id: id, serverId: serverId)
-      }
-    case "session.created", "session.updated", "session.attention.updated",
-      "session.archived", "session.unarchived":
-      let result = await projectList.applyServerSessionEvent(event, serverId: serverId)
-      guard !Task.isCancelled else { return }
-      switch result {
-      case let .applied(workspaceMembershipChanged):
-        if let session = projectList.sessions.first(where: {
-          $0.serverId == serverId && $0.id.uuidString.caseInsensitiveCompare(event.subjectId) == .orderedSame
-        }) {
-          onSessionStateChanged?(session, event.subjectRevision)
+    case "navigation.changed":
+      do {
+        let delta = try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(event.payload))
+        let connection = connection(for: serverId)
+        guard let current = connection.navigationSnapshot else { throw CodevisorServerClientError.invalidResponse }
+        guard delta.eventCursor > current.eventCursor else { return }
+        let snapshot = delta.applying(to: current)
+        let prepared = await ServerNavigationSnapshotBuilder.build(
+          projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
+        guard !Task.isCancelled, connection.navigationSnapshot?.eventCursor == current.eventCursor else { return }
+        projectList.commitSnapshot(prepared, serverId: serverId, origin: .liveEvent)
+        workspaceSync?.applyNavigationDelta(delta, previous: current, snapshot: snapshot, serverId: serverId)
+        connection.navigationSnapshot = snapshot
+        let changed = Set(delta.sessions.map { $0.id.lowercased() })
+        for session in projectList.sessions
+        where session.serverId == serverId && changed.contains(session.id.uuidString.lowercased()) {
+          onSessionStateChanged?(session, nil)
         }
-        if workspaceMembershipChanged {
-          await refreshWorkspacesAfterEvent(
-            serverId: serverId,
-            client: client
-          )
-        }
-      case .requiresFullRefresh:
-        // Older servers may emit only an event marker. Retain a
-        // compatibility path, but keep it off the ordinary hot path.
-        scheduleNavigationRefresh(serverId: serverId, client: client)
+      } catch {
+        navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
       }
-    case "workspace.updated":
-      if workspaceSync?.applyServerWorkspaceEvent(event, serverId: serverId) != true {
-        await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
-      }
-    case "workspace.pane.updated", "workspace.pane.deleted":
-      await refreshWorkspacesAfterEvent(serverId: serverId, client: client)
-    case "project.created", "project.updated", "worktree.created":
-      scheduleNavigationRefresh(serverId: serverId, client: client)
     case "harness.lifecycle.updated":
       // Update detection / install progress changed a harness — bump
       // the catalog revision so mounted pickers and settings refetch.
@@ -305,11 +273,7 @@ extension MachineController {
     }
   }
 
-  /// Stops live application before taking the snapshot. The cursor is
-  /// captured after the old consumer is cancelled and before either list is
-  /// fetched; the replacement stream therefore replays every event that can
-  /// race the snapshot. No live event is allowed to invalidate and silently
-  /// discard the authoritative response.
+  /// Installs state and its cursor from one database snapshot before subscribing.
   private func performNavigationSynchronization(
     serverId: String,
     client: any CodevisorServerClienting,
@@ -321,41 +285,41 @@ extension MachineController {
     }
     stopEventSync(for: serverId)
 
-    let cursor: Int
+    var snapshot: ServerNavigationSnapshot
     do {
-      cursor = try await client.latestShellEventCursor()
+      snapshot = try await client.navigationSnapshot()
     } catch {
-      // Older servers return the protocol default (zero). A transient
-      // cursor failure also falls back to replaying the durable log from
-      // zero: more work, but never a correctness gap.
-      cursor = 0
-      Log.sync.error(
-        "Failed to capture navigation cursor for \(serverId, privacy: .public); replaying from zero: \(String(describing: error), privacy: .public)"
-      )
-    }
-
-    guard !Task.isCancelled else { return }
-    var result = await projectList.refreshFromServer(serverId: serverId, client: client)
-    guard !Task.isCancelled else { return }
-    if result == .committed, let workspaceSync {
-      result = await workspaceSync.refreshFromServer(serverId: serverId, client: client)
+      navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client)
+      return
     }
     guard !Task.isCancelled else { return }
-    startEventSync(serverId: serverId, client: client, since: cursor)
-    switch result {
-    case .committed:
-      let connection = connection(for: serverId)
-      connection.navigationSyncState = .current
-      connection.navigationFailures = 0
-      connection.navigationRetryTask?.cancel()
-      connection.navigationRetryTask = nil
-    case .superseded:
-      scheduleNavigationRefresh(serverId: serverId, client: client)
-    case let .failed(message):
-      // Keep the cache visible and continue listening from the captured
-      // cursor, but do not claim it is current. A retry or the stream's
-      // own recovery will run this same reconciliation path again.
-      navigationSynchronizationFailed(message, serverId: serverId, client: client)
+    let initialCursor = snapshot.eventCursor
+    let prepared = await ServerNavigationSnapshotBuilder.build(
+      projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
+    guard !Task.isCancelled else { return }
+    projectList.commitSnapshot(prepared, serverId: serverId)
+    if let workspaceSync {
+      do {
+        snapshot = try await workspaceSync.migrateNavigationSnapshot(snapshot, serverId: serverId, client: client)
+      } catch { navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client); return }
+      guard !Task.isCancelled else { return }
+      if snapshot.eventCursor != initialCursor {
+        let migrated = await ServerNavigationSnapshotBuilder.build(
+          projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
+        guard !Task.isCancelled else { return }
+        projectList.commitSnapshot(migrated, serverId: serverId)
+      }
+      workspaceSync.applyNavigationSnapshot(snapshot, serverId: serverId)
     }
+    connection(for: serverId).navigationSnapshot = snapshot
+    startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
+    for session in projectList.sessions where session.serverId == serverId {
+      onSessionStateChanged?(session, nil)
+    }
+    let connection = connection(for: serverId)
+    connection.navigationSyncState = .current
+    connection.navigationFailures = 0
+    connection.navigationRetryTask?.cancel()
+    connection.navigationRetryTask = nil
   }
 }

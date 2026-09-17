@@ -276,30 +276,12 @@ extension SessionModelTests {
   func sessionPlanUpdates() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    client.historyEvents = [
-      ServerEventEnvelope(
-        id: 1,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-07-05T00:00:00.000Z",
-        payload: .object([
-          "sessionUpdate": .string("plan"),
-          "entries": .array([
-            .object([
-              "content": .string("Explore"),
-              "priority": .string("medium"),
-              "status": .string("completed"),
-            ]),
-            .object([
-              "content": .string("Implement"),
-              "priority": .string("medium"),
-              "status": .string("in_progress"),
-            ]),
-          ]),
-        ])
-      )
-    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [], hasMore: false, eventCursor: 1,
+      sessionPlan: Plan(entries: [
+        PlanEntry(content: "Explore", priority: .medium, status: .completed),
+        PlanEntry(content: "Implement", priority: .medium, status: .inProgress),
+      ]))
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
@@ -335,44 +317,13 @@ extension SessionModelTests {
   func planDocumentReplays() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    client.historyEvents = [
-      ServerEventEnvelope(
-        id: 1,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-07-05T00:00:00.000Z",
-        payload: .object([
-          "sessionUpdate": .string("plan_document"),
-          "markdown": .string("# The Plan\n\n1. Do it"),
-        ])
-      ),
-      ServerEventEnvelope(
-        id: 2,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-07-05T00:00:01.000Z",
-        payload: .object([
-          "sessionUpdate": .string("plan"),
-          "entries": .array([
-            .object([
-              "content": .string("Do it"),
-              "priority": .string("medium"),
-              "status": .string("in_progress"),
-            ])
-          ]),
-        ])
-      ),
-      ServerEventEnvelope(
-        id: 3,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-07-05T00:00:02.000Z",
-        payload: .object(["stopReason": .string("end_turn")])
-      ),
-    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        transcriptStateItem(sessionId: sessionId, plan: "# The Plan\n\n1. Do it")
+      ], hasMore: false, eventCursor: 3,
+      sessionPlan: Plan(entries: [
+        PlanEntry(content: "Do it", priority: .medium, status: .inProgress)
+      ]))
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
@@ -384,6 +335,6 @@ extension SessionModelTests {
       return
     }
     #expect(assistant.turn.planDocument == "# The Plan\n\n1. Do it")
-    #expect(assistant.turn.plan?.entries.first?.status == .inProgress)
+    #expect(model.sessionPlan?.entries.first?.status == .inProgress)
   }
 }

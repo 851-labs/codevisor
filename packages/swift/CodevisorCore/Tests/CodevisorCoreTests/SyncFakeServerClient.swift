@@ -37,7 +37,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var _panes: [ServerWorkspacePane]?
   private var continuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
   private var emittedEvents: [ServerEventEnvelope] = []
-  private var nextEventId = 1
+  var nextEventId = 1
   private var _listSessionCallCount = 0
   private var _workspaceSnapshotCallCount = 0
   var paneUpsertGate: TestSignal?
@@ -93,13 +93,14 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   func emit(kind: String, subjectId: String, payload: JSONValue = .null) {
     let (event, targets): (ServerEventEnvelope, [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation]) =
       lock.withLock {
+        let navigation = navigationEvent(kind: kind, subjectId: subjectId, payload: payload)
         let event = ServerEventEnvelope(
           id: nextEventId,
           serverId: "local",
-          kind: kind,
+          kind: navigation == nil ? kind : "navigation.changed",
           subjectId: subjectId,
           createdAt: "2026-06-30T00:00:02.000Z",
-          payload: payload
+          payload: navigation ?? payload
         )
         nextEventId += 1
         emittedEvents.append(event)
@@ -137,6 +138,76 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
 
+  func navigationSnapshot() async throws -> ServerNavigationSnapshot {
+    let cursor = lock.withLock { nextEventId - 1 }
+    let snapshot = try await workspaceSnapshot()
+    let workspaces: [ServerWorkspace]
+    let panes: [ServerWorkspacePane]
+    if let snapshot {
+      workspaces = snapshot.workspaces; panes = snapshot.panes
+    } else {
+      workspaces = try await listWorkspaces() ?? []; panes = try await listWorkspacePanes() ?? []
+    }
+    return ServerNavigationSnapshot(
+      eventCursor: cursor, projects: try await listProjects(), sessions: try await listSessions(),
+      workspaces: workspaces, panes: panes)
+  }
+
+  /// Test mutations emit the same entity delta as the database journal.
+  private func navigationEvent(kind: String, subjectId: String, payload: JSONValue) -> JSONValue? {
+    let table: String
+    if kind.hasPrefix("workspace.pane.") {
+      table = "workspace_panes"
+    } else if kind.hasPrefix("workspace.") {
+      table = "workspaces"
+    } else if kind.hasPrefix("session.") && kind != "session.output" {
+      table = "sessions"
+    } else if kind.hasPrefix("project.") && kind != "project.setup" {
+      table = "projects"
+    } else {
+      return nil
+    }
+    func same(_ id: String) -> Bool { id.caseInsensitiveCompare(subjectId) == .orderedSame }
+    let record: JSONValue?
+    if payload["id"]?.stringValue != nil {
+      record = payload
+    } else {
+      switch table {
+      case "workspaces": record = _workspaces.first(where: { same($0.id) }).map(navigationFixtureJSON)
+      case "workspace_panes": record = _panes?.first(where: { same($0.id) }).map(navigationFixtureJSON)
+      case "sessions": record = _sessions.first(where: { same($0.id) }).map(navigationFixtureJSON)
+      default: record = _projects.first(where: { same($0.id) }).map(navigationFixtureJSON)
+      }
+    }
+    var deleted: [JSONValue] = []
+    if kind.hasSuffix(".deleted") {
+      func remove(_ table: String, _ id: String) {
+        deleted.append(.object(["table": .string(table), "id": .string(id)]))
+      }
+      remove(table, subjectId)
+      let workspaces =
+        table == "projects"
+        ? _workspaces.filter { same($0.projectId) }.map(\.id) : table == "workspaces" ? [subjectId] : []
+      for id in workspaces where id != subjectId { remove("workspaces", id) }
+      for pane in _panes ?? []
+      where workspaces.contains(where: { $0.caseInsensitiveCompare(pane.workspaceId) == .orderedSame })
+        || (table == "sessions" && pane.resourceKind == "session" && same(pane.resourceId ?? ""))
+      {
+        remove("workspace_panes", pane.id)
+      }
+      if table == "projects" {
+        for session in _sessions where same(session.projectId) { remove("sessions", session.id) }
+      }
+    }
+    var result: [String: JSONValue] = [
+      "eventCursor": .number(Double(nextEventId)),
+      "projects": .array([]), "sessions": .array([]), "workspaces": .array([]), "panes": .array([]),
+      "deleted": .array(deleted),
+    ]
+    if deleted.isEmpty, let record { result[table == "workspace_panes" ? "panes" : table] = .array([record]) }
+    return .object(result)
+  }
+
   func listProjects() async throws -> [ServerProject] { lock.withLock { _projects } }
   func listSessions() async throws -> [ServerSession] {
     lock.withLock {
@@ -152,8 +223,7 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
     if let handler { return try await handler() }
     return lock.withLock {
-      guard let panes = _panes else { return nil }
-      return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: panes)
+      return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: _panes ?? [])
     }
   }
   func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? {

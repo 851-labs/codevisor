@@ -137,9 +137,23 @@ public enum ToolCallContent: Sendable, Codable, Equatable {
   }
 }
 
+public struct ToolDetailResource: Codable, Equatable, Sendable {
+  public struct Field: Codable, Equatable, Sendable {
+    public var name: String
+    public var revision: Int
+    public var encoding: String
+    public var sizeBytes: Int
+    public var pageCount: Int? = nil
+    public var generation: Int? = nil
+  }
+  public var itemId: String
+  public var entryKey: String
+  public var fields: [Field]
+}
+
 private enum ToolCallKeys: String, CodingKey {
   case toolCallId, title, kind, status, content, locations, rawInput, rawOutput, exitCode, diffStats
-  case parentToolCallId
+  case parentToolCallId, detailResource, isSnapshot, stateRevision, statePosition, chatItemId
 }
 
 /// Shared lenient field decoding for `ToolCall` and `ToolCallUpdate`: an
@@ -157,6 +171,7 @@ private struct ToolCallFields {
   var exitCode: Int?
   var diffStats: [ToolCallDiffStat]?
   var parentToolCallId: String?
+  var detailResource: ToolDetailResource?
 
   init(from container: KeyedDecodingContainer<ToolCallKeys>) {
     title = Self.lenient(String.self, from: container, forKey: .title)
@@ -194,6 +209,7 @@ private struct ToolCallFields {
     exitCode = Self.lenient(Int.self, from: container, forKey: .exitCode)
     diffStats = Self.lenient([ToolCallDiffStat].self, from: container, forKey: .diffStats)
     parentToolCallId = Self.lenient(String.self, from: container, forKey: .parentToolCallId)
+    detailResource = Self.lenient(ToolDetailResource.self, from: container, forKey: .detailResource)
   }
 
   // Decodes an optional field, logging (rather than silently dropping) a
@@ -216,6 +232,10 @@ private struct ToolCallFields {
 
 /// A complete tool call as first reported via a `tool_call` session update.
 public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
+  public var isSnapshot: Bool? = nil
+  public var stateRevision: Int? = nil
+  public var statePosition: Int? = nil
+  public var chatItemId: String? = nil
   public var toolCallId: String
   public var title: String
   public var kind: ToolKind?
@@ -232,6 +252,7 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
   /// When set, this call was made by a subagent spawned by the tool call
   /// with that id (e.g. a Claude Task) — clients nest it under the parent.
   public var parentToolCallId: String?
+  public var detailResource: ToolDetailResource?
 
   public var id: String { toolCallId }
 
@@ -246,7 +267,8 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     rawOutput: JSONValue? = nil,
     exitCode: Int? = nil,
     diffStats: [ToolCallDiffStat]? = nil,
-    parentToolCallId: String? = nil
+    parentToolCallId: String? = nil,
+    detailResource: ToolDetailResource? = nil
   ) {
     self.toolCallId = toolCallId
     self.title = title
@@ -259,11 +281,16 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     self.exitCode = exitCode
     self.diffStats = diffStats
     self.parentToolCallId = parentToolCallId
+    self.detailResource = detailResource
   }
 
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: ToolCallKeys.self)
     toolCallId = try container.decode(String.self, forKey: .toolCallId)
+    isSnapshot = try container.decodeIfPresent(Bool.self, forKey: .isSnapshot)
+    stateRevision = try container.decodeIfPresent(Int.self, forKey: .stateRevision)
+    statePosition = try container.decodeIfPresent(Int.self, forKey: .statePosition)
+    chatItemId = try container.decodeIfPresent(String.self, forKey: .chatItemId)
     let fields = ToolCallFields(from: container)
     title = fields.title ?? ""
     kind = fields.kind
@@ -275,6 +302,7 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     exitCode = fields.exitCode
     diffStats = fields.diffStats
     parentToolCallId = fields.parentToolCallId
+    detailResource = fields.detailResource
   }
 }
 
@@ -291,6 +319,7 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
   public var exitCode: Int?
   public var diffStats: [ToolCallDiffStat]?
   public var parentToolCallId: String?
+  public var detailResource: ToolDetailResource?
 
   public init(
     toolCallId: String,
@@ -303,7 +332,8 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     rawOutput: JSONValue? = nil,
     exitCode: Int? = nil,
     diffStats: [ToolCallDiffStat]? = nil,
-    parentToolCallId: String? = nil
+    parentToolCallId: String? = nil,
+    detailResource: ToolDetailResource? = nil
   ) {
     self.toolCallId = toolCallId
     self.title = title
@@ -316,6 +346,7 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     self.exitCode = exitCode
     self.diffStats = diffStats
     self.parentToolCallId = parentToolCallId
+    self.detailResource = detailResource
   }
 
   public init(from decoder: any Decoder) throws {
@@ -332,6 +363,7 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     exitCode = fields.exitCode
     diffStats = fields.diffStats
     parentToolCallId = fields.parentToolCallId
+    detailResource = fields.detailResource
   }
 }
 
@@ -350,6 +382,7 @@ public extension ToolCall {
     if let exitCode = update.exitCode { result.exitCode = exitCode }
     if let diffStats = update.diffStats { result.diffStats = diffStats }
     if let parentToolCallId = update.parentToolCallId { result.parentToolCallId = parentToolCallId }
+    if let resource = update.detailResource { result.detailResource = resource }
     return result
   }
 
@@ -373,7 +406,8 @@ public extension ToolCallUpdate {
       rawOutput: rawOutput,
       exitCode: exitCode,
       diffStats: diffStats,
-      parentToolCallId: parentToolCallId
+      parentToolCallId: parentToolCallId,
+      detailResource: detailResource
     )
   }
 }

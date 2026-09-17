@@ -1,3 +1,4 @@
+import type { TranscriptBodyPage } from "@codevisor/api"
 import { afterEach, expect, it, vi } from "vitest"
 import { jsonRequest, run } from "../test-support.js"
 import { createFirstSession, setUpWorkspace } from "./session-test-support.js"
@@ -71,10 +72,16 @@ it("defaults to 500 completed turns followed by one controllable live turn", asy
   const { sessionId } = seeded.body as { sessionId: string }
   const detail = await run(services.db.getSessionDetail(sessionId))
   expect(detail.session.title).toBe("Default-count fixture")
-  expect(
-    detail.conversation.filter((item) => item.role === "assistant" && !item.isGenerating)
-  ).toHaveLength(500)
-  expect(detail.conversation.filter((item) => item.role === "user")).toHaveLength(501)
+  const all = []
+  let before: number | undefined
+  do {
+    const page = await run(services.db.getTranscriptPage(sessionId, before, 64))
+    all.unshift(...page.items)
+    before = page.nextBefore === undefined ? undefined : Number(page.nextBefore)
+  } while (before !== undefined)
+  expect(detail.conversation.length).toBeLessThanOrEqual(8)
+  expect(all.filter((item) => item.role === "assistant" && !item.isGenerating)).toHaveLength(500)
+  expect(all.filter((item) => item.role === "user")).toHaveLength(501)
   expect(detail.conversation.at(-2)?.text).toBe("Live stress stream")
   expect(detail.conversation.at(-1)).toMatchObject({
     role: "assistant",
@@ -105,7 +112,25 @@ it("seeds mixed Markdown and preserves provider text-part identities and phases"
   const { sessionId } = seeded.body as { sessionId: string }
   const detail = await run(services.db.getSessionDetail(sessionId))
   expect(detail.session.title).toBe("Transcript stress")
-  const markdown = detail.conversation.find((item) => item.role === "assistant")!.text
+  const page = await run(services.db.getTranscriptPage(sessionId, undefined, 64))
+  const assistant = page.items.find((item) => item.role === "assistant")!
+  expect(assistant.text.length).toBeLessThanOrEqual(24_000)
+  const resource = assistant.textResource as { itemId: string; entryKey: string }
+  let markdown = ""
+  let position: number | undefined = 0
+  do {
+    const body: TranscriptBodyPage = (await run(
+      services.db.getTranscriptBodyPage(
+        sessionId,
+        resource.itemId,
+        resource.entryKey,
+        "text",
+        position
+      )
+    ))!
+    markdown += body.text
+    position = body.nextPosition
+  } while (position !== undefined)
   expect(markdown).toContain("## Turn 1:")
   expect(markdown).toContain("Paragraph 12.")
   expect(markdown).toContain('let value119 = "Line 119 in turn 1"')
@@ -144,27 +169,30 @@ it("seeds mixed Markdown and preserves provider text-part identities and phases"
       .filter((event) => event.kind === "session.output")
       .slice(-3)
       .map((event) => event.payload)
-  ).toEqual([
+  ).toMatchObject([
     {
       chatItemId,
       messageId: "planning",
       phase: "commentary",
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "Plan" }
+      sessionUpdate: "agent_message_patch",
+      text: "Plan",
+      offset: 0
     },
     {
       chatItemId,
       messageId: "answer",
       phase: "final",
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "Answer" }
+      sessionUpdate: "agent_message_patch",
+      text: "Answer",
+      offset: 0
     },
     {
       chatItemId,
       messageId: "answer",
       phase: "final",
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "" }
+      sessionUpdate: "agent_message_patch",
+      text: "",
+      offset: 6
     }
   ])
   expect((await post({ action: "finish", sessionId })).status).toBe(200)

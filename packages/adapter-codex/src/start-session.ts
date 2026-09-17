@@ -121,22 +121,13 @@ export const makeStartSession = ({
         config: threadConfig
       })
     } else {
-      try {
-        response = await client.request("thread/resume", {
-          cwd,
-          threadId: resumeThreadId,
-          config: threadConfig
-        })
-      } catch {
-        // Sessions created by the old codex-acp adapter may not be app-server
-        // thread ids; fall back to a fresh thread rather than failing the
-        // session outright (history is lost, the session keeps working).
-        response = await client.request("thread/start", {
-          cwd,
-          config: threadConfig
-        })
-      }
+      response = await client.request("thread/resume", {
+        cwd,
+        threadId: resumeThreadId,
+        config: threadConfig
+      })
     }
+
     const threadId = response.thread?.id
     if (threadId === undefined) {
       client.close()

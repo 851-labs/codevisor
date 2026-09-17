@@ -42,8 +42,8 @@ extension MachineControllerTests {
       clientFactory: { _ in fake }
     )
 
-    // Another client creates a session on the same server.
-    controller.startEventSync(for: "local")
+    // Establish the snapshot boundary before subscribing.
+    await controller.refreshNavigationState(for: "local")
     fake.setSessions([
       ServerSession(
         id: sessionId.uuidString,
@@ -198,7 +198,13 @@ extension MachineControllerTests {
         serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
         serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId),
       ],
-      workspaces: [serverWorkspace(isArchived: false)]
+      workspaces: [serverWorkspace(isArchived: false)],
+      panes: [sessionId, siblingSessionId].map { id in
+        ServerWorkspacePane(
+          id: id.uuidString, workspaceId: workspaceId.uuidString, providerId: "codevisor",
+          paneType: "chat", title: "Chat", resourceKind: "session", resourceId: id.uuidString,
+          createdAt: "2026-06-30T00:00:00.000Z")
+      }
     )
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),

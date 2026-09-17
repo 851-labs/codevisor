@@ -1,8 +1,13 @@
+import { projectSetupState } from "./setup-state.js"
+import { materializeNavigationDelta } from "./navigation-delta.js"
+import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
+import { readToolSnapshot, transcriptTextResource } from "./transcript-bodies.js"
+import { textPatchForEvent } from "./transcript-state.js"
 import type { EventKind } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 import { attempt } from "./errors.js"
-import { isSessionShellEvent, withChatItemId } from "./event-payloads.js"
+import { isSessionShellEvent, withChatItemId, jsonRecord } from "./event-payloads.js"
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
 import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
@@ -15,7 +20,7 @@ export const makeEventsService = (
   context: ServiceContext
 ): Pick<
   CodevisorDatabaseService,
-  "appendEvent" | "latestEventCursor" | "listEvents" | "listSubjectEvents"
+  "appendEvent" | "latestEventCursor" | "listEvents" | "listSubjectEvents" | "readSyncBatch"
 > => {
   const { sqlite, config } = context
 
@@ -43,8 +48,11 @@ export const makeEventsService = (
                 .run(config.serverId, kind, subjectId, createdAt, encoded).lastInsertRowid
             )
           : undefined
+        projectSetupState(sqlite, subjectId, kind, globalEventId ?? 0, createdAt, payload)
         let subjectRevision: number | undefined
         let chatItemId: string | undefined
+        let deliveredPayload = payload
+        let sessionBytes = Buffer.byteLength(encoded)
         if (sessionExists) {
           const sessionEvent = insertSessionEvent(sqlite, {
             session_id: subjectId,
@@ -56,6 +64,35 @@ export const makeEventsService = (
           })
           subjectRevision = sessionEvent.revision
           chatItemId = projectChatEvent(sqlite, sessionEvent)
+          const update = jsonRecord(payload)
+          if (chatItemId !== undefined && update !== undefined) {
+            deliveredPayload =
+              textPatchForEvent(sqlite, chatItemId, subjectRevision, update) ?? payload
+          }
+          if (
+            chatItemId !== undefined &&
+            typeof update?.toolCallId === "string" &&
+            (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update")
+          ) {
+            deliveredPayload = readToolSnapshot(sqlite, chatItemId, update.toolCallId)!
+          }
+          if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
+            deliveredPayload = {
+              ...update,
+              markdown: String(update.markdown ?? "").slice(0, 24_000),
+              stateRevision: subjectRevision,
+              detailResource: transcriptTextResource(sqlite, chatItemId, "plan")
+            }
+          }
+          if (deliveredPayload !== payload) {
+            const state = JSON.stringify(deliveredPayload)
+            sqlite
+              .prepare(
+                "update session_events set payload = ? where session_id = ? and revision = ?"
+              )
+              .run(state, subjectId, subjectRevision)
+            sessionBytes = Buffer.byteLength(state)
+          }
           projectSessionAttention(sqlite, sessionEvent, config.attentionSettleGraceMs)
           projectSessionSidebarState(sqlite, subjectId, createdAt)
           if (kind === "session.output") {
@@ -64,6 +101,10 @@ export const makeEventsService = (
               .run(createdAt, subjectId)
           }
         }
+        const bytes = Buffer.byteLength(encoded)
+        if (subjectRevision !== undefined)
+          trimSyncJournal(sqlite, sessionBytes, subjectRevision, subjectId)
+        if (globalEventId !== undefined) trimSyncJournal(sqlite, bytes, globalEventId)
         return {
           id: (globalEventId ?? subjectRevision)!,
           ...(globalEventId === undefined ? {} : { globalEventId }),
@@ -72,7 +113,7 @@ export const makeEventsService = (
           kind,
           subjectId,
           createdAt,
-          payload: withChatItemId(payload, chatItemId ?? null)
+          payload: withChatItemId(deliveredPayload, chatItemId ?? null)
         }
       })()
     })
@@ -80,8 +121,25 @@ export const makeEventsService = (
 
   return {
     appendEvent,
+    readSyncBatch: (since, subjectId) =>
+      attempt("readSyncBatch", () =>
+        sqlite.transaction(() => {
+          const batch = readSyncBatch(
+            sqlite,
+            since,
+            subjectId === undefined ? undefined : canonicalUuid(subjectId)
+          )
+          return subjectId === undefined && !batch.requiresSnapshot
+            ? materializeNavigationDelta(context, batch)
+            : batch
+        })()
+      ),
     latestEventCursor: attempt("latestEventCursor", () => {
-      const row = sqlite.prepare("select coalesce(max(id), 0) as cursor from events").get() as {
+      const row = sqlite
+        .prepare(
+          "select max(coalesce((select max(id) from events), 0), coalesce((select floor from sync_watermarks where subject_id = 'global'), 0)) as cursor"
+        )
+        .get() as {
         readonly cursor: number
       }
       return row.cursor

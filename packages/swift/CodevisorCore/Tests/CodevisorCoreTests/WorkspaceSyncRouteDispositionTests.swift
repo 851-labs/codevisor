@@ -79,7 +79,10 @@ struct WorkspaceSyncRouteDispositionTests {
       let fake = SyncFakeServerClient(
         projects: [project],
         sessions: [archivedChat],
-        workspaces: [workspaceRecord]
+        workspaces: [workspaceRecord],
+        panes: layout.flatMap { $0.root.allGroups }.flatMap(\.state.panes).map {
+          WorkspaceSyncModel.serverPane(from: $0, workspaceId: workspaceId, createdAt: Date(timeIntervalSince1970: 0))
+        }
       )
       let workspaceSync = WorkspaceSyncModel(repository: repository, projectList: projectList)
       let controller = MachineController(

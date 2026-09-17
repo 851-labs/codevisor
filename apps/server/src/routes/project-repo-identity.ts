@@ -1,14 +1,9 @@
 import type { Project } from "@codevisor/api"
 import { scratchWorkspacesRoot, type CodevisorDatabaseService } from "@codevisor/db"
-import { gitRemoteUrl } from "@codevisor/worktrees"
+import { gitRemoteUrl, isGitWorkTree } from "@codevisor/worktrees"
+import { stat } from "node:fs/promises"
 import { dirname } from "node:path"
-import {
-  appendAndPublish,
-  existingDirectory,
-  run,
-  swallowError,
-  type EventFanout
-} from "../server-context.js"
+import { appendAndPublish, run, swallowError, type EventFanout } from "../server-context.js"
 
 /// A project's git remote is the machine-independent half of its identity:
 /// two machines that each hold a checkout of the same remote are showing the
@@ -59,46 +54,72 @@ export const reconcileProjectRepoUrls = async (
   projects: ReadonlyArray<Project>,
   env?: NodeJS.ProcessEnv,
   fanout?: EventFanout
-): Promise<ReadonlyArray<Project>> =>
-  Promise.all(
-    projects.map(async (project) => {
-      const location = project.locations.find((candidate) => candidate.serverId === serverId)
-      if (
-        location === undefined ||
-        existingDirectory(location.folderPath) === undefined ||
-        dirname(location.folderPath) === scratchWorkspacesRoot()
-      ) {
-        return project
+): Promise<ReadonlyArray<Project>> => {
+  const results = [...projects]
+  const reconcile = async (project: Project): Promise<Project> => {
+    const location = project.locations.find((candidate) => candidate.serverId === serverId)
+    if (location === undefined || dirname(location.folderPath) === scratchWorkspacesRoot()) {
+      return project
+    }
+    const exists = (await stat(location.folderPath).catch(() => undefined))?.isDirectory() === true
+    const isGitRepository = exists && (await isGitWorkTree(location.folderPath))
+    const url = isGitRepository ? await discoverRepoUrl(location.folderPath, env) : undefined
+    const locationChanged = isGitRepository !== location.isGitRepository
+    const remoteChanged = url !== undefined && url !== project.repoUrl
+    if (!locationChanged && !remoteChanged) return project
+    try {
+      if (locationChanged) await run(db.setProjectLocationGitState(location.id, isGitRepository))
+      const updated = {
+        ...(remoteChanged ? await run(db.setProjectRepoUrl(project.id, url!)) : project),
+        locations: project.locations.map((value) =>
+          value.id === location.id ? { ...value, isGitRepository } : value
+        )
       }
-      const url = await discoverRepoUrl(location.folderPath, env)
-      if (url === undefined || url === project.repoUrl) {
-        return project
+      if (fanout !== undefined) {
+        await appendAndPublish(db, fanout, "project.updated", updated.id, updated).catch(
+          swallowError
+        )
       }
-      try {
-        const updated = await run(db.setProjectRepoUrl(project.id, url))
-        if (fanout !== undefined) {
-          await appendAndPublish(db, fanout, "project.updated", updated.id, updated).catch(
-            swallowError
-          )
-        }
-        return updated
-      } catch {
-        /* v8 ignore next -- a row deleted between the list and the write; the stale copy is still fine to return. */
-        return project
-      }
-    })
-  )
+      return updated
+    } catch {
+      /* v8 ignore next -- a row deleted between the list and the write; the stale copy is still fine to return. */
+      return project
+    }
+  }
+  // Repository observation never holds a navigation request or starts an
+  // unbounded wave of Git processes for a large project catalog.
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < projects.length) {
+      const index = next++
+      results[index] = await reconcile(projects[index]!)
+    }
+  }
+  await Promise.all([worker(), worker()])
+  return results
+}
 
 /// Startup backfill: projects recorded by releases that never observed a
 /// remote get one the first time this server boots, with `project.updated`
 /// events so already-connected clients regroup without a manual refresh.
+const refreshes = new WeakMap<CodevisorDatabaseService, Promise<void>>()
 export const backfillProjectRepoUrls = async (
   db: CodevisorDatabaseService,
   serverId: string,
   fanout: EventFanout,
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
 ): Promise<void> => {
-  const projects = await run(db.listProjects)
-  const env = await (resolveEnvironment?.() ?? Promise.resolve(process.env))
-  await reconcileProjectRepoUrls(db, serverId, projects, env, fanout)
+  const running = refreshes.get(db)
+  if (running !== undefined) return running
+  const task = (async () => {
+    const projects = await run(db.listProjects)
+    const env = await (resolveEnvironment?.() ?? Promise.resolve(process.env))
+    await reconcileProjectRepoUrls(db, serverId, projects, env, fanout)
+  })()
+  refreshes.set(db, task)
+  try {
+    await task
+  } finally {
+    refreshes.delete(db)
+  }
 }

@@ -25,6 +25,9 @@ struct NavigationDeletionEventTests {
     )
     fixture.repository.save(emptyWorkspace)
     fixture.repository.save(unrelated)
+    let records = [fixture.workspace, emptyWorkspace, unrelated].map(WorkspaceSyncModel.serverWorkspace)
+    fixture.fake.setWorkspaces(records)
+    fixture.controller.connection(for: fixture.serverId).navigationSnapshot?.workspaces = records
     if notHydrated { fixture.repository.delete(id: fixture.workspace.id) }
     let snapshot = ServerWorkspaceSnapshot(
       workspaces: [fixture.workspace, emptyWorkspace, unrelated].map(WorkspaceSyncModel.serverWorkspace), panes: []
@@ -97,11 +100,7 @@ struct NavigationDeletionEventTests {
     #expect(!updated.centerTabs.isEmpty)
     #expect(fixture.sync.projectList.sessions.isEmpty)
     #expect(fixture.routeDisposition == .dismiss)
-    #expect(fixture.fake.workspaceSnapshotCallCount == 1)
-    await clock.waitForSleep(.seconds(2))
-    let retry = try #require(fixture.controller.connection(for: fixture.serverId).navigationRetryTask)
-    fixture.controller.stopEventSync()
-    await retry.value
+    #expect(fixture.fake.workspaceSnapshotCallCount == 0)
     #expect(clock.pendingCount == 0)
   }
 

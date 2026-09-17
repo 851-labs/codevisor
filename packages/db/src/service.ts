@@ -1,4 +1,6 @@
+import type { SyncBatch } from "./sync-journal.js"
 import type {
+  NavigationSnapshot,
   BrowserCookieMutation,
   BrowserCookieSnapshot,
   BrowserNavigation
@@ -21,6 +23,7 @@ import type {
   SessionDetail,
   SessionSummary,
   TranscriptItemDetails,
+  TranscriptBodyPage,
   TranscriptPage,
   UpdateInfo,
   UpdateProjectRequest,
@@ -66,10 +69,20 @@ export interface CodevisorDatabaseConfig {
 }
 
 export interface CodevisorDatabaseService {
+  readonly getSessionRuntimeState: (sessionId: string) => Effect.Effect<unknown, DatabaseError>
+  readonly saveSessionRuntimeState: (
+    sessionId: string,
+    metadata: unknown
+  ) => Effect.Effect<void, DatabaseError>
+  readonly getNavigationSnapshot: Effect.Effect<NavigationSnapshot, DatabaseError>
   readonly migrate: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly close: Effect.Effect<void>
   readonly createProject: (request: CreateProjectRequest) => Effect.Effect<Project, DatabaseError>
   readonly listProjects: Effect.Effect<ReadonlyArray<Project>, DatabaseError>
+  readonly setProjectLocationGitState: (
+    id: string,
+    isGitRepository: boolean
+  ) => Effect.Effect<void, DatabaseError>
   readonly updateProject: (
     id: string,
     request: UpdateProjectRequest
@@ -172,17 +185,26 @@ export interface CodevisorDatabaseService {
   readonly getSessionConfigSelections: (
     id: string
   ) => Effect.Effect<Readonly<Record<string, string>>, DatabaseError>
+  readonly listSessionsRequiringResume: Effect.Effect<ReadonlyArray<string>, DatabaseError>
   readonly getSessionDetail: (id: string) => Effect.Effect<SessionDetail, DatabaseError>
   readonly getTranscriptPage: (
     sessionId: string,
-    before: number | undefined,
-    limit: number
+    before: number | string | undefined,
+    limit: number,
+    forward?: boolean
   ) => Effect.Effect<TranscriptPage, DatabaseError>
   readonly getTranscriptItemDetails: (
     sessionId: string,
     itemId: string,
-    throughRevision?: number
+    after?: string
   ) => Effect.Effect<TranscriptItemDetails | undefined, DatabaseError>
+  readonly getTranscriptBodyPage: (
+    sessionId: string,
+    itemId: string,
+    key: string,
+    field: string,
+    position: number
+  ) => Effect.Effect<TranscriptBodyPage | undefined, DatabaseError>
   readonly updateSession: (
     id: string,
     request: UpdateSessionRequest
@@ -210,6 +232,10 @@ export interface CodevisorDatabaseService {
     subjectId: string,
     payload: unknown
   ) => Effect.Effect<EventEnvelope, DatabaseError>
+  readonly readSyncBatch: (
+    since: number,
+    subjectId?: string
+  ) => Effect.Effect<SyncBatch, DatabaseError>
   readonly latestEventCursor: Effect.Effect<number, DatabaseError>
   readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly listSubjectEvents: (

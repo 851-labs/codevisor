@@ -1,6 +1,7 @@
 import AVFoundation
 import CodevisorCore
 import CryptoKit
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -55,14 +56,29 @@ public final class AttachmentImageStore {
   private static var inFlight: [String: Task<AttachmentPreviewImage?, Never>] = [:]
   private static let disk = AttachmentPreviewDiskCache()
 
+  private static var activePreviews = 0
+  private static var previewWaiters: [CheckedContinuation<Bool, Never>] = []
+
+  private static func acquirePreviewSlot() async -> Bool {
+    if activePreviews < 4 { activePreviews += 1; return true }
+    guard previewWaiters.count < 64 else { return false }
+    return await withCheckedContinuation { previewWaiters.append($0) }
+  }
+
+  private static func releasePreviewSlot() {
+    if previewWaiters.isEmpty { activePreviews -= 1 } else { previewWaiters.removeFirst().resume(returning: true) }
+  }
+
   public let namespace: String
   private let fetch: Fetch
+  private let fetchPreview: Fetch
   private let version: Version
   private var versions: [String: String] = [:]
 
-  public init(namespace: String, fetch: @escaping Fetch, version: @escaping Version) {
+  public init(namespace: String, fetch: @escaping Fetch, fetchPreview: @escaping Fetch, version: @escaping Version) {
     self.namespace = namespace
     self.fetch = fetch
+    self.fetchPreview = fetchPreview
     self.version = version
   }
 
@@ -106,49 +122,34 @@ public final class AttachmentImageStore {
     }
 
     let source = file.source
-    let name = file.name
-    let mimeType = file.mimeType
-    let isVideo = file.isVideo
-    #if canImport(UIKit)
-      let isPDF = file.isPDF
-    #endif
-    let fetch = self.fetch
+    let fetchPreview = self.fetchPreview
     let task = Task<AttachmentPreviewImage?, Never> {
+      guard await Self.acquirePreviewSlot() else { return nil }
+      defer { Self.releasePreviewSlot() }
       do {
-        let data = try await fetch(source)
-        guard
-          let image = await Task.detached(
-            priority: .userInitiated,
-            operation: { () async -> OSImage? in
-              #if canImport(AppKit)
-                return await attachmentPreviewImage(
-                  data: data,
-                  name: name,
-                  mimeType: mimeType,
-                  isVideo: isVideo
-                )
-              #elseif canImport(UIKit)
-                return await attachmentPreviewImage(
-                  data: data,
-                  name: name,
-                  mimeType: mimeType,
-                  isVideo: isVideo,
-                  isPDF: isPDF
-                )
-              #endif
-            }
-          ).value, let aspectRatio = previewAspectRatio(for: image.size)
-        else { return nil }
-        return AttachmentPreviewImage(
-          image: image,
-          aspectRatio: aspectRatio,
-          version: resolvedVersion
-        )
-      } catch {
-        // Missing/deleted files stay as stable placeholders. A future
-        // mount retries instead of pinning a transient failure forever.
-        return nil
-      }
+        let data = try await fetchPreview(source)
+        guard data.count <= 1024 * 1024 else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+          guard
+            let source = CGImageSourceCreateWithData(
+              data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+            let pixels = CGImageSourceCreateThumbnailAtIndex(
+              source, 0,
+              [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 480,
+              ] as CFDictionary)
+          else { return nil as AttachmentPreviewImage? }
+          #if canImport(AppKit)
+            let image = NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height))
+          #else
+            let image = UIImage(cgImage: pixels)
+          #endif
+          return AttachmentPreviewImage(
+            image: image, aspectRatio: CGFloat(pixels.width) / CGFloat(pixels.height), version: resolvedVersion)
+        }.value
+      } catch { return nil }
     }
     Self.inFlight[requestKey] = task
     let loaded = await task.value
@@ -184,12 +185,13 @@ public final class AttachmentImageStore {
   }
 
   private func baseKey(for source: PreviewFile.Source) -> String {
-    "\(namespace):\(source.cacheKey)"
+    "preview-480-v2:\(namespace):\(source.cacheKey)"
   }
 
   private func fileVersion(for source: PreviewFile.Source) async -> String {
     if let cached = versions[source.cacheKey] { return cached }
     let resolved = (try? await version(source)) ?? "unversioned"
+    if versions.count >= 256 { versions.removeAll(keepingCapacity: true) }
     versions[source.cacheKey] = resolved
     return resolved
   }

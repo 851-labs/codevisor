@@ -19,8 +19,13 @@ public struct ServerSessionSnapshot: Equatable, Sendable {
 
 public struct TranscriptHistoryPage: Equatable, Sendable {
   public var conversation: [ConversationItem]
+  public var nextAfter: String? = nil
+  public var hasNewer: Bool = false
+  public var sequences: [UUID: Int] = [:]
   public var nextBefore: String?
   public var hasMore: Bool
+  public var setupPhases: [SessionSetupPhase] = []
+  public var stateUpdates: [SessionUpdate] = []
   public var eventCursor: Int
   public var pendingQuestion: QuestionRequest? = nil
   public var pendingPlanApproval: Bool = false

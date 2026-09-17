@@ -132,7 +132,12 @@ extension SessionController {
   /// (stale) options for the selected harness with any pending edits applied.
   public var configOptions: [SessionConfigOption] {
     if let model, !model.configOptions.isEmpty {
-      return model.configOptions
+      let pending = pendingConfigByHarness[activeHarnessId ?? ""] ?? [:]
+      return model.configOptions.map { option in
+        var option = option
+        if let value = pending[option.id] { option.currentValue = value }
+        return option
+      }
     }
     // A connected runtime with NO options is not an answer to trust: Claude
     // reports none whenever its model list loses the startup race, and it
@@ -284,13 +289,14 @@ extension SessionController {
     }
     var accepted = true
     if let model {
+      if let harnessId = activeHarnessId { pendingConfigByHarness[harnessId]?[configId] = nil }
       accepted = await model.setConfigOption(configId: configId, value: value)
       if let harnessId = connectedHarnessId {
         configCache.store(model.configOptions, forHarness: harnessId, onServer: project.serverId)
         configOptionsByHarness[harnessId] = model.configOptions
       }
     } else {
-      // Not connected yet: remember it and apply on connect.
+      // Not connected yet: remember it and apply before submitting work.
       if let harnessId = selectedHarnessId {
         pendingConfigByHarness[harnessId, default: [:]][configId] = value
         var options =

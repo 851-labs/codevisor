@@ -383,7 +383,9 @@ describe("session action routes", () => {
       expect.objectContaining({ kind: "project.created" })
     )
     const replayEvents = await run(services.db.listEvents(0))
-    const replayEventCount = replayEvents.length
+    const replayEventCount = replayEvents.filter(
+      (event) => event.kind !== "navigation.changed"
+    ).length
     const replayCursor = replayEvents.at(-1)?.id ?? 0
     const events = await readSseEvents(server, replayEventCount, 0)
     expect(events).toEqual(

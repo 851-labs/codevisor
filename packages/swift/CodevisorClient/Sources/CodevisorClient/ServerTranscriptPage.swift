@@ -4,8 +4,12 @@ import Foundation
 
 public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
   public var items: [ServerTranscriptItem]
+  public var nextAfter: String? = nil
+  public var hasNewer: Bool = false
   public var nextBefore: String?
   public var hasMore: Bool
+  public var setupActivities: [ServerSetupActivity] = []
+  public var stateUpdates: [SessionUpdate] = []
   public var eventCursor: Int
   public var pendingQuestion: QuestionRequest?
   public var pendingPlanApproval: Bool
@@ -45,8 +49,12 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case items
+    case nextAfter
+    case hasNewer
     case nextBefore
     case hasMore
+    case setupActivities
+    case stateUpdates
     case eventCursor
     case pendingQuestion
     case pendingPlanApproval
@@ -61,8 +69,12 @@ public struct ServerTranscriptPage: Decodable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     items = try container.decode([ServerTranscriptItem].self, forKey: .items)
     nextBefore = try container.decodeIfPresent(String.self, forKey: .nextBefore)
+    nextAfter = try container.decodeIfPresent(String.self, forKey: .nextAfter)
+    hasNewer = try container.decode(Bool.self, forKey: .hasNewer)
     hasMore = try container.decode(Bool.self, forKey: .hasMore)
     eventCursor = try container.decode(Int.self, forKey: .eventCursor)
+    setupActivities = try container.decode([ServerSetupActivity].self, forKey: .setupActivities)
+    stateUpdates = try container.decode([SessionUpdate].self, forKey: .stateUpdates)
     pendingQuestion = try container.decodeIfPresent(QuestionRequest.self, forKey: .pendingQuestion)
     pendingPlanApproval =
       try container.decodeIfPresent(Bool.self, forKey: .pendingPlanApproval) ?? false

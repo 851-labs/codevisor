@@ -1,3 +1,4 @@
+import { runTranscriptStateUpgrade } from "./transcript-state-upgrade.js"
 import type { DataUpgradeProgress } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
@@ -42,8 +43,10 @@ const runCanonicalChatBackfill = (
   config: CodevisorDatabaseConfig
 ): void => {
   const existing = sqlite
-    .prepare("select state, completed, total from backfill_jobs where id = ?")
-    .get(canonicalChatBackfillId) as { state: string; completed: number; total: number } | undefined
+    .prepare("select state, cursor, completed, total from backfill_jobs where id = ?")
+    .get(canonicalChatBackfillId) as
+    | { state: string; cursor: string | null; completed: number; total: number }
+    | undefined
   if (existing?.state === "completed") {
     reportDataUpgrade(config, {
       state: "completed",
@@ -74,6 +77,7 @@ const runCanonicalChatBackfill = (
   )
   const total = Math.max(1, transcriptTotal + eventTotal + sessionTotal)
   let completed = Math.min(existing?.completed ?? 0, total)
+  let eventCursor = Number(existing?.cursor ?? 0)
   const progress = (state: DataUpgradeProgress["state"], error?: string): void => {
     const value: DataUpgradeProgress = {
       state,
@@ -104,23 +108,32 @@ const runCanonicalChatBackfill = (
   const checkpoint = (delta: number): void => {
     completed = Math.min(total, completed + delta)
     sqlite
-      .prepare("update backfill_jobs set completed = ?, updated_at = ? where id = ?")
-      .run(completed, isoTimestamp(), canonicalChatBackfillId)
+      .prepare("update backfill_jobs set completed = ?, cursor = ?, updated_at = ? where id = ?")
+      .run(completed, String(eventCursor), isoTimestamp(), canonicalChatBackfillId)
     progress("running")
   }
 
   try {
+    let transcriptCursor = 0
     while (true) {
       const rows = sqlite
         .prepare(
-          `select transcript_items.* from transcript_items
+          `select transcript_items.rowid as row_id from transcript_items
            left join chat_items on chat_items.id = transcript_items.id
-           where chat_items.id is null order by transcript_items.rowid asc limit 100`
+           where transcript_items.rowid > ? and chat_items.id is null order by transcript_items.rowid asc limit 100`
         )
-        .all() as ReadonlyArray<TranscriptRow>
+        .all(transcriptCursor) as ReadonlyArray<{ row_id: number }>
       if (rows.length === 0) break
       sqlite.transaction(() => {
-        for (const row of rows) copyTranscriptItemToChat(sqlite, row)
+        for (const row of rows) {
+          copyTranscriptItemToChat(
+            sqlite,
+            sqlite
+              .prepare("select * from transcript_items where rowid = ?")
+              .get(row.row_id) as TranscriptRow
+          )
+          transcriptCursor = row.row_id
+        }
       })()
       checkpoint(rows.length)
     }
@@ -136,16 +149,22 @@ const runCanonicalChatBackfill = (
     while (true) {
       const rows = sqlite
         .prepare(
-          `select events.* from events
+          `select events.id, length(cast(events.payload as blob)) as bytes from events
            join sessions on sessions.id = events.subject_id
            left join session_events on session_events.global_event_id = events.id
-           where session_events.global_event_id is null
-           order by events.id asc limit 500`
+           where events.id > ? and session_events.global_event_id is null
+           order by events.id asc limit 256`
         )
-        .all() as ReadonlyArray<EventRow>
+        .all(eventCursor) as ReadonlyArray<{ id: number; bytes: number }>
       if (rows.length === 0) break
       sqlite.transaction(() => {
-        for (const row of rows) {
+        let bytes = 0
+        for (const candidate of rows) {
+          if (bytes > 0 && bytes + candidate.bytes > 2 * 1024 * 1024) break
+          const row = sqlite
+            .prepare("select * from events where id = ?")
+            .get(candidate.id) as EventRow
+          bytes += candidate.bytes
           const linkedItem =
             row.transcript_item_id !== null &&
             sqlite.prepare("select 1 from chat_items where id = ?").get(row.transcript_item_id) !==
@@ -166,9 +185,16 @@ const runCanonicalChatBackfill = (
               .prepare("select 1 from transcript_items where session_id = ? limit 1")
               .get(row.subject_id) !== undefined
           if (!hasTranscript) projectChatEvent(sqlite, event)
+          eventCursor = row.id
+          completed = Math.min(total, completed + 1)
         }
+        sqlite
+          .prepare(
+            "update backfill_jobs set completed = ?, cursor = ?, updated_at = ? where id = ?"
+          )
+          .run(completed, String(eventCursor), isoTimestamp(), canonicalChatBackfillId)
       })()
-      checkpoint(rows.length)
+      progress("running")
     }
 
     const sessions = sqlite.prepare("select id from sessions order by id").all() as ReadonlyArray<{
@@ -181,13 +207,20 @@ const runCanonicalChatBackfill = (
             .prepare("select 1 from chat_items where session_id = ? limit 1")
             .get(session.id) !== undefined
         if (!hasChat) {
-          const rows = sqlite
-            .prepare(
-              `select * from conversation_items where session_id = ?
-               order by created_at asc, rowid asc`
-            )
-            .all(session.id) as ReadonlyArray<ConversationRow>
-          for (const row of rows) {
+          let timestamp = ""
+          let rowid = 0
+          while (true) {
+            const row = sqlite
+              .prepare(
+                `select rowid as row_id, * from conversation_items where session_id = ?
+              and (created_at, rowid) > (?, ?) order by created_at, rowid limit 1`
+              )
+              .get(session.id, timestamp, rowid) as
+              | (ConversationRow & { row_id: number })
+              | undefined
+            if (row === undefined) break
+            timestamp = row.created_at
+            rowid = row.row_id
             const attachments = parseAttachments(row.attachments)
             createChatItem(sqlite, session.id, row.role, row.created_at, {
               text: row.text,
@@ -313,7 +346,7 @@ const adoptServerIdentity = (sqlite: Database.Database, config: CodevisorDatabas
 /// and its durable `backfill_jobs` checkpoint.
 const blockingDataUpgrades: ReadonlyArray<
   (sqlite: Database.Database, config: CodevisorDatabaseConfig) => void
-> = [adoptServerIdentity, runCanonicalChatBackfill]
+> = [adoptServerIdentity, runCanonicalChatBackfill, runTranscriptStateUpgrade]
 
 export const runBlockingDataUpgrades = (
   sqlite: Database.Database,

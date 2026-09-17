@@ -1,3 +1,4 @@
+import ACPKit
 import CoreGraphics
 import CodevisorProtocol
 import Foundation
@@ -55,6 +56,12 @@ enum TranscriptAssistantRowProjection {
     to rows: inout [TranscriptPresentationRow]
   ) {
     guard case let .assistant(original) = item else {
+      if case let .user(message) = item, let resource = message.textResource {
+        appendBodyResource(
+          resource, messageID: message.id, sourceID: "user", lifecycle: .settled,
+          preview: message.text, userMessage: message, to: &rows)
+        return
+      }
       rows.append(
         .init(
           id: .message(item.id),
@@ -127,12 +134,15 @@ enum TranscriptAssistantRowProjection {
       to: &rows
     )
     if let planDocument = message.turn.planDocument, !planDocument.isEmpty {
-      TranscriptPlanRowProjection.append(
-        messageID: message.id,
-        markdown: planDocument,
-        lifecycle: lifecycle,
-        to: &rows
-      )
+      if let resource = message.turn.planResource {
+        appendBodyResource(
+          resource, messageID: message.id, sourceID: "plan", lifecycle: lifecycle,
+          preview: planDocument, isPlan: true, to: &rows)
+      } else {
+        TranscriptPlanRowProjection.append(
+          messageID: message.id, markdown: planDocument,
+          lifecycle: lifecycle, to: &rows)
+      }
       projectedContent = true
       projectedContent =
         appendWorkedSection(
@@ -184,6 +194,26 @@ enum TranscriptAssistantRowProjection {
       return true
     }
     guard let (entryID, markdown) = responseText(message.turn) else { return false }
+
+    if let resource = message.turn.textStates[":\(entryID)"]?.resource {
+      appendBodyResource(
+        resource, messageID: message.id, sourceID: entryID, lifecycle: lifecycle,
+        preview: markdown, to: &rows)
+      for (index, file) in message.turn.attachments.enumerated() {
+        let attachment = TranscriptAssistantAttachment(
+          messageID: message.id, sourceID: entryID,
+          ordinal: index, file: PreviewFile(attachment: file), label: file.name, lifecycle: lifecycle)
+        rows.append(
+          .init(
+            id: attachmentID(
+              messageID: message.id, sourceID: entryID,
+              ordinal: index, lifecycle: lifecycle), content: .assistantAttachment(attachment), estimatedHeight: 180))
+      }
+      appendChrome(
+        message, slice: .epilogue, waitingOnBackgroundTask: waitingOnBackgroundTask,
+        lifecycle: lifecycle, to: &rows)
+      return true
+    }
 
     let segments = assistantMarkdownSegments(
       markdown,
@@ -491,5 +521,28 @@ extension TranscriptAssistantRowProjection {
     }
     hasher.combine(waitingOnBackgroundTask)
     return hasher.finalize()
+  }
+}
+
+extension TranscriptAssistantRowProjection {
+  static func appendBodyResource(
+    _ resource: ToolDetailResource, messageID: UUID, sourceID: String,
+    lifecycle: TranscriptBlockLifecycle, membership: TranscriptWorkedSectionMembership? = nil,
+    preview: String = "", userMessage: UserMessage? = nil, isPlan: Bool = false,
+    to rows: inout [TranscriptPresentationRow]
+  ) {
+    for position in TranscriptInlineTextPage.positions(for: resource) {
+      let page = TranscriptInlineTextPage(
+        resource: resource, position: position,
+        preview: position == 0 ? preview : "", userMessage: userMessage, isPlan: isPlan)
+      rows.append(
+        .init(
+          id: userMessage != nil && position == 0
+            ? .message(messageID)
+            : markdownID(
+              messageID: messageID, sourceID: "body:\(sourceID)", ordinal: position,
+              fragment: nil, lifecycle: lifecycle), content: .inlineText(page), estimatedHeight: 800,
+          measurementRevision: page.displayRevision, workedSection: membership))
+    }
   }
 }

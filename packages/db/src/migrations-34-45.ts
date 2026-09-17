@@ -317,28 +317,24 @@ export const migrations34To45: ReadonlyArray<Migration> = [
       alter table sessions add column session_plan text;
     `,
     run: (sqlite) => {
-      // Plans are full snapshots. Walk newest-first and retain the first valid
-      // one for each session so existing chats gain durable cross-device
-      // checklist state immediately after the upgrade.
-      const restored = new Set<string>()
-      const candidates = sqlite
-        .prepare(
-          `select session_id, payload from session_events
-           where kind = 'session.output'
-             and json_valid(payload)
-             and json_extract(payload, '$.sessionUpdate') = 'plan'
-           order by session_id, revision desc`
-        )
-        .all() as ReadonlyArray<{ readonly session_id: string; readonly payload: string }>
+      // Read one indexed row at a time; the newest valid full snapshot wins.
+      let sessionId = ""
+      let revision = -1
+      const select = sqlite.prepare(`select session_id, revision, payload from session_events
+        where (session_id, revision) > (?, ?) and kind = 'session.output'
+          and json_valid(payload) and json_extract(payload, '$.sessionUpdate') = 'plan'
+        order by session_id, revision limit 1`)
       const update = sqlite.prepare("update sessions set session_plan = ? where id = ?")
-      for (const candidate of candidates) {
-        if (restored.has(candidate.session_id)) continue
-        // The SQL predicates guarantee a JSON object with sessionUpdate.
+      while (true) {
+        const candidate = select.get(sessionId, revision) as
+          | { session_id: string; revision: number; payload: string }
+          | undefined
+        if (candidate === undefined) break
+        sessionId = candidate.session_id
+        revision = candidate.revision
         const payload = parseJsonRecord(candidate.payload)!
         const plan = sessionPlanFromPayload(payload)
-        if (plan === undefined) continue
-        update.run(JSON.stringify(plan), candidate.session_id)
-        restored.add(candidate.session_id)
+        if (plan !== undefined) update.run(JSON.stringify(plan), sessionId)
       }
     }
   }

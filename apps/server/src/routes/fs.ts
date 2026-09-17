@@ -1,3 +1,4 @@
+import { mediaPreview } from "../infra/media-previews.js"
 import { FsMkdirRequest, type FsListResponse } from "@codevisor/api"
 import { createReadStream, existsSync, statSync, type Stats } from "node:fs"
 import { mkdir, readdir } from "node:fs/promises"
@@ -146,6 +147,21 @@ export const routeFs = async (
       throw lastError
     }
 
+    if (request.method === "GET" && url.searchParams.get("preview") === "1") {
+      const preview = await mediaPreview(
+        resolved,
+        filesystemMimeType(resolved),
+        services.attachments.root,
+        `${resolved}:${info.size}:${info.mtimeMs}`
+      )
+      response.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": preview.length,
+        "Cache-Control": "private, no-store"
+      })
+      response.end(preview)
+      return true
+    }
     const range = requestedByteRange(request.headers.range, info.size)
     if (range === "invalid") {
       response.writeHead(416, {

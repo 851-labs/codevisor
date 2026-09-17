@@ -40,7 +40,7 @@ struct WorkspaceOrderSyncTests {
     #expect(optimistic.effectiveSidebarPosition > fixture.otherWorkspace.effectiveSidebarPosition)
 
     fixture.sync.reconcile(
-      [original], paneRecords: nil, protectedLocalPaneIds: [], assignments: [:], serverId: fixture.serverId)
+      [original], paneRecords: [], protectedLocalPaneIds: [], assignments: [:], serverId: fixture.serverId)
     #expect(
       fixture.repository.workspace(id: fixture.workspace.id)?.effectiveSidebarPosition
         == optimistic.effectiveSidebarPosition)
@@ -69,7 +69,7 @@ struct WorkspaceOrderSyncTests {
     winner.sidebarOrderRevision = 2
     fixture.fake.setWorkspaces([winner])
     fixture.sync.reconcile(
-      [winner], paneRecords: nil, protectedLocalPaneIds: [], assignments: [:], serverId: fixture.serverId)
+      [winner], paneRecords: [], protectedLocalPaneIds: [], assignments: [:], serverId: fixture.serverId)
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.pendingSidebarOrderRevision == 1)
     fixture.sync.retryWorkspaceOrders(serverId: fixture.serverId, client: fixture.fake)
     await fixture.sync.workspaceOrderTasks[fixture.workspace.id]?.value

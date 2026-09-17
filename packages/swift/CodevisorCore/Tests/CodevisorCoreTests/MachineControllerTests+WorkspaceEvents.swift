@@ -72,7 +72,7 @@ extension MachineControllerTests {
     #expect(fixture.sync.revision == (isArchived ? 1 : 0))
   }
 
-  @Test("Unknown workspaces and legacy marker events still hydrate from snapshots", arguments: [true, false])
+  @Test("Workspace deltas materialize unknown workspaces without another request", arguments: [true, false])
   func workspaceEventSnapshotFallback(unknownWorkspace: Bool) async throws {
     let fixture = WorkspaceEventFixture()
     if unknownWorkspace { fixture.repository.delete(id: fixture.workspace.id) }
@@ -87,13 +87,13 @@ extension MachineControllerTests {
 
     fixture.fake.emit(
       kind: "workspace.updated", subjectId: fixture.workspace.id.uuidString,
-      payload: unknownWorkspace ? fixture.payload(isArchived: true, name: "Shared") : .null
+      payload: fixture.payload(isArchived: true, name: "Shared")
     )
     fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
     await handled.wait()
 
     #expect(fixture.repository.workspace(id: fixture.workspace.id)?.isArchived == true)
-    #expect(fixture.fake.workspaceSnapshotCallCount == 1)
+    #expect(fixture.fake.workspaceSnapshotCallCount == 0)
     #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) == fixture.otherWorkspace)
   }
 
@@ -165,6 +165,21 @@ struct WorkspaceEventFixture {
       store: InMemoryStore(), projectList: projectList, workspaceSync: sync,
       clientFactory: { _ in client }, navigationClock: navigationClock
     )
+    let project = ServerProject(
+      id: workspace.projectId.uuidString, name: "Shared", isArchived: false, origin: .codevisor,
+      createdAt: "2026-06-30T00:00:00.000Z", locations: [])
+    let sessions = projectList.sessions.map { serverSession(from: $0) }
+    let records = [WorkspaceSyncModel.serverWorkspace(from: workspace)]
+    let panes = WorkspaceSyncModel.allPanes(in: workspace).map {
+      WorkspaceSyncModel.serverPane(from: $0, workspaceId: workspace.id, createdAt: workspace.createdAt)
+    }
+    fake.setProjects([project])
+    fake.setSessions(sessions)
+    fake.setWorkspaces(records)
+    fake.setPanes(panes)
+    controller.connection(for: serverId).navigationSnapshot = ServerNavigationSnapshot(
+      eventCursor: 0,
+      projects: [project], sessions: sessions, workspaces: records, panes: panes)
   }
 
   var routeDisposition: WorkspaceRouteDisposition {

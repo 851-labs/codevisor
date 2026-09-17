@@ -1,3 +1,4 @@
+import { mediaPreview } from "../infra/media-previews.js"
 import { randomUUID } from "node:crypto"
 import type { FileMetadata } from "@codevisor/api"
 import { createReadStream } from "node:fs"
@@ -61,6 +62,21 @@ export const routeFiles = async (
   const fileId = matchRoute(url.pathname, "/v1/files/:id")
   if (fileId !== undefined && (request.method === "GET" || request.method === "HEAD")) {
     const file = await attachmentDiskFile(services, fileId)
+    if (request.method === "GET" && url.searchParams.get("preview") === "1") {
+      const preview = await mediaPreview(
+        file.path,
+        file.metadata.mimeType,
+        services.attachments.root,
+        file.metadata.sha256
+      )
+      response.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": preview.length,
+        "Cache-Control": "private, max-age=31536000, immutable"
+      })
+      response.end(preview)
+      return true
+    }
     const range = requestedByteRange(request.headers.range, file.metadata.sizeBytes)
     if (range === "invalid") {
       response.writeHead(416, {

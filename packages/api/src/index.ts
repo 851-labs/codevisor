@@ -25,3 +25,5 @@ export * from "./client-control.js"
 export * from "./client-ui.js"
 
 export * from "./workspace-position.js"
+
+export * from "./navigation.js"

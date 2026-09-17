@@ -1,7 +1,10 @@
+import ACPKit
 import SwiftUI
 import CodevisorCore
 
 extension EnvironmentValues {
+  @Entry public var transcriptCopyResource: ToolDetailResource?
+
   /// The session's disclosure store, injected at the transcript root. Nil in
   /// previews and detached contexts.
   @Entry public var transcriptDisclosure: TranscriptDisclosureStore?

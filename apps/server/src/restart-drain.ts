@@ -17,10 +17,9 @@ import {
 /// durable in the prompt queue, but nothing is claimed — then waits for
 /// every live turn to end. When the deadline passes, the remaining turns are
 /// cancelled (they end as "interrupted", exactly like a crash would leave
-/// them). Once idle, the coordinator snapshots which sessions had a live
-/// agent process (or a held prompt) and closes those processes cleanly; the
-/// next boot reads the snapshot and brings those sessions back before
-/// draining their held prompts (`restart-resume.ts`).
+/// them). Once idle, the coordinator snapshots sessions with durable work
+/// or held prompts and closes loaded processes cleanly. The next boot resumes
+/// only that work before draining held prompts (`restart-resume.ts`).
 ///
 /// `cancel` abandons a drain whose update never happened (the download
 /// failed, the host app aborted): the gate reopens and every held session
@@ -183,23 +182,13 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     return generation === myGeneration
   }
 
-  /// Which sessions the next boot should bring back: every session with a
-  /// live agent process, plus every session holding a prompt behind the
-  /// gate (its process may already be closed, but its prompt is waiting).
+  /// Resume durable work only: queued prompts, active goals, and background
+  /// tasks. Having viewed an idle chat does not make it startup work.
   const sessionsToResume = async (): Promise<ReadonlyArray<string>> => {
-    const loaded = new Set(services.agents.loadedAgentSessionIds())
-    const ids = new Set<string>([...liveSessions(), ...turns.restartHeldSessions])
-    if (loaded.size > 0) {
-      const sessions = await run(services.db.listSessions)
-      for (const session of sessions) {
-        if (session.isArchived) continue
-        const agentSessionId =
-          session.agentSessionId === undefined || session.agentSessionId === ""
-            ? session.id
-            : session.agentSessionId
-        if (loaded.has(agentSessionId)) ids.add(session.id)
-      }
-    }
+    const ids = new Set<string>([
+      ...(await run(services.db.listSessionsRequiringResume)),
+      ...turns.restartHeldSessions
+    ])
     return [...ids].toSorted()
   }
 

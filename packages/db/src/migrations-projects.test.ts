@@ -49,6 +49,7 @@ describe("@codevisor/db project and archive upgrades", () => {
         projectId: "ws-1",
         serverId: "machine-a",
         folderPath: "/tmp/codevisor",
+        isGitRepository: false,
         createdAt: "2026-06-01T00:00:00.000Z"
       }
     ])
@@ -80,7 +81,7 @@ describe("@codevisor/db project and archive upgrades", () => {
     expect(
       JSON.parse(
         (
-          sqlite.prepare("select payload from events where subject_id = 'sess-1'").get() as {
+          sqlite.prepare("select payload from legacy_events where subject_id = 'sess-1'").get() as {
             payload: string
           }
         ).payload
@@ -90,7 +91,7 @@ describe("@codevisor/db project and archive upgrades", () => {
       JSON.parse(
         (
           sqlite
-            .prepare("select payload from session_events where session_id = 'sess-1'")
+            .prepare("select payload from legacy_session_events where session_id = 'sess-1'")
             .get() as { payload: string }
         ).payload
       )

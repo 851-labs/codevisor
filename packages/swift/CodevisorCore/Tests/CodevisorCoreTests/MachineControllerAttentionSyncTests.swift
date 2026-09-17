@@ -112,6 +112,13 @@ private final class Client {
     machine = MachineController(store: InMemoryStore(), projectList: model, clientFactory: { _ in fake })
     let applied = applied
     machine.onSessionStateChanged = { _, _ in applied.signal() }
+    machine.connection(for: background.serverId).navigationSnapshot = ServerNavigationSnapshot(
+      eventCursor: 0,
+      projects: [
+        ServerProject(
+          id: background.projectId.uuidString, name: "Shared", isArchived: false, origin: .codevisor,
+          createdAt: "2026-06-30T00:00:00.000Z", locations: [])
+      ], sessions: [foreground, background].map { serverSession(from: $0) }, workspaces: [], panes: [])
     machine.startEventSync(serverId: background.serverId, client: fake, since: 0)
   }
 }

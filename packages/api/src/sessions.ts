@@ -10,7 +10,6 @@ import {
 } from "./session-updates.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import { CreateProjectRequest } from "./projects.js"
-import { EventEnvelope } from "./events.js"
 
 export const SessionUsage = Schema.Struct({
   /** Tokens currently occupying the model's context window. */
@@ -184,6 +183,22 @@ export type ConversationItem = typeof ConversationItem.Type
 /// A lightweight, stable row in the session transcript. Historical worked
 /// details deliberately do not ride this payload; clients fetch those only
 /// when the disclosure is opened.
+export const TranscriptBodyResource = Schema.Struct({
+  itemId: Schema.String,
+  entryKey: Schema.String,
+  fields: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      revision: Schema.Number,
+      encoding: Schema.Literals(["text", "json"]),
+      sizeBytes: Schema.Number,
+      pageCount: Schema.optional(Schema.Number),
+      generation: Schema.optional(Schema.Number)
+    })
+  )
+})
+export type TranscriptBodyResource = typeof TranscriptBodyResource.Type
+
 export const TranscriptItem = Schema.Struct({
   id: Schema.String,
   sessionId: Schema.String,
@@ -213,6 +228,11 @@ export const TranscriptItem = Schema.Struct({
   /** Provider-asserted finality of the answer candidate. Absent means the
    * candidate is optimistic and must not settle the worked section yet. */
   phase: Schema.optional(MessagePhase),
+  textResource: Schema.optional(TranscriptBodyResource),
+  planResource: Schema.optional(TranscriptBodyResource),
+  textGeneration: Schema.optional(Schema.Number),
+  textRevision: Schema.optional(Schema.Number),
+  textPosition: Schema.optional(Schema.Number),
   revision: Schema.Number
 })
 export type TranscriptItem = typeof TranscriptItem.Type
@@ -230,8 +250,12 @@ export type SessionUpdateGate = typeof SessionUpdateGate.Type
 export const TranscriptPage = Schema.Struct({
   items: Schema.Array(TranscriptItem),
   nextBefore: Schema.optional(Schema.String),
+  nextAfter: Schema.optional(Schema.String),
+  hasNewer: Schema.Boolean,
   hasMore: Schema.Boolean,
   eventCursor: Schema.Number,
+  stateUpdates: Schema.Array(Schema.Unknown),
+  setupActivities: Schema.Array(Schema.Unknown),
   /** Current blocking question, snapshotted at the same revision as
    * `eventCursor` so a reconnect cannot skip the event that created it. */
   pendingQuestion: Schema.optional(QuestionPayload),
@@ -254,14 +278,35 @@ export const TranscriptPage = Schema.Struct({
 })
 export type TranscriptPage = typeof TranscriptPage.Type
 
-/// The raw events assigned to one assistant turn. CodevisorCore reduces this
-/// bounded set only when the user expands historical worked details.
+/// A bounded page of persisted semantic entries. These are current entity
+/// states, not provider event history. Large bodies have separate references.
 export const TranscriptItemDetails = Schema.Struct({
   itemId: Schema.String,
   revision: Schema.Number,
-  events: Schema.Array(Schema.suspend(() => EventEnvelope))
+  eventCursor: Schema.Number,
+  entries: Schema.Array(
+    Schema.Struct({
+      key: Schema.String,
+      position: Schema.Number,
+      revision: Schema.Number,
+      payload: Schema.Unknown
+    })
+  ),
+  nextAfter: Schema.optional(Schema.String),
+  previousBefore: Schema.optional(Schema.String)
 })
 export type TranscriptItemDetails = typeof TranscriptItemDetails.Type
+
+export const TranscriptBodyPage = Schema.Struct({
+  leadingText: Schema.optional(Schema.String),
+  markdownPrefix: Schema.optional(Schema.String),
+  revision: Schema.Number,
+  encoding: Schema.Literals(["text", "json"]),
+  text: Schema.String,
+  position: Schema.Number,
+  nextPosition: Schema.optional(Schema.Number)
+})
+export type TranscriptBodyPage = typeof TranscriptBodyPage.Type
 
 export const PromptQueueItem = Schema.Struct({
   id: Schema.String,
@@ -274,6 +319,8 @@ export const PromptQueueItem = Schema.Struct({
 export type PromptQueueItem = typeof PromptQueueItem.Type
 
 export const SessionDetail = Schema.Struct({
+  hasMore: Schema.Boolean,
+  nextBefore: Schema.optional(Schema.String),
   session: SessionSummary,
   conversation: Schema.Array(ConversationItem),
   promptQueue: Schema.Array(PromptQueueItem),
@@ -369,7 +416,8 @@ export type OpenSessionRequest = typeof OpenSessionRequest.Type
 
 export const OpenSessionResponse = Schema.Struct({
   session: SessionSummary,
-  transcript: TranscriptPage
+  transcript: TranscriptPage,
+  runtime: Schema.Unknown
 })
 export type OpenSessionResponse = typeof OpenSessionResponse.Type
 

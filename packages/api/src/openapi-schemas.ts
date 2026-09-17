@@ -1,3 +1,4 @@
+import { NavigationSnapshot } from "./navigation.js"
 import { ClientContext, ClientNavigationRequest, ConnectedClient } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
@@ -101,6 +102,7 @@ import {
   TailnetPeersResponse,
   TerminalCreateRequest,
   TerminalCreateResponse,
+  TranscriptBodyPage,
   TranscriptItemDetails,
   TranscriptPage,
   UpdateHarnessAccountRequest,
@@ -311,6 +313,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/skills/sync": SkillsScan,
   "PUT /v1/skills/:name/harnesses/:harnessId": SkillsScan,
   "DELETE /v1/skills/:name": SkillsScan,
+  "GET /v1/navigation": NavigationSnapshot,
   "GET /v1/sessions": arrayOf(SessionSummary),
   "POST /v1/sessions": SessionSummary,
   "GET /v1/sessions/:id": SessionDetail,
@@ -323,7 +326,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/sessions/:id/open": OpenSessionResponse,
   "GET /v1/sessions/:id/transcript": TranscriptPage,
   "GET /v1/sessions/:id/transcript/:itemId/details": TranscriptItemDetails,
-  "GET /v1/sessions/:id/events": arrayOf(EventEnvelope),
+  "GET /v1/sessions/:id/transcript/:itemId/body": TranscriptBodyPage,
   "GET /v1/sessions/:id/queue": arrayOf(PromptQueueItem),
   "PATCH /v1/sessions/:id/queue": arrayOf(PromptQueueItem),
   "PATCH /v1/sessions/:id/queue/:queueId": PromptQueueItem,

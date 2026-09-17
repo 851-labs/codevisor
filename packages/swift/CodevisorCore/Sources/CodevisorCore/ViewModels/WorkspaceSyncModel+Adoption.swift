@@ -37,13 +37,16 @@ extension WorkspaceSyncModel {
         targetWorkspaceId = assigned
       } else if remoteIds.contains(workspace.id) {
         targetWorkspaceId = workspace.id
-      } else if assignedTargets.isEmpty {
+      } else {
         do {
           guard
             let uploaded = try await client.upsertWorkspace(
               Self.serverWorkspace(from: workspace)
             ), let uploadedId = UUID(uuidString: uploaded.id)
-          else { continue }
+          else {
+            return WorkspaceAdoptionResult(
+              records: records, assignments: assignments, didMutateServer: didMutateServer, canReconcile: false)
+          }
           targetWorkspaceId = uploadedId
           records.removeAll {
             $0.id.caseInsensitiveCompare(uploaded.id) == .orderedSame
@@ -55,12 +58,9 @@ extension WorkspaceSyncModel {
           Log.sync.error(
             "Failed to adopt workspace \(workspace.id, privacy: .public): \(String(describing: error), privacy: .public)"
           )
-          continue
+          return WorkspaceAdoptionResult(
+            records: records, assignments: assignments, didMutateServer: didMutateServer, canReconcile: false)
         }
-      } else {
-        // Conflicting server memberships require an authoritative
-        // snapshot to settle; never guess and merge distinct workspaces.
-        continue
       }
 
       let sessions = chatIds.compactMap { chatId in
@@ -112,7 +112,10 @@ extension WorkspaceSyncModel {
         }
       }
 
-      for session in sessions where assignments[session.id] != targetWorkspaceId {
+      for session in sessions
+      where assignments[session.id] != targetWorkspaceId
+        && (assignedTargets.count <= 1 || assignments[session.id] == nil)
+      {
         do {
           _ = try await client.upsertSession(
             session,
@@ -229,7 +232,7 @@ extension WorkspaceSyncModel {
         Self.panePublicationKey(serverId: serverId, paneId: paneId)
       )
     }
-    for workspace in repository.loadAll() where workspace.serverId == serverId {
+    for workspace in repository.loadAll() where workspace.serverId == serverId && !workspace.isServerSynced {
       let assignedTargets = Set(workspace.chatSessionIds.compactMap { assignments[$0] })
       let targetWorkspaceId: UUID?
       if assignedTargets.count == 1 {
@@ -254,7 +257,7 @@ extension WorkspaceSyncModel {
         do {
           let candidate = Self.serverPane(
             from: pane,
-            workspaceId: targetWorkspaceId,
+            workspaceId: pane.chatSessionId.flatMap { assignments[$0] } ?? targetWorkspaceId,
             createdAt: workspace.createdAt
           )
           if let uploaded = try await client.upsertWorkspacePane(candidate) {

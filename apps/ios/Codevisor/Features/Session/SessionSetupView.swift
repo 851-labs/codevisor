@@ -38,7 +38,7 @@ private struct SessionSetupPhaseView: View {
   }
 
   private var hasDetail: Bool {
-    !phase.logs.isEmpty || phase.failureMessage != nil
+    !phase.logs.isEmpty || phase.failureMessage != nil || phase.logResource != nil
   }
 
   var body: some View {
@@ -74,7 +74,9 @@ private struct SessionSetupPhaseView: View {
             }
             .foregroundStyle(theme.statusError)
           }
-          if !phase.logs.isEmpty {
+          if let resource = phase.logResource {
+            TranscriptBodyView(resource: resource)
+          } else if !phase.logs.isEmpty {
             PlainOutputView(
               title: "Logs",
               text: phase.logs.map(\.text).joined(separator: "\n"),

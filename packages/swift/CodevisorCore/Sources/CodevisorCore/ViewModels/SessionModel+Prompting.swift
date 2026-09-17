@@ -261,9 +261,6 @@ extension SessionModel {
     isFlushScheduled = false
     let outcome = await loadHistoryForConnectionRecovery()
     guard case .loaded = outcome else {
-      // Keep live events buffered if the initial historical baseline is
-      // still missing. A retry must install those details before its suffix.
-      isActiveTranscriptHydrationPending = activeDeferredDetailItemId != nil
       // The cursor-backed socket is independently self-healing. Keep it
       // alive between snapshot retries so a failed GET never strands the
       // chat or hides events that resume meanwhile.

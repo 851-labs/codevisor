@@ -5,7 +5,11 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
 import { jsonRequest, makeServices, run, start, tempDirs } from "../test-support.js"
-import { backfillProjectRepoUrls, resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
+import {
+  backfillProjectRepoUrls,
+  reconcileProjectRepoUrls,
+  resetRepoUrlDiscoveryCache
+} from "./project-repo-identity.js"
 import { makeEventFanout } from "../server-context.js"
 
 const execFileAsync = promisify(execFile)
@@ -14,6 +18,39 @@ const execFileAsync = promisify(execFile)
 /// folder, normalized into a repo key, backfilled for older rows — and never
 /// mistaken for the repository a scratch folder happens to be nested in.
 describe("project repo identity", () => {
+  it("refreshes persisted navigation when a plain folder becomes a repository", async () => {
+    const { services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-navigation-git-"))
+    tempDirs.push(folder)
+    const project = await run(services.db.createProject({ folderPath: folder }))
+    const before = await run(services.db.getNavigationSnapshot)
+    expect(before.projects[0]?.locations[0]?.isGitRepository).toBe(false)
+    await execFileAsync("git", ["init"], { cwd: folder })
+    const reconciled = await reconcileProjectRepoUrls(services.db, "server-a", [
+      {
+        ...project,
+        locations: [
+          ...project.locations,
+          { ...project.locations[0]!, id: "remote-location", serverId: "remote" }
+        ]
+      }
+    ])
+    expect(reconciled[0]!.locations[1]!.id).toBe("remote-location")
+    const fanout = await run(makeEventFanout)
+    await Promise.all([
+      backfillProjectRepoUrls(services.db, "server-a", fanout),
+      backfillProjectRepoUrls(services.db, "server-a", fanout)
+    ])
+    const after = await run(services.db.getNavigationSnapshot)
+    expect(after.projects[0]?.locations[0]?.isGitRepository).toBe(true)
+    const replay = await run(services.db.readSyncBatch(before.eventCursor))
+    expect(
+      replay.events.find((event) => event.kind === "navigation.changed")?.payload
+    ).toMatchObject({
+      projects: [{ id: project.id, locations: [{ isGitRepository: true }] }]
+    })
+  })
+
   it("records a folder project's git remote at creation and derives its repo key", async () => {
     const { server } = await start()
     const repo = mkdtempSync(join(tmpdir(), "codevisor-remote-"))

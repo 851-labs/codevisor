@@ -126,6 +126,8 @@ extension SessionController {
     }
 
     if let model {
+      await applyPendingRuntimeConfiguration(to: model)
+      await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -146,6 +148,8 @@ extension SessionController {
       self.model = model
       setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
       status = .idle
+      await applyPendingRuntimeConfiguration(to: model)
+      await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
@@ -337,6 +341,7 @@ extension SessionController {
 
   public func setMode(_ modeId: String) async {
     if let model {
+      pendingModeId = nil
       await model.setMode(modeId)
     } else {
       pendingModeId = modeId

@@ -67,22 +67,16 @@ extension ProjectListModel {
     serverId: String,
     client: any CodevisorServerClienting
   ) async throws -> PreparedServerNavigationSnapshot {
-    async let projectRecords = client.listProjects()
-    async let sessionRecords = client.listSessions()
-    let (remoteProjectRecords, remoteSessionRecords) = try await (
-      projectRecords,
-      sessionRecords
-    )
+    let snapshot = try await client.navigationSnapshot()
     return await ServerNavigationSnapshotBuilder.build(
-      projects: remoteProjectRecords,
-      sessions: remoteSessionRecords,
-      serverId: serverId
-    )
+      projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
+
   }
 
   func commitSnapshot(
     _ prepared: PreparedServerNavigationSnapshot,
-    serverId: String
+    serverId: String,
+    origin: SessionAttentionTransition.Origin = .snapshot
   ) {
     for failure in prepared.failures {
       Log.sync.error(
@@ -111,7 +105,7 @@ extension ProjectListModel {
       emitAttentionTransitions(
         from: previousSessions,
         to: nextSessions,
-        origin: .snapshot
+        origin: origin
       )
     }
   }

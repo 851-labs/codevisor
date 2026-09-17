@@ -258,8 +258,13 @@ extension MachineControllerCloudTests {
         "createdAt":"2026-06-30T00:00:01.000Z",
         "updatedAt":"2026-06-30T00:00:02.000Z","usage":null}]
       """
+    provider.requestTransport.responsesByPath["/v1/navigation"] = """
+      {"eventCursor":0,"projects":\(provider.requestTransport.responsesByPath["/v1/projects"]!),
+      "sessions":\(provider.requestTransport.responsesByPath["/v1/sessions"]!),"workspaces":[],"panes":[]}
+      """
     let sessionsGate = TestSignal()
-    provider.requestTransport.gatesByPath["/v1/sessions"] = sessionsGate
+    provider.requestTransport.gatesByPath["/v1/navigation"] = sessionsGate
+
     var connectedMachineIds: [String] = []
     controller.onMachineConnected = { connectedMachineIds.append($0) }
 
@@ -267,8 +272,8 @@ extension MachineControllerCloudTests {
     // fetch. The configured local probe then discovers both ids are the
     // same device and prunes the twin while that fetch is suspended.
     let connect = Task { await controller.connectMachine(twinId) }
-    await awaitObserved { provider.requestTransport.requestCount(for: "/v1/sessions") == 1 }
-    #expect(provider.requestTransport.requestCount(for: "/v1/sessions") == 1)
+    await awaitObserved { provider.requestTransport.requestCount(for: "/v1/navigation") == 1 }
+    #expect(provider.requestTransport.requestCount(for: "/v1/navigation") == 1)
 
     await controller.refreshStatus(for: "local")
     sessionsGate.signal()

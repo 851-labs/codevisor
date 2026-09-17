@@ -1,3 +1,4 @@
+import { projectTranscriptState } from "./transcript-state.js"
 import type { AttachmentRef } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import {
@@ -40,7 +41,7 @@ export const projectChatEvent = (
     const update = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : undefined
     if (update === "assistant_message_finalized" && typeof payload.markdown === "string") {
       itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
-      upsertChatPart(sqlite, itemId, "text", payload.markdown)
+      upsertChatPart(sqlite, itemId, "text", payload.markdown.slice(0, 24_000))
       const attachments = Array.isArray(payload.attachments)
         ? (payload.attachments as ReadonlyArray<AttachmentRef>)
         : undefined
@@ -89,15 +90,6 @@ export const projectChatEvent = (
         itemId = ensureAssistantChatItem(sqlite, sessionId, event.created_at)
         sqlite
           .prepare(
-            `insert into chat_parts (id, item_id, position, kind, text, data_json, revision)
-           values (?, ?, 0, 'text', ?, null, 1)
-           on conflict(item_id, position) do update set
-             text = coalesce(chat_parts.text, '') || excluded.text,
-             revision = chat_parts.revision + 1`
-          )
-          .run(`${itemId}:text`, itemId, conversation.text)
-        sqlite
-          .prepare(
             `update chat_items set message_id = coalesce(message_id, ?), updated_at = ?,
            revision = revision + 1 where id = ?`
           )
@@ -127,7 +119,7 @@ export const projectChatEvent = (
             )
             .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
           if (update === "plan_document" && typeof payload.markdown === "string") {
-            upsertChatPart(sqlite, itemId, "plan", payload.markdown)
+            upsertChatPart(sqlite, itemId, "plan", payload.markdown.slice(0, 24_000))
           }
           if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
           const image =
@@ -283,6 +275,7 @@ export const projectChatEvent = (
         sessionId
       )
   }
+  projectTranscriptState(sqlite, event, itemId, payload)
   return itemId
 }
 

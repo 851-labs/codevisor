@@ -248,6 +248,10 @@ struct SessionTranscriptView: View {
         }
         return try await controller.fileData(for: source)
       },
+      fetchPreview: { [weak controller] source in
+        guard let controller else { throw SessionControllerError.serverUnavailable }
+        return try await controller.filePreview(for: source)
+      },
       version: { [weak controller] source in
         guard let controller else {
           throw SessionControllerError.serverUnavailable

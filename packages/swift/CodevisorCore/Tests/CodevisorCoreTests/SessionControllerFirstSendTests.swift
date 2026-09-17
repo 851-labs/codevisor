@@ -157,6 +157,46 @@ struct SessionControllerFirstSendTests {
     fixture.controller.model?.shutdown()
   }
 
+  @Test("Opening history retains draft selections without waking the provider; send applies them in order")
+  func openingDefersRuntimeMutationsUntilSend() async throws {
+    let fixture = try Fixture()
+    let controller = fixture.controller
+    controller.serverSession = ChatSession(
+      id: fixture.sessionID, projectId: controller.project.id,
+      serverId: controller.project.serverId, harnessId: "codex",
+      title: "Existing chat", createdAt: Date(timeIntervalSince1970: 0)
+    )
+    controller.configOptionsByHarness["codex"] = [
+      SessionConfigOption(
+        id: "model", name: "Model", category: "model", currentValue: "old",
+        options: [SessionConfigSelectOption(value: "new", name: "New")]
+      ),
+      SessionConfigOption(
+        id: "effort", name: "Effort", category: "thought_level", currentValue: "low",
+        options: [SessionConfigSelectOption(value: "high", name: "High")]
+      ),
+      SessionConfigOption(
+        id: "speed", name: "Speed", category: "speed", currentValue: "standard",
+        options: [SessionConfigSelectOption(value: "fast", name: "Fast")]
+      ),
+    ]
+    controller.pendingConfigByHarness["codex"] = ["speed": "fast", "effort": "high", "model": "new"]
+    controller.pendingModeId = "plan"
+    controller.model = try await controller.connect(harnessId: "codex")
+    defer { controller.model?.shutdown() }
+
+    #expect(fixture.client.runtimeRequests.isEmpty)
+    #expect(controller.modelOption?.currentValue == "new")
+    #expect(controller.pendingModeId == "plan")
+    await controller.send()
+    #expect(
+      fixture.client.runtimeRequests == [
+        "mode:plan", "config:model:new", "config:effort:high", "config:speed:fast", "prompt",
+      ])
+    #expect(controller.pendingConfigByHarness["codex"] == nil)
+    #expect(controller.pendingModeId == nil)
+  }
+
   private func userMessages(in controller: SessionController) -> [UserMessage] {
     controller.conversation.compactMap { item in
       if case let .user(message) = item { return message }
@@ -194,7 +234,10 @@ struct SessionControllerFirstSendTests {
             "serverId": "local", "harnessId": "codex", "title": "Draft",
             "origin": "codevisor", "isArchived": false, "createdAt": "2026-09-08T17:45:00Z",
           ],
-          "transcript": ["items": [], "hasMore": false, "eventCursor": 0],
+          "transcript": [
+            "items": [], "setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore": false,
+            "eventCursor": 0,
+          ],
         ])
       )
       controller = SessionController(

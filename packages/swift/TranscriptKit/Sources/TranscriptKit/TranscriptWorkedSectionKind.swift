@@ -153,7 +153,7 @@ extension TranscriptAssistantRowProjection {
     // Deferred history starts loading from the header indicator. Until
     // hydration completes there is deliberately no content row: opening
     // changes neither document geometry nor the header's line height.
-    if deferredDetailID != nil {
+    if deferredDetailID != nil && !message.turn.hasHydratedWorkedDetails {
       return true
     }
 
@@ -161,6 +161,12 @@ extension TranscriptAssistantRowProjection {
       switch item {
       case let .text(entryID, markdown):
         let sourceID = "worked:\(kind.layoutComponent):\(entryID)"
+        if let resource = message.turn.textStates[":\(entryID)"]?.resource {
+          appendBodyResource(
+            resource, messageID: message.id, sourceID: sourceID, lifecycle: lifecycle,
+            membership: .init(identity: identity, role: .content), preview: markdown, to: &rows)
+          continue
+        }
         let blocks = TranscriptMarkdownParseCache.shared.parse(
           markdown, messageID: message.id, sourceID: sourceID
         )

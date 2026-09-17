@@ -189,15 +189,7 @@ extension CodevisorServerClient {
   }
 
   public func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? {
-    do {
-      return try await send(
-        "/v1/sessions/\(id.uuidString)/connect",
-        method: "POST",
-        body: Optional<EmptyBody>.none
-      )
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return nil
-    }
+    try await send("/v1/sessions/\(id.uuidString)/connect", method: "POST", body: Optional<EmptyBody>.none)
   }
 
   public func openSession(
@@ -219,22 +211,16 @@ extension CodevisorServerClient {
     workspaceId: UUID?,
     transcriptLimit: Int
   ) async throws -> ServerSessionOpenResponse? {
-    do {
-      return try await send(
-        "/v1/sessions/\(session.id.uuidString)/open",
-        method: "POST",
-        body: OpenSessionBody(
-          session: session,
-          project: project,
-          workspaceId: workspaceId,
-          transcriptLimit: transcriptLimit
-        )
+    return try await send(
+      "/v1/sessions/\(session.id.uuidString)/open",
+      method: "POST",
+      body: OpenSessionBody(
+        session: session,
+        project: project,
+        workspaceId: workspaceId,
+        transcriptLimit: transcriptLimit
       )
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      // Additive protocol compatibility: an older server routes nothing
-      // at /open — the caller repeats the work as discrete calls.
-      return nil
-    }
+    )
   }
 
   public func transcriptPage(id: UUID, before: String?, limit: Int = 32) async throws -> ServerTranscriptPage {
@@ -251,11 +237,24 @@ extension CodevisorServerClient {
   public func transcriptItemDetails(
     id: UUID,
     itemId: String,
-    throughRevision: Int?
+    after: String?
   ) async throws -> ServerTranscriptItemDetails {
     let encoded = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
-    let suffix = throughRevision.map { "?through=\($0)" } ?? ""
+    let suffix = after.map { "?after=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
     return try await get("/v1/sessions/\(id.uuidString)/transcript/\(encoded)/details\(suffix)")
+  }
+
+  public func transcriptBodyPage(
+    id: UUID, itemId: String, key: String, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage {
+    var components = URLComponents()
+    components.path = "/v1/sessions/\(id.uuidString)/transcript/\(itemId)/body"
+    components.queryItems = [
+      URLQueryItem(name: "key", value: key), URLQueryItem(name: "field", value: field),
+      URLQueryItem(name: "position", value: String(position)),
+    ]
+    guard let path = components.string else { throw CodevisorServerClientError.invalidResponse }
+    return try await get(path)
   }
 
   public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
@@ -405,6 +404,20 @@ extension CodevisorServerClient {
       contentType: mimeType
     )
     return try decoder.decode(ServerFileMetadata.self, from: response)
+  }
+
+  public func filePreview(id: String) async throws -> Data {
+    let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+    return try await performRaw("/v1/files/\(encoded)?preview=1", method: "GET", body: nil, contentType: nil)
+  }
+
+  public func filePreview(path: String, sessionId: UUID?) async throws -> Data {
+    var components = URLComponents()
+    components.path = "/v1/fs/file"
+    components.queryItems = [URLQueryItem(name: "path", value: path), URLQueryItem(name: "preview", value: "1")]
+    if let sessionId { components.queryItems?.append(URLQueryItem(name: "sessionId", value: sessionId.uuidString)) }
+    guard let requestPath = components.string else { throw CodevisorServerClientError.invalidResponse }
+    return try await performRaw(requestPath, method: "GET", body: nil, contentType: nil)
   }
 
   public func fileData(id: String) async throws -> Data {

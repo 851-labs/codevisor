@@ -175,7 +175,7 @@ describe("@codevisor/db", () => {
     ])
   })
 
-  it("exposes the streaming answer candidate's messageId until the item completes", async () => {
+  it("preserves stable answer identities across streaming and completion", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/streaming-message-id" }))
@@ -215,7 +215,7 @@ describe("@codevisor/db", () => {
       messageId: "msg-1"
     })
 
-    // An answer candidate without provider identity has no id to hand back.
+    // Anonymous spans receive a stable server identity.
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
@@ -224,14 +224,13 @@ describe("@codevisor/db", () => {
     )
     expect(
       (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)?.messageId
-    ).toBeUndefined()
+    ).toMatch(/^text:/)
 
-    // Completed items render from accumulated parts with no live
-    // continuation, so they never carry a messageId.
+    // Completion keeps the same stable identity.
     await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
     const completed = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)
     expect(completed?.isGenerating).toBe(false)
-    expect(completed?.messageId).toBeUndefined()
+    expect(completed?.messageId).toMatch(/^text:/)
     await run(db.close)
   })
 

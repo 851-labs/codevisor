@@ -72,16 +72,12 @@ describe("session transcript routes", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "session.output",
-          payload: expect.objectContaining({ sessionUpdate: "agent_message_chunk" })
+          payload: expect.objectContaining({ sessionUpdate: "agent_message_patch" })
         })
       ])
     )
-    // The per-session history endpoint returns only this session's envelopes.
-    const historyResponse = await jsonRequest(server, `/v1/sessions/${session.id}/events`)
-    expect(historyResponse.status).toBe(200)
-    const history = historyResponse.body as Array<{ subjectId: string; kind: string }>
-    expect(history.length).toBeGreaterThan(0)
-    expect(history.every((event) => event.subjectId === session.id)).toBe(true)
+    // Event replay is a bounded delivery protocol, never the history API.
+    expect((await jsonRequest(server, `/v1/sessions/${session.id}/events`)).status).toBe(410)
     const scopedReplay = (await readWebSocketEvents(
       server,
       2,
@@ -112,13 +108,7 @@ describe("session transcript routes", () => {
     )
     expect(transcriptDetails.status).toBe(200)
     expect(transcriptDetails.body).toMatchObject({ itemId: assistantTranscriptItem.id })
-    expect(
-      (
-        transcriptDetails.body as {
-          events: Array<{ subjectId: string }>
-        }
-      ).events.every((event) => event.subjectId === session.id)
-    ).toBe(true)
+    expect((transcriptDetails.body as { entries: unknown[] }).entries.length).toBeGreaterThan(0)
     expect(
       await jsonRequest(server, `/v1/sessions/${session.id}/transcript?before=wat`)
     ).toMatchObject({ status: 400 })
@@ -137,13 +127,13 @@ describe("session transcript routes", () => {
     expect(
       await jsonRequest(
         server,
-        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?through=wat`
+        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?after=wat`
       )
     ).toMatchObject({ status: 400 })
     expect(
       await jsonRequest(
         server,
-        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?through=-1`
+        `/v1/sessions/${session.id}/transcript/${assistantTranscriptItem.id}/details?after=-1`
       )
     ).toMatchObject({ status: 400 })
   })

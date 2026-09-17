@@ -52,12 +52,7 @@ struct NavigationEventRecoveryTests {
 
   @Test(
     "Navigation event refresh failures recover without losing the consumed event",
-    arguments: [
-      "workspace.updated", "workspace.pane.updated", "workspace.pane.deleted",
-      "project.created", "project.updated", "worktree.created",
-      "session.created", "session.updated", "session.attention.updated",
-      "session.archived", "session.unarchived",
-    ])
+    arguments: ["navigation.changed"])
   func eventRefreshRecovery(kind: String) async throws {
     let clock = TestClock()
     let fixture = WorkspaceEventFixture(navigationClock: clock)
@@ -72,12 +67,6 @@ struct NavigationEventRecoveryTests {
     fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
     await handled.wait()
 
-    if !kind.hasPrefix("workspace.") {
-      await clock.waitForSleep(.milliseconds(300))
-      let refresh = try #require(connection.pendingRefreshTask)
-      clock.advance(by: .milliseconds(300))
-      await refresh.value
-    }
     guard case .stale = connection.navigationSyncState else {
       Issue.record("The failed event refresh must report stale navigation")
       return
@@ -191,7 +180,7 @@ struct NavigationEventRecoveryTests {
     #expect(clock.pendingCount == 0)
   }
 
-  @Test("Older servers without workspace endpoints still finish navigation sync")
+  @Test("An empty authoritative navigation snapshot removes vanished server workspaces")
   func olderServerCompatibility() async {
     let fixture = WorkspaceEventFixture()
     defer { fixture.controller.stopEventSync() }
@@ -199,13 +188,13 @@ struct NavigationEventRecoveryTests {
       serverId: fixture.serverId, client: FakeServerClient(), presentation: .background
     )
     #expect(fixture.controller.connection(for: fixture.serverId).navigationSyncState == .current)
-    #expect(fixture.repository.workspace(id: fixture.workspace.id) == fixture.workspace)
+    #expect(fixture.repository.workspace(id: fixture.workspace.id) == nil)
   }
 
   private func archivedSnapshot(_ fixture: WorkspaceEventFixture) -> ServerWorkspaceSnapshot {
     var workspace = WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)
     workspace.isArchived = true
-    return ServerWorkspaceSnapshot(workspaces: [workspace], panes: [])
+    return ServerWorkspaceSnapshot(workspaces: [workspace], panes: fixture.fake.workspacePanes ?? [])
   }
 
   private func stop(_ fixture: WorkspaceEventFixture) async {

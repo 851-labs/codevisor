@@ -34,8 +34,7 @@ import {
   configSelectionsFromOptions,
   createSessionIfMissing,
   ensureAgentSessionFor,
-  findSession,
-  sessionHistoryEventsWithSetup
+  findSession
 } from "./session-workspace.js"
 import { MAX_PROMPT_ATTACHMENTS } from "./sessions.js"
 import { withUpdateGate } from "./update-gate.js"
@@ -59,13 +58,7 @@ export const routeSessionActions = async (
     return true
   }
 
-  // One-round-trip chat open: ensure the project and session records exist
-  // and return the first transcript page together, replacing the client's
-  // listProjects → createProject → listSessions → create/update → transcript
-  // waterfall. Deliberately does NOT touch the agent runtime — clients call
-  // /connect in parallel so the transcript can paint while the agent process
-  // is still spawning. Older clients keep using the discrete routes; newer
-  // clients fall back to them when this route 404s on an older server.
+  // History and saved configuration are independent of the provider process.
   const openSessionId = matchRoute(url.pathname, "/v1/sessions/:id/open")
   if (openSessionId !== undefined && request.method === "POST") {
     const payload = await readSchema(request, OpenSessionRequestSchema)
@@ -110,15 +103,28 @@ export const routeSessionActions = async (
       routeState,
       openSessionId
     )
-    writeJson(response, 200, { session, transcript })
+    const runtime = await run(services.db.getSessionRuntimeState(openSessionId))
+    writeJson(response, 200, { session, transcript, runtime })
     return true
   }
 
   const transcriptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/transcript")
   if (transcriptSessionId !== undefined && request.method === "GET") {
     const rawBefore = url.searchParams.get("before")
-    const before = rawBefore === null ? undefined : Number(rawBefore)
-    if (before !== undefined && (!Number.isSafeInteger(before) || before < 0)) {
+    const byId =
+      rawBefore?.startsWith("after-id:") === true || rawBefore?.startsWith("before-id:") === true
+    const forward =
+      rawBefore?.startsWith("after:") === true || rawBefore?.startsWith("after-id:") === true
+    const before =
+      rawBefore === null
+        ? undefined
+        : byId
+          ? rawBefore.slice(rawBefore.indexOf(":") + 1)
+          : Number(forward ? rawBefore.slice(6) : rawBefore)
+    if (
+      (typeof before === "number" && (!Number.isSafeInteger(before) || before < 0)) ||
+      (typeof before === "string" && !/^[a-fA-F0-9-]{36}$/.test(before))
+    ) {
       throw new HttpFailure(400, "Invalid transcript cursor")
     }
     const rawLimit = url.searchParams.get("limit")
@@ -130,12 +136,27 @@ export const routeSessionActions = async (
       response,
       200,
       withUpdateGate(
-        await run(services.db.getTranscriptPage(transcriptSessionId, before, limit)),
+        await run(services.db.getTranscriptPage(transcriptSessionId, before, limit, forward)),
         services,
         routeState,
         transcriptSessionId
       )
     )
+    return true
+  }
+
+  const transcriptBody = matchRouteParams(url.pathname, "/v1/sessions/:id/transcript/:itemId/body")
+  if (transcriptBody !== undefined && request.method === "GET") {
+    const { id, itemId } = transcriptBody as { readonly id: string; readonly itemId: string }
+    const key = url.searchParams.get("key")
+    const field = url.searchParams.get("field")
+    const position = Number(url.searchParams.get("position") ?? "0")
+    if (key === null || field === null || !Number.isSafeInteger(position) || position < 0) {
+      throw new HttpFailure(400, "Invalid transcript body cursor")
+    }
+    const page = await run(services.db.getTranscriptBodyPage(id, itemId, key, field, position))
+    if (page === undefined) throw new HttpFailure(404, "Transcript body not found")
+    writeJson(response, 200, page)
     return true
   }
 
@@ -145,12 +166,26 @@ export const routeSessionActions = async (
   )
   if (transcriptDetails !== undefined && request.method === "GET") {
     const { id, itemId } = transcriptDetails as { readonly id: string; readonly itemId: string }
-    const rawThrough = url.searchParams.get("through")
-    const through = rawThrough === null ? undefined : Number(rawThrough)
-    if (through !== undefined && (!Number.isSafeInteger(through) || through < 0)) {
-      throw new HttpFailure(400, "Invalid transcript detail cursor")
+    const after = url.searchParams.get("after") ?? undefined
+    if (after !== undefined) {
+      try {
+        const cursor = JSON.parse(Buffer.from(after, "base64url").toString()) as {
+          position?: unknown
+          key?: unknown
+          reverse?: unknown
+        }
+        if (
+          !Number.isSafeInteger(cursor.position) ||
+          typeof cursor.key !== "string" ||
+          (cursor.reverse !== undefined && typeof cursor.reverse !== "boolean")
+        )
+          throw new Error("Invalid cursor")
+      } catch {
+        writeJson(response, 400, { error: "Invalid transcript detail cursor" })
+        return true
+      }
     }
-    const details = await run(services.db.getTranscriptItemDetails(id, itemId, through))
+    const details = await run(services.db.getTranscriptItemDetails(id, itemId, after))
     if (details === undefined) {
       throw new HttpFailure(404, `Transcript item not found: ${itemId}`)
     }
@@ -171,17 +206,11 @@ export const routeSessionActions = async (
     return true
   }
 
-  // Full persisted event history for one session — the client replays these
-  // through its live pipeline to rebuild rich transcripts (tool calls, diffs)
-  // that the text-only conversation snapshot cannot carry.
+  // Delivery journals are never a history API. Clients open the persisted
+  // transcript and subscribe after its revision.
   const eventsSessionId = matchRoute(url.pathname, "/v1/sessions/:id/events")
   if (eventsSessionId !== undefined && request.method === "GET") {
-    writeJson(
-      response,
-      200,
-      await sessionHistoryEventsWithSetup(services.db, config.id, eventsSessionId)
-    )
-    return true
+    throw new HttpFailure(410, "Use the paginated transcript endpoint and its event cursor")
   }
 
   const queueItemRoute = matchRouteParams(url.pathname, "/v1/sessions/:id/queue/:queueId")

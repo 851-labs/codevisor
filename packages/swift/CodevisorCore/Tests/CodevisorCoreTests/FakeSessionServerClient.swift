@@ -35,6 +35,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _eventContinuations: [AsyncThrowingStream<ServerEventEnvelope, any Error>.Continuation] = []
   private let lock = NSLock()
 
+  private var _runtimeRequests: [String] = []
+
+  var runtimeRequests: [String] { lock.withLock { _runtimeRequests } }
+
   private var _promptedTexts: [String] = []
   private var _promptedAttachments: [[ServerAttachmentRef]] = []
   private var _promptedMessageIds: [String?] = []
@@ -74,6 +78,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var historyEvents: [ServerEventEnvelope] = []
   var initialTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPage: ServerTranscriptPage?
+  let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
   /// When false, prompts are accepted without the scripted assistant echo,
   /// leaving the turn generating so tests can emit their own events.
@@ -302,19 +307,27 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     if shouldFail { throw URLError(.networkConnectionLost) }
     if before == nil, let initialTranscriptPage { return initialTranscriptPage }
     if before != nil, let olderTranscriptPage { return olderTranscriptPage }
-    throw CodevisorServerClientError.httpStatus(404, "")
+    return ServerTranscriptPage(
+      items: detailConversation.enumerated().map { index, item in
+        ServerTranscriptItem(
+          id: item.id, sessionId: sessionId.uuidString, sequence: index,
+          role: item.role == .assistant ? .assistant : .user, text: item.text,
+          createdAt: item.createdAt, updatedAt: item.createdAt, isGenerating: item.isGenerating,
+          hasDetails: false, attachments: item.attachments, messageId: item.messageId, revision: 1)
+      }, hasMore: false, eventCursor: detailCursor)
   }
 
   func transcriptItemDetails(
     id: UUID,
     itemId: String,
-    throughRevision: Int?
+    after: String?
   ) async throws -> ServerTranscriptItemDetails {
     let gate = lock.withLock {
       _transcriptDetailRequestCount += 1
-      _transcriptDetailThroughRevisions.append(throughRevision)
+      _transcriptDetailThroughRevisions.append(nil)
       return _transcriptDetailGate
     }
+    transcriptDetailRequests.signal()
     if let gate {
       for await _ in gate { break }
     }
@@ -414,7 +427,10 @@ extension FakeSessionServerClient {
   }
 
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
-    lock.withLock { _promptedTexts.append(text) }
+    lock.withLock {
+      _runtimeRequests.append("prompt")
+      _promptedTexts.append(text)
+    }
     promptRequests.signal()
     if let gate = lock.withLock({ _promptGate }) {
       for await _ in gate { break }
@@ -459,7 +475,9 @@ extension FakeSessionServerClient {
   func cancelSession(id: UUID) async throws {
     lock.withLock { _cancelCount += 1 }
   }
-  func setSessionMode(id: UUID, modeId: String) async throws {}
+  func setSessionMode(id: UUID, modeId: String) async throws {
+    lock.withLock { _runtimeRequests.append("mode:\(modeId)") }
+  }
 
   func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
     lock.withLock { _configUpdates.append(("browser-extension-installer", "open")) }
@@ -468,6 +486,7 @@ extension FakeSessionServerClient {
 
   func setSessionConfig(id: UUID, configId: String, value: String) async throws {
     let (gate, shouldFail) = lock.withLock {
+      _runtimeRequests.append("config:\(configId):\(value)")
       _configUpdates.append((configId, value))
       let shouldFail = _nextConfigUpdateShouldFail
       _nextConfigUpdateShouldFail = false

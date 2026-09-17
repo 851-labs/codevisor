@@ -1,9 +1,15 @@
-import type { AttachmentRef, MessagePhase, SessionGoal } from "@codevisor/api"
+import { transcriptTextResource } from "./transcript-bodies.js"
+import type {
+  AttachmentRef,
+  MessagePhase,
+  SessionGoal,
+  TranscriptBodyResource
+} from "@codevisor/api"
 import { SessionGoal as SessionGoalSchema } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
-import { jsonRecord, payloadText } from "./event-payloads.js"
+import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
 import { serializeAttachments } from "./row-mappers.js"
 
 export const chatState = (
@@ -91,8 +97,37 @@ export const createChatItem = (
       options.hasDetails === true ? 1 : 0,
       options.revision ?? 1
     )
-  if (options.text !== undefined) upsertChatPart(sqlite, id, "text", options.text)
-  if (options.planDocument !== undefined) upsertChatPart(sqlite, id, "plan", options.planDocument)
+  if (options.text !== undefined) {
+    const migrated =
+      sqlite
+        .prepare(
+          "select 1 from backfill_jobs where id = 'persisted-transcript-state-v1' and state = 'completed'"
+        )
+        .get() !== undefined
+    upsertChatPart(sqlite, id, "text", migrated ? options.text.slice(0, 24_000) : options.text)
+    seedStandaloneText(sqlite, id, options.text, options.messageId)
+  }
+  if (options.planDocument !== undefined) {
+    const migrated =
+      sqlite
+        .prepare(
+          "select 1 from backfill_jobs where id = 'persisted-transcript-state-v1' and state = 'completed'"
+        )
+        .get() !== undefined
+    upsertChatPart(
+      sqlite,
+      id,
+      "plan",
+      migrated ? options.planDocument.slice(0, 24_000) : options.planDocument
+    )
+    sqlite
+      .prepare(
+        `insert into transcript_entries(item_id, entry_key, position, revision, category, payload)
+      values (?, 'plan', 1, 0, 'plan', '{"sessionUpdate":"plan_document"}') on conflict do nothing`
+      )
+      .run(id)
+    appendTranscriptText(sqlite, id, "plan", options.planDocument, true)
+  }
   sqlite
     .prepare(
       `update session_chat_state set
@@ -162,111 +197,73 @@ export const ensureAssistantChatItem = (
 
 export const chatAssistantSummary = (
   sqlite: Database.Database,
-  sessionId: string,
+  _sessionId: string,
   itemId: string
-): { text: string; planDocument?: string; messageId?: string; phase?: MessagePhase } => {
-  const rows = sqlite
+): {
+  text: string
+  planDocument?: string
+  messageId?: string
+  phase?: MessagePhase
+  textGeneration?: number
+  textRevision?: number
+  textPosition?: number
+  textResource?: TranscriptBodyResource | undefined
+  planResource?: TranscriptBodyResource | undefined
+} => {
+  // Indexed state lookup; no provider log scan, including while a turn streams.
+  const row = sqlite
     .prepare(
-      `select payload from session_events
-       where session_id = ? and chat_item_id = ? and kind = 'session.output'
-       order by revision asc`
+      `select entry_key, payload, phase, revision, position from transcript_entries
+    where item_id = ? and parent_id = '' and category = 'text' and text_length > 0
+      and coalesce(phase, '') != 'commentary'
+    order by position desc limit 1`
     )
-    .all(sessionId, itemId) as ReadonlyArray<{ payload: string }>
-  const spans: Array<{ chunks: Array<string>; phase?: MessagePhase; messageId?: string }> = []
-  const indexById = new Map<string, number>()
-  let anonymous = 0
-  let planDocument: string | undefined
-  let finalized: { readonly markdown: string; readonly messageId?: string } | undefined
-  for (const row of rows) {
-    const payload = jsonRecord(JSON.parse(row.payload))
-    /* v8 ignore next -- session events are encoded from object payloads; this only guards manually corrupted rows. */
-    if (payload === undefined) continue
-    if (payload.sessionUpdate === "plan_document" && typeof payload.markdown === "string") {
-      planDocument = payload.markdown
-      continue
-    }
-    if (
-      payload.sessionUpdate === "assistant_message_finalized" &&
-      typeof payload.markdown === "string"
-    ) {
-      finalized = {
-        markdown: payload.markdown,
-        ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {})
+    .get(itemId) as
+    | {
+        entry_key: string
+        payload: string
+        phase: MessagePhase | null
+        revision: number
+        position: number
       }
-      continue
-    }
-    const direct = payload.role === "assistant" && typeof payload.text === "string"
-    if (
-      !direct &&
-      (payload.sessionUpdate !== "agent_message_chunk" ||
-        typeof payload.parentToolCallId === "string")
-    ) {
-      anonymous += 1
-      continue
-    }
-    /* v8 ignore next -- projected answer events always carry text; this only guards manually corrupted rows. */
-    const text = payloadText(payload) ?? ""
-    const suppliedMessageId = typeof payload.messageId === "string" ? payload.messageId : undefined
-    // A zero-length chunk can retroactively classify a previously streamed
-    // span. Keep it in the semantic summary even though it has no visible
-    // text; dropping it resurrects Claude preambles as final answers when a
-    // client reopens the chat after the following tool call has started.
-    if (text.length === 0 && suppliedMessageId === undefined) continue
-    const messageId = suppliedMessageId ?? `anonymous:${anonymous}`
-    let index = indexById.get(messageId)
-    if (index === undefined) {
-      index = spans.length
-      indexById.set(messageId, index)
-      // Anonymous spans have no provider identity to hand back to clients.
-      spans.push(suppliedMessageId === undefined ? { chunks: [] } : { chunks: [], messageId })
-    }
-    const span = spans[index]
-    /* v8 ignore next -- index is created from spans.length immediately before lookup. */
-    if (span === undefined) continue
-    if (text.length > 0) span.chunks.push(text)
-    if (payload.phase === "commentary" || payload.phase === "final") {
-      span.phase = payload.phase
-    }
-  }
-  const final = [...spans]
-    .reverse()
-    .find((span) => span.chunks.length > 0 && span.phase !== "commentary")
-  const messageId = finalized?.messageId ?? final?.messageId
-  const phase: MessagePhase | undefined = finalized === undefined ? final?.phase : "final"
+    | undefined
+  const payload =
+    row === undefined
+      ? undefined
+      : (JSON.parse(row.payload) as { messageId?: string; generation?: number })
+  const plan = sqlite
+    .prepare("select 1 from transcript_entries where item_id = ? and entry_key = 'plan'")
+    .get(itemId)
   return {
-    text: finalized?.markdown ?? final?.chunks.join("") ?? "",
-    ...(planDocument === undefined ? {} : { planDocument }),
-    ...(messageId === undefined ? {} : { messageId }),
-    ...(phase === undefined ? {} : { phase })
+    text: row === undefined ? "" : readTranscriptText(sqlite, itemId, row.entry_key, 24_000),
+    ...(plan === undefined
+      ? {}
+      : {
+          planResource: transcriptTextResource(sqlite, itemId, "plan"),
+          planDocument: readTranscriptText(sqlite, itemId, "plan", 24_000)
+        }),
+    ...(row === undefined
+      ? {}
+      : {
+          textResource: transcriptTextResource(sqlite, itemId, row.entry_key),
+          messageId: payload?.messageId ?? row.entry_key,
+          textGeneration: payload?.generation ?? 0,
+          textRevision: row.revision,
+          textPosition: row.position
+        }),
+    ...(row?.phase == null ? {} : { phase: row.phase })
   }
 }
 
-/// Goal updates live in the durable session log rather than the transcript
-/// projection. Snapshot the newest one alongside the transcript cursor so a
-/// client that opens after the update cannot skip it by subscribing from the
-/// newer cursor.
 export const sessionGoalSnapshot = (
   sqlite: Database.Database,
   sessionId: string
 ): SessionGoal | undefined => {
-  const row = sqlite
-    .prepare(
-      `select payload from session_events
-       where session_id = ? and kind = 'session.updated'
-         and (json_type(payload, '$.goal') = 'object'
-           or json_extract(payload, '$.goalCleared') = 1)
-       order by revision desc limit 1`
-    )
-    .get(sessionId) as { readonly payload: string } | undefined
-  if (row === undefined) return undefined
-  const payload = jsonRecord(JSON.parse(row.payload))
-  if (payload?.goalCleared === true) return undefined
-  try {
-    return Schema.decodeUnknownSync(SessionGoalSchema)(payload?.goal)
-  } catch {
-    /* v8 ignore next -- only manually corrupted session events can reach this path. */
-    return undefined
-  }
+  const row = sqlite.prepare("select goal_state from sessions where id = ?").get(sessionId) as
+    | { goal_state: string | null }
+    | undefined
+  if (row?.goal_state == null) return undefined
+  return Schema.decodeUnknownSync(SessionGoalSchema)(JSON.parse(row.goal_state))
 }
 
 export const finishAssistantChatItem = (
@@ -303,4 +300,30 @@ export const finishAssistantChatItem = (
       retryable ? 1 : 0,
       itemId
     )
+}
+
+/** Imports and user messages have no token stream to materialize them. */
+export const seedStandaloneText = (
+  db: Database.Database,
+  itemId: string,
+  text: string,
+  messageId?: string
+): void => {
+  if (text.length === 0) return
+  const key = messageId === undefined ? "imported-text" : `message::${messageId}`
+  const result = db
+    .prepare(
+      `insert into transcript_entries (item_id, entry_key, position, revision, category, payload)
+    values (?, ?, 0, 0, 'text', ?) on conflict(item_id, entry_key) do nothing`
+    )
+    .run(
+      itemId,
+      key,
+      JSON.stringify({
+        sessionUpdate: "agent_message_chunk",
+        messageId: messageId ?? key,
+        generation: 0
+      })
+    )
+  if (result.changes > 0) appendTranscriptText(db, itemId, key, text)
 }

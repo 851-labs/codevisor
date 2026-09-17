@@ -64,6 +64,7 @@ extension SessionController {
     else { return }
 
     if let model {
+      await applyPendingRuntimeConfiguration(to: model)
       guard await model.setGoal(objective: objective) else { return }
       isGoalComposerArmed = false
       isGoalEditing = false
@@ -117,9 +118,11 @@ extension SessionController {
     status = .connecting("Starting \(harness.name)…")
     if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
     do {
-      // connect applies the pending goal once the agent session exists.
+      // Opening saved state stays read-only; this explicit submission starts work.
       let model = try await connect(harnessId: harness.id)
       self.model = model
+      await applyPendingRuntimeConfiguration(to: model)
+      await applyPendingGoal(to: model)
       setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
       status = .idle
     } catch {
@@ -132,6 +135,7 @@ extension SessionController {
   @discardableResult
   public func setGoal(objective: String? = nil, status: GoalStatus? = nil) async -> Bool {
     if let model {
+      await applyPendingRuntimeConfiguration(to: model)
       return await model.setGoal(objective: objective, status: status)
     } else if let objective {
       pendingGoal = objective

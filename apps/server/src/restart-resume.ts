@@ -17,15 +17,13 @@ import {
 
 /// Sessions resumed at once after a restart. Deliberately small: the
 /// startup comment in server.ts explains why cold-starting every chat at
-/// boot starved /health; this only touches the sessions the drain snapshot
-/// named, a few at a time, after the listener is already up.
+/// boot starved /health; only durable work resumes after the listener is up.
 const RESUME_CONCURRENCY = 2
 
-/// The boot half of the restart drain: reconnects the sessions the previous
-/// process snapshotted (those with a live agent process or a held prompt at
-/// shutdown) through each harness's native resume, then drains any prompts
-/// that were held behind the gate. The snapshot is consumed first so a
-/// crash mid-resume never loops.
+/// The boot half of the restart drain: resumes queued prompts, active goals,
+/// and background tasks. Old snapshots also release their persisted gates,
+/// but an idle session is never reconnected merely because it was open.
+/// Consume the snapshot before reconnecting; durable work remains in SQLite.
 export const resumeSessionsAfterRestart = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -34,9 +32,10 @@ export const resumeSessionsAfterRestart = async (
   snapshot: RestartSnapshotStore,
   log: (line: string) => void = (line) => console.log(line)
 ): Promise<ReadonlyArray<string>> => {
-  const requested = snapshot.read()
+  const required = new Set(await run(services.db.listSessionsRequiringResume))
+  const requested = [...new Set([...(snapshot.read() ?? []), ...required])]
   snapshot.clear()
-  if (requested === undefined || requested.length === 0) return []
+  if (requested.length === 0) return []
   const sessions = await run(services.db.listSessions)
   const known = new Map(sessions.map((session) => [session.id, session]))
   // The previous process published `waiting` for every session it held and
@@ -59,6 +58,8 @@ export const resumeSessionsAfterRestart = async (
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
       const sessionId = next
       try {
+        const queued = await run(services.db.listPromptQueue(sessionId))
+        if (queued.length === 0 && !required.has(sessionId)) continue
         await ensureAgentSessionFor(services, fanout, serverId, sessionId)
         resumed.push(sessionId)
       } catch (cause) {

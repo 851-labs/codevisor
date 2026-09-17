@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 
 export const EventKind = Schema.Literals([
+  "navigation.changed",
   "project.created",
   "project.updated",
   "project.deleted",

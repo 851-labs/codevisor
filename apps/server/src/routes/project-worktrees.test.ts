@@ -150,11 +150,9 @@ describe("project worktree routes", () => {
       expect(
         mirroredSetupPayloads.map((event) => (event.payload as { state: string }).state)
       ).toEqual(setupPayloads.map((payload) => payload.state))
-      const mirroredSetupHistory = (
-        await jsonRequest(server, "/v1/sessions/session-awaiting-worktree/events")
-      ).body as ReadonlyArray<{ readonly kind: string; readonly subjectId: string }>
-      expect(mirroredSetupHistory).toHaveLength(mirroredSetupPayloads.length)
-      expect(mirroredSetupHistory.every((event) => event.kind === "worktree.setup")).toBe(true)
+      expect(
+        (await jsonRequest(server, "/v1/sessions/session-awaiting-worktree/events")).status
+      ).toBe(410)
 
       // Repeated custom names get a readable sequence number.
       const secondWorktree = (
@@ -231,9 +229,8 @@ describe("project worktree routes", () => {
       expect(session.worktreeName).toBe(worktree.name)
       expect(session.cwd).toBe(worktree.path)
       expect(agents.creations).toContainEqual(["codex", worktree.path])
-      const sessionHistory = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
-        .body as ReadonlyArray<{ readonly kind: string; readonly subjectId: string }>
-      expect(sessionHistory).toEqual(
+      const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
+      expect(page.setupActivities).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: "worktree.setup", subjectId: worktree.id })
         ])

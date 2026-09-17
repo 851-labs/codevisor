@@ -1,3 +1,9 @@
+import { sessionSetupState } from "./setup-state.js"
+import { transcriptTextResource } from "./transcript-bodies.js"
+import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
+import { readTranscriptStatePage } from "./transcript-state-pages.js"
+import { readTranscriptBodyPage } from "./transcript-bodies.js"
+import { Effect } from "effect"
 import { isoTimestamp } from "@codevisor/api"
 import {
   chatAssistantSummary,
@@ -7,20 +13,16 @@ import {
   sessionGoalSnapshot,
   setChatRoute
 } from "./chat-items.js"
-import { attempt } from "./errors.js"
+import { transcriptMarkdownContext } from "./transcript-markdown-context.js"
+import { DatabaseError, attempt } from "./errors.js"
 import {
   backgroundTasksFromRaw,
   pendingQuestionFromRaw,
   sessionPlanFromRaw
 } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
-import {
-  conversationFromRow,
-  listPromptQueueSync,
-  sessionEventFromRow,
-  transcriptFromChatRow
-} from "./row-mappers.js"
-import type { ChatItemRow, ConversationRow, SessionActionRow, SessionEventRow } from "./rows.js"
+import { listPromptQueueSync, transcriptFromChatRow } from "./row-mappers.js"
+import type { ChatItemRow, SessionActionRow } from "./rows.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
 
@@ -57,6 +59,7 @@ export const makeTranscriptService = (
   | "getSessionDetail"
   | "getTranscriptPage"
   | "getTranscriptItemDetails"
+  | "getTranscriptBodyPage"
   | "appendConversationItem"
   | "hasConversationMessage"
   | "hasTerminalAssistantAfterMessage"
@@ -67,148 +70,205 @@ export const makeTranscriptService = (
 > => {
   const { sqlite, getSession } = context
 
-  return {
+  const service: Pick<
+    CodevisorDatabaseService,
+    | "getSessionDetail"
+    | "getTranscriptPage"
+    | "getTranscriptItemDetails"
+    | "getTranscriptBodyPage"
+    | "appendConversationItem"
+    | "hasConversationMessage"
+    | "hasTerminalAssistantAfterMessage"
+    | "failStaleAssistantChatItems"
+    | "listQuietStreamingSessions"
+    | "getSessionActionResult"
+    | "saveSessionActionResult"
+  > = {
     getSessionDetail: (rawId) =>
-      attempt("getSessionDetail", () => {
-        const id = canonicalUuid(rawId)
-        const session = getSession(id)
-        const state = sqlite
-          .prepare(
-            `select revision as cursor, pending_question, background_tasks, session_plan
-             from sessions where id = ?`
-          )
-          .get(id) as {
-          readonly cursor: number
-          readonly pending_question: string | null
-          readonly background_tasks: string
-          readonly session_plan: string | null
-        }
-        const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
-        const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
-        const sessionPlan = sessionPlanFromRaw(state.session_plan)
-        const goal = sessionGoalSnapshot(sqlite, id)
-        return {
-          session,
-          conversation: sqlite
+      Effect.map(service.getTranscriptPage(rawId, undefined, 8), (page) => ({
+        ...page,
+        session: getSession(canonicalUuid(rawId)),
+        conversation: page.items.map((item) => ({
+          id: item.id,
+          role: item.role,
+          messageId: item.messageId,
+          text: item.text,
+          createdAt: item.createdAt,
+          isGenerating: item.isGenerating,
+          attachments: item.attachments
+        })),
+        promptQueue: listPromptQueueSync(sqlite, canonicalUuid(rawId))
+      })),
+    getTranscriptPage: (rawSessionId, rawBefore, limit, forward = false) =>
+      attempt("getTranscriptPage", () =>
+        sqlite.transaction(() => {
+          const sessionId = canonicalUuid(rawSessionId)
+          const session = getSession(sessionId)
+          const before =
+            typeof rawBefore === "string"
+              ? (
+                  sqlite
+                    .prepare(
+                      "select position from chat_items where session_id = ? and (id = ? or lower(message_id) = ?)"
+                    )
+                    .get(sessionId, canonicalUuid(rawBefore), canonicalUuid(rawBefore)) as
+                    | { position: number }
+                    | undefined
+                )?.position
+              : rawBefore
+          if (rawBefore !== undefined && before === undefined)
+            throw new Error("Transcript cursor item no longer exists")
+          const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
+          const rows = sqlite
             .prepare(
-              `select chat_items.id, chat_items.role, chat_items.message_id,
-                 coalesce((select text from chat_parts
-                   where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
-                 chat_items.created_at, case when chat_items.status = 'streaming' then 1 else 0 end as is_generating,
-                 chat_items.attachments
-               from chat_items
-               where session_id = ? and ${renderableChatItemPredicate}
-               order by position asc`
-            )
-            .all(id)
-            .map((row) => conversationFromRow(row as ConversationRow)),
-          promptQueue: listPromptQueueSync(sqlite, id),
-          eventCursor: Number(state.cursor),
-          ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
-          pendingPlanApproval: session.pendingPlanApproval === true,
-          backgroundTasks,
-          ...(goal === undefined ? {} : { goal }),
-          ...(sessionPlan === undefined ? {} : { sessionPlan })
-        }
-      }),
-    getTranscriptPage: (rawSessionId, before, limit) =>
-      attempt("getTranscriptPage", () => {
-        const sessionId = canonicalUuid(rawSessionId)
-        const session = getSession(sessionId)
-        const bounded = Math.max(1, Math.min(64, Math.trunc(limit)))
-        const rows = sqlite
-          .prepare(
-            `select chat_items.*,
-               coalesce((select text from chat_parts
+              `select chat_items.*,
+               coalesce((select substr(text, 1, 24000) from chat_parts
                  where item_id = chat_items.id and kind = 'text' order by position limit 1), '') as text,
-               (select text from chat_parts
+               (select substr(text, 1, 24000) from chat_parts
                  where item_id = chat_items.id and kind = 'plan' order by position limit 1) as plan_document
              from chat_items
              where session_id = ? and role in ('user', 'assistant')
                and ${renderableChatItemPredicate}
-               and (? is null or position < ?)
-             order by position desc limit ?`
-          )
-          .all(sessionId, before ?? null, before ?? null, bounded + 1) as ReadonlyArray<ChatItemRow>
-        const candidates = rows.slice(0, bounded)
-        const pageRows: ChatItemRow[] = []
-        let characters = 0
-        const maxCharacters =
-          bounded <= 8 ? maxInitialTranscriptPageCharacters : maxOlderTranscriptPageCharacters
-        for (const row of candidates) {
-          const rowCharacters = row.text.length + (row.plan_document?.length ?? 0)
-          if (pageRows.length > 0 && characters + rowCharacters > maxCharacters) {
-            break
+               and (? is null or position ${forward ? ">" : "<"} ?)
+             order by position ${forward ? "asc" : "desc"} limit ?`
+            )
+            .all(
+              sessionId,
+              before ?? null,
+              before ?? null,
+              bounded + 1
+            ) as ReadonlyArray<ChatItemRow>
+          const candidates = rows.slice(0, bounded)
+          const pageRows: ChatItemRow[] = []
+          let characters = 0
+          const maxCharacters =
+            bounded <= 8 ? maxInitialTranscriptPageCharacters : maxOlderTranscriptPageCharacters
+          for (const row of candidates) {
+            const rowCharacters = row.text.length + (row.plan_document?.length ?? 0)
+            if (pageRows.length > 0 && characters + rowCharacters > maxCharacters) {
+              break
+            }
+            pageRows.push(row)
+            characters += rowCharacters
           }
-          pageRows.push(row)
-          characters += rowCharacters
-        }
-        const hasMore = rows.length > pageRows.length
-        const items = [...pageRows].reverse().map((row) => {
-          const item = transcriptFromChatRow(row)
-          if (row.role !== "assistant" || row.status !== "streaming") return item
-          const summary = chatAssistantSummary(sqlite, sessionId, row.id)
-          return {
-            ...item,
-            text: summary.text,
-            ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
-            ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
-            ...(summary.phase === undefined ? {} : { phase: summary.phase })
-          }
-        })
-        const cursor = pageRows.at(-1)?.position
-        const state = sqlite
-          .prepare(
-            `select revision as cursor, pending_question, background_tasks, session_plan
+          const ordered = forward ? pageRows : [...pageRows].reverse()
+          const items = ordered.map((row) => {
+            const item = transcriptFromChatRow(row)
+            if (row.role !== "assistant") {
+              const entry = sqlite
+                .prepare(
+                  "select entry_key from transcript_entries where item_id = ? and category = 'text' order by position limit 1"
+                )
+                .get(row.id) as { entry_key: string } | undefined
+              return {
+                ...item,
+                ...(entry === undefined
+                  ? {}
+                  : { textResource: transcriptTextResource(sqlite, row.id, entry.entry_key) })
+              }
+            }
+            const summary = chatAssistantSummary(sqlite, sessionId, row.id)
+            return {
+              ...item,
+              text: summary.text,
+              textResource: summary.textResource,
+              planResource: summary.planResource,
+              textGeneration: summary.textGeneration,
+              textRevision: summary.textRevision,
+              textPosition: summary.textPosition,
+              ...(summary.planDocument === undefined ? {} : { planDocument: summary.planDocument }),
+              ...(summary.messageId === undefined ? {} : { messageId: summary.messageId }),
+              ...(summary.phase === undefined ? {} : { phase: summary.phase })
+            }
+          })
+          const first = ordered[0]?.position
+          const last = ordered.at(-1)?.position
+          const hasMore =
+            first !== undefined &&
+            sqlite
+              .prepare(
+                `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position < ? limit 1`
+              )
+              .get(sessionId, first) !== undefined
+          const hasNewer =
+            last !== undefined &&
+            sqlite
+              .prepare(
+                `select 1 from chat_items where session_id = ?
+          and ${renderableChatItemPredicate} and position > ? limit 1`
+              )
+              .get(sessionId, last) !== undefined
+          const state = sqlite
+            .prepare(
+              `select revision as cursor, pending_question, background_tasks, session_plan
              from sessions where id = ?`
+            )
+            .get(sessionId) as {
+            readonly cursor: number
+            readonly pending_question: string | null
+            readonly background_tasks: string
+            readonly session_plan: string | null
+          }
+          const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
+          const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
+          const sessionPlan = sessionPlanFromRaw(state.session_plan)
+          const goal = sessionGoalSnapshot(sqlite, sessionId)
+          return {
+            items,
+            setupActivities: sessionSetupState(sqlite, sessionId),
+            ...(hasMore ? { nextBefore: String(first!) } : {}),
+            ...(last === undefined ? {} : { nextAfter: `after:${last}` }),
+            hasNewer,
+            hasMore,
+            eventCursor: Number(state.cursor),
+            stateUpdates: (
+              sqlite
+                .prepare(
+                  `select payload from session_state where session_id = ?
+            and state_key in ('available_commands_update', 'config_option_update', 'current_mode_update')`
+                )
+                .all(sessionId) as Array<{ payload: string }>
+            ).map((row) => JSON.parse(row.payload) as unknown),
+            ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
+            pendingPlanApproval: session.pendingPlanApproval === true,
+            backgroundTasks,
+            ...(goal === undefined ? {} : { goal }),
+            ...(sessionPlan === undefined ? {} : { sessionPlan }),
+            usage: session.usage
+          }
+        })()
+      ),
+    getTranscriptItemDetails: (rawSessionId, itemId, after) =>
+      attempt("getTranscriptItemDetails", () =>
+        readTranscriptStatePage(sqlite, canonicalUuid(rawSessionId), itemId, after)
+      ),
+    getTranscriptBodyPage: (sessionId, itemId, key, field, position) =>
+      Effect.tryPromise({
+        try: async () => {
+          const id = canonicalUuid(sessionId)
+          const page = readTranscriptBodyPage(sqlite, id, itemId, key, field, position)
+          if (
+            page === undefined ||
+            field !== "text" ||
+            position === 0 ||
+            itemId.startsWith("setup:")
           )
-          .get(sessionId) as {
-          readonly cursor: number
-          readonly pending_question: string | null
-          readonly background_tasks: string
-          readonly session_plan: string | null
-        }
-        const pendingQuestion = pendingQuestionFromRaw(state.pending_question)
-        const backgroundTasks = backgroundTasksFromRaw(state.background_tasks)
-        const sessionPlan = sessionPlanFromRaw(state.session_plan)
-        const goal = sessionGoalSnapshot(sqlite, sessionId)
-        return {
-          items,
-          ...(hasMore ? { nextBefore: String(cursor!) } : {}),
-          hasMore,
-          eventCursor: Number(state.cursor),
-          ...(pendingQuestion === undefined ? {} : { pendingQuestion }),
-          pendingPlanApproval: session.pendingPlanApproval === true,
-          backgroundTasks,
-          ...(goal === undefined ? {} : { goal }),
-          ...(sessionPlan === undefined ? {} : { sessionPlan }),
-          usage: session.usage
-        }
-      }),
-    getTranscriptItemDetails: (rawSessionId, itemId, throughRevision) =>
-      attempt("getTranscriptItemDetails", () => {
-        const sessionId = canonicalUuid(rawSessionId)
-        const item = sqlite
-          .prepare("select revision from chat_items where session_id = ? and id = ?")
-          .get(sessionId, itemId) as { revision: number } | undefined
-        if (item === undefined) return undefined
-        const events = (
-          throughRevision === undefined
-            ? sqlite
-                .prepare(
-                  `select * from session_events
-                   where session_id = ? and chat_item_id = ? order by revision asc`
-                )
-                .all(sessionId, itemId)
-            : sqlite
-                .prepare(
-                  `select * from session_events
-                   where session_id = ? and chat_item_id = ? and revision <= ?
-                   order by revision asc`
-                )
-                .all(sessionId, itemId, throughRevision)
-        ).map((row) => sessionEventFromRow(row as SessionEventRow))
-        return { itemId, revision: item.revision, events }
+            return page
+          const context = await transcriptMarkdownContext(
+            sqlite,
+            itemId,
+            key,
+            page.revision,
+            position
+          )
+          const current = readTranscriptBodyPage(sqlite, id, itemId, key, field, position)
+          if (current?.revision !== page.revision)
+            throw new Error("Transcript changed; reload this text range")
+          return { ...current, markdownPrefix: context.prefix, leadingText: context.leadingText }
+        },
+        catch: (cause) =>
+          new DatabaseError({ operation: "getTranscriptBodyPage", message: String(cause) })
       }),
     appendConversationItem: (rawSessionId, role, messageId, text, isGenerating, attachments) =>
       attempt("appendConversationItem", () => {
@@ -234,12 +294,13 @@ export const makeTranscriptService = (
             routed === last?.id &&
             (attachments === undefined || attachments.length === 0)
           ) {
+            const key = `message::${messageId}`
+            appendTranscriptText(sqlite, routed, key, text)
             sqlite
               .prepare(
-                `update chat_parts set text = coalesce(text, '') || ?, revision = revision + 1
-                 where item_id = ? and kind = 'text'`
+                "update chat_parts set text = ?, revision = revision + 1 where item_id = ? and kind = 'text'"
               )
-              .run(text, routed)
+              .run(readTranscriptText(sqlite, routed, key, 24_000), routed)
             sqlite
               .prepare(
                 "update chat_items set status = ?, updated_at = ?, revision = revision + 1 where id = ?"
@@ -290,16 +351,10 @@ export const makeTranscriptService = (
         (
           sqlite
             .prepare(
-              // ISO-8601 UTC timestamps compare correctly as text. A session
-              // qualifies only when its entire event log has been quiet since
-              // the cutoff: any recent event means the turn may still be live.
-              `select distinct session_id from chat_items as item
+              // Activity belongs to current state, independent of journal retention.
+              `select distinct item.session_id from chat_items as item join sessions on sessions.id = item.session_id
                where item.role = 'assistant' and item.status = 'streaming'
-                 and not exists (
-                   select 1 from session_events as event
-                   where event.session_id = item.session_id
-                     and event.created_at > ?
-                 )`
+                 and coalesce(sessions.last_event_at, sessions.created_at) <= ?`
             )
             .all(quietSinceIso) as Array<{ session_id: string }>
         ).map((row) => row.session_id)
@@ -368,4 +423,5 @@ export const makeTranscriptService = (
           )
       })
   }
+  return service
 }

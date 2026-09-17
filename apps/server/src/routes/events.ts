@@ -5,7 +5,7 @@ import type { TerminalManagerService } from "@codevisor/terminal"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { adaptDirectSocket } from "./net-direct.js"
 import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
-import { attachShellEventSocket } from "./events-shell.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 import type { ClientControlBroker } from "../infra/client-control.js"
 import type { Socket } from "node:net"
 import { WebSocket, type WebSocketServer } from "ws"
@@ -35,17 +35,27 @@ export const handleEvents = async (
     Connection: "keep-alive",
     "Content-Type": "text/event-stream"
   })
-  for (const event of await run(db.listEvents(Number.isFinite(since) ? since : 0))) {
-    writeSse(response, event)
-  }
-  const unsubscribe = fanout.subscribe((event) => {
-    if (isGlobalShellEnvelope(event)) writeSse(response, event)
-  })
-  response.on("close", unsubscribe)
+  await attachSyncEventSocket(
+    db,
+    fanout,
+    Number.isFinite(since) ? since : 0,
+    {
+      get bufferedAmount() {
+        return response.writableLength
+      },
+      send(data) {
+        writeSse(response, JSON.parse(data) as EventEnvelope)
+      },
+      close() {
+        response.end()
+      },
+      on(_event, listener) {
+        return response.on("close", listener)
+      }
+    },
+    ""
+  )
 }
-
-const isGlobalShellEnvelope = (event: EventEnvelope): boolean =>
-  event.subjectRevision === undefined || event.globalEventId !== undefined
 
 export const handleUpgrade = async (
   services: CodevisorServerServices,
@@ -176,13 +186,8 @@ export const handleUpgrade = async (
   }
 }
 
-/// Keepalive cadence for session event sockets. Clients arm a receive
-/// deadline (a few multiples of this) once they see the first keepalive, so
-/// "no frames" reliably means "dead path" instead of "quiet turn" — the
-/// difference between a subway-stalled stream reconnecting in seconds and
-/// hanging forever. Legacy global subscribers receive no heartbeats; sync=1
-/// shell subscribers opt into durable checkpoints in events-shell.ts.
-/// Heartbeats must never advance a client's replay cursor.
+/// Keepalives let quiet clients detect dead paths without advancing their
+/// replay cursor. Global and session subscribers share the bounded journal reader.
 const EVENT_SOCKET_KEEPALIVE_MS = 25_000
 
 export const attachEventSocket = async (
@@ -193,122 +198,9 @@ export const attachEventSocket = async (
   serverId: string,
   subjectId?: string,
   keepaliveMs: number = EVENT_SOCKET_KEEPALIVE_MS,
-  durableReplay: boolean = false
-): Promise<void> => {
-  if (subjectId === undefined && durableReplay) {
-    return attachShellEventSocket(db, fanout, since, webSocket, serverId, keepaliveMs)
-  }
-  const liveOnly = since >= Number.MAX_SAFE_INTEGER
-  let cursor = liveOnly ? 0 : since
-  let hasDurableCursor = !liveOnly
-  let isReplaying = true
-  const liveQueue: Array<EventEnvelope> = []
-  const sendEvent = (event: EventEnvelope): void => {
-    if (subjectId !== undefined && event.subjectId !== subjectId) {
-      return
-    }
-    // Session-only runtime traffic never enters the global shell log and must
-    // not wake every project-list subscriber.
-    if (subjectId === undefined && !isGlobalShellEnvelope(event)) {
-      return
-    }
-    const scopedId =
-      subjectId === undefined ? (event.globalEventId ?? event.id) : event.subjectRevision
-    if (scopedId === undefined || scopedId <= cursor) return
-    cursor = scopedId
-    hasDurableCursor = true
-    if (webSocket.readyState === WebSocket.OPEN) {
-      webSocket.send(JSON.stringify(subjectId === undefined ? event : { ...event, id: scopedId }))
-    }
-  }
-  const unsubscribe = fanout.subscribe((event) => {
-    if (isReplaying) {
-      liveQueue.push(event)
-      return
-    }
-    sendEvent(event)
-  })
-  webSocket.on("close", unsubscribe)
-  const sendCheckpoint = (): void => {
-    if (webSocket.readyState !== WebSocket.OPEN) return
-    webSocket.send(
-      JSON.stringify({
-        id: cursor,
-        serverId,
-        kind: "keepalive",
-        subjectId,
-        createdAt: new Date().toISOString(),
-        payload: {}
-      })
-    )
-  }
-  // The durable log repairs a missed fanout notification, including a lone
-  // completion event. Serialize replay with live delivery so the checkpoint
-  // certifies every event through its cursor, rather than mere socket health.
-  const catchUp = async (): Promise<void> => {
-    if (isReplaying || webSocket.readyState !== WebSocket.OPEN) return
-    // A live-only subscriber has no replay position until its first real
-    // event. A liveness checkpoint must not silently opt it into history.
-    if (!hasDurableCursor) {
-      sendCheckpoint()
-      return
-    }
-    isReplaying = true
-    try {
-      for (const event of await run(db.listSubjectEvents(subjectId!, cursor))) sendEvent(event)
-      isReplaying = false
-      for (const event of liveQueue.splice(0)) sendEvent(event)
-      sendCheckpoint()
-    } catch {
-      webSocket.close()
-    }
-  }
-  if (subjectId !== undefined) {
-    const keepalive = setInterval(() => {
-      if (durableReplay) {
-        void catchUp()
-        return
-      }
-      /* v8 ignore next -- the close handler clears the interval before the socket normally leaves OPEN. */
-      if (webSocket.readyState !== WebSocket.OPEN) return
-      // A full envelope so every client decodes it. `id` is the socket's own
-      // cursor: existing clients advance via max(cursor, id), so this can
-      // never move a cursor — it only proves the path is alive.
-      webSocket.send(
-        JSON.stringify({
-          id: cursor,
-          serverId,
-          kind: "keepalive",
-          subjectId,
-          createdAt: new Date().toISOString(),
-          payload: {}
-        })
-      )
-    }, keepaliveMs)
-    keepalive.unref()
-    webSocket.on("close", () => clearInterval(keepalive))
-  }
-  try {
-    if (!liveOnly) {
-      const replay =
-        subjectId === undefined
-          ? await run(db.listEvents(since))
-          : await run(db.listSubjectEvents(subjectId, since))
-      for (const event of replay) sendEvent(event)
-    }
-    isReplaying = false
-    for (const event of liveQueue) {
-      sendEvent(event)
-    }
-    liveQueue.length = 0
-    if (durableReplay && subjectId !== undefined) sendCheckpoint()
-  } catch {
-    /* v8 ignore next -- defensive close path for database failures during websocket replay. */
-    unsubscribe()
-    /* v8 ignore next -- defensive close path for database failures during websocket replay. */
-    webSocket.close()
-  }
-}
+  _durableReplay: boolean = false
+): Promise<void> =>
+  attachSyncEventSocket(db, fanout, since, webSocket, serverId, subjectId, keepaliveMs)
 
 const attachTerminalSocket = async (
   terminal: TerminalManagerService,

@@ -120,6 +120,9 @@ extension ChatScreen {
               onNearTop: {
                 requestOlderHistoryLoad()
               },
+              onNearNewerHistory: { latest in
+                requestNewerHistoryLoad(latest: latest)
+              },
               markdownImageLoader: attachmentImages?.markdownImageLoader,
               openMarkdownLink: { url in
                 TranscriptMarkdownLinkOpener.open(
@@ -153,9 +156,21 @@ extension ChatScreen {
   }
 
   @discardableResult
+  func requestNewerHistoryLoad(latest: Bool) -> Bool {
+    guard historyLoadTask == nil, controller.hasNewerHistory,
+      !controller.isLoadingOlderHistory, !controller.isLoadingNewerHistory
+    else { return false }
+    historyLoadTask = Task { @MainActor in
+      defer { historyLoadTask = nil }
+      await controller.loadNewerHistory(latest: latest)
+    }
+    return true
+  }
+
+  @discardableResult
   func requestOlderHistoryLoad() -> Bool {
     guard historyLoadTask == nil, controller.hasOlderHistory,
-      !controller.isLoadingOlderHistory
+      !controller.isLoadingOlderHistory, !controller.isLoadingNewerHistory
     else { return false }
     historyLoadTask = Task { @MainActor in
       defer { historyLoadTask = nil }

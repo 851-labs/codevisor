@@ -1,3 +1,6 @@
+import { migrateProjectLocationState } from "./project-location-state.js"
+import { installNavigationJournal } from "./navigation-journal.js"
+import { makeNavigationService } from "./navigation-service.js"
 import { makeBrowserStateService } from "./browser-state-service.js"
 import type Database from "better-sqlite3"
 import { Effect } from "effect"
@@ -73,6 +76,8 @@ export const createService = (
       // after the schema commit. Startup remains blocking, but the old tables
       // stay untouched and an interrupted process resumes from durable rows.
       runBlockingDataUpgrades(sqlite, config)
+      migrateProjectLocationState(sqlite)
+      installNavigationJournal(sqlite)
     } finally {
       sqlite.pragma("foreign_keys = ON")
     }
@@ -84,6 +89,7 @@ export const createService = (
   return {
     migrate,
     close: Effect.sync(() => sqlite.close()),
+    ...makeNavigationService(context),
     ...makeProjectsService(context),
     ...makeWorktreesService(context),
     ...makeWorkspacesService(context),

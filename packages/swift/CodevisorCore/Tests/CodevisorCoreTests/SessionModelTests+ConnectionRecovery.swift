@@ -5,6 +5,27 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
+  @Test("Recovery replaces a disjoint history window without hiding its gap")
+  func recoveryReplacesDisjointHistoryWindow() async {
+    let sessionId = UUID()
+    let client = FakeSessionServerClient(sessionId: sessionId)
+    client.initialTranscriptPage = cancellationTranscriptPage(
+      sessionId: sessionId, isGenerating: true, stopReason: nil,
+      eventCursor: 2, text: "Current turn")
+    let model = SessionModel(
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
+      sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
+    await model.loadHistory()
+    let old = ConversationItem.user(UserMessage(text: "Old window before an unloaded gap"))
+    model.setConversation([old] + model.conversation)
+    model.hasNewerHistory = true
+    client.initialTranscriptPage?.eventCursor = 3
+    _ = await model.loadHistoryForConnectionRecovery()
+    #expect(!model.conversation.contains(old))
+    #expect(!model.hasNewerHistory)
+  }
+
   @Test("Transient reconciliation retries preserve the stream and clear status when the snapshot succeeds")
   func transientReconciliationRetriesSilently() async {
     let sessionId = UUID()
@@ -115,7 +136,7 @@ extension SessionModelTests {
 }
 
 extension SessionModelTests {
-  @Test("Recovery keeps cached details and older pages visible until the replacement is complete")
+  @Test("Recovery installs the current snapshot without waiting for deferred details")
   func recoveryInstallsSnapshotAtomically() async throws {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -137,7 +158,6 @@ extension SessionModelTests {
     model.setConversation([older, .assistant(AssistantMessage(id: assistantId, turn: cachedTurn))])
     model.hasOlderHistory = true
     model.olderHistoryCursor = "older-page"
-    let cached = model.conversation
 
     page.eventCursor = 3
     page.items[0].revision = 3
@@ -146,31 +166,9 @@ extension SessionModelTests {
     page.items[0].isGenerating = false
     page.items[0].stopReason = "end_turn"
     client.initialTranscriptPage = page
-    client.transcriptDetailsByItem[page.items[0].id] = ServerTranscriptItemDetails(
-      itemId: page.items[0].id, revision: 3,
-      events: [
-        ServerEventEnvelope(
-          id: 3, subjectRevision: 3, serverId: "local", kind: "session.output",
-          subjectId: sessionId.uuidString, createdAt: "2026-09-10T00:00:00.000Z",
-          payload: .object([
-            "sessionUpdate": .string("tool_call"),
-            "toolCallId": .string("recovered-tool"), "title": .string("Read state"),
-          ]))
-      ])
-    let (gate, release) = AsyncStream.makeStream(of: Void.self)
-    client.holdTranscriptDetails(until: gate)
     model.apply(.synchronization(.reconnecting))
-    let recovery = Task { await model.reconcileIfInFlight() }
-    await settleUntil { client.transcriptDetailRequestCount == 1 }
-    #expect(model.conversation == cached)
-    #expect(model.serverEventCursor == 2)
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
-    // A foreground and a sidebar repair racing must share the first attempt.
-    await model.reconcileFromServer()
-    #expect(client.transcriptPageRequests.count == 2)
-    release.yield()
-    release.finish()
-    await recovery.value
+    await model.reconcileIfInFlight()
+    #expect(client.transcriptDetailRequestCount == 0)
     #expect(model.serverEventCursor == 3)
     #expect(model.conversation.first == older)
     #expect(model.hasOlderHistory)
@@ -179,7 +177,7 @@ extension SessionModelTests {
     guard case let .assistant(recovered)? = model.conversation.last else {
       Issue.record("Expected recovered assistant"); return
     }
-    #expect(recovered.turn.allToolCalls.map(\.toolCallId) == ["recovered-tool"])
+    #expect(recovered.turn.hasDeferredWorkedDetails)
     #expect(model.connectionRecoveryMessage == nil)
     model.apply(.synchronization(.caughtUp))
     #expect(model.connectionRecoveryMessage == nil)
@@ -187,7 +185,7 @@ extension SessionModelTests {
 }
 
 extension SessionModelTests {
-  @Test("Missing active details retry without applying live events to an incomplete baseline")
+  @Test("A missing detail page does not block live synchronization and can be retried")
   func missingActiveDetailsKeepRecoveryGate() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -203,22 +201,18 @@ extension SessionModelTests {
       connectionRecoveryRetryBaseDelay: .milliseconds(10), connectionRecoveryRetryMaximumDelay: .milliseconds(10))
     defer { model.shutdown() }
     await model.loadHistoryForInitialDisplay()
-    await settleUntil { scheduler.pendingCount == 1 }
-    #expect(client.transcriptDetailRequestCount == 2)
-    #expect(model.isActiveTranscriptHydrationPending)
+    #expect(client.transcriptDetailRequestCount == 0)
     #expect(model.serverEventCursor == 2)
-    #expect(model.connectionRecoveryMessage == "Reconnecting…")
-    #expect(model.usesPaginatedHistory)
+    #expect(await model.loadTranscriptDetails(itemId: page.items[0].id) == false)
     client.transcriptDetailsByItem[page.items[0].id] = ServerTranscriptItemDetails(
-      itemId: page.items[0].id, revision: 2,
-      events: [
-        toolCallEnvelope(
-          id: 2,
-          sessionId: sessionId, toolCallId: "historical-tool", status: "completed")
+      itemId: page.items[0].id, revision: 2, eventCursor: 2,
+      entries: [
+        ServerTranscriptEntry(
+          key: "tool:historical-tool", position: 2, revision: 2,
+          payload: toolCallEnvelope(id: 2, sessionId: sessionId, toolCallId: "historical-tool", status: "completed")
+            .payload)
       ])
-    scheduler.advance()
-    await model.connectionRecoveryTask?.value
-    #expect(!model.isActiveTranscriptHydrationPending)
+    #expect(await model.loadTranscriptDetails(itemId: page.items[0].id))
     guard case let .assistant(message) = model.activeItem else {
       Issue.record("Expected recovered active turn"); return
     }

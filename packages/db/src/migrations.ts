@@ -6,6 +6,8 @@ import { migrations34To45 } from "./migrations-34-45.js"
 import { migrations47 } from "./migrations-47.js"
 import { migrations46 } from "./migrations-46.js"
 
+import { migrations48 } from "./migrations-48.js"
+
 export type { Migration } from "./migration-types.js"
 
 /// Every schema migration in order; the service applies the ones past the
@@ -16,5 +18,6 @@ export const migrations: ReadonlyArray<Migration> = [
   ...migrations30To33,
   ...migrations34To45,
   ...migrations46,
-  ...migrations47
+  ...migrations47,
+  ...migrations48
 ]

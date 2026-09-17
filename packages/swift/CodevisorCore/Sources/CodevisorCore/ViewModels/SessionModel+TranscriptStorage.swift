@@ -24,9 +24,11 @@ extension SessionModel {
   }
 
   func appendSettled(_ item: ConversationItem) {
-    guard item.hasRenderableTranscriptContent else { return }
+    guard item.hasRenderableTranscriptContent, !hasNewerHistory else { return }
     settledIndexById[item.id] = settledConversation.count
     settledConversation.append(item)
+    boundHistoryWindow(keepingOldest: false)
+    if case .assistant = item { retainDetailWindow(itemId: item.id.uuidString) }
   }
 
   func rebuildSettledIndex() {

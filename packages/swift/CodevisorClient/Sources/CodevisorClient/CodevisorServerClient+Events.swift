@@ -10,6 +10,7 @@ public struct ServerEventEnvelope: Decodable, Equatable, Sendable {
   public var kind: String
   public var subjectId: String
   public var createdAt: String
+  public var transportByteCount: Int? = nil
   public var payload: JSONValue
 
   public init(
@@ -58,14 +59,8 @@ extension CodevisorServerClient {
   /// fetched. Subscribing from this cursor afterward replays every event that
   /// raced those snapshots without replaying the server's lifetime log.
   public func latestShellEventCursor() async throws -> Int {
-    do {
-      let response: ShellEventCursorResponse = try await get("/v1/events/cursor")
-      return response.cursor
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      // Compatibility with older servers: replaying from zero is more
-      // expensive, but it is gapless and therefore safe.
-      return 0
-    }
+    let response: ShellEventCursorResponse = try await get("/v1/events/cursor")
+    return response.cursor
   }
 
   public func eventStream(since: Int = 0) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
@@ -116,7 +111,10 @@ extension CodevisorServerClient {
     since: Int,
     handledKinds: Set<String>? = nil
   ) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
-    AsyncThrowingStream { continuation in
+    AsyncThrowingStream(bufferingPolicy: .bufferingOldest(256)) { continuation in
+      @Sendable func emit(_ event: ServerEventEnvelope) throws {
+        if case .dropped = continuation.yield(event) { throw EventSnapshotRequiredError() }
+      }
       let task = Task {
         var cursor = since
         var failures = 0
@@ -152,6 +150,9 @@ extension CodevisorServerClient {
               } else {
                 probe = try decoder.decode(ServerEventKindProbe.self, from: data)
               }
+              if probe.kind == "snapshot_required" {
+                throw EventSnapshotRequiredError()
+              }
               if probe.kind == Self.keepaliveEventKind {
                 // Check even filtered shell streams. A heartbeat beyond
                 // our received tail is a missed update, not proof of sync.
@@ -161,7 +162,7 @@ extension CodevisorServerClient {
                 failures = 0
                 if scoped {
                   needsConnectionConfirmation = false
-                  continuation.yield(.synchronization(.caughtUp, cursor: cursor))
+                  try emit(.synchronization(.caughtUp, cursor: cursor))
                 }
                 continue
               }
@@ -179,7 +180,8 @@ extension CodevisorServerClient {
                 failures = 0
                 continue
               }
-              let event = try decodedEvent ?? decoder.decode(ServerEventEnvelope.self, from: data)
+              var event = try decodedEvent ?? decoder.decode(ServerEventEnvelope.self, from: data)
+              event.transportByteCount = data.count
               if scoped, cursor < ServerSessionTransport.liveOnlyEventCursor {
                 guard event.id > cursor else { continue }
                 if event.subjectRevision != nil, event.id != cursor + 1 {
@@ -191,7 +193,7 @@ extension CodevisorServerClient {
               // Keep this distinct from caughtUp: only a checkpoint can
               // certify that the durable tail has arrived without gaps.
               if needsConnectionConfirmation {
-                continuation.yield(.synchronization(.catchingUp, cursor: cursor))
+                try emit(.synchronization(.catchingUp, cursor: cursor))
                 needsConnectionConfirmation = false
               }
               // A live-only sentinel cursor means "no real cursor
@@ -200,7 +202,7 @@ extension CodevisorServerClient {
               // afterward.
               cursor = Self.advanceEventCursor(cursor, to: event.id)
               failures = 0
-              continuation.yield(event)
+              try emit(event)
             }
           } catch {
             if Task.isCancelled {
@@ -208,12 +210,14 @@ extension CodevisorServerClient {
               return
             }
             if scoped {
-              continuation.yield(.synchronization(.reconnecting, cursor: cursor))
+              try? emit(.synchronization(.reconnecting, cursor: cursor))
             }
             // A shell gap can replay from the unchanged cursor, preserving
             // live attention edges. Invalid envelopes need the machine's
             // authoritative snapshot recovery rather than endless replay.
-            if (scoped && error is EventStreamGapError) || (!scoped && error is DecodingError) {
+            if error is EventSnapshotRequiredError || (scoped && error is EventStreamGapError)
+              || (!scoped && error is DecodingError)
+            {
               continuation.finish(throwing: error)
               return
             }
@@ -307,3 +311,5 @@ extension CodevisorServerClient {
     }
   }
 }
+
+private struct EventSnapshotRequiredError: Error {}

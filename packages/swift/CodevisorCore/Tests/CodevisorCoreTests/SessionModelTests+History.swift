@@ -5,6 +5,7 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
+
   @Test("Paginated history drops empty completed item shells from older servers")
   func paginatedHistoryDropsEmptyCompletedShells() throws {
     let sessionId = UUID()
@@ -52,7 +53,7 @@ extension SessionModelTests {
               "revision": 1
             }
           ],
-          "hasMore": false,
+          "setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore": false,
           "eventCursor": 3
         }
         """.utf8)
@@ -72,41 +73,22 @@ extension SessionModelTests {
     let assistantItemId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     client.detailCursor = 42
-    client.detailConversation = [
-      ServerConversationItem(
-        id: userItemId.uuidString,
-        role: .user,
-        messageId: "user-1",
-        text: "what changed?",
-        createdAt: "2026-06-30T00:00:00.000Z",
-        isGenerating: false
-      ),
-      ServerConversationItem(
-        id: assistantItemId.uuidString,
-        role: .assistant,
-        messageId: "assistant-1",
-        text: "Server-backed ",
-        createdAt: "2026-06-30T00:00:01.000Z",
-        isGenerating: false
-      ),
-      ServerConversationItem(
-        id: UUID().uuidString,
-        role: .assistant,
-        messageId: "assistant-1",
-        text: "history.",
-        createdAt: "2026-06-30T00:00:02.000Z",
-        isGenerating: false
-      ),
-    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        transcriptStateItem(
+          id: userItemId, sessionId: sessionId, role: .user, text: "what changed?", messageId: "user-1"),
+        transcriptStateItem(
+          id: assistantItemId, sessionId: sessionId, text: "Server-backed history.", messageId: "assistant-1"),
+      ], hasMore: false, eventCursor: 42)
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
 
     await model.loadHistory()
-    await settleUntil { !client.eventSinceValues.isEmpty }
+    await client.eventReads.wait()
 
-    #expect(client.eventSinceValues == [42])
+    #expect(client.sessionEventSinceValues == [42])
     #expect(model.conversation.count == 2)
     guard case let .user(user) = model.conversation.first else {
       Issue.record("expected user")
@@ -311,6 +293,7 @@ extension SessionModelTests {
           stopDetail: nil,
           planDocument: nil,
           attachments: nil,
+          messageId: "answer-1",
           revision: 4
         )
       ],
@@ -345,29 +328,22 @@ extension SessionModelTests {
       eventCursor: 12
     )
     client.transcriptDetailsByItem[assistantId.uuidString] = ServerTranscriptItemDetails(
-      itemId: assistantId.uuidString,
-      revision: 4,
-      events: [
-        ServerEventEnvelope(
-          id: 10, serverId: "local", kind: "session.output",
-          subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.000Z",
+      itemId: assistantId.uuidString, revision: 4, eventCursor: 12,
+      entries: [
+        ServerTranscriptEntry(
+          key: "message::answer-1", position: 10, revision: 10,
           payload: .object([
-            "sessionUpdate": .string("agent_message_chunk"),
-            "messageId": .string("answer-1"),
-            "content": .object(["type": .string("text"), "text": .string("Summary answer")]),
-          ])
-        ),
-        ServerEventEnvelope(
-          id: 11, serverId: "local", kind: "session.output",
-          subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:01.500Z",
+            "sessionUpdate": .string("agent_message_patch"), "messageId": .string("answer-1"),
+            "text": .string("Summary answer"), "offset": .number(0), "totalLength": .number(14),
+            "generation": .number(0), "stateRevision": .number(10), "statePosition": .number(10),
+          ])),
+        ServerTranscriptEntry(
+          key: "tool:tool-1", position: 11, revision: 11,
           payload: .object([
-            "sessionUpdate": .string("tool_call"),
-            "toolCallId": .string("tool-1"),
-            "title": .string("Read file"),
-          ])
-        ),
-      ]
-    )
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("tool-1"), "title": .string("Read file"),
+            "isSnapshot": .bool(true), "stateRevision": .number(11), "statePosition": .number(11),
+          ])),
+      ])
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
@@ -401,7 +377,7 @@ extension SessionModelTests {
       return false
     })
     #expect(hasToolCall)
-    #expect(message.turn.deferredDetailItemId == nil)
+    #expect(message.turn.hasDeferredWorkedDetails == false)
     #expect(message.turn.hasHydratedWorkedDetails)
     #expect(client.transcriptDetailRequestCount == 1)
 
@@ -414,7 +390,7 @@ extension SessionModelTests {
       Issue.record("expected cached hydrated assistant")
       return
     }
-    #expect(restoredMessage.turn.deferredDetailItemId == nil)
+    #expect(restoredMessage.turn.hasDeferredWorkedDetails == false)
     #expect(restoredMessage.turn.hasHydratedWorkedDetails)
     #expect(client.transcriptDetailRequestCount == 1)
   }

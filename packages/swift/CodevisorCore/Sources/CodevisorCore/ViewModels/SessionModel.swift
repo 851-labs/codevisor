@@ -179,6 +179,15 @@ public final class SessionModel {
   /// this: before the first snapshot, an empty `backgroundTasks` just means
   /// history hasn't replayed, not that every task ended.
   public internal(set) var hasBackgroundTaskSnapshot = false
+  public internal(set) var persistedSetupPhases: [SessionSetupPhase] = [] {
+    didSet { if persistedSetupPhases != oldValue { transcriptProjectionRevision &+= 1 } }
+  }
+  public internal(set) var hasNewerHistory = false {
+    didSet { if hasNewerHistory != oldValue { transcriptProjectionRevision &+= 1 } }
+  }
+  public internal(set) var isLoadingNewerHistory = false
+  @ObservationIgnored var transcriptSequences: [UUID: Int] = [:]
+  @ObservationIgnored var residentDetailItemIds: [String] = []
   public internal(set) var hasOlderHistory = false
   public internal(set) var isLoadingOlderHistory = false
   @ObservationIgnored var olderHistoryCursor: String?
@@ -195,9 +204,6 @@ public final class SessionModel {
   /// events before post-snapshot socket updates are reduced. The socket is
   /// connected immediately, but its events remain buffered behind this
   /// session-owned task so the snapshot boundary stays lossless.
-  @ObservationIgnored var activeTranscriptHydrationTask: Task<Void, Never>?
-  @ObservationIgnored var activeTranscriptHydrationGeneration: UInt64 = 0
-  @ObservationIgnored var isActiveTranscriptHydrationPending = false
   /// Constant-time routing for late/nested tool updates. Values are stable
   /// conversation ids, so prepending older pages cannot invalidate them.
   @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]

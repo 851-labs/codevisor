@@ -1,3 +1,6 @@
+import { repoIdentityKey } from "@codevisor/api"
+import { dirname } from "node:path"
+import { scratchWorkspacesRoot } from "./paths.js"
 import type {
   ArchivedWorktree,
   AttachmentRef,
@@ -6,7 +9,6 @@ import type {
   Project,
   ProjectLocation,
   PromptQueueItem,
-  SessionDetail,
   SessionSummary,
   TranscriptItem,
   UpdateInfo,
@@ -20,7 +22,6 @@ import { resolveSessionCwd, worktreePath } from "./paths.js"
 import type {
   ArchivedWorktreeRow,
   ChatItemRow,
-  ConversationRow,
   EventRow,
   FileRow,
   FileStorageRecord,
@@ -50,6 +51,7 @@ const projectLocationFromRow = (row: ProjectLocationRow): ProjectLocation => ({
   projectId: row.project_id,
   serverId: row.server_id,
   folderPath: row.folder_path,
+  ...(row.is_git_repository == null ? {} : { isGitRepository: row.is_git_repository === 1 }),
   createdAt: row.created_at
 })
 
@@ -64,6 +66,10 @@ export const projectFromRow = (
   origin: row.origin,
   createdAt: row.created_at,
   locations: locations.map(projectLocationFromRow),
+  ...(locations.some((location) => dirname(location.folder_path) === scratchWorkspacesRoot())
+    ? { isScratch: true }
+    : {}),
+  ...(row.repo_url === null ? {} : { repoKey: repoIdentityKey(row.repo_url) }),
   ...(row.repo_url === null ? {} : { repoUrl: row.repo_url }),
   ...(row.worktree_base_remote === null || row.worktree_base_branch === null
     ? {}
@@ -205,21 +211,6 @@ export const parseAttachments = (raw: string | null): ReadonlyArray<AttachmentRe
   }
   const parsed = JSON.parse(raw) as ReadonlyArray<AttachmentRef>
   return parsed.length === 0 ? undefined : parsed
-}
-
-export const conversationFromRow = (
-  row: ConversationRow
-): SessionDetail["conversation"][number] => {
-  const attachments = parseAttachments(row.attachments)
-  return {
-    id: row.id,
-    role: row.role,
-    ...(row.message_id === null ? {} : { messageId: row.message_id }),
-    text: row.text,
-    createdAt: row.created_at,
-    isGenerating: row.is_generating === 1,
-    ...(attachments === undefined ? {} : { attachments })
-  }
 }
 
 export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {

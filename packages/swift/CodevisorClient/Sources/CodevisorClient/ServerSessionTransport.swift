@@ -7,8 +7,11 @@ import TranscriptKit
 /// it came from. Session sockets scope that cursor to the session's own
 /// revision sequence — the same value `streamEvents(since:)` resumes from.
 public struct ServerSessionStreamEnvelope: Equatable, Sendable {
+  public var byteCount: Int = 1024
   public let cursor: Int
   public let event: ServerSessionStreamEvent
+
+  public static func == (lhs: Self, rhs: Self) -> Bool { lhs.cursor == rhs.cursor && lhs.event == rhs.event }
 
   public init(cursor: Int, event: ServerSessionStreamEvent) {
     self.cursor = cursor
@@ -29,21 +32,6 @@ public struct ServerSessionTransport: Sendable {
 }
 
 extension ServerSessionTransport {
-  public func snapshot() async throws -> ServerSessionSnapshot {
-    let detail = try await client.sessionDetail(id: sessionId)
-    return ServerSessionSnapshot(
-      conversation: Self.conversationItems(from: detail.conversation),
-      promptQueue: detail.promptQueue,
-      eventCursor: detail.eventCursor,
-      pendingQuestion: detail.pendingQuestion,
-      pendingPlanApproval: detail.pendingPlanApproval,
-      backgroundTasks: detail.backgroundTasks,
-      goal: detail.goal,
-      sessionPlan: detail.sessionPlan,
-      updateGateHarnessName: detail.updateGate?.harnessName
-    )
-  }
-
   public func usageLimits() async throws -> ServerHarnessUsageLimits {
     try await client.sessionUsageLimits(id: sessionId)
   }
@@ -69,8 +57,15 @@ extension ServerSessionTransport {
       conversation: page.items
         .map(Self.conversationItem(from:))
         .filter(\.hasRenderableTranscriptContent),
+      nextAfter: page.nextAfter, hasNewer: page.hasNewer,
+      sequences: Dictionary(
+        page.items.compactMap { item in
+          UUID(uuidString: item.id).map { _ in (Self.conversationItem(from: item).id, item.sequence) }
+        }, uniquingKeysWith: { _, new in new }),
       nextBefore: page.nextBefore,
       hasMore: page.hasMore,
+      setupPhases: page.setupActivities.map(\.phase),
+      stateUpdates: page.stateUpdates,
       eventCursor: page.eventCursor,
       pendingQuestion: page.pendingQuestion,
       pendingPlanApproval: page.pendingPlanApproval,
@@ -84,53 +79,25 @@ extension ServerSessionTransport {
 
   public func transcriptDetails(
     itemId: String,
-    throughRevision: Int? = nil
-  ) async throws -> [ServerSessionStreamEvent] {
-    let details = try await client.transcriptItemDetails(
-      id: sessionId,
-      itemId: itemId,
-      throughRevision: throughRevision
-    )
-    let envelopes = details.events.filter { event in
-      guard let throughRevision else { return true }
-      return (event.subjectRevision ?? event.id) <= throughRevision
-    }
-    return envelopes.flatMap(Self.sessionStreamEvents(from:))
+    after: String? = nil
+  ) async throws -> ServerTranscriptItemDetails {
+    try await client.transcriptItemDetails(id: sessionId, itemId: itemId, after: after)
   }
 
-  public func updates(since: Int = Self.liveOnlyEventCursor) -> AsyncStream<SessionUpdate> {
-    AsyncStream { continuation in
-      let task = Task {
-        do {
-          for try await streamEvent in streamEvents(since: since) {
-            guard case let .update(update) = streamEvent else { continue }
-            continuation.yield(update)
-          }
-        } catch {
-          // This compatibility wrapper cannot surface failures;
-          // SessionModel consumes streamEvents directly and
-          // performs durable reconciliation.
-          Log.session.debug(
-            "Legacy updates() stream ended with error: \(String(describing: error), privacy: .public)"
-          )
-        }
-        continuation.finish()
-      }
-      continuation.onTermination = { _ in task.cancel() }
-    }
+  public func transcriptBodyPage(
+    resource: ToolDetailResource, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage {
+    try await client.transcriptBodyPage(
+      id: sessionId, itemId: resource.itemId, key: resource.entryKey, field: field, position: position)
   }
 
-  /// The session's full persisted event history, mapped to the same stream
-  /// events the live pipeline applies — replaying them rebuilds the rich
-  /// transcript (tool calls, diffs, turn boundaries). Returns the id of the
-  /// last envelope so live streaming can resume exactly after it.
-  public func history() async throws -> (events: [ServerSessionStreamEvent], cursor: Int?) {
-    let envelopes = try await client.sessionEvents(id: sessionId)
-    let events =
-      envelopes
-      .filter { $0.subjectId.caseInsensitiveCompare(sessionId.uuidString) == .orderedSame }
-      .flatMap { Self.sessionStreamEvents(from: $0) }
-    return (events, envelopes.last?.id)
+  public func detailEvents(from details: ServerTranscriptItemDetails) -> [ServerSessionStreamEvent] {
+    details.entries.flatMap { entry in
+      Self.sessionStreamEvents(
+        from: ServerEventEnvelope(
+          id: entry.revision, serverId: "", kind: "session.output", subjectId: sessionId.uuidString,
+          createdAt: "", payload: entry.payload))
+    }
   }
 
   public func streamEvents(
@@ -147,7 +114,7 @@ extension ServerSessionTransport {
   public func streamEnvelopes(
     since: Int = Self.liveOnlyEventCursor
   ) -> AsyncThrowingStream<ServerSessionStreamEnvelope, any Error> {
-    AsyncThrowingStream { continuation in
+    AsyncThrowingStream(bufferingPolicy: .bufferingOldest(512)) { continuation in
       // The upstream subscription is acquired synchronously at stream
       // construction, NOT inside the bridge task. Callers subscribe and
       // then prompt (`startConsumer()` before `transport.prompt` in
@@ -162,7 +129,11 @@ extension ServerSessionTransport {
             let updates = Self.sessionStreamEvents(from: event)
             // Even events without visible content belong to the applied cursor.
             for update in updates.isEmpty ? [.synchronization(.cursor)] : updates {
-              continuation.yield(ServerSessionStreamEnvelope(cursor: event.id, event: update))
+              var envelope = ServerSessionStreamEnvelope(cursor: event.id, event: update)
+              envelope.byteCount = event.transportByteCount ?? 1024
+              if case .dropped = continuation.yield(envelope) {
+                throw CodevisorServerClientError.invalidResponse
+              }
             }
           }
           continuation.finish()
@@ -229,52 +200,6 @@ extension ServerSessionTransport {
     }
   }
 
-  private static func conversationItems(from items: [ServerConversationItem]) -> [ConversationItem] {
-    var conversation: [ConversationItem] = []
-    var pendingAssistant: AssistantMessage?
-
-    func flushAssistant() {
-      if let assistant = pendingAssistant {
-        conversation.append(.assistant(assistant))
-        pendingAssistant = nil
-      }
-    }
-
-    for item in items {
-      switch item.role {
-      case .user:
-        flushAssistant()
-        conversation.append(
-          .user(
-            UserMessage(
-              id: item.messageId.flatMap(UUID.init(uuidString:)) ?? uuid(from: item.id),
-              text: item.text,
-              attachments: (item.attachments ?? []).map(\.attachment)
-            )))
-      case .assistant:
-        var assistant =
-          pendingAssistant
-          ?? AssistantMessage(
-            id: uuid(from: item.id),
-            turn: AssistantTurn(isGenerating: item.isGenerating)
-          )
-        TranscriptReducer.apply(
-          .agentMessageChunk(.text(item.text), messageId: item.messageId),
-          to: &assistant.turn
-        )
-        assistant.turn.isGenerating = item.isGenerating
-        if let attachments = item.attachments {
-          assistant.turn.attachments = attachments.map(\.attachment)
-        }
-        pendingAssistant = assistant
-      case .system:
-        flushAssistant()
-      }
-    }
-    flushAssistant()
-    return conversation.filter(\.hasRenderableTranscriptContent)
-  }
-
   private static func conversationItem(from item: ServerTranscriptItem) -> ConversationItem {
     let id = uuid(from: item.id)
     switch item.role {
@@ -283,7 +208,10 @@ extension ServerSessionTransport {
         UserMessage(
           id: item.messageId.flatMap(UUID.init(uuidString:)) ?? id,
           text: item.text,
-          attachments: (item.attachments ?? []).map(\.attachment)
+          attachments: (item.attachments ?? []).map(\.attachment),
+          textResource: item.textResource.flatMap {
+            ($0.fields.first?.sizeBytes ?? 0) > item.text.utf16.count * 2 ? $0 : nil
+          }
         ))
     case .assistant:
       // A still-streaming item carries the provider message id of its
@@ -294,7 +222,7 @@ extension ServerSessionTransport {
       // have no live continuation, so the synthetic summary id is fine.
       let textId = item.messageId.map { "acp:\($0)" } ?? "summary:\(item.id)"
       let entries: [TranscriptEntry] = item.text.isEmpty ? [] : [.text(id: textId, markdown: item.text)]
-      let turn = AssistantTurn(
+      var turn = AssistantTurn(
         entries: entries,
         attachments: (item.attachments ?? []).map(\.attachment),
         isGenerating: item.isGenerating,
@@ -311,6 +239,14 @@ extension ServerSessionTransport {
         hasDeferredWorkedDetails: item.hasDetails,
         detailRevision: item.revision
       )
+      if let position = item.textPosition { turn.entryPositions["text:\(textId)"] = position }
+      turn.textStates[":\(textId)"] = TranscriptTextState(
+        generation: item.textGeneration ?? 0, revision: item.textRevision ?? 0,
+        resource: item.textResource.flatMap { ($0.fields.first?.sizeBytes ?? 0) > item.text.utf16.count * 2 ? $0 : nil }
+      )
+      turn.planResource = item.planResource.flatMap {
+        ($0.fields.first?.sizeBytes ?? 0) > (item.planDocument?.utf16.count ?? 0) * 2 ? $0 : nil
+      }
       return .assistant(AssistantMessage(id: id, turn: turn))
     }
   }
@@ -341,6 +277,13 @@ extension ServerSessionTransport {
       ]
     }
     if let rawUpdate = decodeRawSessionUpdate(event.payload) {
+      if event.payload["isFinalized"]?.boolValue == true, case let .agentMessagePatch(patch) = rawUpdate {
+        return [
+          .update(rawUpdate),
+          .assistantFinalized(
+            markdown: patch.text, messageId: patch.messageId, attachments: attachments(from: event.payload)),
+        ]
+      }
       return [.update(rawUpdate)]
     }
 

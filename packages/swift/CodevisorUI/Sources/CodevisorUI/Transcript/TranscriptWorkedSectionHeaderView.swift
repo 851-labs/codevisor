@@ -185,6 +185,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
         .buttonStyle(TranscriptWorkedSectionButtonStyle())
       }
       Divider()
+      if isExpanded { TranscriptMoreDetailsButton(turn: turn) }
     }
   }
 
@@ -217,7 +218,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
       if showsChevron {
         TranscriptWorkedDisclosureIndicator(
           expanded: isExpanded,
-          deferredDetailItemID: turn.hasDeferredWorkedDetails
+          deferredDetailItemID: turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails
             ? turn.deferredDetailItemId
             : nil
         )

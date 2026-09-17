@@ -65,6 +65,7 @@ extension VirtualizedTranscriptScrollView {
     self.onBottomStateChange = onBottomStateChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
+    self.onNearNewerHistory = callbacks.onNearNewerHistory
     self.onOlderHistoryPresented = onOlderHistoryPresented
     isPreparingInitialProjection = newIsPreparingInitialProjection
     isActiveProjectionPending = newIsActiveProjectionPending

@@ -83,11 +83,10 @@ describe("assistant artifact promotion", () => {
     const finalized = published.find(
       (event) =>
         event.kind === "session.output" &&
-        (event.payload as { sessionUpdate?: string }).sessionUpdate ===
-          "assistant_message_finalized"
+        (event.payload as { isFinalized?: boolean }).isFinalized === true
     )
     expect(finalized?.payload).toMatchObject({
-      markdown,
+      text: markdown,
       messageId: "msg-1",
       attachments: [
         {
@@ -244,12 +243,10 @@ describe("assistant artifact promotion", () => {
       payload: { initiatedBy: "user", turnId: "turn-1", turnState: "ended", stopReason: "end_turn" }
     })
     const finalized = published.find(
-      (event) =>
-        (event.payload as { sessionUpdate?: string }).sessionUpdate ===
-        "assistant_message_finalized"
+      (event) => (event.payload as { isFinalized?: boolean }).isFinalized === true
     )
     expect(finalized?.payload).toMatchObject({ attachments: [{ fileId: file.id }] })
-    expect(finalized?.payload).not.toHaveProperty("messageId")
+    expect(finalized?.payload).toMatchObject({ messageId: expect.any(String), isFinalized: true })
   })
 
   it("does nothing for replies without attachment references", async () => {

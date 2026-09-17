@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type { Readable, Writable } from "node:stream"
+import { Worker } from "node:worker_threads"
 import { summarizeProcessFailure } from "./process-failure.js"
 
 /// The subset of a spawned child process a stdio transport needs. An
@@ -36,6 +37,7 @@ export const childStdioEndpoint = (child: ChildProcessWithoutNullStreams): Stdio
 export interface NdjsonTransportOptions {
   /// Failure message when the process exits without stderr output.
   readonly exitMessage?: string
+  readonly isolateCodexHistory?: boolean
 }
 
 /// A newline-delimited-JSON pipe to a child process, with an explicit
@@ -59,6 +61,7 @@ export interface NdjsonTransport {
   /// open or the pipe can no longer accept writes.
   send: (payload: Record<string, unknown>) => void
   onLine: (handler: (line: string) => void) => void
+  onMessage?: (handler: (message: Record<string, unknown>) => void) => void
   /// Fires at most once, only for FAILURES (process exit/crash, pipe
   /// error). Registered late, it fires immediately with the stored failure.
   onFailure: (handler: (error: Error) => void) => void
@@ -74,12 +77,20 @@ export const makeNdjsonTransport = (
   let failure: Error | undefined
   let lineHandler: ((line: string) => void) | undefined
   let stderrTail = ""
+  let messageHandler: ((message: Record<string, unknown>) => void) | undefined
+  const worker =
+    options.isolateCodexHistory === true
+      ? new Worker(new URL("./ndjson-worker.js", import.meta.url))
+      : undefined
+  let pendingCharacters = 0
+  let processExit: Error | undefined
 
   const fail = (error: Error): void => {
     // Includes deliberate close: the child's exit after close() (we killed
     // it) is expected, not a failure.
     if (!open) return
     open = false
+    void worker?.terminate()
     failure = error
     for (const handler of failureHandlers) {
       handler(error)
@@ -91,6 +102,22 @@ export const makeNdjsonTransport = (
   // stderr is capture-only; its pipe failing loses diagnostics, not the
   // session. The listener still must exist (see the invariant above).
   endpoint.stderr?.on("error", () => undefined)
+  worker?.on("error", fail)
+  worker?.on("exit", (code) => {
+    if (open) fail(new Error(`Agent output worker exited (${code})`))
+  })
+  worker?.on("message", (value: { message?: Record<string, unknown>; consumed?: number }) => {
+    if (!open) return
+    if (value.message !== undefined) {
+      if (messageHandler !== undefined) messageHandler(value.message)
+      else lineHandler?.(JSON.stringify(value.message))
+    }
+    if (value.consumed !== undefined) {
+      pendingCharacters -= value.consumed
+      if (pendingCharacters < 512 * 1024) endpoint.stdout.resume()
+      if (pendingCharacters === 0 && processExit !== undefined) fail(processExit)
+    }
+  })
 
   if (endpoint.stderr !== undefined) {
     endpoint.stderr.setEncoding("utf8")
@@ -99,31 +126,45 @@ export const makeNdjsonTransport = (
     })
   }
 
-  let buffer = ""
+  // Search each incoming chunk once. Joining only at a newline avoids the
+  // quadratic flatten/rescan loop when a provider sends a huge response.
+  let fragments: string[] = []
   endpoint.stdout.setEncoding("utf8")
   endpoint.stdout.on("data", (chunk: string) => {
-    buffer += chunk
-    while (true) {
-      const newline = buffer.indexOf("\n")
+    if (!open) return
+    if (worker !== undefined) {
+      pendingCharacters += chunk.length
+      worker.postMessage({ chunk }, [])
+      if (pendingCharacters >= 1024 * 1024) endpoint.stdout.pause()
+      return
+    }
+    let start = 0
+    while (start < chunk.length) {
+      const newline = chunk.indexOf("\n", start)
       if (newline === -1) break
-      const line = buffer.slice(0, newline)
-      buffer = buffer.slice(newline + 1)
+      fragments.push(chunk.slice(start, newline))
+      const line = fragments.join("")
+      fragments = []
+      start = newline + 1
       lineHandler?.(line)
     }
+    if (start < chunk.length) fragments.push(chunk.slice(start))
   })
 
   endpoint.onExit((error) => {
     // The captured tail is raw CLI output — often minified bundle text and
     // stack frames — and this error surfaces to the user, so condense it.
-    fail(
+    processExit =
       error ??
-        new Error(summarizeProcessFailure(stderrTail, options.exitMessage ?? "process exited"))
-    )
+      new Error(summarizeProcessFailure(stderrTail, options.exitMessage ?? "process exited"))
+    if (pendingCharacters === 0) fail(processExit)
   })
 
   return {
     close: () => {
       open = false
+      fragments = []
+      void worker?.terminate()
       try {
         endpoint.stdin.end()
       } catch {
@@ -142,6 +183,13 @@ export const makeNdjsonTransport = (
     onLine: (handler) => {
       lineHandler = handler
     },
+    ...(worker === undefined
+      ? {}
+      : {
+          onMessage: (handler: (message: Record<string, unknown>) => void) => {
+            messageHandler = handler
+          }
+        }),
     pid: endpoint.pid,
     send: (payload) => {
       if (!open) return

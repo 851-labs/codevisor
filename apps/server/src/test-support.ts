@@ -281,7 +281,8 @@ export const readSseEvents = async (
     for (const chunk of chunks) {
       const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "))
       if (dataLine !== undefined) {
-        events.push(JSON.parse(dataLine.slice("data: ".length)) as unknown)
+        const event = JSON.parse(dataLine.slice("data: ".length)) as { kind: string }
+        if (!["keepalive", "navigation.changed"].includes(event.kind)) events.push(event)
       }
     }
   }
@@ -293,7 +294,8 @@ export const readWebSocketEvents = async (
   server: RunningCodevisorServer,
   expectedCount: number,
   since?: number | string,
-  path = "/v1/events/socket"
+  path = "/v1/events/socket",
+  includeControls = false
 ): Promise<ReadonlyArray<unknown>> => {
   const eventsUrl =
     since === undefined
@@ -308,7 +310,9 @@ export const readWebSocketEvents = async (
       if (isDone) {
         return
       }
-      events.push(JSON.parse(data.toString()) as unknown)
+      const event = JSON.parse(data.toString()) as { kind: string }
+      if (!includeControls && ["keepalive", "navigation.changed"].includes(event.kind)) return
+      events.push(event)
       if (events.length >= expectedCount) {
         isDone = true
         webSocket.close()

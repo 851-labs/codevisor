@@ -96,126 +96,48 @@ extension SessionModelTests {
     #expect(model.configOptions == [refreshed])
   }
 
-  @Test("loadHistory replays persisted events, rebuilding tool calls")
-  func loadHistoryReplaysEvents() async {
+  @Test("History paints the persisted answer and loads tools only on disclosure")
+  func loadHistoryRestoresState() async {
     let sessionId = UUID()
+    let assistantId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    client.detailCursor = 99
-    client.historyEvents = [
-      ServerEventEnvelope(
-        id: 1,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:00.000Z",
-        payload: .object(["role": .string("user"), "text": .string("edit the file")])
-      ),
-      ServerEventEnvelope(
-        id: 2,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:01.000Z",
-        payload: .object([
-          "sessionUpdate": .string("tool_call"),
-          "toolCallId": .string("edit-1"),
-          "title": .string("Edited a.txt"),
-          "kind": .string("edit"),
-          "status": .string("completed"),
-          "diffStats": .array([
-            .object([
-              "path": .string("a.txt"), "added": .number(3), "removed": .number(1),
-            ])
-          ]),
-        ])
-      ),
-      ServerEventEnvelope(
-        id: 3,
-        serverId: "local",
-        kind: "session.output",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:02.000Z",
-        payload: .object([
-          "sessionUpdate": .string("agent_message_chunk"),
-          "messageId": .string("m1"),
-          "content": .object(["type": .string("text"), "text": .string("Done.")]),
-        ])
-      ),
-      ServerEventEnvelope(
-        id: 4,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:03.000Z",
-        payload: .object(["stopReason": .string("end_turn")])
-      ),
-    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        transcriptStateItem(sessionId: sessionId, role: .user, text: "edit the file"),
+        transcriptStateItem(id: assistantId, sessionId: sessionId, text: "Done.", messageId: "m1", hasDetails: true),
+      ], hasMore: false, eventCursor: 99)
+    client.transcriptDetailsByItem[assistantId.uuidString] = ServerTranscriptItemDetails(
+      itemId: assistantId.uuidString, revision: 1, eventCursor: 99,
+      entries: [
+        .init(
+          key: "tool:edit-1", position: 2, revision: 2,
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("edit-1"),
+            "title": .string("Edited a.txt"), "kind": .string("edit"), "status": .string("completed"),
+            "diffStats": .array([.object(["path": .string("a.txt"), "added": .number(3), "removed": .number(1)])]),
+          ]))
+      ])
     let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString,
-      now: { Date(timeIntervalSince1970: 100) }
-    )
-
+      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId), sessionId: sessionId.uuidString)
+    defer { model.shutdown() }
     await model.loadHistory()
-
     #expect(model.conversation.count == 2)
-    guard case let .user(user) = model.conversation.first else {
-      Issue.record("expected user")
-      return
-    }
-    #expect(user.text == "edit the file")
-    guard case let .assistant(assistant) = model.conversation.last else {
-      Issue.record("expected assistant")
-      return
-    }
+    #expect(userMessages(model).first?.text == "edit the file")
+    #expect(client.transcriptDetailRequestCount == 0)
+    #expect(await model.loadTranscriptDetails(itemId: assistantId.uuidString))
+    guard case let .assistant(assistant) = model.conversation.last else { Issue.record("expected assistant"); return }
     #expect(assistant.turn.toolCalls.count == 1)
     #expect(assistant.turn.toolCalls.first?.diffStats?.first?.added == 3)
     #expect(assistant.turn.finalText == .text(id: "acp:m1", markdown: "Done."))
-    #expect(assistant.turn.isGenerating == false)
-    #expect(model.isSending == false)
-    // Live streaming resumes after the last replayed envelope, not the
-    // snapshot cursor. The consumer task connects asynchronously.
-    await settleUntil { !client.eventSinceValues.isEmpty }
-    #expect(client.eventSinceValues == [4])
+    #expect(!model.isSending)
+    await client.eventReads.wait()
+    #expect(client.sessionEventSinceValues == [99])
   }
 
   @Test("History restores selections without replacing the current config catalog")
   func historyKeepsCurrentConfigCatalog() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    client.historyEvents = [
-      ServerEventEnvelope(
-        id: 1,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-07-09T18:23:30.000Z",
-        payload: .object([
-          "configOptions": .array([
-            .object([
-              "id": .string("model"),
-              "name": .string("Model"),
-              "category": .string("model"),
-              "currentValue": .string("gpt-5.5"),
-              "options": .array([
-                .object(["value": .string("gpt-5.5"), "name": .string("GPT-5.5")]),
-                .object(["value": .string("gpt-5.4"), "name": .string("GPT-5.4")]),
-              ]),
-            ]),
-            .object([
-              "id": .string("effort"),
-              "name": .string("Reasoning"),
-              "category": .string("thought_level"),
-              "currentValue": .string("xhigh"),
-              "options": .array([
-                .object(["value": .string("low"), "name": .string("Low")]),
-                .object(["value": .string("xhigh"), "name": .string("X-High")]),
-              ]),
-            ]),
-          ])
-        ])
-      )
-    ]
     let currentOptions = [
       SessionConfigOption(
         id: "model",
@@ -240,6 +162,12 @@ extension SessionModelTests {
         ]
       ),
     ]
+    var savedOptions = currentOptions
+    savedOptions[0].currentValue = "gpt-5.5"
+    savedOptions[1].currentValue = "xhigh"
+    var page = ServerTranscriptPage(items: [], hasMore: false, eventCursor: 1)
+    page.stateUpdates = [.configOptionUpdate(savedOptions)]
+    client.initialTranscriptPage = page
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString,
@@ -252,6 +180,6 @@ extension SessionModelTests {
     #expect(modelOption?.options.map(\.value) == ["gpt-5.6-sol", "gpt-5.5", "gpt-5.6-terra"])
     #expect(modelOption?.currentValue == "gpt-5.5")
     #expect(model.configOptions.first { $0.id == "effort" }?.currentValue == "xhigh")
-    #expect(client.configUpdates.map(\.0) == ["model", "effort"])
+    #expect(client.configUpdates.isEmpty)
   }
 }

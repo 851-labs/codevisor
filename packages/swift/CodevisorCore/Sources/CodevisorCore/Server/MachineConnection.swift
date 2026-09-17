@@ -52,6 +52,7 @@ public final class MachineConnection {
   /// Per-machine authoritative snapshot reconciliation.
   @ObservationIgnored var navigationSyncToken: UUID?
   @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
+  @ObservationIgnored var navigationSnapshot: ServerNavigationSnapshot?
   /// Manual refresh work survives the gesture's short presentation budget.
   @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
   /// Coalesces navigation-affecting events for this machine only.

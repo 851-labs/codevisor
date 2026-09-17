@@ -152,7 +152,7 @@ extension WorkspaceSyncModel {
         id: id,
         kind: .chat,
         name: record.title,
-        terminalKey: id.uuidString,
+        terminalKey: sessionId?.uuidString ?? id.uuidString,
         chatSessionId: sessionId
       )
     case "terminal":

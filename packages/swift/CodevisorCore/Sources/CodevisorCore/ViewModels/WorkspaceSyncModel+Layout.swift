@@ -4,8 +4,14 @@ extension WorkspaceSyncModel {
   static func reconcilePanes(
     in workspace: inout Workspace,
     records: [ServerWorkspacePane],
-    protectedLocalPaneIds: Set<UUID>
+    protectedLocalPaneIds: Set<UUID>,
+    preserveEmptyTabs: Bool = false
   ) {
+    let emptyTabs =
+      preserveEmptyTabs
+      ? workspace.centerTabs.enumerated().filter { $0.element.root.allGroups.allSatisfy { $0.state.panes.isEmpty } }
+      : []
+    let selectedTab = workspace.selectedCenterTabId
     let remote = records.compactMap { record -> (ServerWorkspacePane, PaneDescriptorState)? in
       descriptor(from: record).map { (record, $0) }
     }
@@ -45,6 +51,10 @@ extension WorkspaceSyncModel {
       _ = removePane(id: pane.id, from: &workspace)
     }
     pruneEmptyCenterTabs(in: &workspace)
+    for (index, tab) in emptyTabs where !workspace.centerTabs.contains(where: { $0.id == tab.id }) {
+      workspace.centerTabs.insert(tab, at: min(index, workspace.centerTabs.count))
+    }
+    if workspace.centerTabs.contains(where: { $0.id == selectedTab }) { workspace.selectedCenterTabId = selectedTab }
     ensureUsableLayout(&workspace)
   }
 

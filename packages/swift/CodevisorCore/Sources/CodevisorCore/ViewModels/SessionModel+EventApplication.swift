@@ -4,6 +4,11 @@ import ACPKit
 extension SessionModel {
   private func apply(_ update: SessionUpdate) {
     appliedUpdateCount += 1
+    if let owner = Self.persistedOwner(of: update), activeItem?.id != owner, settledIndexById[owner] == nil {
+      // A late update to an evicted turn is already persisted. Reloading that
+      // history page will show it; it must not create a new active response.
+      return
+    }
     // Plans update session-level state (the pinned todo panel) AND flow
     // into the turn below for history/replay.
     if case let .plan(plan) = update {
@@ -51,6 +56,7 @@ extension SessionModel {
         ensureAssistantTurn()
         guard case .assistant(var message) = activeItem else { return }
         TranscriptReducer.apply(update, to: &message.turn)
+        message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
         activeItem = .assistant(message)
         recordToolRoute(for: update, itemId: message.id)
       }
@@ -66,6 +72,7 @@ extension SessionModel {
         !(index == itemCount - 1 && message.turn.isGenerating)
       {
         TranscriptReducer.apply(update, to: &message.turn)
+        message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
         setItem(.assistant(message), at: index)
         recordToolRoute(for: update, itemId: message.id)
         return
@@ -82,6 +89,7 @@ extension SessionModel {
       // chunk for no state change.
       if !isSending { isSending = true }
       TranscriptReducer.apply(update, to: &message.turn)
+      message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
       activeItem = .assistant(message)
       recordToolRoute(for: update, itemId: message.id)
     }
@@ -89,16 +97,30 @@ extension SessionModel {
 
   /// The conversation index of the bubble that owns this update. Routing is
   /// O(1) even after many history pages have been loaded.
+  private static func persistedOwner(of update: SessionUpdate) -> UUID? {
+    switch update {
+    case let .agentMessagePatch(patch): return patch.chatItemId.flatMap(UUID.init(uuidString:))
+    case let .toolCall(call): return call.chatItemId.flatMap(UUID.init(uuidString:))
+    default: return nil
+    }
+  }
+
   private func owningItemIndex(for update: SessionUpdate) -> Int? {
+    if let owner = Self.persistedOwner(of: update) {
+      return activeItem?.id == owner ? settledConversation.count : settledIndexById[owner]
+    }
     var parentId: String?
     var toolCallId: String?
     switch update {
+    case let .agentMessagePatch(patch):
+      parentId = patch.parentToolCallId
     case let .agentMessageChunk(_, _, parent, _):
       parentId = parent
     case let .agentThoughtChunk(_, _, parent):
       parentId = parent
     case let .toolCall(call):
       parentId = call.parentToolCallId
+      toolCallId = call.toolCallId
     case let .toolCallUpdate(toolUpdate):
       parentId = toolUpdate.parentToolCallId
       toolCallId = toolUpdate.toolCallId
@@ -114,6 +136,14 @@ extension SessionModel {
   }
 
   private func recordToolRoute(for update: SessionUpdate, itemId: UUID) {
+    if toolOwnerItemIds.count > 1024 {
+      let resident = Set(
+        conversation.flatMap { item -> [String] in
+          guard case let .assistant(message) = item else { return [] }
+          return message.turn.allToolCalls.map(\.toolCallId)
+        })
+      toolOwnerItemIds = toolOwnerItemIds.filter { resident.contains($0.key) }
+    }
     switch update {
     case let .toolCall(call):
       toolOwnerItemIds[call.toolCallId] = itemId
@@ -388,7 +418,7 @@ extension SessionModel {
     switch event {
     case let .update(update):
       switch update {
-      case .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument:
+      case .agentMessagePatch, .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument:
         return .modelStream
       case .toolCall:
         return .toolInputStream

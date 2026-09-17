@@ -3,10 +3,12 @@ import Foundation
 extension WorkspaceSyncModel {
   func reconcile(
     _ records: [ServerWorkspace],
-    paneRecords: [ServerWorkspacePane]?,
+    paneRecords: [ServerWorkspacePane],
     protectedLocalPaneIds: Set<UUID>,
     assignments: [UUID: UUID],
-    serverId: String
+    serverId: String,
+    affectedWorkspaceIds: Set<UUID>? = nil,
+    paneWorkspaceIds: Set<UUID>? = nil
   ) {
     let sessionOrder = Dictionary(
       uniqueKeysWithValues: projectList.sessions
@@ -35,6 +37,7 @@ extension WorkspaceSyncModel {
         continue
       }
       remoteIds.insert(id)
+      guard affectedWorkspaceIds == nil || affectedWorkspaceIds!.contains(id) else { continue }
       let sessionIds = sessionsByWorkspace[id] ?? []
       let worktreeName = sessionIds.lazy.compactMap { sessionId in
         self.projectList.sessions.first(where: {
@@ -85,14 +88,14 @@ extension WorkspaceSyncModel {
           createdAt: createdAt,
           worktreeName: worktreeName,
           sessionIds: sessionIds,
-          usesPaneRegistry: paneRecords != nil
+          usesPaneRegistry: true
         )
       }
 
       Self.applyMetadata(record, to: &workspace)
       workspace.worktreeName = workspace.worktreeName ?? worktreeName
 
-      if let paneRecords {
+      if existing == nil || paneWorkspaceIds == nil || paneWorkspaceIds!.contains(id) {
         var paneProtection = protectedLocalPaneIds
         let stableRecords = stablePaneSnapshot(
           paneRecords.filter {
@@ -104,14 +107,9 @@ extension WorkspaceSyncModel {
         Self.reconcilePanes(
           in: &workspace,
           records: stableRecords,
-          protectedLocalPaneIds: paneProtection
+          protectedLocalPaneIds: paneProtection,
+          preserveEmptyTabs: existing != nil
         )
-      } else {
-        for sessionId in sessionIds where workspace.tabId(containingChat: sessionId) == nil {
-          workspace.centerTabs.append(
-            WorkspaceTab(root: .leaf(.centerInitial(sessionId: sessionId)))
-          )
-        }
       }
 
       if existing != workspace || migrationSource != nil {
@@ -132,6 +130,7 @@ extension WorkspaceSyncModel {
       workspace.serverId == serverId
       && workspace.isServerSynced
       && !remoteIds.contains(workspace.id)
+      && (affectedWorkspaceIds == nil || affectedWorkspaceIds!.contains(workspace.id))
     {
       sessionsInvalidatedByWorkspaceDeletion[serverId, default: []]
         .formUnion(workspace.chatSessionIds)
@@ -146,6 +145,7 @@ extension WorkspaceSyncModel {
     where
       workspace.serverId == serverId
       && !workspace.isServerSynced
+      && (affectedWorkspaceIds == nil || affectedWorkspaceIds!.contains(workspace.id))
       && !workspace.chatSessionIds.isEmpty
       && workspace.chatSessionIds.allSatisfy({ sessionId in
         guard let assigned = assignments[sessionId] else { return false }

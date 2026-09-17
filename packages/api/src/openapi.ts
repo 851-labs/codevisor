@@ -80,9 +80,38 @@ const queryParameters = (endpoint: Endpoint): ReadonlyArray<JsonObject> => {
   }
   if (endpoint === "GET /v1/sessions/:id/transcript") {
     return [
-      { name: "before", in: "query", schema: { type: "integer", minimum: 0 } },
-      { name: "limit", in: "query", schema: { type: "integer", minimum: 1, default: 32 } }
+      {
+        name: "before",
+        in: "query",
+        description: "Opaque nextBefore or nextAfter cursor from a transcript page.",
+        schema: { type: "string" }
+      },
+      {
+        name: "limit",
+        in: "query",
+        schema: { type: "integer", minimum: 1, maximum: 64, default: 32 }
+      }
     ]
+  }
+  if (endpoint === "GET /v1/sessions/:id/transcript/:itemId/details") {
+    return [
+      {
+        name: "after",
+        in: "query",
+        description: "Opaque nextAfter or previousBefore cursor from a detail page.",
+        schema: { type: "string" }
+      }
+    ]
+  }
+  if (endpoint === "GET /v1/sessions/:id/transcript/:itemId/body") {
+    return [
+      { name: "key", in: "query", required: true, schema: { type: "string" } },
+      { name: "field", in: "query", required: true, schema: { type: "string" } },
+      { name: "position", in: "query", schema: { type: "integer", minimum: 0, default: 0 } }
+    ]
+  }
+  if (endpoint === "GET /v1/files/:id") {
+    return [{ name: "preview", in: "query", schema: { type: "string", enum: ["1"] } }]
   }
   if (endpoint === "POST /v1/files") {
     return [{ name: "name", in: "query", schema: { type: "string", default: "attachment" } }]

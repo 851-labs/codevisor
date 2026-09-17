@@ -101,7 +101,13 @@ extension SidebarView {
       list.unarchive(project)
     case let .session(session):
       restoreChat(session)
-      activateSession(session)
+      // Selection must use the restored state: an archived value deliberately
+      // cannot recreate the pane removed when the chat was closed.
+      if let restored = list.sessions.first(where: {
+        $0.serverId == session.serverId && $0.id == session.id && !$0.isArchived
+      }) {
+        activateSession(restored)
+      }
     }
   }
 }

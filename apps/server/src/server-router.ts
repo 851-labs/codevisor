@@ -156,6 +156,12 @@ export const handleRequest = async (
       return
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/navigation") {
+      await authorize(services.db, config, request)
+      writeJson(response, 200, await run(services.db.getNavigationSnapshot))
+      return
+    }
+
     if (request.method === "GET" && url.pathname === "/v1/events") {
       await authorize(services.db, config, request)
       await handleEvents(services.db, fanout, url, response)

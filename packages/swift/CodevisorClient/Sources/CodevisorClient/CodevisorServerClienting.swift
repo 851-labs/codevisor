@@ -252,6 +252,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func restorePlugin(pluginId: String) async throws -> ServerPluginSummary
   /// Persistently enable or disable plugin runtime and capabilities.
   func setPluginEnabled(pluginId: String, enabled: Bool) async throws -> ServerPluginSummary
+  func navigationSnapshot() async throws -> ServerNavigationSnapshot
   func listProjects() async throws -> [ServerProject]
   func upsertProject(_ project: Project) async throws -> ServerProject
   func updateProject(_ project: Project) async throws -> ServerProject
@@ -346,8 +347,11 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func transcriptItemDetails(
     id: UUID,
     itemId: String,
-    throughRevision: Int?
+    after: String?
   ) async throws -> ServerTranscriptItemDetails
+  func transcriptBodyPage(
+    id: UUID, itemId: String, key: String, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage
   func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
   func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
   func upsertSession(_ session: ChatSession) async throws -> ServerSession
@@ -367,6 +371,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
   ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
+  func filePreview(id: String) async throws -> Data
+  func filePreview(path: String, sessionId: UUID?) async throws -> Data
   func fileData(id: String) async throws -> Data
   func readDocument(path: String) async throws -> ServerFileDocument
   func saveDocument(path: String, content: String, version: String) async throws -> ServerFileDocument

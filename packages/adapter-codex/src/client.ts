@@ -71,7 +71,8 @@ export const spawnCodexClient: CodexConnector = async (request) => {
     child.once("error", reject)
   })
   const transport = makeNdjsonTransport(childStdioEndpoint(child), {
-    exitMessage: "codex app-server exited"
+    exitMessage: "codex app-server exited",
+    isolateCodexHistory: true
   })
   const client = wireCodexClient(transport)
   const pid = child.pid!
@@ -150,14 +151,7 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
 
   transport.onFailure((error) => settle(error, true))
 
-  const handleLine = (line: string): void => {
-    if (line.trim().length === 0) return
-    let message: Record<string, unknown>
-    try {
-      message = JSON.parse(line) as Record<string, unknown>
-    } catch {
-      return
-    }
+  const handleMessage = (message: Record<string, unknown>): void => {
     const id = message.id
     if (typeof id === "number" && ("result" in message || "error" in message)) {
       const entry = pending.get(id)
@@ -207,7 +201,17 @@ export const wireCodexClient = (transport: NdjsonTransport): CodexClient => {
     }
     notificationHandler?.(method, message.params)
   }
-  transport.onLine(handleLine)
+  if (transport.onMessage !== undefined) transport.onMessage(handleMessage)
+  else
+    transport.onLine((line) => {
+      let message: Record<string, unknown>
+      try {
+        message = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        return
+      }
+      handleMessage(message)
+    })
 
   return {
     close: () => {

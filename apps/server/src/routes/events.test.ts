@@ -30,10 +30,12 @@ describe("event routes", () => {
     })
 
     const project = await run(services.db.createProject({ folderPath: "/tmp/event-cursor" }))
-    await run(services.db.appendEvent("project.updated", project.id, { title: "Updated" }))
+    const appended = await run(
+      services.db.appendEvent("project.updated", project.id, { title: "Updated" })
+    )
 
     expect(await jsonRequest(server, "/v1/events/cursor")).toMatchObject({
-      body: { cursor: 1 },
+      body: { cursor: appended.globalEventId },
       status: 200
     })
   })
@@ -43,7 +45,7 @@ describe("event routes", () => {
     const event = await run(
       services.db.appendEvent("project.updated", "project", { title: "Updated" })
     )
-    const frames = await readWebSocketEvents(server, 2, "0&sync=1")
+    const frames = await readWebSocketEvents(server, 2, "0&sync=1", "/v1/events/socket", true)
     expect(frames).toEqual([
       { ...event, previousEventId: 0 },
       expect.objectContaining({ id: event.id, kind: "keepalive", subjectId: "" })
@@ -147,7 +149,8 @@ describe("event routes", () => {
       kind: "project.created" as const,
       payload: { id: "replay" },
       serverId: "server-a",
-      subjectId: "replay"
+      subjectId: "replay",
+      globalEventId: 1
     }
     const liveEvent = {
       createdAt: "2026-06-30T00:00:01.000Z",
@@ -155,28 +158,45 @@ describe("event routes", () => {
       kind: "project.updated" as const,
       payload: { id: "live" },
       serverId: "server-a",
-      subjectId: "live"
+      subjectId: "live",
+      globalEventId: 2
     }
+    const durable: Array<import("@codevisor/api").EventEnvelope> = [replayEvent]
+    let firstRead = true
     const server = await startWithApp(
       {
         ...services,
         db: {
           ...services.db,
-          listEvents: (since) =>
-            since >= Number.MAX_SAFE_INTEGER
-              ? Effect.succeed([])
-              : Effect.promise(async () => {
-                  await run(fanout.publish(liveEvent))
-                  return [replayEvent]
-                })
+          readSyncBatch: (since, subject) =>
+            Effect.promise(async () => {
+              const events = durable.filter((event) =>
+                subject === undefined
+                  ? event.globalEventId !== undefined && event.globalEventId > since
+                  : event.subjectId === subject && (event.subjectRevision ?? 0) > since
+              )
+              if (firstRead) {
+                firstRead = false
+                durable.push(liveEvent)
+                await run(fanout.publish(liveEvent))
+              }
+              return { events, cursor: events.at(-1)?.id ?? since, requiresSnapshot: false }
+            })
         }
       },
       fanout
     )
+    const publish = async (event: import("@codevisor/api").EventEnvelope) => {
+      durable.push(event as typeof replayEvent)
+      await run(fanout.publish(event))
+    }
     runningServers.push(server)
 
-    expect(await readWebSocketEvents(server, 2, 0)).toEqual([replayEvent, liveEvent])
-    expect(await readWebSocketEvents(server, 1, 1)).toEqual([liveEvent])
+    expect(await readWebSocketEvents(server, 2, 0)).toEqual([
+      { ...replayEvent, previousEventId: 0 },
+      { ...liveEvent, previousEventId: 1 }
+    ])
+    expect(await readWebSocketEvents(server, 1, 1)).toEqual([{ ...liveEvent, previousEventId: 1 }])
     const subscribe = fanout.subscribe.bind(fanout)
     const subscription = vi.spyOn(fanout, "subscribe")
     const nextSubscription = () => {
@@ -191,9 +211,14 @@ describe("event routes", () => {
     let subscribed = nextSubscription()
     const liveOnly = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
     await subscribed
-    const afterSnapshot = { ...liveEvent, id: 3, payload: { id: "after-snapshot" } }
-    await run(fanout.publish(afterSnapshot))
-    expect(await liveOnly).toEqual([afterSnapshot])
+    const afterSnapshot = {
+      ...liveEvent,
+      id: 3,
+      globalEventId: 3,
+      payload: { id: "after-snapshot" }
+    }
+    await publish(afterSnapshot)
+    expect(await liveOnly).toEqual([{ ...afterSnapshot, previousEventId: 2 }])
 
     subscribed = nextSubscription()
     const globalFiltered = readWebSocketEvents(server, 1, Number.MAX_SAFE_INTEGER)
@@ -202,13 +227,19 @@ describe("event routes", () => {
       fanout.publish({
         ...afterSnapshot,
         id: 4,
+        globalEventId: undefined,
         subjectId: "session-only",
         subjectRevision: 1
       })
     )
-    const globalAfterFilter = { ...afterSnapshot, id: 5, subjectId: "global-after-filter" }
-    await run(fanout.publish(globalAfterFilter))
-    expect(await globalFiltered).toEqual([globalAfterFilter])
+    const globalAfterFilter = {
+      ...afterSnapshot,
+      id: 5,
+      globalEventId: 5,
+      subjectId: "global-after-filter"
+    }
+    await publish(globalAfterFilter)
+    expect(await globalFiltered).toEqual([{ ...globalAfterFilter, previousEventId: 4 }])
 
     subscribed = nextSubscription()
     const scopedFiltered = readWebSocketEvents(
@@ -232,8 +263,8 @@ describe("event routes", () => {
       subjectId: "target-session",
       subjectRevision: 2
     }
-    await run(fanout.publish(scopedAfterFilter))
-    expect(await scopedFiltered).toEqual([{ ...scopedAfterFilter, id: 2 }])
+    await publish(scopedAfterFilter)
+    expect(await scopedFiltered).toEqual([{ ...scopedAfterFilter, id: 2, previousEventId: 1 }])
 
     subscribed = nextSubscription()
     const sseFiltered = readSseEvents(server, 1, Number.MAX_SAFE_INTEGER)
@@ -242,13 +273,14 @@ describe("event routes", () => {
       fanout.publish({
         ...afterSnapshot,
         id: 8,
+        globalEventId: undefined,
         subjectId: "session-only-sse",
         subjectRevision: 1
       })
     )
-    const globalSseEvent = { ...afterSnapshot, id: 9, subjectId: "global-sse" }
-    await run(fanout.publish(globalSseEvent))
-    expect(await sseFiltered).toEqual([globalSseEvent])
+    const globalSseEvent = { ...afterSnapshot, id: 9, globalEventId: 9, subjectId: "global-sse" }
+    await publish(globalSseEvent)
+    expect(await sseFiltered).toEqual([{ ...globalSseEvent, previousEventId: 8 }])
   })
 
   it("interleaves keepalives on session sockets so silence is measurable", async () => {
@@ -292,31 +324,29 @@ describe("event routes", () => {
       payload: {}
     })
 
-    // After real traffic, keepalives carry the advanced cursor.
-    await run(
-      fanout.publish({
-        createdAt: "2026-06-30T00:00:00.000Z",
-        id: 41,
-        kind: "session.output",
-        payload: {},
-        serverId: "server-a",
-        subjectId: "session-keepalive",
-        subjectRevision: 7
-      })
+    // Fanout wakes a durable read; only committed records advance the cursor.
+    const project = await run(services.db.createProject({ folderPath: "/tmp/keepalive" }))
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex", title: "Keepalive" })
     )
+    scoped.close()
+    const connected = makeFakeSocket()
+    await attachEventSocket(services.db, fanout, 0, connected as never, "server-a", session.id)
+    const committed = await run(services.db.appendEvent("session.output", session.id, {}))
+    await run(fanout.publish(committed))
     await vi.advanceTimersByTimeAsync(25_000)
     expect(
-      scoped.sent
+      connected.sent
         .map(parse)
         .filter((event) => event.kind === "keepalive")
         .at(-1)?.id
-    ).toBe(7)
+    ).toBe(committed.subjectRevision)
 
     // Close stops the timer.
-    scoped.close()
-    const sentAtClose = scoped.sent.length
+    connected.close()
+    const sentAtClose = connected.sent.length
     await vi.advanceTimersByTimeAsync(25_000)
-    expect(scoped.sent.length).toBe(sentAtClose)
+    expect(connected.sent.length).toBe(sentAtClose)
 
     // The global socket stays keepalive-free: old live-only subscribers adopt
     // the first received id as their cursor, which a keepalive must never
@@ -331,7 +361,10 @@ describe("event routes", () => {
       undefined
     )
     await vi.advanceTimersByTimeAsync(25_000)
-    expect(global.sent).toEqual([])
+    expect(global.sent.map(parse)).toEqual([
+      expect.objectContaining({ id: 0, kind: "keepalive" }),
+      expect.objectContaining({ id: 0, kind: "keepalive" })
+    ])
     global.close()
   })
 
@@ -347,8 +380,12 @@ describe("event routes", () => {
       payload: {}
     }))
     const db = {
-      listSubjectEvents: (_id: string, since: number) =>
-        Effect.sync(() => durable.filter((event) => event.id > since))
+      readSyncBatch: (since: number) =>
+        Effect.sync(() => ({
+          events: durable.filter((event) => event.id > since),
+          cursor: durable.at(-1)?.id ?? since,
+          requiresSnapshot: false
+        }))
     }
     const sent: Array<{ id: number; kind: string }> = []
     const closers: Array<() => void> = []

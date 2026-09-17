@@ -53,10 +53,24 @@ extension SessionStore {
         $0.serverId == session.serverId && $0.id == session.projectId
       })
     else { return }
+    let hadChatPane =
+      environment.workspaces.workspaceId(forSession: session.id)
+      .flatMap { environment.workspaces.workspace(id: $0)?.tabId(containingChat: session.id) } != nil
     var workspace = workspace(for: session, project: project)
     if !session.isArchived, workspace.tabId(containingChat: session.id) == nil {
-      workspace.centerTabs.append(WorkspaceTab(root: .leaf(.centerInitial(sessionId: session.id))))
+      let group = PaneGroupState.centerInitial(sessionId: session.id)
+      workspace.centerTabs.append(WorkspaceTab(root: .leaf(group)))
       environment.workspaces.save(workspace)
+    }
+    if !session.isArchived, !hadChatPane {
+      // The one-time migration is complete. Publish panes created by explicit
+      // navigation now so the next snapshot and other devices retain them.
+      for pane in workspace.centerTabs.flatMap({ $0.root.allGroups.flatMap { $0.state.panes } })
+      where pane.chatSessionId == session.id {
+        environment.workspaceSync.publishPane(
+          pane, workspaceId: workspace.id,
+          client: environment.machines.client(for: session.serverId))
+      }
     }
     selectDestination(.chat(session.id), in: workspace.id)
   }

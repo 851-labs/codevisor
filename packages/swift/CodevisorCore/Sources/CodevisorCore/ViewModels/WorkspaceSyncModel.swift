@@ -56,6 +56,8 @@ public final class WorkspaceSyncModel {
   @ObservationIgnored var optimisticPaneDeletions: Set<PanePublicationKey> = []
   @ObservationIgnored var confirmedPaneRevisions: [PanePublicationKey: Int] = [:]
 
+  @ObservationIgnored var onSnapshotRefreshed: ((ServerNavigationSnapshot, String) async -> Void)?
+
   public init(repository: any WorkspaceRepository, projectList: ProjectListModel) {
     self.repository = repository
     self.projectList = projectList
@@ -65,115 +67,56 @@ public final class WorkspaceSyncModel {
     revision &+= 1
   }
 
-  /// Older servers return nil and leave every local workspace untouched.
+  /// One-time, receipt-backed migration of layouts that predate server ownership.
+  /// A failed upload leaves local layout intact and the migration retryable.
+  func migrateNavigationSnapshot(
+    _ initial: ServerNavigationSnapshot, serverId: String,
+    client: any CodevisorServerClienting
+  ) async throws -> ServerNavigationSnapshot {
+    let key = "persisted-navigation-v1:\(serverId)"
+    if repository.hasPerformedMigration(key) { return initial }
+    let adoption = await adoptLocalWorkspaces(
+      initial.workspaces,
+      assignments: projectList.workspaceAssignments(for: serverId), serverId: serverId, client: client)
+    guard adoption.canReconcile else { throw CodevisorServerClientError.invalidResponse }
+    let panes = await backfillLocalPanes(
+      initial.panes, workspaceRecords: adoption.records,
+      assignments: adoption.assignments, serverId: serverId, client: client)
+    guard panes.protectedIds.isEmpty else { throw CodevisorServerClientError.invalidResponse }
+    let changed = adoption.didMutateServer || panes.records.count != initial.panes.count
+    let snapshot = changed ? try await client.navigationSnapshot() : initial
+    try Task.checkCancellation()
+    repository.markMigrationPerformed(key)
+    return snapshot
+  }
+
+  public func applyNavigationSnapshot(_ snapshot: ServerNavigationSnapshot, serverId: String) {
+    refreshGenerationByServer[serverId, default: 0] &+= 1
+    reconcile(
+      snapshot.workspaces, paneRecords: snapshot.panes,
+      protectedLocalPaneIds: [], assignments: projectList.workspaceAssignments(for: serverId),
+      serverId: serverId)
+  }
+
   @discardableResult
   public func refreshFromServer(
     serverId: String,
     client: any CodevisorServerClienting
   ) async -> ServerNavigationRefreshResult {
-    // Per-server generations: a background machine's refresh must never
-    // be gated (or cancelled) by the selected machine's, and vice versa.
     refreshGenerationByServer[serverId, default: 0] &+= 1
     let generation = refreshGenerationByServer[serverId]
     do {
-      var records: [ServerWorkspace]
-      var paneSnapshot: [ServerWorkspacePane]?
-      let usesCoherentSnapshot: Bool
-      if let snapshot = try await client.workspaceSnapshot() {
-        records = snapshot.workspaces
-        paneSnapshot = snapshot.panes
-        usesCoherentSnapshot = true
+      let snapshot = try await migrateNavigationSnapshot(
+        try await client.navigationSnapshot(), serverId: serverId, client: client)
+      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId] else { return .superseded }
+      if let onSnapshotRefreshed {
+        await onSnapshotRefreshed(snapshot, serverId)
       } else {
-        // Rolling-upgrade fallback for servers that expose the two
-        // older endpoints but not the atomic snapshot yet.
-        async let workspaceRequest = client.listWorkspaces()
-        async let paneRequest = client.listWorkspacePanes()
-        guard let legacyRecords = try await workspaceRequest else { return .committed }
-        records = legacyRecords
-        paneSnapshot = try await paneRequest
-        usesCoherentSnapshot = false
+        applyNavigationSnapshot(snapshot, serverId: serverId)
       }
-      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
-      else { return .superseded }
-      var assignments = projectList.workspaceAssignments(for: serverId)
-
-      // A workspace created before server ownership existed has no
-      // server row for panes to reference. Adopt it before backfilling
-      // pane identities, and carry the membership we just wrote into
-      // this same reconciliation pass instead of waiting for the
-      // resulting session events to round-trip.
-      let adoption = await adoptLocalWorkspaces(
-        records,
-        assignments: assignments,
-        serverId: serverId,
-        client: client
-      )
-      records = adoption.records
-      assignments = adoption.assignments
-      guard adoption.canReconcile else { return .failed("Couldn't sync workspace panes.") }
-
-      // Adoption writes a workspace, its pane identities, and session
-      // membership after the coherent snapshot above was captured. Do
-      // not reconcile that pre-adoption pane list: it can be empty and
-      // would evict the live local pane before the server's resulting
-      // events arrive. Re-read the atomic snapshot so the repository
-      // crosses the ownership boundary in one coherent commit.
-      if adoption.didMutateServer {
-        guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
-        else { return .superseded }
-        if usesCoherentSnapshot {
-          guard let refreshed = try await client.workspaceSnapshot() else {
-            return .failed("Couldn't refresh workspaces after syncing panes.")
-          }
-          records = refreshed.workspaces
-          paneSnapshot = refreshed.panes
-        } else {
-          async let workspaceRequest = client.listWorkspaces()
-          async let paneRequest = client.listWorkspacePanes()
-          guard let refreshedRecords = try await workspaceRequest,
-            let refreshedPanes = try await paneRequest
-          else { return .failed("Couldn't refresh workspaces after syncing panes.") }
-          records = refreshedRecords
-          paneSnapshot = refreshedPanes
-        }
-      }
-
-      var protectedLocalPaneIds = Set<UUID>()
-      let panes: [ServerWorkspacePane]?
-      if let paneSnapshot, !usesCoherentSnapshot {
-        // Backfill is pane-receipt based rather than one global
-        // migration bit. It exists only for rolling upgrades; a
-        // current server snapshot is authoritative and hydration
-        // never manufactures or uploads panes.
-        let backfill = await backfillLocalPanes(
-          paneSnapshot,
-          workspaceRecords: records,
-          assignments: assignments,
-          serverId: serverId,
-          client: client
-        )
-        panes = backfill.records
-        protectedLocalPaneIds = backfill.protectedIds
-      } else if let paneSnapshot {
-        panes = paneSnapshot
-      } else {
-        panes = nil
-      }
-      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId]
-      else { return .superseded }
-      reconcile(
-        records,
-        paneRecords: panes,
-        protectedLocalPaneIds: protectedLocalPaneIds,
-        assignments: assignments,
-        serverId: serverId
-      )
       retryWorkspaceOrders(serverId: serverId, client: client)
       return .committed
     } catch {
-      Log.sync.error(
-        "Failed to refresh workspaces from server: \(String(describing: error), privacy: .public)"
-      )
       return .failed(String(describing: error))
     }
   }

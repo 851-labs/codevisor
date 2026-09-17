@@ -45,6 +45,7 @@ export interface ProjectLocationRow {
   readonly project_id: string
   readonly server_id: string
   readonly folder_path: string
+  readonly is_git_repository?: number | null
   readonly created_at: string
 }
 

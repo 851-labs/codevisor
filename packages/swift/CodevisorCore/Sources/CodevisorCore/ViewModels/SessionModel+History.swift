@@ -8,6 +8,12 @@ enum SessionHistoryLoadOutcome {
 }
 
 extension SessionModel {
+  public func transcriptBodyPage(
+    resource: ToolDetailResource, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage {
+    try await transport.transcriptBodyPage(resource: resource, field: field, position: position)
+  }
+
   // MARK: - History
 
   /// Loads the server's conversation snapshot and begins live streaming from
@@ -42,21 +48,14 @@ extension SessionModel {
     defersPromptQueue: Bool,
     preservingContent: Bool = false
   ) async -> SessionHistoryLoadOutcome {
-    cancelActiveTranscriptHydration()
     promptQueueLoadTask?.cancel()
     promptQueueLoadTask = nil
     do {
-      var page: TranscriptHistoryPage
+      let page: TranscriptHistoryPage
       if let preloaded {
         page = preloaded
       } else {
-        do {
-          page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
-        } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
-          // Only a missing page endpoint selects legacy history. A missing
-          // detail item must never replace cached content with a legacy snapshot.
-          return await loadLegacyHistory()
-        }
+        page = try await transport.transcriptPage(limit: Self.initialTranscriptPageSize)
       }
       usesPaginatedHistory = true
       if appliedStateIsCurrent(through: page.eventCursor) {
@@ -78,36 +77,10 @@ extension SessionModel {
         }
         return .loaded
       }
-      // Prepare a complete replacement off-screen. A failed/cancelled detail
-      // fetch leaves the cached transcript and its applied cursor intact.
-      if preservingContent {
-        let hydratedIDs = Set(
-          conversation.compactMap { item -> UUID? in
-            guard case let .assistant(message) = item,
-              message.turn.deferredDetailItemId == nil
-            else { return nil }
-            return message.id
-          })
-        for index in page.conversation.indices {
-          guard case let .assistant(message) = page.conversation[index],
-            let itemID = message.turn.deferredDetailItemId,
-            message.turn.isGenerating || hydratedIDs.contains(message.id)
-          else { continue }
-          let events: [ServerSessionStreamEvent]
-          do {
-            events = try await transport.transcriptDetails(itemId: itemID, throughRevision: page.eventCursor)
-          } catch let CodevisorServerClientError.httpStatus(status, _) where status == 404 {
-            return .failed(message: "Transcript details are unavailable. Reconnecting…", retryable: true)
-          }
-          page.conversation[index] = .assistant(
-            AssistantMessage(
-              id: message.id, turn: Self.hydratedTranscriptTurn(message, events: events)))
-        }
-      }
       try Task.checkCancellation()
       // Keep already loaded older pages (and their pagination cursor).
       let prefix =
-        preservingContent
+        preservingContent && !hasNewerHistory
         ? page.conversation.first.flatMap { first in
           conversation.firstIndex(where: { $0.id == first.id }).map { Array(conversation.prefix($0)) }
         } : nil
@@ -115,9 +88,27 @@ extension SessionModel {
         olderHistoryCursor = page.nextBefore
         hasOlderHistory = page.hasMore
       }
+      transcriptSequences.merge(page.sequences) { _, new in new }
+      hasNewerHistory = false
       setConversation((prefix ?? []) + page.conversation)
+      boundHistoryWindow(keepingOldest: false)
       if let persistedUsage = page.usage {
         usage = persistedUsage
+      }
+      persistedSetupPhases = page.setupPhases
+      for update in page.stateUpdates {
+        if case let .configOptionUpdate(saved) = update, !configOptions.isEmpty {
+          configOptions = configOptions.map { current in
+            guard let selection = saved.first(where: { $0.id == current.id }),
+              current.options.contains(where: { $0.value == selection.currentValue })
+            else { return current }
+            var restored = current
+            restored.currentValue = selection.currentValue
+            return restored
+          }
+        } else {
+          apply(.update(update))
+        }
       }
       pendingQuestion = page.pendingQuestion
       pendingPlanApproval = page.pendingPlanApproval
@@ -138,17 +129,7 @@ extension SessionModel {
       if isSending { noteProviderActivity(.modelStream) }
       serverEventCursor = page.eventCursor
       if preservingContent { applySynchronization(.catchingUp) }
-      let activeDetailItemId = activeDeferredDetailItemId
-      if activeDetailItemId != nil {
-        isActiveTranscriptHydrationPending = true
-      }
       await startConsumer()
-      if let activeDetailItemId {
-        startActiveTranscriptHydration(
-          itemId: activeDetailItemId,
-          throughRevision: page.eventCursor
-        )
-      }
       if defersPromptQueue {
         schedulePromptQueueLoad()
       } else {
@@ -247,122 +228,11 @@ extension SessionModel {
   }
   */
 
-  private func loadLegacyHistory() async -> SessionHistoryLoadOutcome {
-    do {
-      let snapshot = try await transport.snapshot()
-      queuedPrompts = snapshot.promptQueue
-      promptQueueRevision &+= 1
-
-      // Replay the persisted event history through the live pipeline —
-      // the text-only conversation snapshot loses tool calls and diffs.
-      // Fall back to the snapshot for sessions with no stored events.
-      let history = try await transport.history()
-      if history.events.isEmpty {
-        setConversation(snapshot.conversation)
-        pendingQuestion = snapshot.pendingQuestion
-        pendingPlanApproval = snapshot.pendingPlanApproval
-        updateGateHarnessName = snapshot.updateGateHarnessName
-        goal = snapshot.goal
-        sessionPlan = snapshot.sessionPlan
-        if let tasks = snapshot.backgroundTasks {
-          backgroundTasks = tasks
-          hasBackgroundTaskSnapshot = true
-        }
-        serverEventCursor = snapshot.eventCursor
-      } else {
-        setConversation([])
-        pendingQuestion = nil
-        isReplayingHistory = true
-        historicalConfigSelections.removeAll(keepingCapacity: true)
-        // Hours-long sessions replay tens of thousands of events;
-        // yielding periodically keeps the run loop responsive (input,
-        // rendering) instead of beachballing the app while a session
-        // opens. The live consumer starts only after the loop, so no
-        // stream events can interleave with the replay.
-        for (index, event) in history.events.enumerated() {
-          apply(event)
-          if index % 256 == 255 {
-            await Task.yield()
-          }
-        }
-        isReplayingHistory = false
-        // Replayed events can end on a `waiting` gate whose release the log
-        // never recorded; the snapshot says whether it is still held.
-        updateGateHarnessName = snapshot.updateGateHarnessName
-        let runtimeOptions = configOptions
-        let restoredOptions = Self.mergingSupportedSelections(
-          historicalConfigSelections,
-          into: runtimeOptions
-        )
-        configOptions = restoredOptions
-        await restoreRuntimeConfigSelections(from: runtimeOptions, to: restoredOptions)
-        isSending = lastTurnIsGenerating
-        if isSending { noteProviderActivity(.modelStream) }
-        serverEventCursor = history.cursor ?? snapshot.eventCursor
-      }
-      await startConsumer()
-      // Legacy global streams have no session checkpoint. Their complete
-      // history replay is the strongest synchronization boundary available.
-      applySynchronization(.caughtUp)
-      return .loaded
-    } catch {
-      isReplayingHistory = false
-      return historyLoadOutcome(for: error)
-    }
-  }
-
-  private static func mergingSupportedSelections(
-    _ selections: [String: String],
-    into currentOptions: [SessionConfigOption]
-  ) -> [SessionConfigOption] {
-    currentOptions.map { option in
-      guard let selected = selections[option.id],
-        option.options.contains(where: { $0.value == selected })
-      else {
-        return option
-      }
-      var merged = option
-      merged.currentValue = selected
-      return merged
-    }
-  }
-
-  private func restoreRuntimeConfigSelections(
-    from runtimeOptions: [SessionConfigOption],
-    to restoredOptions: [SessionConfigOption]
-  ) async {
-    let runtimeValues = Dictionary(uniqueKeysWithValues: runtimeOptions.map { ($0.id, $0.currentValue) })
-    let categoryOrder = [
-      SessionConfigOption.Category.model: 0,
-      SessionConfigOption.Category.thoughtLevel: 1,
-      SessionConfigOption.Category.speed: 2,
-    ]
-    let changed =
-      restoredOptions
-      .filter { runtimeValues[$0.id] != $0.currentValue }
-      .sorted {
-        (categoryOrder[$0.category ?? ""] ?? 99) < (categoryOrder[$1.category ?? ""] ?? 99)
-      }
-    for option in changed {
-      do {
-        _ = try await transport.setConfigOption(
-          configId: option.id,
-          value: option.currentValue
-        )
-      } catch {
-        // Best-effort restore: the remaining options still apply.
-        Log.session.error(
-          "Failed to restore config option \(option.id, privacy: .public): \(String(describing: error), privacy: .public)"
-        )
-      }
-    }
-  }
-
   /// Prepends one bounded page of older semantic rows. Requests are
   /// deduplicated and stable ids prevent overlap if a retry races a prior load.
   @discardableResult
   public func loadOlderHistory() async -> Int {
-    guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
+    guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory, !isLoadingNewerHistory,
       let cursor = olderHistoryCursor
     else { return 0 }
     isLoadingOlderHistory = true
@@ -372,13 +242,16 @@ extension SessionModel {
         before: cursor,
         limit: Self.olderTranscriptPageSize
       )
+      try Task.checkCancellation()
       let existing = Set(conversation.map(\.id))
       let unique = page.conversation
         .map(restoringCachedTranscriptDetails)
         .filter {
           $0.hasRenderableTranscriptContent && !existing.contains($0.id)
         }
+      transcriptSequences.merge(page.sequences) { _, new in new }
       settledConversation.insert(contentsOf: unique, at: 0)
+      boundHistoryWindow(keepingOldest: true)
       rebuildSettledIndex()
       olderHistoryCursor = page.nextBefore
       hasOlderHistory = page.hasMore
@@ -395,15 +268,15 @@ extension SessionModel {
   /// turn-scoped events are reduced; opening a disclosure never touches the
   /// rest of the session history.
   @discardableResult
-  public func loadTranscriptDetails(itemId: String) async -> Bool {
-    if restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
+  public func loadTranscriptDetails(itemId: String, previous: Bool = false) async -> Bool {
+    if !previous && restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
     if let task = transcriptDetailLoadTasks[itemId] {
       return await task.value
     }
 
     let task = Task { @MainActor [weak self] in
       guard let self else { return false }
-      return await self.fetchTranscriptDetails(itemId: itemId)
+      return await self.fetchTranscriptDetails(itemId: itemId, previous: previous)
     }
     transcriptDetailLoadTasks[itemId] = task
     let loaded = await task.value
@@ -411,34 +284,56 @@ extension SessionModel {
     return loaded
   }
 
-  private func fetchTranscriptDetails(itemId: String) async -> Bool {
-    await fetchTranscriptDetails(itemId: itemId, throughRevision: nil)
-  }
-
-  private func fetchTranscriptDetails(
-    itemId: String,
-    throughRevision: Int?
-  ) async -> Bool {
+  private func fetchTranscriptDetails(itemId: String, previous: Bool) async -> Bool {
+    guard let location = transcriptItemLocation(itemId), case let .assistant(message) = location.item else {
+      return false
+    }
+    let after = previous ? message.turn.detailPreviousBefore : message.turn.detailNextAfter
     do {
-      let events = try await transport.transcriptDetails(
-        itemId: itemId,
-        throughRevision: throughRevision
-      )
-      guard let location = transcriptItemLocation(itemId) else { return false }
-      let original = location.item
-      guard case let .assistant(originalMessage) = original else { return false }
-      let turn = Self.hydratedTranscriptTurn(originalMessage, events: events)
-      let hydrated = ConversationItem.assistant(AssistantMessage(id: originalMessage.id, turn: turn))
-      transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(
-        revision: originalMessage.turn.detailRevision,
-        turn: turn
-      )
+      let page = try await transport.transcriptDetails(itemId: itemId, after: after)
+      try Task.checkCancellation()
+      guard let location = transcriptItemLocation(itemId), case let .assistant(original) = location.item else {
+        return false
+      }
+      var base = original
+      // Replace the previous detail page, retaining only updates newer than the
+      // page's consistent snapshot. The complete transcript stays on the server.
+      base.turn.detailAnswerPreview = original.turn.detailAnswerPreview ?? original.turn.finalText
+      base.turn.entries = original.turn.entries.filter {
+        original.turn.revision(of: $0, parent: nil) > page.eventCursor
+      }
+      base.turn.subagents = original.turn.subagents.reduce(into: [:]) { result, pair in
+        let (parent, bucket) = pair
+        var kept = bucket
+        kept.entries = bucket.entries.filter { entry in
+          original.turn.revision(of: entry, parent: parent) > page.eventCursor
+        }
+        if !kept.entries.isEmpty { result[parent] = kept }
+      }
+      var turn = Self.hydratedTranscriptTurn(base, events: transport.detailEvents(from: page))
+      turn.detailAnswerPreview = original.turn.detailAnswerPreview ?? original.turn.finalText
+      if case let .text(id, _) = turn.detailAnswerPreview, let phase = original.turn.textPhases[id] {
+        turn.textPhases[id] = phase
+      }
+      turn.detailNextAfter = page.nextAfter
+      turn.detailPreviousBefore = page.previousBefore
+      turn.detailPageCursor = after
+      turn.hasDeferredWorkedDetails = page.nextAfter != nil || page.previousBefore != nil
+      turn.deferredDetailItemId = itemId
+      turn.detailRevision = page.revision
+      turn.pruneEntryMetadata()
+      let hydrated = ConversationItem.assistant(AssistantMessage(id: original.id, turn: turn))
+      if page.nextAfter == nil && page.previousBefore == nil && !turn.isGenerating {
+        transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(revision: page.revision, turn: turn)
+        if transcriptDetailsCache.count > 8, let oldest = transcriptDetailsCache.keys.first(where: { $0 != itemId }) {
+          transcriptDetailsCache.removeValue(forKey: oldest)
+        }
+      }
       installTranscriptDetails(hydrated, at: location.storage)
+      retainDetailWindow(itemId: itemId)
       return true
     } catch {
-      if !isTaskCancellation(error) {
-        errorMessage = serverErrorMessage(error)
-      }
+      if !isTaskCancellation(error) { errorMessage = serverErrorMessage(error) }
       return false
     }
   }
@@ -447,11 +342,7 @@ extension SessionModel {
     _ originalMessage: AssistantMessage,
     events: [ServerSessionStreamEvent]
   ) -> AssistantTurn {
-    var turn = AssistantTurn(
-      isGenerating: true,
-      isThinking: false,
-      startedAt: originalMessage.turn.startedAt
-    )
+    var turn = originalMessage.turn
     for event in events {
       switch event {
       case let .update(update):
@@ -488,6 +379,10 @@ extension SessionModel {
     turn.isGenerating = originalMessage.turn.isGenerating
     turn.startedAt = originalMessage.turn.startedAt
     turn.endedAt = originalMessage.turn.endedAt
+    turn.stopReason = originalMessage.turn.stopReason
+    turn.stopDetail = originalMessage.turn.stopDetail
+    turn.stopKind = originalMessage.turn.stopKind
+    turn.retryable = originalMessage.turn.retryable
     turn.planDocument = turn.planDocument ?? originalMessage.turn.planDocument
     if turn.attachments.isEmpty { turn.attachments = originalMessage.turn.attachments }
     turn.deferredDetailItemId = nil
@@ -497,51 +392,13 @@ extension SessionModel {
     return turn
   }
 
-  /// Hydrates the compact, generating assistant item returned to a client
-  /// that joined mid-turn. Events newer than `throughRevision` are already
-  /// arriving on the socket, but remain in `pendingEvents` until this
-  /// snapshot-scoped baseline is installed.
-  private func startActiveTranscriptHydration(
-    itemId: String,
-    throughRevision: Int
-  ) {
-    activeTranscriptHydrationGeneration &+= 1
-    let generation = activeTranscriptHydrationGeneration
-    activeTranscriptHydrationTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      let hydrated = await self.fetchTranscriptDetails(
-        itemId: itemId,
-        throughRevision: throughRevision
-      )
-      guard !Task.isCancelled,
-        self.activeTranscriptHydrationGeneration == generation
-      else { return }
-      self.activeTranscriptHydrationTask = nil
-      guard hydrated else {
-        // Never apply a live suffix to a missing historical baseline.
-        // Recovery prehydrates its replacement and retries transient errors.
-        self.applySynchronization(.reconnecting)
-        await self.reconcileFromServer()
-        return
-      }
-      self.isActiveTranscriptHydrationPending = false
-      self.scheduleFlush()
-    }
-  }
-
-  func cancelActiveTranscriptHydration() {
-    activeTranscriptHydrationGeneration &+= 1
-    activeTranscriptHydrationTask?.cancel()
-    activeTranscriptHydrationTask = nil
-    isActiveTranscriptHydrationPending = false
-  }
-
   private func restoreTranscriptDetailsIfCached(itemId: String) -> Bool {
     guard let cached = transcriptDetailsCache[itemId] else { return false }
     // A row task can briefly outlive the deferred row it hydrated. The
     // cache entry proves that work already completed successfully.
     guard let location = transcriptItemLocation(itemId) else { return true }
     guard case let .assistant(originalMessage) = location.item,
+      !originalMessage.turn.hasDeferredWorkedDetails,
       cached.revision == originalMessage.turn.detailRevision
     else { return false }
     let hydrated = ConversationItem.assistant(
@@ -586,13 +443,6 @@ extension SessionModel {
       return (.active, activeItem)
     }
     return nil
-  }
-
-  var activeDeferredDetailItemId: String? {
-    guard case let .assistant(message) = activeItem,
-      message.turn.isGenerating
-    else { return nil }
-    return message.turn.deferredDetailItemId
   }
 
   private var lastTurnIsGenerating: Bool {

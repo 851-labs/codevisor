@@ -147,6 +147,11 @@ public extension SessionModel {
 /// stream never yields and every write throws or drops, so nothing can reach
 /// a real server.
 struct PreviewServerClient: CodevisorServerClienting {
+  func navigationSnapshot() async throws -> ServerNavigationSnapshot {
+    ServerNavigationSnapshot(
+      eventCursor: 0, projects: try await listProjects(), sessions: try await listSessions(), workspaces: [], panes: [])
+  }
+
   var harnessCapabilities: [ServerHarnessCapability] = []
 
   func health() async throws -> ServerHealth {

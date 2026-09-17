@@ -1,9 +1,12 @@
+import type { Project, SessionSummary } from "@codevisor/api"
+import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach } from "vitest"
+import { afterEach, onTestFinished } from "vitest"
+import { createService } from "./create-service.js"
 import type { DatabaseError } from "./errors.js"
 
 const tempDirs: Array<string> = []
@@ -154,4 +157,21 @@ export const buildV4Fixture = (filename: string): void => {
       values ('sess-1', 'action-1', 'prompt', '{}', '2026-06-01T01:03:00.000Z');
   `)
   sqlite.close()
+}
+
+export const memoryDatabase = async (): Promise<{
+  sqlite: Database.Database
+  config: CodevisorDatabaseConfig
+  db: CodevisorDatabaseService
+  project: Project
+  session: SessionSummary
+}> => {
+  const sqlite = new Database(":memory:")
+  const config = { filename: ":memory:", serverId: "local" }
+  const db = createService(sqlite, config)
+  onTestFinished(() => run(db.close))
+  await run(db.migrate)
+  const project = await run(db.createProject({ folderPath: "/tmp/transcript-state-test" }))
+  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+  return { sqlite, config, db, project, session }
 }

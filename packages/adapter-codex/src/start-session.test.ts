@@ -153,7 +153,7 @@ describe("CodexProvider", () => {
     expect(reads).toEqual(["/custom/codex-home/config.toml"])
   })
 
-  it("keeps the requested id when resuming, with thread/start fallback", async () => {
+  it("keeps the requested id and surfaces resume failures without creating a new thread", async () => {
     const { client, loaded } = await setup({ resume: "old-thread" })
     expect(loaded?.sessionId).toBe("old-thread")
     expect(loaded?.metadata?.sessionId).toBe("old-thread")
@@ -162,8 +162,6 @@ describe("CodexProvider", () => {
     ).toEqual(expect.arrayContaining([expect.objectContaining({ value: "gpt-5.5" })]))
     expect(client.requests.map((request) => request.method)).toContain("thread/resume")
 
-    const fallback = await setup({ failResume: true, resume: "not-a-thread" })
-    expect(fallback.loaded?.sessionId).toBe("not-a-thread")
-    expect(fallback.client.requests.map((request) => request.method)).toContain("thread/start")
+    await expect(setup({ failResume: true, resume: "not-a-thread" })).rejects.toThrow()
   })
 })

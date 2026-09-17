@@ -172,11 +172,16 @@ struct AssistantTurnView: View {
         //
         // Streaming and settled responses use the same block renderer,
         // so completing a turn does not replace its text geometry.
-        assistantResponse(
-          entryID: entryID,
-          markdown: markdown,
-          animationEnabled: animationEnabled
-        )
+        if let resource = turn.textStates[":\(entryID)"]?.resource {
+          TranscriptInlineTextView(resource: resource, preview: markdown)
+        } else {
+          assistantResponse(
+            entryID: entryID,
+            markdown: markdown,
+            animationEnabled: animationEnabled
+          )
+        }
+
       }
 
       if presentation.showsResponse, finalText == nil, !turn.attachments.isEmpty {
@@ -188,13 +193,16 @@ struct AssistantTurnView: View {
       }
 
       if presentation.showsEpilogue,
-        let final = finalText, case let .text(_, markdown) = final
+        let final = finalText, case let .text(entryID, markdown) = final
       {
         if !turn.isGenerating {
           // Copies just the final answer text, not the worked/tool
           // content. Hidden until hover so the transcript stays clean.
-          MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
-            .opacity(isHovered ? 1 : 0)
+          MessageCopyButton(
+            text: markdown, help: "Copy response", isRevealed: isHovered,
+            resource: turn.textStates[":\(entryID)"]?.resource
+          )
+          .opacity(isHovered ? 1 : 0)
         }
       }
 
@@ -437,6 +445,7 @@ struct AssistantTurnView: View {
       // contents, so a rendered Worked section keeps the line in both
       // its collapsed and expanded states.
       Divider()
+      if expanded { TranscriptMoreDetailsButton(turn: turn) }
 
       TranscriptDisclosureContentReveal(
         isExpanded: expanded && !items.isEmpty

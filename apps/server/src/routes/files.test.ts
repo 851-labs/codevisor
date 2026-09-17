@@ -244,8 +244,9 @@ describe("file routes", () => {
       { fileId: pngRef.fileId },
       { fileId: textRef.fileId }
     ])
-    const history = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
-      .body as ReadonlyArray<{ readonly payload: Record<string, unknown> }>
+    const history = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+      readonly payload: Record<string, unknown>
+    }>
     expect(
       history.some(
         (event) =>
@@ -265,8 +266,10 @@ describe("file routes", () => {
       method: "POST"
     })
     await waitFor(async () => {
-      const events = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
-        .body as ReadonlyArray<{ readonly kind: string; readonly payload: Record<string, unknown> }>
+      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+        readonly kind: string
+        readonly payload: Record<string, unknown>
+      }>
       return events.some(
         (event) =>
           event.kind === "session.error" && String(event.payload.message).includes("vanished-file")
@@ -281,8 +284,9 @@ describe("file routes", () => {
       subjectId: agentSessionId
     })
     await waitFor(async () => {
-      const events = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
-        .body as ReadonlyArray<{ readonly payload: Record<string, unknown> }>
+      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+        readonly payload: Record<string, unknown>
+      }>
       return events.some((event) => event.payload.text === "malformed")
     })
     const refreshed = (await jsonRequest(server, `/v1/sessions/${session.id}`)).body as {
@@ -305,8 +309,10 @@ describe("file routes", () => {
       ).status
     ).toBe(202)
     await waitFor(async () => {
-      const events = (await jsonRequest(server, `/v1/sessions/${session.id}/events`))
-        .body as ReadonlyArray<{ readonly kind: string; readonly payload: Record<string, unknown> }>
+      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+        readonly kind: string
+        readonly payload: Record<string, unknown>
+      }>
       return events.some(
         (event) =>
           event.kind === "session.error" &&

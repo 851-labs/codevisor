@@ -24,6 +24,17 @@ struct FileMarkdownPreview: View {
           else { throw URLError(.badURL) }
           return try await client.documentData(path: resolved)
         }
+      },
+      fetchPreview: { source in
+        switch source {
+        case let .attachment(id): return try await client.filePreview(id: id)
+        case let .serverPath(target):
+          guard
+            let resolved = MarkdownDocumentPath.resolve(
+              target, relativeTo: (path as NSString).deletingLastPathComponent)
+          else { throw URLError(.badURL) }
+          return try await client.filePreview(path: resolved, sessionId: nil)
+        }
       }, version: { _ in nil })
     imageLoader = MarkdownImageLoader(id: images.namespace) { await images.markdownImageLoader.image(for: $0) }
   }

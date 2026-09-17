@@ -9,12 +9,14 @@ struct ModelTests {
   func transcriptPageStateCompatibility() throws {
     let legacy = try JSONDecoder().decode(
       ServerTranscriptPage.self,
-      from: Data(#"{"items":[],"hasMore":false,"eventCursor":5}"#.utf8)
+      from: Data(
+        #"{"items":[],"setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore":false,"eventCursor":5}"#
+          .utf8)
     )
     let current = try JSONDecoder().decode(
       ServerTranscriptPage.self,
       from: Data(
-        #"{"items":[],"hasMore":false,"eventCursor":6,"pendingPlanApproval":true,"sessionPlan":{"entries":[{"content":"Implement","priority":"medium","status":"in_progress"}]}}"#
+        #"{"items":[],"setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore":false,"eventCursor":6,"pendingPlanApproval":true,"sessionPlan":{"entries":[{"content":"Implement","priority":"medium","status":"in_progress"}]}}"#
           .utf8
       )
     )

@@ -22,21 +22,33 @@ describe("durable session checkpoints", () => {
     let failReplay!: (error: Error) => void
     let reads = 0
     const db = {
-      listSubjectEvents: () =>
+      readSyncBatch: (since: number) =>
         Effect.promise(() => {
           reads += 1
-          if (reads === 1) return Promise.resolve([])
+          if (reads === 1)
+            return Promise.resolve({ events: [], cursor: since, requiresSnapshot: false })
+          if (reads === 3)
+            return Promise.resolve({ events: [event(3)], cursor: 3, requiresSnapshot: false })
           return new Promise<Array<import("@codevisor/api").EventEnvelope>>((resolve, reject) => {
             resolveReplay = resolve
             failReplay = reject
-          })
+          }).then((events) => ({
+            events,
+            cursor: events.at(-1)?.id ?? since,
+            requiresSnapshot: false
+          }))
         })
     }
+    const delivered = Promise.withResolvers<void>()
     const sent: Array<{ id: number; kind: string }> = []
     const closers: Array<() => void> = []
     const socket = {
       readyState: 1,
-      send: (raw: string) => sent.push(JSON.parse(raw)),
+      send: (raw: string) => {
+        const event = JSON.parse(raw)
+        sent.push(event)
+        if (event.id === 3 && event.kind === "keepalive") delivered.resolve()
+      },
       on: (_name: string, handler: () => void) => closers.push(handler),
       close: () => {
         socket.readyState = 3
@@ -61,7 +73,7 @@ describe("durable session checkpoints", () => {
       expect(reads).toBe(2)
       expect(sent.map((frame) => frame.id)).toEqual([1])
       resolveReplay([event(2)])
-      await vi.advanceTimersByTimeAsync(0)
+      await delivered.promise
       expect(sent.map(({ id, kind }) => [id, kind])).toEqual([
         [1, "keepalive"],
         [2, "session.output"],
@@ -79,7 +91,9 @@ describe("durable session checkpoints", () => {
 
   it("does not replay history for a live-only subscriber before its first event", async () => {
     const fanout = await run(makeEventFanout)
-    const listSubjectEvents = vi.fn(() => Effect.succeed([]))
+    const readSyncBatch = vi.fn(() =>
+      Effect.succeed({ events: [], cursor: 0, requiresSnapshot: false })
+    )
     const sent: Array<{ id: number }> = []
     const closers: Array<() => void> = []
     const socket = {
@@ -94,7 +108,7 @@ describe("durable session checkpoints", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
     try {
       await attachEventSocket(
-        { listSubjectEvents } as never,
+        { readSyncBatch } as never,
         fanout,
         Number.MAX_SAFE_INTEGER,
         socket as never,
@@ -104,7 +118,7 @@ describe("durable session checkpoints", () => {
         true
       )
       await vi.advanceTimersByTimeAsync(25_000)
-      expect(listSubjectEvents).not.toHaveBeenCalled()
+      expect(readSyncBatch).not.toHaveBeenCalled()
       expect(sent.map((frame) => frame.id)).toEqual([0, 0])
     } finally {
       socket.close()
@@ -120,13 +134,13 @@ it("does not checkpoint a socket closed while durable replay was loading", async
     started = resolve
   })
   const db = {
-    listSubjectEvents: () =>
+    readSyncBatch: (since: number) =>
       Effect.promise(async () => {
         started()
         await new Promise<void>((resolve) => {
           release = resolve
         })
-        return []
+        return { events: [], cursor: since, requiresSnapshot: false }
       })
   }
   const closers: Array<() => void> = []

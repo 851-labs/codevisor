@@ -213,6 +213,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var onBottomStateChange: ((Bool) -> Void)?
   var onFollowStateChange: ((Bool) -> Void)?
   var onNearTop: (() -> Bool)?
+  var onNearNewerHistory: ((Bool) -> Bool)?
   var onInitialPresentationReady: (() -> Void)?
   var isInitialPresentationReady: Bool { initialPresentationGate.isReady }
   var frameBudget: TranscriptFrameBudget {

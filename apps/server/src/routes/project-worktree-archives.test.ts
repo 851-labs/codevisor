@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
-import { jsonRequest, start, tempDirs } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
@@ -126,8 +126,9 @@ describe("project worktree archive routes", () => {
       })
       expect(existsSync(solo.path)).toBe(false)
       expect(await worktreeNames()).not.toContain(solo.name)
-      const removedWorktreeHistory = (await jsonRequest(server, `/v1/sessions/${sharer.id}/events`))
-        .body as ReadonlyArray<{ readonly kind: string }>
+      const removedWorktreeHistory = (await run(
+        services.db.listSubjectEvents(sharer.id)
+      )) as ReadonlyArray<{ readonly kind: string }>
       expect(removedWorktreeHistory.some((event) => event.kind === "worktree.setup")).toBe(false)
 
       // Re-archiving once the worktree record is gone is a harmless no-op.
@@ -160,8 +161,9 @@ describe("project worktree archive routes", () => {
 
       // The restore is announced as its own event kind: clients must move the
       // row between sidebar sections, not just repaint it.
-      const restoreHistory = (await jsonRequest(server, `/v1/sessions/${sharer.id}/events`))
-        .body as ReadonlyArray<{ readonly kind: string }>
+      const restoreHistory = (await run(
+        services.db.listSubjectEvents(sharer.id)
+      )) as ReadonlyArray<{ readonly kind: string }>
       expect(restoreHistory.some((event) => event.kind === "session.unarchived")).toBe(true)
 
       // The other session that shared the worktree is still archived, and
@@ -218,8 +220,9 @@ describe("project worktree archive routes", () => {
         body: JSON.stringify({ isArchived: true }),
         method: "PATCH"
       })
-      const ignoredHistory = (await jsonRequest(server, `/v1/sessions/${ignoredSession.id}/events`))
-        .body as ReadonlyArray<{
+      const ignoredHistory = (await run(
+        services.db.listSubjectEvents(ignoredSession.id)
+      )) as ReadonlyArray<{
         readonly kind: string
         readonly payload?: { readonly archiveDroppedIgnoredPaths?: ReadonlyArray<string> }
       }>
@@ -285,8 +288,9 @@ describe("project worktree archive routes", () => {
         method: "PATCH"
       })
       expect(orphanRestored.body).toMatchObject({ isArchived: false })
-      const orphanHistory = (await jsonRequest(server, `/v1/sessions/${orphanSession.id}/events`))
-        .body as ReadonlyArray<{
+      const orphanHistory = (await run(
+        services.db.listSubjectEvents(orphanSession.id)
+      )) as ReadonlyArray<{
         readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
       }>
       expect(orphanHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(

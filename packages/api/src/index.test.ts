@@ -261,23 +261,16 @@ describe("@codevisor/api", () => {
     expect(event.payload).toEqual({ text: "hello" })
   })
 
-  it("decodes transcript item details with their bounded events", () => {
+  it("decodes a bounded page of transcript state", () => {
     const details = decode(TranscriptItemDetails)({
       itemId: "item-1",
       revision: 2,
-      events: [
-        {
-          id: 3,
-          serverId: "local",
-          kind: "session.output",
-          subjectId: "session-1",
-          createdAt: "2026-06-30T00:00:00.000Z",
-          payload: { text: "hello" }
-        }
-      ]
+      eventCursor: 4,
+      entries: [{ key: "text:3", position: 3, revision: 4, payload: { text: "hello" } }],
+      nextAfter: "opaque-page-cursor"
     })
-
-    expect(details.events[0]?.payload).toEqual({ text: "hello" })
+    expect(details.entries[0]?.payload).toEqual({ text: "hello" })
+    expect(details.nextAfter).toBe("opaque-page-cursor")
   })
 
   it("decodes session details with an event replay cursor", () => {
@@ -311,7 +304,8 @@ describe("@codevisor/api", () => {
           updatedAt: "2026-06-30T00:00:02.000Z"
         }
       ],
-      eventCursor: 7
+      eventCursor: 7,
+      hasMore: false
     })
     expect(detail.eventCursor).toBe(7)
     expect(detail.conversation[0]?.role).toBe("user")

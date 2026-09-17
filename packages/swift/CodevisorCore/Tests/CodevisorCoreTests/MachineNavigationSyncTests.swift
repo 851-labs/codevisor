@@ -145,24 +145,20 @@ struct MachineNavigationSyncTests {
 
     await controller.refreshNavigationState(for: "local")
 
-    let snapshotGate = Latch()
-    fake.configureListSessionDelay { await snapshotGate.wait() }
-    let callCountBeforeEvent = fake.listSessionCallCount
+    defer { controller.stopEventSync() }
+    let applied = TestSignal()
+    controller.onPluginUpdated = { _, _ in applied.signal() }
+    let before = fake.listSessionCallCount
     fake.emit(
-      kind: "worktree.created",
-      subjectId: UUID().uuidString,
-      payload: .object([:])
-    )
-    try await waitUntil {
-      fake.listSessionCallCount == callCountBeforeEvent + 1
-    }
-
+      kind: "navigation.changed", subjectId: "navigation",
+      payload: .object([
+        "eventCursor": .number(1), "projects": .array([]), "sessions": .array([]),
+        "workspaces": .array([]), "panes": .array([]), "deleted": .array([]),
+      ]))
+    fake.emit(kind: "plugin.updated", subjectId: "barrier", payload: .object([:]))
+    await applied.wait()
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
-    await snapshotGate.open()
-    try await waitUntil {
-      controller.navigationSyncStateByMachineId["local"] == .current
-        && fake.listSessionCallCount == callCountBeforeEvent + 1
-    }
+    #expect(fake.listSessionCallCount == before)
   }
 
   @Test("A cold catch-up still presents the blocking catch-up state")
@@ -311,10 +307,14 @@ private final class NavigationSyncFakeServerClient: CodevisorServerClienting, @u
         let event = ServerEventEnvelope(
           id: nextEventId,
           serverId: "local",
-          kind: kind,
+          kind: kind.hasPrefix("session.") ? "navigation.changed" : kind,
           subjectId: subjectId,
           createdAt: "2026-08-21T21:00:01.000Z",
-          payload: payload
+          payload: kind.hasPrefix("session.")
+            ? .object([
+              "eventCursor": .number(Double(nextEventId)), "projects": .array([]), "sessions": .array([payload]),
+              "workspaces": .array([]), "panes": .array([]), "deleted": .array([]),
+            ]) : payload
         )
         nextEventId += 1
         events.append(event)

@@ -144,7 +144,7 @@ describe("@codevisor/db", () => {
     ).toEqual([
       ["user", "user-1", "hello", false],
       ["assistant", "assistant-1", "streaming", true],
-      ["assistant", undefined, "no id", false]
+      ["assistant", "imported-text", "no id", false]
     ])
 
     const event = await run(
@@ -153,12 +153,14 @@ describe("@codevisor/db", () => {
     expect(event.id).toBe(1)
     expect(event).toMatchObject({ subjectRevision: 1 })
     expect(event.globalEventId).toBeUndefined()
-    expect(await run(db.listEvents(0))).toEqual([])
+    expect(
+      (await run(db.listEvents(0))).filter((event) => event.kind !== "navigation.changed")
+    ).toEqual([])
     expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
     await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
-    expect(await run(db.listEvents(0))).toMatchObject([
-      { id: 1, kind: "session.output", payload: { text: "elsewhere" } }
-    ])
+    expect(
+      (await run(db.listEvents(0))).filter((event) => event.kind !== "navigation.changed")
+    ).toMatchObject([{ kind: "session.output", payload: { text: "elsewhere" } }])
     expect(await run(db.listSubjectEvents(firstSession.id))).toMatchObject([
       { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
     ])

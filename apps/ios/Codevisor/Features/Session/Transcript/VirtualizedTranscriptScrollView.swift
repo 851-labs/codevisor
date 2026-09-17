@@ -180,6 +180,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var onBottomStateChange: ((Bool) -> Void)?
   var onFollowStateChange: ((Bool) -> Void)?
   var onNearTop: (() -> Bool)?
+  var onNearNewerHistory: ((Bool) -> Bool)?
   var onOlderHistoryPresented: ((UInt64) -> Void)?
   var onInitialPresentationReady: (() -> Void)?
   var applicationObserver: NSObjectProtocol?

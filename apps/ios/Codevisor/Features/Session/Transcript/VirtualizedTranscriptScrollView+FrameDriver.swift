@@ -59,6 +59,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     onBottomStateChange = nil
     onFollowStateChange = nil
     onNearTop = nil
+    onNearNewerHistory = nil
     onOlderHistoryPresented = nil
   }
 

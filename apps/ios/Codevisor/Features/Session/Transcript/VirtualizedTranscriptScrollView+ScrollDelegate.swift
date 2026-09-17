@@ -43,6 +43,9 @@ extension VirtualizedTranscriptScrollView {
       isTracking || isDragging || isDecelerating
       || isExplicitUserScroll || isNativeMovement
     if let lastObservedContentOffsetY, isUserMovement {
+      if !isApplyingPosition {
+        historyPrefetchPolicy.observeUserScroll(delta: contentOffset.y - lastObservedContentOffsetY)
+      }
       pendingWindowScrollDelta += contentOffset.y - lastObservedContentOffsetY
     } else if !isApplyingPosition {
       pendingWindowScrollDelta = 0

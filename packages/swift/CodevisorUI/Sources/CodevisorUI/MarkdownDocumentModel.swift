@@ -39,6 +39,17 @@ public final class MarkdownDocumentModel {
           return try await client.fileData(sessionId: sessionId, path: resolved)
         }
       },
+      fetchPreview: { source in
+        switch source {
+        case let .attachment(id): return try await client.filePreview(id: id)
+        case let .serverPath(target):
+          guard
+            let resolved = MarkdownDocumentPath.resolve(
+              target, relativeTo: (path as NSString).deletingLastPathComponent)
+          else { throw URLError(.badURL) }
+          return try await client.filePreview(path: resolved, sessionId: sessionId)
+        }
+      },
       version: { _ in nil }
     )
     // Retain the document's loader/store together, independently of view mounts.

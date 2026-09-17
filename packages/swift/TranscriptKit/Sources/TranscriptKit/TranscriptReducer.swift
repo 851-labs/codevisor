@@ -10,7 +10,24 @@ import ACPKit
 /// never affect the main turn's thinking state.
 public enum TranscriptReducer {
   public static func apply(_ update: SessionUpdate, to turn: inout AssistantTurn) {
+    defer { orderEntries(&turn) }
+    let parent: String?
     switch update {
+    case let .agentMessagePatch(patch): parent = patch.parentToolCallId
+    case let .toolCall(call): parent = call.parentToolCallId
+    default: parent = nil
+    }
+    if let parent, !turn.allToolCalls.contains(where: { $0.toolCallId == parent }) {
+      turn.entries.append(
+        .tool(
+          ToolCall(
+            toolCallId: parent, title: "Subagent", kind: .agent,
+            status: turn.isGenerating ? .inProgress : .completed)))
+    }
+    switch update {
+    case let .agentMessagePatch(patch):
+      applyTextPatch(patch, to: &turn)
+
     case let .agentMessageChunk(block, messageId, parentToolCallId, phase):
       if let parent = parentToolCallId {
         var bucket = turn.subagents[parent] ?? SubagentTranscript()
@@ -47,7 +64,9 @@ public enum TranscriptReducer {
       break  // Echo of the user's own input.
 
     case let .toolCall(call):
+      if let position = call.statePosition { turn.entryPositions["tool:\(call.toolCallId)"] = position }
       if let parent = call.parentToolCallId {
+        turn.entries.removeAll { $0.id == "tool:\(call.toolCallId)" }
         var bucket = turn.subagents[parent] ?? SubagentTranscript()
         bucket.isThinking = false
         upsertTool(call, entries: &bucket.entries)
@@ -59,6 +78,7 @@ public enum TranscriptReducer {
       }
       // An agent call gets its bucket eagerly so the UI can render the
       // nested section before any child output arrives.
+      cascadeSettleIfParent(ToolCallUpdate(toolCallId: call.toolCallId, status: call.status), in: &turn)
       if call.kind == .agent, turn.subagents[call.toolCallId] == nil {
         turn.subagents[call.toolCallId] = SubagentTranscript()
       }
@@ -69,7 +89,10 @@ public enum TranscriptReducer {
     case let .plan(plan):
       turn.plan = plan
 
-    case let .planDocument(markdown):
+    case let .planDocument(markdown, resource, revision):
+      guard (revision ?? 0) >= turn.planRevision else { break }
+      turn.planRevision = revision ?? 0
+      turn.planResource = resource
       turn.isThinking = false
       turn.planDocument = markdown
       // Mark where the plan landed in the stream so the work that follows
@@ -252,6 +275,8 @@ public enum TranscriptReducer {
 
   private static func upsertTool(_ call: ToolCall, entries: inout [TranscriptEntry]) {
     if let index = toolIndex(call.toolCallId, in: entries), case let .tool(existing) = entries[index] {
+      if let revision = call.stateRevision, revision < (existing.stateRevision ?? 0) { return }
+      if call.isSnapshot == true { entries[index] = .tool(call); return }
       // A full re-send replaces the call, but must not clobber streamed
       // state it omits (diffStats/content arrive on separate updates).
       var merged = call

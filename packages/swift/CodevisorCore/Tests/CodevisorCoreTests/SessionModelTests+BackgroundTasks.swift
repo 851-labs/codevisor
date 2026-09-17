@@ -292,49 +292,35 @@ extension SessionModelTests {
   func historyReplaysNestingAndBackgroundTasks() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    func envelope(_ id: Int, _ kind: String, _ payload: JSONValue) -> ServerEventEnvelope {
-      ServerEventEnvelope(
-        id: id, serverId: "local", kind: kind,
-        subjectId: sessionId.uuidString, createdAt: "2026-06-30T00:00:00.000Z",
-        payload: payload
-      )
-    }
-    client.historyEvents = [
-      envelope(
-        1, "session.output",
-        .object([
-          "sessionUpdate": .string("tool_call"),
-          "toolCallId": .string("task-1"),
-          "title": .string("Agent: explore"),
-          "kind": .string("agent"),
-          "status": .string("in_progress"),
-        ])),
-      envelope(
-        2, "session.output",
-        .object([
-          "sessionUpdate": .string("agent_message_chunk"),
-          "content": .object(["type": .string("text"), "text": .string("child prose")]),
-          "messageId": .string("msg-sub"),
-          "parentToolCallId": .string("task-1"),
-        ])),
-      envelope(3, "session.updated", .object(["backgroundTasks": .array([])])),
-      envelope(4, "session.updated", .object(["stopReason": .string("end_turn")])),
-      envelope(
-        5, "session.updated",
-        .object([
-          "backgroundTasks": .array([
-            .object([
-              "id": .string("bg-9"),
-              "description": .string("Long build"),
-              "status": .string("running"),
-              "taskType": .string("shell"),
-            ])
-          ])
-        ])),
-    ]
+    let itemId = UUID()
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        transcriptStateItem(id: itemId, sessionId: sessionId, hasDetails: true)
+      ], hasMore: false, eventCursor: 5,
+      backgroundTasks: [
+        BackgroundTaskInfo(id: "bg-9", description: "Long build", status: "running", taskType: "shell")
+      ])
+    client.transcriptDetailsByItem[itemId.uuidString] = ServerTranscriptItemDetails(
+      itemId: itemId.uuidString, revision: 1, eventCursor: 5,
+      entries: [
+        .init(
+          key: "tool:task-1", position: 1, revision: 1,
+          payload: .object([
+            "sessionUpdate": .string("tool_call"), "toolCallId": .string("task-1"), "title": .string("Agent: explore"),
+            "kind": .string("agent"), "status": .string("completed"),
+          ])),
+        .init(
+          key: "message:task-1:msg-sub", position: 2, revision: 2,
+          payload: .object([
+            "sessionUpdate": .string("agent_message_patch"), "messageId": .string("msg-sub"),
+            "text": .string("child prose"), "offset": .number(0), "totalLength": .number(11),
+            "generation": .number(0), "stateRevision": .number(2), "parentToolCallId": .string("task-1"),
+          ])),
+      ])
 
     await model(client, sessionId: sessionId) { model in
       await model.loadHistory()
+      #expect(await model.loadTranscriptDetails(itemId: itemId.uuidString))
       guard case let .assistant(message) = model.conversation.last else {
         Issue.record("expected assistant")
         return

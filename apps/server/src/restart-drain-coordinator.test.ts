@@ -80,7 +80,7 @@ const makeHarness = async () => {
 describe("restart coordinator", () => {
   beforeEach(() => vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] }))
   afterEach(() => vi.useRealTimers())
-  it("snapshots live, held, and loaded sessions — never archived ones", async () => {
+  it("snapshots held work without reloading idle or archived sessions", async () => {
     const harness = await makeHarness()
     const { sessions, turns } = harness
     turns.restartHeldSessions.add(sessions.fresh.id)
@@ -91,7 +91,7 @@ describe("restart coordinator", () => {
     const drained = await coordinator.begin()
 
     expect(drained.state).toBe("drained")
-    expect(harness.snapshot.read()).toEqual([sessions.fresh.id, sessions.live.id].toSorted())
+    expect(harness.snapshot.read()).toEqual([sessions.fresh.id])
     expect(harness.agents.closes).toEqual(["agent-live", "agent-old", sessions.fresh.id])
     // Idempotent once drained.
     expect((await coordinator.begin()).state).toBe("drained")
@@ -140,9 +140,8 @@ describe("restart coordinator", () => {
     )
     expect(closeAttempts).toBe(1)
     expect(harness.logs.some((line) => line.includes("could not close agent-live"))).toBe(true)
-    // The prompt drain that never ended is left for reconciliation; the
-    // snapshot still names its session so the next boot brings it back.
-    expect(harness.snapshot.read()).toContain(sessions.live.id)
+    // Interrupted work has no queued continuation; opening the chat later is lazy.
+    expect(harness.snapshot.read()).not.toContain(sessions.live.id)
     coordinator.close()
     turns.activePromptSessions.clear()
   })

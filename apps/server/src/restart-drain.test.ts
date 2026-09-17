@@ -182,6 +182,15 @@ describe("restart drain", () => {
         worktreeName: "ghost"
       })
     )
+    await run(services.db.appendEvent("session.updated", doomed.id, { goal: { status: "active" } }))
+    const idle = await run(
+      services.db.createSession({
+        agentSessionId: "agent-idle",
+        harnessId: "codex",
+        projectId: project.id,
+        title: "Idle"
+      })
+    )
     const archived = await run(
       services.db.createSession({
         agentSessionId: "agent-archived",
@@ -193,7 +202,7 @@ describe("restart drain", () => {
     await run(services.db.updateSession(archived.id, { isArchived: true }))
     writeFileSync(
       snapshotPath,
-      JSON.stringify({ sessions: [doomed.id, archived.id, "no-such-session", sessionId] })
+      JSON.stringify({ sessions: [doomed.id, archived.id, idle.id, "no-such-session", sessionId] })
     )
 
     // The "restarted" server consumes the snapshot: the session reconnects
@@ -214,7 +223,7 @@ describe("restart drain", () => {
     ).not.toHaveProperty("updateGate")
     expect(
       agents.loads.some(([, agentSessionId]) =>
-        ["agent-doomed", "agent-archived"].includes(agentSessionId)
+        ["agent-doomed", "agent-archived", "agent-idle"].includes(agentSessionId)
       )
     ).toBe(false)
     expect(agents.loads.some(([, agentSessionId]) => agentSessionId === "agent-codex-repo")).toBe(
