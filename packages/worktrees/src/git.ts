@@ -133,7 +133,6 @@ export type GitOutputListener = (stream: GitOutputStream, line: string) => void
 /// Matches ANSI escape sequences - CSI (colors, cursor moves, erase), OSC
 /// (titles/links), and single-character escapes - that TUI-style checkout
 /// hooks emit. Setup logs render as plain text, so these are stripped.
-// eslint-disable-next-line no-control-regex
 // oxlint-disable no-control-regex
 const ansiEscapePattern =
   /\u001B(?:\[[0-9:;<=>?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)?|[@-Z\\^_])/g

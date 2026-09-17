@@ -76,7 +76,6 @@ describe("harness update checks", () => {
       },
       beginInstall: async (id: string, methodId?: string) => {
         // Non-Error throw exercises the conflict mapping's String branch.
-        // oxlint-disable-next-line no-throw-literal
         if (methodId === "carrier-pigeon") throw "no runnable install method"
         calls.push(`install ${id} ${methodId ?? "auto"}`)
         return { terminalId: "terminal-9" }

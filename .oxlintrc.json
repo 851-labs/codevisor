@@ -7,7 +7,8 @@
     "coverage/**",
     "dist/**",
     "node_modules/**",
-    "**/routeTree.gen.ts"
+    "**/routeTree.gen.ts",
+    "**/worker-configuration.d.ts"
   ],
   "plugins": ["typescript", "import", "unicorn", "oxc"],
   "categories": {

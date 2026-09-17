@@ -135,7 +135,7 @@ describe("terminal persistence", () => {
       terminal: {
         ...manager,
         restoreTerminals: () => {
-          throw "boom" // eslint-disable-line no-throw-literal
+          throw "boom"
         }
       },
       log: (line) => lines.push(line)

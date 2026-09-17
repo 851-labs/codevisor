@@ -252,7 +252,6 @@ describe("authLoginCommand", () => {
     expect(
       await authLoginCommand(nonError.deps, {
         server: "https://cloud.example",
-        // eslint-disable-next-line prefer-promise-reject-errors
         fetchImpl: () => Promise.reject("boom")
       })
     ).toBe(1)
