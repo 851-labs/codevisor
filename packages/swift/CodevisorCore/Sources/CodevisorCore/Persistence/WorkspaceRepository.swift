@@ -271,11 +271,13 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
       return assigned
     }
 
-    // Migrate the session's pre-workspace pane state, tagging its chat
-    // pane with the session it references.
+    // /open creates a new workspace's initial chat pane with the session id.
+    // Use that identity before first paint so its acknowledgement updates
+    // the mounted pane instead of replacing the transcript and composer.
+    // Existing layouts and promoted drafts retain their own pane identities.
     var center =
       legacyGroups?.load(sessionId: seed.sessionId)
-      ?? .centerInitial(sessionId: seed.sessionId)
+      ?? .centerInitial(sessionId: seed.sessionId, paneId: seed.sessionId)
     for index in center.panes.indices where center.panes[index].kind == .chat {
       if center.panes[index].chatSessionId == nil {
         center.panes[index].chatSessionId = seed.sessionId

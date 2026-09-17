@@ -169,9 +169,9 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
   /// The state a session's center group starts with: the chat pane, bound
   /// to its session (an unbound chat pane is a DRAFT — see addChatPane),
   /// selected when the workspace first opens.
-  public static func centerInitial(sessionId: UUID) -> PaneGroupState {
+  public static func centerInitial(sessionId: UUID, paneId: UUID = UUID()) -> PaneGroupState {
     let chat = PaneDescriptorState(
-      id: UUID(),
+      id: paneId,
       kind: .chat,
       name: "Chat",
       terminalKey: sessionId.uuidString,

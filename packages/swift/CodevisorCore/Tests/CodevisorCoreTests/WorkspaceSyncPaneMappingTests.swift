@@ -10,6 +10,46 @@ import Testing
 struct WorkspaceSyncPaneMappingTests {
   private let workspaceId = UUID()
 
+  @Test("First-send server acknowledgement retains the mounted chat pane", arguments: [false, true])
+  func firstSendKeepsPaneIdentity(promotedDraft: Bool) throws {
+    let sessionId = UUID()
+    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    var workspace = repository.ensureWorkspace(
+      for: WorkspaceSessionSeed(
+        sessionId: sessionId, initialName: "Project", serverId: "local",
+        projectId: UUID(), rootDirectory: nil
+      ), legacyGroups: nil
+    )
+    if promotedDraft {
+      var group = PaneGroupState()
+      let draft = group.addChatPane()
+      group.assignChatSession(paneId: draft.id, sessionId: sessionId, name: "Hello")
+      workspace.centerTree = .leaf(group)
+    }
+    let group = try #require(workspace.centerTree.allGroups.first?.state)
+    let paneId = try #require(group.selectedPaneId)
+    let tabId = workspace.selectedCenterTabId
+    let leafId = workspace.centerTree.allGroups.first?.id
+    // A new workspace's first chat is created by /open using the session
+    // id. An existing draft is promoted with its already-published pane id.
+    let record = ServerWorkspacePane(
+      id: (promotedDraft ? paneId : sessionId).uuidString.lowercased(),
+      workspaceId: workspace.id.uuidString.lowercased(), providerId: "codevisor",
+      paneType: "chat", title: "Hello", resourceKind: "session",
+      resourceId: sessionId.uuidString.lowercased(), createdAt: "2026-01-01T00:00:00.000Z"
+    )
+
+    WorkspaceSyncModel.reconcilePanes(in: &workspace, records: [record], protectedLocalPaneIds: [])
+
+    #expect(workspace.selectedCenterTabId == tabId)
+    #expect(workspace.centerTree.allGroups.first?.id == leafId)
+    let acknowledged = try #require(workspace.centerTree.allGroups.first?.state)
+    #expect(acknowledged.selectedPaneId == paneId)
+    #expect(acknowledged.panes.map(\.id) == [paneId])
+    #expect(acknowledged.selectedPane?.chatSessionId == sessionId)
+    #expect(acknowledged.selectedPane?.name == "Hello")
+  }
+
   @Test("Plugin panes publish a plugin-scoped provider and round-trip")
   func pluginPaneRoundTrip() {
     let id = UUID()
