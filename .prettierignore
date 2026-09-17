@@ -1,9 +1,5 @@
 apps/macos/
 packages/swift/
-coverage/
-dist/
-node_modules/
-.turbo/
 bun.lock
 *.xcworkspace/
 *.xcodeproj/
@@ -11,5 +7,4 @@ bun.lock
 .swiftlint-baseline.json
 .repos/
 apps/www/.source/
-tmp/
 .codevisor/
