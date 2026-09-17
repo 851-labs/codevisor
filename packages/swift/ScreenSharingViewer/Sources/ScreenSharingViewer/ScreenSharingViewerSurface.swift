@@ -17,4 +17,11 @@ public protocol ScreenSharingViewerSurface: AnyObject {
   func beginInput() -> Bool
   func endInput()
   func stop()
+  /// The fill around the remote display (letterbox bars, and everything
+  /// before the first frame). Surfaces that don't paint one ignore it.
+  func setLetterboxColor(_ color: NSColor)
+}
+
+extension ScreenSharingViewerSurface {
+  public func setLetterboxColor(_ color: NSColor) {}
 }

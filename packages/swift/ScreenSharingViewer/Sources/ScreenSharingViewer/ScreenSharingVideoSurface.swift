@@ -1,5 +1,6 @@
 import AppKit
 import CodevisorScreenSharing
+import Metal
 import OSLog
 
 @MainActor
@@ -20,11 +21,20 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
     set { input.onRelease = newValue }
   }
   public var inputFailureMessage: String? { input.failureMessage }
+  public func setLetterboxColor(_ color: NSColor) { letterboxColor = color }
   public func beginInput() -> Bool { input.begin() }
   public func endInput() { input.end() }
   private var tracking: NSTrackingArea?
   private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
   private var videoSize = CGSize(width: 1920, height: 1080)
+  /// The fill around the remote display: the letterbox bars an aspect-fit
+  /// leaves, and the whole surface before the first frame. Apple's Screen
+  /// Sharing seats the remote screen on the window surface rather than black
+  /// bars, so the default is the dynamic window background, resolved against
+  /// this view's appearance (the Metal clear color is a fixed value, so it is
+  /// re-resolved whenever the appearance or the color changes). The pane
+  /// passes its own surface color when a theme palette is active.
+  public var letterboxColor: NSColor = .windowBackgroundColor { didSet { applyLetterboxColor() } }
 
   /// `profile` nil (the default) keeps the product renderer exactly as it was: display-link drive, three drawables,
   /// main-actor preparation. The explicit profile forwards to the EXISTING worker/arrival2 initializer; no pacing,
@@ -42,6 +52,28 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
       self?.videoSize = size
       self?.needsLayout = true
     }
+    applyLetterboxColor()
+  }
+
+  public override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    applyLetterboxColor()
+  }
+
+  /// Resolves `letterboxColor` for the current appearance into the renderer's
+  /// clear color. A fully transparent color (a theme that defers to the
+  /// window backdrop) falls back to the window background, because the Metal
+  /// layer is opaque.
+  private func applyLetterboxColor() {
+    var resolved: NSColor?
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      resolved = letterboxColor.usingColorSpace(.sRGB)
+      if (resolved?.alphaComponent ?? 0) <= 0 { resolved = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) }
+    }
+    guard let color = resolved else { return }
+    metal.clearColor = MTLClearColorMake(
+      Double(color.redComponent), Double(color.greenComponent), Double(color.blueComponent), 1)
+    metal.needsDisplay = true
   }
   public required init?(coder: NSCoder) { nil }
   /// The video always fills the pane, scaled to fit and letterboxed by the renderer.

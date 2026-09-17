@@ -131,6 +131,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     surface.endInput()
   }
 
+  /// The fill the surface paints around the remote display; the pane keeps it
+  /// on the app's own surface color instead of black bars.
+  public func letterbox(_ color: NSColor) { surface.setLetterboxColor(color) }
+
   private func emit(_ event: ScreenSharingControlEvent) {
     guard !closed else { return }
     for continuation in subscribers.values { continuation.yield(event) }
