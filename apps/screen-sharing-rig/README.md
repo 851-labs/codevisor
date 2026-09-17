@@ -10,7 +10,7 @@ A two-Mac development loop for the native screen-sharing engine: one resident ho
 | `ScreenSharingRig`         | `Sources/ScreenSharingRig`                                 | The executable: `RigRunner` (state, telemetry tick), `RigRunner+Host`, `RigRunner+Viewer`, `RigHUDView`.                                                                           |
 | `ScreenSharingDiagnostics` | `apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics` | Workload window, painter and synthetic source shared with the probe.                                                                                                               |
 
-The bundle is `~/Applications/CodevisorRig/ScreenSharingRig.app` (`com.codevisor.ScreenSharingRig`), built and signed by `scripts/screen-sharing-rig.mjs` with the login keychain's Apple Development identity so Screen Recording, Accessibility and Local Network grants survive rebuilds.
+The bundle is `~/Applications/CodevisorRig/ScreenSharingRig.app` (`com.codevisor.ScreenSharingRig`), built and signed by `scripts/screen-sharing-rig.ts` with the login keychain's Apple Development identity so Screen Recording, Accessibility and Local Network grants survive rebuilds.
 
 ## Commands
 

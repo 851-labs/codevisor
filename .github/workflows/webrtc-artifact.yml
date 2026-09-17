@@ -18,6 +18,12 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # scripts/ is TypeScript, run directly by Node's type stripping, which is
+      # unflagged from Node 23.6. The self-hosted runner's preinstalled Node is
+      # not guaranteed to be recent enough, so pin it like every other workflow.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.x"
       - name: Read pinned tools
         id: tools
         run: |
@@ -33,7 +39,7 @@ jobs:
             developer_dir="$(scripts/release/resolve-xcode.sh)"
           fi
           # The recipe still enforces the exact pinned version before fetching.
-          DEVELOPER_DIR="$developer_dir" node scripts/build-webrtc.mjs
+          DEVELOPER_DIR="$developer_dir" node scripts/build-webrtc.ts
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: native-webrtc-candidate

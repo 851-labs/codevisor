@@ -101,7 +101,7 @@ test target over another bespoke implementation.
 - TCA's `TestStore` and `withMainSerialExecutor` install a process-wide Swift
   executor override. Run the full Swift suites with `bun run swift:test`, which
   isolates those suites from other tests without disabling parallelism. Register
-  new suites using either API in `scripts/test-swift.mjs`; the script's regression
+  new suites using either API in `scripts/test-swift.ts`; the script's regression
   test checks that every such suite is included. Do not combine them with unrelated
   suites in a direct `swift test` invocation.
 

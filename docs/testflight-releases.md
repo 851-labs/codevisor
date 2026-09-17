@@ -65,7 +65,7 @@ For the same read-only check locally with Apple credentials, repository tags,
 and the Alpha artifact downloaded:
 
 ```sh
-node scripts/release/promote-ios-testflight.mjs VERSION ARTIFACT_DIRECTORY RELEASE_NOTES --check
+node scripts/release/promote-ios-testflight.ts VERSION ARTIFACT_DIRECTORY RELEASE_NOTES --check
 ```
 
 Supply the same Apple environment variables as Build Alpha, plus

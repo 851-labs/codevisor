@@ -1,0 +1,49 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+
+import { developmentLayout } from "./dev-layout.ts"
+import { xcodebuildArguments } from "./xcodebuild.ts"
+import type { XcodePlatform } from "./xcodebuild.ts"
+
+test("xcodebuild builds pin worktree-local caches", () => {
+  const layout = developmentLayout("/repo/codevisor", {})
+  const arguments_ = xcodebuildArguments(layout, "macos", ["-scheme", "Codevisor", "build"])
+
+  assert.deepEqual(arguments_.slice(0, 7), [
+    "-derivedDataPath",
+    layout.build.macos.derivedData,
+    "-clonedSourcePackagesDirPath",
+    layout.build.macos.sourcePackages,
+    "-packageCachePath",
+    layout.build.packageCache,
+    "-skipMacroValidation"
+  ])
+  assert.deepEqual(arguments_.slice(7), ["-scheme", "Codevisor", "build"])
+})
+
+test("standalone Xcode operations omit incompatible build flags", () => {
+  const layout = developmentLayout("/repo/codevisor", {})
+  const exportArguments = [
+    "-exportArchive",
+    "-archivePath",
+    "/repo/codevisor/tmp/build/ios/Codevisor.xcarchive",
+    "-exportOptionsPlist",
+    "/repo/codevisor/tmp/build/ios/ExportOptions.plist",
+    "-exportPath",
+    "/repo/codevisor/tmp/build/ios/export"
+  ]
+
+  assert.deepEqual(xcodebuildArguments(layout, "ios", exportArguments), exportArguments)
+  assert.deepEqual(xcodebuildArguments(layout, "ios", ["-downloadPlatform", "iOS"]), [
+    "-downloadPlatform",
+    "iOS"
+  ])
+})
+
+test("xcodebuild arguments reject unknown platforms", () => {
+  const layout = developmentLayout("/repo/codevisor", {})
+  // xcodebuildArguments guards platforms that never passed through the union:
+  // release scripts and tests reach it with unvalidated platform names.
+  const watchos = "watchos" as unknown as XcodePlatform
+  assert.throws(() => xcodebuildArguments(layout, watchos, []), /Unknown Xcode platform/)
+})

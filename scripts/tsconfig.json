@@ -1,0 +1,36 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Typecheck only. scripts/ is run directly by Bun and never built, so the
+    // base project's emit settings (rootDir "src", outDir, declaration) do not
+    // apply and are switched off here.
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "..",
+    "composite": false,
+    // Checks the existing .mjs sources in place, ahead of the .ts migration.
+    // Same mechanism packages/processes uses for its .mjs sources.
+    "allowJs": true,
+    "checkJs": true,
+    // Lifted to true once the .ts conversion supplies real annotations.
+    "noImplicitAny": false,
+    // Lets converted scripts import siblings as "./dev-layout.ts".
+    // Legal because noEmit is set.
+    "allowImportingTsExtensions": true,
+    // Node 26 runs these files by stripping types, which cannot transform
+    // enum / namespace / parameter properties. This flag makes tsc reject
+    // that syntax so every script stays runnable under BOTH node and bun —
+    // which is what keeps the Bun-less release workflows working unchanged.
+    "erasableSyntaxOnly": true,
+    // Node-only: no DOM, and no bun-types (scripts use zero Bun globals).
+    "lib": ["ES2024"],
+    "types": ["node"]
+  },
+  "include": ["**/*.mjs", "**/*.ts"],
+  // vendor-file-icons.ts imports from the vscode-icons submodule under .repos/,
+  // which is not checked out in every environment. Typechecking it would make
+  // this project's result depend on submodule state, so it is excluded; the
+  // script is a rarely-run vendoring tool, not part of any build or release path.
+  "exclude": ["node_modules", "**/*.test.mjs", "**/*.test.ts", "vendor-file-icons.ts"]
+}

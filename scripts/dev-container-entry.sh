@@ -4,7 +4,7 @@
 # Runs inside a stock node image with two bind mounts from the worktree's
 # ignored tmp/:
 #   /codevisor        — the Linux workspace copy (dists + manifests) that
-#                       scripts/dev-containers.mjs assembles; this script
+#                       scripts/dev-containers.ts assembles; this script
 #                       installs Linux node_modules INTO it, so every byte
 #                       stays under the worktree's tmp/ and dies with it.
 #   /codevisor-state  — shared per-worktree cache (the bun binary, the bun

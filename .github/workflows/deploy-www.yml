@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "apps/www/**"
-      - "scripts/release/install.test.mjs"
+      - "scripts/release/install.test.ts"
       - "packages/api/**"
       - "bun.lock"
       - ".github/workflows/deploy-www.yml"
@@ -34,7 +34,7 @@ jobs:
       - name: Verify installer
         run: |
           sh -n apps/www/public/install.sh
-          node --test scripts/release/install.test.mjs
+          node --test scripts/release/install.test.ts
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build and typecheck

@@ -118,7 +118,7 @@ jobs:
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             if ! curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed" \
-              || ! node scripts/release/verify-appcast.mjs "$feed" "$build" alpha; then
+              || ! node scripts/release/verify-appcast.ts "$feed" "$build" alpha; then
               feeds_complete=false
             fi
           done
@@ -153,7 +153,7 @@ jobs:
       - name: Generate complete Alpha changelog
         if: steps.alpha.outputs.publish == 'true'
         run: |
-          node scripts/release/generate-release-notes.mjs \
+          node scripts/release/generate-release-notes.ts \
             --channel alpha \
             --version "${{ steps.alpha.outputs.version }}-alpha.${{ steps.alpha.outputs.build }}" \
             --commit "${{ steps.alpha.outputs.sha }}" \
@@ -212,6 +212,6 @@ jobs:
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
-            node scripts/release/verify-appcast.mjs \
+            node scripts/release/verify-appcast.ts \
               "$feed" "${{ steps.alpha.outputs.build }}" alpha
           done

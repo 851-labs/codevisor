@@ -38,7 +38,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ALPHA_RUN_ID: ${{ inputs.alpha_run_id }}
-        run: node scripts/release/prepare-ios-testflight.mjs "$ALPHA_RUN_ID" dist/ios-testflight
+        run: node scripts/release/prepare-ios-testflight.ts "$ALPHA_RUN_ID" dist/ios-testflight
       - name: Download the selected Alpha iOS artifact
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,7 +49,7 @@ jobs:
           VERSION: ${{ steps.alpha.outputs.version }}
           SOURCE_SHA: ${{ steps.alpha.outputs.source_sha }}
         run: |
-          node scripts/release/generate-release-notes.mjs \
+          node scripts/release/generate-release-notes.ts \
             --channel alpha --version "$VERSION" --commit "$SOURCE_SHA" \
             --output dist/ios-testflight/RELEASE_NOTES.md
       - name: Check or submit the uploaded build
@@ -69,5 +69,5 @@ jobs:
           if [[ "$CHECK_ONLY" == true ]]; then
             arguments+=(--check)
           fi
-          node scripts/release/promote-ios-testflight.mjs "$VERSION" \
+          node scripts/release/promote-ios-testflight.ts "$VERSION" \
             dist/ios-testflight dist/ios-testflight/RELEASE_NOTES.md "${arguments[@]}"

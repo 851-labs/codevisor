@@ -84,8 +84,8 @@ jobs:
         shell: bash
         run: |
           if [[ "$UPLOAD_PACKAGE" == true ]]; then
-            node scripts/release/publish-browser-extension.mjs \
+            node scripts/release/publish-browser-extension.ts \
               "dist/release/Codevisor-Chrome-$version.zip"
           else
-            node scripts/release/publish-browser-extension.mjs --publish-only
+            node scripts/release/publish-browser-extension.ts --publish-only
           fi

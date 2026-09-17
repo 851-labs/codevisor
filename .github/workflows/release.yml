@@ -108,10 +108,10 @@ jobs:
             curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
             if [[ -n "$existing_tag_sha" ]]; then
-              node scripts/release/verify-appcast.mjs "$feed" "$build" alpha \
-                || node scripts/release/verify-appcast.mjs "$feed" "$build" stable
+              node scripts/release/verify-appcast.ts "$feed" "$build" alpha \
+                || node scripts/release/verify-appcast.ts "$feed" "$build" stable
             else
-              node scripts/release/verify-appcast.mjs "$feed" "$build" alpha
+              node scripts/release/verify-appcast.ts "$feed" "$build" alpha
             fi
           done
           curl --fail --silent --show-error \
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
+      - run: node scripts/release/build-browser-extension.ts "${{ needs.metadata.outputs.version }}" dist/release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: codevisor-browser-extension
@@ -166,7 +166,7 @@ jobs:
           path: dist/release
       - name: Generate complete Stable changelog
         run: |
-          node scripts/release/generate-release-notes.mjs \
+          node scripts/release/generate-release-notes.ts \
             --channel stable --version "$VERSION" --commit "$GITHUB_SHA" \
             --output dist/release/RELEASE_NOTES.md
       - name: Publish exact Alpha bytes as Stable
@@ -212,7 +212,7 @@ jobs:
           tap_dir="$RUNNER_TEMP/homebrew-tap"
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/851-labs/homebrew-tap.git" "$tap_dir"
           VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR=dist/release \
-            node scripts/release/update-homebrew-tap.mjs "$tap_dir"
+            node scripts/release/update-homebrew-tap.ts "$tap_dir"
           cd "$tap_dir"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -234,7 +234,7 @@ jobs:
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
-            node scripts/release/verify-appcast.mjs "$feed" "$BUILD_NUMBER" stable
+            node scripts/release/verify-appcast.ts "$feed" "$BUILD_NUMBER" stable
           done
       - name: Mark verified Stable release as Latest
         env:

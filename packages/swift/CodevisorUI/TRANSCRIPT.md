@@ -265,7 +265,7 @@ Local captures are under `tmp/transcript-performance/renderer-*`. Summarize any
 capture without relying on a particular machine's paths:
 
 ```sh
-node scripts/transcript-performance-summary.mjs /path/to/trace.jsonl
+node scripts/transcript-performance-summary.ts /path/to/trace.jsonl
 ```
 
 The summary reports counts, p50, p95, and maximum CPU durations by event and the
@@ -354,19 +354,19 @@ In another terminal, set `TRANSCRIPT_STRESS_URL` to the local server URL printed
 by this worktree's runner. Then create any of the presets:
 
 ```sh
-node scripts/dev-transcript-stress.mjs seed mixed
-node scripts/dev-transcript-stress.mjs seed paragraph
-node scripts/dev-transcript-stress.mjs seed code
-node scripts/dev-transcript-stress.mjs seed table
+node scripts/dev-transcript-stress.ts seed mixed
+node scripts/dev-transcript-stress.ts seed paragraph
+node scripts/dev-transcript-stress.ts seed code
+node scripts/dev-transcript-stress.ts seed table
 ```
 
 Each command prints a `sessionId` and leaves its final turn open. Open that chat
 in both apps, then control arrivals explicitly:
 
 ```sh
-node scripts/dev-transcript-stress.mjs chunk <sessionId> "Visible live text."
-node scripts/dev-transcript-stress.mjs chunk <sessionId> --stdin < /path/to/chunk.md
-node scripts/dev-transcript-stress.mjs finish <sessionId>
+node scripts/dev-transcript-stress.ts chunk <sessionId> "Visible live text."
+node scripts/dev-transcript-stress.ts chunk <sessionId> --stdin < /path/to/chunk.md
+node scripts/dev-transcript-stress.ts finish <sessionId>
 ```
 
 Finish fixtures before restarting the runner unless testing interrupted turns;

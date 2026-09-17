@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Test doubles are deliberately partial — a stub that stands in for
+    // setTimeout or spawn implements the one shape the test exercises, not
+    // Node's full overload set. These two rules generate the most friction
+    // against that and buy the least in a test file.
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    // Fixture objects are built inline and intentionally incomplete.
+    "noImplicitAny": false
+  },
+  "include": ["**/*.test.mjs", "**/*.test.ts"],
+  "exclude": ["node_modules"]
+}

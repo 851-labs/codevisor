@@ -80,7 +80,7 @@ if [[ ! -f "$ghostty_resources" ]]; then
 fi
 echo "Building with GhosttyKit from $ghostty_library"
 
-node "$repo_root/scripts/chromium-artifact.mjs" arm64 x86_64
+node "$repo_root/scripts/chromium-artifact.ts" arm64 x86_64
 
 # Keep the project's linker settings, including startup-loaded browser storage.
 # Only the resolved Ghostty archive differs between local and release builds.
@@ -106,4 +106,4 @@ if /usr/bin/nm -u "$app_executable" | grep -F "$libcpp_hash_memory_symbol" >/dev
   exit 1
 fi
 
-node "$script_dir/macos-browser-artifact.mjs" linkage "$app_path" arm64 x86_64
+node "$script_dir/macos-browser-artifact.ts" linkage "$app_path" arm64 x86_64

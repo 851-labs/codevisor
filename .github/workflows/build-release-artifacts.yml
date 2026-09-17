@@ -312,7 +312,7 @@ jobs:
         id: package-ghostty
         shell: bash
         run: |
-          archive="$(scripts/release/package-ghosttykit.sh dist/release)"
+          archive="$(bun scripts/release/package-ghosttykit.ts dist/release)"
           stamp="$(basename "$archive")"
           stamp="${stamp#GhosttyKit-}"
           stamp="${stamp%.tar.gz}"
@@ -408,7 +408,7 @@ jobs:
           rm -f "$failure_marker" "$runtime_archive.part"
           mkdir -p "$(dirname "$runtime_archive")"
           download_intel_runtime() {
-            scripts/release/download-github-artifact.sh \
+            bun scripts/release/download-github-artifact.ts \
               "$GITHUB_RUN_ID" \
               codevisor-macos-x64-runtime \
               "$runtime_download_dir" \

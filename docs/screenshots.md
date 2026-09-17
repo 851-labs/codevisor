@@ -57,7 +57,7 @@ bun run screenshots:ios --runtime 'iOS 27.0'
 - `apps/shared/Screenshots/`: demo conversation, sidebar records, model capabilities, environment/controller factories, appearance selection, and offline HTML. Both Xcode apps compile these same files only in Debug builds.
 - `apps/shared/ScreenshotTests/`: shared scene order, content readiness checks, locale, and named XCTest attachments. iOS captures the screen; macOS requests a native capture by window ID from the CLI, excluding overlapping apps and window shadows. Ordinary test runs skip capture unless explicitly enabled by the scripts.
 - Each app's `PreviewContent/`: a small adapter mounting its production native views with the shared inputs. The macOS entry point branches before live storage and server startup.
-- `scripts/screenshots-lib.mjs` and `scripts/screenshots-capture.mjs`: shared options, appearances, isolated builds, attachment export, image validation, manifests, galleries, and zips.
-- `scripts/screenshots-ios.mjs` and `scripts/screenshots-macos.mjs`: platform setup and capture loops.
+- `scripts/screenshots-lib.ts` and `scripts/screenshots-capture.ts`: shared options, appearances, isolated builds, attachment export, image validation, manifests, galleries, and zips.
+- `scripts/screenshots-ios.ts` and `scripts/screenshots-macos.ts`: platform setup and capture loops.
 
 Run the script checks with `node --test scripts/screenshots*.test.mjs`. Verify rendering by running both capture commands and reviewing the resulting images.

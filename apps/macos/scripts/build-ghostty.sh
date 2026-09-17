@@ -36,7 +36,7 @@ BUILD_FLAGS=(
 )
 
 # Identifies a built framework: pinned ref + build flags. Written into the
-# xcframework on install; `dev.mjs` refuses to reuse or copy a framework
+# xcframework on install; `dev.ts` refuses to reuse or copy a framework
 # whose stamp doesn't match, so a build-script change (new ref, new flags)
 # invalidates every prebuilt copy instead of silently shipping stale ones.
 PATCH_FINGERPRINT="$(/usr/bin/shasum -a 256 "$GHOSTTY_COMPAT_PATCH" | awk '{print $1}')"

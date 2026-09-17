@@ -43,7 +43,7 @@ provenance. If the Alpha publisher has not run, dispatch
 Generate the prospective Stable notes locally:
 
 ```sh
-node scripts/release/generate-release-notes.mjs \
+node scripts/release/generate-release-notes.ts \
   --channel stable \
   --version VERSION \
   --commit "$main_sha" \

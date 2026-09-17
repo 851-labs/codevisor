@@ -1,6 +1,6 @@
 /// Worker environment: generated bindings/vars (worker-configuration.d.ts)
 /// plus values wrangler cannot know about — deploy-time secrets and the
-/// dev-only vars injected by `wrangler dev --var` (see scripts/dev.mjs).
+/// dev-only vars injected by `wrangler dev --var` (see scripts/dev.ts).
 export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID"> {
   /// ≥32 chars; `openssl rand -base64 32`. Required outside dev auth mode.
   BETTER_AUTH_SECRET?: string

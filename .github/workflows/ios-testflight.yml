@@ -68,7 +68,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: bun scripts/release/build-ios-testflight.mjs "$IOS_VERSION"
+        run: bun scripts/release/build-ios-testflight.ts "$IOS_VERSION"
       - name: Retain the signed IPA and archive with symbols
         if: inputs.operation == 'build'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -93,7 +93,7 @@ jobs:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: bun scripts/release/publish-ios-testflight.mjs "$IOS_VERSION"
+        run: bun scripts/release/publish-ios-testflight.ts "$IOS_VERSION"
       - name: Clean generated iOS artifacts on the persistent runner
         if: always()
         run: rm -rf tmp/build/ios/testflight "$CODEVISOR_APPLE_KEY_DIRECTORY"

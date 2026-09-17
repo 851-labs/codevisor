@@ -42,7 +42,7 @@ aws s3 cp "$release_notes" "s3://$bucket/$prefix/$notes_name" \
 for arch in arm64 x64; do
   archive="$artifact_dir/Codevisor-macOS-$arch.zip"
   [[ -f "$archive" ]] || { echo "Missing $archive" >&2; exit 1; }
-  signature="$(node scripts/release/sign-sparkle-update.mjs "$archive" "$sparkle_public_key")"
+  signature="$(node scripts/release/sign-sparkle-update.ts "$archive" "$sparkle_public_key")"
   if [[ "$(uname -s)" == Darwin ]]; then
     length="$(stat -f %z "$archive")"
   else
@@ -57,7 +57,7 @@ for arch in arm64 x64; do
   old_feed="$work_dir/appcast-$arch-old.xml"
   new_feed="$work_dir/appcast-$arch.xml"
   curl --fail --silent --show-error "$origin/appcast-$arch.xml" --output "$old_feed" || true
-  node scripts/release/update-appcast.mjs \
+  node scripts/release/update-appcast.ts \
     --input "$old_feed" \
     --output "$new_feed" \
     --channel "$channel" \
