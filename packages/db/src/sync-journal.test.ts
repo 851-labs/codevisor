@@ -1,47 +1,85 @@
 import type { TranscriptBodyPage } from "@codevisor/api"
-import Database from "better-sqlite3"
 import { expect, it } from "vitest"
-import { createService } from "./create-service.js"
 import { makeDatabase } from "./index.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { memoryDatabase, run, tempDatabase } from "./test-support.js"
 
-it("replays short gaps and resnapshots long gaps without deleting transcript content", async ({
-  onTestFinished
-}) => {
-  // Retention is a database behavior, independent of filesystem durability.
-  // Keep the production row limit without paying thousands of disk commits.
-  const raw = new Database(":memory:")
-  const db = createService(raw, { filename: ":memory:", serverId: "local" })
-  onTestFinished(() => run(db.close))
-  await run(db.migrate)
-  const project = await run(db.createProject({ folderPath: "/tmp/journal" }))
-  const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
+it("replays short gaps and resnapshots long gaps without deleting transcript content", async () => {
+  const { sqlite, db, session } = await memoryDatabase()
   await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
-  for (let index = 0; index < 2500; index++) {
+  const originalText = "x".repeat(2500)
+  await run(
+    db.appendEvent("session.output", session.id, {
+      sessionUpdate: "agent_message_chunk",
+      messageId: "answer",
+      content: { type: "text", text: originalText }
+    })
+  )
+
+  // Seed already-projected history in one transaction. Retention keeps 2,048
+  // rows and checks every 64 revisions; real appends below cross that boundary.
+  sqlite.transaction(() => {
+    const insert = sqlite.prepare(
+      `insert into session_events (session_id, revision, server_id, kind, created_at, payload)
+       values (?, ?, 'local', 'session.updated', '2026-09-16T00:00:00.000Z', ?)`
+    )
+    const payload = JSON.stringify({ title: session.title })
+    for (let revision = 3; revision <= 2110; revision++) {
+      insert.run(session.id, revision, payload)
+    }
+    sqlite.prepare("update sessions set revision = 2110 where id = ?").run(session.id)
+    sqlite
+      .prepare(
+        `update sync_watermarks set bytes = (
+           select sum(length(cast(payload as blob))) from session_events where session_id = ?
+         ) where subject_id = ?`
+      )
+      .run(session.id, `session:${session.id}`)
+  })()
+
+  for (const text of ["y", "z"]) {
     await run(
       db.appendEvent("session.output", session.id, {
         sessionUpdate: "agent_message_chunk",
         messageId: "answer",
-        content: { type: "text", text: "x" }
+        content: { type: "text", text }
       })
     )
   }
   expect(await run(db.readSyncBatch(0, session.id))).toEqual({
     events: [],
-    cursor: 2501,
+    cursor: 2112,
     requiresSnapshot: true
   })
-  const short = await run(db.readSyncBatch(2499, session.id))
+  const short = await run(db.readSyncBatch(2110, session.id))
   expect(short.requiresSnapshot).toBe(false)
-  expect(short.events.map((event) => event.id)).toEqual([2500, 2501])
+  expect(short.cursor).toBe(2112)
+  expect(short.events).toMatchObject([
+    {
+      id: 2111,
+      payload: { sessionUpdate: "agent_message_patch", text: "y", offset: 2500 }
+    },
+    {
+      id: 2112,
+      payload: { sessionUpdate: "agent_message_patch", text: "z", offset: 2501 }
+    }
+  ])
   const page = await run(db.getTranscriptPage(session.id, undefined, 8))
-  expect(page.items[0]!.text).toBe("x".repeat(2500))
+  expect(page.items[0]!.text).toBe(`${originalText}yz`)
   expect(
-    (raw.prepare("select count(*) as n from session_events").get() as { n: number }).n
-  ).toBeLessThan(2112)
+    sqlite
+      .prepare(
+        "select count(*) as count, min(revision) as first, max(revision) as last from session_events where session_id = ?"
+      )
+      .get(session.id)
+  ).toEqual({ count: 2048, first: 65, last: 2112 })
   expect(
-    (raw.prepare("select count(*) as n from transcript_entries").get() as { n: number }).n
+    sqlite
+      .prepare("select floor from sync_watermarks where subject_id = ?")
+      .get(`session:${session.id}`)
+  ).toEqual({ floor: 64 })
+  expect(
+    (sqlite.prepare("select count(*) as n from transcript_entries").get() as { n: number }).n
   ).toBe(1)
 })
 
