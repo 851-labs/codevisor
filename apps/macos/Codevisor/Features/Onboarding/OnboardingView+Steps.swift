@@ -176,7 +176,6 @@ extension OnboardingView {
             }
             if environment.cloud.supportsEmailSignIn {
               CloudEmailSignInButton { showsEmailSignIn = true }
-                .disabled(isSigningInToCloud)
             }
             if environment.cloud.developmentAccountAvailable {
               CloudSignInProviderButton(

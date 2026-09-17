@@ -206,17 +206,14 @@ private struct ConnectMachineStep: View {
             title: "Sign in with GitHub",
             icon: .asset("GitHubMark")
           ) { startCloudSignIn() }
-          .disabled(isSigningInToCloud)
         }
 
         if cloud.supportsAppleSignIn {
           CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
-            .disabled(isSigningInToCloud)
         }
 
         if cloud.supportsEmailSignIn {
           CloudEmailSignInButton { showsEmailSignIn = true }
-            .disabled(isSigningInToCloud)
         }
 
         if cloud.developmentAccountAvailable {
@@ -226,7 +223,6 @@ private struct ConnectMachineStep: View {
           ) {
             Task { await cloud.signInWithDevelopmentAccount() }
           }
-          .disabled(isSigningInToCloud)
         }
 
         secondaryManualLink
@@ -365,6 +361,7 @@ private struct ConnectMachineStep: View {
   // MARK: Cloud sign-in
 
   private func startCloudSignIn(provider: CloudSignInProvider = .github) {
+    guard !isSigningInToCloud else { return }
     isSigningInToCloud = true
     Task {
       await cloudSignIn.signIn(provider: provider, cloud: environment.cloud)

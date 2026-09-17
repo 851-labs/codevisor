@@ -77,10 +77,11 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
       return try await withCheckedThrowingContinuation { completion in
         webRequestID = requestID
         webCompletion = completion
-        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: Self.callbackScheme) {
-          [weak self] callback, error in
-          Task { @MainActor in self?.finishWeb(requestID: requestID, callback: callback, error: error) }
+        let completionHandler = Self.webAuthenticationCompletion { [weak self] callback, error in
+          self?.finishWeb(requestID: requestID, callback: callback, error: error)
         }
+        let session = ASWebAuthenticationSession(
+          url: url, callbackURLScheme: Self.callbackScheme, completionHandler: completionHandler)
         session.presentationContextProvider = self
         session.prefersEphemeralWebBrowserSession = false
         webSession = session
@@ -93,6 +94,16 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
         guard self?.webRequestID == requestID else { return }
         self?.webSession?.cancel()
       }
+    }
+  }
+
+  // AuthenticationServices can call back on a background queue. Keep the SDK
+  // callback nonisolated and move all authentication state access to the main actor.
+  nonisolated static func webAuthenticationCompletion(
+    _ completion: @escaping @MainActor @Sendable (URL?, (any Error)?) -> Void
+  ) -> ASWebAuthenticationSession.CompletionHandler {
+    { @Sendable callback, error in
+      Task { @MainActor in completion(callback, error) }
     }
   }
 

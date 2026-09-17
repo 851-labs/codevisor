@@ -126,10 +126,10 @@ struct CloudAccountAuthenticationSections: View {
       }
     }
     .padding(.vertical, 4)
-    .disabled(isSigningIn)
   }
 
   private func start(_ provider: CloudSignInProvider) {
+    guard !isSigningIn else { return }
     isSigningIn = true
     Task {
       await authentication.signIn(provider: provider, cloud: cloud, link: link)
