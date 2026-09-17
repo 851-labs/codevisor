@@ -330,7 +330,6 @@ extension TranscriptAssistantRowProjection {
     switch item {
     case .text: 80
     case let .toolGroup(group): max(44, CGFloat(group.calls.count) * 34)
-    case .contextCompaction: 24
     case .subagent: 52
     }
   }

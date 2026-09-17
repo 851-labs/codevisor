@@ -13,7 +13,8 @@ import {
 } from "../server-context.js"
 
 const StressRequest = Schema.Struct({
-  action: Schema.Literals(["seed", "chunk", "finish"]),
+  action: Schema.Literals(["seed", "chunk", "compaction", "finish"]),
+  status: Schema.optional(Schema.Literals(["started", "completed", "failed"])),
   sessionId: Schema.optional(Schema.String),
   folderPath: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
@@ -133,7 +134,14 @@ export const routeTranscriptStress = async (
     const id = body.sessionId
     if (!id || !owned.has(id))
       throw new HttpFailure(400, "Unknown stress session; seed it in this process first")
-    if (body.action === "chunk") {
+    if (body.action === "compaction") {
+      if (!body.status) throw new HttpFailure(400, "Provide a compaction status")
+      await emit(id, "session.output", {
+        sessionUpdate: "context_compaction",
+        compactionId: "stress-compaction",
+        status: body.status
+      })
+    } else if (body.action === "chunk") {
       await emit(id, "session.output", {
         messageId: body.messageId ?? "stress-live-answer",
         ...(body.phase ? { phase: body.phase } : {}),

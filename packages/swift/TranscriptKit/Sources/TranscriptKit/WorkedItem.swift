@@ -2,7 +2,7 @@ import Foundation
 import ACPKit
 
 /// A presentation item within the "Worked for…" section: reasoning text, a
-/// group of consecutive tool calls, or an inline lifecycle event.
+/// group of consecutive tool calls, or a nested subagent.
 public struct ToolCallGroup: Identifiable, Sendable, Equatable {
   public let id: String
   public let calls: [ToolCall]
@@ -25,7 +25,6 @@ public struct ToolCallGroup: Identifiable, Sendable, Equatable {
 public enum WorkedItem: Identifiable, Sendable, Equatable {
   case text(id: String, markdown: String)
   case toolGroup(ToolCallGroup)
-  case contextCompaction(id: String, status: ContextCompactionStatus)
   /// A subagent spawn rendered as its own collapsible section with a nested
   /// transcript (`AssistantTurn.subagentItems(_:)`), never folded into a
   /// tool-group summary.
@@ -35,7 +34,6 @@ public enum WorkedItem: Identifiable, Sendable, Equatable {
     switch self {
     case let .text(id, _): return "wtext:\(id)"
     case let .toolGroup(group): return "wgroup:\(group.id)"
-    case let .contextCompaction(id, _): return "wcompaction:\(id)"
     case let .subagent(id, _): return "wagent:\(id)"
     }
   }
@@ -117,13 +115,10 @@ extension AssistantTurn {
       case let .tool(call):
         group.append(call)
         groupHasUnsettledCall = groupHasUnsettledCall || !call.isSettled
-      case let .contextCompaction(id, status):
-        flush()
-        // Only completion has inline content. Invisible lifecycle rows still
-        // reserve height and spacing in the native transcript virtualizers.
-        if status == .completed {
-          items.append(.contextCompaction(id: id, status: status))
-        }
+      case .contextCompaction:
+        // Lifecycle state drives the turn's temporary activity label. It is
+        // never transcript content, including when restoring older history.
+        continue
       }
     }
     flush()

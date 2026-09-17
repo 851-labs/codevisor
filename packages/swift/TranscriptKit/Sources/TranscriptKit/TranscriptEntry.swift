@@ -167,9 +167,8 @@ public struct AssistantTurn: Sendable, Equatable {
 }
 
 extension AssistantTurn {
-  /// Latest ordered context-compaction lifecycle, used only to coordinate
-  /// the turn-level activity indicator. The event itself renders from
-  /// `entries` at its actual arrival position.
+  /// Latest context-compaction lifecycle, used only for the temporary
+  /// turn-level activity indicator. Completed compaction is not visible work.
   public var contextCompactionStatus: ContextCompactionStatus? {
     for entry in entries.reversed() {
       if case let .contextCompaction(_, status) = entry { return status }
@@ -214,6 +213,7 @@ extension AssistantTurn {
     let finalID = finalText?.id
     return entries.compactMap { entry in
       if entry.id == finalID { return nil }
+      if case .contextCompaction = entry { return nil }
       if case let .tool(call) = entry, call.kind == .imageGeneration { return nil }
       return entry
     }
@@ -443,7 +443,10 @@ public enum ConversationItem: Identifiable, Sendable, Equatable {
     case let .assistant(message):
       let turn = message.turn
       return turn.isGenerating
-        || !turn.entries.isEmpty
+        || turn.entries.contains { entry in
+          if case .contextCompaction = entry { return false }
+          return true
+        }
         || !turn.attachments.isEmpty
         || turn.hasDeferredWorkedDetails
         || !(turn.planDocument?.isEmpty ?? true)

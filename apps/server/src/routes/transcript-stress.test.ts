@@ -25,6 +25,23 @@ it("keeps the transcript driver opt-in and limits mutations to its own fixtures"
   })
   expect(seeded.status).toBe(201)
   const { sessionId } = seeded.body as { sessionId: string }
+  expect((await post({ action: "compaction", sessionId })).status).toBe(400)
+  for (const status of ["started", "completed", "started", "failed"]) {
+    expect((await post({ action: "compaction", sessionId, status })).status).toBe(200)
+  }
+  const compactions = (await run(services.db.listSubjectEvents(sessionId)))
+    .filter(
+      (event) =>
+        (event.payload as { sessionUpdate?: string }).sessionUpdate === "context_compaction"
+    )
+    .map((event) => event.payload)
+  expect(compactions).toMatchObject(
+    ["started", "completed", "started", "failed"].map((status) => ({
+      sessionUpdate: "context_compaction",
+      compactionId: "stress-compaction",
+      status
+    }))
+  )
   expect((await post({ action: "chunk", sessionId, text: "Visible " })).status).toBe(200)
   expect((await post({ action: "chunk", sessionId, text: "append" })).status).toBe(200)
   expect((await post({ action: "finish", sessionId })).status).toBe(200)

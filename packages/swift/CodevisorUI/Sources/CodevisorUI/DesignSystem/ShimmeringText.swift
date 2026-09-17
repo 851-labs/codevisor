@@ -269,35 +269,11 @@ extension ShimmeringText {
   }
 }
 
-public struct AgentStatusText: View {
-  var text: String
-  var font: Font = .callout
-
-  public init(text: String, font: Font = .callout) {
-    self.text = text
-    self.font = font
-  }
-
-  public var body: some View {
-    Text(text)
-      .font(font)
-      .foregroundStyle(.secondary)
-      .accessibilityLabel(text)
-  }
-}
-
-extension AgentStatusText {
-  public static var contextCompacted: AgentStatusText {
-    AgentStatusText(text: "Context compacted")
-  }
-}
-
 #Preview {
   VStack(alignment: .leading, spacing: 8) {
     ShimmeringText.thinking
     ShimmeringText.startingAgent
     ShimmeringText.compactingContext
-    AgentStatusText.contextCompacted
   }
   .padding()
 }

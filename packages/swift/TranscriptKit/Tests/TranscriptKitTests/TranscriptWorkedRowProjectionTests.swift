@@ -5,7 +5,7 @@ import CodevisorProtocol
 @testable import TranscriptKit
 
 struct TranscriptWorkedRowProjectionTests {
-  @Test(arguments: [ContextCompactionStatus.started, .failed])
+  @Test(arguments: [ContextCompactionStatus.started, .completed, .failed])
   func invisibleCompactionDoesNotAddSpaceBeforeActivity(status: ContextCompactionStatus) {
     var message = AssistantMessage(
       turn: AssistantTurn(
@@ -39,7 +39,7 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(rows.map(\.id) == [.activeChrome(message.id, .activity)])
   }
 
-  @Test func completedCompactionKeepsItsInlineHistoryRow() {
+  @Test func completedCompactionLeavesNoWorkedSectionOrHistoryRow() {
     let message = AssistantMessage(
       turn: AssistantTurn(
         entries: [.contextCompaction(id: "compact", status: .completed)],
@@ -48,12 +48,12 @@ struct TranscriptWorkedRowProjectionTests {
     )
     let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
 
-    #expect(
-      rows.map(\.id) == [
-        .activeWorkedHeader(message.id, .planning),
-        .activeWorkedItem(message.id, .planning, itemID: "wcompaction:compact"),
-        .activeChrome(message.id, .activity),
-      ])
+    #expect(rows.map(\.id) == [.activeChrome(message.id, .activity)])
+    #expect(!message.turn.hasWorkedContent)
+    var historical = message
+    historical.turn.isGenerating = false
+    #expect(historical.turn.workedItems.isEmpty)
+    #expect(!ConversationItem.assistant(historical).hasRenderableTranscriptContent)
   }
 
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {

@@ -55,15 +55,6 @@ struct TurnItemsView: View {
         } else {
           ToolCallRow(call: call, isTurnActive: isTurnActive)
         }
-      case let .contextCompaction(_, status):
-        switch status {
-        case .started:
-          EmptyView()  // The turn owns the single ephemeral activity label.
-        case .completed:
-          AgentStatusText.contextCompacted
-        case .failed:
-          EmptyView()
-        }
       }
     }
     .font(.callout)

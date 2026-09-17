@@ -50,15 +50,6 @@ struct TranscriptItemsView: View {
           group: group,
           isTurnActive: isTurnActive
         )
-      case let .contextCompaction(_, status):
-        switch status {
-        case .started:
-          EmptyView()  // The turn owns the single ephemeral activity label.
-        case .completed:
-          AgentStatusText.contextCompacted
-        case .failed:
-          EmptyView()
-        }
       case let .subagent(_, call):
         if depth + 1 < Self.maxNestingDepth {
           SubagentSectionView(

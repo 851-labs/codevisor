@@ -59,25 +59,21 @@ struct WorkedItemsTests {
     #expect(runningGroup.hasUnsettledCall)
   }
 
-  @Test("Context compaction breaks tool groups at its arrival position")
-  func compactionOrder() {
+  @Test(
+    "Compaction lifecycle does not split visible tool groups",
+    arguments: [ContextCompactionStatus.started, .completed, .failed])
+  func compactionIsNotWork(status: ContextCompactionStatus) {
     let result = turn([
       tool("before", .read),
-      .contextCompaction(id: "compact-1", status: .completed),
+      .contextCompaction(id: "compact-1", status: status),
       tool("after", .execute),
     ]).workedItems
 
-    #expect(result.count == 3)
+    #expect(result.count == 1)
     if case let .toolGroup(group) = result[0] {
-      #expect(group.calls.map(\.toolCallId) == ["before"])
+      #expect(group.calls.map(\.toolCallId) == ["before", "after"])
     } else {
-      Issue.record("expected leading tool group")
-    }
-    #expect(result[1] == .contextCompaction(id: "compact-1", status: .completed))
-    if case let .toolGroup(group) = result[2] {
-      #expect(group.calls.map(\.toolCallId) == ["after"])
-    } else {
-      Issue.record("expected trailing tool group")
+      Issue.record("expected a single tool group")
     }
   }
 
