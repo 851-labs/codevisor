@@ -135,7 +135,9 @@ private struct ScreenSharingPaneView: View {
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }
       ZStack {
-        if let endpoint = store.endpoint { ScreenSharingNativeView(view: endpoint.view) }
+        if let endpoint = store.endpoint {
+          ScreenSharingNativeView(endpoint: endpoint, letterbox: theme.isSystem ? nil : theme.paneBackground)
+        }
         if store.phase != .viewing {
           VStack(spacing: 12) {
             ProgressView().controlSize(.small)
@@ -151,8 +153,15 @@ private struct ScreenSharingPaneView: View {
   }
 }
 
+/// The endpoint's video surface, with the fill around the remote display kept
+/// on the app's surface color — themed panes use their own, and the system
+/// theme (whose pane background defers to the window backdrop) gets the native
+/// window background rather than black bars.
 private struct ScreenSharingNativeView: NSViewRepresentable {
-  let view: NSView
-  func makeNSView(context: Context) -> NSView { view }
-  func updateNSView(_ nsView: NSView, context: Context) {}
+  let endpoint: ScreenSharingViewerEndpoint
+  let letterbox: Color?
+  func makeNSView(context: Context) -> NSView { endpoint.view }
+  func updateNSView(_ nsView: NSView, context: Context) {
+    endpoint.letterbox(letterbox.map(NSColor.init) ?? .windowBackgroundColor)
+  }
 }
