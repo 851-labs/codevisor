@@ -13,6 +13,7 @@ DerivedData/
 *.tsbuildinfo
 *.log
 *.pid
+*.profraw
 *.xcuserstate
 *.xcscmblueprint
 xcuserdata/
