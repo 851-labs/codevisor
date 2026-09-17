@@ -20,13 +20,10 @@ xcuserdata/
 .env
 .env.*
 !.env.example
-apps/server/data/
 apps/macos/Frameworks/
 .wrangler/
-.playwright-mcp/
 # Colocated dev/test build & server state (see scripts/dev.mjs)
 tmp/
-.codevisor/
 
 # Generated per-worktree iOS dev icon (scripts/dev-ios.mjs)
 apps/ios/Codevisor/Resources/AppIconDevGenerated.icon/
