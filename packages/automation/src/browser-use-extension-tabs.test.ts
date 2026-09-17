@@ -1,11 +1,13 @@
-import { observeCdp } from "./browser-cdp-test-support.js"
 import { once } from "node:events"
 import { rmSync, mkdtempSync, readFileSync } from "node:fs"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 import WebSocket, { WebSocketServer } from "ws"
+
+import { observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []

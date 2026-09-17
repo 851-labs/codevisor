@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest"
 import type { Provider, OAuthCredential } from "@earendil-works/pi-ai"
+import { describe, expect, it, vi } from "vitest"
+
+import type { SharedTokenBundle } from "./shared-credential-types.js"
+import { refreshSharedOAuth } from "./shared-oauth-providers.js"
 import {
   parseProviderOAuth,
   providerCredential,
@@ -7,8 +10,6 @@ import {
   providerTokenEndpoint,
   refreshProviderOAuth
 } from "./shared-provider-oauth.js"
-import { refreshSharedOAuth } from "./shared-oauth-providers.js"
-import type { SharedTokenBundle } from "./shared-credential-types.js"
 
 const jwt = (value: unknown) =>
   `header.${Buffer.from(JSON.stringify(value)).toString("base64url")}.signature`

@@ -1,5 +1,7 @@
-import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
 import { randomUUID } from "node:crypto"
+
+import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
+
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
 import type { makeMcpOAuthRuntime } from "./mcp-oauth.js"

@@ -1,6 +1,7 @@
-import type * as acp from "@agentclientprotocol/sdk"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
+
+import type * as acp from "@agentclientprotocol/sdk"
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
 /// pi-acp includes Pi's human-readable startup prelude in `_meta` and then

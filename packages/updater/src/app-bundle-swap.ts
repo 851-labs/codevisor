@@ -1,11 +1,12 @@
+import { execFile } from "node:child_process"
 import { createPublicKey, verify as cryptoVerify } from "node:crypto"
 import { createWriteStream } from "node:fs"
 import { mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+
 import { parseAppcast, selectLatestAppcastItem, type AppcastItem } from "./appcast.js"
 
 const execFileAsync = promisify(execFile)

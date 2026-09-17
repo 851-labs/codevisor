@@ -2,6 +2,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { McpManager } from "@codevisor/mcp"
 import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
+
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,

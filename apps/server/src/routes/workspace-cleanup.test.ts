@@ -1,13 +1,15 @@
-import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import { jsonRequest, run, start, tempDirs, idleRestartCoordinator } from "../test-support.js"
+
 import { makeEventFanout, type RouteState } from "../server.js"
-import { ensureAgentSessionFor } from "./session-workspace.js"
+import { jsonRequest, run, start, tempDirs, idleRestartCoordinator } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
+import { ensureAgentSessionFor } from "./session-workspace.js"
 
 const setup = async () => {
   const fixture = await start()

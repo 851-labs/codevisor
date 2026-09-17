@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events"
+
 import { beforeEach, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),

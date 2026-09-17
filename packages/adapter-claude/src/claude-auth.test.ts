@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { spawnClaudeAuthClient } from "./claude-auth.js"
 
 const makeClient = (overrides: Record<string, unknown> = {}) => {

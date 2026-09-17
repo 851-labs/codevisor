@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
 import {
   browserKeyDescription,

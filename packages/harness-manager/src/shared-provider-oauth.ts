@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto"
+
 import type { OAuthCredential, Provider } from "@earendil-works/pi-ai"
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all"
+
 import { SharedCredentialError, type SharedTokenBundle } from "./shared-credential-types.js"
 
 export type ProviderOAuthHarness = "pi" | "opencode" | "grok-build"

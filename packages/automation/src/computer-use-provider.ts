@@ -1,17 +1,18 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
+
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import type { AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
-import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
-
-import { computerUseTools } from "./computer-use-tools.js"
-import { makeComputerUseRepls } from "./computer-use-repl.js"
-import { waitForComputerState } from "./computer-use-wait.js"
 import { makeRecordingArtifacts } from "./computer-use-recording-artifacts.js"
+import { makeComputerUseRepls } from "./computer-use-repl.js"
+import { computerUseTools } from "./computer-use-tools.js"
+import { waitForComputerState } from "./computer-use-wait.js"
+import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
 
 export { computerUseTools } from "./computer-use-tools.js"
 interface PendingRequest {

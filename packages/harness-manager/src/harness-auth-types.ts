@@ -1,10 +1,9 @@
-import type { OAuthAuth } from "@earendil-works/pi-ai"
+import type { spawnClaudeAuthClient } from "@codevisor/adapter-claude"
 import type {
   AgentRuntimeService,
   HarnessAccountContext,
   HarnessDefinition
 } from "@codevisor/agent-runtime"
-import type { spawnClaudeAuthClient } from "@codevisor/adapter-claude"
 import type {
   Harness,
   HarnessAccount,
@@ -17,6 +16,8 @@ import type {
 } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
+import type { OAuthAuth } from "@earendil-works/pi-ai"
+
 import type { CredentialSource } from "./credential-ferry.js"
 import type { SharedAccountIntegration } from "./shared-account-integration.js"
 import type { SharedProviderIntegration } from "./shared-provider-integration.js"

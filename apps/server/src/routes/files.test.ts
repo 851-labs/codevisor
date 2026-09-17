@@ -1,4 +1,3 @@
-import Database from "better-sqlite3"
 import {
   existsSync,
   mkdirSync,
@@ -11,7 +10,10 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+
+import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
+
 import { sweepAttachmentTempFiles } from "../server.js"
 import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
 

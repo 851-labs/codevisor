@@ -6,6 +6,8 @@
 /// behind the same injectable seam as the other CLI commands; the real
 /// prompt implementations are wired in cli.ts.
 import qrcode from "qrcode-terminal"
+
+import { readCloudRegistration } from "./cloud-control.js"
 import {
   DEFAULT_PORT,
   resolvePort,
@@ -13,7 +15,6 @@ import {
   type CliDeps,
   type CommandOptions
 } from "./support.js"
-import { readCloudRegistration } from "./cloud-control.js"
 
 export interface SelectChoice<A> {
   readonly title: string

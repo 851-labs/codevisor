@@ -1,5 +1,6 @@
-import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
+import type { HarnessAccount } from "@codevisor/api"
+
 import type { ProviderOAuthHarness } from "./shared-provider-oauth.js"
 
 export interface SharedProviderIntegration {

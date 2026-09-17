@@ -1,14 +1,13 @@
-import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
-import type { CodevisorDatabaseService } from "@codevisor/db"
-import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
-import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
+
+import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import type { AutomationProviderContext } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
-import { CdpConnection } from "./browser-cdp.js"
 import { discardTargetState, jsonResult, type BrowserRuntime } from "./browser-cdp-engine.js"
+import { CdpConnection } from "./browser-cdp.js"
 import {
   downloadedChromiumPath,
   runBrowserInstaller,
@@ -27,6 +26,9 @@ import {
   openBrowserExtensionWebStore,
   prepareBrowserExtension
 } from "./browser-extension-relay.js"
+import { makeBrowserRepls, browserResultValue } from "./browser-repl.js"
+import { makeBrowserRuntimeFactory } from "./browser-runtime-factory.js"
+import { serializedBrowserOperation, closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 import {
   makeBrowserToolInvoker,
   runtimeKey,

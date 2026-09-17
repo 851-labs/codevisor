@@ -1,5 +1,7 @@
 import { Socket } from "node:net"
+
 import { afterEach, expect, it, vi } from "vitest"
+
 import { hasExistingListener } from "./listener-probe.js"
 
 afterEach(() => vi.restoreAllMocks())

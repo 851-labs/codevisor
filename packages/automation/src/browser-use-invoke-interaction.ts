@@ -1,5 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { delay } from "./browser-cdp.js"
+
 import {
   actionResult,
   evaluate,
@@ -7,6 +7,7 @@ import {
   stringArgument,
   verifiedActionResult
 } from "./browser-cdp-engine.js"
+import { delay } from "./browser-cdp.js"
 import {
   dispatchClick,
   dispatchKeyEvent,

@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
+
 import { afterEach, expect, it, vi } from "vitest"
+
 import { makeNdjsonTransport, type StdioEndpoint } from "./stdio-transport.js"
 
 const workers = vi.hoisted(() => ({ instances: [] as WorkerDouble[] }))

@@ -1,7 +1,8 @@
 import { expect, it, vi } from "vitest"
+
+import { runBlockingDataUpgrades } from "./data-upgrades.js"
 import { memoryDatabase, run } from "./test-support.js"
 import { migrateSetupState } from "./transcript-import-upgrade.js"
-import { runBlockingDataUpgrades } from "./data-upgrades.js"
 import { runTranscriptStateUpgrade } from "./transcript-state-upgrade.js"
 
 it("checkpoints setup logs in byte-bounded batches and resumes without duplicating output", async () => {

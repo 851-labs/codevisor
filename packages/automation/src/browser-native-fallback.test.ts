@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), launch: vi.fn() }))
@@ -11,9 +12,9 @@ vi.mock("./browser-chromium.js", async (original) => ({
   systemChromePath: () => "/fixture/chromium",
   userChromiumIsRunning: () => false
 }))
+import { managedBrowserHeadless } from "./browser-chromium.js"
 import { browserResultValue } from "./browser-repl.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
-import { managedBrowserHeadless } from "./browser-chromium.js"
 
 const connection = (name: string) => ({
   closed: false,

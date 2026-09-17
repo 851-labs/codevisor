@@ -1,4 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+
 import type { CatalogServer } from "./mcp-gateway-catalog.js"
 
 /// One plugin-declared agent tool, flattened by the plugins manager.

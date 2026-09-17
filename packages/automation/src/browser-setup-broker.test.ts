@@ -2,6 +2,7 @@ import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
+
 import { makeBrowserSetupBroker } from "./browser-setup-broker.js"
 import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
 

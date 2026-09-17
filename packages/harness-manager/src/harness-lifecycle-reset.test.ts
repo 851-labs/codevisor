@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
+
 import {
   agentsStub,
   cleanupLifecycleTests,
@@ -11,6 +11,7 @@ import {
   makeDb,
   waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 

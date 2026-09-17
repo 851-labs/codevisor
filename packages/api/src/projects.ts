@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+
 import { SessionOrigin } from "./session-config.js"
 
 export const ProjectLocation = Schema.Struct({

@@ -1,4 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
+
 import { objectSchema, tool } from "./browser-use-tool-schema.js"
 
 /// Clipboard, console logs, viewport, raw CDP access, page assets, and user history.

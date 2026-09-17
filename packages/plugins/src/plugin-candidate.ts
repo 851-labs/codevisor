@@ -1,6 +1,9 @@
 import { cp, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
+
 import type { PluginManifest } from "@codevisor/api"
+
+import type { PreparedCandidateContext, StagedPlugin } from "./plugin-install-types.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, writePluginInstallReceipt } from "./plugin-receipt.js"
 import { assertPluginRequirements, type FindExecutable } from "./plugin-requirements.js"
@@ -9,7 +12,6 @@ import {
   MANAGED_PLUGIN_MARKER_CONTENT,
   type InstalledPlugin
 } from "./plugin-store.js"
-import type { PreparedCandidateContext, StagedPlugin } from "./plugin-install-types.js"
 import { PluginsError } from "./plugins-error.js"
 
 export interface PluginCandidatePreparerDeps {

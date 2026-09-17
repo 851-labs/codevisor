@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import type { PromptAcceptedResponse } from "@codevisor/api"
 import {
   OpenSessionRequest as OpenSessionRequestSchema,
@@ -11,7 +13,7 @@ import {
   UpdateQueuedPromptRequest,
   isoTimestamp
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   appendAndPublish,
   HttpFailure,

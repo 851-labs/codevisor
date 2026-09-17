@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { computerUseState, waitForComputerState } from "./computer-use-wait.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+import { computerUseState, waitForComputerState } from "./computer-use-wait.js"
 const reply = (text: string): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify({ snapshotId: text, text }) }]
 })

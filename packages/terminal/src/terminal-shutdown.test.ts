@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+
 import { makeTerminalManager, TerminalError } from "./index.js"
 import { run } from "./test-support.js"
 

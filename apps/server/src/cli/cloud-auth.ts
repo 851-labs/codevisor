@@ -7,14 +7,15 @@ import {
   type AccountMachineSummary,
   type FetchLike
 } from "@codevisor/cloud-client"
-import { applySyncParticipation } from "./sync.js"
-import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
+
 import {
   cloudUrl,
   ensureCloudServer,
   readCloudRegistration,
   waitForCloudConnection
 } from "./cloud-control.js"
+import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
+import { applySyncParticipation } from "./sync.js"
 
 /// `codevisor auth …` — connect this machine to a Codevisor Cloud account via
 /// the RFC 8628 device flow, so it appears in the user's apps automatically.

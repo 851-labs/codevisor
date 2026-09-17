@@ -1,15 +1,14 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+import type { Socket } from "node:net"
+
 import type { EventEnvelope, TerminalClientFrame } from "@codevisor/api"
 import { TerminalClientFrame as TerminalClientFrameSchema, decode } from "@codevisor/api"
+import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { adaptDirectSocket } from "./net-direct.js"
-import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
-import { attachSyncEventSocket } from "./sync-event-socket.js"
-import type { ClientControlBroker } from "../infra/client-control.js"
-import type { Socket } from "node:net"
 import { WebSocket, type WebSocketServer } from "ws"
-import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
+
+import type { ClientControlBroker } from "../infra/client-control.js"
 import {
   authorize,
   failureMessage,
@@ -22,6 +21,9 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
+import { adaptDirectSocket } from "./net-direct.js"
+import { spliceVNCSocket, VNC_SOCKET_PATH } from "./screen-sharing-vnc.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 
 export const handleEvents = async (
   db: CodevisorDatabaseService,

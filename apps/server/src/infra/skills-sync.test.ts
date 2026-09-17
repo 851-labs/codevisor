@@ -1,10 +1,12 @@
-import { makeSkillsManager } from "@codevisor/skills"
-import { makeBlobStore } from "@codevisor/sync"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gzipSync } from "node:zlib"
+
+import { makeSkillsManager } from "@codevisor/skills"
+import { makeBlobStore } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
+
 import { makeAgents, makeServices, run, tempDirs } from "../test-support.js"
 import {
   packSkillArchive,

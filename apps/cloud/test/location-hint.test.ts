@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { hubLocationHint } from "../src/location-hint.js"
 
 const geo = (continent: string, latitude?: number, longitude?: number): unknown => ({

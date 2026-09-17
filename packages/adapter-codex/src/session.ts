@@ -1,10 +1,11 @@
-import type { QuestionSpec, SessionGoal } from "@codevisor/api"
 import type {
   BackgroundTerminalIntegration,
   ExternalTerminalStream,
   QuestionAnswer,
   RuntimeEmit
 } from "@codevisor/agent-runtime"
+import type { QuestionSpec, SessionGoal } from "@codevisor/api"
+
 import type { CodexClient } from "./client.js"
 import type { CodexCommandKiller } from "./process-kill.js"
 import type { CodexTitleGenerator } from "./title-generation.js"

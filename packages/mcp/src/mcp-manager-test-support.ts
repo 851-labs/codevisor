@@ -1,14 +1,16 @@
+import { mkdtempSync, rmSync } from "node:fs"
+import { createServer } from "node:http"
+import type { Server } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
-import { createServer } from "node:http"
-import type { Server } from "node:http"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { makeMcpManager } from "./mcp-manager.js"
-import type { McpManager } from "./mcp-manager-types.js"
 import { vi } from "vitest"
+
+import type { McpManager } from "./mcp-manager-types.js"
+import { makeMcpManager } from "./mcp-manager.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 

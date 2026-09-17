@@ -1,8 +1,9 @@
-import { afterEach, expect, it, vi } from "vitest"
 import { makeHarnessAuthManager, SharedCredentialError } from "@codevisor/harness-manager"
+import { afterEach, expect, it, vi } from "vitest"
+
 import { fleet } from "../infra/shared-accounts-test-support.js"
-import { jsonRequest, startWithApp, runningServers } from "../test-support.js"
 import { providerSlot } from "../infra/shared-provider-store.js"
+import { jsonRequest, startWithApp, runningServers } from "../test-support.js"
 
 afterEach(() => {
   vi.useRealTimers()

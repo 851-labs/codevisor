@@ -1,9 +1,10 @@
-import { Effect } from "effect"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { attachEventSocket } from "./events.js"
+
 import { CodevisorServer, makeEventFanout } from "../server.js"
 import {
   jsonRequest,
@@ -16,6 +17,7 @@ import {
   startWithApp,
   tempDirs
 } from "../test-support.js"
+import { attachEventSocket } from "./events.js"
 
 describe("event routes", () => {
   afterEach(() => {

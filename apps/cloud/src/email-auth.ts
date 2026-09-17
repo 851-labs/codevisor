@@ -1,5 +1,6 @@
 import { APIError, createAuthMiddleware } from "better-auth/api"
 import { emailOTP } from "better-auth/plugins"
+
 import type { CloudEnv } from "./env.js"
 
 export const hasEmailAuth = (env: CloudEnv): boolean => Boolean(env.RESEND_API_KEY)

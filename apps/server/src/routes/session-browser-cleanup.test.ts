@@ -1,12 +1,14 @@
-import { describe, expect, it, vi } from "vitest"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { makeServices, run, tempDirs, jsonRequest, waitFor } from "../test-support.js"
-import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
-import { makeEventFanout } from "../server.js"
+
+import { describe, expect, it, vi } from "vitest"
+
 import type { CodevisorServerServices } from "../server-context.js"
+import { makeEventFanout } from "../server.js"
+import { makeServices, run, tempDirs, jsonRequest, waitFor } from "../test-support.js"
 import { sessionEventSink } from "./session-events.js"
+import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
 const fixture = async () => {
   const { services } = await makeServices("browser-cleanup")

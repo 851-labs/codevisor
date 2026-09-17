@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+
 import { PluginsError } from "./plugins-error.js"
 
 const DISABLED_DIRECTORY = ".codevisor-disabled-plugins"

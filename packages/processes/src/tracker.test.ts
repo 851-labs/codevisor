@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest"
+
 import { trackProcessTree, type ProcessIdentity } from "./index.mjs"
 
 const entry = (pid: number, ppid = 1, pgid = pid, startedAt = "first"): ProcessIdentity => ({

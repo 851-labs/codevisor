@@ -1,14 +1,16 @@
+import { randomUUID } from "node:crypto"
+
 import type { CreateSessionRequest } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
-import { randomUUID } from "node:crypto"
+
 import { attempt } from "./errors.js"
 import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { sessionFromRow } from "./row-mappers.js"
 import type { SessionRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 import {
   attentionSettleDeadline,
   ensureSessionAttentionState,

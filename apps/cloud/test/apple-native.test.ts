@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import worker from "../src/index.js"
 import {
   appleEnv,

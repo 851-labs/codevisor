@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
+
 import { isNewerVersion } from "./harness-update-sources.js"
 
 export const DEFAULT_GITHUB_REPOSITORY = "851-labs/codevisor"

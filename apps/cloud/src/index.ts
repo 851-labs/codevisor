@@ -1,21 +1,22 @@
 // @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import { Hono } from "hono"
-import { createAuth } from "./auth.js"
+
 import { hasAppleAuth } from "./apple-auth.js"
+import { createAuth } from "./auth.js"
+import { credentialRoutes } from "./credential-routes.js"
 import { hasEmailAuth } from "./email-auth.js"
-import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 import { hubLocationHint } from "./location-hint.js"
-import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
-import { loginPage } from "./pages/login.js"
+import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
+import { loginPage } from "./pages/login.js"
+import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
+import { pluginModeration } from "./plugin-moderation.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
+import { notifyPluginReports } from "./plugin-reports.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
-import { pluginModeration } from "./plugin-moderation.js"
-import { notifyPluginReports } from "./plugin-reports.js"
-import { credentialRoutes } from "./credential-routes.js"
 
 // Note: the Worker entry module may only export handlers/DO classes — plain
 // value re-exports (strings, constants) crash workerd at startup.

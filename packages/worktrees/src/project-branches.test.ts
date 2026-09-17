@@ -1,9 +1,11 @@
-import { testTempDir } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
+import { testTempDir } from "./git-test-support.js"
 import { listProjectGitBranches, worktreeStartPoint } from "./project-branches.js"
 
 const makeRepo = (): { readonly root: string; readonly repo: string } => {

@@ -1,7 +1,10 @@
-import { Effect } from "effect"
 import { request, Server } from "node:http"
-import { WebSocket } from "ws"
+
+import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
+import { WebSocket } from "ws"
+
+import { readTailnetPeers } from "./infra/tailnet.js"
 import {
   defaultDatabasePath,
   defaultServerConfig,
@@ -9,7 +12,6 @@ import {
   startCodevisorServer
 } from "./server.js"
 import type { CodevisorServerServices } from "./server.js"
-import { readTailnetPeers } from "./infra/tailnet.js"
 import {
   jsonRequest,
   makeServices,

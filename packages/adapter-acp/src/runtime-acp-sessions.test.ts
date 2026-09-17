@@ -1,6 +1,7 @@
+import { makeAgentRuntime, type RuntimeEmit } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { makeAgentRuntime, type RuntimeEmit } from "@codevisor/agent-runtime"
+
 import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {

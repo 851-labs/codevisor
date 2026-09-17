@@ -1,5 +1,6 @@
-import type { DiffStat } from "@codevisor/api"
 import { diffStatsFromUnified, lineCount } from "@codevisor/agent-runtime"
+import type { DiffStat } from "@codevisor/api"
+
 import { isRecord } from "./internal.js"
 
 /// For adds/deletes codex sends the raw file content in `diff`, not a unified

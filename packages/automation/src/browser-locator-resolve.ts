@@ -1,8 +1,8 @@
-import { evaluatedValue } from "./browser-cdp.js"
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import { evaluatedValue } from "./browser-cdp.js"
+import { parseLocator } from "./browser-locator-parse.js"
 import { normalizeRef } from "./browser-snapshot.js"
 import type { AXNode } from "./browser-snapshot.js"
-import { parseLocator } from "./browser-locator-parse.js"
 
 /// Resolving a locator to the backend node ids it matches, across frames and
 /// shadow roots, with Playwright's strictness rules.

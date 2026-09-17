@@ -1,5 +1,6 @@
-import type { TerminalServerFrame } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+
+import type { TerminalServerFrame } from "@codevisor/api"
 import { Context, Effect, Layer } from "effect"
 
 import {

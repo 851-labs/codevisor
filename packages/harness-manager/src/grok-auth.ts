@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { loginGrok, GROK_CLIENT_ID, GROK_ISSUER } from "./grok-device-auth.js"
+
 import type { HarnessAccount, HarnessAuthFlow } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
+
+import { loginGrok, GROK_CLIENT_ID, GROK_ISSUER } from "./grok-device-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 
 interface Login {

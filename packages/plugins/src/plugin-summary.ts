@@ -1,6 +1,7 @@
 import type { PluginSummary } from "@codevisor/api"
-import type { InstalledPlugin } from "./plugin-store.js"
+
 import { pluginConsentKey } from "./plugin-consent.js"
+import type { InstalledPlugin } from "./plugin-store.js"
 
 export const summarizePlugin = (
   plugin: InstalledPlugin,

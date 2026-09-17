@@ -1,7 +1,8 @@
-import { readSetupBodyPage } from "./setup-state.js"
-import type Database from "better-sqlite3"
 import type { TranscriptBodyPage, TranscriptBodyResource } from "@codevisor/api"
+import type Database from "better-sqlite3"
+
 import type { JsonRecord } from "./event-payloads.js"
+import { readSetupBodyPage } from "./setup-state.js"
 
 const blockSize = 8192
 

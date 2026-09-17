@@ -1,6 +1,8 @@
 import { homedir } from "node:os"
 import { resolve } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { localArtifactPath, markdownFileReferences } from "./markdown-artifacts.js"
 
 describe("Markdown artifact paths", () => {

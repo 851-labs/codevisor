@@ -1,7 +1,9 @@
 import { mkdtemp, mkdir, readFile, readlink, lstat, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   canonicalLinuxService,
   migrateLinuxDataLayout,

@@ -1,8 +1,10 @@
-import { isoTimestamp } from "@codevisor/api"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
+
+import { isoTimestamp } from "@codevisor/api"
+
 import { attempt } from "./errors.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeAuthService = (
   context: ServiceContext

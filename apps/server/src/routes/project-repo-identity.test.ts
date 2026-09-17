@@ -3,14 +3,16 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
 import { describe, expect, it } from "vitest"
+
+import { makeEventFanout } from "../server-context.js"
 import { jsonRequest, makeServices, run, start, tempDirs } from "../test-support.js"
 import {
   backfillProjectRepoUrls,
   reconcileProjectRepoUrls,
   resetRepoUrlDiscoveryCache
 } from "./project-repo-identity.js"
-import { makeEventFanout } from "../server-context.js"
 
 const execFileAsync = promisify(execFile)
 

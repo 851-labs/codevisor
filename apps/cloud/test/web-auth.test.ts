@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
-import worker from "../src/index.js"
+
 import type { CloudEnv } from "../src/env.js"
+import worker from "../src/index.js"
 import { loginURL, validAuthRedirect } from "../src/pages/auth-navigation.js"
 import { BASE } from "./cloud-test-support.js"
 

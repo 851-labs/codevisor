@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { makeTerminalManager } from "./index.js"
 import { run, makeSpawner } from "./test-support.js"
 

@@ -1,10 +1,12 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
-import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
+
 import {
   defaultServerConfig,
   makeEventFanout,

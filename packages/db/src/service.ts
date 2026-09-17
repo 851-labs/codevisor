@@ -1,11 +1,9 @@
-import type { SyncBatch } from "./sync-journal.js"
 import type {
   NavigationSnapshot,
   BrowserCookieMutation,
   BrowserCookieSnapshot,
   BrowserNavigation
 } from "@codevisor/api"
-import type { SyncEntryRecord } from "@codevisor/sync"
 import type {
   ArchivedWorktree,
   AttachmentKind,
@@ -37,8 +35,10 @@ import type {
   WorkspaceSnapshot,
   Worktree
 } from "@codevisor/api"
+import type { SyncEntryRecord } from "@codevisor/sync"
 import Database from "better-sqlite3"
 import { Context, Effect, Layer } from "effect"
+
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
 import type {
@@ -55,6 +55,7 @@ import type {
   SaveNativeMcpRemovalRequest,
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
+import type { SyncBatch } from "./sync-journal.js"
 
 export interface CodevisorDatabaseConfig {
   readonly filename: string

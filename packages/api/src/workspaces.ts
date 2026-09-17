@@ -1,6 +1,7 @@
 import { Schema } from "effect"
-import { WorkspacePosition } from "./workspace-position.js"
+
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
+import { WorkspacePosition } from "./workspace-position.js"
 
 /// A pane workspace: the server-owned identity of one working surface inside
 /// a project. It names the surface, points at the directory it works in (a

@@ -1,11 +1,13 @@
-import Database from "better-sqlite3"
-import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
+
+import Database from "better-sqlite3"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)

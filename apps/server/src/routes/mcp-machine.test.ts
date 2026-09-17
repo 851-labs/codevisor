@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+
 import { jsonRequest, makeServices, run, start, startWithApp } from "../test-support.js"
 
 describe("machine-specific MCP availability", () => {

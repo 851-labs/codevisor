@@ -4,7 +4,9 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Readable } from "node:stream"
+
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
+
 import { routeFileDocuments } from "./file-documents.js"
 import { searchFileEntries } from "./file-search.js"
 

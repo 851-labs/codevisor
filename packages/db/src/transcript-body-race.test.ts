@@ -1,4 +1,5 @@
 import { expect, it } from "vitest"
+
 import { memoryDatabase, run } from "./test-support.js"
 
 it("returns an atomic body block and generation so readers can detect a replacement between pages", async () => {

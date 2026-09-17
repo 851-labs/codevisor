@@ -1,4 +1,5 @@
 import type { EventEnvelope, NavigationSnapshot } from "@codevisor/api"
+
 import { jsonRecord } from "./event-payloads.js"
 import {
   projectFromRow,

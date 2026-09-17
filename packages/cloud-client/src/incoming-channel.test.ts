@@ -1,6 +1,7 @@
 import { openChannel, acceptChannel } from "@codevisor/cloud-crypto"
 import { generateDeviceKeyPair } from "@codevisor/cloud-crypto"
 import { describe, expect, it } from "vitest"
+
 import { makeLiveChannel, type LiveChannel } from "./incoming-channel.js"
 
 /// Edge behavior of the credit-gated live channel against a scripted port —

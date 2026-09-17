@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WebSocket } from "ws"
+
 import { ClientControlBroker } from "./client-control.js"
 
 class ClientSocket extends EventEmitter {

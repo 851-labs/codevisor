@@ -3,8 +3,8 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import process from "node:process"
 
-import { runXcodebuild } from "./xcodebuild.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
+import { runXcodebuild } from "./xcodebuild.mjs"
 
 export async function buildIOSDevelopmentApp({
   repoRoot,

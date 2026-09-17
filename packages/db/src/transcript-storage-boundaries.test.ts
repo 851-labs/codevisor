@@ -1,7 +1,9 @@
 import type { TranscriptBodyPage } from "@codevisor/api"
 import { expect, it } from "vitest"
-import { memoryDatabase, run } from "./test-support.js"
+
+import type { JsonRecord } from "./event-payloads.js"
 import { projectSetupState, sessionSetupState } from "./setup-state.js"
+import { memoryDatabase, run } from "./test-support.js"
 import {
   mergeTranscriptFields,
   readToolSnapshot,
@@ -13,7 +15,6 @@ import {
   readTranscriptText,
   textPatchForEvent
 } from "./transcript-state.js"
-import type { JsonRecord } from "./event-payloads.js"
 
 it("retains setup metadata and all Unicode log pages with session authorization", async () => {
   const { sqlite, db, project, session } = await memoryDatabase()

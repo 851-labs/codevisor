@@ -1,9 +1,10 @@
-import { makeGitRepo } from "./git-test-support.js"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
 
+import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, removeWorktree, runGit } from "./git.js"
 import {
   archiveWorktreeFiles,

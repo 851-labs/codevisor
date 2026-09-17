@@ -1,5 +1,6 @@
 import type { PluginRegistryIndex } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   DEFAULT_PLUGIN_REGISTRY_URL,
   filterPluginRegistryIndex,

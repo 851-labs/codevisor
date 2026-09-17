@@ -1,8 +1,10 @@
 import { mkdtemp, readFile, writeFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, expect, it, vi } from "vitest"
+
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
+import { afterEach, expect, it, vi } from "vitest"
+
 import { sharedAccountVault, discoverNativeAccount } from "./shared-account-storage.js"
 const execute = vi.hoisted(() =>
   vi.fn(

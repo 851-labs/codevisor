@@ -1,8 +1,9 @@
 // @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import { isoTimestamp } from "@codevisor/api"
-import { machineRow, machineRows, machinePresence } from "./hub-schema.js"
+
 import { hasRoutableMachineSocket } from "./hub-delivery.js"
 import type { HubNoticesPort } from "./hub-notices.js"
+import { machineRow, machineRows, machinePresence } from "./hub-schema.js"
 
 export const listHubMachines = (hub: HubNoticesPort) => {
   // Machines in their resume grace window count as online: their

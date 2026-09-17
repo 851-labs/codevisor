@@ -1,5 +1,6 @@
-import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "@codevisor/agent-runtime"
+import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
+
 import type { ClaudeModel, ClaudeSession } from "./session.js"
 
 // "Always Ask" (not the CLI's internal "default") mirrors the naming the

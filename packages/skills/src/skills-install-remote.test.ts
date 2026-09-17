@@ -1,10 +1,12 @@
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
+import { execSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { execSync } from "node:child_process"
+
+import { makeAgentRuntime } from "@codevisor/agent-runtime"
+import { afterEach, describe, expect, it } from "vitest"
+
 import { makeSkillsManager } from "./skills-manager.js"
 import type { SkillsManager } from "./skills-manager.js"
-import { afterEach, describe, expect, it } from "vitest"
 import {
   cleanupSkillsTests,
   makeHome,

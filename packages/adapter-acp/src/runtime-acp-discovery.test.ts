@@ -1,9 +1,11 @@
-import { Effect } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+
 import { AgentRuntime, harnessCatalog, locateExecutableOnPath } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
+import { describe, expect, it } from "vitest"
+
 import { makeAcpAgentRuntime, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime", () => {

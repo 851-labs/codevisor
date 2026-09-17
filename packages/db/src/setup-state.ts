@@ -1,5 +1,6 @@
-import type Database from "better-sqlite3"
 import type { TranscriptBodyPage } from "@codevisor/api"
+import type Database from "better-sqlite3"
+
 import { jsonRecord } from "./event-payloads.js"
 
 export const projectSetupState = (

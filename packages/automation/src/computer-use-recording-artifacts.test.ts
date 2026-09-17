@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { describe, expect, it, vi } from "vitest"
+
 import { makeRecordingArtifacts } from "./computer-use-recording-artifacts.js"
 
 const reply = (value: unknown): CallToolResult => ({

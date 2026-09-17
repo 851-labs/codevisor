@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto"
 /// Linux workspace assembly for the containerized dev remotes — the
 /// dist/manifest subset copied under tmp/container/app that the container
 /// installs its own Linux node_modules into.
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
-import { createHash } from "node:crypto"
 import { join } from "node:path"
+
 import { pathExists } from "./dev-shared.mjs"
 
 /// The workspace subset a Linux container needs to run `dist/main.js`:

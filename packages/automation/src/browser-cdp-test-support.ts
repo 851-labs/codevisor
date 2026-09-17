@@ -1,4 +1,5 @@
 import { vi } from "vitest"
+
 import { CdpConnection } from "./browser-cdp.js"
 
 /// Headless fixtures with multiple tabs must not depend on which tab Chrome

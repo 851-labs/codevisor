@@ -1,19 +1,21 @@
+import { randomUUID } from "node:crypto"
+
 import * as acp from "@agentclientprotocol/sdk"
-import type { SessionGoal } from "@codevisor/api"
-import {
-  adapterPromise,
-  type AgentSessionMetadata,
-  type RuntimeEvent,
-  type SetGoalUpdate
-} from "@codevisor/agent-runtime"
 import {
   turnLifecycleEvent,
   type AcpAgentConnection,
   type AcpConnectionExtensionContext,
   type AcpStdioExtensionFactory
 } from "@codevisor/adapter-acp"
-import { randomUUID } from "node:crypto"
+import {
+  adapterPromise,
+  type AgentSessionMetadata,
+  type RuntimeEvent,
+  type SetGoalUpdate
+} from "@codevisor/agent-runtime"
+import type { SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
+
 import {
   grokAskUserQuestion,
   grokGoalNotification,

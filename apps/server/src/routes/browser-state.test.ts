@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { jsonRequest, start } from "../test-support.js"
 
 describe("native browser state API", () => {

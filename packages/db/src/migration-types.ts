@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+
 import type { CodevisorDatabaseConfig } from "./service.js"
 
 export interface Migration {

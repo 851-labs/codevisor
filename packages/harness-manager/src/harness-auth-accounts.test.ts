@@ -1,7 +1,3 @@
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
-import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
-import type { TerminalManagerService } from "@codevisor/terminal"
-import { Effect } from "effect"
 import {
   chmodSync,
   mkdirSync,
@@ -13,7 +9,13 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+import { makeDatabase, type CodevisorDatabaseService } from "@codevisor/db"
+import type { TerminalManagerService } from "@codevisor/terminal"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
+
 import { makeHarnessAuthManager } from "./harness-auth.js"
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)

@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest"
+
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import type { CdpConnection } from "./browser-cdp.js"
 import { observeBrowserRuntime } from "./browser-runtime-events.js"

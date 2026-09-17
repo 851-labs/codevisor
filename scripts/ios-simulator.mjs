@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url"
+
 import { parseSimulatorArguments } from "./ios-simulator-state.mjs"
 import { runOwnedTask } from "./owned-task.mjs"
 

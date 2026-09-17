@@ -1,5 +1,6 @@
 import sharp from "sharp"
 import { describe, expect, it, vi } from "vitest"
+
 import { fetchPluginIcon, MAX_PLUGIN_ICON_BYTES } from "./plugin-icon.js"
 import { plugin } from "./test-support.js"
 

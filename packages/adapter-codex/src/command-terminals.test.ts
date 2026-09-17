@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { makeCodexProvider } from "./provider.js"
 import { definition, environment, FakeCodexClient, run } from "./test-support.js"
 

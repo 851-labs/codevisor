@@ -1,9 +1,11 @@
-import type { UpdateApplyState } from "@codevisor/api"
-import { observableFixture } from "./changes-test-support.js"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { UpdateApplyState } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
+
+import { observableFixture } from "./changes-test-support.js"
 import type { CodevisorServerUpdater, RunningCodevisorServer } from "./server.js"
 import {
   jsonRequest,

@@ -1,10 +1,11 @@
+import type { SessionSummary } from "@codevisor/api"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import type { SessionSummary } from "@codevisor/api"
+
 import { archiveSessionRuntime } from "./server-session-effects.js"
+import { makeServices } from "./test-support.js"
 import { settleCleanup } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
-import { makeServices } from "./test-support.js"
 
 describe("workspace cleanup coordination", () => {
   it("still retires the agent when terminal cleanup fails, and propagates failure", async () => {

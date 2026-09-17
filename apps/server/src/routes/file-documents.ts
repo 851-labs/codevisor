@@ -17,6 +17,7 @@ import { readdir } from "node:fs/promises"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+
 import { HttpFailure, readJson, writeJson } from "../server-context.js"
 import { searchFileEntries } from "./file-search.js"
 

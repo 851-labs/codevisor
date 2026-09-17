@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
 import { readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"

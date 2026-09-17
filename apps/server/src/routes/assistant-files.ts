@@ -1,8 +1,10 @@
-import type { AttachmentRef, FileMetadata } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { stat } from "node:fs/promises"
 import { basename } from "node:path"
+
+import type { AttachmentRef, FileMetadata } from "@codevisor/api"
+
 import { run, type CodevisorServerServices } from "../server-context.js"
 import { filesystemMimeType } from "./fs.js"
 

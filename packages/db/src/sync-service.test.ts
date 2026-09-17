@@ -1,5 +1,6 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
 import { describe, expect, it } from "vitest"
+
 import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 

@@ -1,3 +1,6 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+import type { Socket } from "node:net"
+
 import type {
   DiscoverRemotePluginRequest,
   DiscoverRemotePluginResult,
@@ -11,8 +14,7 @@ import type {
   PluginUpdatePlan,
   PluginUpdatesResponse
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import type { Socket } from "node:net"
+
 import type { PluginIconAsset } from "./plugin-icon.js"
 import type { ClonePluginSourceResult } from "./plugin-source.js"
 import type { PluginSupervisorConfig } from "./plugin-supervisor.js"

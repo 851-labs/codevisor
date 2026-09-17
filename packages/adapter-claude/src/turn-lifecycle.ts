@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
+
 import { normalizePromptInput, type RuntimeEvent } from "@codevisor/agent-runtime"
+
 import { claudeContent } from "./attachments.js"
 import { deferred } from "./internal.js"
 import type { ClaudeSession } from "./session.js"

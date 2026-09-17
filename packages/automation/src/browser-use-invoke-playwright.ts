@@ -1,9 +1,8 @@
-import { routeBrowserFrame } from "./browser-frame.js"
-import { browserNavigationBaseline, waitForBrowserState } from "./browser-load-state.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
-import { delay, evaluatedValue } from "./browser-cdp.js"
+
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import {
   actionResult,
   booleanArgument,
@@ -14,6 +13,8 @@ import {
   verifiedActionResult,
   waitForCdpEvent
 } from "./browser-cdp-engine.js"
+import { delay, evaluatedValue } from "./browser-cdp.js"
+import { routeBrowserFrame } from "./browser-frame.js"
 import {
   dispatchClick,
   fillResolvedElement,
@@ -23,6 +24,7 @@ import {
   setCheckedElement,
   triggerMediaDownload
 } from "./browser-input.js"
+import { browserNavigationBaseline, waitForBrowserState } from "./browser-load-state.js"
 import {
   callLocatorFunction,
   evaluateLocatorReadOnly,

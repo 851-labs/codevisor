@@ -1,3 +1,6 @@
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+
 /// Terminal replay buffers across host restarts.
 ///
 /// The terminal manager's frame buffers are in-memory, so a server restart
@@ -12,8 +15,6 @@
 /// exits, which is what host updates go through. All writes are synchronous so
 /// they are safe inside `process.on("exit")`.
 import type { TerminalManagerService, TerminalSnapshot } from "@codevisor/terminal"
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
 
 const SNAPSHOT_FILE = "terminal-buffers.json"
 

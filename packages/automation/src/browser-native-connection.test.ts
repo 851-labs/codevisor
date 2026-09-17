@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({ socket: vi.fn(), read: vi.fn() }))
 vi.mock("node:net", () => ({ createConnection: mocks.socket }))

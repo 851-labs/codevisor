@@ -1,4 +1,5 @@
 import { expect, it } from "vitest"
+
 import { browserCookieKey, shareableBrowserURL } from "./browser-state.js"
 
 it("gives matching cookie identities the same key across browsers without colliding on path or name", () => {

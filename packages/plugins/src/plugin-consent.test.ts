@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { pluginConsentKey } from "./plugin-consent.js"
 
 describe("plugin consent identity", () => {

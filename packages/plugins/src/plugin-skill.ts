@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+
 import { PluginsError } from "./plugins-error.js"
 
 export const PLUGIN_AUTHORING_SKILL_DIRECTORY = "create-codevisor-plugin"

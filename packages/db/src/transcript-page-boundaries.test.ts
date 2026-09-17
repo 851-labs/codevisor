@@ -1,7 +1,8 @@
 import { expect, it } from "vitest"
+
 import { createChatItem, seedStandaloneText, chatAssistantSummary } from "./chat-items.js"
-import { projectTranscriptState, textPatchForEvent } from "./transcript-state.js"
 import { memoryDatabase, run } from "./test-support.js"
+import { projectTranscriptState, textPatchForEvent } from "./transcript-state.js"
 
 it("keeps parent tool headers across detail pages and respects the serialized byte budget", async () => {
   const { db, session } = await memoryDatabase()

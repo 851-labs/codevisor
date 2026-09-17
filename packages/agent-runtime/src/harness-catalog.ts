@@ -1,7 +1,6 @@
-import type { HarnessDefinition } from "./types.js"
-
-import { executableHarness } from "./harness-catalog-support.js"
 import { additionalAcpHarnesses } from "./harness-catalog-acp.js"
+import { executableHarness } from "./harness-catalog-support.js"
+import type { HarnessDefinition } from "./types.js"
 
 // Install commands and ACP launch arguments audited against upstream on 2026-09-13.
 // Sources, registry revision, and exclusions: docs/harness-catalog-audit.md.

@@ -1,7 +1,9 @@
-import type { OpenCodeAuthFlow, OpenCodeAuthProvider } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+import type { OpenCodeAuthFlow, OpenCodeAuthProvider } from "@codevisor/api"
+
 import {
   credentialTypes,
   failureMessage,

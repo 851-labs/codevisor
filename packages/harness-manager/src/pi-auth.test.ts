@@ -1,8 +1,10 @@
-import type { AuthInteraction, OAuthCredential, Provider } from "@earendil-works/pi-ai"
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { AuthInteraction, OAuthCredential, Provider } from "@earendil-works/pi-ai"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { makePiAuthManager, piAuthPath } from "./pi-auth.js"
 
 const directories: string[] = []

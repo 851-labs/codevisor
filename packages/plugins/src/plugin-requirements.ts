@@ -1,8 +1,10 @@
-import type { PluginManifest } from "@codevisor/api"
-import { compareSemanticVersions } from "@codevisor/api"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { delimiter, extname, join } from "node:path"
+
+import type { PluginManifest } from "@codevisor/api"
+import { compareSemanticVersions } from "@codevisor/api"
+
 import { PluginsError } from "./plugins-error.js"
 
 export type FindExecutable = (name: string, env: NodeJS.ProcessEnv) => Promise<string | undefined>

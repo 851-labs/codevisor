@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
 import { NativeMcpError } from "@codevisor/mcp"
+import { describe, expect, it } from "vitest"
+
 import {
   jsonRequest,
   makeServices,

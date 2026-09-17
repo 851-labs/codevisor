@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events"
+
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
 

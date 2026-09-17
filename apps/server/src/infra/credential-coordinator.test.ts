@@ -1,8 +1,10 @@
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, expect, it, vi } from "vitest"
+
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
+import { afterEach, expect, it, vi } from "vitest"
+
 import { makeCredentialCoordinator } from "./credential-coordinator.js"
 
 const dirs: string[] = []

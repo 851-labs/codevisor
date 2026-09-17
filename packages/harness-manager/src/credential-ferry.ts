@@ -1,7 +1,9 @@
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+
 import lockfile from "proper-lockfile"
+
 import { openCodeAuthPath } from "./opencode-auth.js"
 
 /// Phase 20: the static credential ferry's file layer. Each source knows

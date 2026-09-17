@@ -1,6 +1,8 @@
-import type { SkillsScan } from "@codevisor/api"
 import { lstat, mkdir, realpath, rename, rm, symlink } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
+
+import type { SkillsScan } from "@codevisor/api"
+
 import { resolveNativeConfigPath } from "./native-paths.js"
 import type { SkillsManagerConfig } from "./skills-manager.js"
 import { cloneSkillSource } from "./skills-remote-source.js"

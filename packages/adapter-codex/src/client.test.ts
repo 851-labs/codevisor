@@ -1,8 +1,10 @@
 import { once } from "node:events"
 import { PassThrough } from "node:stream"
-import { describe, expect, it } from "vitest"
+
 import { makeNdjsonTransport } from "@codevisor/agent-runtime"
 import type { StdioEndpoint } from "@codevisor/agent-runtime"
+import { describe, expect, it } from "vitest"
+
 import { wireCodexClient } from "./client.js"
 
 /// The transport seam is where write-after-exit bugs live: replies to

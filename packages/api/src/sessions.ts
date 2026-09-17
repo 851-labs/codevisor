@@ -1,5 +1,7 @@
-import { WorkspacePosition } from "./workspace-position.js"
 import { Schema } from "effect"
+
+import { CreateProjectRequest } from "./projects.js"
+import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import {
   BackgroundTask,
   MessagePhase,
@@ -8,8 +10,7 @@ import {
   SessionPlan,
   TurnStopKind
 } from "./session-updates.js"
-import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
-import { CreateProjectRequest } from "./projects.js"
+import { WorkspacePosition } from "./workspace-position.js"
 
 export const SessionUsage = Schema.Struct({
   /** Tokens currently occupying the model's context window. */

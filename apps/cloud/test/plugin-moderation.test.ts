@@ -1,5 +1,6 @@
 import { createExecutionContext, env, SELF, waitOnExecutionContext } from "cloudflare:test"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
 import worker from "../src/index.js"
 import { notifyPluginReports } from "../src/plugin-reports.js"
 

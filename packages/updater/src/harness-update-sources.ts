@@ -1,5 +1,6 @@
-import type { InstallOrigin } from "@codevisor/agent-runtime"
 import { realpathSync } from "node:fs"
+
+import type { InstallOrigin } from "@codevisor/agent-runtime"
 
 /// Pure latest-version checkers for harness update detection: npm registry,
 /// Homebrew API, GitHub releases. All of them degrade to `undefined` on any

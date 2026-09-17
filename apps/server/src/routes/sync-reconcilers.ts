@@ -1,4 +1,5 @@
 import type { SyncEntryRecord } from "@codevisor/sync"
+
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
@@ -11,17 +12,17 @@ import {
   type PluginReadinessRow
 } from "../infra/config-sync.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
-import {
-  MCP_READINESS_NAMESPACE,
-  publishMcpReadiness,
-  readMcpOverlays
-} from "../infra/mcp-fleet.js"
+import { readHarnessSettings } from "../infra/harness-preferences.js"
 import {
   HARNESSES_SYNC_NAMESPACE,
   reconcileHarnesses,
   type HarnessSyncStatus
 } from "../infra/harness-sync.js"
-import { readHarnessSettings } from "../infra/harness-preferences.js"
+import {
+  MCP_READINESS_NAMESPACE,
+  publishMcpReadiness,
+  readMcpOverlays
+} from "../infra/mcp-fleet.js"
 import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
 import type { PluginSyncStatus } from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"

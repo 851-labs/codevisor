@@ -1,7 +1,8 @@
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
-import { spawn, spawnSync, type ChildProcess } from "node:child_process"
+
 import { CdpConnection, delay } from "./browser-cdp.js"
 
 export const systemChromePath = (): string | undefined => {

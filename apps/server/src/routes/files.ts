@@ -1,8 +1,10 @@
-import { mediaPreview } from "../infra/media-previews.js"
 import { randomUUID } from "node:crypto"
-import type { FileMetadata } from "@codevisor/api"
 import { createReadStream } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
+
+import type { FileMetadata } from "@codevisor/api"
+
+import { mediaPreview } from "../infra/media-previews.js"
 import {
   attachmentDiskFile,
   matchRoute,

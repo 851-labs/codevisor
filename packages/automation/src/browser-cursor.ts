@@ -1,5 +1,5 @@
-import { delay } from "./browser-cdp.js"
 import type { BrowserRuntime, PageHandle } from "./browser-cdp-engine.js"
+import { delay } from "./browser-cdp.js"
 import {
   pointerOverlayExpression,
   type PointerCommand,

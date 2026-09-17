@@ -1,4 +1,3 @@
-import { observableFixture } from "./changes-test-support.js"
 import { harnessCatalog } from "@codevisor/agent-runtime"
 import type {
   AgentRuntimeService,
@@ -10,6 +9,8 @@ import type {
 } from "@codevisor/agent-runtime"
 import type { Harness, SessionConfigOption } from "@codevisor/api"
 import { Effect } from "effect"
+
+import { observableFixture } from "./changes-test-support.js"
 
 /// The fake agent runtime the server tests drive: scripted harnesses,
 /// sessions, prompts, and the event emitter tests use to simulate agents.

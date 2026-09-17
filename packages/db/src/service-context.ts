@@ -1,6 +1,7 @@
 import type { Project, SessionSummary } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import type Database from "better-sqlite3"
+
 import { canonicalUuid } from "./ids.js"
 import { projectFromRow, sessionFromRow } from "./row-mappers.js"
 import type { ProjectLocationRow, ProjectRow, SessionRow } from "./rows.js"

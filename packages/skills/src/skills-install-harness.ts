@@ -1,6 +1,8 @@
-import type { SkillsScan } from "@codevisor/api"
 import { lstat, mkdir, readdir, readlink, rm } from "node:fs/promises"
 import { join, resolve } from "node:path"
+
+import type { SkillsScan } from "@codevisor/api"
+
 import { resolveNativeConfigPath } from "./native-paths.js"
 import {
   assertSafeChild,

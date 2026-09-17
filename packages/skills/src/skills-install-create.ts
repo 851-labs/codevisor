@@ -1,6 +1,8 @@
-import type { SkillsScan } from "@codevisor/api"
 import { lstat, mkdir, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
+
+import type { SkillsScan } from "@codevisor/api"
+
 import { assertSafeChild, type SkillsInstallContext } from "./skills-install-context.js"
 import {
   copyDirectory,

@@ -1,11 +1,13 @@
-import type { PluginRuntimeState } from "@codevisor/api"
 import { spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { request as httpRequest } from "node:http"
 import { connect, createServer } from "node:net"
 import { join } from "node:path"
-import type { InstalledPlugin } from "./plugin-store.js"
+
+import type { PluginRuntimeState } from "@codevisor/api"
+
 import { displayPluginCommand, pluginRunCommand } from "./plugin-command.js"
+import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"
 
 /// Minimal handle the supervisor needs over a plugin child process.

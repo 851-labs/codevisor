@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
 import type { ToolGatewayConfig } from "@codevisor/agent-runtime"
+import { describe, expect, it } from "vitest"
+
 import { makeCodexProvider } from "./provider.js"
 import { definition, environment, FakeCodexClient, run, setup } from "./test-support.js"
 

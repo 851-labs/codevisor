@@ -1,5 +1,6 @@
 import type { CredentialSource } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "./credential-sync.js"
 

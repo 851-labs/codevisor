@@ -1,8 +1,10 @@
-import type { PluginSummary } from "@codevisor/api"
 import type { IncomingMessage } from "node:http"
+
+import type { PluginSummary } from "@codevisor/api"
+
 import { makePluginEnabledState } from "./plugin-enabled-state.js"
-import { makePluginInstaller } from "./plugin-install.js"
 import { fetchPluginIcon } from "./plugin-icon.js"
+import { makePluginInstaller } from "./plugin-install.js"
 import {
   makePaneTokenStore,
   PANE_TOKEN_QUERY_PARAM,
@@ -20,16 +22,16 @@ import {
   type InstalledPlugin,
   type PluginScan
 } from "./plugin-store.js"
-import { makePluginSupervisor, type PluginSupervisorConfig } from "./plugin-supervisor.js"
-import { makePluginUpdates } from "./plugin-updates.js"
 import { summarizePlugin } from "./plugin-summary.js"
+import { makePluginSupervisor, type PluginSupervisorConfig } from "./plugin-supervisor.js"
+import { invokePluginTool } from "./plugin-tools.js"
+import { makePluginUpdates } from "./plugin-updates.js"
+import { PluginsError } from "./plugins-error.js"
 import type {
   PluginsManager,
   PluginsManagerConfig,
   PluginStateEvent
 } from "./plugins-manager-types.js"
-import { invokePluginTool } from "./plugin-tools.js"
-import { PluginsError } from "./plugins-error.js"
 
 export type { PluginToolInvocationContext, PluginToolSummary } from "./plugin-tools.js"
 export type {

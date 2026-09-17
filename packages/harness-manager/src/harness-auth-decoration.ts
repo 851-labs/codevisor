@@ -1,5 +1,6 @@
 import type { Harness, HarnessAuth, HarnessAuthMethod } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
+
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"
 import { run } from "./harness-auth-support.js"

@@ -1,8 +1,9 @@
 import { env } from "cloudflare:test"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import worker from "../src/index.js"
-import type { CloudEnv } from "../src/env.js"
+
 import { sendAuthEmail } from "../src/email-auth.js"
+import type { CloudEnv } from "../src/env.js"
+import worker from "../src/index.js"
 import { authed, BASE } from "./cloud-test-support.js"
 
 let email: string

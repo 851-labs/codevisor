@@ -1,10 +1,7 @@
-import { NavigationSnapshot } from "./navigation.js"
+import { Schema } from "effect"
+
 import { ClientContext, ClientNavigationRequest, ConnectedClient } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
-import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
-import { Schema } from "effect"
-import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
-
 import {
   AgentSessionSummary,
   AnswerOpenCodeAuthRequest,
@@ -120,7 +117,10 @@ import {
   WorkspaceSnapshot,
   Worktree
 } from "./index.js"
+import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
+import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
+import { PutSyncRequest, SyncDocument, SyncParticipation } from "./sync.js"
 
 /// Request and response schemas per endpoint, rendered to JSON Schema for the
 /// OpenAPI document.

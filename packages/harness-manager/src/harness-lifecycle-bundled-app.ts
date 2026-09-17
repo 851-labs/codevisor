@@ -1,3 +1,5 @@
+import { basename } from "node:path"
+
 import {
   locateExecutableOnPath,
   type HarnessDefinition,
@@ -5,7 +7,7 @@ import {
 } from "@codevisor/agent-runtime"
 import type { HarnessBundledApp } from "@codevisor/api"
 import { isNewerVersion } from "@codevisor/updater"
-import { basename } from "node:path"
+
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import type { HarnessUpdateDetection } from "./harness-lifecycle-detection.js"
 import type { HarnessOperationRunner } from "./harness-lifecycle-execution.js"

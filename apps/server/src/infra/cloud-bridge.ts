@@ -1,5 +1,8 @@
-import type { CloudServerControl } from "../server-context-types.js"
+import { readFile, rm, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
+import { dirname, join } from "node:path"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
+
 import {
   decode,
   TERMINAL_CHANNEL_TYPE,
@@ -23,14 +26,13 @@ import {
   type MachineCredentials,
   type PeerKeyPinStore
 } from "@codevisor/cloud-client"
-import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
-import { httpChannelHandler, wsChannelHandler } from "./cloud-proxy-handlers.js"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 import { WebSocket } from "ws"
-import { readFile, rm, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
-import { deflateRawSync, inflateRawSync } from "node:zlib"
+
+import type { CloudServerControl } from "../server-context-types.js"
+import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
+import { httpChannelHandler, wsChannelHandler } from "./cloud-proxy-handlers.js"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,

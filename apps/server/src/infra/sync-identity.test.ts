@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makeServices, run } from "../test-support.js"
 import { ACCOUNTS_SYNC_NAMESPACE } from "./config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE, MCP_READINESS_NAMESPACE, readMcpOverlays } from "./mcp-fleet.js"

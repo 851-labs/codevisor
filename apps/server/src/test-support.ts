@@ -1,7 +1,13 @@
 import { fixtureChanged, observeDatabase } from "./changes-test-support.js"
 export { waitFor, observableFixture } from "./changes-test-support.js"
+import { mkdtempSync, rmSync } from "node:fs"
+import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { makeAttachmentStore, makeDatabase } from "@codevisor/db"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+import { makeMcpManager } from "@codevisor/mcp"
 import type {
   TerminalHandlers,
   TerminalProcess,
@@ -10,12 +16,10 @@ import type {
 } from "@codevisor/terminal"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
-import { createServer } from "node:http"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { WebSocket } from "ws"
 import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
+import { WebSocket } from "ws"
+
+import type { RestartCoordinator } from "./restart-drain.js"
 import {
   defaultServerConfig,
   EventFanout,
@@ -25,8 +29,6 @@ import {
 } from "./server.js"
 import type { RunningCodevisorServer } from "./server.js"
 import type { CodevisorServerConfig, CodevisorServerServices } from "./server.js"
-import type { RestartCoordinator } from "./restart-drain.js"
-import { makeMcpManager } from "@codevisor/mcp"
 import { run, makeAgents } from "./test-support-agents.js"
 export * from "./test-support-agents.js"
 export * from "./test-support-stubs.js"

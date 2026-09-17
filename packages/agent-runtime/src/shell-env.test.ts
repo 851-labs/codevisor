@@ -1,6 +1,8 @@
 import * as childProcess from "node:child_process"
 import * as os from "node:os"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import {
   fallbackPathDirectories,
   nvmBinDirectories,

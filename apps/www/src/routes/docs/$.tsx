@@ -1,11 +1,11 @@
-import { Suspense, type ReactNode } from "react"
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router"
 import { createServerFn } from "@tanstack/react-start"
 import { useFumadocsLoader } from "fumadocs-core/source/client"
 import { DocsLayout } from "fumadocs-ui/layouts/docs"
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/layouts/docs/page"
-import browserCollections from "../../../.source/browser"
+import { Suspense, type ReactNode } from "react"
 
+import browserCollections from "../../../.source/browser"
 import { OpenAPIPage } from "../../components/api-page"
 import { useMDXComponents } from "../../components/mdx"
 import { baseOptions } from "../../lib/layout.shared"

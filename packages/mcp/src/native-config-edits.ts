@@ -1,5 +1,6 @@
 import * as jsonc from "jsonc-parser"
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml"
+
 import { detectIndent, NativeConfigUnsupportedError } from "./native-config-files.js"
 
 /// Remove one server entry from a JSONC document, preserving the user's

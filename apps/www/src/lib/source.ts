@@ -1,5 +1,6 @@
 import { dynamicLoader } from "fumadocs-core/source/dynamic"
 import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons"
+
 import { docs } from "../../.source/server"
 import { openapi } from "./openapi"
 

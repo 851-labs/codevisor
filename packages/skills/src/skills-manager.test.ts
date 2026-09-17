@@ -1,4 +1,3 @@
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
 import {
   existsSync,
   mkdirSync,
@@ -9,8 +8,11 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { makeSkillsManager } from "./skills-manager.js"
+
+import { makeAgentRuntime } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it } from "vitest"
+
+import { makeSkillsManager } from "./skills-manager.js"
 import {
   cleanupSkillsTests,
   directories,

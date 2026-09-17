@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
 import type { HarnessDefinition, ProviderEnvironment } from "@codevisor/agent-runtime"
+import { describe, expect, it } from "vitest"
+
 import type { CodexSpawnRequest } from "./client.js"
 import { makeCodexProvider } from "./provider.js"
 import { definition, environment, FakeCodexClient, run, setup } from "./test-support.js"

@@ -16,6 +16,7 @@ import {
   selectLatestAppcastItem,
   type LatestVersionResult
 } from "@codevisor/updater"
+
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { appBundlePath, run } from "./harness-lifecycle-support.js"
 import type { HarnessUpdateCheckOutcome } from "./harness-lifecycle-types.js"

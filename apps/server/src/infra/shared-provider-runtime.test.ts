@@ -1,13 +1,15 @@
-import { IncomingMessage, ServerResponse } from "node:http"
-import { Socket } from "node:net"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import * as fs from "node:fs/promises"
+import { IncomingMessage, ServerResponse } from "node:http"
+import { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import { SharedCredentialError, type SharedTokenBundle } from "@codevisor/harness-manager"
-import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import { fleet } from "./shared-accounts-test-support.js"
+import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
 
 vi.mock("node:fs/promises", { spy: true })
 

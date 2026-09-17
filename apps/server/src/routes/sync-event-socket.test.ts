@@ -1,11 +1,13 @@
 import { EventEmitter } from "node:events"
+
+import type { EventEnvelope } from "@codevisor/api"
 import { Effect } from "effect"
 import { expect, it, onTestFinished, vi } from "vitest"
-import { handleEvents } from "./events.js"
-import { attachSyncEventSocket } from "./sync-event-socket.js"
+
 import { makeEventFanout } from "../server.js"
 import { run } from "../test-support.js"
-import type { EventEnvelope } from "@codevisor/api"
+import { handleEvents } from "./events.js"
+import { attachSyncEventSocket } from "./sync-event-socket.js"
 
 const event = (revision: number): EventEnvelope => ({
   id: revision,

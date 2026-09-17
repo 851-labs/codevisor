@@ -1,8 +1,8 @@
 import { Effect } from "effect"
-import { harnessCatalog } from "./harness-catalog.js"
-import { locateExecutableOnPath } from "./executable-locator.js"
-import { makeVersionProber } from "./version-probe.js"
+
 import type { AgentRuntimeConfig, ProviderFactoryContext } from "./agent-runtime-types.js"
+import { locateExecutableOnPath } from "./executable-locator.js"
+import { harnessCatalog } from "./harness-catalog.js"
 import {
   runtimeEffect,
   type AgentProvider,
@@ -17,6 +17,7 @@ import {
   type RuntimeEvent,
   type RuntimeEventSink
 } from "./types.js"
+import { makeVersionProber } from "./version-probe.js"
 
 export interface ManagedSession {
   readonly harnessId: string

@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { expect } from "vitest"
+
 import { jsonRequest, start, tempDirs } from "../test-support.js"
 
 type StartedServer = Awaited<ReturnType<typeof start>>["server"]

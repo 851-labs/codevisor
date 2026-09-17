@@ -1,5 +1,6 @@
 import { harnessCatalog, type ProviderEnvironment } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
+
 import { makeCursorProvider } from "./provider.js"
 
 const environment: ProviderEnvironment = {

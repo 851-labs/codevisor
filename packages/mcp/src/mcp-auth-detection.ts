@@ -1,5 +1,6 @@
 import type { McpAuthDetection } from "@codevisor/api"
 import { discoverOAuthProtectedResourceMetadata } from "@modelcontextprotocol/sdk/client/auth.js"
+
 import { requireHttpUrl, suggestedMcpName } from "./mcp-support.js"
 
 /// Probes an HTTP MCP endpoint with a bare initialize request and classifies

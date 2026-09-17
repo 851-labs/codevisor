@@ -4,6 +4,7 @@
 /// injectable-seam style as support.ts; the confirm prompt is wired in
 /// cli.ts.
 import { resolve } from "node:path"
+
 import { resolvePort, type CliDeps, type CommandOptions } from "./support.js"
 
 export interface PluginsCliDeps extends CliDeps {

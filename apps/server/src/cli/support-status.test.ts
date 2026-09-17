@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+
+import { makeWorld, unit, systemCat, userCat, health, ok } from "./support-test-support.js"
 import {
   DEFAULT_PORT,
   logsCommand,
@@ -7,7 +9,6 @@ import {
   tokenCommand,
   updateCommand
 } from "./support.js"
-import { makeWorld, unit, systemCat, userCat, health, ok } from "./support-test-support.js"
 
 describe("codevisor CLI status, token, update, and logs", () => {
   it("restarts pidfile servers by stopping then starting", async () => {

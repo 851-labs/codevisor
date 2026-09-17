@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from "vitest"
 import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
+import { describe, expect, it, vi } from "vitest"
+
+import type { SharedTokenBundle, CredentialCoordinator } from "./shared-credential-types.js"
 import {
   makeSharedCredentialVault,
   openSharedCredential,
   sealSharedCredential
 } from "./shared-credential-vault.js"
-import type { SharedTokenBundle, CredentialCoordinator } from "./shared-credential-types.js"
 
 const original: SharedTokenBundle = {
   harnessId: "codex",

@@ -1,10 +1,10 @@
-import { delay } from "./browser-cdp.js"
 import {
   evaluate,
   pageInformation,
   type BrowserRuntime,
   type PageHandle
 } from "./browser-cdp-engine.js"
+import { delay } from "./browser-cdp.js"
 
 const loads = new WeakMap<
   BrowserRuntime,

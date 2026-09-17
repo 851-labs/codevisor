@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import type {
   PluginManifest,
   PluginNamedChanges,
@@ -12,10 +14,10 @@ import {
   isSupportedPluginProtocolVersion,
   parseSemanticVersion
 } from "@codevisor/api"
-import { randomUUID } from "node:crypto"
+
 import { displayPluginCommand, pluginRunCommand, pluginSetupCommands } from "./plugin-command.js"
-import type { PluginInstaller } from "./plugin-install.js"
 import type { PreparedPluginUpdate } from "./plugin-install-types.js"
+import type { PluginInstaller } from "./plugin-install.js"
 import { readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { InstalledPlugin } from "./plugin-store.js"
 import { PluginsError } from "./plugins-error.js"

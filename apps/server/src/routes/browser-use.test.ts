@@ -1,6 +1,7 @@
-import { WebSocket } from "ws"
-import { describe, expect, it } from "vitest"
 import { CODEVISOR_BROWSER_EXTENSION_ID } from "@codevisor/automation"
+import { describe, expect, it } from "vitest"
+import { WebSocket } from "ws"
+
 import { jsonRequest, start } from "../test-support.js"
 
 describe("browser-use routes", () => {

@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
 import { run, makeSpawner, inputFrame, resizeFrame, closeFrame } from "./test-support.js"
 

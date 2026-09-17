@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+
 import { describe, expect, it } from "vitest"
+
 import { computerUseTools, linuxComputerUseHelperPath } from "./computer-use-provider.js"
 
 describe("Computer Use tool contract", () => {

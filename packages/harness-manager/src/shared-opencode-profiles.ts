@@ -1,6 +1,8 @@
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { createHash } from "node:crypto"
 import { join } from "node:path"
+
+import type { CodevisorDatabaseService } from "@codevisor/db"
+
 import {
   atomicWriteJson,
   readJsonFile,

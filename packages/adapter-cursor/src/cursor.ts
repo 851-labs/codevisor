@@ -1,6 +1,6 @@
-import type { QuestionSpec } from "@codevisor/api"
 import type { AcpMappedQuestion } from "@codevisor/adapter-acp"
 import type { RuntimeEvent } from "@codevisor/agent-runtime"
+import type { QuestionSpec } from "@codevisor/api"
 
 type CursorTodoStatus = "pending" | "in_progress" | "completed" | "cancelled"
 

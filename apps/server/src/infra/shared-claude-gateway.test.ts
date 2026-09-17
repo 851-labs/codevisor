@@ -1,7 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http"
 import { Socket } from "node:net"
 import type { AddressInfo } from "node:net"
+
 import { describe, expect, it, onTestFinished, vi } from "vitest"
+
 import { makeSharedClaudeGateway } from "./shared-claude-gateway.js"
 
 const bundle = {

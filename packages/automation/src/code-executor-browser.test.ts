@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makeCodeExecutor } from "./code-executor.js"
 
 describe.sequential("Codevisor browser facade", () => {

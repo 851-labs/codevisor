@@ -1,7 +1,8 @@
-import type { AgentSessionSummary, ProjectRecommendation } from "@codevisor/api"
 import { readFileSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, resolve, sep } from "node:path"
+
+import type { AgentSessionSummary, ProjectRecommendation } from "@codevisor/api"
 import { worktreesRoot } from "@codevisor/db"
 
 interface RecommendationAggregate {

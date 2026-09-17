@@ -1,9 +1,10 @@
-import { seedImportedTranscript, migrateSetupState } from "./transcript-import-upgrade.js"
-import { activateSyncJournals } from "./sync-journal.js"
-import type Database from "better-sqlite3"
 import { isoTimestamp } from "@codevisor/api"
-import type { CodevisorDatabaseConfig } from "./service.js"
+import type Database from "better-sqlite3"
+
 import type { SessionEventRow } from "./rows.js"
+import type { CodevisorDatabaseConfig } from "./service.js"
+import { activateSyncJournals } from "./sync-journal.js"
+import { seedImportedTranscript, migrateSetupState } from "./transcript-import-upgrade.js"
 import { projectTranscriptState } from "./transcript-state.js"
 
 const id = "persisted-transcript-state-v1"

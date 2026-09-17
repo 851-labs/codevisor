@@ -1,6 +1,8 @@
-import type { RestartDrainState } from "@codevisor/api"
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
+
+import type { RestartDrainState } from "@codevisor/api"
+
 import {
   appendAndPublish,
   failureMessage,

@@ -3,13 +3,15 @@ import { createServer, type IncomingMessage, type Server } from "node:http"
 import type { Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { PluginManifestV1 } from "@codevisor/api"
 import { afterEach } from "vitest"
 import { WebSocketServer } from "ws"
-import type { PluginManifestV1 } from "@codevisor/api"
+
 import type { InstalledPlugin } from "./plugin-store.js"
 import type { PluginProcessHandle, PluginSpawnOptions } from "./plugin-supervisor.js"
-import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
 import { PluginsError } from "./plugins-error.js"
+import { makePluginsManager, type PluginsManager } from "./plugins-manager.js"
 
 /// Shared fixtures for the supervisor and manager suites (same pattern as
 /// apps/server's test-support.ts): in-process fake plugin servers, fake

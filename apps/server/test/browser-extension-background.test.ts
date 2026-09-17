@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { runInNewContext } from "node:vm"
+
 import { describe, expect, it, vi } from "vitest"
 
 type Listener = (...arguments_: ReadonlyArray<unknown>) => unknown

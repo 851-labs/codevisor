@@ -1,6 +1,8 @@
-import { EventEmitter } from "node:events"
 import type { ChildProcess } from "node:child_process"
+import { EventEmitter } from "node:events"
+
 import { afterEach, expect, it, vi } from "vitest"
+
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 import { closeBrowserRuntime } from "./browser-runtime-lifecycle.js"
 

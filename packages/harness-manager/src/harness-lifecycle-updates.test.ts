@@ -1,8 +1,8 @@
-import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
-import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 import { afterEach, describe, expect, it } from "vitest"
+
+import { waitForLifecycleSettle } from "./harness-lifecycle-test-support.js"
 import {
   cleanupLifecycleTests,
   run,
@@ -15,6 +15,7 @@ import {
   installableDefinition,
   appBundleDefinition
 } from "./harness-lifecycle-test-support.js"
+import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
 
 afterEach(cleanupLifecycleTests)
 

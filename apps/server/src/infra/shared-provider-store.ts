@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto"
-import { Effect } from "effect"
+
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 import type {
   SharedCredentialReference,
   SharedCredentialVault,
   SharedTokenBundle,
   ProviderOAuthHarness
 } from "@codevisor/harness-manager"
+import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+import { Effect } from "effect"
+
 import type { SharedAccountStore } from "./shared-account-store.js"
 
 export const PROVIDER_LOCAL = "local.shared-provider-accounts"

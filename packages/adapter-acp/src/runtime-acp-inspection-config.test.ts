@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
 import { makeAcpAgentRuntime, run } from "./test-support.js"
 
 describe("@codevisor/agent-runtime inspection configuration", () => {

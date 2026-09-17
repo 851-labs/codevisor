@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { parsePluginManifest } from "./plugin-manifest.js"
 import { PluginsError } from "./plugins-error.js"
 

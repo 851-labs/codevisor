@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+
 import { extensions } from "../.repos/vscode-icons/src/iconsManifest/supportedExtensions.ts"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")

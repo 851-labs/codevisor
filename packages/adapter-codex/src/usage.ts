@@ -1,5 +1,6 @@
 import type { HarnessUsageLimits } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
+
 import { isRecord } from "./internal.js"
 
 const usageWindowLabel = (durationMinutes: number | undefined, fallback: string): string => {

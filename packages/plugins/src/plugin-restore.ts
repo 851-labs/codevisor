@@ -1,8 +1,10 @@
-import type { PluginManifest } from "@codevisor/api"
 import { existsSync } from "node:fs"
-import { PluginsError } from "./plugins-error.js"
+
+import type { PluginManifest } from "@codevisor/api"
+
 import type { InstalledPlugin } from "./plugin-store.js"
 import type { PluginTransactionEngine } from "./plugin-transaction.js"
+import { PluginsError } from "./plugins-error.js"
 
 export interface PluginRestore {
   readonly canRestore: (pluginId: string) => boolean

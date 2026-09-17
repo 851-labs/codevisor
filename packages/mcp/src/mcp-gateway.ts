@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto"
+import { realpathSync, statSync } from "node:fs"
+import { isAbsolute, relative, resolve } from "node:path"
+
+import type { FileMetadata } from "@codevisor/api"
 import type {
   CodeExecutor,
   BrowserSetupBroker,
@@ -5,6 +10,7 @@ import type {
 } from "@codevisor/automation"
 import { CodeExecutionToolError } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
+import { makeAttachmentStore } from "@codevisor/db"
 import {
   McpServer as McpSdkServer,
   type RegisteredTool
@@ -12,15 +18,12 @@ import {
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { randomUUID } from "node:crypto"
-import { realpathSync, statSync } from "node:fs"
-import { isAbsolute, relative, resolve } from "node:path"
 import { z } from "zod"
-import type { FileMetadata } from "@codevisor/api"
-import { makeAttachmentStore } from "@codevisor/db"
+
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
 import type { McpManagerConfig } from "./mcp-manager-types.js"
 import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
+import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 import {
   type SandboxArtifactCollector,
   type SandboxArtifactPersistence,
@@ -28,7 +31,6 @@ import {
   sandboxSuccessfulToolResult
 } from "./mcp-sandbox-results.js"
 import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
-import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 
 /// One live MCP connection to a gateway. Harnesses may connect more than
 /// once per Codevisor session: codex 0.145+ tears down and re-initializes

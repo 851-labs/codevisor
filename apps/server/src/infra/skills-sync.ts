@@ -1,3 +1,9 @@
+import { spawn } from "node:child_process"
+import { cp, mkdtemp, rename, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { gunzipSync } from "node:zlib"
+
 import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { SkillsManager } from "@codevisor/skills"
 import {
@@ -9,11 +15,6 @@ import {
   type SyncEntryRecord
 } from "@codevisor/sync"
 import { Effect } from "effect"
-import { spawn } from "node:child_process"
-import { gunzipSync } from "node:zlib"
-import { cp, mkdtemp, rename, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 
 /// Server half of skills replication. The "skills" sync namespace is the
 /// fleet's desired state — one entry per canonical skill, valued

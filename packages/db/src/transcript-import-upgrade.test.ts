@@ -1,9 +1,10 @@
 import Database from "better-sqlite3"
 import { expect, it, onTestFinished, vi } from "vitest"
+
 import { makeDatabase } from "./index.js"
+import { run, tempDatabase } from "./test-support.js"
 import { seedImportedTranscript } from "./transcript-import-upgrade.js"
 import { readTranscriptText } from "./transcript-state.js"
-import { run, tempDatabase } from "./test-support.js"
 
 it.each([1, 2])(
   "resumes inside an imported Unicode message after a %i-block checkpoint without losing or duplicating content",

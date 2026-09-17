@@ -5,8 +5,8 @@ import {
   updateFromRow
 } from "./row-mappers.js"
 import type { HarnessPendingUpdateRow, HarnessUpdateStateRow, UpdateRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeUpdatesService = (
   context: ServiceContext

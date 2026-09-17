@@ -1,10 +1,12 @@
-import { createServer, type ServerResponse } from "node:http"
 import { mkdtempSync, rmSync, readFileSync } from "node:fs"
+import { createServer, type ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it as baseIt, vi } from "vitest"
-import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
+
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { afterEach, describe, expect, it as baseIt, vi } from "vitest"
+
+import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const value = <T = unknown>(result: CallToolResult): T => {

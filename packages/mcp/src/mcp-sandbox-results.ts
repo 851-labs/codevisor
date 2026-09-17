@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto"
+
 import type { AttachmentRef } from "@codevisor/api"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { randomUUID } from "node:crypto"
 
 export type McpContent = CallToolResult["content"][number]
 

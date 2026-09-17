@@ -1,4 +1,5 @@
 import { decode, PluginRegistryIndex } from "@codevisor/api"
+
 import { PluginsError } from "./plugins-error.js"
 
 /// Read-through cache over the hosted plugin registry index

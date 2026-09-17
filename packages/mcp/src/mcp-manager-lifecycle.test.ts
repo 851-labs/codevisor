@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { makeMcpManager } from "./mcp-manager.js"
+
 import {
   cleanupMcpManagerTests,
   connectionStateSettles,
@@ -9,6 +9,7 @@ import {
   testManager,
   workingUpstream
 } from "./mcp-manager-test-support.js"
+import { makeMcpManager } from "./mcp-manager.js"
 
 afterEach(cleanupMcpManagerTests)
 

@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process"
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { clonePluginSource, parsePluginSource } from "./plugin-source.js"
 import { makeDir } from "./test-support.js"
 

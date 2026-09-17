@@ -1,12 +1,14 @@
 import { readFile, stat, realpath, writeFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi, onTestFinished } from "vitest"
-import { atomicWriteJson } from "@codevisor/harness-manager"
+
 import type { HarnessAccount } from "@codevisor/api"
+import { atomicWriteJson } from "@codevisor/harness-manager"
+import { afterEach, beforeEach, describe, expect, it, vi, onTestFinished } from "vitest"
+
+import { run } from "../test-support.js"
 import { fleet } from "./shared-accounts-test-support.js"
 import { providerSlot } from "./shared-provider-store.js"
-import { run } from "../test-support.js"
 
 const jwt = (sub: string) =>
   `header.${Buffer.from(JSON.stringify({ sub })).toString("base64url")}.signature`

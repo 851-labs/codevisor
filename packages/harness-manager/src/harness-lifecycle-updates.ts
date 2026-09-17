@@ -2,6 +2,7 @@ import type { HarnessInstallMethodSpec } from "@codevisor/agent-runtime"
 import type { HarnessLifecycleState } from "@codevisor/api"
 import type { HarnessPendingUpdateRecord } from "@codevisor/db"
 import { detectBrewPackage, detectInstallOrigin } from "@codevisor/updater"
+
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { matchSource } from "./harness-lifecycle-detection.js"
 import type { HarnessOperationRunner } from "./harness-lifecycle-execution.js"

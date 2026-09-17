@@ -1,11 +1,13 @@
 import { EventEmitter } from "node:events"
+
 import type {
   Options as ClaudeOptions,
   SDKMessage,
   SDKUserMessage
 } from "@anthropic-ai/claude-agent-sdk"
-import { Effect } from "effect"
 import type { HarnessDefinition, ProviderEnvironment } from "@codevisor/agent-runtime"
+import { Effect } from "effect"
+
 import { makeClaudeProvider, type ClaudeProviderConfig } from "./claude.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)

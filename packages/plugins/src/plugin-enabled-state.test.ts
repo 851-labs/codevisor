@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { isPluginEnabled, setPluginEnabledState } from "./plugin-enabled-state.js"
 import { makeDir } from "./test-support.js"
 

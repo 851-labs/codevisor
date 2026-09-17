@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makePeerKeyPinStore, parsePeerKeyPins, serializePeerKeyPins } from "./peer-pins.js"
 
 describe("parsePeerKeyPins", () => {

@@ -1,5 +1,6 @@
-import type { AutomationToolProvider } from "./automation-provider.js"
 import type WebSocket from "ws"
+
+import type { AutomationToolProvider } from "./automation-provider.js"
 
 export type BrowserBackend = "managed" | "extension" | "builtin"
 export type BrowserExtensionSetupMode = "development" | "webStore"

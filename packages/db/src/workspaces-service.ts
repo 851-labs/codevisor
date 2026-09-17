@@ -1,12 +1,14 @@
-import { initialWorkspacePosition, workspacePositionEpoch, isoTimestamp } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+
+import { initialWorkspacePosition, workspacePositionEpoch, isoTimestamp } from "@codevisor/api"
+
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
-import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
+import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
 
 export const makeWorkspacesService = (
   context: ServiceContext

@@ -1,7 +1,8 @@
 import type { Harness } from "@codevisor/api"
-import type { CodevisorServerServices } from "../server-context.js"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
+
+import type { CodevisorServerServices } from "../server-context.js"
 import { jsonRequest, makeServices, pluginsStub, run, startWithApp } from "../test-support.js"
 
 /// Phase 17: the mcp-readiness surface over HTTP — the on-demand publish

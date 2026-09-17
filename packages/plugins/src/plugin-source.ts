@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+
 import { PluginsError } from "./plugins-error.js"
 
 /// A plugin source resolved to something `git clone` understands, forked from

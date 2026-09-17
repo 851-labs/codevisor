@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import type { AutomationProviderContext } from "./automation-provider.js"
 import {
   attachTarget,
@@ -14,13 +15,13 @@ import {
 import type { BrowserRuntime, TargetInfo } from "./browser-cdp-engine.js"
 import { makeBrowserCursorRegistry } from "./browser-cursor.js"
 import { initialPointerState, type PointerState } from "./browser-input.js"
-import type { BrowserBackend } from "./browser-use-provider.js"
-import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
-import { invokePlaywrightTools } from "./browser-use-invoke-playwright.js"
-import { invokePageTools } from "./browser-use-invoke-page.js"
 import { invokeInteractionTools } from "./browser-use-invoke-interaction.js"
 import { invokeMouseTools } from "./browser-use-invoke-mouse.js"
+import { invokeNavigationTools } from "./browser-use-invoke-navigation.js"
+import { invokePageTools } from "./browser-use-invoke-page.js"
+import { invokePlaywrightTools } from "./browser-use-invoke-playwright.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
+import type { BrowserBackend } from "./browser-use-provider.js"
 
 export type {
   BrowserAssetInventory,

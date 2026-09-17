@@ -1,10 +1,12 @@
-import { observableFixture } from "../changes-test-support.js"
-import type { Harness } from "@codevisor/api"
-import { Effect } from "effect"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+import type { Harness } from "@codevisor/api"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+
+import { observableFixture } from "../changes-test-support.js"
 import {
   jsonRequest,
   makeServices,

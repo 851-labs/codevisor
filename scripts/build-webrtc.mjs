@@ -1,8 +1,8 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process"
 // An isolated, pinned source recipe. Does not change the reference submodule,
 // installed SwiftPM artifact, Xcode selection, or any published release.
 import { createHash } from "node:crypto"
-import { spawnSync } from "node:child_process"
 import {
   cpSync,
   existsSync,

@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   PutSyncRequest as PutSyncRequestSchema,
   SyncParticipation as SyncParticipationSchema
@@ -8,10 +10,10 @@ import {
   latestSyncTimestamp,
   nextSyncTimestamp
 } from "@codevisor/sync"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
-import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
 import type { HarnessSyncStatus } from "../infra/harness-sync.js"
+import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
 import {
   appendAndPublish,

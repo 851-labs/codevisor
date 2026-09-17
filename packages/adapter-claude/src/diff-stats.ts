@@ -1,6 +1,8 @@
-import type { DiffStat } from "@codevisor/api"
-import { diffStatsFromTexts, lineCount } from "@codevisor/agent-runtime"
 import { isAbsolute, resolve } from "node:path"
+
+import { diffStatsFromTexts, lineCount } from "@codevisor/agent-runtime"
+import type { DiffStat } from "@codevisor/api"
+
 import { isRecord } from "./internal.js"
 import type { ClaudeSession, ToolInputAccumulator } from "./session.js"
 import { activeToolTitle } from "./tool-presentation.js"

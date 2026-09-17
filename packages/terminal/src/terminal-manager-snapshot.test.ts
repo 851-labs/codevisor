@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+
 import { makeTerminalManager, TerminalError } from "./index.js"
 import { run, FakeProcess, makeSpawner, inputFrame } from "./test-support.js"
 

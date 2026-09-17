@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   PromoteWorkspacePaneToChatRequest as PromoteWorkspacePaneToChatRequestSchema,
   UpdateWorkspacePaneRequest as UpdateWorkspacePaneRequestSchema,
@@ -5,7 +7,7 @@ import {
   UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema,
   UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema
 } from "@codevisor/api"
-import type { IncomingMessage, ServerResponse } from "node:http"
+
 import {
   appendAndPublish,
   applyCascadedSessionEffects,

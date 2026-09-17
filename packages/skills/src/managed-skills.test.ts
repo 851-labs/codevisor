@@ -1,6 +1,8 @@
 import { lstatSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+
 import { afterEach, describe, expect, it } from "vitest"
+
 import { managedAttachmentSkill } from "./managed-skills.js"
 import { cleanupSkillsTests, makeHome, manager } from "./skills-test-support.js"
 

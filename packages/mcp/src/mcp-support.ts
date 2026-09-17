@@ -1,7 +1,8 @@
+import type { IncomingMessage } from "node:http"
+
 import type { CreateMcpServerRequest } from "@codevisor/api"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
-import type { IncomingMessage } from "node:http"
 import { Effect } from "effect"
 
 export interface UpstreamConnection {

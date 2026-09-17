@@ -2,7 +2,9 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { cp } from "node:fs/promises"
 import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
+
 import { makePluginInstaller, type PluginInstallerDeps } from "./plugin-install.js"
 import { PLUGIN_INSTALL_RECEIPT_FILENAME, readPluginInstallReceipt } from "./plugin-receipt.js"
 import type { ClonePluginSourceResult } from "./plugin-source.js"

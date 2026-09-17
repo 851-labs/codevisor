@@ -1,15 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises"
+import { createServer } from "node:http"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import type { FileMetadata } from "@codevisor/api"
+import { computerUseTools, textToolResult } from "@codevisor/automation"
+import { makeAttachmentStore } from "@codevisor/db"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { createServer } from "node:http"
-import { computerUseTools, textToolResult } from "@codevisor/automation"
+import { afterEach, describe, expect, it } from "vitest"
+
 import { cleanupMcpManagerTests, listen, run, testManager } from "./mcp-manager-test-support.js"
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import type { FileMetadata } from "@codevisor/api"
-import { makeAttachmentStore } from "@codevisor/db"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
 
 afterEach(cleanupMcpManagerTests)

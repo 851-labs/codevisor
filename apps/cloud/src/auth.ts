@@ -4,10 +4,11 @@ import { betterAuth } from "better-auth"
 import { bearer, deviceAuthorization } from "better-auth/plugins"
 import { oneTimeToken } from "better-auth/plugins/one-time-token"
 import { drizzle } from "drizzle-orm/d1"
+
 import { appleOptions, hasAppleAuth, revokeAppleAuthorization } from "./apple-auth.js"
 import { nativeAppleAuth } from "./apple-native.js"
-import { emailAuthPlugin, hasEmailAuth } from "./email-auth.js"
 import * as schema from "./db/schema.js"
+import { emailAuthPlugin, hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
 
 /// Client ids accepted by the device-authorization flow. Machines are the only

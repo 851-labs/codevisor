@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events"
 import { readFileSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
+
 import { CdpConnection } from "./browser-cdp.js"
 
 export const nativeBrowserSocketPath = (dataDir: string, uid = process.getuid?.() ?? 0): string => {

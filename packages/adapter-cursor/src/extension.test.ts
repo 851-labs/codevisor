@@ -3,6 +3,7 @@ import type { AcpAgentConnection } from "@codevisor/adapter-acp"
 import type { PromptInput, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { CURSOR_MAX_TRANSIENT_RETRIES, makeCursorExtension } from "./extension.js"
 
 const SESSION_ID = "cursor-session"

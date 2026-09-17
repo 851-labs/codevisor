@@ -1,7 +1,9 @@
-import type { PluginManifest, PluginSource } from "@codevisor/api"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+
+import type { PluginManifest, PluginSource } from "@codevisor/api"
+
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, type PluginInstallReceipt } from "./plugin-receipt.js"
 import { PluginsError } from "./plugins-error.js"

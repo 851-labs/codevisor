@@ -1,3 +1,7 @@
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
+
 import type {
   DiscoverRemotePluginRequest,
   DiscoverRemotePluginResult,
@@ -5,11 +9,15 @@ import type {
   LinkPluginRequest,
   PluginManifest
 } from "@codevisor/api"
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
-import { displayPluginCommand, pluginSetupCommands } from "./plugin-command.js"
+
 import { makePluginCandidatePreparer } from "./plugin-candidate.js"
+import { displayPluginCommand, pluginSetupCommands } from "./plugin-command.js"
+import { describePlugin } from "./plugin-discovery.js"
+import type {
+  PreparedPluginUpdate,
+  PreparePluginUpdateRequest,
+  StagedPlugin
+} from "./plugin-install-types.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, type PluginInstallSourceReceipt } from "./plugin-receipt.js"
 import { assertGitAvailable, type FindExecutable } from "./plugin-requirements.js"
@@ -27,14 +35,8 @@ import type {
   RegisterPluginTerminal
 } from "./plugin-supervisor.js"
 import { defaultSpawnArgv, defaultSpawnShell } from "./plugin-supervisor.js"
-import { PluginsError } from "./plugins-error.js"
-import { describePlugin } from "./plugin-discovery.js"
 import { makePluginTransactionEngine } from "./plugin-transaction.js"
-import type {
-  PreparedPluginUpdate,
-  PreparePluginUpdateRequest,
-  StagedPlugin
-} from "./plugin-install-types.js"
+import { PluginsError } from "./plugins-error.js"
 
 /// The install pipeline behind `codevisor plugin install|link|remove` and the
 /// matching /v1/plugins routes, forked from packages/skills' staged-clone

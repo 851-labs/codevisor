@@ -1,9 +1,9 @@
-import { exportBrowserContent } from "./browser-content.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { randomUUID } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
-import { delay } from "./browser-cdp.js"
+
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import {
   attachTarget,
   evaluate,
@@ -13,6 +13,8 @@ import {
   numberArgument,
   stringArgument
 } from "./browser-cdp-engine.js"
+import { delay } from "./browser-cdp.js"
+import { exportBrowserContent } from "./browser-content.js"
 import type { BrowserToolInvocation, BrowserToolSessionState } from "./browser-use-invoke-types.js"
 
 /// Clipboard, console logs, dialogs, viewport, raw CDP access, and page asset bundling.

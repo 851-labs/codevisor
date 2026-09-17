@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto"
+import { mkdir, readFile, rm } from "node:fs/promises"
+import { join } from "node:path"
+
 import { makeGrokAuth } from "./grok-auth.js"
 import { makeHarnessAccountOperations } from "./harness-auth-accounts.js"
 import { makeHarnessAuthCore } from "./harness-auth-core.js"
@@ -7,13 +11,10 @@ import { makeHarnessAuthProbes } from "./harness-auth-probes.js"
 import { run } from "./harness-auth-support.js"
 import type { HarnessAuthManager, HarnessAuthManagerConfig } from "./harness-auth-types.js"
 import { makeOpenCodeAuthManager, openCodeAuthPath } from "./opencode-auth.js"
+import type { OpenCodeProfile } from "./opencode-auth.js"
 import { makePiAuthManager } from "./pi-auth.js"
 import { reconcileSharedOpenCodeProfiles } from "./shared-opencode-profiles.js"
 import { providerOAuthSupported } from "./shared-provider-oauth.js"
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rm } from "node:fs/promises"
-import { join } from "node:path"
-import type { OpenCodeProfile } from "./opencode-auth.js"
 
 export type {
   HarnessAuthEvent,

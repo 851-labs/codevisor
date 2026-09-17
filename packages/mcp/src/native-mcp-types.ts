@@ -1,3 +1,4 @@
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type {
   ImportNativeMcpsRequest,
   ImportNativeMcpsResult,
@@ -5,8 +6,8 @@ import type {
   NativeMcpScan,
   RemoveNativeMcpResult
 } from "@codevisor/api"
-import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { CodevisorDatabaseService } from "@codevisor/db"
+
 import type { McpManager } from "./mcp-manager-types.js"
 import type { NativeConfigFileSystem } from "./native-config-files.js"
 

@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+
 import { Effect } from "effect"
 import { afterEach, expect, it, vi } from "vitest"
+
 import { fleet, native } from "./shared-accounts-test-support.js"
 const home = vi.hoisted(() => ({ path: "" }))
 vi.mock("node:os", async (original) => ({

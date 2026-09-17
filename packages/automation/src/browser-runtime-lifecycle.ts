@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process"
+
 import type { BrowserRuntime } from "./browser-cdp-engine.js"
 
 export const serializedBrowserOperation = async <T>(

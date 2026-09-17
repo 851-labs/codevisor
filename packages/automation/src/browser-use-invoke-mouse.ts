@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+
 import { actionResult, numberArgument } from "./browser-cdp-engine.js"
 import {
   dispatchClick,

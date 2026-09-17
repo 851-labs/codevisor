@@ -1,5 +1,6 @@
-import type { CanonicalModeId, SessionConfigOption, SessionModeState } from "@codevisor/api"
 import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "@codevisor/agent-runtime"
+import type { CanonicalModeId, SessionConfigOption, SessionModeState } from "@codevisor/api"
+
 import type { CodexModel, CodexSession } from "./session.js"
 
 /// The wire value Codex uses for its fast service tier (the UI calls it

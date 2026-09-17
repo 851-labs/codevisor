@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
+
 import { resolveServerDataLayout } from "./infra/data-dir.js"
 
 // Keep this module limited to Node builtins: main writes a checkpoint before

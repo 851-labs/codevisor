@@ -1,7 +1,8 @@
 import type { NavigationSnapshot } from "@codevisor/api"
+
+import { attempt } from "./errors.js"
 import { jsonRecord } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
-import { attempt } from "./errors.js"
 import {
   projectFromRow,
   sessionFromRow,

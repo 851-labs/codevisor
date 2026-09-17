@@ -1,13 +1,15 @@
+import { randomUUID } from "node:crypto"
+
 import type { Worktree } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { randomUUID } from "node:crypto"
+
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
 import { worktreePath } from "./paths.js"
 import { archivedWorktreeFromRow, worktreeFromRow } from "./row-mappers.js"
 import type { ArchivedWorktreeRow, WorktreeRow } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeWorktreesService = (
   context: ServiceContext

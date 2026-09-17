@@ -6,6 +6,7 @@ import {
   waitOnExecutionContext
 } from "cloudflare:test"
 import { describe, expect, it } from "vitest"
+
 import type { CloudEnv } from "../src/env.js"
 import worker from "../src/index.js"
 import {

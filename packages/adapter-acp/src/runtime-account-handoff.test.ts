@@ -1,6 +1,7 @@
+import type { RuntimeEmit, RuntimeEvent } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { RuntimeEmit, RuntimeEvent } from "@codevisor/agent-runtime"
+
 import { makeAcpAgentRuntime, run } from "./test-support.js"
 
 describe("agent runtime account handoff", () => {

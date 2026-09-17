@@ -1,9 +1,11 @@
-import type { Harness } from "@codevisor/api"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+
+import type { Harness } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
+import { describe, expect, it, vi } from "vitest"
+
 import {
   jsonRequest,
   makeServices,

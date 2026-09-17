@@ -1,11 +1,13 @@
+import { createHash, randomUUID } from "node:crypto"
+
 import type { FileMetadata } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { createHash, randomUUID } from "node:crypto"
+
 import { attempt } from "./errors.js"
 import { fileMetadataFromRow, fileStorageRecordFromRow } from "./row-mappers.js"
 import type { FileRow, FileStorageState } from "./rows.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeFilesService = (
   context: ServiceContext

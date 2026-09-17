@@ -1,7 +1,9 @@
 import { EventEmitter, once } from "node:events"
 import { createServer, request, type Server, type IncomingMessage } from "node:http"
 import { createServer as createTCPServer, type AddressInfo, type Socket } from "node:net"
+
 import { afterEach, describe, expect, it } from "vitest"
+
 import { BrowserProxy, browserProxyTarget } from "./browser-proxy.js"
 
 describe("browser connection proxy", () => {

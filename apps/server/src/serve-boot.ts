@@ -1,20 +1,22 @@
-import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
-import type { ScreenSharingVNCConfig } from "./server-context-types.js"
-import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
-import type { StartupReporter } from "./startup-progress.js"
-import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
-import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
-import { requestMacScreenSharing } from "@codevisor/automation"
-import type { TerminalManagerService } from "@codevisor/terminal"
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+
+import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
+import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
+import { requestMacScreenSharing } from "@codevisor/automation"
+import type { TerminalManagerService } from "@codevisor/terminal"
+
 import {
   startBackgroundTerminalHost,
   wrapBackgroundCommand
 } from "./infra/background-terminal-host.js"
 import type { ServerLease } from "./infra/server-lease.js"
+import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
+import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
+import type { ScreenSharingVNCConfig } from "./server-context-types.js"
+import type { StartupReporter } from "./startup-progress.js"
 
 /// Boot-time helpers for the `serve` entry point: argument parsing, bundle
 /// metadata, data-upgrade status, app-owner monitoring, optional feature

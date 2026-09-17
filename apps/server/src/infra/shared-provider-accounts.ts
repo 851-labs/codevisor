@@ -1,10 +1,9 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { Effect } from "effect"
-import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+
 import type { HarnessAccountContext } from "@codevisor/agent-runtime"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { HarnessAccount } from "@codevisor/api"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   parseProviderOAuth,
   SharedCredentialError,
@@ -14,9 +13,12 @@ import {
   type SharedCredentialVault,
   type SharedCredentialReference
 } from "@codevisor/harness-manager"
+import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+import { Effect } from "effect"
+
 import type { SharedAccountStore } from "./shared-account-store.js"
-import { makeSharedProviderStore, providerDigest, providerSlot } from "./shared-provider-store.js"
 import { makeSharedProviderRuntime, readProviderDocument } from "./shared-provider-runtime.js"
+import { makeSharedProviderStore, providerDigest, providerSlot } from "./shared-provider-store.js"
 
 export const makeSharedProviderAccounts = (options: {
   db: CodevisorDatabaseService

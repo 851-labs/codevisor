@@ -21,8 +21,8 @@ import { createServer } from "node:http"
 import { userInfo } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import process from "node:process"
-import { parseArgs } from "node:util"
 import { fileURLToPath } from "node:url"
+import { parseArgs } from "node:util"
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)))
 

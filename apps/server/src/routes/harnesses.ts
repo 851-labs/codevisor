@@ -1,13 +1,15 @@
+import type { IncomingMessage, ServerResponse } from "node:http"
+import { tmpdir } from "node:os"
+
 import type { Harness, HarnessCapability } from "@codevisor/api"
 import {
   HarnessPreference,
   UpdateHarnessRequest as UpdateHarnessRequestSchema
 } from "@codevisor/api"
-import { decorateHarnessSettings, setHarnessOverride } from "../infra/harness-preferences.js"
-import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { tmpdir } from "node:os"
 import { parseCustomHarnessDocument } from "@codevisor/harness-manager"
+import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+
+import { decorateHarnessSettings, setHarnessOverride } from "../infra/harness-preferences.js"
 import {
   existingDirectory,
   HttpFailure,

@@ -1,8 +1,10 @@
-import type { QuestionResolvedPayload, QuestionSpec } from "@codevisor/api"
-import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
-import type { CodevisorDatabaseService } from "@codevisor/db"
 import { randomUUID } from "node:crypto"
+
+import type { QuestionAnswer, RuntimeEventSink } from "@codevisor/agent-runtime"
+import type { QuestionResolvedPayload, QuestionSpec } from "@codevisor/api"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import { Effect } from "effect"
+
 import type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider.js"
 
 interface PendingQuestion {

@@ -1,6 +1,8 @@
-import type { ScreenSharingRequest } from "@codevisor/api"
 import { randomUUID } from "node:crypto"
+
+import type { ScreenSharingRequest } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
+
 import { jsonRequest, makeServices, run, runningServers, startWithApp } from "./test-support.js"
 
 const capabilities = (): ScreenSharingRequest => ({

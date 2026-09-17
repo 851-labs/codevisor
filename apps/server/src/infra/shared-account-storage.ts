@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import { readFile, rm, open } from "node:fs/promises"
 import { join } from "node:path"
+import { promisify } from "node:util"
+
 import {
   atomicWriteJson,
   makeSharedCredentialVault,
@@ -9,6 +10,7 @@ import {
   refreshSharedOAuth
 } from "@codevisor/harness-manager"
 import type { CredentialCoordinator, SharedOAuthHarness } from "@codevisor/harness-manager"
+
 import { makeCredentialCoordinator } from "./credential-coordinator.js"
 
 export const sharedAccountVault = (dataDir: string, provided?: CredentialCoordinator) => {

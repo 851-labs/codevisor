@@ -1,4 +1,5 @@
-import { transcriptTextResource } from "./transcript-bodies.js"
+import { randomUUID } from "node:crypto"
+
 import type {
   AttachmentRef,
   MessagePhase,
@@ -8,9 +9,10 @@ import type {
 import { SessionGoal as SessionGoalSchema } from "@codevisor/api"
 import type Database from "better-sqlite3"
 import { Schema } from "effect"
-import { randomUUID } from "node:crypto"
-import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
+
 import { serializeAttachments } from "./row-mappers.js"
+import { transcriptTextResource } from "./transcript-bodies.js"
+import { appendTranscriptText, readTranscriptText } from "./transcript-state.js"
 
 export const chatState = (
   sqlite: Database.Database,

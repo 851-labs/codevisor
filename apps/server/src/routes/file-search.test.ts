@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, opendir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
 import { afterEach, expect, it, vi } from "vitest"
+
 import { searchFileEntries } from "./file-search.js"
 
 vi.mock("node:fs/promises", async (original) => {

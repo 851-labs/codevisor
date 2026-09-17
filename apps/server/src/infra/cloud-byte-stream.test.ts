@@ -1,5 +1,7 @@
 import { EventEmitter, once } from "node:events"
 import { createServer, type AddressInfo, type Socket } from "node:net"
+
+import type { ChannelCloseReason } from "@codevisor/api"
 import {
   BYTE_STREAM_INITIAL_CREDIT_BYTES,
   BYTE_STREAM_MAX_CHUNK_BYTES,
@@ -7,8 +9,8 @@ import {
   codevisorLoopbackParams,
   type IncomingChannel
 } from "@codevisor/cloud-client"
-import type { ChannelCloseReason } from "@codevisor/api"
 import { afterEach, describe, expect, it, vi } from "vitest"
+
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 
 class FakeChannel implements IncomingChannel {

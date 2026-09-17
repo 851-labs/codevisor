@@ -1,13 +1,12 @@
-import type { UpdateInfo } from "@codevisor/api"
-import type { CodevisorDatabaseService } from "@codevisor/db"
-import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { createWriteStream, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs"
-import { installRuntime, planRestart, resolveInstallRoot } from "@codevisor/updater"
+import { dirname, join } from "node:path"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { dirname, join } from "node:path"
-import type { CodevisorServerUpdater } from "./server.js"
+
+import type { UpdateInfo } from "@codevisor/api"
+import type { CodevisorDatabaseService } from "@codevisor/db"
+import { installRuntime, planRestart, resolveInstallRoot } from "@codevisor/updater"
 import {
   channelFromSyncedValue,
   DEFAULT_GITHUB_REPOSITORY,
@@ -20,7 +19,10 @@ import {
   sha256File
 } from "@codevisor/updater"
 import type { ServerRelease, ServerUpdateChannel } from "@codevisor/updater"
+import { Effect } from "effect"
+
 import { SERVER_PROCESS_TITLE, SERVER_UPDATE_CHECK_TTL_MS } from "./serve-boot.js"
+import type { CodevisorServerUpdater } from "./server.js"
 
 /// Self-updater for standalone server installs and the app-hosted handoff.
 

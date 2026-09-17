@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { CodexTitleGenerator, parseGeneratedTitle } from "./title-generation.js"
+
 import { FakeCodexClient } from "./test-support.js"
+import { CodexTitleGenerator, parseGeneratedTitle } from "./title-generation.js"
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void

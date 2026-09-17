@@ -4,9 +4,10 @@ import {
   type BrowserCookieSnapshot,
   type BrowserNavigation
 } from "@codevisor/api"
+
 import { attempt } from "./errors.js"
-import type { CodevisorDatabaseService } from "./service.js"
 import type { ServiceContext } from "./service-context.js"
+import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeBrowserStateService = ({
   sqlite

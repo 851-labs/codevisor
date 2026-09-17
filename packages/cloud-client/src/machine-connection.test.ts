@@ -1,7 +1,8 @@
 import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
 import type { MachineToHub } from "@codevisor/api"
-import { CloudMachineConnection, reconnectDelayMs } from "./index.js"
 import { describe, expect, it, vi } from "vitest"
+
+import { CloudMachineConnection, reconnectDelayMs } from "./index.js"
 import {
   FakeSocket,
   machineKeys,

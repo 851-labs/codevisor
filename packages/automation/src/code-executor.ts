@@ -30,6 +30,7 @@ import type {
   QuickJSHandle,
   QuickJSRuntime
 } from "quickjs-emscripten"
+
 import { buildExecutionSource } from "./code-executor-source.js"
 
 export interface CodeExecutionResult {
