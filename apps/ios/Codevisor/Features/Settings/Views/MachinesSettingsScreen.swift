@@ -168,19 +168,6 @@ struct MachinesSettingsScreen: View {
     )
   }
 
-  private func connectionError(for machine: CodevisorMachine) -> String? {
-    if case let .stale(message) = machines.navigationSyncStateByMachineId[machine.id] {
-      return message
-    }
-    if case let .failed(message) = machines.availabilityByMachineId[machine.id] {
-      return message
-    }
-    if let status = machines.statusByMachineId[machine.id], !status.isReachable {
-      return status.label
-    }
-    return nil
-  }
-
   private func cloudMachine(for machine: CodevisorMachine) -> CloudMachine? {
     let deviceId =
       CodevisorMachine.cloudDeviceId(forMachineId: machine.id)
@@ -197,15 +184,20 @@ struct MachinesSettingsScreen: View {
     }
   }
 
-  /// Cloud presence and direct paths match the account's machine indicators.
-  /// Manually paired machines fall back to their latest reachability probe.
+  /// Reachability and sync failures must remain visible even when the cloud
+  /// roster says the host is online.
   private func machineRow(_ machine: CodevisorMachine) -> some View {
     let presence = cloudMachine(for: machine)
     let status = machines.statusByMachineId[machine.id]
     let configuredDirect = !machine.isCloud && status?.isReachable == true && status?.route == .direct
-    let online = configuredDirect || (presence?.online ?? (status?.isReachable == true))
     let direct = configuredDirect || presence.map { cloud.directPaths.machineIds.contains($0.deviceId) } == true
-    let error = online ? nil : connectionError(for: machine)
+    let connection = MachineConnectionPresentation(
+      status: status,
+      availability: machines.availabilityByMachineId[machine.id],
+      navigationSyncState: machines.navigationSyncStateByMachineId[machine.id],
+      cloudOnline: presence?.online,
+      usesDirectConnection: direct
+    )
     return HStack(spacing: 10) {
       Image(systemName: EntitySystemSymbol.machine(machine))
         .foregroundStyle(.secondary)
@@ -228,17 +220,17 @@ struct MachinesSettingsScreen: View {
       } else {
         HStack(spacing: 5) {
           Circle()
-            .fill(online ? Color.green : Color.gray)
+            .fill(connectionColor(connection))
             .frame(width: 7, height: 7)
             .accessibilityHidden(true)
-          Text(online ? (direct ? "Online · Direct" : "Online") : "Offline")
+          Text(connection.label)
             .font(.footnote)
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
         }
       }
     }
     .accessibilityElement(children: .combine)
-    .accessibilityValue(error ?? "")
     .contentShape(Rectangle())
     .contextMenu {
       if let presence, cloud.machinesWithChangedKeys.contains(presence.deviceId) {
@@ -271,6 +263,11 @@ struct MachinesSettingsScreen: View {
       }
       .accessibilityLabel("Rename")
     }
+  }
+
+  private func connectionColor(_ connection: MachineConnectionPresentation) -> Color {
+    if case .online = connection { return .green }
+    return .gray
   }
 
   private func discoveredRow(_ machine: TailnetMachineDiscovery.Discovered) -> some View {
