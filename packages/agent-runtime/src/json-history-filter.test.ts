@@ -38,8 +38,14 @@ describe("Codex history filtering", () => {
   it("never retains or forwards the growing history prefix", () => {
     const filter = new JsonHistoryFilter()
     expect(filter.push('{"result":{"thread":{"turns":[')).toBe('{"result":{"thread":{"turns":[]')
-    const chunk = JSON.stringify({ output: "x".repeat(64 * 1024) }) + ","
-    for (let index = 0; index < 256; index++) expect(filter.push(chunk)).toBe("")
+    const retainedBytes = JSON.stringify(filter).length
+    const chunk = JSON.stringify({ output: "x".repeat(1024) }) + ","
+    // Inspect retained state directly: a large throughput fixture only tests
+    // runner speed under coverage and doesn't detect a hidden history buffer.
+    for (let index = 0; index < 64; index++) {
+      expect(filter.push(chunk)).toBe("")
+      expect(JSON.stringify(filter).length).toBeLessThanOrEqual(retainedBytes)
+    }
     expect(filter.push('null],"id":"chat"}},"id":1}\n')).toBe(',"id":"chat"}},"id":1}\n')
     expect(filter.push('{"method":"turn/started","params":{"id":"new"}}\n')).toBe(
       '{"method":"turn/started","params":{"id":"new"}}\n'

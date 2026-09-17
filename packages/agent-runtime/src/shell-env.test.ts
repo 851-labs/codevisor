@@ -20,9 +20,13 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...actual, homedir: vi.fn(actual.homedir), userInfo: vi.fn(actual.userInfo) }
 })
 
-describe("resolveShellEnv", () => {
-  afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  // Module-factory vi.fn mocks keep their implementations after restoreAllMocks.
+  vi.resetAllMocks()
+})
 
+describe("resolveShellEnv", () => {
   it.each([undefined, ""])("restores HOME when the inherited value is %s", async (home) => {
     const base = Object.freeze({ HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/sh" })
     const runShell = vi.fn(() => Promise.resolve(envOutput("/probed")))
@@ -288,7 +292,6 @@ describe("resolveShellEnv", () => {
 })
 
 describe("runShellCommand", () => {
-  afterEach(() => vi.restoreAllMocks())
   it("exports the supplied HOME to child scripts", async () => {
     await expect(
       runShellCommand("/bin/sh", ["-uc", 'printf "%s" "$HOME"'], 5000, {

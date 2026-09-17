@@ -70,14 +70,16 @@ struct VNCScreenSharingViewerBackendTests {
     let harness = try await Harness()
     defer { harness.stop() }
     harness.connect()
-    #expect(await awaitPolled { harness.log.endpoints.count == 1 })
+    await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 1)
     let first = harness.log.endpoints[0]
     expectNoDifference(harness.log.events, [.opened(first)])
     #expect(first.supportsControl && first.supportsClipboard)
     harness.surfaces[0].present()
-    #expect(await awaitPolled { harness.log.events.count == 2 })
+    await awaitObserved { harness.log.events.count >= 2 }
     harness.server.closeClient()
-    #expect(await awaitPolled { harness.log.endpoints.count == 2 })
+    await awaitObserved { harness.log.endpoints.count == 2 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 2)
     let second = harness.log.endpoints[1]
     expectNoDifference(harness.log.events, [.opened(first), .ready, .reconnecting, .opened(second)])
     #expect((first.session as? VNCScreenSharingSession)?.closed == true)
@@ -91,15 +93,16 @@ struct VNCScreenSharingViewerBackendTests {
     let harness = try await Harness()
     defer { harness.stop() }
     harness.connect()
-    #expect(await awaitPolled { harness.log.endpoints.count == 1 })
+    await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 1)
     harness.server.closeClient()
-    #expect(await awaitPolled { harness.log.finished == 1 })
+    await awaitObserved { harness.log.finished == 1 }
     expectNoDifference(harness.log.events.dropFirst(), [.ended("The VNC server closed the connection.")])
 
     let wrong = try await Harness(password: "wrong")
     defer { wrong.stop() }
     wrong.connect()
-    #expect(await awaitPolled { wrong.log.finished == 1 })
+    await awaitObserved { wrong.log.finished == 1 }
     expectNoDifference(wrong.log.events, [.ended("Authentication failed")])
     #expect(wrong.surfaces.isEmpty)
   }
