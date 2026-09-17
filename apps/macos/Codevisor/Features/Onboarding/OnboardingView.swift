@@ -77,7 +77,8 @@ struct OnboardingView: View {
   @State var showingGitClone = false
   @State var isFinishing = false
   @State var showsNotInstalled = false
-  @State var authenticationHarness: ServerHarness?
+  @State var authenticationHarness: HarnessAccountsPresentation<ServerHarness>?
+  @State var detailHarness: ServerHarness?
   @State var toggleError: ToggleError?
   /// Sharing is selected initially, but nothing is persisted or sent until
   /// the user continues past the final onboarding step.
@@ -133,7 +134,7 @@ struct OnboardingView: View {
         guard before?.lifecycle?.resolvedPhase == .installing, before?.isReady != true,
           harness.requiresAuthentication
         else { continue }
-        authenticationHarness = harness
+        authenticationHarness = .init(harness, startsSignIn: true)
         break
       }
     }
@@ -146,8 +147,18 @@ struct OnboardingView: View {
         projectSetup.addPickedFolders(urls)
       }
     }
-    .sheet(item: $authenticationHarness) { harness in
-      HarnessAuthenticationView(harness: harness) { replaceHarness($0) }
+    .sheet(item: $authenticationHarness) { presentation in
+      let harness = presentation.selection
+      HarnessAuthenticationView(
+        harness: harness, onChange: { replaceHarness($0) },
+        signInRequest: presentation.startsSignIn
+          ? HarnessMachineSignIn(profileId: harness.id == "opencode" ? "default" : nil) : nil
+      )
+      .environment(\.settingsMachineId, CodevisorMachine.local.id)
+    }
+    .sheet(item: $detailHarness) { harness in
+      HarnessDetailSheet(harness: harness)
+        .environment(\.settingsMachineId, CodevisorMachine.local.id)
     }
     .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
     .sheet(isPresented: $showingGitClone) {

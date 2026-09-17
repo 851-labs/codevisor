@@ -8,11 +8,16 @@ import SwiftUI
 struct HarnessesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @State private var globalModel = HarnessGlobalModel()
-  @State private var accountsSetting: HarnessFleet.Setting?
+  @State private var accountsSetting: HarnessAccountsPresentation<HarnessFleet.Setting>?
 
   var body: some View {
     List {
-      HarnessGlobalSection(model: globalModel, onAccounts: { accountsSetting = $0 }) { id, symbol in
+      HarnessGlobalSection(
+        model: globalModel,
+        onAccounts: { setting, signIn in
+          accountsSetting = .init(setting, startsSignIn: signIn)
+        }
+      ) { id, symbol in
         HarnessIconView(harnessId: id, fallbackSymbolName: symbol, size: 22)
       }
       Section("Machines") {
@@ -31,8 +36,10 @@ struct HarnessesSettingsScreen: View {
     }
     .navigationTitle("Harnesses")
     .navigationBarTitleDisplayMode(.inline)
-    .sheet(item: $accountsSetting) { setting in
-      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name) { machineId, harness, request in
+    .sheet(item: $accountsSetting) { presentation in
+      let setting = presentation.selection
+      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name, startsSignIn: presentation.startsSignIn) {
+        machineId, harness, request in
         HarnessAuthenticationScreen(serverId: machineId ?? "", harness: harness, signInRequest: request)
       }
     }
@@ -67,17 +74,30 @@ struct HarnessesSettingsScreen: View {
 /// The contextual manager used by the model picker. Installation stays in
 /// this navigation stack and retains the sheet's compact detent.
 struct HarnessMachineSettingsScreen: View {
+  @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
   @State private var refreshToken = UUID()
   @State private var isRefreshing = false
+  @State private var model = HarnessMachineModel()
+  @State private var authenticationHarness: HarnessAccountsPresentation<ServerHarness>?
+  @State private var uninstallHarness: ServerHarness?
+  @State private var resetHarness: ServerHarness?
 
   var body: some View {
     List {
       HarnessSyncSection(machineId: machine.id)
       HarnessMachineSections(
         machine: machine,
-        refreshToken: refreshToken,
-        isRefreshing: $isRefreshing
+        model: model,
+        presentAccounts: { authenticationHarness = .init($0, startsSignIn: $1) },
+        requestUninstall: { uninstallHarness = $0 },
+        resetOverride: { harness in
+          if harness.settings?.global?.installed == false && harness.isReady {
+            resetHarness = harness
+          } else {
+            Task { await model.resetOverride(id: harness.id) }
+          }
+        }
       )
     }
     .navigationTitle(machine.name)
@@ -89,6 +109,64 @@ struct HarnessMachineSettingsScreen: View {
         }
       }
     }
+    .sheet(item: $authenticationHarness, onDismiss: { Task { await model.refresh() } }) { presentation in
+      let harness = presentation.selection
+      HarnessMachineAccountsSheet(machine: machine, harness: harness, startsSignIn: presentation.startsSignIn)
+    }
+    .alert(
+      model.operationError?.title ?? "Couldn't Update Harness",
+      isPresented: Binding(get: { model.operationError != nil }, set: { if !$0 { model.dismissOperationError() } })
+    ) {
+      Button("OK") { model.dismissOperationError() }
+    } message: {
+      Text(model.operationError?.message ?? "")
+    }
+    .confirmationDialog(
+      "Uninstall \(uninstallHarness?.name ?? "harness")?",
+      isPresented: Binding(get: { uninstallHarness != nil }, set: { if !$0 { uninstallHarness = nil } }),
+      titleVisibility: .visible, presenting: uninstallHarness
+    ) { harness in
+      Button("Uninstall", role: .destructive) { Task { await model.uninstallHarness(id: harness.id) } }
+    } message: { _ in
+      Text("Chats and accounts are kept.")
+    }
+    .confirmationDialog(
+      "Use Global Setting?",
+      isPresented: Binding(get: { resetHarness != nil }, set: { if !$0 { resetHarness = nil } }),
+      titleVisibility: .visible, presenting: resetHarness
+    ) { harness in
+      Button("Uninstall", role: .destructive) { Task { await model.resetOverride(id: harness.id) } }
+    } message: { harness in
+      Text("The global setting will uninstall \(harness.name) here.")
+    }
+    .task(id: machine.id) {
+      model.configure(for: machine.id, dependencies: dependencies)
+      await model.refresh()
+    }
+    .onChange(of: refreshToken) { _, _ in
+      Task {
+        await model.scan()
+        isRefreshing = false
+      }
+    }
+    .onChange(of: environment.harnessCatalogRevision(for: machine.id)) { _, _ in
+      Task { await model.refresh() }
+    }
+  }
+
+  private var client: any CodevisorServerClienting { environment.machines.client(for: machine.id) }
+
+  private var dependencies: HarnessMachineModel.Dependencies {
+    HarnessMachineModel.Dependencies(
+      loadCatalog: { try await client.listHarnessesWithLifecycle() },
+      rescanCatalog: { try await client.rescanHarnesses() },
+      setDesiredEnabled: { try await client.setHarnessDesiredEnabled(id: $0, enabled: $1) },
+      startUpdate: { try await client.updateHarness(id: $0) },
+      startUninstall: { try await client.uninstallHarness(id: $0) },
+      resetOverride: { try await client.resetHarnessOverride(id: $0) },
+      catalogDidChange: { environment.harnessCatalogDidChange(onServer: machine.id) },
+      lifecycleDidChange: { environment.setHarnessLifecycle($0, harnessId: $1, onServer: machine.id) }
+    )
   }
 }
 
@@ -117,198 +195,9 @@ private struct HarnessRefreshButton: View {
   }
 }
 
-/// Separate native list sections keep installed harnesses and the install
-/// catalog visually and behaviorally distinct.
-private struct HarnessMachineSections: View {
-  @Environment(AppEnvironment.self) private var environment
-  let machine: CodevisorMachine
-  let refreshToken: UUID
-  @Binding var isRefreshing: Bool
-
-  @State private var harnesses: [ServerHarness] = []
-  @State private var isLoading = true
-  @State private var errorMessage: String?
-  @State private var showsAvailableToInstall = true
-
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: machine.id)
-  }
-
-  private var installed: [ServerHarness] {
-    harnesses.filter(\.isReady)
-  }
-
-  private var notInstalled: [ServerHarness] {
-    harnesses.filter { !$0.isReady }
-  }
-
-  var body: some View {
-    Group {
-      if isLoading, harnesses.isEmpty {
-        Section {
-          HStack {
-            Spacer()
-            ProgressView()
-            Spacer()
-          }
-        }
-      } else if let errorMessage {
-        Section {
-          Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(.secondary)
-          Button("Try Again") { Task { await load(rescan: true) } }
-        }
-      } else {
-        if !installed.isEmpty {
-          Section("Installed") {
-            ForEach(installed, id: \.id) { harness in
-              installedHarnessRow(harness)
-            }
-          }
-        }
-
-        if !notInstalled.isEmpty {
-          Section {
-            DisclosureGroup(isExpanded: $showsAvailableToInstall) {
-              ForEach(notInstalled, id: \.id) { harness in
-                availableHarnessRow(harness)
-              }
-            } label: {
-              HStack {
-                Text("Available to Install")
-                Spacer()
-                Text(notInstalled.count, format: .number)
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
-        }
-      }
-    }
-    .task(id: "\(machine.id):\(refreshToken)") {
-      isLoading = true
-      await load(rescan: true)
-      if !Task.isCancelled {
-        isRefreshing = false
-      }
-    }
-    .onChange(of: environment.harnessCatalogRevision(for: machine.id)) { _, _ in
-      Task { await load() }
-    }
-  }
-
-  private func installedHarnessRow(_ harness: ServerHarness) -> some View {
-    NavigationLink {
-      HarnessDetailScreen(machine: machine, harness: harness) { updated in
-        updateHarness(updated)
-      }
-    } label: {
-      harnessLabel(harness)
-    }
-  }
-
-  @ViewBuilder
-  private func availableHarnessRow(_ harness: ServerHarness) -> some View {
-    if harness.lifecycle?.resolvedPhase == .installing {
-      HStack(spacing: 12) {
-        harnessLabel(harness)
-        Spacer()
-        ProgressView()
-          .controlSize(.small)
-      }
-    } else {
-      VStack(alignment: .leading, spacing: 8) {
-        NavigationLink {
-          HarnessInstallScreen(harness: harness, machine: machine) { started, methodId in
-            noteInstallStarted(started, harness: harness, methodId: methodId)
-          }
-        } label: {
-          harnessLabel(harness)
-        }
-        if harness.hasOverride {
-          Button("Use Global Setting") {
-            Task {
-              do {
-                updateHarness(try await client.resetHarnessOverride(id: harness.id))
-                environment.harnessCatalogDidChange(onServer: machine.id)
-              } catch { errorMessage = ErrorReporter.userFacingMessage(for: error) }
-            }
-          }
-          .font(.callout)
-        }
-      }
-    }
-  }
-
-  private func harnessLabel(_ harness: ServerHarness) -> some View {
-    HStack(spacing: 12) {
-      HarnessIconView(
-        harnessId: harness.id,
-        fallbackSymbolName: harness.symbolName,
-        size: 22
-      )
-      VStack(alignment: .leading, spacing: 3) {
-        Text(harness.name)
-        Text(harness.lifecycle?.resolvedPhase == .uninstalling ? "Uninstalling…" : harness.settingsSummary)
-          .font(.caption).foregroundStyle(.secondary)
-      }
-    }
-    .padding(.vertical, 2)
-  }
-
-  private func noteInstallStarted(
-    _ started: ServerHarnessOperationStarted,
-    harness: ServerHarness,
-    methodId: String
-  ) {
-    let lifecycle =
-      started.lifecycle
-      ?? ServerHarnessLifecycleState(
-        phase: "installing",
-        methodId: methodId,
-        terminalId: started.terminalId
-      )
-    if let index = harnesses.firstIndex(where: { $0.id == harness.id }) {
-      harnesses[index].lifecycle = lifecycle
-    }
-    environment.setHarnessLifecycle(
-      lifecycle,
-      harnessId: harness.id,
-      onServer: machine.id
-    )
-    environment.harnessCatalogDidChange(onServer: machine.id)
-  }
-
-  private func updateHarness(_ harness: ServerHarness) {
-    if let index = harnesses.firstIndex(where: { $0.id == harness.id }) {
-      harnesses[index] = harness
-    }
-  }
-
-  private func load(rescan: Bool = false) async {
-    do {
-      let loaded =
-        try await
-        (rescan
-        ? client.rescanHarnesses()
-        : client.listHarnessesWithLifecycle())
-      guard !Task.isCancelled else { return }
-      harnesses = loaded
-      errorMessage = nil
-      isLoading = false
-    } catch is CancellationError {
-      return
-    } catch {
-      guard !Task.isCancelled else { return }
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
-      isLoading = false
-    }
-  }
-}
-
 /// Installed-harness controls live on their own detail page instead of
 /// competing for space and meaning in the list row.
-private struct HarnessDetailScreen: View {
+struct HarnessDetailScreen: View {
   @Environment(AppEnvironment.self) private var environment
   let machine: CodevisorMachine
   let onChanged: (ServerHarness) -> Void
@@ -410,13 +299,13 @@ private struct HarnessDetailScreen: View {
     }
     .task(id: "\(machine.id):\(harness.id)") { await load() }
     .onChange(of: environment.harnessCatalogRevision(for: machine.id)) { _, _ in Task { await load() } }
-    .alert("Uninstall \(harness.name)?", isPresented: $confirmsUninstall) {
+    .confirmationDialog("Uninstall \(harness.name)?", isPresented: $confirmsUninstall, titleVisibility: .visible) {
       Button("Uninstall", role: .destructive) { Task { await uninstall() } }
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("Removes the CLI from \(machine.name). Chats and accounts are kept.")
     }
-    .alert("Use Global Setting?", isPresented: $confirmsReset) {
+    .confirmationDialog("Use Global Setting?", isPresented: $confirmsReset, titleVisibility: .visible) {
       Button("Uninstall", role: .destructive) { Task { await resetOverride() } }
       Button("Cancel", role: .cancel) {}
     } message: {

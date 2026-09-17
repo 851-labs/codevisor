@@ -31,11 +31,13 @@ struct HarnessAuthenticationView: View {
   var showsHeader = true
   var signInRequest: HarnessMachineSignIn?
 
-  @State private var accounts: [ServerHarnessAccount] = []
+  @State private var model = HarnessAccountListModel()
+  @State private var didOpenSignInRequest = false
+  @State private var choosesSignInMethod = false
+  @State private var draftAccount: ServerHarnessAccount?
+  @State private var pollingTask: Task<Void, Never>?
   @State private var methods: [ServerHarnessAuthMethod] = []
   @State private var flow: ServerHarnessAuthFlow?
-  @State private var isWorking = false
-  @State private var errorMessage: String?
   /// The focused modal step a sign-in attempt runs in.
   @State private var loginStep: HarnessLoginStep?
 
@@ -62,6 +64,7 @@ struct HarnessAuthenticationView: View {
               Button("Done") { dismiss() }
                 .settingsActionTint(theme)
                 .keyboardShortcut(.defaultAction)
+                .disabled(model.isWorking)
             }
           }
           .navigationTitle(authenticationTitle)
@@ -71,13 +74,14 @@ struct HarnessAuthenticationView: View {
         accountsForm
       }
     }
+    .interactiveDismissDisabled(model.isWorking)
     .task { await load() }
     .onChange(of: environment.configSync.revisionsByNamespace[HarnessSharedCredentials.namespace]) { _, _ in
       if isShared { Task { await load() } }
     }
     // Each sign-in attempt is one focused task in its own sheet — the
     // accounts list never grows inline flow UI.
-    .sheet(item: $loginStep) { step in
+    .sheet(item: $loginStep, onDismiss: { Task { await cancelFlow() } }) { step in
       HarnessLoginStepSheet(
         harness: harness,
         step: step,
@@ -85,30 +89,35 @@ struct HarnessAuthenticationView: View {
         submitApiKey: { account, method, key in
           await submitApiKey(account: account, method: method, key: key)
         },
-        cancel: {
-          loginStep = nil
-          Task { await cancelFlow() }
-        }
+        cancel: { loginStep = nil }
       )
     }
     .onChange(of: environment.configSync.revisionsByNamespace["harness-shared-accounts"]) { _, _ in
       Task { await load() }
     }
     .onDisappear {
-      guard let flow else { return }
-      Task {
-        try? await client.cancelHarnessLogin(
-          harnessId: harness.id,
-          accountId: flow.accountId,
-          flowId: flow.id
-        )
+      pollingTask?.cancel()
+      Task { await cancelFlow() }
+    }
+  }
+
+  @ViewBuilder private var accountsForm: some View {
+    if choosesSignInMethod {
+      HarnessSignInMethods(methods: methods, model: model) { method in
+        Task { await beginSignIn(method: method) }
+      }
+    } else {
+      HarnessAccountsContent(harnessId: harness.id, harnessName: harness.name, model: model, retry: load) {
+        populatedAccountsForm
+      } signIn: {
+        addAccountControl("Sign In")
       }
     }
   }
 
-  private var accountsForm: some View {
+  private var populatedAccountsForm: some View {
     Form {
-      if let errorMessage {
+      if let errorMessage = model.errorMessage {
         Section {
           Label(errorMessage, systemImage: "exclamationmark.triangle")
             .foregroundStyle(.secondary)
@@ -120,21 +129,18 @@ struct HarnessAuthenticationView: View {
         {
           HarnessSharedAccountRows(source: source)
         }
-        ForEach(accounts) { account in accountRow(account) }
+        ForEach(model.accounts) { account in accountRow(account) }
       } footer: {
         if harness.auth?.supportsMultipleAccounts == true {
-          Button {
-            Task { await addAccount() }
-          } label: {
-            Label("Add Account", systemImage: "plus")
-          }
-          .font(.body)
-          .settingsActionTint(theme)
-          .disabled(isWorking)
+          addAccountControl("Add Account")
+            .font(.body)
+            .settingsActionTint(theme)
+            .disabled(model.isWorking)
         }
       }
     }
     .formStyle(.grouped)
+    .disabled(model.isWorking)
   }
 
   @ViewBuilder
@@ -208,6 +214,10 @@ struct HarnessAuthenticationView: View {
     }
   }
 
+  private func addAccountControl(_ title: String) -> some View {
+    HarnessAddAccountControl(title: title, methods: methods) { await addAccount(method: $0) }
+  }
+
   private var authenticationTitle: String {
     harness.auth?.supportsMultipleAccounts == true ? "\(harness.name) Accounts" : "\(harness.name) Setup"
   }
@@ -230,38 +240,96 @@ struct HarnessAuthenticationView: View {
 extension HarnessAuthenticationView {
   private func load() async {
     methods = supportedLoginMethods(harness.auth?.loginMethods ?? [])
-    do {
-      accounts = try await client.listHarnessAccounts(harnessId: harness.id)
-      errorMessage = nil
-    } catch { errorMessage = serverErrorMessage(error) }
+    guard loginStep == nil else { return }
+    await model.load {
+      try await client.listHarnessAccounts(harnessId: harness.id)
+        .filter { $0.id != draftAccount?.id }
+    }
+    await openRequestedSignIn()
   }
 
-  private func addAccount() async {
-    await perform {
-      _ = try await client.createHarnessAccount(harnessId: harness.id, label: nil)
-      await load()
+  private func openRequestedSignIn() async {
+    guard signInRequest != nil, !didOpenSignInRequest, model.hasLoaded, model.errorMessage == nil else { return }
+    didOpenSignInRequest = true
+    if methods.count > 1 {
+      choosesSignInMethod = true
+    } else {
+      await beginSignIn(method: methods.first)
     }
+  }
+
+  private func beginSignIn(method: ServerHarnessAuthMethod?) async {
+    if let account = model.accountForSignIn {
+      if let method { selectLoginMethod(method, for: account) } else { await login(account, methodId: nil) }
+    } else {
+      await addAccount(method: method)
+    }
+  }
+
+  private func addAccount(method: ServerHarnessAuthMethod?) async {
+    if model.accounts.isEmpty, let account = model.emptyDefaultAccount {
+      if let method { selectLoginMethod(method, for: account) } else { await login(account, methodId: nil) }
+      return
+    }
+    await model.perform("Starting sign-in…") {
+      let account: ServerHarnessAccount
+      if let draftAccount {
+        account = draftAccount
+      } else {
+        account = try await client.createHarnessAccount(harnessId: harness.id, label: nil)
+      }
+      draftAccount = account
+      if let method, method.kind == "apiKey" {
+        loginStep = .apiKey(account: account, method: method)
+      } else {
+        try await startLogin(account, methodId: method?.id)
+      }
+    }
+    if loginStep == nil { await discardDraft() }
   }
 
   private func activate(_ account: ServerHarnessAccount) async {
-    await perform {
-      accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id)
+    if await model.perform(
+      "Switching account…", accountId: account.id,
+      optimistic: { accounts in
+        accounts.map {
+          var row = $0; row.isActive = row.id == account.id; return row
+        }
+      },
+      action: {
+        model.accounts = try await client.activateHarnessAccount(harnessId: harness.id, accountId: account.id)
+      })
+    {
+      await refreshHarness()
     }
-    await refreshHarness()
   }
 
   private func logout(_ account: ServerHarnessAccount) async {
-    await perform {
-      _ = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id); await load()
+    if await model.perform(
+      "Signing out…", accountId: account.id,
+      action: {
+        let updated = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id)
+        if isShared, ["claude-code", "codex"].contains(harness.id) {
+          model.accounts.removeAll { $0.id == account.id }
+        } else if let index = model.accounts.firstIndex(where: { $0.id == account.id }) {
+          model.accounts[index] = updated
+        }
+      })
+    {
+      await load(); await refreshHarness()
     }
-    await refreshHarness()
   }
 
   private func remove(_ account: ServerHarnessAccount) async {
-    await perform {
-      try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id); await load()
+    if await model.perform(
+      "Removing account…", accountId: account.id,
+      optimistic: { $0.filter { $0.id != account.id } },
+      action: {
+        try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id)
+      })
+    {
+      await load(); await refreshHarness()
     }
-    await refreshHarness()
   }
 
   private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
@@ -288,8 +356,9 @@ extension HarnessAuthenticationView {
       )
       if next.kind == "complete" {
         self.flow = nil
-        loginStep = nil
+        draftAccount = nil
         await finishAuthentication(accountId: flow.accountId)
+        loginStep = nil
       }
       return nil
     } catch {
@@ -311,8 +380,9 @@ extension HarnessAuthenticationView {
         apiKey: key
       )
       if next.kind == "complete" {
-        loginStep = nil
+        draftAccount = nil
         await finishAuthentication(accountId: account.id)
+        loginStep = nil
       }
       return nil
     } catch {
@@ -320,70 +390,93 @@ extension HarnessAuthenticationView {
     }
   }
 
-  private func login(_ account: ServerHarnessAccount, methodId: String?, apiKey: String? = nil) async {
-    await perform {
-      let next = try await client.loginHarnessAccount(
-        harnessId: harness.id,
-        accountId: account.id,
-        methodId: methodId,
-        apiKey: apiKey
-      )
-      flow = next.kind == "complete" ? nil : next
-      loginStep = next.kind == "complete" ? nil : .flow(next)
-      if next.kind != "deviceCode",
-        let value = next.url ?? next.verificationUrl,
-        let url = URL(string: value)
-      {
-        NSWorkspace.shared.open(url)
-      }
-      if next.kind == "complete" { await finishAuthentication(accountId: account.id); return }
-      Task { await poll(accountId: account.id) }
+  private func login(_ account: ServerHarnessAccount, methodId: String?) async {
+    await model.perform("Starting sign-in…", accountId: account.id) {
+      try await startLogin(account, methodId: methodId)
     }
+  }
+
+  private func startLogin(_ account: ServerHarnessAccount, methodId: String?) async throws {
+    let next = try await client.loginHarnessAccount(
+      harnessId: harness.id, accountId: account.id, methodId: methodId, apiKey: nil)
+    flow = next.kind == "complete" ? nil : next
+    if next.kind == "complete" {
+      draftAccount = nil
+      await finishAuthentication(accountId: account.id)
+      return
+    }
+    loginStep = .flow(next)
+    if next.kind != "deviceCode", let value = next.url ?? next.verificationUrl, let url = URL(string: value) {
+      NSWorkspace.shared.open(url)
+    }
+    pollingTask?.cancel()
+    pollingTask = Task { await poll(accountId: account.id) }
   }
 
   private func poll(accountId: String) async {
     for _ in 0..<300 where !Task.isCancelled && flow != nil {
       try? await Task.sleep(for: .seconds(2))
+      guard !Task.isCancelled, flow != nil else { return }
       guard let account = try? await client.probeHarnessAccount(harnessId: harness.id, accountId: accountId)
       else { continue }
+      guard !Task.isCancelled, flow != nil else { return }
       if account.authState == "authenticated" || account.authState == "notRequired" {
         flow = nil
-        loginStep = nil
+        draftAccount = nil
         await finishAuthentication(accountId: accountId)
+        loginStep = nil
         return
       }
       if account.authState == "error" {
         // Friendly text only — `detail` carries the probe's technical
         // cause (up to a crashed CLI's stderr) and never reaches the UI.
         let message = "Couldn't verify sign-in."
+        pollingTask = nil
         await cancelFlow()
+        loginStep = nil
         await load()
-        errorMessage = message
+        model.errorMessage = message
         return
       }
     }
   }
 
   private func finishAuthentication(accountId: String) async {
+    choosesSignInMethod = false
     if let activated = try? await client.activateHarnessAccount(
       harnessId: harness.id,
       accountId: accountId
     ) {
-      accounts = activated
+      model.accounts = activated
     } else {
-      await load()
+      model.accounts = (try? await client.listHarnessAccounts(harnessId: harness.id)) ?? model.accounts
     }
     await refreshHarness()
   }
 
   private func cancelFlow() async {
-    guard let current = flow else { return }
-    flow = nil
-    try? await client.cancelHarnessLogin(
-      harnessId: harness.id,
-      accountId: current.accountId,
-      flowId: current.id
-    )
+    pollingTask?.cancel()
+    pollingTask = nil
+    guard flow != nil || draftAccount != nil else { return }
+    await model.perform("Canceling sign-in…") {
+      if let current = flow {
+        flow = nil
+        try await client.cancelHarnessLogin(
+          harnessId: harness.id, accountId: current.accountId, flowId: current.id)
+      }
+      await discardDraft()
+    }
+  }
+
+  private func discardDraft() async {
+    guard let account = draftAccount else { return }
+    do {
+      let current = try await client.probeHarnessAccount(harnessId: harness.id, accountId: account.id)
+      if current.authState == "unauthenticated" || current.authState == "checking" {
+        try await client.removeHarnessAccount(harnessId: harness.id, accountId: account.id)
+      }
+      draftAccount = nil
+    } catch { model.errorMessage = serverErrorMessage(error) }
   }
 
   private func refreshHarness() async {
@@ -405,14 +498,4 @@ extension HarnessAuthenticationView {
     return candidates.filter { $0.id != "chatgpt" }
   }
 
-  private func perform(_ operation: () async throws -> Void) async {
-    isWorking = true
-    defer { isWorking = false }
-    do { try await operation(); errorMessage = nil } catch { errorMessage = serverErrorMessage(error) }
-  }
-
-  private func copy(_ value: String) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(value, forType: .string)
-  }
 }

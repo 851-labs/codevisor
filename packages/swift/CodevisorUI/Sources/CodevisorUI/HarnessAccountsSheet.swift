@@ -1,6 +1,19 @@
 import CodevisorCore
 import SwiftUI
 
+/// Keep the selection and entry action together so the first presentation
+/// cannot capture the previous action from a separate SwiftUI state property.
+public struct HarnessAccountsPresentation<Selection>: Identifiable {
+  public let id = UUID()
+  public let selection: Selection
+  public let startsSignIn: Bool
+
+  public init(_ selection: Selection, startsSignIn: Bool = false) {
+    self.selection = selection
+    self.startsSignIn = startsSignIn
+  }
+}
+
 public struct HarnessMachineSignIn: Identifiable {
   public let id = UUID()
   public var profileId: String?
@@ -23,25 +36,29 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @Environment(\.dismiss) private var dismiss
   let harnessId: String
   let harnessName: String
+  let startsSignIn: Bool
   let editor: (String?, ServerHarness, HarnessMachineSignIn?) -> Editor
   @State private var machineSignIn: HarnessMachineSignIn?
   @State private var sharedHost: (id: String, harness: ServerHarness)?
   @State private var sharedHostError = false
+  @State private var isWorking = false
 
   private var sharesOAuth: Bool { ["claude-code", "codex", "pi", "opencode"].contains(harnessId) }
 
   public init(
-    harnessId: String, harnessName: String,
+    harnessId: String, harnessName: String, startsSignIn: Bool = false,
     @ViewBuilder editor: @escaping (String?, ServerHarness, HarnessMachineSignIn?) -> Editor
   ) {
     self.harnessId = harnessId
     self.harnessName = harnessName
+    self.startsSignIn = startsSignIn
     self.editor = editor
   }
 
   public var body: some View {
     NavigationStack {
       content
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("\(harnessName) Accounts")
         #if os(iOS)
           .navigationBarTitleDisplayMode(.inline)
@@ -53,10 +70,13 @@ public struct HarnessAccountsSheet<Editor: View>: View {
         #endif
     }
     .environment(\.harnessAccountsDismiss, { dismiss() })
+    .onPreferenceChange(HarnessAccountsWorkingPreference.self) { isWorking = $0 }
+    .interactiveDismissDisabled(isWorking)
     #if os(macOS)
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SheetFooter {
           Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+          .disabled(isWorking)
         }
       }
       .frame(
@@ -90,7 +110,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @ViewBuilder private var content: some View {
     if sharesOAuth {
       if let sharedHost {
-        editor(sharedHost.id, sharedHost.harness, nil)
+        editor(sharedHost.id, sharedHost.harness, initialSignInRequest)
           .environment(\.sharedHarnessAccounts, true)
           .environment(\.harnessMachineSignIn, nil)
       } else if sharedHostError {
@@ -102,21 +122,31 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           Button("Retry") { Task { await loadSharedHost() } }
         }
       } else {
-        ProgressView()
+        HarnessAccountsLoadingView()
       }
     } else if let source = HarnessSharedCredentials(rawValue: harnessId) {
       if source == .devin {
-        Form { HarnessSharedAccountsSection(source: source) }.formStyle(.grouped)
+        if (try? source.credentials(from: source.content(in: environment.configSync)).isEmpty) == true {
+          HarnessSignInInvitation(harnessId: harnessId, harnessName: harnessName) {
+            HarnessCredentialImportButton(source: source)
+          }
+        } else {
+          Form { HarnessSharedAccountsSection(source: source) }.formStyle(.grouped)
+        }
       } else if let harness = try? HarnessAccountsStore(environment: environment, machineId: "", isShared: true)
         .sharedHarness(id: harnessId, name: harnessName)
       {
-        editor(nil, harness, nil)
+        editor(nil, harness, initialSignInRequest)
           .environment(\.sharedHarnessAccounts, true)
           .environment(\.harnessMachineSignIn, { machineSignIn = $0 })
       }
     } else {
-      machinePicker(nil)
+      machinePicker(initialSignInRequest)
     }
+  }
+
+  private var initialSignInRequest: HarnessMachineSignIn? {
+    startsSignIn ? HarnessMachineSignIn(profileId: harnessId == "opencode" ? "default" : nil) : nil
   }
 
   private func loadSharedHost() async {

@@ -8,7 +8,7 @@ struct HarnessMachineSections: View {
 
   let model: HarnessMachineModel
   let onScan: () -> Void
-  let onAuthenticate: (ServerHarness) -> Void
+  let onAuthenticate: (ServerHarness, Bool) -> Void
   let onShowDetail: (ServerHarness) -> Void
   let onUninstall: (ServerHarness) -> Void
   let onReset: (ServerHarness) -> Void
@@ -66,134 +66,34 @@ struct HarnessMachineSections: View {
   }
 
   private func installedRow(_ harness: ServerHarness) -> some View {
-    HStack(spacing: 10) {
-      HStack(spacing: 10) {
-        HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-          .foregroundStyle(.secondary)
-          .frame(width: 20)
-        VStack(alignment: .leading, spacing: 2) {
-          HStack(spacing: 6) {
-            Text(harness.name)
-            Text(harness.settingsSource)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .help(harness.settingsSummary)
-          }
-          Text(rowSubtitle(harness))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .truncationMode(.tail)
-            .help(rowSubtitle(harness))
-        }
+    let state = HarnessRowState.machine(harness)
+    return HarnessSettingsRow(
+      name: harness.name, state: state,
+      isEnabled: Binding(
+        get: { model.harness(id: harness.id)?.isDesiredEnabled ?? harness.isDesiredEnabled },
+        set: { enabled in Task { await model.setDesiredEnabled(id: harness.id, enabled: enabled) } }),
+      isChanging: model.isChangingPreference(for: harness.id),
+      signIn: { onAuthenticate(harness, true) }
+    ) {
+      HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
+    } actions: {
+      if state.showsAccounts {
+        Button("Accounts…") { onAuthenticate(harness, false) }
       }
-      Spacer()
-      primaryAction(harness)
-      Toggle(
-        "Enable \(harness.name)",
-        isOn: Binding(
-          get: { model.harness(id: harness.id)?.isDesiredEnabled ?? harness.isDesiredEnabled },
-          set: { enabled in
-            Task { await model.setDesiredEnabled(id: harness.id, enabled: enabled) }
-          }
-        )
-      )
-      .labelsHidden()
-      .toggleStyle(.switch)
-      .controlSize(.small)
-      .disabled(model.isChangingPreference(for: harness.id) || harness.isLifecycleBusy)
-      rowMenu(harness)
-    }
-    .frame(maxWidth: .infinity, alignment: .trailing)
-  }
-
-  @ViewBuilder
-  private func primaryAction(_ harness: ServerHarness) -> some View {
-    if harness.lifecycle?.resolvedPhase == .uninstalling {
-      ProgressView().controlSize(.small)
-    } else if harness.requiresAuthentication {
-      // Sign-in and fleet enablement are independent controls.
-      Button("Sign In…") { onAuthenticate(harness) }
-        .settingsActionTint(theme)
-    } else if model.isStartingUpdate(for: harness.id) || harness.lifecycle?.resolvedPhase == .updating {
-      ProgressView()
-        .controlSize(.small)
-        .help("Updating \(harness.name)…")
-    } else if harness.lifecycle?.resolvedPhase == .pendingUpdate {
-      Text("Queued")
-        .foregroundStyle(.secondary)
-        .help("Updates when active \(harness.name) chats finish")
-    } else if harness.updateInfo?.updateAvailable == true {
-      Button(harness.lifecycle?.resolvedPhase == .failed ? "Try Again" : "Update") {
-        Task { await model.updateHarness(id: harness.id) }
+      if harness.updateInfo?.updateAvailable == true {
+        Button("Update") { Task { await model.updateHarness(id: harness.id) } }
+          .disabled(harness.isLifecycleBusy || model.isStartingUpdate(for: harness.id))
       }
-      .settingsActionTint(theme)
-      .help(updateHelp(harness))
-    }
-  }
-
-  /// The row's secondary actions stay behind one quiet control.
-  private func rowMenu(_ harness: ServerHarness) -> some View {
-    Menu {
       if harness.hasOverride {
-        Button("Use Global Setting") { onReset(harness) }
-          .disabled(harness.isLifecycleBusy)
-        Divider()
+        Button("Use Global Setting") { onReset(harness) }.disabled(harness.isLifecycleBusy)
       }
       if harness.source == "custom" {
         Button("Edit…") { onEditCustom(harness.id) }
       } else {
         Button("Get Info…") { onShowDetail(harness) }
       }
-      if harness.auth != nil {
-        Button("Accounts…") { onAuthenticate(harness) }
-      }
       Divider()
-      Button("Uninstall…", role: .destructive) { onUninstall(harness) }
-        .disabled(harness.isLifecycleBusy)
-    } label: {
-      Image(systemName: "ellipsis.circle")
-        .foregroundStyle(.secondary)
-    }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .help("\(harness.name) options")
-    .accessibilityLabel("\(harness.name) options")
-  }
-
-  private func rowSubtitle(_ harness: ServerHarness) -> String {
-    if harness.lifecycle?.resolvedPhase == .uninstalling { return "Uninstalling…" }
-    if harness.lifecycle?.resolvedPhase == .updating {
-      let target = harness.lifecycle?.targetVersion
-      return target.map { "Updating to \($0)…" } ?? "Updating…"
-    }
-    if harness.lifecycle?.resolvedPhase == .failed {
-      let reason = harness.lifecycle?.error?
-        .split(whereSeparator: \.isNewline).first.map(String.init)
-      return reason.map { "\($0)" } ?? "Operation failed"
-    }
-    return authStatus(harness)
-  }
-
-  private func updateHelp(_ harness: ServerHarness) -> String {
-    guard let update = harness.updateInfo, let latest = update.latestVersion else {
-      return "Update \(harness.name)"
-    }
-    let installed = update.installedVersion.map { "\($0) → " } ?? ""
-    return "Update \(harness.name) (\(installed)\(latest))"
-  }
-
-  private func authStatus(_ harness: ServerHarness) -> String {
-    guard let auth = harness.auth else { return "Sign-in status unavailable" }
-    let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
-    switch auth.resolvedState {
-    case .authenticated: return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
-    case .notRequired: return "No sign-in required"
-    case .checking: return "Checking sign-in…"
-    case .expired: return "Sign-in expired"
-    case .error: return "Something went wrong starting the CLI"
-    case .unauthenticated, .unavailable, .unknown: return "Not signed in"
+      Button("Uninstall…", role: .destructive) { onUninstall(harness) }.disabled(harness.isLifecycleBusy)
     }
   }
 

@@ -108,6 +108,7 @@ struct HarnessLoginStepSheet: View {
     Group {
       Button("Cancel", role: .cancel) { cancel() }
         .keyboardShortcut(.cancelAction)
+        .disabled(isSubmitting)
       if needsSubmit {
         Button(isSubmitting ? "Verifying…" : "Continue") { submit() }
           .keyboardShortcut(.defaultAction)

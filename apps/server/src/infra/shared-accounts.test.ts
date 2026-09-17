@@ -1,10 +1,96 @@
 import { Effect } from "effect"
 import { makeSharedAccounts } from "./shared-accounts.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { sharedOAuthIdentity, sharedApiKey } from "@codevisor/harness-manager"
+import {
+  makeHarnessAuthManager,
+  sharedOAuthIdentity,
+  sharedApiKey
+} from "@codevisor/harness-manager"
+import type { AgentRuntimeService } from "@codevisor/agent-runtime"
+import type { TerminalManagerService } from "@codevisor/terminal"
 import { fleet, native } from "./shared-accounts-test-support.js"
 afterEach(() => vi.useRealTimers())
 describe("automatic shared accounts", () => {
+  it("hides pending sign-in profiles and imported aliases from cached catalog accounts", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(100_000)
+    const a = await fleet().machine("a", native("alice"))
+    await Effect.runPromise(
+      a.db.saveHarnessAccount({
+        id: "native-default",
+        harnessId: "codex",
+        profileKind: "default",
+        label: "Existing Codex account",
+        authState: "authenticated",
+        canLogin: true,
+        canLogout: true
+      })
+    )
+    await a.shared.reconcile()
+    const id = sharedOAuthIdentity(native("alice"))
+    const pending = await a.shared.prepareLogin(id)
+    expect(await Effect.runPromise(a.db.getHarnessAccount(pending))).toBeDefined()
+    expect(await Effect.runPromise(a.db.getHarnessAccount("native-default"))).toBeDefined()
+    const token = vi.spyOn(a.vault, "token")
+    expect((await a.shared.storedAccounts("codex"))?.map((account) => account.id)).toEqual([id])
+    expect(await a.shared.storedAccounts("cursor")).toBeUndefined()
+    expect(token).not.toHaveBeenCalled()
+  })
+
+  it("keeps catalog accounts aligned with the account sheet without credential probes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(100_000)
+    const f = fleet(),
+      a = await f.machine("a", native("alice"))
+    await a.shared.reconcile()
+    const id = sharedOAuthIdentity(native("alice"))
+    await a.shared.logout(id, true)
+    expect(await Effect.runPromise(a.db.getHarnessAccount(id))).toBeDefined()
+    await Effect.runPromise(
+      a.db.saveHarnessAccount({
+        id: "native-default",
+        harnessId: "codex",
+        profileKind: "default",
+        label: "Existing Codex account",
+        authState: "unauthenticated",
+        canLogin: true,
+        canLogout: false
+      })
+    )
+    const manager = makeHarnessAuthManager({
+      db: a.db,
+      dataDir: a.dataDir,
+      agents: {} as AgentRuntimeService,
+      terminal: {} as TerminalManagerService,
+      sharedAccounts: () => a.shared,
+      resolveEnv: async () => ({ HOME: a.dataDir })
+    })
+    const token = vi.spyOn(a.vault, "token")
+    const decorate = () =>
+      manager.decorateHarnessesFromStoredState([
+        {
+          id: "codex",
+          name: "Codex",
+          symbolName: "terminal",
+          source: "registry",
+          launchKind: "executable",
+          enabled: true,
+          readiness: { state: "ready" }
+        }
+      ])
+    const [empty] = await decorate()
+    expect(empty?.auth?.accounts.some((account) => account.id === id)).toBe(false)
+    expect(empty?.auth?.state).toBe("unauthenticated")
+    const saved = await a.shared.create("codex", "Work")
+    const [configured] = await decorate()
+    expect(configured?.auth?.accounts.map((account) => account.id)).toContain(saved.id)
+    expect(token).not.toHaveBeenCalled()
+    token.mockRestore()
+    expect(new Set((await a.shared.accounts("codex"))?.map((account) => account.id))).toEqual(
+      new Set(configured?.auth?.accounts.map((account) => account.id))
+    )
+  })
+
   it("imports the first login and adds a different joining login without changing the shared default", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(100_000)

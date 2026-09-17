@@ -12,7 +12,7 @@ struct HarnessMachinePane: View {
   var opensPendingAccountRequest = false
 
   @State private var model = HarnessMachineModel()
-  @State private var authenticationHarness: ServerHarness?
+  @State private var authenticationHarness: HarnessAccountsPresentation<ServerHarness>?
   @State private var catalogReadyServerId: String?
   @State private var detailHarness: ServerHarness?
   @State private var showsCustomEditor = false
@@ -30,7 +30,9 @@ struct HarnessMachinePane: View {
         onScan: {
           Task { presentAuthentication(await model.scan()) }
         },
-        onAuthenticate: { authenticationHarness = $0 },
+        onAuthenticate: { harness, signIn in
+          authenticationHarness = .init(harness, startsSignIn: signIn)
+        },
         onShowDetail: { detailHarness = $0 },
         onUninstall: { uninstallHarness = $0 },
         onReset: { harness in
@@ -49,7 +51,7 @@ struct HarnessMachinePane: View {
     .task(id: serverId) {
       catalogReadyServerId = nil
       model.configure(for: serverId, dependencies: modelDependencies)
-      let automaticCandidate = await model.scan()
+      let automaticCandidate = await model.refresh()
       catalogReadyServerId = model.isScanning ? nil : serverId
       if !presentRequestedAccountManager() {
         presentAuthentication(automaticCandidate)
@@ -69,8 +71,12 @@ struct HarnessMachinePane: View {
       _, _ in
       presentRequestedAccountManager()
     }
-    .sheet(item: $authenticationHarness) { harness in
-      HarnessAuthenticationView(harness: harness) { model.replaceHarness($0) }
+    .sheet(item: $authenticationHarness) { presentation in
+      let harness = presentation.selection
+      HarnessAuthenticationView(
+        harness: harness, onChange: { model.replaceHarness($0) },
+        signInRequest: presentation.startsSignIn
+          ? HarnessMachineSignIn(profileId: harness.id == "opencode" ? "default" : nil) : nil)
     }
     .sheet(item: $detailHarness) { harness in
       HarnessDetailSheet(harness: harness)
@@ -150,7 +156,7 @@ struct HarnessMachinePane: View {
 
   private func presentAuthentication(_ harness: ServerHarness?) {
     guard authenticationHarness == nil, let harness else { return }
-    authenticationHarness = harness
+    authenticationHarness = .init(harness, startsSignIn: true)
   }
 
   /// Presents the deep-linked account manager once this machine's catalog is
@@ -170,7 +176,7 @@ struct HarnessMachinePane: View {
       return false
     }
     settingsRouter.pendingHarnessAccountRequest = nil
-    presentAuthentication(harness)
+    authenticationHarness = .init(harness, startsSignIn: false)
     return true
   }
 }

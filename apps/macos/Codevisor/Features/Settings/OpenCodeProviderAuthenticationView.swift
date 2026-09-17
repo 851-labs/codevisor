@@ -190,10 +190,12 @@ struct OpenCodeProviderAuthenticationView: View {
       VStack(spacing: 0) {
         Group {
           if isProviderContentLoading {
-            ProgressView()
-              .controlSize(.small)
-              .accessibilityLabel("Loading providers")
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HarnessAccountsLoadingView()
+          } else if configuredProviders.isEmpty && !hasInheritedProviders {
+            HarnessSignInInvitation(harnessId: harness.id, harnessName: harness.name) {
+              Button("Sign In", systemImage: "plus") { prepareProviderSignIn() }
+                .disabled(providers.isEmpty || isWorking)
+            }
           } else {
             List(selection: $selectedProviderId) {
               Section("Providers") {
@@ -216,32 +218,34 @@ struct OpenCodeProviderAuthenticationView: View {
           }
         }
 
-        Divider()
+        if !configuredProviders.isEmpty || hasInheritedProviders {
+          Divider()
 
-        HStack(spacing: 10) {
-          Button {
-            prepareProviderSignIn()
-          } label: {
-            Image(systemName: "plus")
+          HStack(spacing: 10) {
+            Button {
+              prepareProviderSignIn()
+            } label: {
+              Image(systemName: "plus")
+            }
+            .disabled(isProviderContentLoading || providers.isEmpty || isWorking)
+            .help("Add Provider")
+            .accessibilityLabel("Add Provider")
+
+            Button {
+              if let provider = selectedConfiguredProvider { Task { await remove(provider) } }
+            } label: {
+              Image(systemName: "minus")
+            }
+            .disabled(selectedConfiguredProvider == nil || isWorking)
+            .help("Remove Credential")
+            .accessibilityLabel("Remove Credential")
+
+            Spacer()
           }
-          .disabled(isProviderContentLoading || providers.isEmpty || isWorking)
-          .help("Add Provider")
-          .accessibilityLabel("Add Provider")
-
-          Button {
-            if let provider = selectedConfiguredProvider { Task { await remove(provider) } }
-          } label: {
-            Image(systemName: "minus")
-          }
-          .disabled(selectedConfiguredProvider == nil || isWorking)
-          .help("Remove Credential")
-          .accessibilityLabel("Remove Credential")
-
-          Spacer()
+          .buttonStyle(.borderless)
+          .settingsActionTint(theme)
+          .padding(10)
         }
-        .buttonStyle(.borderless)
-        .settingsActionTint(theme)
-        .padding(10)
       }
     } else {
       ContentUnavailableView("No Profile Selected", systemImage: "person.crop.circle")
@@ -288,6 +292,13 @@ struct OpenCodeProviderAuthenticationView: View {
       $0.credentialType != nil
         && (isShared || selectedAccount?.profileKind != "default" || $0.credentialType == "oauth")
     }
+  }
+
+  private var hasInheritedProviders: Bool {
+    !isShared && selectedAccount?.profileKind == "default"
+      && ((try? HarnessSharedCredentials.opencode.credentials(
+        from: HarnessSharedCredentials.opencode.content(in: environment.configSync)
+      ).isEmpty) == false)
   }
 
   var selectedProvider: ServerOpenCodeAuthProvider? {

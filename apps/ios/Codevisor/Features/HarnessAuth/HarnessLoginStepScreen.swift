@@ -47,6 +47,7 @@ struct HarnessLoginStepScreen: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel", systemImage: "xmark", role: .cancel) { cancel() }.labelStyle(.iconOnly)
+            .disabled(isSubmitting)
         }
 
         if let browserURL {

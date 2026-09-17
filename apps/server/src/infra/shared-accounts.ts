@@ -297,6 +297,19 @@ export const makeSharedAccounts = (options: {
       )
     )
   }
+  const storedAccounts = async (
+    harnessId: SharedOAuthHarness
+  ): Promise<ReadonlyArray<HarnessAccount>> => {
+    const sharedIds = new Set((await store.accounts()).map((account) => account.id))
+    const rows: HarnessAccount[] = []
+    for (const row of await run(db.listHarnessAccounts(harnessId))) {
+      if (row.id.startsWith("shared-")) {
+        if (!sharedIds.has(row.id)) continue
+      } else if (pending.has(row.id) || (await local(`alias:${row.id}`))) continue
+      rows.push(publicAccount(row))
+    }
+    return rows
+  }
   const accounts = async (
     harnessId: string,
     shared = false
@@ -317,10 +330,8 @@ export const makeSharedAccounts = (options: {
       if (value) rows.push({ ...value, isActive: account.id === selected, selectionScope })
     }
     if (!shared)
-      for (const row of await run(db.listHarnessAccounts(harnessId))) {
-        if (row.id.startsWith("shared-") || pending.has(row.id) || (await local(`alias:${row.id}`)))
-          continue
-        rows.push(publicAccount(row))
+      for (const row of await storedAccounts(harnessId)) {
+        if (!row.id.startsWith("shared-")) rows.push(row)
       }
     return rows
   }
@@ -354,6 +365,8 @@ export const makeSharedAccounts = (options: {
     reconcile,
     probe,
     accounts,
+    storedAccounts: async (harnessId: string) =>
+      sharedHarness(harnessId) ? storedAccounts(harnessId) : undefined,
     activate,
     gateway,
     subscribe: store.subscribe,

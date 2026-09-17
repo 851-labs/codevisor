@@ -46,11 +46,9 @@ extension OpenCodeProviderAuthenticationView {
     }
     if selectedAccountId == accountId {
       isLoadingProviders = false
-      if !didOpenRequestedProvider, let providerId = signInRequest?.providerId,
-        let provider = providers.first(where: { $0.id == providerId })
-      {
+      if !didOpenRequestedProvider, let signInRequest, errorMessage == nil {
         didOpenRequestedProvider = true
-        prepareProviderSignIn(provider)
+        prepareProviderSignIn(providers.first { $0.id == signInRequest.providerId })
       }
     }
   }

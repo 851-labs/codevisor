@@ -7,11 +7,16 @@ struct HarnessesSettingsView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   @State private var globalModel = HarnessGlobalModel()
-  @State private var accountsSetting: HarnessFleet.Setting?
+  @State private var accountsSetting: HarnessAccountsPresentation<HarnessFleet.Setting>?
 
   var body: some View {
     Form {
-      HarnessGlobalSection(model: globalModel, onAccounts: { accountsSetting = $0 }) { id, symbol in
+      HarnessGlobalSection(
+        model: globalModel,
+        onAccounts: { setting, signIn in
+          accountsSetting = .init(setting, startsSignIn: signIn)
+        }
+      ) { id, symbol in
         HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
       Section("Machines") {
@@ -27,8 +32,10 @@ struct HarnessesSettingsView: View {
       }
     }
     .settingsPaneFormStyle(theme)
-    .sheet(item: $accountsSetting) { setting in
-      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name) { machineId, harness, request in
+    .sheet(item: $accountsSetting) { presentation in
+      let setting = presentation.selection
+      HarnessAccountsSheet(harnessId: setting.id, harnessName: setting.name, startsSignIn: presentation.startsSignIn) {
+        machineId, harness, request in
         HarnessAuthenticationView(
           harness: harness, onChange: { _ in },
           showsHeader: false,

@@ -26,6 +26,7 @@ public final class ConfigSync {
   /// Bumped whenever a namespace's replica actually changes — the
   /// invalidation observers watch instead of diffing entries.
   public private(set) var revisionsByNamespace: [String: UInt64] = [:]
+  public private(set) var receivedNamespaces: Set<String> = []
   /// Invoked after a namespace's replica actually changed (local write or
   /// adopted remote entries) — consumers apply the new values in place.
   @ObservationIgnored public var onNamespaceChanged: ((String) -> Void)?
@@ -58,6 +59,11 @@ public final class ConfigSync {
 
   public func entries(namespace: String) -> [ServerSyncEntry] {
     loadNamespace(namespace)
+  }
+
+  /// An empty replica is meaningful only after it has been received or saved.
+  public func hasSnapshot(namespace: String) -> Bool {
+    receivedNamespaces.contains(namespace) || store.loadData(forKey: "configSync.replica.\(namespace)") != nil
   }
 
   /// The live value for a key; nil when absent or tombstoned.
@@ -135,6 +141,8 @@ public final class ConfigSync {
         )
       else { continue }
       apply(namespace: namespace, incoming: document.entries)
+      receivedNamespaces.insert(namespace)
+      persistNamespace(namespace)
     }
   }
 

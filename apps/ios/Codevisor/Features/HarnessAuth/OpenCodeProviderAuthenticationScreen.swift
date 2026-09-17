@@ -99,7 +99,8 @@ struct OpenCodeProviderAuthenticationScreen: View {
         OpenCodeProfileScreen(
           serverId: serverId, harness: harness, initialAccount: account,
           isShared: isShared, machineSignIn: machineSignIn,
-          initialProviderId: signInRequest?.providerId, onChange: { Task { await catalogChanged() } }
+          initialProviderId: signInRequest?.providerId, startsSignIn: true,
+          onChange: { Task { await catalogChanged() } }
         )
         .environment(\.sharedHarnessAccounts, isShared)
         .environment(\.harnessMachineSignIn, machineSignIn)
@@ -265,6 +266,7 @@ private struct OpenCodeProfileScreen: View {
   @State private var account: ServerHarnessAccount
   let onChange: () -> Void
   let initialProviderId: String?
+  let startsSignIn: Bool
   @State private var pendingMachineSignIn: HarnessMachineSignIn?
   @State private var didOpenRequestedProvider = false
 
@@ -280,7 +282,7 @@ private struct OpenCodeProfileScreen: View {
     initialAccount: ServerHarnessAccount,
     isShared: Bool,
     machineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?,
-    initialProviderId: String? = nil,
+    initialProviderId: String? = nil, startsSignIn: Bool = false,
     onChange: @escaping () -> Void
   ) {
     self.serverId = serverId
@@ -289,6 +291,7 @@ private struct OpenCodeProfileScreen: View {
     self.harness = harness
     _account = State(initialValue: initialAccount)
     self.initialProviderId = initialProviderId
+    self.startsSignIn = startsSignIn
     self.onChange = onChange
   }
 
@@ -303,56 +306,35 @@ private struct OpenCodeProfileScreen: View {
   }
 
   var body: some View {
-    List {
-      if let errorMessage {
-        Section {
-          Label(errorMessage, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(.secondary)
+    Group {
+      if isLoading && providers.isEmpty {
+        HarnessAccountsLoadingView()
+      } else if providers.isEmpty, let errorMessage {
+        ContentUnavailableView {
+          Label("Couldn't Load Accounts", systemImage: "exclamationmark.triangle")
+        } description: {
+          Text(errorMessage)
+        } actions: {
+          Button("Retry") { Task { await load() } }
         }
-      }
-
-      Section("Providers") {
-        if !isShared, account.profileKind == "default" {
-          HarnessSharedAccountRows(source: .opencode, excludingProviderIds: Set(configuredProviders.map(\.id)))
-        }
-        if isLoading, providers.isEmpty {
-          HStack {
-            Spacer(); ProgressView(); Spacer()
+      } else if configuredProviders.isEmpty && !hasInheritedProviders {
+        HarnessSignInInvitation(harnessId: harness.id, harnessName: harness.name, errorMessage: errorMessage) {
+          Button("Sign In", systemImage: "plus") {
+            setupProvider = OpenCodeProviderSetupRequest(providerId: nil)
           }
+          .disabled(isLoading || providers.isEmpty || isWorking)
         }
-        ForEach(configuredProviders) { provider in
-          Button {
-            setupProvider = OpenCodeProviderSetupRequest(providerId: provider.id)
-          } label: {
-            HStack(spacing: 10) {
-              Image(systemName: "key.fill")
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(provider.name).foregroundStyle(Color.primary)
-                Text(credentialDescription(provider.credentialType))
-                  .font(.footnote)
-                  .foregroundStyle(.secondary)
-              }
-              Spacer()
-              Image(systemName: "chevron.forward")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-            }
-          }
-          .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Remove", systemImage: "trash", role: .destructive) { Task { await remove(provider) } }.labelStyle(
-              .iconOnly)
-          }
-        }
-
+      } else {
+        providerList
       }
     }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button("Add Provider", systemImage: "plus") {
-          setupProvider = OpenCodeProviderSetupRequest(providerId: nil)
-        }.labelStyle(.iconOnly).disabled(isLoading || providers.isEmpty || isWorking)
+        if !configuredProviders.isEmpty || hasInheritedProviders {
+          Button("Add Provider", systemImage: "plus") {
+            setupProvider = OpenCodeProviderSetupRequest(providerId: nil)
+          }.labelStyle(.iconOnly).disabled(isLoading || providers.isEmpty || isWorking)
+        }
       }
       if !account.isActive {
         ToolbarItem(placement: .topBarTrailing) {
@@ -403,6 +385,56 @@ private struct OpenCodeProfileScreen: View {
     }
   }
 
+  private var hasInheritedProviders: Bool {
+    !isShared && account.profileKind == "default"
+      && ((try? HarnessSharedCredentials.opencode.credentials(
+        from: HarnessSharedCredentials.opencode.content(in: environment.configSync)
+      ).isEmpty) == false)
+  }
+
+  private var providerList: some View {
+    List {
+      if let errorMessage {
+        Section {
+          Label(errorMessage, systemImage: "exclamationmark.triangle")
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      Section("Providers") {
+        if !isShared, account.profileKind == "default" {
+          HarnessSharedAccountRows(source: .opencode, excludingProviderIds: Set(configuredProviders.map(\.id)))
+        }
+        ForEach(configuredProviders) { provider in
+          Button {
+            setupProvider = OpenCodeProviderSetupRequest(providerId: provider.id)
+          } label: {
+            HStack(spacing: 10) {
+              Image(systemName: "key.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(provider.name).foregroundStyle(Color.primary)
+                Text(credentialDescription(provider.credentialType))
+                  .font(.footnote)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              Image(systemName: "chevron.forward")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            }
+          }
+          .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Remove", systemImage: "trash", role: .destructive) { Task { await remove(provider) } }.labelStyle(
+              .iconOnly)
+          }
+        }
+
+      }
+    }
+  }
+
   private var profileName: String {
     account.profileKind == "default" ? "Default Profile" : account.label
   }
@@ -423,9 +455,7 @@ private struct OpenCodeProfileScreen: View {
       errorMessage = serverErrorMessage(error)
     }
     isLoading = false
-    if !didOpenRequestedProvider, let initialProviderId,
-      providers.contains(where: { $0.id == initialProviderId })
-    {
+    if !didOpenRequestedProvider, (startsSignIn || initialProviderId != nil), errorMessage == nil {
       didOpenRequestedProvider = true
       setupProvider = OpenCodeProviderSetupRequest(providerId: initialProviderId)
     }

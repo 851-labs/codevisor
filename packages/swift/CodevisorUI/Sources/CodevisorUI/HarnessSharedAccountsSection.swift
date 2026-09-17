@@ -95,7 +95,7 @@ public struct HarnessSharedAccountsSection: View {
   }
 }
 
-private struct HarnessCredentialImportButton: View {
+struct HarnessCredentialImportButton: View {
   @Environment(AppEnvironment.self) private var environment
   let source: HarnessSharedCredentials
   @State private var isImporting = false

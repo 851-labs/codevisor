@@ -99,10 +99,13 @@ export const makeHarnessAuthDecoration = (
   }
 
   const authSnapshot = async (harnessId: string): Promise<HarnessAuth> => {
-    const accounts = (await run(config.db.listHarnessAccounts(harnessId))).map(publicAccount)
+    const storedAccounts = await config.sharedAccounts?.()?.storedAccounts?.(harnessId)
+    const accounts =
+      storedAccounts ?? (await run(config.db.listHarnessAccounts(harnessId))).map(publicAccount)
     const active = accounts.find((account) => account.isActive) ?? accounts[0]
     return {
-      state: active?.authState ?? "unavailable",
+      state:
+        active?.authState ?? (storedAccounts === undefined ? "unavailable" : "unauthenticated"),
       ...(active === undefined ? {} : { activeAccountId: active.id }),
       accounts,
       loginMethods: loginMethods(harnessId),

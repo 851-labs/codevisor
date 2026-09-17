@@ -14,7 +14,7 @@ extension OnboardingView {
       stepHeader(
         symbol: "terminal",
         title: "Choose your harnesses",
-        subtitle: "These are the ACP coding agents we found on your Mac. Turn on the ones you'd like to use."
+        subtitle: "Choose which harnesses to use on this Mac."
       )
 
       switch detection {
@@ -132,63 +132,26 @@ extension OnboardingView {
   }
 
   private func harnessRow(_ harness: ServerHarness) -> some View {
-    HStack(spacing: 12) {
-      HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
-        .frame(width: 34, height: 34)
-        .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardHoverBackground))
-        .accessibilityHidden(true)
-
-      VStack(alignment: .leading, spacing: 2) {
-        Text(harness.name)
-          .fontWeight(.medium)
-        // One line, exactly like every other harness row — an errored
-        // probe must not make this row taller than its neighbours. The
-        // full text stays reachable as a tooltip.
-        Text(authStatus(harness))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-          .help(authStatus(harness))
+    let state = HarnessRowState.machine(harness)
+    return HarnessSettingsRow(
+      name: harness.name, state: state,
+      isEnabled: Binding(
+        get: { harness.isDesiredEnabled },
+        set: { enabled in Task { await setHarness(harness, enabled: enabled) } }),
+      signIn: {
+        authenticationHarness = .init(harness, startsSignIn: true)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-
-      if harness.requiresAuthentication {
-        Button("Sign In…") { authenticationHarness = harness }
-      } else {
-        if harness.auth?.supportsMultipleAccounts == true {
-          Button("Accounts…") { authenticationHarness = harness }
+    ) {
+      HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
+    } actions: {
+      if state.showsAccounts {
+        Button("Accounts…") {
+          authenticationHarness = .init(harness, startsSignIn: false)
         }
       }
-      Toggle(
-        "Enable \(harness.name)",
-        isOn: Binding(
-          get: { harness.isDesiredEnabled },
-          set: { enabled in Task { await setHarness(harness, enabled: enabled) } }
-        )
-      )
-      .labelsHidden()
-      .toggleStyle(.switch)
-      .controlSize(.small)
+      Button("Get Info…") { detailHarness = harness }
     }
-    .padding(.vertical, 10)
-  }
-
-  private func authStatus(_ harness: ServerHarness) -> String {
-    guard let auth = harness.auth else { return "Sign-in status unavailable" }
-    let account = auth.accounts.first(where: { $0.id == auth.activeAccountId }) ?? auth.accounts.first
-    switch auth.resolvedState {
-    case .authenticated: return account?.email.map { "Signed in as \($0)" } ?? "Signed in"
-    case .notRequired: return "No sign-in required"
-    case .checking: return "Checking sign-in…"
-    case .expired: return "Sign-in expired"
-    // Deliberately plain language, and deliberately not the probe's
-    // `detail`: that carries a crashed CLI's stderr, which was rendering
-    // here as kilobytes of minified JavaScript. The technical cause is
-    // still summarized and persisted server-side for diagnosis.
-    case .error: return "Something went wrong starting the CLI"
-    case .unauthenticated, .unavailable, .unknown: return "Not signed in"
-    }
+    .padding(.vertical, 6)
   }
 
   private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
@@ -247,7 +210,7 @@ extension OnboardingView {
     // one instantly-failing shot.
     for attempt in 0..<8 {
       if let loaded = try? await environment.harnessService(for: CodevisorMachine.local.id)
-        .rescanHarnesses()
+        .allHarnesses()
       {
         harnesses = loaded
         detection = .loaded

@@ -46,6 +46,21 @@ struct ConfigSyncTests {
     await awaitObserved(predicate)
   }
 
+  @Test("An acknowledged empty snapshot stays known after relaunch")
+  func emptySnapshot() async throws {
+    let controller = try makeController(
+      fakes: ["local": SyncFakeServerClient(projects: [], sessions: [])], remotes: [])
+    let store = InMemoryStore()
+    let sync = ConfigSync(machines: controller, store: store)
+    #expect(!sync.hasSnapshot(namespace: "harness-shared-accounts"))
+    await sync.synchronize(machineId: "local", namespaces: ["harness-shared-accounts"])
+    #expect(sync.hasSnapshot(namespace: "harness-shared-accounts"))
+    #expect(!sync.hasSnapshot(namespace: "harness-credentials"))
+    let reloaded = ConfigSync(machines: controller, store: store)
+    #expect(reloaded.hasSnapshot(namespace: "harness-shared-accounts"))
+    #expect(reloaded.entries(namespace: "harness-shared-accounts").isEmpty)
+  }
+
   @Test("Writes stamp strictly increasing clocks and persist locally")
   func writesStampAndPersist() throws {
     let controller = try makeController(

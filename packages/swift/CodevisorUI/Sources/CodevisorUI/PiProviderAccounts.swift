@@ -42,36 +42,51 @@ public struct PiProviderAccounts: View {
   }
 
   public var body: some View {
-    Form {
-      if let errorMessage {
-        Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
-      }
+    Group {
       if isLoading && providers.isEmpty {
-        ProgressView().frame(maxWidth: .infinity)
+        HarnessAccountsLoadingView()
+      } else if providers.isEmpty, let errorMessage {
+        ContentUnavailableView {
+          Label("Couldn't Load Accounts", systemImage: "exclamationmark.triangle")
+        } description: {
+          Text(errorMessage)
+        } actions: {
+          Button("Retry") { Task { await load() } }
+        }
       } else if configured.isEmpty && !hasInherited {
-        ContentUnavailableView("No Providers", systemImage: "key")
+        HarnessSignInInvitation(harnessId: harness.id, harnessName: harness.name, errorMessage: errorMessage) {
+          Button("Sign In", systemImage: "plus") { setup = HarnessMachineSignIn() }
+            .disabled(isLoading)
+        }
       } else {
-        Section {
-          if !isShared { HarnessSharedAccountRows(source: .pi, excludingProviderIds: Set(configured.map(\.id))) }
-          ForEach(configured) { provider in
-            providerRow(provider)
+        Form {
+          if let errorMessage {
+            Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
           }
+          Section {
+            if !isShared { HarnessSharedAccountRows(source: .pi, excludingProviderIds: Set(configured.map(\.id))) }
+            ForEach(configured) { provider in
+              providerRow(provider)
+            }
+          }
+          #if os(macOS)
+            Section {
+            } footer: {
+              Button("Add Provider…", systemImage: "plus") { setup = HarnessMachineSignIn() }
+                .font(.body).disabled(isLoading)
+            }
+          #endif
         }
+        .formStyle(.grouped)
       }
-      #if os(macOS)
-        Section {
-        } footer: {
-          Button("Add Provider…", systemImage: "plus") { setup = HarnessMachineSignIn() }
-            .font(.body).disabled(isLoading)
-        }
-      #endif
     }
-    .formStyle(.grouped)
     #if os(iOS)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          Button("Add Provider", systemImage: "plus") { setup = HarnessMachineSignIn() }
-          .labelStyle(.iconOnly).disabled(isLoading)
+          if !configured.isEmpty || hasInherited {
+            Button("Add Provider", systemImage: "plus") { setup = HarnessMachineSignIn() }
+            .labelStyle(.iconOnly).disabled(isLoading)
+          }
         }
         HarnessAccountsCloseToolbar()
       }
