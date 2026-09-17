@@ -24,18 +24,14 @@ struct TurnItemsView: View {
     ForEach(items) { item in
       switch item {
       case let .text(entryID, markdown):
-        if let resource = turn.textStates["\(parentToolCallID ?? ""):\(entryID)"]?.resource {
-          TranscriptInlineTextView(resource: resource, preview: markdown)
-        } else {
-          StreamingMarkdownView(
-            markdown,
-            isComplete: !isTurnActive,
-            foregroundColor: theme.textPrimary,
-            streamID: streamID(for: entryID),
-            animationPresentation: animationPresentation,
-            animationEnabled: animationEnabled
-          )
-        }
+        StreamingMarkdownView(
+          markdown,
+          isComplete: !isTurnActive,
+          foregroundColor: theme.textPrimary,
+          streamID: streamID(for: entryID),
+          animationPresentation: animationPresentation,
+          animationEnabled: animationEnabled
+        )
       case let .toolGroup(group):
         ToolGroupView(
           group: group,

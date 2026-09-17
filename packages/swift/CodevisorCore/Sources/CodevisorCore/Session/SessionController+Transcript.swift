@@ -55,7 +55,7 @@ extension SessionController {
     case let .failed(message):
       projectionStatus = .failed(message)
     }
-    var input = TranscriptProjectionInput(
+    return TranscriptProjectionInput(
       settledConversation: settledConversation,
       pendingUserMessage: pendingUserMessage,
       activeItem: activeItem,
@@ -74,13 +74,6 @@ extension SessionController {
       status: projectionStatus,
       activityMessage: transcriptActivityOverride
     )
-    input.hasNewerHistory = model?.hasNewerHistory ?? false
-    return input
-  }
-  public var hasNewerHistory: Bool { model?.hasNewerHistory ?? false }
-  public var isLoadingNewerHistory: Bool { model?.isLoadingNewerHistory ?? false }
-  public func loadNewerHistory(latest: Bool = false) async -> Int {
-    await model?.loadNewerHistory(latest: latest) ?? 0
   }
   public var hasOlderHistory: Bool { model?.hasOlderHistory ?? false }
   public var isLoadingOlderHistory: Bool { model?.isLoadingOlderHistory ?? false }
@@ -255,16 +248,8 @@ extension SessionController {
   }
 
   @discardableResult
-  public func loadTranscriptDetails(_ itemId: String, previous: Bool = false) async -> Bool {
-    await model?.loadTranscriptDetails(itemId: itemId, previous: previous) ?? false
-  }
-
-  public func requestTranscriptDetailPage(_ request: TranscriptDetailPageRequest) -> Bool {
-    model?.requestTranscriptDetailPage(request) ?? false
-  }
-
-  public func isLoadingTranscriptDetails(_ itemID: String) -> Bool {
-    model?.loadingTranscriptDetailItemIds.contains(itemID) ?? false
+  public func loadTranscriptDetails(_ itemId: String) async -> Bool {
+    await model?.loadTranscriptDetails(itemId: itemId) ?? false
   }
 
   public func transcriptBodyPage(

@@ -153,24 +153,14 @@ extension TranscriptAssistantRowProjection {
     // Deferred history starts loading from the header indicator. Until
     // hydration completes there is deliberately no content row: opening
     // changes neither document geometry nor the header's line height.
-    if deferredDetailID != nil && !message.turn.hasHydratedWorkedDetails {
+    if deferredDetailID != nil {
       return true
-    }
-
-    if allowsDeferred {
-      appendDetailBoundary(message, identity: identity, previous: true, to: &rows)
     }
 
     for item in items {
       switch item {
       case let .text(entryID, markdown):
         let sourceID = "worked:\(kind.layoutComponent):\(entryID)"
-        if let resource = message.turn.textStates[":\(entryID)"]?.resource {
-          appendBodyResource(
-            resource, messageID: message.id, sourceID: sourceID, lifecycle: lifecycle,
-            membership: .init(identity: identity, role: .content), preview: markdown, to: &rows)
-          continue
-        }
         let blocks = TranscriptMarkdownParseCache.shared.parse(
           markdown, messageID: message.id, sourceID: sourceID
         )
@@ -214,27 +204,7 @@ extension TranscriptAssistantRowProjection {
         )
       }
     }
-    if allowsDeferred {
-      appendDetailBoundary(message, identity: identity, previous: false, to: &rows)
-    }
     return true
-  }
-
-  private static func appendDetailBoundary(
-    _ message: AssistantMessage,
-    identity: TranscriptWorkedSectionIdentity,
-    previous: Bool,
-    to rows: inout [TranscriptPresentationRow]
-  ) {
-    guard let itemID = message.turn.deferredDetailItemId,
-      let cursor = previous ? message.turn.detailPreviousBefore : message.turn.detailNextAfter
-    else { return }
-    rows.append(
-      .init(
-        id: .workedDetailPage(message.id, previous: previous),
-        content: .workedDetailPage(.init(itemID: itemID, cursor: cursor, previous: previous)),
-        estimatedHeight: 16, spacingAfter: 12,
-        workedSection: .init(identity: identity, role: .content)))
   }
 
   private static func appendWorkedItemRow(

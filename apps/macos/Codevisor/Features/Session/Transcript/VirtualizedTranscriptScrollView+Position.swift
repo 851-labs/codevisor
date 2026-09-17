@@ -206,8 +206,6 @@ extension VirtualizedTranscriptScrollView {
     let viewportTop = contentView.bounds.minY
     let isUserMovement = isDraggingScrollerKnob || isHandlingUserInput || isLiveScrolling
     if let lastObservedViewportTop, isUserMovement {
-      historyPrefetchPolicy.observeUserScroll(delta: viewportTop - lastObservedViewportTop)
-      detailPrefetchPolicy.observeUserScroll(delta: viewportTop - lastObservedViewportTop)
       pendingWindowScrollDelta += viewportTop - lastObservedViewportTop
       runwayMotion.observe(
         viewportTop: viewportTop,
@@ -278,26 +276,12 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func checkForHistoryPrefetch(force: Bool = false) {
-    let threshold = max(600, contentView.bounds.height * 1.5)
-    checkForDetailPrefetch(threshold: threshold)
-    if let gap = rows.firstIndex(where: { if case .historyGap = $0.content { true } else { false } }),
-      gap > 0
-    {
-      let distance = transcriptRowsOrigin + virtualLayout.frame(at: gap).minY - (contentView.bounds.maxY)
-      historyPrefetchPolicy.requestNewerIfNeeded(
-        newestKey: rows[gap - 1].layoutKey,
-        distanceFromBoundary: distance,
-        threshold: threshold,
-        followsLatest: followsLatest && !force
-      ) { [weak self] latest in
-        self?.onNearNewerHistory?(latest) == true
-      }
-      if !force, historyPrefetchPolicy.prefersNewer || followsLatest { return }
-    }
     guard hasOlderHistory, let oldestKey = rows.first?.layoutKey else { return }
+    let distanceFromTop = contentView.bounds.minY
+    let threshold = max(600, contentView.bounds.height * 1.5)
     historyPrefetchPolicy.requestIfNeeded(
       oldestKey: oldestKey,
-      distanceFromTop: contentView.bounds.minY,
+      distanceFromTop: distanceFromTop,
       threshold: threshold,
       force: force
     ) { [weak self] in

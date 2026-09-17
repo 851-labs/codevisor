@@ -5,7 +5,7 @@ extension SessionModel {
   private func apply(_ update: SessionUpdate) {
     appliedUpdateCount += 1
     if let owner = Self.persistedOwner(of: update), activeItem?.id != owner, settledIndexById[owner] == nil {
-      // A late update to an evicted turn is already persisted. Reloading that
+      // A late update to an unloaded turn is already persisted. Loading that
       // history page will show it; it must not create a new active response.
       return
     }
@@ -56,7 +56,6 @@ extension SessionModel {
         ensureAssistantTurn()
         guard case .assistant(var message) = activeItem else { return }
         TranscriptReducer.apply(update, to: &message.turn)
-        message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
         activeItem = .assistant(message)
         recordToolRoute(for: update, itemId: message.id)
       }
@@ -72,7 +71,6 @@ extension SessionModel {
         !(index == itemCount - 1 && message.turn.isGenerating)
       {
         TranscriptReducer.apply(update, to: &message.turn)
-        message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
         setItem(.assistant(message), at: index)
         recordToolRoute(for: update, itemId: message.id)
         return
@@ -89,7 +87,6 @@ extension SessionModel {
       // chunk for no state change.
       if !isSending { isSending = true }
       TranscriptReducer.apply(update, to: &message.turn)
-      message.turn.boundResidentEntries(itemId: message.id.uuidString.lowercased())
       activeItem = .assistant(message)
       recordToolRoute(for: update, itemId: message.id)
     }

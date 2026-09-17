@@ -52,7 +52,6 @@ extension VirtualizedTranscriptScrollView {
       uninstallPresentationFrameDriver()
       sessionController = newSessionController
       historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
-      detailPrefetchPolicy = TranscriptDetailPrefetchPolicy()
       deferredActivePlaceholderKey = nil
       installPresentationFrameDriver()
     }
@@ -64,7 +63,6 @@ extension VirtualizedTranscriptScrollView {
     self.onBottomStateChange = onBottomStateChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
-    self.onNearNewerHistory = callbacks.onNearNewerHistory
     // Pagination feedback describes the fetch, not row projection. Apply
     // it even when the native document is waiting for projected rows so a
     // completed request can never leave the indicator running.

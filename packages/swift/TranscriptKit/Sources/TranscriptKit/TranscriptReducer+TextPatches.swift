@@ -26,16 +26,13 @@ extension TranscriptReducer {
     var existing = ""
     if !replaces, let index, case let .text(_, text) = entries[index] { existing = text }
     let length = existing.utf16.count
-    // Overlapping snapshot and stream ranges converge without replaying text.
-    // Keep a bounded preview; the complete message has separately paged storage.
-    if patch.offset <= length, length < 24_000 {
+    // Storage snapshots and live deltas converge on the same complete text.
+    // Rendering keeps its original identity and streaming path at every length.
+    if patch.offset <= length {
       let overlap = length - patch.offset
       let incoming = patch.text as NSString
       if overlap < incoming.length {
-        let suffix = incoming.substring(from: overlap)
-        var units = Array(suffix.utf16.prefix(24_000 - length))
-        if let last = units.last, (0xD800...0xDBFF).contains(last) { units.removeLast() }
-        existing += String(decoding: units, as: UTF16.self)
+        existing += incoming.substring(from: overlap)
       }
     }
     if let index {
@@ -81,6 +78,14 @@ extension TranscriptReducer {
       }.map(\.element)
     }
     turn.entries = sorted(turn.entries)
+    if turn.planDocument != nil, turn.planRevision > 0 {
+      // The answer summary may be present before earlier work is restored.
+      // Derive the split from durable order, not the order pages were loaded.
+      turn.planBoundary =
+        turn.entries.prefix {
+          (positions[$0.id] ?? Int.max) <= turn.planRevision
+        }.count
+    }
     for parent in turn.subagents.keys {
       guard var bucket = turn.subagents[parent] else { continue }
       bucket.entries = sorted(bucket.entries)

@@ -56,7 +56,6 @@ extension VirtualizedTranscriptScrollView {
       unregisterPresentationFrameDriver()
       sessionController = newSessionController
       historyPrefetchPolicy = TranscriptHistoryPrefetchPolicy()
-      detailPrefetchPolicy = TranscriptDetailPrefetchPolicy()
       deferredActivePlaceholderKey = nil
     }
     rowContent = newRowContent
@@ -66,7 +65,6 @@ extension VirtualizedTranscriptScrollView {
     self.onBottomStateChange = onBottomStateChange
     self.onFollowStateChange = onFollowStateChange
     self.onNearTop = onNearTop
-    self.onNearNewerHistory = callbacks.onNearNewerHistory
     self.onOlderHistoryPresented = onOlderHistoryPresented
     isPreparingInitialProjection = newIsPreparingInitialProjection
     isActiveProjectionPending = newIsActiveProjectionPending

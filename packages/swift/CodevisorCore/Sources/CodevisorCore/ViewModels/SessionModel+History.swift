@@ -51,7 +51,7 @@ extension SessionModel {
     promptQueueLoadTask?.cancel()
     promptQueueLoadTask = nil
     do {
-      let page: TranscriptHistoryPage
+      var page: TranscriptHistoryPage
       if let preloaded {
         page = preloaded
       } else {
@@ -77,10 +77,29 @@ extension SessionModel {
         }
         return .loaded
       }
+      page = try await transport.completeHistoryPage(page, limit: Self.initialTranscriptPageSize)
+      if preservingContent {
+        let hydratedIDs = Set(
+          conversation.compactMap { item -> UUID? in
+            guard case let .assistant(message) = item, message.turn.hasHydratedWorkedDetails else { return nil }
+            return message.id
+          })
+        for index in page.conversation.indices {
+          guard case let .assistant(message) = page.conversation[index],
+            let itemID = message.turn.deferredDetailItemId,
+            message.turn.isGenerating || hydratedIDs.contains(message.id)
+          else { continue }
+          let details = try await transport.transcriptDetails(itemId: itemID)
+          page.conversation[index] = .assistant(
+            AssistantMessage(
+              id: message.id, turn: Self.hydratedTranscriptTurn(message, events: transport.detailEvents(from: details)))
+          )
+        }
+      }
       try Task.checkCancellation()
       // Keep already loaded older pages (and their pagination cursor).
       let prefix =
-        preservingContent && !hasNewerHistory
+        preservingContent
         ? page.conversation.first.flatMap { first in
           conversation.firstIndex(where: { $0.id == first.id }).map { Array(conversation.prefix($0)) }
         } : nil
@@ -88,10 +107,7 @@ extension SessionModel {
         olderHistoryCursor = page.nextBefore
         hasOlderHistory = page.hasMore
       }
-      transcriptSequences.merge(page.sequences) { _, new in new }
-      hasNewerHistory = false
       setConversation((prefix ?? []) + page.conversation)
-      boundHistoryWindow(keepingOldest: false)
       if let persistedUsage = page.usage {
         usage = persistedUsage
       }
@@ -233,16 +249,15 @@ extension SessionModel {
   /// deduplicated and stable ids prevent overlap if a retry races a prior load.
   @discardableResult
   public func loadOlderHistory() async -> Int {
-    guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory, !isLoadingNewerHistory,
+    guard usesPaginatedHistory, hasOlderHistory, !isLoadingOlderHistory,
       let cursor = olderHistoryCursor
     else { return 0 }
     isLoadingOlderHistory = true
     defer { isLoadingOlderHistory = false }
     do {
-      let page = try await transport.transcriptPage(
-        before: cursor,
-        limit: Self.olderTranscriptPageSize
-      )
+      let page = try await transport.completeHistoryPage(
+        transport.transcriptPage(before: cursor, limit: Self.olderTranscriptPageSize),
+        before: cursor, limit: Self.olderTranscriptPageSize)
       try Task.checkCancellation()
       let existing = Set(conversation.map(\.id))
       let unique = page.conversation
@@ -250,9 +265,7 @@ extension SessionModel {
         .filter {
           $0.hasRenderableTranscriptContent && !existing.contains($0.id)
         }
-      transcriptSequences.merge(page.sequences) { _, new in new }
       settledConversation.insert(contentsOf: unique, at: 0)
-      boundHistoryWindow(keepingOldest: true)
       rebuildSettledIndex()
       olderHistoryCursor = page.nextBefore
       hasOlderHistory = page.hasMore

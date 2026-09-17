@@ -5,8 +5,8 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("Recovery replaces a disjoint history window without hiding its gap")
-  func recoveryReplacesDisjointHistoryWindow() async {
+  @Test("Recovery preserves already loaded older history")
+  func recoveryPreservesLoadedOlderHistory() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     client.initialTranscriptPage = cancellationTranscriptPage(
@@ -17,13 +17,11 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString)
     defer { model.shutdown() }
     await model.loadHistory()
-    let old = ConversationItem.user(UserMessage(text: "Old window before an unloaded gap"))
+    let old = ConversationItem.user(UserMessage(text: "Earlier loaded message"))
     model.setConversation([old] + model.conversation)
-    model.hasNewerHistory = true
     client.initialTranscriptPage?.eventCursor = 3
     _ = await model.loadHistoryForConnectionRecovery()
-    #expect(!model.conversation.contains(old))
-    #expect(!model.hasNewerHistory)
+    #expect(model.conversation.contains(old))
   }
 
   @Test("Transient reconciliation retries preserve the stream and clear status when the snapshot succeeds")

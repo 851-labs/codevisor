@@ -144,9 +144,6 @@ extension SessionTranscriptView {
           onNearTop: {
             requestOlderHistoryLoad()
           },
-          onNearNewerHistory: { latest in
-            requestNewerHistoryLoad(latest: latest)
-          },
           onOlderHistoryPresented: { token in
             // UIViewRepresentable updates are part of SwiftUI's render
             // transaction. Publish the acknowledgement on the next turn
@@ -189,21 +186,9 @@ extension SessionTranscriptView {
   }
 
   @discardableResult
-  func requestNewerHistoryLoad(latest: Bool) -> Bool {
-    guard historyLoadTask == nil, controller.hasNewerHistory,
-      !controller.isLoadingOlderHistory, !controller.isLoadingNewerHistory
-    else { return false }
-    historyLoadTask = Task { @MainActor in
-      defer { historyLoadTask = nil }
-      await controller.loadNewerHistory(latest: latest)
-    }
-    return true
-  }
-
-  @discardableResult
   func requestOlderHistoryLoad() -> Bool {
     guard historyLoadTask == nil, controller.hasOlderHistory,
-      !controller.isLoadingOlderHistory, !controller.isLoadingNewerHistory
+      !controller.isLoadingOlderHistory
     else { return false }
     guard
       let token = olderHistoryPresentation.begin(

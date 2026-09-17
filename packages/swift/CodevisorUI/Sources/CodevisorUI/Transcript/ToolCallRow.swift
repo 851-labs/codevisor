@@ -28,7 +28,7 @@ public struct ToolCallRow: View {
   /// per-render main-thread cost.
   @State private var totalsCache = DiffTotalsCache()
 
-  private var hasDetails: Bool { call.hasPresentableDetails || call.detailResource != nil }
+  private var hasDetails: Bool { call.hasPresentableDetails }
 
   private var hasOnlyDiffContent: Bool {
     guard let content = call.content, !content.isEmpty else { return false }
@@ -81,9 +81,7 @@ public struct ToolCallRow: View {
         // Diffs carry their own card; wrapping them in the labeled
         // output card double-borders them for no benefit.
         Group {
-          if let resource = call.detailResource {
-            TranscriptBodyView(resource: resource)
-          } else if hasOnlyDiffContent {
+          if hasOnlyDiffContent {
             VStack(alignment: .leading, spacing: 8) {
               ForEach(Array((call.content ?? []).enumerated()), id: \.offset) { _, content in
                 if case let .diff(path, oldText, newText) = content {

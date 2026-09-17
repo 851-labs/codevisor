@@ -4,6 +4,23 @@ import Testing
 @testable import TranscriptKit
 
 struct TranscriptTextPatchTests {
+  @Test func restoredPlanKeepsWorkOnTheCorrectSideOfThePlan() {
+    var turn = AssistantTurn(isGenerating: false)
+    func text(_ id: String, position: Int, phase: MessagePhase) {
+      TranscriptReducer.apply(
+        .agentMessagePatch(
+          AgentMessagePatch(
+            messageId: id, text: id, offset: 0, totalLength: id.utf16.count,
+            generation: 0, stateRevision: position, phase: phase, statePosition: position)), to: &turn)
+    }
+    text("answer", position: 4, phase: .final)
+    text("planning", position: 1, phase: .commentary)
+    TranscriptReducer.apply(.planDocument(markdown: "The plan", detailResource: nil, stateRevision: 2), to: &turn)
+    text("implementation", position: 3, phase: .commentary)
+    #expect(turn.workedItemsBeforePlan == [.text(id: "acp:planning", markdown: "planning")])
+    #expect(turn.workedItemsAfterPlan == [.text(id: "acp:implementation", markdown: "implementation")])
+  }
+
   @Test func overlappingSnapshotAndLiveTextConverge() {
     let prefix = AgentMessagePatch(
       messageId: "answer", text: "hello", offset: 0,
@@ -34,7 +51,7 @@ struct TranscriptTextPatchTests {
     #expect(turn.textPhases["acp:answer"] == .final)
   }
 
-  @Test func offsetsCountUTF16AndPreviewsStayBounded() {
+  @Test func offsetsCountUTF16AndStreamingKeepsCompleteText() {
     var turn = AssistantTurn()
     for patch in [
       AgentMessagePatch(messageId: "answer", text: "😀", offset: 0, totalLength: 2, generation: 0, stateRevision: 1),
@@ -44,7 +61,7 @@ struct TranscriptTextPatchTests {
     ] { TranscriptReducer.apply(.agentMessagePatch(patch), to: &turn) }
     guard case let .text(_, text) = turn.entries.first else { Issue.record("Missing answer"); return }
     #expect(text.hasPrefix("😀a"))
-    #expect(text.utf16.count == 24_000)
+    #expect(text.utf16.count == 40_002)
   }
 
   @Test func olderToolSnapshotCannotReopenCompletedTool() throws {

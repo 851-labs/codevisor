@@ -172,16 +172,11 @@ struct AssistantTurnView: View {
         //
         // Streaming and settled responses use the same block renderer,
         // so completing a turn does not replace its text geometry.
-        if let resource = turn.textStates[":\(entryID)"]?.resource {
-          TranscriptInlineTextView(resource: resource, preview: markdown)
-        } else {
-          assistantResponse(
-            entryID: entryID,
-            markdown: markdown,
-            animationEnabled: animationEnabled
-          )
-        }
-
+        assistantResponse(
+          entryID: entryID,
+          markdown: markdown,
+          animationEnabled: animationEnabled
+        )
       }
 
       if presentation.showsResponse, finalText == nil, !turn.attachments.isEmpty {
@@ -193,16 +188,13 @@ struct AssistantTurnView: View {
       }
 
       if presentation.showsEpilogue,
-        let final = finalText, case let .text(entryID, markdown) = final
+        let final = finalText, case let .text(_, markdown) = final
       {
         if !turn.isGenerating {
           // Copies just the final answer text, not the worked/tool
           // content. Hidden until hover so the transcript stays clean.
-          MessageCopyButton(
-            text: markdown, help: "Copy response", isRevealed: isHovered,
-            resource: turn.textStates[":\(entryID)"]?.resource
-          )
-          .opacity(isHovered ? 1 : 0)
+          MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
+            .opacity(isHovered ? 1 : 0)
         }
       }
 
@@ -404,7 +396,7 @@ struct AssistantTurnView: View {
   ) -> some View {
     let expanded = isExpanded(key)
     let deferredDetailItemID =
-      allowsDeferred && turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails
+      allowsDeferred && turn.hasDeferredWorkedDetails
       ? turn.deferredDetailItemId
       : nil
     return VStack(alignment: .leading, spacing: 12) {
@@ -416,7 +408,7 @@ struct AssistantTurnView: View {
           label: sectionLabel(timer: timerLabel),
           showsChevron: false,
           expanded: expanded,
-          deferredDetailItemID: deferredDetailItemID
+          deferredDetailItemID: nil
         )
       } else {
         Button {
@@ -474,10 +466,9 @@ struct AssistantTurnView: View {
   ) -> some View {
     HStack(spacing: 6) {
       label
-      if showsChevron || deferredDetailItemID != nil {
+      if showsChevron {
         TranscriptWorkedDisclosureIndicator(
           expanded: expanded,
-          showsChevron: showsChevron,
           deferredDetailItemID: deferredDetailItemID
         )
       }

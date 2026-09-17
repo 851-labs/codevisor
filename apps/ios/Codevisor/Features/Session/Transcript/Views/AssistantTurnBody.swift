@@ -111,16 +111,11 @@ struct AssistantTurnBody: View {
           ImageGenerationActivityView(call: call)
         }
         if case let .text(entryID, markdown) = finalText {
-          if let resource = turn.textStates[":\(entryID)"]?.resource {
-            TranscriptInlineTextView(resource: resource, preview: markdown)
-          } else {
-            assistantResponse(
-              entryID: entryID,
-              markdown: markdown,
-              animationEnabled: animationEnabled
-            )
-          }
-
+          assistantResponse(
+            entryID: entryID,
+            markdown: markdown,
+            animationEnabled: animationEnabled
+          )
         }
         if finalText == nil, !turn.attachments.isEmpty {
           assistantResponse(
@@ -131,9 +126,9 @@ struct AssistantTurnBody: View {
         }
       }
       if presentation.showsEpilogue {
-        if case let .text(entryID, markdown) = finalText {
+        if case let .text(_, markdown) = finalText {
           if !isGenerating {
-            MessageCopyButton(text: markdown, help: "Copy response", resource: turn.textStates[":\(entryID)"]?.resource)
+            MessageCopyButton(text: markdown, help: "Copy response")
           }
         }
         if let activity, activity.followsResponse {
@@ -334,7 +329,7 @@ struct AssistantTurnBody: View {
     if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
       let isExpanded = isExpanded(key)
       let deferredDetailItemID =
-        allowsDeferred && turn.hasDeferredWorkedDetails && !turn.hasHydratedWorkedDetails
+        allowsDeferred && turn.hasDeferredWorkedDetails
         ? turn.deferredDetailItemId
         : nil
       VStack(alignment: .leading, spacing: 12) {
@@ -343,7 +338,7 @@ struct AssistantTurnBody: View {
             label: sectionLabel(showsTimer: showsTimer),
             showsChevron: false,
             expanded: isExpanded,
-            deferredDetailItemID: deferredDetailItemID
+            deferredDetailItemID: nil
           )
         } else {
           Button {
@@ -398,10 +393,9 @@ struct AssistantTurnBody: View {
   ) -> some View {
     HStack(spacing: 6) {
       label
-      if showsChevron || deferredDetailItemID != nil {
+      if showsChevron {
         TranscriptWorkedDisclosureIndicator(
           expanded: expanded,
-          showsChevron: showsChevron,
           deferredDetailItemID: deferredDetailItemID
         )
       }

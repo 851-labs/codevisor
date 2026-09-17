@@ -33,18 +33,14 @@ struct TranscriptItemsView: View {
         // Streaming render mode while the turn is live: commentary
         // spans stream the same way the final answer does, so they get
         // the same O(growing block) per-flush cost bound.
-        if let resource = turn.textStates["\(parentToolCallID ?? ""):\(entryID)"]?.resource {
-          TranscriptInlineTextView(resource: resource, preview: markdown)
-        } else {
-          StreamingMarkdownView(
-            markdown,
-            isComplete: !isTurnActive,
-            foregroundColor: theme.textPrimary,
-            streamID: streamID(for: entryID),
-            animationPresentation: animationPresentation,
-            animationEnabled: animationEnabled
-          )
-        }
+        StreamingMarkdownView(
+          markdown,
+          isComplete: !isTurnActive,
+          foregroundColor: theme.textPrimary,
+          streamID: streamID(for: entryID),
+          animationPresentation: animationPresentation,
+          animationEnabled: animationEnabled
+        )
       case let .toolGroup(group):
         ToolGroupView(
           group: group,

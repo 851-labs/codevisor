@@ -289,7 +289,9 @@ export const textPatchForEvent = (
   const final = payload.sessionUpdate === "assistant_message_finalized"
   const rawText = final ? String(payload.markdown ?? "") : (payloadText(payload) ?? "")
   const offset = final ? 0 : row.text_length - rawText.length
-  const text = prefix(rawText, Math.max(0, 24_000 - offset))
+  // Bound each delivery, not the lifetime of the message. Ordinary deltas
+  // continue streaming after 24K; oversized individual updates carry a resource.
+  const text = prefix(rawText, 24_000)
   return {
     ...metadata,
     sessionUpdate: "agent_message_patch",

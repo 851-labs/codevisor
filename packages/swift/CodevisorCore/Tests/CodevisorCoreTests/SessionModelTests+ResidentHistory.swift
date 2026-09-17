@@ -5,16 +5,16 @@ import ACPKit
 @testable import CodevisorCore
 
 extension SessionModelTests {
-  @Test("Forward paging stays bounded and jumping to latest uses one snapshot request")
-  func newerHistoryWindowAndLatestJump() async {
+  @Test("Loading older history retains the visible document and live work")
+  func loadedHistoryAndWorkStayResident() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString)
     defer { model.shutdown() }
-    func page(_ range: Range<Int>, hasNewer: Bool) -> ServerTranscriptPage {
-      var result = ServerTranscriptPage(
+    func page(_ range: Range<Int>) -> ServerTranscriptPage {
+      ServerTranscriptPage(
         items: range.map { sequence in
           ServerTranscriptItem(
             id: UUID().uuidString, sessionId: sessionId.uuidString, sequence: sequence,
@@ -23,28 +23,22 @@ extension SessionModelTests {
             hasDetails: false, revision: 1)
         }, nextBefore: String(range.lowerBound), hasMore: range.lowerBound > 0,
         eventCursor: 1)
-      result.hasNewer = hasNewer
-      return result
     }
-    client.initialTranscriptPage = page(0..<64, hasNewer: false)
+    client.initialTranscriptPage = page(64..<96)
     await model.loadHistory()
-    model.hasNewerHistory = true
-    client.olderTranscriptPage = page(64..<80, hasNewer: true)
-    #expect(await model.loadNewerHistory() == 16)
-    #expect(model.settledConversation.count == 64)
-    #expect(model.transcriptSequences.values.min() == 16)
-    #expect(model.transcriptSequences.values.max() == 79)
-    #expect(client.transcriptPageRequests.last?.before == "after:63")
-    #expect(model.hasNewerHistory && model.hasOlderHistory)
-
-    client.initialTranscriptPage = page(10000..<10016, hasNewer: false)
-    let beforeJump = client.transcriptPageRequests.count
-    #expect(await model.loadNewerHistory(latest: true) == 16)
-    #expect(client.transcriptPageRequests.count == beforeJump + 1)
-    #expect(client.transcriptPageRequests.last?.before == nil)
-    #expect(model.settledConversation.count == 16)
-    #expect(model.transcriptSequences.values.min() == 10000)
-    #expect(!model.hasNewerHistory && model.hasOlderHistory)
-    #expect(model.olderHistoryCursor == "10000")
+    let latest = model.conversation
+    client.olderTranscriptPage = page(0..<64)
+    #expect(await model.loadOlderHistory() == 64)
+    #expect(model.settledConversation.count == 96)
+    #expect(Array(model.conversation.suffix(32)) == latest)
+    #expect(!model.hasOlderHistory)
+    let historyIDs = model.conversation.map(\.id)
+    for index in 0..<160 {
+      model.apply(.update(.toolCall(ToolCall(toolCallId: "tool-\(index)", title: "Tool \(index)", status: .completed))))
+    }
+    guard case let .assistant(message) = model.activeItem else { Issue.record("Missing live turn"); return }
+    #expect(message.turn.toolCalls.count == 160)
+    #expect(!message.turn.hasDeferredWorkedDetails)
+    #expect(Array(model.conversation.prefix(96)).map(\.id) == historyIDs)
   }
 }

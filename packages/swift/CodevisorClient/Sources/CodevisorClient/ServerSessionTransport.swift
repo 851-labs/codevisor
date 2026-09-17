@@ -57,11 +57,6 @@ extension ServerSessionTransport {
       conversation: page.items
         .map(Self.conversationItem(from:))
         .filter(\.hasRenderableTranscriptContent),
-      nextAfter: page.nextAfter, hasNewer: page.hasNewer,
-      sequences: Dictionary(
-        page.items.compactMap { item in
-          UUID(uuidString: item.id).map { _ in (Self.conversationItem(from: item).id, item.sequence) }
-        }, uniquingKeysWith: { _, new in new }),
       nextBefore: page.nextBefore,
       hasMore: page.hasMore,
       setupPhases: page.setupActivities.map(\.phase),
@@ -75,13 +70,6 @@ extension ServerSessionTransport {
       usage: page.usage?.sessionUsage,
       updateGateHarnessName: page.updateGate?.harnessName
     )
-  }
-
-  public func transcriptDetails(
-    itemId: String,
-    after: String? = nil
-  ) async throws -> ServerTranscriptItemDetails {
-    try await client.transcriptItemDetails(id: sessionId, itemId: itemId, after: after)
   }
 
   public func transcriptBodyPage(
@@ -123,10 +111,13 @@ extension ServerSessionTransport {
       // session the server replays nothing — events emitted before the
       // subscription registers would be lost permanently.
       let upstream = client.sessionEventStream(id: sessionId, since: since)
+      let content = ServerTranscriptContent(transport: self)
       let task = Task {
         do {
           for try await event in upstream {
-            let updates = Self.sessionStreamEvents(from: event)
+            var complete = event
+            complete.payload = try await content.payload(event.payload)
+            let updates = Self.sessionStreamEvents(from: complete)
             // Even events without visible content belong to the applied cursor.
             for update in updates.isEmpty ? [.synchronization(.cursor)] : updates {
               var envelope = ServerSessionStreamEnvelope(cursor: event.id, event: update)

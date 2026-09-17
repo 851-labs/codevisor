@@ -182,12 +182,6 @@ public final class SessionModel {
   public internal(set) var persistedSetupPhases: [SessionSetupPhase] = [] {
     didSet { if persistedSetupPhases != oldValue { transcriptProjectionRevision &+= 1 } }
   }
-  public internal(set) var hasNewerHistory = false {
-    didSet { if hasNewerHistory != oldValue { transcriptProjectionRevision &+= 1 } }
-  }
-  public internal(set) var isLoadingNewerHistory = false
-  @ObservationIgnored var transcriptSequences: [UUID: Int] = [:]
-  @ObservationIgnored var residentDetailItemIds: [String] = []
   public internal(set) var hasOlderHistory = false
   public internal(set) var isLoadingOlderHistory = false
   @ObservationIgnored var olderHistoryCursor: String?
@@ -200,8 +194,6 @@ public final class SessionModel {
   /// host. Closing or virtualizing the disclosure cannot cancel useful work,
   /// and remounts simply await the same request.
   @ObservationIgnored var transcriptDetailLoadTasks: [String: Task<Bool, Never>] = [:]
-  @ObservationIgnored var transcriptDetailWindows: [String: TranscriptDetailWindow] = [:]
-  public internal(set) var loadingTranscriptDetailItemIds: Set<String> = []
   /// Constant-time routing for late/nested tool updates. Values are stable
   /// conversation ids, so prepending older pages cannot invalidate them.
   @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]

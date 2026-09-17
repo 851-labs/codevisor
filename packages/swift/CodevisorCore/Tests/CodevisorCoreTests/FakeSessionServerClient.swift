@@ -6,21 +6,6 @@ import ACPKit
 
 @testable import CodevisorCore
 
-/// A clock that returns scripted timestamps in order, repeating the last value.
-final class TimeBox: @unchecked Sendable {
-  private let values: [Date]
-  private var index = 0
-  private let lock = NSLock()
-  init(values: [Date]) { self.values = values }
-  func next() -> Date {
-    lock.withLock {
-      let value = values[min(index, values.count - 1)]
-      index += 1
-      return value
-    }
-  }
-}
-
 @Observable
 final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendable {
   private let sessionId: UUID
@@ -81,6 +66,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
   var transcriptDetailsByCursor: [String: ServerTranscriptItemDetails] = [:]
+  var transcriptDetailHandler: (@Sendable (String, String?) async throws -> ServerTranscriptItemDetails)?
+  var transcriptBodyHandler: (@Sendable (String, String, String, Int) async throws -> ServerTranscriptBodyPage)?
+  private var _transcriptBodyRequests: [Int] = []
+  var transcriptBodyRequests: [Int] { lock.withLock { _transcriptBodyRequests } }
   private var _transcriptDetailCursors: [String?] = []
   var transcriptDetailCursors: [String?] { lock.withLock { _transcriptDetailCursors } }
   /// When false, prompts are accepted without the scripted assistant echo,
@@ -332,6 +321,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
       return _transcriptDetailGate
     }
     transcriptDetailRequests.signal()
+    if let transcriptDetailHandler { return try await transcriptDetailHandler(itemId, after) }
     if let gate {
       for await _ in gate { break }
     }
@@ -339,6 +329,23 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
       throw CodevisorServerClientError.httpStatus(404, "")
     }
     return details
+  }
+
+  func finishEvents() {
+    let continuations = lock.withLock {
+      let result = _eventContinuations
+      _eventContinuations.removeAll()
+      return result
+    }
+    for continuation in continuations { continuation.finish() }
+  }
+
+  func transcriptBodyPage(
+    id: UUID, itemId: String, key: String, field: String, position: Int
+  ) async throws -> ServerTranscriptBodyPage {
+    lock.withLock { _transcriptBodyRequests.append(position) }
+    guard let transcriptBodyHandler else { throw CodevisorServerClientError.httpStatus(404, "Missing body fixture") }
+    return try await transcriptBodyHandler(itemId, key, field, position)
   }
 
   func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {

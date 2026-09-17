@@ -142,7 +142,6 @@ public struct TranscriptSurfaceCallbacks {
   public var onBottomStateChange: @MainActor (Bool) -> Void
   public var onFollowStateChange: @MainActor (Bool) -> Void
   public var onNearTop: @MainActor () -> Bool
-  public var onNearNewerHistory: @MainActor (Bool) -> Bool
   public var onOlderHistoryPresented: @MainActor (UInt64) -> Void
   public var onSendAnimationCompleted: @MainActor (UserSendAnimationRequest) -> Void
   /// Opens a Markdown link. Returns true when the link was handled (a
@@ -163,7 +162,6 @@ public struct TranscriptSurfaceCallbacks {
       onBottomStateChange: @escaping @MainActor (Bool) -> Void,
       onFollowStateChange: @escaping @MainActor (Bool) -> Void,
       onNearTop: @escaping @MainActor () -> Bool,
-      onNearNewerHistory: @escaping @MainActor (Bool) -> Bool = { _ in false },
       onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
       onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
       markdownImageLoader: MarkdownImageLoader? = nil,
@@ -179,7 +177,6 @@ public struct TranscriptSurfaceCallbacks {
       self.onBottomStateChange = onBottomStateChange
       self.onFollowStateChange = onFollowStateChange
       self.onNearTop = onNearTop
-      self.onNearNewerHistory = onNearNewerHistory
       self.onOlderHistoryPresented = onOlderHistoryPresented
       self.onSendAnimationCompleted = onSendAnimationCompleted
       self.markdownImageLoader = markdownImageLoader
@@ -195,7 +192,6 @@ public struct TranscriptSurfaceCallbacks {
       onBottomStateChange: @escaping @MainActor (Bool) -> Void,
       onFollowStateChange: @escaping @MainActor (Bool) -> Void,
       onNearTop: @escaping @MainActor () -> Bool,
-      onNearNewerHistory: @escaping @MainActor (Bool) -> Bool = { _ in false },
       onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
       onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
       markdownImageLoader: MarkdownImageLoader? = nil,
@@ -208,7 +204,6 @@ public struct TranscriptSurfaceCallbacks {
       self.onBottomStateChange = onBottomStateChange
       self.onFollowStateChange = onFollowStateChange
       self.onNearTop = onNearTop
-      self.onNearNewerHistory = onNearNewerHistory
       self.onOlderHistoryPresented = onOlderHistoryPresented
       self.onSendAnimationCompleted = onSendAnimationCompleted
       self.markdownImageLoader = markdownImageLoader

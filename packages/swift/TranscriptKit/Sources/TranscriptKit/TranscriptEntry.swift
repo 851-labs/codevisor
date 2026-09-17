@@ -107,10 +107,6 @@ public struct AssistantTurn: Sendable, Equatable {
   /// turn's bounded event set.
   public var deferredDetailItemId: String?
   public var hasDeferredWorkedDetails: Bool
-  public var detailNextAfter: String? = nil
-  public var detailPreviousBefore: String? = nil
-  public var detailPageCursor: String? = nil
-  public var detailAnswerPreview: TranscriptEntry? = nil
   public var detailRevision: Int
   /// True after deferred worked details were restored from durable history.
   /// Renderers use this provenance to settle the restored text even when the
@@ -185,17 +181,8 @@ extension AssistantTurn {
   /// live candidate render final-styled from its first chunk and demote the
   /// moment a provider proves it was narration.
   public var finalText: TranscriptEntry? {
-    let candidate = finalTextIndex.map { entries[$0] }
-    if let preview = detailAnswerPreview {
-      if case let .text(candidateID, candidateText) = candidate,
-        case let .text(previewID, previewText) = preview,
-        candidateID == previewID, candidateText.count >= previewText.count
-      {
-        return candidate
-      }
-      return preview
-    }
-    return candidate
+    guard let index = finalTextIndex else { return nil }
+    return entries[index]
   }
 
   /// True when the current final-answer candidate is provider-asserted

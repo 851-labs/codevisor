@@ -107,8 +107,6 @@ public struct TranscriptRowContentView: View {
       TranscriptSettledWorkedHeaderRow(header: header)
     case let .activeWorkedHeader(header):
       TranscriptActiveWorkedHeaderRow(controller: controller, header: header)
-    case let .workedDetailPage(request):
-      TranscriptDetailPageIndicator(request: request, controller: controller)
     case let .assistantWorkedItem(item):
       TranscriptSettledWorkedItemPresentation(item: item) {
         item, turn, turnID, isTurnActive, animationPresentation, animationEnabled in
@@ -123,8 +121,6 @@ public struct TranscriptRowContentView: View {
       leaves.assistantTurn(
         message, isWaitingOnUser, waitingOnBackgroundTask, AssistantTurnPresentation(chromeSlice: slice)
       )
-    case let .inlineText(page):
-      TranscriptInlineTextPageView(page: page, userMessage: leaves.userMessage)
     case let .markdownChunk(chunk):
       TranscriptMarkdownChunkView(chunk: chunk)
     case let .assistantAttachment(attachment):
@@ -163,8 +159,6 @@ public struct TranscriptRowContentView: View {
         .suppressedDuringStreamingTextEntrance()
     case let .error(message):
       leaves.errorRow(message, row.id)
-    case .historyGap:
-      TranscriptNewerHistoryIndicator()
     case let .bottomSpacer(height):
       Color.clear.frame(height: height)
     }
@@ -223,17 +217,5 @@ public struct TranscriptActiveItemRow: View {
     .onChange(of: goalActivity) { _, _ in
       invalidateRowMeasurement?()
     }
-  }
-}
-
-private struct TranscriptNewerHistoryIndicator: View {
-  @Environment(\.transcriptController) private var controller
-
-  var body: some View {
-    ProgressView()
-      .controlSize(.small)
-      .accessibilityLabel("Loading newer messages")
-      .opacity(controller?.isLoadingNewerHistory == true ? 1 : 0)
-      .frame(maxWidth: .infinity, minHeight: 44)
   }
 }

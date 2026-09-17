@@ -13,8 +13,7 @@ import {
   sessionGoalSnapshot,
   setChatRoute
 } from "./chat-items.js"
-import { transcriptMarkdownContext } from "./transcript-markdown-context.js"
-import { DatabaseError, attempt } from "./errors.js"
+import { attempt } from "./errors.js"
 import {
   backgroundTasksFromRaw,
   pendingQuestionFromRaw,
@@ -244,32 +243,9 @@ export const makeTranscriptService = (
         readTranscriptStatePage(sqlite, canonicalUuid(rawSessionId), itemId, after)
       ),
     getTranscriptBodyPage: (sessionId, itemId, key, field, position) =>
-      Effect.tryPromise({
-        try: async () => {
-          const id = canonicalUuid(sessionId)
-          const page = readTranscriptBodyPage(sqlite, id, itemId, key, field, position)
-          if (
-            page === undefined ||
-            field !== "text" ||
-            position === 0 ||
-            itemId.startsWith("setup:")
-          )
-            return page
-          const context = await transcriptMarkdownContext(
-            sqlite,
-            itemId,
-            key,
-            page.revision,
-            position
-          )
-          const current = readTranscriptBodyPage(sqlite, id, itemId, key, field, position)
-          if (current?.revision !== page.revision)
-            throw new Error("Transcript changed; reload this text range")
-          return { ...current, markdownPrefix: context.prefix, leadingText: context.leadingText }
-        },
-        catch: (cause) =>
-          new DatabaseError({ operation: "getTranscriptBodyPage", message: String(cause) })
-      }),
+      attempt("getTranscriptBodyPage", () =>
+        readTranscriptBodyPage(sqlite, canonicalUuid(sessionId), itemId, key, field, position)
+      ),
     appendConversationItem: (rawSessionId, role, messageId, text, isGenerating, attachments) =>
       attempt("appendConversationItem", () => {
         const sessionId = canonicalUuid(rawSessionId)

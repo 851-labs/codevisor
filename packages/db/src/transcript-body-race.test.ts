@@ -1,9 +1,7 @@
-import { expect, it, vi } from "vitest"
+import { expect, it } from "vitest"
 import { memoryDatabase, run } from "./test-support.js"
-const context = vi.hoisted(() => vi.fn())
-vi.mock("./transcript-markdown-context.js", () => ({ transcriptMarkdownContext: context }))
 
-it("rejects a body range if the answer is finalized while its markdown context is being indexed", async () => {
+it("returns an atomic body block and generation so readers can detect a replacement between pages", async () => {
   const { db, session } = await memoryDatabase()
   await run(
     db.appendEvent("session.output", session.id, {
@@ -13,15 +11,8 @@ it("rejects a body range if the answer is finalized while its markdown context i
     })
   )
   const item = (await run(db.getTranscriptPage(session.id, undefined, 1))).items[0]!
-  const started = Promise.withResolvers<void>()
-  const release = Promise.withResolvers<{ prefix: string; leadingText: string }>()
-  context.mockImplementation(() => {
-    started.resolve()
-    return release.promise
-  })
-  const reading = run(db.getTranscriptBodyPage(session.id, item.id, "message::m", "text", 1))
-  const rejected = expect(reading).rejects.toThrow("Transcript changed")
-  await started.promise
+  const first = await run(db.getTranscriptBodyPage(session.id, item.id, "message::m", "text", 0))
+  expect(first?.text).toBe("a".repeat(8192))
   await run(
     db.appendEvent("session.output", session.id, {
       sessionUpdate: "assistant_message_finalized",
@@ -29,6 +20,10 @@ it("rejects a body range if the answer is finalized while its markdown context i
       markdown: "final"
     })
   )
-  release.resolve({ prefix: "", leadingText: "" })
-  await rejected
+  const replaced = await run(db.getTranscriptBodyPage(session.id, item.id, "message::m", "text", 0))
+  expect(replaced?.text).toBe("final")
+  expect(replaced?.revision).not.toBe(first?.revision)
+  expect(
+    await run(db.getTranscriptBodyPage(session.id, item.id, "message::m", "text", 1))
+  ).toBeUndefined()
 })

@@ -8,34 +8,6 @@ import CoreGraphics
 /// a request before this policy records the oldest row as handled.
 public struct TranscriptHistoryPrefetchPolicy: Sendable {
   private var lastAcceptedOldestKey: String?
-  private var lastAcceptedNewestKey: String?
-  public private(set) var prefersNewer = false
-
-  /// Only native input changes direction. Anchor compensation after a page
-  /// arrives must not immediately fetch back the page that was just evicted.
-  public mutating func observeUserScroll(delta: CGFloat) {
-    if abs(delta) > 0.5 { prefersNewer = delta > 0 }
-  }
-
-  @discardableResult
-  public mutating func requestNewerIfNeeded(
-    newestKey: String,
-    distanceFromBoundary: CGFloat,
-    threshold: CGFloat,
-    followsLatest: Bool,
-    request: (Bool) -> Bool
-  ) -> Bool {
-    if distanceFromBoundary > threshold * 1.25 {
-      lastAcceptedNewestKey = nil
-    }
-    guard followsLatest || (prefersNewer && distanceFromBoundary <= threshold) else {
-      return false
-    }
-    let key = (followsLatest ? "latest:" : "page:") + newestKey
-    guard key != lastAcceptedNewestKey, request(followsLatest) else { return false }
-    lastAcceptedNewestKey = key
-    return true
-  }
 
   public init() {}
 

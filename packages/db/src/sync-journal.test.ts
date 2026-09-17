@@ -4,6 +4,25 @@ import { makeDatabase } from "./index.js"
 import { readSyncBatch, trimSyncJournal } from "./sync-journal.js"
 import { memoryDatabase, run, tempDatabase } from "./test-support.js"
 
+it("continues delivering text deltas after the message exceeds the snapshot preview", async () => {
+  const { db, session } = await memoryDatabase()
+  await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+  for (const text of ["a".repeat(24_000), "😀 continued", " and still streaming"]) {
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "answer",
+        content: { type: "text", text }
+      })
+    )
+  }
+  const replay = await run(db.readSyncBatch(2, session.id))
+  expect(replay.events.map((event) => event.payload)).toMatchObject([
+    { sessionUpdate: "agent_message_patch", text: "😀 continued", offset: 24_000 },
+    { sessionUpdate: "agent_message_patch", text: " and still streaming", offset: 24_012 }
+  ])
+})
+
 it("replays short gaps and resnapshots long gaps without deleting transcript content", async () => {
   const { sqlite, db, session } = await memoryDatabase()
   await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))

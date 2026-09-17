@@ -2,115 +2,56 @@ import Foundation
 import ACPKit
 
 extension SessionModel {
-  /// Reopening an active turn restores its latest work without delaying the
-  /// snapshot or live stream. No disclosure gesture is needed for a live turn.
+  /// Restore active work without coupling its lifetime to a mounted disclosure.
   func restoreActiveTranscriptDetails() {
     for item in conversation {
       guard case let .assistant(message) = item,
         message.turn.isGenerating, !message.turn.hasHydratedWorkedDetails,
-        let itemId = message.turn.deferredDetailItemId
+        let itemID = message.turn.deferredDetailItemId
       else { continue }
-      _ = startTranscriptDetailLoad(itemId: itemId, previous: false)
+      _ = startTranscriptDetailLoad(itemId: itemID)
     }
   }
 
-  public func requestTranscriptDetailPage(_ request: TranscriptDetailPageRequest) -> Bool {
-    guard transcriptDetailLoadTasks[request.itemID] == nil,
-      let location = transcriptItemLocation(request.itemID),
-      case let .assistant(message) = location.item,
-      request.cursor == (request.previous ? message.turn.detailPreviousBefore : message.turn.detailNextAfter)
-    else { return false }
-    _ = startTranscriptDetailLoad(itemId: request.itemID, previous: request.previous)
-    return true
-  }
-
-  /// Hydrates one historical assistant turn on demand. Only the bounded
-  /// turn-scoped events are reduced; opening a disclosure never touches the
-  /// rest of the session history.
+  /// Storage pages are assembled off-screen and installed once. Loaded work
+  /// stays resident for this chat, exactly like the original disclosure contract.
   @discardableResult
-  public func loadTranscriptDetails(itemId: String, previous: Bool = false) async -> Bool {
-    if !previous && restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
-    return await startTranscriptDetailLoad(itemId: itemId, previous: previous).value
+  public func loadTranscriptDetails(itemId: String) async -> Bool {
+    if restoreTranscriptDetailsIfCached(itemId: itemId) { return true }
+    return await startTranscriptDetailLoad(itemId: itemId).value
   }
 
-  private func startTranscriptDetailLoad(itemId: String, previous: Bool) -> Task<Bool, Never> {
-    if let task = transcriptDetailLoadTasks[itemId] {
-      return task
-    }
-    loadingTranscriptDetailItemIds.insert(itemId)
+  private func startTranscriptDetailLoad(itemId: String) -> Task<Bool, Never> {
+    if let task = transcriptDetailLoadTasks[itemId] { return task }
     let task = Task { @MainActor [weak self] in
       guard let self else { return false }
-      defer {
-        self.transcriptDetailLoadTasks.removeValue(forKey: itemId)
-        self.loadingTranscriptDetailItemIds.remove(itemId)
+      defer { self.transcriptDetailLoadTasks.removeValue(forKey: itemId) }
+      do {
+        let details = try await self.transport.transcriptDetails(itemId: itemId)
+        try Task.checkCancellation()
+        guard let location = self.transcriptItemLocation(itemId),
+          case let .assistant(original) = location.item
+        else { return false }
+        // Streamed revisions may have advanced while storage was loading.
+        // The reducer merges snapshots by stable identity and revision.
+        var turn = Self.hydratedTranscriptTurn(original, events: self.transport.detailEvents(from: details))
+        turn.detailRevision = max(turn.detailRevision, details.revision)
+        let hydrated = ConversationItem.assistant(AssistantMessage(id: original.id, turn: turn))
+        if !turn.isGenerating {
+          self.transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(revision: details.revision, turn: turn)
+        }
+        self.installTranscriptDetails(hydrated, at: location.storage)
+        return true
+      } catch {
+        if !isTaskCancellation(error) { self.errorMessage = serverErrorMessage(error) }
+        return false
       }
-      return await self.fetchTranscriptDetails(itemId: itemId, previous: previous)
     }
     transcriptDetailLoadTasks[itemId] = task
     return task
   }
 
-  private func fetchTranscriptDetails(itemId: String, previous: Bool) async -> Bool {
-    guard let location = transcriptItemLocation(itemId), case let .assistant(message) = location.item else {
-      return false
-    }
-    let initial = !message.turn.hasHydratedWorkedDetails
-    let after =
-      initial && message.turn.isGenerating
-      ? "latest" : (previous ? message.turn.detailPreviousBefore : message.turn.detailNextAfter)
-    do {
-      let page = try await transport.transcriptDetails(itemId: itemId, after: after)
-      try Task.checkCancellation()
-      guard let location = transcriptItemLocation(itemId), case let .assistant(original) = location.item else {
-        return false
-      }
-      var window = initial ? TranscriptDetailWindow() : (transcriptDetailWindows[itemId] ?? TranscriptDetailWindow())
-      let resident = window.install(page, previous: previous)
-      transcriptDetailWindows[itemId] = window
-      var base = original
-      // Adjacent pages overlap in memory so native scrolling retains its anchor.
-      // Live updates newer than these snapshots must survive their installation.
-      base.turn.detailAnswerPreview = original.turn.detailAnswerPreview ?? original.turn.finalText
-      base.turn.entries = original.turn.entries.filter {
-        original.turn.revision(of: $0, parent: nil) > resident.eventCursor
-      }
-      base.turn.subagents = original.turn.subagents.reduce(into: [:]) { result, pair in
-        let (parent, bucket) = pair
-        var kept = bucket
-        kept.entries = bucket.entries.filter { entry in
-          original.turn.revision(of: entry, parent: parent) > resident.eventCursor
-        }
-        if !kept.entries.isEmpty { result[parent] = kept }
-      }
-      var turn = Self.hydratedTranscriptTurn(base, events: transport.detailEvents(from: resident))
-      turn.detailAnswerPreview = original.turn.detailAnswerPreview ?? original.turn.finalText
-      if case let .text(id, _) = turn.detailAnswerPreview, let phase = original.turn.textPhases[id] {
-        turn.textPhases[id] = phase
-      }
-      turn.detailNextAfter = resident.nextAfter
-      turn.detailPreviousBefore = resident.previousBefore
-      turn.detailPageCursor = after
-      turn.hasDeferredWorkedDetails = resident.nextAfter != nil || resident.previousBefore != nil
-      turn.deferredDetailItemId = itemId
-      turn.detailRevision = page.revision
-      turn.pruneEntryMetadata()
-      let hydrated = ConversationItem.assistant(AssistantMessage(id: original.id, turn: turn))
-      if page.nextAfter == nil && page.previousBefore == nil && !turn.isGenerating {
-        transcriptDetailsCache[itemId] = TranscriptDetailsCacheEntry(revision: page.revision, turn: turn)
-        if transcriptDetailsCache.count > 8, let oldest = transcriptDetailsCache.keys.first(where: { $0 != itemId }) {
-          transcriptDetailsCache.removeValue(forKey: oldest)
-        }
-      }
-      installTranscriptDetails(hydrated, at: location.storage)
-      retainDetailWindow(itemId: itemId)
-      return true
-    } catch {
-      if !isTaskCancellation(error) { errorMessage = serverErrorMessage(error) }
-      return false
-    }
-  }
-
-  private static func hydratedTranscriptTurn(
+  static func hydratedTranscriptTurn(
     _ originalMessage: AssistantMessage,
     events: [ServerSessionStreamEvent]
   ) -> AssistantTurn {
@@ -170,7 +111,6 @@ extension SessionModel {
     // cache entry proves that work already completed successfully.
     guard let location = transcriptItemLocation(itemId) else { return true }
     guard case let .assistant(originalMessage) = location.item,
-      !originalMessage.turn.hasDeferredWorkedDetails,
       cached.revision == originalMessage.turn.detailRevision
     else { return false }
     let hydrated = ConversationItem.assistant(
