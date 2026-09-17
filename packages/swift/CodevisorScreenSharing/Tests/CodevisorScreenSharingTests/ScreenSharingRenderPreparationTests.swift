@@ -111,7 +111,7 @@ struct ScreenSharingRenderPreparationTests {
     @MainActor final class Counter { var value = 0 }
     static let size = CGSize(width: 1920, height: 1080)
     let geometry = ScreenSharingRenderGeometry(
-      fitToWindow: false, clearColor: SIMD4(0.1, 0.2, 0.3, 1), drawableSize: size)
+      clearColor: SIMD4(0.1, 0.2, 0.3, 1), drawableSize: size)
     init() {
       coordinator = ScreenSharingRenderCoordinator(
         mailbox: mailbox, metrics: metrics, renderOnArrival: true, redrawsOnDemand: true, hop: queue.hop)
@@ -123,7 +123,7 @@ struct ScreenSharingRenderPreparationTests {
     @discardableResult func drawRequested(size: CGSize = size) -> Bool {
       coordinator.prepare(
         with: preparer,
-        geometry: .init(fitToWindow: geometry.fitToWindow, clearColor: geometry.clearColor, drawableSize: size))
+        geometry: .init(clearColor: geometry.clearColor, drawableSize: size))
     }
     /// A prepared result: the submission plus the retained frame (as the worker's TextureFrame would be).
     func prepared(_ submission: ControlledSubmission) -> (ScreenSharingVideoFrame) -> ScreenSharingPreparedSubmission? {

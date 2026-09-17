@@ -1,14 +1,12 @@
 import Foundation
 
-/// Shared presentation preferences. Session credentials and SDP never belong here.
+/// The pane preferences shared through the registry. Session credentials and SDP never belong here.
 public struct ScreenSharingPanePreferences: Codable, Equatable, Sendable {
   public var schemaVersion: Int
   public var preferredDisplayId: String?
-  public var fitToWindow: Bool
 
-  public init(preferredDisplayId: String? = nil, fitToWindow: Bool = true) {
+  public init(preferredDisplayId: String? = nil) {
     schemaVersion = 1
     self.preferredDisplayId = preferredDisplayId
-    self.fitToWindow = fitToWindow
   }
 }

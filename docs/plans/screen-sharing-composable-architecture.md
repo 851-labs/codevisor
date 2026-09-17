@@ -108,7 +108,6 @@ public struct ScreenSharingEndpointClient: Sendable {          // `liveValue` re
   public var controlEvents: @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID) async -> AsyncStream<ScreenSharingControlEvent>
   public var endInput: @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID) async -> Void
   public var sendControl: @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ message: ScreenSharingControlMessage) async -> Bool
-  public var setFitToWindow: @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ fit: Bool) async -> Void
 }
 ```
 
@@ -122,7 +121,7 @@ The native `connect` is one main-actor runner per pane: a new discovery or conne
 
 **Control lease** (`ControlLease`, a child reducer under `ifLet(\.lease)`): request gated on channel availability, grant, denial, revocation, the 3 s grant deadline (`clock.sleep`) and the 1 s heartbeat (`clock.timer`), all over `ScreenSharingEndpointClient`. A release the user did not ask for reaches the parent as `.delegate(.released)`, which flips the interaction mode back to View.
 
-**Reducer** (`ScreenSharingViewer`, `CodevisorCoreMac`): state is `displays`, `endpoint`, `interactionMode`, `lease`, `message`, `phase`, `preferences`, `preferencesRevision`, `selectedDisplayId`. Actions are named for what the user did or what an effect returned: `paneAppeared`/`paneDisappeared`/`paneClosed`, `displaySelected`, `connectButtonTapped`, `retryButtonTapped`, `fitToWindowChanged`, `interactionModeChanged`, `preferencesSynced` (a registry update), `discoveryResponse(Result)`, `connectionEvent(ScreenSharingViewerEvent)` and `lease(ControlLease.Action)`. `Action` is not `Equatable`; tests receive by case path. The discovery and connection effects share `CancelID.connection` with `cancelInFlight`, which replaces the generation counter; the endpoint's control-event subscription is `CancelID.controlEvents`. `preferencesRevision` increments only for changes the user made in this pane, so the pane persists exactly those and a synced registry update never echoes — a `TestStore` assertion rather than a closure convention.
+**Reducer** (`ScreenSharingViewer`, `CodevisorCoreMac`): state is `displays`, `endpoint`, `interactionMode`, `lease`, `message`, `phase`, `preferences`, `preferencesRevision`, `selectedDisplayId`. Actions are named for what the user did or what an effect returned: `paneAppeared`/`paneDisappeared`/`paneClosed`, `displaySelected`, `connectButtonTapped`, `retryButtonTapped`, `interactionModeChanged`, `preferencesSynced` (a registry update), `discoveryResponse(Result)`, `connectionEvent(ScreenSharingViewerEvent)` and `lease(ControlLease.Action)`. `Action` is not `Equatable`; tests receive by case path. The discovery and connection effects share `CancelID.connection` with `cancelInFlight`, which replaces the generation counter; the endpoint's control-event subscription is `CancelID.controlEvents`. `preferencesRevision` increments only for changes the user made in this pane, so the pane persists exactly those and a synced registry update never echoes — a `TestStore` assertion rather than a closure convention.
 
 ## Migration steps
 

@@ -86,8 +86,6 @@ struct ScreenSharingViewerEndpointTests {
     fixture.session.controlChannel.isAvailable = true
     let endpoint = fixture.make()
     let client = ScreenSharingEndpointClient.liveValue
-    await client.setFitToWindow(endpoint.id, false)
-    #expect(fixture.surface.fitToWindow == false)
     #expect(await client.sendControl(endpoint.id, .request(id: UUID())))
     #expect(await client.beginInput(endpoint.id, UUID()) == nil)
     #expect(fixture.surface.inputActive)

@@ -126,7 +126,7 @@ struct ScreenSharingRenderCoordinatorAuditTests {
         deliveryAuditIdentity: identity))
     #expect(
       coordinator.prepare(
-        with: preparer, geometry: .init(fitToWindow: true, clearColor: .zero, drawableSize: CGSize(width: 8, height: 8))
+        with: preparer, geometry: .init(clearColor: .zero, drawableSize: CGSize(width: 8, height: 8))
       ))
     #expect(preparer.lastIdentity == .some(identity))  // the worker request carries the identity as a scalar
     let submission = ControlledSubmission()
@@ -145,7 +145,7 @@ struct ScreenSharingRenderCoordinatorAuditTests {
         deliveryAuditIdentity: .init(sequence: 8, generation: 2)))
     #expect(
       coordinator.prepare(
-        with: preparer, geometry: .init(fitToWindow: true, clearColor: .zero, drawableSize: CGSize(width: 8, height: 8))
+        with: preparer, geometry: .init(clearColor: .zero, drawableSize: CGSize(width: 8, height: 8))
       ))
     preparer.finish { _ in nil }
     let t = audit.snapshot()

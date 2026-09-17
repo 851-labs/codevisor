@@ -15,7 +15,6 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     get { coordinator.onFrameSize }
     set { coordinator.onFrameSize = newValue }
   }
-  public var fitToWindow = true { didSet { coordinator.setNeedsRedraw() } }
   public var onPresented: ((UInt32) -> Void)? {
     get { coordinator.onPresented }
     set { coordinator.onPresented = newValue }
@@ -165,8 +164,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       coordinator.prepare(
         with: preparer,
         geometry: .init(
-          fitToWindow: fitToWindow, clearColor: SIMD4(clear.red, clear.green, clear.blue, clear.alpha),
-          drawableSize: size))
+          clearColor: SIMD4(clear.red, clear.green, clear.blue, clear.alpha), drawableSize: size))
     } else {
       renderFrame(surface: nil)
     }
@@ -221,7 +219,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
       return
     }
     coordinator.reportSize(ScreenSharingMetalEncoder.videoSize(of: frame))
-    guard let encoded = encoder.encode(textures, into: target, fitToWindow: fitToWindow) else {
+    guard let encoded = encoder.encode(textures, into: target) else {
       metrics.increment("renderDrops")
       if isNewFrame { coordinator.deferPresentation() }
       return
@@ -398,7 +396,8 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
   }
 
   /// Encodes and ends encoding; the buffer is neither presented nor committed here.
-  func encode(_ textures: Textures, into target: Surface, fitToWindow: Bool) -> Encoded? {
+  /// The video is scaled to fit the target and centred, letterboxed on the short axis.
+  func encode(_ textures: Textures, into target: Surface) -> Encoded? {
     guard
       let buffer = commandQueue.makeCommandBuffer(),
       let encoder = buffer.makeRenderCommandEncoder(descriptor: target.pass)
@@ -407,7 +406,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     let width = Double(CVPixelBufferGetWidth(pixel))
     let height = Double(CVPixelBufferGetHeight(pixel))
     let targetSize = CGSize(width: target.drawable.texture.width, height: target.drawable.texture.height)
-    let scale = fitToWindow ? min(targetSize.width / width, targetSize.height / height) : 1
+    let scale = min(targetSize.width / width, targetSize.height / height)
     encoder.setViewport(
       MTLViewport(
         originX: (targetSize.width - width * scale) / 2, originY: (targetSize.height - height * scale) / 2,
@@ -518,8 +517,7 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
           pass.colorAttachments[0].clearColor = MTLClearColor(
             red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
           guard
-            let encoded = encoder.encode(
-              textures, into: Surface(drawable: drawable, pass: pass), fitToWindow: request.geometry.fitToWindow)
+            let encoded = encoder.encode(textures, into: Surface(drawable: drawable, pass: pass))
           else { return nil }  // the drawable is released with this pool, never presented
           metrics.observe("renderPreparation", milliseconds: Double(ScreenSharingMetrics.nowNs - started) / 1_000_000)
           return .init(

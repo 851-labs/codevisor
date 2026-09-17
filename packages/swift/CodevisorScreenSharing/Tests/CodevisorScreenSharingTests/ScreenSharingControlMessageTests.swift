@@ -26,7 +26,7 @@ struct ScreenSharingControlMessageTests {
     func pointer(_ x: Double, _ y: Double, clamp: Bool = false) -> ScreenSharingPointer? {
       ScreenSharingVideoGeometry.pointer(
         x: x, y: y, surfaceWidth: 1000, surfaceHeight: 1000,
-        videoWidth: 1920, videoHeight: 1080, fit: true, clamp: clamp)
+        videoWidth: 1920, videoHeight: 1080, clamp: clamp)
     }
     #expect(pointer(500, 500) == .init(x: 0.5, y: 0.5))
     #expect(pointer(500, 100) == nil)
@@ -36,7 +36,7 @@ struct ScreenSharingControlMessageTests {
     #expect(
       ScreenSharingVideoGeometry.pointer(
         x: 100, y: 100, surfaceWidth: 0, surfaceHeight: 100,
-        videoWidth: 100, videoHeight: 100, fit: true) == nil)
+        videoWidth: 100, videoHeight: 100) == nil)
   }
 
   @Test func incomingControlHasBoundedBytesAndMessageCountEvenForEmptyPackets() {
@@ -68,14 +68,14 @@ struct ScreenSharingControlMessageTests {
     #expect(scroll.add(x: 100_000, y: -100_000) == (4096, -4096))
   }
 
-  @Test func actualSizeMapsVideoPixelsInsideTheCenteredDocument() {
+  @Test func geometryMapsTheVideoCornersOfAWiderSurface() {
     #expect(
       ScreenSharingVideoGeometry.pointer(
-        x: 500, y: 300, surfaceWidth: 2000, surfaceHeight: 1200,
-        videoWidth: 1000, videoHeight: 600, fit: false) == .init(x: 0, y: 0))
+        x: 500, y: 0, surfaceWidth: 2000, surfaceHeight: 600,
+        videoWidth: 1000, videoHeight: 600) == .init(x: 0, y: 0))
     #expect(
       ScreenSharingVideoGeometry.pointer(
-        x: 1500, y: 900, surfaceWidth: 2000, surfaceHeight: 1200,
-        videoWidth: 1000, videoHeight: 600, fit: false) == .init(x: 1, y: 1))
+        x: 1500, y: 600, surfaceWidth: 2000, surfaceHeight: 600,
+        videoWidth: 1000, videoHeight: 600) == .init(x: 1, y: 1))
   }
 }

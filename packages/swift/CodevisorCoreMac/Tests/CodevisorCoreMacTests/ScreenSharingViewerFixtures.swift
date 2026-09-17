@@ -81,11 +81,10 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
 }
 
 /// The AppKit half of an endpoint without AppKit behavior: an empty view,
-/// recorded fit and input state, and a presentation the test triggers.
+/// recorded input state, and a presentation the test triggers.
 @MainActor
 final class FakeSurface: ScreenSharingViewerSurface {
   let view = NSView()
-  var fitToWindow = true
   var onPresented: (() -> Void)?
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?

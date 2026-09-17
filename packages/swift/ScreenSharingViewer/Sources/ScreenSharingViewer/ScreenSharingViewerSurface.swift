@@ -7,7 +7,6 @@ import CodevisorScreenSharing
 @MainActor
 public protocol ScreenSharingViewerSurface: AnyObject {
   var view: NSView { get }
-  var fitToWindow: Bool { get set }
   /// Fired for every presentation; the endpoint reports only the first.
   var onPresented: (() -> Void)? { get set }
   var onFocusChanged: ((Bool) -> Void)? { get set }

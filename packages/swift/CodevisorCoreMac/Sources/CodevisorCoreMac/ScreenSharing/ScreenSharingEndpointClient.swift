@@ -35,7 +35,6 @@ public struct ScreenSharingEndpointClient: Sendable {
     @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ message: ScreenSharingControlMessage) async -> Bool = {
       _, _ in false
     }
-  public var setFitToWindow: @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ fit: Bool) async -> Void
 }
 
 extension ScreenSharingEndpointClient: DependencyKey {
@@ -46,8 +45,7 @@ extension ScreenSharingEndpointClient: DependencyKey {
       endInput: { id in await ScreenSharingEndpointRegistry.shared.endpoint(id)?.endInput() },
       sendControl: { id, message in
         await ScreenSharingEndpointRegistry.shared.endpoint(id)?.sendControl(message) ?? false
-      },
-      setFitToWindow: { id, fit in await ScreenSharingEndpointRegistry.shared.endpoint(id)?.fit(fit) })
+      })
   }
 
   public static var testValue: Self { Self() }

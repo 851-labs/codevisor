@@ -24,9 +24,7 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
   public func endInput() { input.end() }
   private var tracking: NSTrackingArea?
   private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
-  private let scroll = NSScrollView()
   private var videoSize = CGSize(width: 1920, height: 1080)
-  public var fitToWindow = true { didSet { needsLayout = true; metal.fitToWindow = fitToWindow } }
 
   /// `profile` nil (the default) keeps the product renderer exactly as it was: display-link drive, three drawables,
   /// main-actor preparation. The explicit profile forwards to the EXISTING worker/arrival2 initializer; no pacing,
@@ -39,29 +37,17 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
       maximumDrawableCount: profile?.maximumDrawableCount ?? 3,
       offMainPreparation: profile?.offMainPreparation ?? false)
     super.init(frame: .zero)
-    scroll.drawsBackground = false
-    scroll.autohidesScrollers = true
-    scroll.documentView = metal
-    addSubview(scroll)
+    addSubview(metal)
     metal.onFrameSize = { [weak self] size in
       self?.videoSize = size
       self?.needsLayout = true
     }
   }
   public required init?(coder: NSCoder) { nil }
+  /// The video always fills the pane, scaled to fit and letterboxed by the renderer.
   public override func layout() {
     super.layout()
-    scroll.frame = bounds
-    scroll.hasHorizontalScroller = !fitToWindow
-    scroll.hasVerticalScroller = !fitToWindow
-    let viewport = scroll.contentSize
-    let pixels = convertFromBacking(videoSize)
-    metal.frame = CGRect(
-      origin: .zero,
-      size: fitToWindow
-        ? viewport
-        : CGSize(
-          width: max(viewport.width, pixels.width), height: max(viewport.height, pixels.height)))
+    metal.frame = bounds
     window?.invalidateCursorRects(for: self)
   }
   public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
@@ -96,7 +82,7 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
     super.resetCursorRects()
     guard input.active else { return }
     let drawable = metal.convertToBacking(metal.bounds).size
-    let scale = fitToWindow ? min(drawable.width / videoSize.width, drawable.height / videoSize.height) : 1
+    let scale = min(drawable.width / videoSize.width, drawable.height / videoSize.height)
     let video = CGRect(
       x: (drawable.width - videoSize.width * scale) / 2,
       y: (drawable.height - videoSize.height * scale) / 2,
@@ -137,7 +123,7 @@ public final class ScreenSharingVideoSurface: NSView, ScreenSharingInputTarget, 
     return ScreenSharingVideoGeometry.pointer(
       x: point.x, y: metal.isFlipped ? point.y : size.height - point.y,
       surfaceWidth: size.width, surfaceHeight: size.height,
-      videoWidth: videoSize.width, videoHeight: videoSize.height, fit: fitToWindow, clamp: clamp)
+      videoWidth: videoSize.width, videoHeight: videoSize.height, clamp: clamp)
   }
 
 }

@@ -63,12 +63,12 @@ public enum ScreenSharingInputEvent: Codable, Sendable, Equatable {
 public enum ScreenSharingVideoGeometry {
   public static func pointer(
     x: Double, y: Double, surfaceWidth: Double, surfaceHeight: Double,
-    videoWidth: Double, videoHeight: Double, fit: Bool, clamp: Bool = false
+    videoWidth: Double, videoHeight: Double, clamp: Bool = false
   ) -> ScreenSharingPointer? {
     guard [x, y, surfaceWidth, surfaceHeight, videoWidth, videoHeight].allSatisfy(\.isFinite),
       surfaceWidth > 0, surfaceHeight > 0, videoWidth > 0, videoHeight > 0
     else { return nil }
-    let scale = fit ? min(surfaceWidth / videoWidth, surfaceHeight / videoHeight) : 1
+    let scale = min(surfaceWidth / videoWidth, surfaceHeight / videoHeight)
     let width = videoWidth * scale; let height = videoHeight * scale
     let px = (x - (surfaceWidth - width) / 2) / width
     let py = (y - (surfaceHeight - height) / 2) / height

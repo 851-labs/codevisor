@@ -9,8 +9,8 @@ import Testing
 
 /// The viewer's control plane against a scripted backend and endpoint client:
 /// every transition is asserted exhaustively, including the lease child's,
-/// and the endpoint calls (fit, control messages, input) are checked on the
-/// client they land on.
+/// and the endpoint calls (control messages, input) are checked on the client
+/// they land on.
 @MainActor
 struct ScreenSharingViewerTests {
   private let display = ScreenSharingViewerFixtures.display
@@ -38,7 +38,7 @@ struct ScreenSharingViewerTests {
   }
 
   @Test(arguments: [ScreenSharingViewer.InteractionMode.view, .control])
-  func connectingKeepsTheLatestModeAndFitAndRequestsControlOnlyAfterReady(
+  func connectingKeepsTheLatestModeAndRequestsControlOnlyAfterReady(
     mode: ScreenSharingViewer.InteractionMode
   )
     async
@@ -50,16 +50,11 @@ struct ScreenSharingViewerTests {
       await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
       await store.send(.interactionModeChanged(.control)) { $0.interactionMode = .control }
       if mode == .view { await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view } }
-      await store.send(.fitToWindowChanged(false)) {
-        $0.preferences.fitToWindow = false
-        $0.preferencesRevision = 2
-      }
       let endpoint = backend.open()
       await store.receive(\.connectionEvent.opened) {
         $0.endpoint = endpoint
         $0.lease = ControlLease.State(endpoint: endpoint.id)
       }
-      expectNoDifference(client.fits.map(\.fit), [false])
       client.emit(.availability(true), to: endpoint.id)
       await store.receive(\.lease.event) { $0.lease?.available = true }
       expectNoDifference(client.messages(to: endpoint.id), [])
@@ -149,10 +144,6 @@ struct ScreenSharingViewerTests {
       }
       await store.receive(\.lease.delegate.released) { $0.interactionMode = .view }
       expectNoDifference(client.endInputs, [endpoint.id])
-      await store.send(.fitToWindowChanged(false)) {
-        $0.preferences.fitToWindow = false
-        $0.preferencesRevision = 2
-      }
       #expect(store.state.interactionMode == .view)
       await store.send(.paneClosed) {
         $0.visible = false
@@ -289,18 +280,13 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  @Test func syncedPreferencesUpdateTheLiveSurfaceWithoutEchoOrReconnect() async {
+  @Test func aSyncedDisplayReconnectsWithoutEchoingTheWrite() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
       let client = FakeEndpointClient()
       let store = await makeViewingStore(backend, client)
-      let endpoint = backend.endpoints[0]
       var preferences = store.state.preferences
-      preferences.fitToWindow = false
-      await store.send(.preferencesSynced(preferences)) { $0.preferences = preferences }
       await store.send(.preferencesSynced(preferences))
-      expectNoDifference(client.fits.map(\.fit), [true, false])
-      expectNoDifference(client.fits.map(\.endpoint), [endpoint.id, endpoint.id])
       #expect(store.state.preferencesRevision == 1 && backend.connections.count == 1)
 
       preferences.preferredDisplayId = "missing"

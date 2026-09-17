@@ -20,11 +20,9 @@ package protocol ScreenSharingRenderSubmission: Sendable {
 /// sizing and acquisition are serialized on the worker without any lock the
 /// main actor could wait on.
 package struct ScreenSharingRenderGeometry: Equatable, Sendable {
-  package let fitToWindow: Bool
   package let clearColor: SIMD4<Double>
   package let drawableSize: CGSize
-  package init(fitToWindow: Bool, clearColor: SIMD4<Double>, drawableSize: CGSize) {
-    self.fitToWindow = fitToWindow
+  package init(clearColor: SIMD4<Double>, drawableSize: CGSize) {
     self.clearColor = clearColor
     self.drawableSize = drawableSize
   }
@@ -105,11 +103,11 @@ package final class ScreenSharingRenderCoordinator {
   /// to echo them back. Survives `stop()`: the executing preparation still
   /// returns once, and that return clears the slot.
   private var pending: PendingPreparation?
-  /// Off-main mode: a redraw request (resize, backing scale, fit) schedules a
+  /// Off-main mode: a redraw request (resize, backing scale) schedules a
   /// draw through the hop when the renderer is idle, instead of waiting for
   /// the next video frame. Never synchronous from the caller.
   private let redrawsOnDemand: Bool
-  /// One scheduled redraw hop at a time: a burst of resize/fit changes
+  /// One scheduled redraw hop at a time: a burst of resize changes
   /// coalesces into a single draw request.
   private var redrawHopPending = false
   package private(set) var stopped = false
@@ -161,7 +159,7 @@ package final class ScreenSharingRenderCoordinator {
     requestDraw()
   }
 
-  /// A resize or fit change asks for one redraw of the cached frame. With
+  /// A resize asks for one redraw of the cached frame. With
   /// `redrawsOnDemand` the draw is scheduled through the hop (coalesced by the
   /// flag: later hops find nothing to do); never a synchronous reentrant draw.
   package func setNeedsRedraw() {

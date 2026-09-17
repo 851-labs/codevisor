@@ -131,8 +131,6 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     surface.endInput()
   }
 
-  public func fit(_ enabled: Bool) { surface.fitToWindow = enabled }
-
   private func emit(_ event: ScreenSharingControlEvent) {
     guard !closed else { return }
     for continuation in subscribers.values { continuation.yield(event) }

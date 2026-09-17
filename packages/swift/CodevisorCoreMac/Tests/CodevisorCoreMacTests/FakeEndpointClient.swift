@@ -10,7 +10,6 @@ import Foundation
 final class FakeEndpointClient {
   private(set) var beginInputs: [(endpoint: ScreenSharingViewerEndpoint.ID, lease: UUID)] = []
   private(set) var endInputs: [ScreenSharingViewerEndpoint.ID] = []
-  private(set) var fits: [(endpoint: ScreenSharingViewerEndpoint.ID, fit: Bool)] = []
   private(set) var sent: [(endpoint: ScreenSharingViewerEndpoint.ID, message: ScreenSharingControlMessage)] = []
   /// The failure `beginInput` reports; nil grants capture.
   var beginInputFailure: String?
@@ -46,8 +45,7 @@ final class FakeEndpointClient {
           sent.append((endpoint, message))
           return sendSucceeds
         }
-      },
-      setFitToWindow: { [self] endpoint, fit in await MainActor.run { fits.append((endpoint, fit)) } })
+      })
   }
 
   private func stream(

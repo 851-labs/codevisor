@@ -17,13 +17,6 @@ struct ScreenSharingToolbar: ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
       if store.endpoint?.supportsControl != false { controlActions }
     }
-    ToolbarItem(id: "screenSharing.size", placement: .primaryAction) {
-      Picker("Size", selection: $store.preferences.fitToWindow.sending(\.fitToWindowChanged)) {
-        Text("Fit").tag(true)
-        Text("Actual Size").tag(false)
-      }
-      .labelsHidden().frame(width: 110)
-    }
     ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
       if store.endpoint?.supportsClipboard != false {
         Menu {

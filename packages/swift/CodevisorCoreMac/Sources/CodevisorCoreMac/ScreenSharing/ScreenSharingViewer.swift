@@ -45,7 +45,6 @@ public struct ScreenSharingViewer {
     case connectionEvent(ScreenSharingViewerEvent)
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
-    case fitToWindowChanged(Bool)
     case interactionModeChanged(InteractionMode)
     case lease(ControlLease.Action)
     case paneAppeared
@@ -70,12 +69,10 @@ public struct ScreenSharingViewer {
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
-        return .merge(
-          fitEndpoint(state),
-          .run { [endpointClient] send in
-            for await event in await endpointClient.controlEvents(id) { await send(.lease(.event(event))) }
-          }
-          .cancellable(id: CancelID.controlEvents, cancelInFlight: true))
+        return .run { [endpointClient] send in
+          for await event in await endpointClient.controlEvents(id) { await send(.lease(.event(event))) }
+        }
+        .cancellable(id: CancelID.controlEvents, cancelInFlight: true)
 
       case .connectionEvent(.ready):
         guard [.connecting, .reconnecting].contains(state.phase), state.lease != nil else { return .none }
@@ -114,11 +111,6 @@ public struct ScreenSharingViewer {
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
         return select(id, &state)
 
-      case .fitToWindowChanged(let fit):
-        state.preferences.fitToWindow = fit
-        state.preferencesRevision += 1
-        return fitEndpoint(state)
-
       // Keep the user's choice while connecting; ask the lease only once
       // video is up. The lease itself waits for its channel.
       case .interactionModeChanged(let mode):
@@ -151,14 +143,13 @@ public struct ScreenSharingViewer {
         state.phase = .suspended
         return .merge(.cancel(id: CancelID.connection), .cancel(id: CancelID.controlEvents))
 
-      // Apply a registry update without replacing the live surface or echoing
-      // the write. A display change from another client requires a new Connect.
+      // Apply a registry update without echoing the write. A display change
+      // from another client requires a new Connect.
       case .preferencesSynced(let preferences):
         guard state.preferences != preferences else { return .none }
         let displayChanged = state.preferences.preferredDisplayId != preferences.preferredDisplayId
         state.preferences = preferences
-        guard displayChanged else { return fitEndpoint(state) }
-        return .merge(fitEndpoint(state), refresh(&state))
+        return displayChanged ? refresh(&state) : .none
 
       case .retryButtonTapped:
         return refresh(&state)
@@ -213,11 +204,5 @@ public struct ScreenSharingViewer {
   private func fail(_ state: inout State, _ message: String) {
     state.phase = .failed
     state.message = message
-  }
-
-  private func fitEndpoint(_ state: State) -> Effect<Action> {
-    guard let id = state.endpoint?.id else { return .none }
-    let fit = state.preferences.fitToWindow
-    return .run { [endpointClient] _ in await endpointClient.setFitToWindow(id, fit) }
   }
 }
