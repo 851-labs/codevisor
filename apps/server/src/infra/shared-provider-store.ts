@@ -132,7 +132,7 @@ export const makeSharedProviderStore = (options: {
     }
     if (shared || !global || same(global)) {
       await store.writeProvider(slot, record)
-      await setLocal(slot, null)
+      if (!shared) await setLocal(slot, null)
     } else await setLocal(slot, record)
     // Revoke only the replaced grant in this scope, after its successor is
     // durable. A distinct local account must never revoke the fleet account.

@@ -1,3 +1,4 @@
+import type { OAuthAuth } from "@earendil-works/pi-ai"
 import type {
   AgentRuntimeService,
   HarnessAccountContext,
@@ -52,6 +53,8 @@ export interface HarnessAuthManagerConfig {
   readonly agents: AgentRuntimeService
   readonly terminal: TerminalManagerService
   readonly preferDeviceCode?: boolean
+  /// Test seam: replaces Grok's device-code authorization client.
+  readonly grokOAuth?: OAuthAuth
   /// Test seam: replaces the SDK-backed Claude OAuth client factory.
   readonly claudeAuth?: typeof spawnClaudeAuthClient
   /// Overrides the login-shell environment resolver in tests and embedded hosts.
@@ -75,21 +78,26 @@ export interface HarnessAuthManager {
     harnesses: ReadonlyArray<Harness>
   ) => Promise<ReadonlyArray<Harness>>
   readonly refresh: (harnessId?: string) => Promise<void>
-  readonly accounts: (harnessId: string) => Promise<ReadonlyArray<HarnessAccount>>
+  readonly accounts: (harnessId: string, shared?: boolean) => Promise<ReadonlyArray<HarnessAccount>>
   readonly createAccount: (harnessId: string, label?: string) => Promise<HarnessAccount>
   readonly renameAccount: (accountId: string, label: string) => Promise<HarnessAccount>
   readonly removeAccount: (accountId: string) => Promise<void>
   readonly activateAccount: (harnessId: string, accountId: string) => Promise<void>
-  readonly probeAccount: (accountId: string, force?: boolean) => Promise<HarnessAccount>
+  readonly probeAccount: (
+    accountId: string,
+    force?: boolean,
+    shared?: boolean
+  ) => Promise<HarnessAccount>
   readonly beginLogin: (
     accountId: string,
     methodId?: string,
-    apiKey?: string
+    apiKey?: string,
+    shared?: boolean
   ) => Promise<HarnessAuthFlow>
   readonly cancelLogin: (flowId: string) => Promise<void>
   /// Completes a pasteCode flow with the user's pasted code.
   readonly answerLogin: (flowId: string, code: string) => Promise<HarnessAuthFlow>
-  readonly logout: (accountId: string) => Promise<HarnessAccount>
+  readonly logout: (accountId: string, shared?: boolean) => Promise<HarnessAccount>
   readonly accountContext: (accountId: string) => Promise<HarnessAccountContext>
   readonly activeAccountContext: (harnessId: string) => Promise<HarnessAccountContext | undefined>
   readonly markAccountExpired: (accountId: string, detail?: string) => Promise<void>

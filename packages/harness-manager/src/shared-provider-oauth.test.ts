@@ -85,6 +85,26 @@ describe("shared provider OAuth contracts", () => {
     expect(token.credential).not.toHaveProperty("refresh_token")
     expect(parseProviderOAuth("grok-build", "xai", grok, "external")!.refreshToken).toBeUndefined()
   })
+  it("preserves Grok device identity and distinguishes team consent from personal consent", () => {
+    const device = {
+      ...grok,
+      key: jwt({ principal_id: "team" }),
+      id_token: jwt({ sub: "person", email: "person@example.test" })
+    }
+    expect(parseProviderOAuth("grok-build", "xai", device, "managed")).toMatchObject({
+      subject: "person",
+      email: "person@example.test",
+      organizationId: "team"
+    })
+    expect(
+      parseProviderOAuth(
+        "grok-build",
+        "xai",
+        { ...device, key: jwt({ principalId: "other-team" }) },
+        "managed"
+      )?.organizationId
+    ).toBe("other-team")
+  })
   it("keeps opaque grants distinct and shares durable Copilot tokens without pretending they rotate", () => {
     const a = parseProviderOAuth(
       "pi",
@@ -138,13 +158,33 @@ describe("shared provider OAuth contracts", () => {
   it("rejects uninspected plugins and enterprise issuers without sending them a fleet token", () => {
     expect(parseProviderOAuth("opencode", "custom", credential, "managed")).toBeUndefined()
     for (const value of [
-      { ...grok, auth_mode: "api_key" },
+      { ...grok, auth_mode: "web_login" },
       { ...grok, oidc_issuer: "https://idp.example.test" },
       { ...grok, oidc_client_id: "other" },
       { ...grok, expires_at: "invalid" },
       { ...grok, key: "" }
     ])
       expect(parseProviderOAuth("grok-build", "xai", value, "managed")).toBeUndefined()
+  })
+  it("shares Grok API keys without refreshing them or exposing the key as account identity", () => {
+    const parsed = parseProviderOAuth(
+      "grok-build",
+      "xai",
+      { auth_mode: "api_key", key: "api-key" },
+      "external"
+    )!
+    expect(parsed).toMatchObject({
+      authMethod: "apiKey",
+      accessToken: "api-key",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      ownership: "managed"
+    })
+    expect(parsed.subject).toMatch(/^key:/)
+    expect(parsed.subject).not.toContain("api-key")
+    expect(parsed.refreshToken).toBeUndefined()
+    expect(
+      parseProviderOAuth("grok-build", "xai", { auth_mode: "api_key", key: "" }, "managed")
+    ).toBeUndefined()
   })
   it("uses Pi's own provider refresher and preserves provider-specific fields", async () => {
     const refresh = vi.fn(async (_credential: OAuthCredential, _signal?: AbortSignal) => ({

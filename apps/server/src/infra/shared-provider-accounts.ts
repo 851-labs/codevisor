@@ -7,6 +7,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { HarnessAccount } from "@codevisor/api"
 import {
   parseProviderOAuth,
+  SharedCredentialError,
   piAuthPath,
   openCodeAuthPath,
   type ProviderOAuthHarness,
@@ -130,6 +131,52 @@ export const makeSharedProviderAccounts = (options: {
     store,
     runtime,
     reconcile,
+    account: async (account: HarnessAccount, shared = false): Promise<HarnessAccount> => {
+      await reconcile()
+      const slot = providerSlot("grok-build", "default", "xai")
+      const row = await store.get(slot, shared)
+      const global = await store.get(slot, true)
+      const { email: _email, detail: _detail, authMethod: _method, ...base } = account
+      const selectionScope =
+        shared ||
+        (row?.credential.id === global?.credential.id && (await store.local(slot)) !== false)
+          ? ("shared" as const)
+          : ("machine" as const)
+      const unsigned: HarnessAccount = {
+        ...base,
+        label: "Grok",
+        authState: "unauthenticated",
+        isActive: true,
+        canLogin: true,
+        canLogout: false,
+        selectionScope
+      }
+      if (!row) return unsigned
+      try {
+        const token = await options.vault.token(row.credential)
+        return {
+          ...unsigned,
+          authState: "authenticated",
+          authMethod: token.authMethod ?? "oauth",
+          canLogout: true,
+          label:
+            token.authMethod === "apiKey"
+              ? `API key ••••${token.accessToken.slice(-4)}`
+              : (token.email ?? "Grok"),
+          ...(token.email ? { email: token.email } : {})
+        }
+      } catch (cause) {
+        return {
+          ...unsigned,
+          authState: "expired",
+          canLogout: true,
+          detail:
+            cause instanceof SharedCredentialError
+              ? cause.message
+              : "Account sync is unavailable. Try again."
+        }
+      }
+    },
     staticOverrides: async (harness: "pi" | "opencode") => {
       const providers = await store.knownProviders(harness, "default")
       const local = await Promise.all(

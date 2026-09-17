@@ -37,6 +37,40 @@ struct HarnessAccountsStoreTests {
     #expect(!paths.contains(where: { $0.contains("/providers/") && $0.hasSuffix("/login") }))
     #expect(environment.configSync.value(namespace: HarnessSharedCredentials.namespace, key: "pi-auth") == nil)
   }
+  @Test("Grok account management and device sign-in stay in shared scope")
+  func grokSharedAccount() async throws {
+    let transport = SharedAccountTestTransport()
+    let environment = AppEnvironment(
+      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
+      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      settings: AppSettingsModel(store: InMemoryStore()),
+      machineClientFactory: { _ in
+        CodevisorServerClient(config: .init(baseURL: URL(string: "http://fixture.test")!, requestTransport: transport))
+      }
+    )
+    let store = HarnessAccountsStore(environment: environment, machineId: "local", isShared: true)
+    let account = try #require(try await store.listHarnessAccounts(harnessId: "grok-build").first)
+    let flow = try await store.loginHarnessAccount(
+      harnessId: "grok-build", accountId: account.id, methodId: "grok.com", apiKey: nil)
+    #expect(flow.kind == "deviceCode")
+    #expect(flow.userCode == "ABCD-EFGH")
+    #expect(flow.verificationUrl == "https://auth.x.ai/device")
+    try await store.cancelHarnessLogin(harnessId: "grok-build", accountId: account.id, flowId: flow.id)
+    #expect(
+      try await store.loginHarnessAccount(
+        harnessId: "grok-build", accountId: account.id, methodId: "apiKey", apiKey: "fixture-key"
+      ).kind == "complete")
+    #expect(
+      try await store.probeHarnessAccount(harnessId: "grok-build", accountId: account.id).authState == "authenticated")
+    #expect(
+      try await store.activateHarnessAccount(harnessId: "grok-build", accountId: account.id).first?.isActive == true)
+    #expect(
+      try await store.logoutHarnessAccount(harnessId: "grok-build", accountId: account.id).authState
+        == "unauthenticated")
+    #expect(await transport.requests.allSatisfy { $0 == "/v1/harnesses/grok-build/shared-accounts" })
+  }
+
   @Test("Shared profiles use the existing editor operations and remain distinct from machine accounts")
   func profiles() async throws {
     let environment = AppEnvironment.preview(seedProjects: [])
@@ -163,17 +197,21 @@ private actor SharedAccountTestTransport: ServerRequestTransport {
     let payload = try JSONDecoder().decode([String: String].self, from: body)
     let action = payload["action"]!
     let oauth = payload["methodId"] == "oauth"
+    let device = payload["methodId"] == "grok.com"
     if action == "rename" { label = payload["label"]! }
-    if action == "answer" || (action == "login" && !oauth) { authenticated = true }
+    if action == "answer" || (action == "login" && !oauth && !device) { authenticated = true }
     if action == "logout" { authenticated = false }
     let account: [String: Any] = [
-      "id": "shared-test", "harnessId": path.contains("claude-code") ? "claude-code" : "codex",
+      "id": "shared-test", "harnessId": path.split(separator: "/")[2].description,
       "label": label, "profileKind": "managed", "authState": authenticated ? "authenticated" : "unauthenticated",
       "isActive": true, "canLogin": true, "canLogout": authenticated, "selectionScope": "shared",
     ]
     let response: [String: Any] = [
       "account": account, "accounts": [account],
-      "flow": ["id": "flow", "accountId": "shared-test", "kind": oauth ? "pasteCode" : "complete"],
+      "flow": [
+        "id": "flow", "accountId": "shared-test", "kind": device ? "deviceCode" : (oauth ? "pasteCode" : "complete"),
+        "userCode": "ABCD-EFGH", "verificationUrl": "https://auth.x.ai/device",
+      ],
     ]
     return (
       try JSONSerialization.data(withJSONObject: response),

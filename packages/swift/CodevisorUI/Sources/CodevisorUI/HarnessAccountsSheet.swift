@@ -43,7 +43,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @State private var sharedHostError = false
   @State private var isWorking = false
 
-  private var sharesOAuth: Bool { ["claude-code", "codex", "pi", "opencode"].contains(harnessId) }
+  private var sharesOAuth: Bool { ["claude-code", "codex", "pi", "opencode", "grok-build"].contains(harnessId) }
 
   public init(
     harnessId: String, harnessName: String, startsSignIn: Bool = false,
@@ -81,7 +81,8 @@ public struct HarnessAccountsSheet<Editor: View>: View {
       }
       .frame(
         width: harnessId == "opencode" ? 760 : 560,
-        height: harnessId == "opencode" ? 540 : (["claude-code", "codex"].contains(harnessId) ? 380 : 480))
+        height: harnessId == "opencode"
+          ? 540 : (["claude-code", "codex", "grok-build"].contains(harnessId) ? 380 : 480))
     #endif
     .task { if sharesOAuth { await loadSharedHost() } }
     .sheet(item: $machineSignIn) { request in

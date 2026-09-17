@@ -3,6 +3,7 @@ import type { HarnessAccountContext } from "@codevisor/agent-runtime"
 import type { ProviderOAuthHarness } from "./shared-provider-oauth.js"
 
 export interface SharedProviderIntegration {
+  readonly account?: (account: HarnessAccount, shared?: boolean) => Promise<HarnessAccount>
   readonly capture: (
     harness: ProviderOAuthHarness,
     profile: string,

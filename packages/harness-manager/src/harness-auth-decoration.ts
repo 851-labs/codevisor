@@ -94,6 +94,16 @@ export const makeHarnessAuthDecoration = (
         }
       ]
     }
+    if (harnessId === "grok-build")
+      return [
+        { id: "grok.com", name: "Sign in to Grok", kind: "deviceCode" },
+        {
+          id: "apiKey",
+          name: "Use xAI API Key",
+          kind: "apiKey",
+          description: "Use xAI API billing."
+        }
+      ]
     if (harnessId === "pi") return []
     return acpLoginMethods.get(harnessId) ?? []
   }

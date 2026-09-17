@@ -49,6 +49,42 @@ export const routeSharedHarnessAccounts = async (
   if (!shared || !auth) throw new HttpFailure(501, "Update this machine to sync accounts")
   const input = await readSchema(request, Action)
   response.setHeader("Cache-Control", "no-store")
+  if (harnessId === "grok-build") {
+    if (["create", "rename", "inherit", "answer", "providers"].includes(input.action))
+      throw new HttpFailure(400, "Unknown Grok account action")
+    if (input.action === "list") {
+      writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
+      return true
+    }
+    const account = input.accountId
+      ? await run(services.db.getHarnessAccount(input.accountId))
+      : undefined
+    if (!account || account.harnessId !== harnessId) throw new HttpFailure(404, "Account not found")
+    switch (input.action) {
+      case "probe":
+        writeJson(response, 200, { account: await auth.probeAccount(account.id, true, true) })
+        break
+      case "login":
+        writeJson(response, 201, {
+          flow: await auth.beginLogin(account.id, input.methodId, input.apiKey, true)
+        })
+        break
+      case "activate":
+        // Grok has one provider slot; sign-in already selects it in this scope.
+        writeJson(response, 200, { accounts: await auth.accounts(harnessId, true) })
+        break
+      case "logout":
+      case "remove":
+        writeJson(response, 200, { account: await auth.logout(account.id, true) })
+        break
+      case "cancel":
+        if (!input.flowId) throw new HttpFailure(400, "Choose a sign-in attempt")
+        await auth.cancelLogin(input.flowId)
+        writeJson(response, 200, {})
+        break
+    }
+    return true
+  }
   if (harnessId === "pi" || harnessId === "opencode") {
     const profile = input.accountId ?? "default"
     const account =

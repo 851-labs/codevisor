@@ -1,3 +1,4 @@
+import type { GrokAuth } from "./grok-auth.js"
 import { spawnCodexClient } from "@codevisor/adapter-codex"
 import type { HarnessAccount } from "@codevisor/api"
 import type { HarnessAccountRecord } from "@codevisor/db"
@@ -14,7 +15,7 @@ import {
 /// Sign-in status probes per harness family: Codex over its app-server
 /// protocol, Claude via `auth status --json`, everything else through the
 /// runtime's ACP authentication inspection.
-export const makeHarnessAuthProbes = (core: HarnessAuthCore) => {
+export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => {
   const {
     accountCommand,
     accountEnv,
@@ -168,8 +169,13 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore) => {
     })
   }
 
-  const probeAccount = async (accountId: string, force = false): Promise<HarnessAccount> => {
+  const probeAccount = async (
+    accountId: string,
+    force = false,
+    sharedScope = false
+  ): Promise<HarnessAccount> => {
     const previous = await run(config.db.getHarnessAccount(accountId))
+    if (previous?.harnessId === "grok-build") return grok.account(previous, sharedScope)
     const shared = await config.sharedAccounts?.()?.probe(accountId)
     if (shared !== undefined) {
       if (previous?.authState !== shared.authState || previous?.detail !== shared.detail) {

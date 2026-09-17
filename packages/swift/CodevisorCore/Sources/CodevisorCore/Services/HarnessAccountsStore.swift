@@ -16,7 +16,9 @@ import Foundation
   var client: any CodevisorServerClienting { environment.machines.client(for: machineId) }
   var sync: ConfigSync { environment.configSync }
   static let namespace = HarnessSharedCredentials.namespace
-  func usesSharedOAuth(_ harnessId: String) -> Bool { isShared && ["claude-code", "codex"].contains(harnessId) }
+  func usesSharedOAuth(_ harnessId: String) -> Bool {
+    isShared && ["claude-code", "codex", "grok-build"].contains(harnessId)
+  }
 
   func shared(
     _ harnessId: String, _ request: ServerSharedHarnessAccountRequest

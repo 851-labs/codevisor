@@ -1,3 +1,4 @@
+import { makeGrokAuth } from "./grok-auth.js"
 import { makeHarnessAccountOperations } from "./harness-auth-accounts.js"
 import { makeHarnessAuthCore } from "./harness-auth-core.js"
 import { makeHarnessAuthDecoration } from "./harness-auth-decoration.js"
@@ -74,11 +75,12 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       await rm(path, { force: true })
     }
   })
-  const probes = makeHarnessAuthProbes(core)
+  const grok = makeGrokAuth(core)
+  const probes = makeHarnessAuthProbes(core, grok)
   const { probeAccount } = probes
   const decoration = makeHarnessAuthDecoration(core, probes)
   const accounts = makeHarnessAccountOperations(core, probes, decoration)
-  const logins = makeHarnessLoginOperations(core, probes)
+  const logins = makeHarnessLoginOperations(core, probes, grok)
 
   return {
     sharedOpenCodeProfiles: (content) =>
@@ -102,9 +104,29 @@ export const makeHarnessAuthManager = (config: HarnessAuthManagerConfig): Harnes
       if (await config.sharedAccounts?.()?.logout(accountId)) return
       return accounts.removeAccount(accountId)
     },
-    accounts: async (harnessId) =>
-      (await config.sharedAccounts?.()?.accounts(harnessId)) ??
-      (await run(config.db.listHarnessAccounts(harnessId))).map(core.publicAccount),
+    accounts: async (harnessId, shared = false) => {
+      if (harnessId === "grok-build") {
+        let rows = await run(config.db.listHarnessAccounts(harnessId))
+        if (!rows.length)
+          rows = [
+            await run(
+              config.db.saveHarnessAccount({
+                harnessId,
+                profileKind: "default",
+                label: "Grok",
+                authState: "unauthenticated",
+                canLogin: true,
+                canLogout: false
+              })
+            )
+          ]
+        return Promise.all(rows.map((row) => grok.account(row, shared)))
+      }
+      return (
+        (await config.sharedAccounts?.()?.accounts(harnessId)) ??
+        (await run(config.db.listHarnessAccounts(harnessId))).map(core.publicAccount)
+      )
+    },
     probeAccount,
     accountContext: async (accountId) => {
       const shared = await config.sharedAccounts?.()?.context(accountId)

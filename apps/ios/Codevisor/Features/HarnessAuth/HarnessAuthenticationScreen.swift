@@ -361,7 +361,7 @@ extension HarnessAuthenticationScreen {
   }
 
   private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
-    if isShared, !["claude-code", "codex"].contains(harness.id), method.kind != "apiKey" {
+    if isShared, !["claude-code", "codex", "grok-build"].contains(harness.id), method.kind != "apiKey" {
       machineSignIn?(HarnessMachineSignIn())
       return
     }

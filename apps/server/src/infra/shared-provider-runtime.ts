@@ -100,6 +100,7 @@ export const makeSharedProviderRuntime = (options: {
       )
         delete auth[id]
     }
+    let grokApiKey: string | undefined
     for (const row of rows) {
       const slot = providerSlot(harness, profile, row.providerId)
       const capKey = `cap:${providerDigest(slot)}`
@@ -118,6 +119,7 @@ export const makeSharedProviderRuntime = (options: {
       // omitted so the harness requests sign-in instead of using stale auth.
       const token = await vault.token(row.credential).catch(() => undefined)
       if (!token) continue
+      if (harness === "grok-build" && token.authMethod === "apiKey") grokApiKey = token.accessToken
       auth[row.providerId] = providerCredential(token, MANAGED_REFRESH_PREFIX + cap.capability)
       const endpoint = providerTokenEndpoint(row.providerId)
       manifest.providers[row.providerId] = {
@@ -187,13 +189,20 @@ export const makeSharedProviderRuntime = (options: {
       await atomicWriteJson(join(root, "data", "opencode", "auth.json"), auth)
     } else {
       runtimeEnv.GROK_HOME = root
+      runtimeEnv.GROK_AUTH = ""
+      runtimeEnv.GROK_AUTH_PATH = join(root, "auth.json")
+      runtimeEnv.XAI_API_KEY = grokApiKey ?? ""
+      await atomicWriteJson(join(root, "auth.json"), {})
       const source = dirname(nativePath)
       await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
       for (const name of ["sessions", "config.toml"]) {
         await linkResource(join(source, name), join(root, name))
       }
+      if (grokApiKey) {
+        runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = ""
+        return { ...base, env: runtimeEnv }
+      }
       if (!manifest.providers.xai) {
-        await atomicWriteJson(join(root, "auth.json"), {})
         runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = "false"
         return { ...base, env: runtimeEnv }
       }

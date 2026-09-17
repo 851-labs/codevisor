@@ -50,6 +50,19 @@ export const parseProviderOAuth = (
   if (!providerOAuthSupported(harnessId, providerId, providers)) return undefined
   const credential = object(value)
   const grok = harnessId === "grok-build"
+  if (grok && credential.auth_mode === "api_key") {
+    const key = string(credential.key)
+    if (!key) return undefined
+    return {
+      harnessId,
+      providerId,
+      authMethod: "apiKey",
+      ownership: "managed",
+      subject: `key:${createHash("sha256").update(key).digest("hex")}`,
+      accessToken: key,
+      expiresAt: Number.MAX_SAFE_INTEGER
+    }
+  }
   if (grok ? credential.auth_mode !== "oidc" : credential.type !== "oauth") return undefined
   if (
     grok &&
@@ -67,7 +80,10 @@ export const parseProviderOAuth = (
       ? Date.parse(String(credential.expires_at))
       : credential.expires
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return undefined
-  const identity = claims(accessToken)
+  const accessIdentity = claims(accessToken)
+  const identity = grok
+    ? { ...claims(string(credential.id_token) ?? ""), ...accessIdentity }
+    : accessIdentity
   const auth = object(identity["https://api.openai.com/auth"])
   const subject =
     string(auth.chatgpt_user_id) ??
@@ -75,6 +91,7 @@ export const parseProviderOAuth = (
     string(credential.user_id) ??
     `grant:${createHash("sha256").update(refresh).digest("hex")}`
   const organizationId =
+    (grok ? (string(identity.principal_id) ?? string(identity.principalId)) : undefined) ??
     string(credential.accountId) ??
     string(auth.chatgpt_account_id) ??
     string(credential.organization_id)

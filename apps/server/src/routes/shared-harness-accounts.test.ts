@@ -38,6 +38,7 @@ it("manages shared accounts through authenticated HTTP without exposing credenti
   expect((await send({ action: "probe", accountId: id }, "claude-code")).status).toBe(404)
   expect((await send({ action: "probe" })).status).toBe(404)
   expect((await send({ action: "list" }, "pi")).status).toBe(400)
+  expect((await send({ action: "list" }, "gemini")).status).toBe(400)
   expect((await send({ action: "login", accountId: id })).status).toBe(201)
   expect(m.auth.beginLogin).toHaveBeenCalledWith(id, undefined, undefined)
   expect((await send({ action: "answer", accountId: id })).status).toBe(400)
