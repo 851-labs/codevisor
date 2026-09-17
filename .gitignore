@@ -10,21 +10,17 @@ coverage/
 build/
 Build/
 DerivedData/
-.derivedData/
-.derived-data/
 *.tsbuildinfo
 *.log
 *.pid
 *.xcuserstate
 *.xcscmblueprint
-**/xcuserdata/
+xcuserdata/
 .env
 .env.*
 !.env.example
 apps/server/data/
 apps/macos/Frameworks/
-packages/swift/.build/
-packages/swift/.swiftpm/
 .wrangler/
 .playwright-mcp/
 # Colocated dev/test build & server state (see scripts/dev.mjs)
