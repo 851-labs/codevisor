@@ -30,7 +30,7 @@ export const projectSetupState = (
       )
       .get(subject, kind) as { n: number }
   ).n
-  for (let offset = 0; offset < line.length; ) {
+  for (let offset = 0; offset < line.length;) {
     let end = Math.min(offset + 8192, line.length)
     if (
       end < line.length &&

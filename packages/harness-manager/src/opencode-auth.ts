@@ -154,16 +154,14 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
           credentialTypes(profile.authPath)
         ])
         return (catalog.all ?? [])
-          .map(
-            (provider): OpenCodeAuthProvider => ({
-              id: provider.id,
-              name: provider.name,
-              methods: methodValues(authMethods[provider.id]),
-              ...(credentials[provider.id] === undefined
-                ? {}
-                : { credentialType: credentials[provider.id] })
-            })
-          )
+          .map((provider): OpenCodeAuthProvider => ({
+            id: provider.id,
+            name: provider.name,
+            methods: methodValues(authMethods[provider.id]),
+            ...(credentials[provider.id] === undefined
+              ? {}
+              : { credentialType: credentials[provider.id] })
+          }))
           .sort((left, right) => left.name.localeCompare(right.name))
       } finally {
         if (server !== undefined) await server.stop()
