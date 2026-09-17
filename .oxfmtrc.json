@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "trailingComma": "none",
+  "printWidth": 100,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "apps/macos/",
+    "packages/swift/",
+    "bun.lock",
+    "*.xcworkspace/",
+    "*.xcodeproj/",
+    "**/routeTree.gen.ts",
+    "**/worker-configuration.d.ts",
+    ".swiftlint-baseline.json",
+    ".repos/",
+    "apps/www/.source/",
+    ".codevisor/"
+  ]
+}

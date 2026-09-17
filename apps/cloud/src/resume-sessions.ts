@@ -170,9 +170,9 @@ export class ResumeSessions {
   /// The next pending grace deadline, for alarm scheduling.
   nextExpiry(): number | undefined {
     const row = this.sql
-      .exec<
-        { next: number | null } & Record<string, SqlStorageValue>
-      >("SELECT MIN(expires_at) AS next FROM sessions WHERE expires_at IS NOT NULL")
+      .exec<{ next: number | null } & Record<string, SqlStorageValue>>(
+        "SELECT MIN(expires_at) AS next FROM sessions WHERE expires_at IS NOT NULL"
+      )
       .toArray()[0]
     return row?.next ?? undefined
   }
@@ -221,15 +221,17 @@ export class ResumeSessions {
   /// the caller abandons the session and reports the peer gone/offline.
   buffer(connectionId: string, message: Uint8Array): boolean {
     const used = this.sql
-      .exec<
-        { total: number | null } & Record<string, SqlStorageValue>
-      >("SELECT SUM(LENGTH(message)) AS total FROM session_buffers WHERE connection_id = ?", connectionId)
+      .exec<{ total: number | null } & Record<string, SqlStorageValue>>(
+        "SELECT SUM(LENGTH(message)) AS total FROM session_buffers WHERE connection_id = ?",
+        connectionId
+      )
       .toArray()[0]
     if ((used?.total ?? 0) + message.byteLength > RESUME_BUFFER_CAP_BYTES) return false
     const next = this.sql
-      .exec<
-        { next: number | null } & Record<string, SqlStorageValue>
-      >("SELECT MAX(seq) AS next FROM session_buffers WHERE connection_id = ?", connectionId)
+      .exec<{ next: number | null } & Record<string, SqlStorageValue>>(
+        "SELECT MAX(seq) AS next FROM session_buffers WHERE connection_id = ?",
+        connectionId
+      )
       .toArray()[0]
     this.sql.exec(
       "INSERT INTO session_buffers (connection_id, seq, message) VALUES (?, ?, ?)",
@@ -245,9 +247,10 @@ export class ResumeSessions {
   /// arrival order.
   drainBuffers(connectionId: string): Uint8Array[] {
     const rows = this.sql
-      .exec<
-        { message: ArrayBuffer } & Record<string, SqlStorageValue>
-      >("SELECT message FROM session_buffers WHERE connection_id = ? ORDER BY seq", connectionId)
+      .exec<{ message: ArrayBuffer } & Record<string, SqlStorageValue>>(
+        "SELECT message FROM session_buffers WHERE connection_id = ? ORDER BY seq",
+        connectionId
+      )
       .toArray()
     this.sql.exec("DELETE FROM session_buffers WHERE connection_id = ?", connectionId)
     return rows.map((row) => new Uint8Array(row.message))

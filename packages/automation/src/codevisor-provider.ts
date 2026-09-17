@@ -120,13 +120,11 @@ const tools: ReadonlyArray<Tool> = [
     description: "Return the calling Codevisor session and project ids.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
-  ...CODEVISOR_API_TOOLS.map(
-    (spec): Tool => ({
-      name: spec.name,
-      description: spec.description,
-      inputSchema: toolInputSchema(spec) as Tool["inputSchema"]
-    })
-  )
+  ...CODEVISOR_API_TOOLS.map((spec): Tool => ({
+    name: spec.name,
+    description: spec.description,
+    inputSchema: toolInputSchema(spec) as Tool["inputSchema"]
+  }))
 ]
 
 const loopbackBaseUrl = (value: string): URL => {
