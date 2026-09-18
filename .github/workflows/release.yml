@@ -7,6 +7,13 @@ on:
         description: Version to promote, without the leading v.
         required: true
         type: string
+      alpha_tag:
+        description: >-
+          Published Alpha tag to promote (for example v0.1.101-alpha.644). Its
+          commit must already be on main. Defaults to the Alpha built at current
+          main HEAD.
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -27,6 +34,8 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      source_sha: ${{ steps.release.outputs.source_sha }}
+      pinned_source: ${{ steps.release.outputs.pinned_source }}
       alpha_run_id: ${{ steps.release.outputs.alpha_run_id }}
       build: ${{ steps.release.outputs.build }}
       ghostty_stamp: ${{ steps.release.outputs.ghostty_stamp }}
@@ -37,25 +46,50 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Require current main and a matching published Alpha
+      - name: Resolve the Alpha source commit and require its published Alpha
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_ALPHA_TAG: ${{ inputs.alpha_tag }}
         shell: bash
         run: |
           version="${INPUT_VERSION#v}"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be numeric semver." >&2; exit 1; }
-          source_sha="$(git rev-parse HEAD)"
           main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          [[ "$source_sha" == "$main_sha" ]] || { echo "Publish Stable must run at current main." >&2; exit 1; }
+          if [[ -n "$INPUT_ALPHA_TAG" ]]; then
+            # Promote an explicit Alpha. Its commit must already be on main so
+            # Stable never ships bytes that main does not contain.
+            [[ "$INPUT_ALPHA_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.([0-9]+)$ ]] || {
+              echo "alpha_tag must look like vX.Y.Z-alpha.N." >&2; exit 1;
+            }
+            [[ "${BASH_REMATCH[1]}" == "$version" ]] || {
+              echo "alpha_tag $INPUT_ALPHA_TAG does not carry version $version." >&2; exit 1;
+            }
+            source_sha="$(git ls-remote origin "refs/tags/$INPUT_ALPHA_TAG^{}" | awk '{print $1}')"
+            if [[ -z "$source_sha" ]]; then
+              source_sha="$(git ls-remote origin "refs/tags/$INPUT_ALPHA_TAG" | awk '{print $1}')"
+            fi
+            [[ -n "$source_sha" ]] || { echo "Alpha tag $INPUT_ALPHA_TAG does not exist on origin." >&2; exit 1; }
+            git fetch --quiet origin main "$source_sha"
+            git merge-base --is-ancestor "$source_sha" "$main_sha" || {
+              echo "Alpha tag $INPUT_ALPHA_TAG ($source_sha) is not on main." >&2; exit 1;
+            }
+            pinned_source=true
+          else
+            source_sha="$(git rev-parse HEAD)"
+            [[ "$source_sha" == "$main_sha" ]] || {
+              echo "Publish Stable must run at current main unless alpha_tag is given." >&2; exit 1;
+            }
+            pinned_source=false
+          fi
           tag="v$version"
           existing_tag_sha="$(git ls-remote origin "refs/tags/$tag^{}" | awk '{print $1}')"
           if [[ -z "$existing_tag_sha" ]]; then
             existing_tag_sha="$(git ls-remote origin "refs/tags/$tag" | awk '{print $1}')"
           fi
           if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$source_sha" ]]; then
-            echo "$tag points to $existing_tag_sha instead of current main $source_sha." >&2
+            echo "$tag points to $existing_tag_sha instead of the Alpha source $source_sha." >&2
             exit 1
           fi
           run_id="$(gh run list --workflow release-candidate.yml --commit "$source_sha" \
@@ -73,12 +107,16 @@ jobs:
           ghostty_stamp="$(jq -r .ghostty_stamp "$provenance")"
           [[ "$ghostty_stamp" =~ ^[0-9a-f]{40}-[0-9a-f]{16}$ ]] || { echo "Ghostty stamp is invalid." >&2; exit 1; }
           alpha_tag="v$version-alpha.$build"
+          if [[ -n "$INPUT_ALPHA_TAG" && "$alpha_tag" != "$INPUT_ALPHA_TAG" ]]; then
+            echo "Provenance names $alpha_tag but $INPUT_ALPHA_TAG was requested." >&2
+            exit 1
+          fi
           alpha_tag_sha="$(git ls-remote origin "refs/tags/$alpha_tag^{}" | awk '{print $1}')"
           if [[ -z "$alpha_tag_sha" ]]; then
             alpha_tag_sha="$(git ls-remote origin "refs/tags/$alpha_tag" | awk '{print $1}')"
           fi
           [[ "$alpha_tag_sha" == "$source_sha" ]] || {
-            echo "Published Alpha tag $alpha_tag does not point to current main." >&2
+            echo "Published Alpha tag $alpha_tag does not point to the Alpha source $source_sha." >&2
             exit 1
           }
           release_json="$(gh release view "$alpha_tag" --json assets,isDraft,isPrerelease)"
@@ -119,6 +157,8 @@ jobs:
             >/dev/null
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "pinned_source=$pinned_source" >> "$GITHUB_OUTPUT"
           echo "alpha_run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "ghostty_stamp=$ghostty_stamp" >> "$GITHUB_OUTPUT"
@@ -128,6 +168,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -145,11 +187,14 @@ jobs:
     env:
       VERSION: ${{ needs.metadata.outputs.version }}
       TAG: ${{ needs.metadata.outputs.tag }}
+      SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+      PINNED_SOURCE: ${{ needs.metadata.outputs.pinned_source }}
       BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
       GHOSTTY_STAMP: ${{ needs.metadata.outputs.ghostty_stamp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
           fetch-depth: 0
       - name: Download exact Alpha artifacts
         env:
@@ -167,19 +212,23 @@ jobs:
       - name: Generate complete Stable changelog
         run: |
           node scripts/release/generate-release-notes.mjs \
-            --channel stable --version "$VERSION" --commit "$GITHUB_SHA" \
+            --channel stable --version "$VERSION" --commit "$SOURCE_SHA" \
             --output dist/release/RELEASE_NOTES.md
       - name: Publish exact Alpha bytes as Stable
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-            [[ "$current_main" == "$GITHUB_SHA" ]] || {
-              echo "main advanced to $current_main after release validation at $GITHUB_SHA." >&2
-              exit 1
-            }
-            git push origin "$GITHUB_SHA:refs/tags/$TAG"
+            if [[ "$PINNED_SOURCE" != true ]]; then
+              # Without an explicit alpha_tag the source is "current main", so
+              # main moving during validation means we validated the wrong SHA.
+              current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+              [[ "$current_main" == "$SOURCE_SHA" ]] || {
+                echo "main advanced to $current_main after release validation at $SOURCE_SHA." >&2
+                exit 1
+              }
+            fi
+            git push origin "$SOURCE_SHA:refs/tags/$TAG"
           fi
           shopt -s nullglob
           artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)

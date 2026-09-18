@@ -34,10 +34,16 @@ main_sha="$(git rev-parse origin/main)"
 gh run list --workflow release-candidate.yml --commit "$main_sha" --status success --limit 5
 ```
 
+If main HEAD has no successful Alpha yet (its build is still running or
+failed), you may instead promote the newest successful Alpha on `main`. Find
+it with `gh run list --workflow release-candidate.yml --branch main --status
+success --limit 5` and use that run's `headSha` as `source_sha` in place of
+`main_sha` below; it must be an ancestor of `origin/main`.
+
 Inspect the successful run's `codevisor-release-provenance` artifact. It must
-say `channel: alpha`, use `main_sha`, and contain the numeric version and build
-number. Also require a published `vVERSION-alpha.BUILD` prerelease for that
-provenance. If the Alpha publisher has not run, dispatch
+say `channel: alpha`, use the source SHA, and contain the numeric version and
+build number. Also require a published `vVERSION-alpha.BUILD` prerelease for
+that provenance. If the Alpha publisher has not run, dispatch
 `publish-release-candidate.yml` and monitor it first.
 
 Generate the prospective Stable notes locally:
@@ -46,7 +52,7 @@ Generate the prospective Stable notes locally:
 node scripts/release/generate-release-notes.mjs \
   --channel stable \
   --version VERSION \
-  --commit "$main_sha" \
+  --commit "$source_sha" \
   --output /tmp/codevisor-release-notes.md
 ```
 
@@ -63,13 +69,22 @@ git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
 gh workflow run release.yml --ref main -f version=VERSION
 ```
 
+Without `alpha_tag`, the workflow promotes the Alpha built at current main
+HEAD and fails if main moved. To promote an older Alpha on `main`, pass its
+prerelease tag; the workflow tags that Alpha's commit, not HEAD:
+
+```sh
+gh workflow run release.yml --ref main -f version=VERSION -f alpha_tag=vVERSION-alpha.BUILD
+```
+
 Monitor the resulting `Publish Stable` workflow through completion.
 
 ## Verify
 
 Verify all of the following before reporting success:
 
-- `vVERSION` points to the original Alpha source SHA.
+- `vVERSION` points to the original Alpha source SHA (the promoted Alpha's
+  commit, which may be behind main HEAD when `alpha_tag` was given).
 - The Stable macOS ZIP SHA-256 values equal the corresponding Alpha ZIP
   SHA-256 values byte-for-byte.
 - The GitHub release body equals the generated changelog and is non-empty.
