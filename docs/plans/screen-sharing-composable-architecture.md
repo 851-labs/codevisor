@@ -19,7 +19,6 @@ One further cut governs where each technique applies. The **control plane** (vis
 
 > Superseded on 2026-09-18. The graph below is the one this branch landed; the targets were later consolidated into three under `packages/swift/ScreenSharing` (`ScreenSharing`, WebRTC-free; `ScreenSharingWebRTC`, the peer; `ScreenSharingTesting`, the loopback RFB server), with the former `ScreenSharingCore`, `ScreenSharingViewer`, `ScreenSharingVNC`, `ScreenSharingRFB` and `ScreenSharingHostInput` targets becoming folders of `ScreenSharing`. The rule this section states, that a VNC backend never depends on WebRTC, is now enforced by linkage rather than by a comment: `ScreenSharing` does not link the framework. Current layout: [the engine README](../../packages/swift/ScreenSharing/README.md).
 
-
 ```mermaid
 flowchart TB
     Core[ScreenSharingCore<br/>frames, mailbox, metrics, input + control + clipboard messages,<br/>clipboard transfer, message-channel contract, viewing-session contract]
