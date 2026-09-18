@@ -122,6 +122,13 @@ extension MachineController {
         let connection = connection(for: serverId)
         guard let current = connection.navigationSnapshot else { throw CodevisorServerClientError.invalidResponse }
         guard delta.eventCursor > current.eventCursor else { return }
+        
+        // Buffer events during catch-up to prevent layout shifting
+        if connection.isBufferingNavigation() {
+          connection.bufferNavigationDelta(delta)
+          return
+        }
+        
         let snapshot = delta.applying(to: current)
         let prepared = await ServerNavigationSnapshotBuilder.build(
           projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
@@ -229,7 +236,7 @@ extension MachineController {
       // A superseded snapshot can finish without a terminal state. A
       // cold catch-up must not stay displayed with no task to clear it.
       if connection.navigationSyncTask == nil,
-        connection.navigationSyncState == .catchingUp
+        case .catchingUp = connection.navigationSyncState
       {
         await synchronizeNavigationState(
           serverId: serverId,
@@ -318,12 +325,40 @@ extension MachineController {
       }
       workspaceSync.applyNavigationSnapshot(snapshot, serverId: serverId)
     }
-    connection(for: serverId).navigationSnapshot = snapshot
-    startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
+    let connection = connection(for: serverId)
+    connection.navigationSnapshot = snapshot
+    
+    // Apply all buffered deltas at once for smooth transition
+    if !connection.bufferedNavigationDeltas.isEmpty {
+      var currentSnapshot = snapshot
+      for delta in connection.bufferedNavigationDeltas {
+        guard delta.eventCursor > currentSnapshot.eventCursor else { continue }
+        currentSnapshot = delta.applying(to: currentSnapshot)
+      }
+      
+      // Apply the final accumulated state in one commit
+      let finalPrepared = await ServerNavigationSnapshotBuilder.build(
+        projects: currentSnapshot.projects, sessions: currentSnapshot.sessions, serverId: serverId)
+      guard !Task.isCancelled else { return }
+      projectList.commitSnapshot(finalPrepared, serverId: serverId, origin: .snapshot)
+      
+      if let workspaceSync {
+        for delta in connection.bufferedNavigationDeltas {
+          guard delta.eventCursor > snapshot.eventCursor,
+                delta.eventCursor <= currentSnapshot.eventCursor else { continue }
+          let intermediateSnapshot = delta.applying(to: snapshot)
+          workspaceSync.applyNavigationDelta(delta, previous: snapshot, snapshot: intermediateSnapshot, serverId: serverId)
+        }
+      }
+      
+      connection.navigationSnapshot = currentSnapshot
+      connection.clearNavigationBuffer()
+    }
+    
+    startEventSync(serverId: serverId, client: client, since: connection.navigationSnapshot?.eventCursor ?? snapshot.eventCursor)
     for session in projectList.sessions where session.serverId == serverId {
       onSessionStateChanged?(session, nil)
     }
-    let connection = connection(for: serverId)
     connection.navigationSyncState = .current
     connection.navigationFailures = 0
     connection.navigationRetryTask?.cancel()

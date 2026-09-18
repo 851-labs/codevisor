@@ -47,7 +47,7 @@ struct MachineConnectionPresentationTests {
       reachable: false, availability: .waiting(.connecting), sync: .stale("Unreachable"))
     #expect(retrying == .offline)
     #expect(presentation(availability: .waiting(.connecting), sync: .stale("Sync failed")) == .offline)
-    #expect(presentation(sync: .catchingUp) == .syncing)
+    #expect(presentation(sync: .catchingUp()) == .syncing)
     let recovered = presentation()
     #expect(recovered == .online(isDirect: true))
   }
@@ -61,7 +61,7 @@ struct MachineConnectionPresentationTests {
 
   @Test("Reachable machines wait for a current navigation snapshot")
   func initialSync() {
-    for sync in [nil, NavigationSyncState.cached, .catchingUp] {
+    for sync in [nil, NavigationSyncState.cached, .catchingUp()] {
       #expect(presentation(sync: sync) == .syncing)
     }
   }

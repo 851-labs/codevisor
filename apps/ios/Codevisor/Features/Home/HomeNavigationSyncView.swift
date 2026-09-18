@@ -62,3 +62,54 @@ private struct DelayedNavigationSyncProgressView: View {
     }
   }
 }
+
+/// Subtle overlay sync indicator that doesn't disrupt existing content layout.
+/// Shows during buffered catch-up to indicate work is happening without causing shifts.
+struct NavigationSyncOverlay: View {
+  let machineName: String
+  let bufferedEvents: Int
+  
+  @State private var showsIndicator = false
+  
+  var body: some View {
+    VStack {
+      Spacer()
+      HStack {
+        Spacer()
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Syncing")
+              .font(.caption.weight(.medium))
+            if bufferedEvents > 0 {
+              Text("\(bufferedEvents) updates")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+        .opacity(showsIndicator ? 1 : 0)
+        .scaleEffect(showsIndicator ? 1 : 0.8)
+        Spacer()
+      }
+      .padding(.bottom, 16)
+    }
+    .allowsHitTesting(false)
+    .task(id: "\(machineName)-\(bufferedEvents)") {
+      showsIndicator = false
+      do {
+        try await Task.sleep(for: .milliseconds(300))
+      } catch {
+        return
+      }
+      withAnimation(.spring(duration: 0.3)) {
+        showsIndicator = true
+      }
+    }
+  }
+}

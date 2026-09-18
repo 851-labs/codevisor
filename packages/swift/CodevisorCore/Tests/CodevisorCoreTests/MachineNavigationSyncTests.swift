@@ -213,7 +213,11 @@ struct MachineNavigationSyncTests {
       )
     }
     try await waitUntil { fake.listSessionCallCount == 1 }
-    #expect(controller.navigationSyncStateByMachineId["local"] == .catchingUp)
+    if case .catchingUp = controller.navigationSyncStateByMachineId["local"] {
+      // Expected: catching up with buffer
+    } else {
+      Issue.record("Expected .catchingUp state")
+    }
 
     await snapshotGate.open()
     await refresh.value
