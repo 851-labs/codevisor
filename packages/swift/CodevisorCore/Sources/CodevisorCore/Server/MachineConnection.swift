@@ -59,6 +59,8 @@ public final class MachineConnection {
   @ObservationIgnored var navigationSyncToken: UUID?
   @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
   @ObservationIgnored var navigationSnapshot: ServerNavigationSnapshot?
+  /// Buffered navigation deltas during catch-up to prevent layout shifting.
+  @ObservationIgnored var bufferedNavigationDeltas: [ServerNavigationDelta] = []
   /// Manual refresh work survives the gesture's short presentation budget.
   @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
   /// Coalesces navigation-affecting events for this machine only.
@@ -83,8 +85,30 @@ public final class MachineConnection {
   /// keeps its connection warning until a new snapshot succeeds.
   func beginNavigationCatchUp() {
     if navigationSyncState == nil || navigationSyncState == .cached {
-      navigationSyncState = .catchingUp
+      navigationSyncState = .catchingUp(bufferedEvents: 0)
+      bufferedNavigationDeltas = []
     }
+  }
+  
+  /// Whether this connection is actively buffering navigation updates.
+  func isBufferingNavigation() -> Bool {
+    if case .catchingUp = navigationSyncState {
+      return true
+    }
+    return false
+  }
+  
+  /// Adds a delta to the buffer and updates the sync state count.
+  func bufferNavigationDelta(_ delta: ServerNavigationDelta) {
+    bufferedNavigationDeltas.append(delta)
+    if case .catchingUp = navigationSyncState {
+      navigationSyncState = .catchingUp(bufferedEvents: bufferedNavigationDeltas.count)
+    }
+  }
+  
+  /// Clears the buffer when catch-up completes.
+  func clearNavigationBuffer() {
+    bufferedNavigationDeltas = []
   }
 }
 

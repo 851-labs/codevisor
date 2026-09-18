@@ -4,7 +4,9 @@
 /// being reconciled.
 public enum NavigationSyncState: Equatable, Sendable {
   case cached
-  case catchingUp
+  /// Catching up with buffering enabled: updates are collected and applied atomically.
+  /// The associated value is the number of buffered events.
+  case catchingUp(bufferedEvents: Int = 0)
   case current
   case stale(String)
 }

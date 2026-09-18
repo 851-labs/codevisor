@@ -13,6 +13,9 @@ extension HomeView {
   var refreshableNavigationContent: some View {
     if !sidebarSections.isEmpty {
       sidebarList
+        .overlay {
+          syncOverlayIfCatchingUp
+        }
     } else if anyMachineSynced {
       // At least one machine answered with a real (empty) list: the
       // honest presentation is "no workspaces"; the toolbar flags sync failures.
@@ -65,6 +68,29 @@ extension HomeView {
       actions: sidebarActions,
       refresh: refreshNavigation
     )
+  }
+  
+  /// Shows a non-intrusive sync overlay when catching up with buffered events
+  @ViewBuilder
+  private var syncOverlayIfCatchingUp: some View {
+    if let catchingUpMachine = machines.allMachines.first(where: { machine in
+      if case .catchingUp = machines.navigationSyncStateByMachineId[machine.id] {
+        return true
+      }
+      return false
+    }) {
+      let bufferedCount: Int = {
+        if case let .catchingUp(count) = machines.navigationSyncStateByMachineId[catchingUpMachine.id] {
+          return count
+        }
+        return 0
+      }()
+      
+      NavigationSyncOverlay(
+        machineName: catchingUpMachine.name,
+        bufferedEvents: bufferedCount
+      )
+    }
   }
 
   #if DEBUG
