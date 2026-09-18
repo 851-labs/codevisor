@@ -26,6 +26,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { resolveSessionAccount, startSessionAgent } from "./session-creation.js"
 import { sessionEventSink } from "./session-events.js"
 
 const createServerSession = async (
@@ -36,65 +37,61 @@ const createServerSession = async (
   project: Project
 ): Promise<SessionSummary> => {
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, payload.worktreeName)
-  const accountContext =
-    payload.harnessAccountId === undefined
-      ? await services.auth?.activeAccountContext(payload.harnessId)
-      : await services.auth?.accountContext(payload.harnessAccountId)
-  /* v8 ignore next -- both accepted and rejected auth-gating paths are integration-tested. */
-  if (
-    services.auth !== undefined &&
-    accountContext === undefined &&
-    payload.deferAgentSession !== true
-  ) {
-    throw new HttpFailure(409, "Select a signed-in harness account before creating a session")
-  }
-  const harnessAccountId = payload.harnessAccountId ?? accountContext?.id
-  await ensureSessionWorkspace(
+  const { accountContext, harnessAccountId } = await resolveSessionAccount(services, payload)
+  const workspaceExisted = await assertWorkspaceProject(services, payload.workspaceId, project)
+  const sessionId = payload.id ?? randomUUID()
+  const agentSessionId = await startSessionAgent(
     services,
     fanout,
-    payload.workspaceId,
+    serverId,
+    sessionId,
     project,
-    payload.worktreeName ?? project.name,
+    payload,
     cwd,
-    payload.sidebarOrderHead
+    accountContext
   )
-  // The session id is generated up front so the standing event sink can bind
-  // to it before the agent session exists.
-  const sessionId = payload.id ?? randomUUID()
-  const sink = sessionEventSink(services, fanout, serverId, sessionId)
-  const toolGateway = await services.mcp?.issueGateway(sessionId, project.id, sink)
-  const agentSessionId =
-    payload.deferAgentSession === true
-      ? ""
-      : (payload.agentSessionId ??
-        (await run(
-          services.agents.createAgentSession(
-            payload.harnessId,
-            cwd,
-            sink,
-            accountContext,
-            toolGateway
-          )
-        )))
-  const session = await run(
-    services.db.createSession({
-      ...payload,
-      id: sessionId,
-      // Use the resolved project's canonical id (the client may have sent a
-      // different-cased UUID) so the session's foreign key matches the row.
-      projectId: project.id,
-      ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
-      agentSessionId
+  const sessionPayload = {
+    ...payload,
+    id: sessionId,
+    // Use the resolved project's canonical id (the client may have sent a
+    // different-cased UUID) so the session's foreign key matches the row.
+    projectId: project.id,
+    ...(harnessAccountId === undefined ? {} : { harnessAccountId }),
+    agentSessionId
+  }
+  if (payload.workspaceId === undefined) {
+    return run(services.db.createSession(sessionPayload))
+  }
+  // A chat born into a workspace commits with the workspace row (created here
+  // when the client has not uploaded it yet) and its chat pane in ONE
+  // transaction, so no other client can observe the workspace without its
+  // chat. The events below keep clients that predate the navigation journal
+  // informed, exactly as the discrete writes used to.
+  const created = await run(
+    services.db.createWorkspaceWithSession({
+      workspace: {
+        ...(payload.sidebarOrderHead === undefined
+          ? {}
+          : { sidebarOrderHead: payload.sidebarOrderHead }),
+        id: payload.workspaceId.toLowerCase(),
+        projectId: project.id,
+        name: payload.worktreeName ?? project.name,
+        hasCustomName: false,
+        rootDirectory: cwd
+      },
+      session: { ...sessionPayload, workspaceId: undefined }
     })
   )
-  // Session membership predates explicit workspace panes. Route every create
-  // through the compatibility bridge so old clients still materialize the
-  // canonical shared chat pane.
-  if (payload.workspaceId !== undefined) {
-    await run(services.db.setSessionWorkspace(session.id, payload.workspaceId))
-    return run(services.db.getSessionSummary(session.id))
+  if (!workspaceExisted) {
+    await appendAndPublish(
+      services.db,
+      fanout,
+      "workspace.updated",
+      created.workspace.id,
+      created.workspace
+    )
   }
-  return session
+  return created.session
 }
 
 /// Create-or-return for sessions: the existing-row and in-flight-create
@@ -208,34 +205,44 @@ export const applySessionUpdate = async (
   return session
 }
 
+/// Whether the workspace already exists, rejecting a cross-project pairing
+/// with the same 409 both the discrete and the atomic create paths owe.
+const assertWorkspaceProject = async (
+  services: CodevisorServerServices,
+  workspaceId: string | undefined,
+  project: Project
+): Promise<boolean> => {
+  if (workspaceId === undefined) return false
+  const canonical = workspaceId.toLowerCase()
+  const existing = (await run(services.db.listWorkspaces)).find(
+    (workspace) => workspace.id.toLowerCase() === canonical
+  )
+  if (existing === undefined) return false
+  if (existing.projectId.toLowerCase() !== project.id.toLowerCase()) {
+    throw new HttpFailure(
+      409,
+      `Workspace ${workspaceId} belongs to project ${existing.projectId}, not ${project.id}`
+    )
+  }
+  return true
+}
+
 /// Native clients persist pane layout locally, but workspace identity and
-/// membership are server-owned. A chat may reach the server before its local
-/// workspace has ever been uploaded, so assigning the chat lazily creates the
-/// metadata row first. The event lets every other client materialize its own
-/// local layout for the shared workspace.
+/// membership are server-owned. Assigning an EXISTING chat to a workspace the
+/// client has not uploaded yet lazily creates the metadata row first. The
+/// event lets every other client materialize its own local layout for the
+/// shared workspace.
 const ensureSessionWorkspace = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
-  workspaceId: string | undefined,
+  workspaceId: string,
   project: Project,
   workspaceName: string,
   rootDirectory: string | undefined,
   sidebarOrderHead?: string
 ): Promise<void> => {
-  if (workspaceId === undefined) return
+  if (await assertWorkspaceProject(services, workspaceId, project)) return
   const canonical = workspaceId.toLowerCase()
-  const existing = (await run(services.db.listWorkspaces)).find(
-    (workspace) => workspace.id.toLowerCase() === canonical
-  )
-  if (existing !== undefined) {
-    if (existing.projectId.toLowerCase() !== project.id.toLowerCase()) {
-      throw new HttpFailure(
-        409,
-        `Workspace ${workspaceId} belongs to project ${existing.projectId}, not ${project.id}`
-      )
-    }
-    return
-  }
   const workspace = await run(
     services.db.upsertWorkspace({
       ...(sidebarOrderHead === undefined ? {} : { sidebarOrderHead }),

@@ -56,6 +56,7 @@ import type {
   UpdateHarnessAccountAuthRequest
 } from "./rows.js"
 import type { SyncBatch } from "./sync-journal.js"
+import type { CreateWorkspaceWithSession, DeleteWorkspacePane } from "./workspace-service-types.js"
 
 export interface CodevisorDatabaseConfig {
   readonly filename: string
@@ -143,10 +144,10 @@ export interface CodevisorDatabaseService {
     paneId: string,
     request: UpdateWorkspacePaneRequest
   ) => Effect.Effect<WorkspacePane, DatabaseError>
-  readonly deleteWorkspacePane: (
-    workspaceId: string,
-    paneId: string
-  ) => Effect.Effect<WorkspacePane | undefined, DatabaseError>
+  /// Deletes the pane; an emptied workspace is a valid state.
+  readonly deleteWorkspacePane: DeleteWorkspacePane
+  /// Workspace, session and chat pane in one transaction; idempotent per session id.
+  readonly createWorkspaceWithSession: CreateWorkspaceWithSession
   /// Atomically replaces one pane's renderer/resource and assigns the chat
   /// session to that workspace. It never manufactures a second pane id.
   readonly promoteWorkspacePaneToSession: (

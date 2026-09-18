@@ -119,19 +119,24 @@ struct WorkspaceSyncPaneMappingTests {
     )
   }
 
-  @Test("Native codevisor panes keep their existing mapping")
+  @Test("Native codevisor panes keep their existing mapping; New Tab rows are ignored")
   func codevisorPanesStillMap() {
     let id = UUID()
-    let record = ServerWorkspacePane(
-      id: id.uuidString,
-      workspaceId: workspaceId.uuidString,
-      providerId: "codevisor",
-      paneType: "new-tab",
-      title: "New tab",
-      createdAt: "2026-01-01T00:00:00.000Z"
-    )
-    let descriptor = WorkspaceSyncModel.descriptor(from: record)
-    #expect(descriptor?.kind == .newTab)
-    #expect(descriptor?.id == id)
+    func record(paneType: String, title: String) -> ServerWorkspacePane {
+      ServerWorkspacePane(
+        id: id.uuidString,
+        workspaceId: workspaceId.uuidString,
+        providerId: "codevisor",
+        paneType: paneType,
+        title: title,
+        createdAt: "2026-01-01T00:00:00.000Z"
+      )
+    }
+    let browser = WorkspaceSyncModel.descriptor(from: record(paneType: "browser", title: "Browser"))
+    #expect(browser?.kind == .browser)
+    #expect(browser?.id == id)
+    // The New Tab page is device-local. A row from a client that still
+    // publishes it means nothing here.
+    #expect(WorkspaceSyncModel.descriptor(from: record(paneType: "new-tab", title: "New tab")) == nil)
   }
 }

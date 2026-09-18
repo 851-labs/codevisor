@@ -177,7 +177,7 @@ public enum WorkspaceWorktreeSplitMigration {
       return repaired
     }
     if workspace.centerTabs.isEmpty {
-      let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
+      let replacement = WorkspaceTab.placeholder()
       workspace.centerTabs = [replacement]
       workspace.selectedCenterTabId = replacement.id
     } else if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }) {

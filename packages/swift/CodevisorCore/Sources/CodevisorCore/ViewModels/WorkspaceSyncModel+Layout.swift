@@ -1,16 +1,21 @@
 import Foundation
 
 extension WorkspaceSyncModel {
+  /// Projects the server's pane registry onto this device's layout.
+  ///
+  /// The New Tab page is device-local: it is never published, and the
+  /// registry never lists it. So local `.newTab` panes are neither created
+  /// from nor removed by server records — with one exception. A workspace
+  /// showing ONLY the New Tab page (a workspace another client is still
+  /// filling, or one whose last pane closed) holds it as a placeholder: the
+  /// first real pane fills that tab in place, and any other placeholder tab
+  /// is dropped. New Tabs opened beside real panes (⌘T) are kept.
   static func reconcilePanes(
     in workspace: inout Workspace,
     records: [ServerWorkspacePane],
-    protectedLocalPaneIds: Set<UUID>,
-    preserveEmptyTabs: Bool = false
+    protectedLocalPaneIds: Set<UUID>
   ) {
-    let emptyTabs =
-      preserveEmptyTabs
-      ? workspace.centerTabs.enumerated().filter { $0.element.root.allGroups.allSatisfy { $0.state.panes.isEmpty } }
-      : []
+    let hadRealPanes = workspace.hasRealPanes
     let selectedTab = workspace.selectedCenterTabId
     let remote = records.compactMap { record -> (ServerWorkspacePane, PaneDescriptorState)? in
       descriptor(from: record).map { (record, $0) }
@@ -30,6 +35,7 @@ extension WorkspaceSyncModel {
       {
         continue
       }
+      if !hadRealPanes, fillPlaceholderTab(with: descriptor, in: &workspace) { continue }
       let state = PaneGroupState(
         panes: [descriptor], selectedPaneId: descriptor.id
       )
@@ -37,9 +43,9 @@ extension WorkspaceSyncModel {
     }
 
     for pane in allPanes(in: workspace) {
-      guard !protectedLocalPaneIds.contains(pane.id), !remoteIds.contains(pane.id) else {
-        continue
-      }
+      guard pane.kind != .newTab, !protectedLocalPaneIds.contains(pane.id),
+        !remoteIds.contains(pane.id)
+      else { continue }
       // Resource matching is an identity-migration fallback, not a
       // reason to retain two panes for one chat. Once the authoritative
       // pane id is present, remove any compatibility pane that refers to
@@ -50,12 +56,34 @@ extension WorkspaceSyncModel {
       }
       _ = removePane(id: pane.id, from: &workspace)
     }
-    pruneEmptyCenterTabs(in: &workspace)
-    for (index, tab) in emptyTabs where !workspace.centerTabs.contains(where: { $0.id == tab.id }) {
-      workspace.centerTabs.insert(tab, at: min(index, workspace.centerTabs.count))
+    if !hadRealPanes, workspace.hasRealPanes {
+      workspace.centerTabs.removeAll(where: \.isPlaceholder)
     }
+    pruneEmptyCenterTabs(in: &workspace)
     if workspace.centerTabs.contains(where: { $0.id == selectedTab }) { workspace.selectedCenterTabId = selectedTab }
     ensureUsableLayout(&workspace)
+  }
+
+  /// Gives a pane that has no slot yet the placeholder tab's page, keeping
+  /// the tab and leaf identity a mounted view may already hold.
+  private static func fillPlaceholderTab(
+    with pane: PaneDescriptorState,
+    in workspace: inout Workspace
+  ) -> Bool {
+    guard let tabIndex = workspace.centerTabs.firstIndex(where: \.isPlaceholder) else { return false }
+    let tab = workspace.centerTabs[tabIndex]
+    guard
+      let leafId = tab.root.group(id: tab.activeLeafId) != nil
+        ? tab.activeLeafId : tab.root.allGroups.first?.id
+    else { return false }
+    workspace.centerTabs[tabIndex].root = tab.root.updatingGroup(id: leafId) { state in
+      var state = state
+      state.panes = [pane]
+      state.selectedPaneId = pane.id
+      return state
+    }
+    workspace.centerTabs[tabIndex].activeLeafId = leafId
+    return true
   }
 
   static func allPanes(in workspace: Workspace) -> [PaneDescriptorState] {
@@ -152,7 +180,7 @@ extension WorkspaceSyncModel {
       }
       return
     }
-    let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
+    let tab = WorkspaceTab.placeholder()
     workspace.centerTabs = [tab]
     workspace.selectedCenterTabId = tab.id
   }
@@ -181,7 +209,7 @@ extension WorkspaceSyncModel {
   ) -> Workspace {
     let tabs: [WorkspaceTab]
     if usesPaneRegistry || sessionIds.isEmpty {
-      tabs = [WorkspaceTab(root: .leaf(PaneGroupState()))]
+      tabs = [WorkspaceTab.placeholder()]
     } else {
       tabs = sessionIds.map {
         WorkspaceTab(root: .leaf(.centerInitial(sessionId: $0)))

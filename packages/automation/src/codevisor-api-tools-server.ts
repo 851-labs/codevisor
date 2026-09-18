@@ -195,7 +195,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.pane_upsert",
-    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType new-tab, chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<pluginId> and a paneType from plugins.list. Use clients.navigate to select the synchronized pane in a particular client.",
+    "Create or replace a shared pane identity. Built-ins use providerId codevisor and paneType chat, terminal, browser, or markdown. A chat references resourceKind session and its session id; markdown references resourceKind file and its path. Plugins use providerId plugin:<pluginId> and a paneType from plugins.list. Use clients.navigate to select the synchronized pane in a particular client.",
     "PUT",
     "/v1/workspaces/:workspaceId/panes/:paneId",
     { body: UpsertWorkspacePaneRequest }
@@ -209,14 +209,14 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.pane_promote_chat",
-    "Convert an existing New Tab pane into a chat, preserving its pane identity and workspace membership.",
+    "Convert an existing pane into a chat, preserving its pane identity and workspace membership.",
     "POST",
     "/v1/workspaces/:workspaceId/panes/:paneId/promote-chat",
     { body: PromoteWorkspacePaneToChatRequest }
   ),
   apiTool(
     "workspaces.pane_close",
-    "Close a shared pane. Closing the final pane preserves its identity as a New Tab. This affects every client; it does not delete the chat session.",
+    "Close a shared pane. Closing the final pane leaves the workspace empty; clients show their local New Tab page. This affects every client; it does not delete the chat session.",
     "POST",
     "/v1/workspaces/:workspaceId/panes/:paneId/close"
   ),

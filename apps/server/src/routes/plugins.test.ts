@@ -399,8 +399,9 @@ describe("plugin routes", () => {
     const calls: Array<Array<unknown>> = []
     const server = await startWithApp({ ...services, plugins: pluginsStub(calls) })
     runningServers.push(server)
-    // ws-shared: the plugin pane sits next to another pane → plain deletion.
-    // ws-lonely: the plugin pane is the workspace's only pane → New Tab.
+    // ws-shared: the plugin pane sits next to another pane.
+    // ws-lonely: the plugin pane is the workspace's only pane; the workspace
+    // is simply left empty (clients render their own New Tab page).
     await seedWorkspaces(server, ["ws-shared", "ws-lonely"])
     await seedPane(server, "ws-shared", "plugin-pane", "plugin:owner.example")
     await seedPane(server, "ws-shared", "other-pane", "plugin:owner.other")
@@ -422,9 +423,9 @@ describe("plugin routes", () => {
     )
     expect(events).toContainEqual(
       expect.objectContaining({
-        kind: "workspace.pane.updated",
+        kind: "workspace.pane.deleted",
         subjectId: "lonely-pane",
-        payload: expect.objectContaining({ id: "lonely-pane", paneType: "new-tab" })
+        payload: { id: "lonely-pane", workspaceId: "ws-lonely" }
       })
     )
     const panes = (await jsonRequest(server, "/v1/workspace-panes")).body as Array<{

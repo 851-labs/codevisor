@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 
-import type { CreateSessionRequest } from "@codevisor/api"
+import type { CreateSessionRequest, SessionSummary } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
@@ -18,6 +18,48 @@ import {
   projectSessionSidebarState,
   settleSessionAttention
 } from "./session-attention.js"
+
+/// The synchronous insert behind `createSession`, exported so the atomic
+/// workspace create can run it inside its own transaction.
+export const insertSessionRow = (
+  context: ServiceContext,
+  request: CreateSessionRequest
+): SessionSummary => {
+  const { sqlite, config, getSession } = context
+
+  const now = isoTimestamp()
+  // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
+  // write (mirroring createProject) so ids stay consistent no matter
+  // which client created the session (Swift uppercases, Node lowercases)
+  // — a case-only difference must not spawn a duplicate session row for
+  // the same chat.
+  const id = (request.id ?? randomUUID()).toLowerCase()
+  sqlite
+    .prepare(
+      `insert into sessions (
+            id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
+            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at,
+            sidebar_state, sidebar_state_changed_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
+    )
+    .run(
+      id,
+      canonicalUuid(request.projectId),
+      config.serverId,
+      request.harnessId,
+      request.harnessAccountId ?? null,
+      request.agentSessionId ?? null,
+      request.title ?? "New Session",
+      request.origin ?? "codevisor",
+      (request.isArchived ?? false) ? 1 : 0,
+      request.worktreeName ?? null,
+      request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
+      request.createdAt ?? now,
+      request.updatedAt ?? null,
+      request.updatedAt ?? request.createdAt ?? now
+    )
+  return getSession(id)
+}
 
 export const makeSessionsService = (
   context: ServiceContext
@@ -44,40 +86,7 @@ export const makeSessionsService = (
   const createSession = Effect.fn("CodevisorDatabase.createSession")(function* (
     request: CreateSessionRequest
   ) {
-    return yield* attempt("createSession", () => {
-      const now = isoTimestamp()
-      // UUIDs are case-insensitive identifiers. Canonicalize to lowercase on
-      // write (mirroring createProject) so ids stay consistent no matter
-      // which client created the session (Swift uppercases, Node lowercases)
-      // — a case-only difference must not spawn a duplicate session row for
-      // the same chat.
-      const id = (request.id ?? randomUUID()).toLowerCase()
-      sqlite
-        .prepare(
-          `insert into sessions (
-            id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
-            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at,
-            sidebar_state, sidebar_state_changed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
-        )
-        .run(
-          id,
-          canonicalUuid(request.projectId),
-          config.serverId,
-          request.harnessId,
-          request.harnessAccountId ?? null,
-          request.agentSessionId ?? null,
-          request.title ?? "New Session",
-          request.origin ?? "codevisor",
-          (request.isArchived ?? false) ? 1 : 0,
-          request.worktreeName ?? null,
-          request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
-          request.createdAt ?? now,
-          request.updatedAt ?? null,
-          request.updatedAt ?? request.createdAt ?? now
-        )
-      return getSession(id)
-    })
+    return yield* attempt("createSession", () => insertSessionRow(context, request))
   })
 
   return {
@@ -290,33 +299,14 @@ export const makeSessionsService = (
       attempt("deleteSession", () => {
         const id = canonicalUuid(rawId)
         sqlite.transaction(() => {
-          const pane = sqlite
+          // The chat's pane goes with it. An emptied workspace is a valid
+          // state; clients render it locally rather than the registry
+          // holding a placeholder row.
+          sqlite
             .prepare(
-              "select id, workspace_id from workspace_panes where resource_kind = 'session' and resource_id = ?"
+              "delete from workspace_panes where resource_kind = 'session' and resource_id = ?"
             )
-            .get(id) as { readonly id: string; readonly workspace_id: string } | undefined
-          if (pane !== undefined) {
-            const count = (
-              sqlite
-                .prepare("select count(*) as count from workspace_panes where workspace_id = ?")
-                .get(pane.workspace_id) as { readonly count: number }
-            ).count
-            if (count > 1) {
-              sqlite.prepare("delete from workspace_panes where id = ?").run(pane.id)
-            } else {
-              // Permanent chat deletion is another way a pane resource can
-              // disappear. Apply the same final-pane invariant as Close.
-              sqlite
-                .prepare(
-                  `update workspace_panes set
-                     provider_id = 'codevisor', pane_type = 'new-tab', title = 'New tab',
-                     resource_kind = null, resource_id = null, metadata = null,
-                     revision = revision + 1, updated_at = ?
-                   where id = ?`
-                )
-                .run(isoTimestamp(), pane.id)
-            }
-          }
+            .run(id)
           sqlite.prepare("delete from sessions where id = ?").run(id)
         })()
       })

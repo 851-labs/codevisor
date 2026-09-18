@@ -18,7 +18,7 @@ extension Workspace {
       centerTabs.remove(at: index)
     }
     if centerTabs.isEmpty {
-      let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
+      let replacement = WorkspaceTab.placeholder()
       centerTabs = [replacement]
       selectedCenterTabId = replacement.id
     } else if !centerTabs.contains(where: { $0.id == selectedCenterTabId }) {

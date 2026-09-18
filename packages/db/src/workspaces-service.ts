@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto"
 
-import { initialWorkspacePosition, workspacePositionEpoch, isoTimestamp } from "@codevisor/api"
+import {
+  initialWorkspacePosition,
+  workspacePositionEpoch,
+  isoTimestamp,
+  type UpsertWorkspaceRequest,
+  type Workspace
+} from "@codevisor/api"
+import type Database from "better-sqlite3"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
@@ -9,6 +16,103 @@ import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
+
+/// Same contract as the project cascade, one level down. Pane layout is kept
+/// (the workspace row survives) so restoring revives the surface intact.
+const cascadeArchiveWorkspace = (
+  sqlite: Database.Database,
+  workspaceId: string,
+  stamp: string
+): void => {
+  sqlite
+    .prepare(
+      `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
+       where workspace_id = ? collate nocase and is_archived = 0`
+    )
+    .run(stamp, workspaceId, workspaceId)
+}
+
+const cascadeUnarchiveWorkspace = (sqlite: Database.Database, workspaceId: string): void => {
+  sqlite
+    .prepare(
+      `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
+       where workspace_id = ? collate nocase and archive_cascade_from = ? collate nocase`
+    )
+    .run(workspaceId, workspaceId)
+}
+
+/// The synchronous upsert behind `upsertWorkspace`, exported so the atomic
+/// workspace create can run it inside its own transaction.
+export const upsertWorkspaceRow = (
+  context: ServiceContext,
+  request: UpsertWorkspaceRequest
+): Workspace => {
+  const { sqlite, config, getProject } = context
+
+  const projectId = canonicalUuid(request.projectId)
+  getProject(projectId)
+  const now = isoTimestamp()
+  const id = (request.id ?? randomUUID()).toLowerCase()
+  const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
+    | WorkspaceRow
+    | undefined
+  const head = sqlite
+    .prepare("select sidebar_position from workspaces order by sidebar_position limit 1")
+    .get() as { sidebar_position: string } | undefined
+  const epoch = Math.max(
+    Date.now(),
+    head ? workspacePositionEpoch(head.sidebar_position) + 1 : 0,
+    request.sidebarOrderHead ? workspacePositionEpoch(request.sidebarOrderHead) + 1 : 0
+  )
+  const position = existing?.sidebar_position ?? initialWorkspacePosition(epoch, id)
+  const stamp = archivedStamp(
+    request.isArchived,
+    existing?.is_archived === 1,
+    existing?.archived_at ?? undefined
+  )
+  const wasArchived = existing?.is_archived === 1
+  sqlite.transaction(() => {
+    sqlite
+      .prepare(
+        `insert into workspaces (
+                 id, server_id, project_id, name, has_custom_name,
+                 root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
+               on conflict(id) do update set
+                 project_id = excluded.project_id,
+                 name = excluded.name,
+                 has_custom_name = excluded.has_custom_name,
+                 root_directory = excluded.root_directory,
+                 is_archived = excluded.is_archived,
+                 archived_at = excluded.archived_at,
+                 updated_at = ?`
+      )
+      .run(
+        id,
+        config.serverId,
+        projectId,
+        request.name,
+        request.hasCustomName ? 1 : 0,
+        request.rootDirectory ?? null,
+        stamp === null ? 0 : 1,
+        stamp,
+        request.createdAt ?? now,
+        position,
+        now
+      )
+    // A full upsert can flip the archive bit just like a PATCH, so it
+    // owes the same cascade — otherwise archiving via PUT would leave
+    // the workspace's chats visible under a hidden workspace.
+    if (stamp !== null && !wasArchived) {
+      cascadeArchiveWorkspace(sqlite, id, stamp)
+    } else if (stamp === null && wasArchived) {
+      cascadeUnarchiveWorkspace(sqlite, id)
+    }
+  })()
+  return workspaceFromRow(
+    sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
+  )
+}
 
 export const makeWorkspacesService = (
   context: ServiceContext
@@ -26,69 +130,25 @@ export const makeWorkspacesService = (
   | "promoteWorkspacePaneToSession"
   | "setSessionWorkspace"
 > => {
-  const { sqlite, config, getProject } = context
+  const { sqlite } = context
 
-  /// Same contract as the project cascade, one level down. Pane layout is kept
-  /// (the workspace row survives) so restoring revives the surface intact.
-  const cascadeArchiveWorkspace = (workspaceId: string, stamp: string): void => {
-    sqlite
-      .prepare(
-        `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
-         where workspace_id = ? collate nocase and is_archived = 0`
-      )
-      .run(stamp, workspaceId, workspaceId)
-  }
-
-  const cascadeUnarchiveWorkspace = (workspaceId: string): void => {
-    sqlite
-      .prepare(
-        `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
-         where workspace_id = ? collate nocase and archive_cascade_from = ? collate nocase`
-      )
-      .run(workspaceId, workspaceId)
-  }
-
-  /// Removes a duplicate resource identity without ever emptying the
-  /// workspace it came from. A same-workspace conflict can be deleted because
-  /// the winning pane is inserted/updated in the same transaction; a
-  /// cross-workspace session move leaves the old identity as New Tab when it
-  /// was that workspace's final pane.
+  /// Removes every other pane rendering the same resource. A session is
+  /// globally unique, so the pane that previously showed it goes away even
+  /// when it was its workspace's last pane: an empty workspace is a valid
+  /// state that clients render with their own local empty page.
   const discardConflictingPanes = (
     paneId: string,
     resourceKind: string,
     resourceId: string,
     targetWorkspaceId: string
   ): void => {
-    const conflicts = sqlite
+    sqlite
       .prepare(
-        `select id, workspace_id from workspace_panes
+        `delete from workspace_panes
          where id <> ? and resource_kind = ? and resource_id = ?
            and (workspace_id = ? or ? = 'session')`
       )
-      .all(paneId, resourceKind, resourceId, targetWorkspaceId, resourceKind) as ReadonlyArray<{
-      readonly id: string
-      readonly workspace_id: string
-    }>
-    for (const conflict of conflicts) {
-      const count = (
-        sqlite
-          .prepare("select count(*) as count from workspace_panes where workspace_id = ?")
-          .get(conflict.workspace_id) as { readonly count: number }
-      ).count
-      if (conflict.workspace_id === targetWorkspaceId || count > 1) {
-        sqlite.prepare("delete from workspace_panes where id = ?").run(conflict.id)
-      } else {
-        sqlite
-          .prepare(
-            `update workspace_panes set
-               provider_id = 'codevisor', pane_type = 'new-tab', title = 'New tab',
-               resource_kind = null, resource_id = null, metadata = null,
-               revision = revision + 1, updated_at = ?
-             where id = ?`
-          )
-          .run(isoTimestamp(), conflict.id)
-      }
-    }
+      .run(paneId, resourceKind, resourceId, targetWorkspaceId, resourceKind)
   }
 
   return {
@@ -101,71 +161,7 @@ export const makeWorkspacesService = (
       ).map(workspaceFromRow)
     ),
     upsertWorkspace: (request) =>
-      attempt("upsertWorkspace", () => {
-        const projectId = canonicalUuid(request.projectId)
-        getProject(projectId)
-        const now = isoTimestamp()
-        const id = (request.id ?? randomUUID()).toLowerCase()
-        const existing = sqlite.prepare("select * from workspaces where id = ?").get(id) as
-          | WorkspaceRow
-          | undefined
-        const head = sqlite
-          .prepare("select sidebar_position from workspaces order by sidebar_position limit 1")
-          .get() as { sidebar_position: string } | undefined
-        const epoch = Math.max(
-          Date.now(),
-          head ? workspacePositionEpoch(head.sidebar_position) + 1 : 0,
-          request.sidebarOrderHead ? workspacePositionEpoch(request.sidebarOrderHead) + 1 : 0
-        )
-        const position = existing?.sidebar_position ?? initialWorkspacePosition(epoch, id)
-        const stamp = archivedStamp(
-          request.isArchived,
-          existing?.is_archived === 1,
-          existing?.archived_at ?? undefined
-        )
-        const wasArchived = existing?.is_archived === 1
-        sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `insert into workspaces (
-                 id, server_id, project_id, name, has_custom_name,
-                 root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
-               on conflict(id) do update set
-                 project_id = excluded.project_id,
-                 name = excluded.name,
-                 has_custom_name = excluded.has_custom_name,
-                 root_directory = excluded.root_directory,
-                 is_archived = excluded.is_archived,
-                 archived_at = excluded.archived_at,
-                 updated_at = ?`
-            )
-            .run(
-              id,
-              config.serverId,
-              projectId,
-              request.name,
-              request.hasCustomName ? 1 : 0,
-              request.rootDirectory ?? null,
-              stamp === null ? 0 : 1,
-              stamp,
-              request.createdAt ?? now,
-              position,
-              now
-            )
-          // A full upsert can flip the archive bit just like a PATCH, so it
-          // owes the same cascade — otherwise archiving via PUT would leave
-          // the workspace's chats visible under a hidden workspace.
-          if (stamp !== null && !wasArchived) {
-            cascadeArchiveWorkspace(id, stamp)
-          } else if (stamp === null && wasArchived) {
-            cascadeUnarchiveWorkspace(id)
-          }
-        })()
-        return workspaceFromRow(
-          sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
-        )
-      }),
+      attempt("upsertWorkspace", () => upsertWorkspaceRow(context, request)),
     updateWorkspace: (rawId, request) =>
       attempt("updateWorkspace", () => {
         const id = canonicalUuid(rawId)
@@ -211,9 +207,9 @@ export const makeWorkspacesService = (
               id
             )
           if (stamp !== null && !wasArchived) {
-            cascadeArchiveWorkspace(id, stamp)
+            cascadeArchiveWorkspace(sqlite, id, stamp)
           } else if (stamp === null && wasArchived) {
-            cascadeUnarchiveWorkspace(id)
+            cascadeUnarchiveWorkspace(sqlite, id)
           }
         })()
         return workspaceFromRow(
@@ -374,58 +370,15 @@ export const makeWorkspacesService = (
       attempt("deleteWorkspacePane", () => {
         const workspaceId = canonicalUuid(rawWorkspaceId)
         const paneId = canonicalUuid(rawPaneId)
-        return sqlite.transaction(() => {
-          const workspace = sqlite
-            .prepare("select id from workspaces where id = ?")
-            .get(workspaceId)
-          if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
-
-          const pane = sqlite
-            .prepare("select * from workspace_panes where id = ? and workspace_id = ?")
-            .get(paneId, workspaceId) as WorkspacePaneRow | undefined
-          // A close is keyed by the stable pane id, so a retry after a
-          // successful deletion is already complete.
-          if (pane === undefined) return undefined
-
-          const count = (
-            sqlite
-              .prepare("select count(*) as count from workspace_panes where workspace_id = ?")
-              .get(workspaceId) as { readonly count: number }
-          ).count
-          if (count > 1) {
-            sqlite
-              .prepare("delete from workspace_panes where id = ? and workspace_id = ?")
-              .run(paneId, workspaceId)
-            return undefined
-          }
-
-          // The shared registry never becomes empty through a close. Preserve
-          // the last pane's identity so every client observes one conversion,
-          // not a deletion followed by a separately-created replacement.
-          if (
-            pane.provider_id !== "codevisor" ||
-            pane.pane_type !== "new-tab" ||
-            pane.title !== "New tab" ||
-            pane.resource_kind !== null ||
-            pane.resource_id !== null ||
-            pane.metadata !== null
-          ) {
-            sqlite
-              .prepare(
-                `update workspace_panes set
-                   provider_id = 'codevisor', pane_type = 'new-tab', title = 'New tab',
-                   resource_kind = null, resource_id = null, metadata = null,
-                   revision = revision + 1, updated_at = ?
-                 where id = ? and workspace_id = ?`
-              )
-              .run(isoTimestamp(), paneId, workspaceId)
-          }
-          return workspacePaneFromRow(
-            sqlite
-              .prepare("select * from workspace_panes where id = ? and workspace_id = ?")
-              .get(paneId, workspaceId) as WorkspacePaneRow
-          )
-        })()
+        const workspace = sqlite.prepare("select id from workspaces where id = ?").get(workspaceId)
+        if (workspace === undefined) throw new Error(`Workspace not found: ${workspaceId}`)
+        // Keyed by the stable pane id, so a retry after a successful deletion
+        // is already complete. Closing the last pane leaves the workspace
+        // empty: the registry never holds a placeholder row for that state,
+        // every client renders its own local empty page instead.
+        sqlite
+          .prepare("delete from workspace_panes where id = ? and workspace_id = ?")
+          .run(paneId, workspaceId)
       }),
     promoteWorkspacePaneToSession: (rawWorkspaceId, rawPaneId, rawSessionId, title) =>
       attempt("promoteWorkspacePaneToSession", () => {

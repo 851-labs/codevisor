@@ -168,12 +168,10 @@ extension WorkspaceSyncModel {
         ownerChatSessionId: decoded?.ownerChatSessionId
       )
     case "new-tab":
-      return PaneDescriptorState(
-        id: id,
-        kind: .newTab,
-        name: record.title,
-        terminalKey: id.uuidString
-      )
+      // A row a client that predates local-only New Tab pages may still
+      // publish. The page is device-local now; the registry entry means
+      // nothing here.
+      return nil
     default:
       // The registry remains forward-compatible; renderer support is a
       // separate client capability and arrives with extension panes.

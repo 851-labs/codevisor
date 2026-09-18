@@ -292,8 +292,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     session: ChatSession
   ) async throws -> ServerWorkspacePanePromotion?
   func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws
-  /// Atomically closes a pane. The returned pane is the same identity
-  /// converted to New Tab when it was the workspace's final pane.
+  /// Closes (deletes) a pane. Current servers return nothing: a workspace
+  /// may be left with no panes and each client shows its own New Tab page.
+  /// A server that predates that returns the final pane converted in place.
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane?
   /// Mirrors a workspace's archived flag so other devices — and the
   /// server's own cascade to the workspace's chats — see it.

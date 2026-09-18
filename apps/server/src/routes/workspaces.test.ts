@@ -247,28 +247,21 @@ describe("workspace routes", () => {
       "/v1/workspaces/workspace-panes/panes/pane-1/close",
       { method: "POST" }
     )
-    expect(finalClose).toEqual({
-      status: 200,
-      body: {
-        pane: expect.objectContaining({
-          id: "pane-1",
-          paneType: "new-tab",
-          title: "New tab",
-          revision: 3
-        })
-      }
-    })
-    // Retrying a final close does not advance the pane revision.
+    // Closing the last pane leaves the workspace empty: no placeholder row is
+    // written for it, clients render their own New Tab page.
+    expect(finalClose).toEqual({ status: 200, body: {} })
+    expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([])
+    // Retrying a close of a deleted pane is a no-op.
     expect(
       (
         await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1/close", {
           method: "POST"
         })
       ).body
-    ).toEqual(finalClose.body)
+    ).toEqual({})
 
     await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-2", {
-      body: JSON.stringify({ providerId: "codevisor", paneType: "new-tab", title: "New tab" }),
+      body: JSON.stringify({ providerId: "codevisor", paneType: "browser", title: "Browser" }),
       method: "PUT"
     })
     expect(
@@ -287,12 +280,8 @@ describe("workspace routes", () => {
           method: "DELETE"
         })
       ).body
-    ).toEqual({
-      pane: expect.objectContaining({ id: "pane-1", paneType: "new-tab", revision: 3 })
-    })
-    expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([
-      expect.objectContaining({ id: "pane-1", paneType: "new-tab" })
-    ])
+    ).toEqual({})
+    expect((await jsonRequest(server, "/v1/workspace-panes")).body).toEqual([])
   })
 
   it("serves pane workspaces with idempotent PUTs and change events", async () => {
@@ -441,6 +430,6 @@ describe("workspace routes", () => {
     )
 
     // Unmatched workspace methods fall through to the 404 handler.
-    expect((await jsonRequest(server, "/v1/workspaces", { method: "POST" })).status).toBe(404)
+    expect((await jsonRequest(server, "/v1/workspaces", { method: "PATCH" })).status).toBe(404)
   })
 })

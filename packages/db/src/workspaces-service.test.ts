@@ -217,8 +217,8 @@ describe("@codevisor/db", () => {
       db.upsertWorkspacePane(first.id, {
         id: "pane-placeholder",
         providerId: "codevisor",
-        paneType: "new-tab",
-        title: "New tab"
+        paneType: "chat",
+        title: "New Chat"
       })
     )
     expect(placeholder).toMatchObject({ id: "pane-placeholder", workspaceId: first.id })
@@ -244,25 +244,20 @@ describe("@codevisor/db", () => {
     expect(
       (await run(db.listWorkspacePanes)).find((pane) => pane.id === "pane-placeholder")
     ).toMatchObject({ workspaceId: second.id })
+    // The source workspace is simply empty now; no placeholder stands in.
     expect(
       (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === first.id)
-    ).toEqual([expect.objectContaining({ paneType: "new-tab" })])
+    ).toEqual([])
 
-    const finalReplacement = await run(db.deleteWorkspacePane(second.id, "pane-placeholder"))
-    expect(finalReplacement).toMatchObject({
-      id: "pane-placeholder",
-      workspaceId: second.id,
-      paneType: "new-tab",
-      revision: 4
-    })
+    await run(db.deleteWorkspacePane(second.id, "pane-placeholder"))
+    expect(await run(db.listWorkspacePanes)).toEqual([])
+    // Re-assigning membership synthesizes the compatibility chat pane again.
     await run(db.setSessionWorkspace(session.id, second.id))
     expect(
       (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === second.id)
-    ).toHaveLength(2)
+    ).toEqual([expect.objectContaining({ id: session.id, paneType: "chat" })])
     await run(db.deleteSession(session.id))
-    expect(
-      (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === second.id)
-    ).toEqual([expect.objectContaining({ id: "pane-placeholder", paneType: "new-tab" })])
+    expect(await run(db.listWorkspacePanes)).toEqual([])
     await run(db.close)
   })
 
@@ -279,8 +274,8 @@ describe("@codevisor/db", () => {
       db.upsertWorkspacePane(workspace.id, {
         id: "stable-pane",
         providerId: "codevisor",
-        paneType: "new-tab",
-        title: "New tab"
+        paneType: "chat",
+        title: "New Chat"
       })
     )
     expect(placeholder.revision).toBe(1)
@@ -407,11 +402,12 @@ describe("@codevisor/db", () => {
       run(db.promoteWorkspacePaneToSession(first.id, generated.id, otherSession.id, "Other"))
     ).rejects.toThrow(/different projects/)
 
-    const closed = await run(db.deleteWorkspacePane(first.id, generated.id))
-    expect(closed).toMatchObject({ id: generated.id, paneType: "new-tab", revision: 6 })
-    // Retrying the same final-pane close is idempotent: same identity and no
-    // additional revision.
-    expect(await run(db.deleteWorkspacePane(first.id, generated.id))).toEqual(closed)
+    await run(db.deleteWorkspacePane(first.id, generated.id))
+    expect(
+      (await run(db.listWorkspacePanes)).filter((pane) => pane.workspaceId === first.id)
+    ).toEqual([])
+    // Closing the last pane leaves the workspace empty; a retry is a no-op.
+    await run(db.deleteWorkspacePane(first.id, generated.id))
 
     const emptyTitle = await run(
       db.createSession({ projectId: project.id, harnessId: "codex", title: "" })
@@ -423,7 +419,7 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
-  it("serializes competing closes and preserves exactly one final pane", async () => {
+  it("closes every pane and leaves an empty workspace without a placeholder", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
     const project = await run(db.createProject({ folderPath: "/tmp/atomic-pane-close" }))
     const workspace = await run(
@@ -450,21 +446,15 @@ describe("@codevisor/db", () => {
       })
     )
 
-    expect(await run(db.deleteWorkspacePane(workspace.id, "first-pane"))).toBeUndefined()
-    const survivor = await run(db.deleteWorkspacePane(workspace.id, "second-pane"))
-    expect(survivor).toMatchObject({
-      id: "second-pane",
-      paneType: "new-tab",
-      title: "New tab",
-      revision: 2
-    })
-    expect(await run(db.deleteWorkspacePane(workspace.id, "first-pane"))).toBeUndefined()
-    expect(await run(db.deleteWorkspacePane(workspace.id, "second-pane"))).toEqual(survivor)
-    expect(await run(db.listWorkspacePanes)).toEqual([survivor])
+    await run(db.deleteWorkspacePane(workspace.id, "first-pane"))
+    await run(db.deleteWorkspacePane(workspace.id, "second-pane"))
+    await run(db.deleteWorkspacePane(workspace.id, "first-pane"))
+    await run(db.deleteWorkspacePane(workspace.id, "second-pane"))
+    expect(await run(db.listWorkspacePanes)).toEqual([])
 
     const snapshot = await run(db.getWorkspaceSnapshot)
     expect(snapshot.workspaces.map((item) => item.id)).toContain(workspace.id)
-    expect(snapshot.panes).toEqual([survivor])
+    expect(snapshot.panes).toEqual([])
     await run(db.close)
   })
 })

@@ -102,7 +102,7 @@ extension Workspace {
       }
       return
     }
-    let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
+    let tab = WorkspaceTab.placeholder()
     centerTabs = [tab]
     selectedCenterTabId = tab.id
   }

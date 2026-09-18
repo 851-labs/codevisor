@@ -8,6 +8,8 @@ extension WorkspaceSyncModel {
     workspaceId: UUID,
     client: any CodevisorServerClienting
   ) {
+    // The New Tab page is device-local: nothing to share.
+    guard pane.kind != .newTab else { return }
     let key = PanePublicationKey(workspaceId: workspaceId, paneId: pane.id)
     optimisticPaneDeletions.remove(key)
     optimisticPaneMutations[key] = pane
@@ -103,18 +105,26 @@ extension WorkspaceSyncModel {
           workspaceId: targetWorkspaceId,
           createdAt: Date()
         )
-        if let promotion = try await client.promoteWorkspacePaneToChat(
-          candidate,
-          session: session
-        ) {
+        // Only a pane the server already knows (a published draft) can be
+        // converted in place. A New Tab page is local, so its chat is simply
+        // created: session, pane, then membership.
+        let isPublished = repository.hasPerformedMigration(
+          Self.panePublicationKey(serverId: workspace.serverId, paneId: pane.id)
+        )
+        if isPublished,
+          let promotion = try await client.promoteWorkspacePaneToChat(
+            candidate,
+            session: session
+          )
+        {
           noteConfirmedRevision(promotion.pane)
           repository.markMigrationPerformed(
             Self.panePublicationKey(serverId: workspace.serverId, paneId: pane.id)
           )
         } else {
-          // Rolling-upgrade fallback. The optimistic barrier still
-          // prevents the intermediate placeholder snapshot from
-          // repainting the initiating client.
+          // Also the rolling-upgrade fallback for a published draft on an
+          // older server. The optimistic barrier still prevents an
+          // intermediate snapshot from repainting the initiating client.
           _ = try await client.upsertSession(session)
           if let uploaded = try await client.upsertWorkspacePane(candidate) {
             noteConfirmedRevision(uploaded)
@@ -222,7 +232,10 @@ extension WorkspaceSyncModel {
       } else {
         optimisticPaneMutations.removeValue(forKey: key)
         confirmedPaneRevisions.removeValue(forKey: key)
+        // Closing the last pane left this device's New Tab page under the
+        // same id; the server has nothing to say about that page.
         if var workspace = repository.workspace(id: workspaceId),
+          !Self.isLocalPlaceholder(id: id, in: workspace),
           Self.removePane(id: id, from: &workspace)
         {
           Self.ensureUsableLayout(&workspace)
@@ -247,11 +260,16 @@ extension WorkspaceSyncModel {
     optimisticPaneDeletions.remove(key)
     confirmedPaneRevisions.removeValue(forKey: key)
     guard var workspace = repository.workspace(id: workspaceId),
-      workspace.serverId == serverId
+      workspace.serverId == serverId,
+      !Self.isLocalPlaceholder(id: id, in: workspace)
     else { return }
     guard Self.removePane(id: id, from: &workspace) else { return }
     Self.ensureUsableLayout(&workspace)
     repository.save(workspace)
     revision &+= 1
+  }
+
+  static func isLocalPlaceholder(id: UUID, in workspace: Workspace) -> Bool {
+    Self.allPanes(in: workspace).contains { $0.id == id && $0.kind == .newTab }
   }
 }

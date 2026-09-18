@@ -4,7 +4,7 @@ import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("workspace pane conflicts", () => {
-  it("preserves the final source pane when a resource moves through an explicit pane", async () => {
+  it("deletes the source pane when a resource moves through an explicit pane", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "machine-a" }))
     const project = await run(db.createProject({ folderPath: "/tmp/workspace-pane-conflicts" }))
     const source = await run(
@@ -28,18 +28,15 @@ describe("workspace pane conflicts", () => {
     )
 
     expect(moved).toMatchObject({ workspaceId: target.id, resourceId: session.id })
-    const panes = await run(db.listWorkspacePanes)
-    expect(panes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: session.id,
-          workspaceId: source.id,
-          paneType: "new-tab"
-        }),
-        expect.objectContaining({ id: "explicit-pane", workspaceId: target.id })
-      ])
-    )
-    expect(panes.find((pane) => pane.id === session.id)?.resourceId).toBeUndefined()
+    // A session renders in exactly one pane. The source workspace is left
+    // empty rather than keeping a placeholder row.
+    expect(await run(db.listWorkspacePanes)).toEqual([
+      expect.objectContaining({
+        id: "explicit-pane",
+        workspaceId: target.id,
+        resourceId: session.id
+      })
+    ])
     await expect(run(db.deleteWorkspacePane("missing", "missing"))).rejects.toThrow(
       /Workspace not found/
     )

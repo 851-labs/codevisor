@@ -21,6 +21,7 @@ import { makeSessionsService } from "./sessions-service.js"
 import { makeSyncService } from "./sync-service.js"
 import { makeTranscriptService } from "./transcript-service.js"
 import { makeUpdatesService } from "./updates-service.js"
+import { makeWorkspaceCreationService } from "./workspace-creation-service.js"
 import { makeWorkspacesService } from "./workspaces-service.js"
 import { makeWorktreesService } from "./worktrees-service.js"
 
@@ -94,6 +95,7 @@ export const createService = (
     ...makeProjectsService(context),
     ...makeWorktreesService(context),
     ...makeWorkspacesService(context),
+    ...makeWorkspaceCreationService(context),
     ...makeSessionsService(context),
     ...makeTranscriptService(context),
     ...makeEventsService(context),

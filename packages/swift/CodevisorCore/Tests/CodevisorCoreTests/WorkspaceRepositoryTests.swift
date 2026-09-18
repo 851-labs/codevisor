@@ -223,7 +223,7 @@ struct WorkspaceRepositoryTests {
       })
   }
 
-  @Test("A version-2 workspace with no tabs repairs to a layout-only shell")
+  @Test("A version-2 workspace with no tabs repairs to a local New Tab page")
   func emptyTopTabsRepairOnDecode() throws {
     let fresh = Workspace(
       name: "Empty", rootDirectory: "/tmp/project", serverId: "local",
@@ -239,7 +239,7 @@ struct WorkspaceRepositoryTests {
     )
     #expect(decoded.centerTabs.count == 1)
     #expect(decoded.selectedCenterTabId == decoded.centerTabs[0].id)
-    #expect(decoded.centerTabs[0].root.allGroups[0].state.panes.isEmpty)
+    #expect(decoded.centerTabs[0].isPlaceholder)
   }
 
   @Test("Workspace tab custom titles persist and older tabs remain automatic")

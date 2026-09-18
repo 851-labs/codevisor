@@ -89,8 +89,9 @@ export const WorkspaceSnapshot = Schema.Struct({
 })
 export type WorkspaceSnapshot = typeof WorkspaceSnapshot.Type
 
-/// Closing the final pane converts that same identity into a New Tab. Closing
-/// any other pane deletes it, in which case `pane` is absent.
+/// Closing a pane deletes it; a workspace may be left with no panes, which
+/// every client renders with its own local empty page. `pane` is always
+/// absent — it remains in the schema for clients that predate this.
 export const CloseWorkspacePaneResponse = Schema.Struct({
   pane: Schema.optional(WorkspacePane)
 })
@@ -132,6 +133,31 @@ export const PromoteWorkspacePaneToChatResponse = Schema.Struct({
   session: SessionSummary
 })
 export type PromoteWorkspacePaneToChatResponse = typeof PromoteWorkspacePaneToChatResponse.Type
+
+/// Creates a workspace around its first chat in one server transaction: the
+/// workspace, the session and the chat pane commit together, so no client
+/// can observe the workspace without its chat. The workspace id is required
+/// (clients own workspace identity); the session's `workspaceId` is implied.
+export const CreateWorkspaceRequest = Schema.Struct({
+  workspace: UpsertWorkspaceRequest,
+  session: CreateSessionRequest,
+  pane: Schema.optional(
+    Schema.Struct({
+      /// Defaults to the session id, matching the pane a session membership
+      /// change would synthesize.
+      id: Schema.optional(Schema.String),
+      title: Schema.optional(Schema.String)
+    })
+  )
+})
+export type CreateWorkspaceRequest = typeof CreateWorkspaceRequest.Type
+
+export const CreateWorkspaceResponse = Schema.Struct({
+  workspace: Workspace,
+  session: SessionSummary,
+  pane: WorkspacePane
+})
+export type CreateWorkspaceResponse = typeof CreateWorkspaceResponse.Type
 
 export const Worktree = Schema.Struct({
   id: Schema.String,

@@ -345,22 +345,10 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
           panes[$0].id.caseInsensitiveCompare(paneId.uuidString) == .orderedSame
         })
       else { return nil }
-      if workspacePaneIndices.count > 1 {
-        _panes?.remove(at: index)
-        return nil
-      }
-      var replacement = panes[index]
-      if replacement.paneType != "new-tab" || replacement.resourceId != nil {
-        replacement.providerId = "codevisor"
-        replacement.paneType = "new-tab"
-        replacement.title = "New tab"
-        replacement.resourceKind = nil
-        replacement.resourceId = nil
-        replacement.metadata = nil
-        replacement.revision = (replacement.revision ?? 0) + 1
-        _panes?[index] = replacement
-      }
-      return replacement
+      // Like the server: a close is a deletion, even of the last pane. The
+      // New Tab page a client shows for an empty workspace is its own.
+      _panes?.remove(at: index)
+      return nil
     }
   }
 

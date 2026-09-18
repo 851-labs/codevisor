@@ -6,8 +6,15 @@ import ACPKit
 
 @MainActor
 extension MachineControllerTests {
-  @Test("A stale placeholder snapshot cannot repaint an optimistic chat promotion")
-  func staleWorkspacePaneSnapshotDoesNotRevertPromotion() async throws {
+  /// `published` is a draft chat pane the server already knows (converted in
+  /// place); otherwise the pane is this device's New Tab page, which the
+  /// server never saw (it has no record for the id) — its chat is created
+  /// outright. Either way a snapshot captured mid-flight must not repaint the
+  /// optimistic chat.
+  @Test(
+    "A stale placeholder snapshot cannot repaint an optimistic chat promotion",
+    arguments: [true, false])
+  func staleWorkspacePaneSnapshotDoesNotRevertPromotion(published: Bool) async throws {
     let projectId = UUID()
     let workspaceId = UUID()
     let sessionId = UUID()
@@ -55,12 +62,12 @@ extension MachineControllerTests {
       isArchived: false,
       createdAt: "2026-06-30T00:00:00.000Z"
     )
-    let placeholderRecord = ServerWorkspacePane(
+    let draftRecord = ServerWorkspacePane(
       id: paneId.uuidString,
       workspaceId: workspaceId.uuidString,
       providerId: "codevisor",
-      paneType: "new-tab",
-      title: "New tab",
+      paneType: "chat",
+      title: "New Chat",
       revision: 1,
       createdAt: "2026-06-30T00:00:02.000Z"
     )
@@ -68,10 +75,11 @@ extension MachineControllerTests {
       projects: [project],
       sessions: [session],
       workspaces: [workspaceRecord],
-      panes: [placeholderRecord]
+      panes: published ? [draftRecord] : []
     )
-    fake.panePromotionGate = TestSignal()
-    defer { fake.panePromotionGate?.signal() }
+    let gate = TestSignal()
+    if published { fake.panePromotionGate = gate } else { fake.paneUpsertGate = gate }
+    defer { gate.signal() }
     let projectList = ProjectListModel(
       projectRepository: DefaultProjectRepository(store: InMemoryStore()),
       sessionRepository: DefaultSessionRepository(store: InMemoryStore())
@@ -79,10 +87,14 @@ extension MachineControllerTests {
     let repository = DefaultWorkspaceRepository(store: InMemoryStore())
     let placeholder = PaneDescriptorState(
       id: paneId,
-      kind: .newTab,
-      name: "New tab",
+      kind: published ? .chat : .newTab,
+      name: published ? "New Chat" : "New tab",
       terminalKey: paneId.uuidString
     )
+    if published {
+      repository.markMigrationPerformed(
+        WorkspaceSyncModel.panePublicationKey(serverId: "local", paneId: paneId))
+    }
     repository.save(
       Workspace(
         id: workspaceId,
@@ -124,13 +136,17 @@ extension MachineControllerTests {
       workspaceId: workspaceId,
       client: fake
     )
-    await fake.panePromotionStarted.wait()
-    // This response is deliberately captured while the server still has
-    // revision 1 / New Tab. It must not overwrite the local renderer.
+    if published {
+      await fake.panePromotionStarted.wait()
+    } else {
+      await fake.paneUpsertStarted.wait()
+    }
+    // This response is deliberately captured while the server still shows
+    // the pre-promotion state. It must not overwrite the local renderer.
     await workspaceSync.refreshFromServer(serverId: "local", client: fake)
     #expect(repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId)
 
-    fake.panePromotionGate?.signal()
+    gate.signal()
     try await waitForSync {
       fake.workspacePanes?.first?.paneType == "chat"
         && repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == paneId
@@ -228,8 +244,9 @@ extension MachineControllerTests {
       fake.workspacePanes?.contains(where: { UUID(uuidString: $0.id) == secondId }) == false
     }
 
-    // Closing the remaining renderer is an in-place optimistic reset and
-    // the server confirms that exact same identity.
+    // Closing the remaining renderer is an in-place optimistic reset to
+    // this device's New Tab page. The server simply deletes the pane; the
+    // local page keeps the same identity.
     fake.paneCloseGate = nil
     var final = try #require(repository.workspace(id: workspaceId))
     let groupId = try #require(final.centerTabs[0].root.allGroups.first?.id)
@@ -248,8 +265,9 @@ extension MachineControllerTests {
     )
     #expect(repository.workspace(id: workspaceId)?.centerTree.allGroups[0].state.selectedPane?.id == firstId)
     try await waitForSync {
-      fake.workspacePanes?.first?.id.caseInsensitiveCompare(firstId.uuidString) == .orderedSame
-        && fake.workspacePanes?.first?.paneType == "new-tab"
+      fake.workspacePanes?.isEmpty == true
+        && repository.workspace(id: workspaceId)?.centerTree.allGroups[0].state.selectedPane?.id
+          == firstId
         && repository.workspace(id: workspaceId)?.centerTree.allGroups[0].state.selectedPane?.kind
           == .newTab
     }
@@ -282,6 +300,13 @@ extension MachineControllerTests {
     let repository = DefaultWorkspaceRepository(store: InMemoryStore())
     let pane = PaneDescriptorState(
       id: paneId,
+      kind: .browser,
+      name: "Browser",
+      terminalKey: paneId.uuidString,
+      browserURL: "https://example.com/"
+    )
+    let replacement = PaneDescriptorState(
+      id: paneId,
       kind: .newTab,
       name: "New tab",
       terminalKey: paneId.uuidString
@@ -305,7 +330,7 @@ extension MachineControllerTests {
     sync.deletePane(
       id: paneId,
       workspaceId: workspaceId,
-      optimisticReplacement: pane,
+      optimisticReplacement: replacement,
       client: fake
     )
 
@@ -313,9 +338,7 @@ extension MachineControllerTests {
     #expect(fake.paneMutationLog == ["upsert"])
     fake.paneUpsertGate?.signal()
     try await waitForSync {
-      fake.paneMutationLog == ["upsert", "close"]
-        && fake.workspacePanes?.first?.id.caseInsensitiveCompare(paneId.uuidString)
-          == .orderedSame
+      fake.paneMutationLog == ["upsert", "close"] && fake.workspacePanes?.isEmpty == true
     }
   }
 

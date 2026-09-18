@@ -5,7 +5,7 @@ import { DatabaseError, makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("session workspaces service", () => {
-  it("removes a detached session pane when another pane keeps the workspace nonempty", async () => {
+  it("moves a session's pane with its membership and deletes it on detach", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/detached-session-pane" }))
     const workspace = await run(
@@ -29,12 +29,15 @@ describe("session workspaces service", () => {
     const third = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
     await run(db.setSessionWorkspace(third.id, workspace.id))
     await run(db.setSessionWorkspace(third.id, target.id))
-    expect(await run(db.listWorkspacePanes)).toEqual(
+    const panes = await run(db.listWorkspacePanes)
+    expect(panes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ workspaceId: workspace.id, paneType: "new-tab" }),
-        expect.objectContaining({ workspaceId: target.id, resourceId: second.id })
+        expect.objectContaining({ workspaceId: target.id, resourceId: second.id }),
+        expect.objectContaining({ workspaceId: target.id, resourceId: third.id })
       ])
     )
+    // The source workspace is left empty; no placeholder row stands in for it.
+    expect(panes.filter((pane) => pane.workspaceId === workspace.id)).toEqual([])
     await run(db.close)
   })
 
@@ -65,14 +68,9 @@ describe("session workspaces service", () => {
     expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBe(workspace.id)
     await run(db.setSessionWorkspace(detached.id, null))
     expect((await run(db.getSessionSummary(detached.id))).workspaceId).toBeUndefined()
-    expect(await run(db.listWorkspacePanes)).toEqual([
-      expect.objectContaining({ id: detached.id, paneType: "new-tab" })
-    ])
-    expect((await run(db.listWorkspacePanes))[0]?.resourceId).toBeUndefined()
+    expect(await run(db.listWorkspacePanes)).toEqual([])
     await run(db.setSessionWorkspace(attached.id, null))
-    expect(await run(db.listWorkspacePanes)).toEqual([
-      expect.objectContaining({ id: detached.id, paneType: "new-tab" })
-    ])
+    expect(await run(db.listWorkspacePanes)).toEqual([])
 
     const deletionWorkspace = await run(
       db.upsertWorkspace({ projectId: project.id, name: "Delete", hasCustomName: false })
@@ -84,7 +82,7 @@ describe("session workspaces service", () => {
     await run(db.deleteSession(deletedSession.id))
     expect(
       (await run(db.listWorkspacePanes)).find((pane) => pane.workspaceId === deletionWorkspace.id)
-    ).toMatchObject({ id: deletedSession.id, paneType: "new-tab", revision: 2 })
+    ).toBeUndefined()
 
     await expect(run(db.setSessionWorkspace("missing", workspace.id))).rejects.toBeInstanceOf(
       DatabaseError

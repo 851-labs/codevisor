@@ -72,22 +72,11 @@ const deletePluginPanes = async (
   pluginId: string
 ): Promise<void> => {
   for (const pane of await listPluginPanes(services, pluginId)) {
-    const replacement = await run(services.db.deleteWorkspacePane(pane.workspaceId, pane.id))
-    if (replacement !== undefined) {
-      // A workspace's final pane converts into a New Tab instead of vanishing.
-      await appendAndPublish(
-        services.db,
-        fanout,
-        "workspace.pane.updated",
-        replacement.id,
-        replacement
-      )
-    } else {
-      await appendAndPublish(services.db, fanout, "workspace.pane.deleted", pane.id, {
-        id: pane.id,
-        workspaceId: pane.workspaceId
-      })
-    }
+    await run(services.db.deleteWorkspacePane(pane.workspaceId, pane.id))
+    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", pane.id, {
+      id: pane.id,
+      workspaceId: pane.workspaceId
+    })
   }
 }
 

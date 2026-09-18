@@ -23,6 +23,7 @@ import {
   type RouteState
 } from "../server-context.js"
 import { createSessionIfMissing } from "./session-workspace.js"
+import { routeWorkspaceCreate } from "./workspace-create.js"
 
 /// Pane workspaces are client-authored identity records, so writes are
 /// idempotent PUTs keyed by the client's workspace id. Creates and updates
@@ -38,6 +39,10 @@ export const routeWorkspaces = async (
 ): Promise<boolean> => {
   if (request.method === "GET" && url.pathname === "/v1/workspaces") {
     writeJson(response, 200, await run(services.db.listWorkspaces))
+    return true
+  }
+
+  if (await routeWorkspaceCreate(services, fanout, config, request, response, url)) {
     return true
   }
 
@@ -106,22 +111,20 @@ export const routeWorkspaces = async (
     url.pathname,
     "/v1/workspaces/:workspaceId/panes/:paneId/close"
   )
-  if (closeRoute !== undefined && request.method === "POST") {
-    const pane = await run(
-      services.db.deleteWorkspacePane(closeRoute.workspaceId as string, closeRoute.paneId as string)
-    )
-    if (pane !== undefined) {
-      await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    } else {
-      await appendAndPublish(
-        services.db,
-        fanout,
-        "workspace.pane.deleted",
-        closeRoute.paneId as string,
-        { id: closeRoute.paneId, workspaceId: closeRoute.workspaceId }
-      )
-    }
-    writeJson(response, 200, { pane })
+  // Close and DELETE are the same operation. Closing the last pane leaves the
+  // workspace empty; the response keeps its `{ pane }` shape (always absent
+  // now) for clients that predate that.
+  if (
+    (closeRoute !== undefined && request.method === "POST") ||
+    (paneRoute !== undefined && request.method === "DELETE")
+  ) {
+    const route = (closeRoute ?? paneRoute)!
+    await run(services.db.deleteWorkspacePane(route.workspaceId as string, route.paneId as string))
+    await appendAndPublish(services.db, fanout, "workspace.pane.deleted", route.paneId as string, {
+      id: route.paneId,
+      workspaceId: route.workspaceId
+    })
+    writeJson(response, 200, {})
     return true
   }
 
@@ -155,28 +158,6 @@ export const routeWorkspaces = async (
     )
     await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
     writeJson(response, 200, pane)
-    return true
-  }
-
-  if (paneRoute !== undefined && request.method === "DELETE") {
-    const pane = await run(
-      services.db.deleteWorkspacePane(paneRoute.workspaceId as string, paneRoute.paneId as string)
-    )
-    if (pane !== undefined) {
-      await appendAndPublish(services.db, fanout, "workspace.pane.updated", pane.id, pane)
-    } else {
-      await appendAndPublish(
-        services.db,
-        fanout,
-        "workspace.pane.deleted",
-        paneRoute.paneId as string,
-        {
-          id: paneRoute.paneId,
-          workspaceId: paneRoute.workspaceId
-        }
-      )
-    }
-    writeJson(response, 200, { pane })
     return true
   }
 

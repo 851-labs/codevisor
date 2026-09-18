@@ -96,13 +96,14 @@ struct ChatlessWorkspacePaneTests {
   }
 
   /// End to end over the real models: a workspace authored on the server with
-  /// one New Tab pane and no chat reconciles into a usable layout, its leaf is
-  /// selectable, and activating it addresses the workspace itself.
+  /// no chat (an older client's "new-tab" row is ignored — the page is
+  /// device-local) reconciles into a usable layout showing this device's own
+  /// New Tab page, its leaf is selectable, and activating it addresses the
+  /// workspace itself.
   @Test @MainActor func aServerAuthoredChatlessWorkspaceBecomesSelectableLayout() throws {
     var space = workspace(centerTree: .leaf(PaneGroupState()))
-    let paneId = UUID()
     let record = ServerWorkspacePane(
-      id: paneId.uuidString,
+      id: UUID().uuidString,
       workspaceId: space.id.uuidString,
       providerId: "codevisor",
       paneType: "new-tab",
@@ -112,12 +113,12 @@ struct ChatlessWorkspacePaneTests {
 
     WorkspaceSyncModel.reconcilePanes(in: &space, records: [record], protectedLocalPaneIds: [])
 
-    let pane = try #require(
-      space.centerTabs.flatMap { $0.root.allGroups }.flatMap(\.state.panes)
-        .first { $0.id == paneId })
+    #expect(space.allPanes.count == 1)
+    let pane = try #require(space.allPanes.first)
     #expect(pane.kind == .newTab)
+    #expect(pane.id.uuidString != record.id)
     let leafId = try #require(
-      space.centerTabs.flatMap { $0.root.allGroups }.first { $0.state.panes.contains { $0.id == paneId } }?.id)
+      space.centerTabs.flatMap { $0.root.allGroups }.first { $0.state.panes.contains { $0.id == pane.id } }?.id)
 
     let selected = space.selectDestination(.leaf(leafId))
     #expect(selected)

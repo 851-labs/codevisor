@@ -107,8 +107,7 @@ extension WorkspaceSyncModel {
         Self.reconcilePanes(
           in: &workspace,
           records: stableRecords,
-          protectedLocalPaneIds: paneProtection,
-          preserveEmptyTabs: existing != nil
+          protectedLocalPaneIds: paneProtection
         )
       }
 

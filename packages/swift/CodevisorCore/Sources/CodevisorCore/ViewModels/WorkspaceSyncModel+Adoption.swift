@@ -79,7 +79,7 @@ extension WorkspaceSyncModel {
             _ = try await client.upsertSession(session)
             didMutateServer = true
           }
-          for localPane in Self.allPanes(in: workspace) {
+          for localPane in Self.allPanes(in: workspace) where localPane.kind != .newTab {
             guard
               try await client.upsertWorkspacePane(
                 Self.serverPane(
@@ -179,7 +179,7 @@ extension WorkspaceSyncModel {
       for session in sessions {
         _ = try await client.upsertSession(session)
       }
-      for localPane in Self.allPanes(in: workspace) {
+      for localPane in Self.allPanes(in: workspace) where localPane.kind != .newTab {
         if try await client.upsertWorkspacePane(
           Self.serverPane(
             from: localPane,
@@ -245,7 +245,7 @@ extension WorkspaceSyncModel {
       guard let targetWorkspaceId, remoteWorkspaceIds.contains(targetWorkspaceId) else {
         continue
       }
-      for pane in Self.allPanes(in: workspace) where !ids.contains(pane.id) {
+      for pane in Self.allPanes(in: workspace) where !ids.contains(pane.id) && pane.kind != .newTab {
         if repository.hasPerformedMigration(
           Self.panePublicationKey(serverId: serverId, paneId: pane.id)
         ) {

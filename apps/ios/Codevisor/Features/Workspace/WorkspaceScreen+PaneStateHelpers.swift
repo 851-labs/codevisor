@@ -39,7 +39,7 @@ extension WorkspaceScreen {
       )
     }
     if workspace.centerTabs.isEmpty {
-      workspace.centerTabs = [WorkspaceTab(root: .leaf(PaneGroupState()))]
+      workspace.centerTabs = [WorkspaceTab.placeholder()]
     }
     workspace.selectedCenterTabId =
       state.selectedPaneId.flatMap { selectedPaneId in

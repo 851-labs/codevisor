@@ -416,7 +416,7 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
         if browser.selected { workspace.selectedCenterTabId = tabId }
       }
       if workspace.centerTabs.isEmpty {
-        let tab = WorkspaceTab(root: .leaf(PaneGroupState()))
+        let tab = WorkspaceTab.placeholder()
         workspace.centerTabs = [tab]
         workspace.selectedCenterTabId = tab.id
       } else if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }) {

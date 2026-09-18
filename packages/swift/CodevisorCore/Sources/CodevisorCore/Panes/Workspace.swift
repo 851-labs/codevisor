@@ -49,6 +49,21 @@ public struct WorkspaceTab: Codable, Sendable, Equatable, Identifiable {
   }
 }
 
+extension WorkspaceTab {
+  /// The tab a layout shows when it has nothing else: one local "New tab"
+  /// page. It exists only on this device — it is never published, and it
+  /// gives way to the first real pane that arrives (see
+  /// `WorkspaceSyncModel.reconcilePanes`).
+  public static func placeholder() -> WorkspaceTab {
+    WorkspaceTab(root: .leaf(.centerInitialWithoutChat()))
+  }
+
+  /// A tab whose every pane is the local New Tab page.
+  public var isPlaceholder: Bool {
+    root.allGroups.allSatisfy { group in group.state.panes.allSatisfy { $0.kind == .newTab } }
+  }
+}
+
 public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public let id: UUID
   public var sidebarPosition: String?
@@ -116,7 +131,7 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     projectId = try container.decode(UUID.self, forKey: .projectId)
     if let decodedTabs = try container.decodeIfPresent([WorkspaceTab].self, forKey: .centerTabs) {
       if decodedTabs.isEmpty {
-        let replacement = WorkspaceTab(root: .leaf(PaneGroupState()))
+        let replacement = WorkspaceTab.placeholder()
         centerTabs = [replacement]
         selectedCenterTabId = replacement.id
       } else {
@@ -362,6 +377,12 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
 
   public var allPanes: [PaneDescriptorState] {
     centerTabs.flatMap { $0.root.allGroups.flatMap(\.state.panes) }
+  }
+
+  /// Whether any pane is real content. A workspace showing only the local
+  /// New Tab page has none: the server knows nothing about that page.
+  public var hasRealPanes: Bool {
+    allPanes.contains { $0.kind != .newTab }
   }
 
   /// Inverts the version-1 `split → tab groups` hierarchy. The selected

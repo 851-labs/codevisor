@@ -12,9 +12,15 @@ struct WorkspaceRenameSyncTests {
     var serverRecord = WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)
     serverRecord.isArchived = true
     _ = try await fixture.fake.upsertWorkspace(serverRecord)
+    // Newer layout is real content the server already knows about; an empty
+    // tab is only ever a placeholder and is retired once real panes exist.
     var current = fixture.workspace
-    current.centerTabs.append(WorkspaceTab(root: .leaf(PaneGroupState())))
+    var newTabGroup = PaneGroupState()
+    let newTab = newTabGroup.addNewTabPane()
+    current.centerTabs.append(WorkspaceTab(root: .leaf(newTabGroup)))
     fixture.repository.save(current)
+    _ = try await fixture.fake.upsertWorkspacePane(
+      WorkspaceSyncModel.serverPane(from: newTab, workspaceId: current.id, createdAt: current.createdAt))
     var renamed = fixture.workspace
     renamed.name = "Renamed on Mac"
     renamed.hasCustomName = true

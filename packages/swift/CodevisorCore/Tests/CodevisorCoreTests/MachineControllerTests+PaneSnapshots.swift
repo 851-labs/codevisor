@@ -69,8 +69,8 @@ extension MachineControllerTests {
       id: remoteTabId.uuidString,
       workspaceId: workspaceId.uuidString,
       providerId: "codevisor",
-      paneType: "new-tab",
-      title: "New tab",
+      paneType: "browser",
+      title: "Browser",
       createdAt: "2026-06-30T00:00:02.000Z"
     )
     let fake = SyncFakeServerClient(
@@ -112,8 +112,10 @@ extension MachineControllerTests {
       materialized.centerTabs.flatMap { $0.root.allGroups }.flatMap(\.state.panes)
         .filter { $0.chatSessionId == sessionId }.count == 1
     )
-    // The one-time upgrade preserves a legacy local tab alongside remote panes.
-    #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == true)
+    // The one-time upgrade keeps a legacy local New Tab beside the remote
+    // panes, but never uploads it: that page is device-local.
+    #expect(materialized.tabId(containingPane: legacyPane.id) != nil)
+    #expect(fake.workspacePanes?.contains(where: { $0.id == legacyPane.id.uuidString }) == false)
 
     controller.startEventSync(for: "local")
     fake.setPanes([chatPane])
@@ -202,7 +204,8 @@ extension MachineControllerTests {
         .flatMap(UUID.init(uuidString:)) == workspaceId
     )
     #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == chatPaneId } == true)
-    #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == placeholder.id } == true)
+    // The local New Tab page is kept but not published.
+    #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == placeholder.id } == false)
     #expect(fake.workspacePanes?.contains { UUID(uuidString: $0.id) == sessionId } == false)
     #expect(repository.workspace(id: workspaceId)?.pane(containingChat: sessionId)?.id == chatPaneId)
     #expect(repository.workspace(id: workspaceId)?.tabId(containingPane: placeholder.id) != nil)
