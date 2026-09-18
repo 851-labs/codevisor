@@ -17,6 +17,9 @@
     private let notificationCenter: NotificationCenter
     private let keyboardCapture: any ScreenSharingKeyboardCapture
     private let applicationIsActive: () -> Bool
+    /// Paces the motion flush. Injected so a test can hold and release the
+    /// coalescing window instead of racing a 16 ms wall-clock timer.
+    private let clock: any Clock<Duration>
     var onInput: ((ScreenSharingInputEvent) -> Void)?
     var onRelease: (() -> Void)?
     private var monitor: Any?
@@ -35,12 +38,14 @@
     init(
       view: any ScreenSharingInputTarget, notificationCenter: NotificationCenter = .default,
       keyboardCapture: any ScreenSharingKeyboardCapture = ScreenSharingSystemKeyboardCapture(),
-      applicationIsActive: @escaping () -> Bool = { NSApp.isActive }
+      applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
+      clock: any Clock<Duration> = ContinuousClock()
     ) {
       self.view = view
       self.notificationCenter = notificationCenter
       self.keyboardCapture = keyboardCapture
       self.applicationIsActive = applicationIsActive
+      self.clock = clock
     }
 
     func begin() -> Bool {
@@ -87,9 +92,9 @@
         notificationCenter.addObserver(
           forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main, using: suspend),
       ]
-      motionTask = Task { [weak self] in
+      motionTask = Task { [weak self, clock] in
         while !Task.isCancelled {
-          do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+          do { try await clock.sleep(for: .milliseconds(16)) } catch { return }
           self?.flushMotion()
         }
       }

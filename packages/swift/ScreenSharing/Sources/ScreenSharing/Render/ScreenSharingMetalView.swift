@@ -379,6 +379,16 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
     CGSize(width: CVPixelBufferGetWidth(frame.pixelBuffer), height: CVPixelBufferGetHeight(frame.pixelBuffer))
   }
 
+  /// The aspect-fit placement of one video inside a drawable: scaled to fit,
+  /// centred, letterboxed on the short axis. Named so the letterbox geometry
+  /// can be checked without a GPU drawable.
+  static func viewport(video: CGSize, target: CGSize) -> MTLViewport {
+    let scale = min(target.width / video.width, target.height / video.height)
+    return MTLViewport(
+      originX: (target.width - video.width * scale) / 2, originY: (target.height - video.height * scale) / 2,
+      width: video.width * scale, height: video.height * scale, znear: 0, zfar: 1)
+  }
+
   /// Pixel-format validation and plane textures; nil for an unsupported frame.
   func textures(for frame: ScreenSharingVideoFrame) -> Textures? {
     let pixel = frame.pixelBuffer
@@ -403,14 +413,9 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       let encoder = buffer.makeRenderCommandEncoder(descriptor: target.pass)
     else { return nil }
     let pixel = textures.frame.pixelBuffer
-    let width = Double(CVPixelBufferGetWidth(pixel))
-    let height = Double(CVPixelBufferGetHeight(pixel))
+    let video = CGSize(width: CVPixelBufferGetWidth(pixel), height: CVPixelBufferGetHeight(pixel))
     let targetSize = CGSize(width: target.drawable.texture.width, height: target.drawable.texture.height)
-    let scale = min(targetSize.width / width, targetSize.height / height)
-    encoder.setViewport(
-      MTLViewport(
-        originX: (targetSize.width - width * scale) / 2, originY: (targetSize.height - height * scale) / 2,
-        width: width * scale, height: height * scale, znear: 0, zfar: 1))
+    encoder.setViewport(Self.viewport(video: video, target: targetSize))
     switch textures.planes {
     case .biplanar(let y, let uv, let isFullRange):
       guard let yTexture = CVMetalTextureGetTexture(y), let uvTexture = CVMetalTextureGetTexture(uv) else {
