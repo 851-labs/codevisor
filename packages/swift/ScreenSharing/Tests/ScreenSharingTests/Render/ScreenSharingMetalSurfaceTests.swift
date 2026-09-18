@@ -4,10 +4,10 @@ import Testing
 
 @testable import ScreenSharing
 
-/// Where the remote screen lands inside the drawable. The arithmetic is checked
-/// on its own, and then end to end: a white frame is actually rendered into a
-/// drawable over a coloured clear, and the resulting pixels say where the video
-/// and its letterbox bars are.
+/// Where the remote screen lands inside the render target. The arithmetic is
+/// checked on its own, and then end to end: a white frame is actually rendered
+/// into a texture over a coloured clear, and the resulting pixels say where the
+/// video and its letterbox bars are.
 @MainActor
 struct ScreenSharingMetalSurfaceTests {
   @Test func aVideoWiderThanTheDrawableIsBarredAboveAndBelow() {
@@ -118,9 +118,12 @@ private func expect(
   #expect(abs(viewport.height - height) < 1e-9, sourceLocation: sourceLocation)
 }
 
-/// A real device, queue, encoder and off-screen `CAMetalLayer`. Metal is a
+/// A real device, queue, encoder and off-screen render target. Metal is a
 /// hard requirement of the viewer, so its absence is reported as a failure
-/// here rather than passing a test that rendered nothing.
+/// here rather than passing a test that rendered nothing. The target is an
+/// ordinary texture rather than a `CAMetalLayer` drawable: the drawable only
+/// ever contributed its texture, and acquiring one needs a window server
+/// session that a headless CI runner does not have.
 @MainActor
 private struct GPUFixture {
   let device: any MTLDevice
@@ -135,32 +138,31 @@ private struct GPUFixture {
       pipelines: .init(device: device, shader: ScreenSharingMetalView.shader))
   }
 
-  /// Renders an all-white video of `video` size into a `target`-sized drawable
+  /// Renders an all-white video of `video` size into a `target`-sized texture
   /// cleared to blue, and reads the result back.
   func render(video: CGSize, target: CGSize) throws -> Rendered {
     let buffer = try GPUFixture.pixelBuffer(width: Int(video.width), height: Int(video.height), fill: 0xFF)
     let frame = ScreenSharingVideoFrame(pixelBuffer: buffer, timestampNs: 1)
     let textures = try #require(encoder.textures(for: frame))
 
-    let layer = CAMetalLayer()
-    layer.device = device
-    layer.pixelFormat = .bgra8Unorm
-    layer.framebufferOnly = false
-    layer.drawableSize = target
-    let drawable = try #require(layer.nextDrawable(), "the off-screen layer produced no drawable")
+    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+      pixelFormat: .bgra8Unorm, width: Int(target.width), height: Int(target.height), mipmapped: false)
+    descriptor.usage = [.renderTarget, .shaderRead]
+    descriptor.storageMode = .private
+    let surface = try #require(device.makeTexture(descriptor: descriptor), "the render target could not be allocated")
     let pass = MTLRenderPassDescriptor()
-    pass.colorAttachments[0].texture = drawable.texture
+    pass.colorAttachments[0].texture = surface
     pass.colorAttachments[0].loadAction = .clear
     pass.colorAttachments[0].storeAction = .store
     pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 1, 1)
 
-    let encoded = try #require(encoder.encode(textures, into: Surface(drawable: drawable, pass: pass)))
+    let encoded = try #require(encoder.encode(textures, into: pass, target: surface))
     #expect(encoded.buffer.status == .notEnqueued, "encoding never commits or presents")
     #expect(encoded.retained.textures.count == 1)
     encoded.buffer.commit()
     encoded.buffer.waitUntilCompleted()
     #expect(encoded.buffer.status == .completed)
-    return try Rendered(texture: drawable.texture, device: device, queue: queue)
+    return try Rendered(texture: surface, device: device, queue: queue)
   }
 
   static func pixelBuffer(width: Int, height: Int, fill: UInt8 = 0) throws -> CVPixelBuffer {
@@ -179,7 +181,7 @@ private struct GPUFixture {
   }
 }
 
-/// The drawable's pixels, copied into shared memory so they can be inspected.
+/// The render target's pixels, copied into shared memory so they can be inspected.
 private struct Rendered {
   private let pixels: [UInt8]
   private let width: Int

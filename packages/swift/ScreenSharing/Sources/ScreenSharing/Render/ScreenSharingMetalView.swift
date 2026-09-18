@@ -408,13 +408,23 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
   /// Encodes and ends encoding; the buffer is neither presented nor committed here.
   /// The video is scaled to fit the target and centred, letterboxed on the short axis.
   func encode(_ textures: Textures, into target: Surface) -> Encoded? {
+    encode(textures, into: target.pass, target: target.drawable.texture)
+  }
+
+  /// The same drawing against a plain render target. A drawable contributes
+  /// only its texture here, so the rendered pixels can be checked against an
+  /// ordinary off-screen texture, with no CoreAnimation layer to acquire and
+  /// no window server session to depend on.
+  func encode(
+    _ textures: Textures, into pass: MTLRenderPassDescriptor, target targetTexture: any MTLTexture
+  ) -> Encoded? {
     guard
       let buffer = commandQueue.makeCommandBuffer(),
-      let encoder = buffer.makeRenderCommandEncoder(descriptor: target.pass)
+      let encoder = buffer.makeRenderCommandEncoder(descriptor: pass)
     else { return nil }
     let pixel = textures.frame.pixelBuffer
     let video = CGSize(width: CVPixelBufferGetWidth(pixel), height: CVPixelBufferGetHeight(pixel))
-    let targetSize = CGSize(width: target.drawable.texture.width, height: target.drawable.texture.height)
+    let targetSize = CGSize(width: targetTexture.width, height: targetTexture.height)
     encoder.setViewport(Self.viewport(video: video, target: targetSize))
     switch textures.planes {
     case .biplanar(let y, let uv, let isFullRange):
