@@ -157,6 +157,10 @@ extension OnboardingView {
       navigate(to: .harnesses, back: false)
     case .harnesses:
       navigate(to: .permissions, back: false)
+      // The Harnesses settings page lists only the shared catalog, which
+      // machines never publish into — give every harness the user kept on
+      // its row now, exactly as "Add Harness…" would.
+      HarnessFleet.seed(from: harnesses, in: environment.configSync)
       // The catalog is already loaded, so make the first new-chat picker
       // available immediately. The capability warm below replaces this
       // provisional seed with model/mode metadata when it finishes.

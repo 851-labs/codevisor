@@ -28,7 +28,33 @@ extension AppEnvironment {
   /// A machine's connection just came up: converge it with the config
   /// plane now rather than on the next periodic sweep.
   func noteMachineConnected(_ machineId: String) {
-    Task { await configSync.synchronizeMachine(machineId) }
+    Task {
+      await configSync.synchronizeMachine(machineId)
+      if machineId == CodevisorMachine.local.id {
+        await seedHarnessCatalogIfNeeded(from: machineId)
+      }
+    }
+  }
+
+  static let harnessCatalogSeedKey = "harnessCatalogSeed.v1"
+
+  /// One-time catch-up for installs that onboarded before onboarding wrote
+  /// the shared harness catalog: their Harnesses page showed no rows even
+  /// though chats worked, because only "Add Harness…" ever authored it.
+  /// Runs after the local machine's config sync so an existing fleet
+  /// catalog is honored — anything authored means there is nothing to
+  /// recover; nothing authored seeds from what this machine has ready and
+  /// enabled. The marker lands only once the local catalog was actually
+  /// read, so an unreachable server retries on the next connect.
+  func seedHarnessCatalogIfNeeded(from serverId: String) async {
+    guard settings.hasCompletedOnboarding,
+      machines.persistenceStore.loadData(forKey: Self.harnessCatalogSeedKey) == nil
+    else { return }
+    if HarnessFleet.settings(configSync, includingUninstalled: true).isEmpty {
+      guard let harnesses = try? await harnessService(for: serverId).allHarnesses() else { return }
+      HarnessFleet.seed(from: harnesses, in: configSync)
+    }
+    try? machines.persistenceStore.saveData(Data([1]), forKey: Self.harnessCatalogSeedKey)
   }
 
   /// Change-driven application of replicated namespaces.

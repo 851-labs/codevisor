@@ -32,6 +32,32 @@ public extension HarnessFleet {
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
+  /// Seeds the shared catalog from one machine's discovered harnesses: each
+  /// harness that is ready and wanted there gets the row "Add Harness…"
+  /// would write. The catalog is authored only by the client (machines
+  /// never publish discovery into it), so without this a fresh install's
+  /// Harnesses page stays empty even though onboarding enabled harnesses
+  /// on the local server. Keys already in the catalog — including uninstall
+  /// directives — are left alone so a preference authored elsewhere in the
+  /// fleet survives. (A leftover discovery row from servers that once
+  /// published `installed: false` is not a preference and is replaced.)
+  /// Returns the ids that were added.
+  @discardableResult
+  static func seed(from harnesses: [ServerHarness], in sync: ConfigSync) -> [String] {
+    let authored = Set(settings(sync, includingUninstalled: true).map(\.id))
+    var added: [String] = []
+    for harness in harnesses where harness.isReady && harness.isDesiredEnabled {
+      guard !authored.contains(harness.id) else { continue }
+      set(
+        Setting(
+          id: harness.id, name: harness.name, symbolName: harness.symbolName,
+          enabled: true, installed: true),
+        in: sync)
+      added.append(harness.id)
+    }
+    return added
+  }
+
   static func set(_ setting: Setting, in sync: ConfigSync) {
     sync.set(
       namespace: "harnesses", key: setting.id,
