@@ -210,6 +210,10 @@ export interface ClaudeSession {
   /// finality marker, so this is the earliest demotion signal available.
   currentMessageTextStreamed: boolean
   currentModel: string
+  /// The CLI permission mode Codevisor last put the session in. Starts in
+  /// bypassPermissions (full access) and follows setMode; canUseTool consults
+  /// it to auto-allow checks the CLI escalates despite bypass.
+  currentModeId: string
   currentEffort: string
   currentSpeed: "standard" | "fast"
   models: ReadonlyArray<ClaudeModel>

@@ -193,6 +193,7 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
     setMode: (modeId) =>
       adapterPromise("setMode", async () => {
         await session.q.setPermissionMode(modeId as never)
+        session.currentModeId = modeId
         await session.emit({
           kind: "session.updated",
           payload: { modeId },

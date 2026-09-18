@@ -18,6 +18,8 @@ describe("ClaudeProvider", () => {
     const createPromise = run(provider.createSession(definition, "/tmp", emit))
     fake.push(initMessage())
     const created = await createPromise
+    await run(created.handle.setMode!("default"))
+    expect(fake.permissionModes).toEqual(["default"])
 
     const toolInput = { command: "rm -rf build" }
     const decision = fake.options!.canUseTool!("Bash", toolInput as never, {} as never)
@@ -55,6 +57,75 @@ describe("ClaudeProvider", () => {
       behavior: "deny",
       message: "User denied permission."
     })
+  })
+
+  it("auto-allows checks the CLI escalates while in bypassPermissions", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    // Full access is acknowledged to the SDK explicitly, as it requires.
+    expect(fake.options?.allowDangerouslySkipPermissions).toBe(true)
+    expect(created.metadata.modes?.currentModeId).toBe("bypassPermissions")
+
+    // The CLI's Bash safety checks (e.g. variable loops in a subagent) still
+    // reach canUseTool under bypass; full access answers them without a prompt.
+    const toolInput = { command: 'for f in a b; do grep -n "$f" .; done' }
+    const eventsBefore = events.length
+    await expect(
+      fake.options!.canUseTool!(
+        "Bash",
+        toolInput as never,
+        {
+          agentID: "a120e6ad",
+          decisionReason: "variable loop cannot be statically validated"
+        } as never
+      )
+    ).resolves.toEqual({ behavior: "allow", updatedInput: toolInput })
+    expect(events.length).toBe(eventsBefore)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("agent=a120e6ad"))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("variable loop"))
+
+    // Questions and plan approvals are still the human's to answer.
+    const question = fake.options!.canUseTool!(
+      "AskUserQuestion",
+      { questions: [{ header: "Scope", question: "Which?", options: [{ label: "A" }] }] } as never,
+      {} as never
+    )
+    await fake.drain()
+    expect((events.at(-1)?.payload as Record<string, unknown>).sessionUpdate).toBe("question")
+    await run(
+      created.handle.answerQuestion!(
+        (events.at(-1)?.payload as Record<string, unknown>).questionId as string,
+        { outcome: "cancelled" }
+      )
+    )
+    await expect(question).resolves.toMatchObject({ behavior: "deny" })
+
+    // Leaving full access restores the prompt.
+    await run(created.handle.setMode!("acceptEdits"))
+    expect(fake.permissionModes).toEqual(["acceptEdits"])
+    expect(events.at(-1)?.payload).toMatchObject({ modeId: "acceptEdits" })
+    const asked = fake.options!.canUseTool!("Bash", { command: "ls" } as never, {} as never)
+    await fake.drain()
+    expect((events.at(-1)?.payload as Record<string, unknown>).questions).toMatchObject([
+      { header: "Permission" }
+    ])
+    await run(
+      created.handle.answerQuestion!(
+        (events.at(-1)?.payload as Record<string, unknown>).questionId as string,
+        { answers: { approval: { answers: ["Deny"] } }, outcome: "answered" }
+      )
+    )
+    await expect(asked).resolves.toMatchObject({ behavior: "deny" })
+    log.mockRestore()
   })
 
   it("surfaces ExitPlanMode as a plan-approval question: implement allows, keep planning denies", async () => {

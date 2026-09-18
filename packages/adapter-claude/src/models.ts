@@ -83,7 +83,11 @@ export const metadataFor = (
       ]
     })
   }
-  return { configOptions: options, modes: PERMISSION_MODES, supportsGoals: true }
+  return {
+    configOptions: options,
+    modes: { ...PERMISSION_MODES, currentModeId: session.currentModeId },
+    supportsGoals: true
+  }
 }
 
 export const effortLevelsFor = (session: ClaudeSession): ReadonlyArray<string> =>

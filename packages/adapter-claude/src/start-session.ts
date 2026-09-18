@@ -108,10 +108,13 @@ export const makeStartSession = (deps: StartSessionDeps) => {
               }
             }
           }),
-      // The CLI invokes this only when the active permission mode requires a
-      // human decision (never in the bypassPermissions default). Questions
-      // and approvals both surface through the blocking question pipeline.
-      canUseTool: async (toolName, toolInput) => {
+      // Questions and approvals both surface through the blocking question
+      // pipeline. In bypassPermissions the CLI auto-approves ordinary tool
+      // calls before consulting this, but its Bash safety checks (unanalyzable
+      // commands, variable loops — mostly inside non-interactive subagents)
+      // still escalate here. Full access means the human already answered
+      // "allow" for those, so they are allowed without a prompt.
+      canUseTool: async (toolName, toolInput, check) => {
         if (session === undefined) {
           return { behavior: "allow", updatedInput: toolInput }
         }
@@ -124,9 +127,20 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         if (toolName === "ExitPlanMode") {
           return holdClaudePlanApproval(session, toolInput)
         }
+        if (session.currentModeId === "bypassPermissions") {
+          console.error(
+            `[claude] auto-allowed ${toolName} escalated under bypassPermissions` +
+              `${check.agentID === undefined ? "" : ` agent=${check.agentID}`}` +
+              `: ${check.decisionReason ?? "no reason given"}`
+          )
+          return { behavior: "allow", updatedInput: toolInput }
+        }
         return holdClaudeApproval(session, toolName, toolInput)
       },
       permissionMode: "bypassPermissions",
+      // The SDK requires this alongside bypassPermissions as an explicit
+      // acknowledgement; Codevisor's full-access default is that choice.
+      allowDangerouslySkipPermissions: true,
       hooks: {
         PostToolUse: [
           {
@@ -227,6 +241,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       currentMessageId: undefined,
       currentMessageTextStreamed: false,
       currentModel: "",
+      currentModeId: "bypassPermissions",
       currentSpeed: "standard",
       cwd,
       emit,
