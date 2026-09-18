@@ -85,27 +85,30 @@ export function diagnosticInfoPlist({
     NSScreenCaptureUsageDescription:
       "Capture the display you select for a native Screen Sharing diagnostic.",
     NSLocalNetworkUsageDescription: "Connect to the other Mac in your Screen Sharing diagnostic.",
+    // Signaling is plain HTTP with a bearer token. ATS exempts RFC 1918 addresses on its own, but not
+    // a Tailscale peer (100.64/10 or a MagicDNS name), which is how the two Macs reach each other off LAN.
+    NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
     ...extra
   }
-  const body = Object.keys(entries)
-    .toSorted()
-    .map((key) => {
-      const value = entries[key]
-      const rendered =
-        typeof value === "boolean"
-          ? value
-            ? "<true/>"
-            : "<false/>"
-          : `<string>${escapeXML(value)}</string>`
-      return `<key>${escapeXML(key)}</key>${rendered}`
-    })
-    .join("\n")
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-${body}
-</dict></plist>
+<plist version="1.0">${plistDict(entries)}</plist>
 `
+}
+
+function plistValue(value) {
+  if (typeof value === "boolean") return value ? "<true/>" : "<false/>"
+  if (value !== null && typeof value === "object") return plistDict(value)
+  return `<string>${escapeXML(value)}</string>`
+}
+
+/// Keys sorted, nested dictionaries rendered the same way.
+function plistDict(entries) {
+  const body = Object.keys(entries)
+    .toSorted()
+    .map((key) => `<key>${escapeXML(key)}</key>${plistValue(entries[key])}`)
+    .join("\n")
+  return `<dict>\n${body}\n</dict>`
 }
 
 /// Sign nested code before the app, inside out, with one identity and no

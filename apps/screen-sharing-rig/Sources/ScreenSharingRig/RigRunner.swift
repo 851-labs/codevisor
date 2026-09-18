@@ -134,6 +134,8 @@
     var clockOffset: RigClockOffset?
     var clockTask: Task<Void, Never>?
     var imageAges = RigImageAge()
+    /// Viewer: what the shell's Native session scenario shows under the video.
+    let nativeSession = RigNativeSessionStatus()
 
     init(configuration: RigConfiguration, build: RigBuildInfo) {
       self.configuration = configuration
@@ -141,6 +143,7 @@
       self.build = build
       name = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
       hudEnabled = configuration.hud
+      nativeSession.hudEnabled = hudEnabled
     }
 
     var elapsedSeconds: Double { Double(ScreenSharingMetrics.nowNs - startedNs) / 1_000_000_000 }
@@ -243,6 +246,16 @@
     func setHUD(_ enabled: Bool) {
       hudEnabled = enabled
       hud?.isHidden = !enabled
+      nativeSession.hudEnabled = enabled
+    }
+
+    func nativeSessionLine() -> String {
+      var parts = [session.map { "connection: \($0.connection)" } ?? "connection: waiting"]
+      if let peerName { parts.append("peer \(peerName) · \(peerBuild?.label ?? "?")") }
+      if let size = session?.frameSizeLabel { parts.append(size) }
+      parts.append("reconnects \(reconnects)")
+      parts.append("up \(Int(elapsedSeconds)) s")
+      return parts.joined(separator: " · ")
     }
 
     func startTelemetry() {
@@ -295,6 +308,7 @@
             peerBuild: peerBuild, reconnects: reconnects, capture: activeCapture.description,
             tuning: configuration.tuning.label))
       }
+      if configuration.role == .viewer { nativeSession.line = nativeSessionLine() }
     }
 
     func status() -> RigStatus {

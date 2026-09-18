@@ -6,6 +6,15 @@
   import ScreenSharingDiagnostics
   import ScreenSharingRigKit
 
+  /// Keeps the session's Metal view exactly on its bounds through every resize
+  /// (the renderer scales to fit and letterboxes); the HUD anchors itself.
+  final class RigViewerSurfaceView: NSView {
+    override func layout() {
+      super.layout()
+      for view in subviews where !(view is RigHUDView) { view.frame = bounds }
+    }
+  }
+
   extension RigRunner {
     func runViewer() async throws {
       guard let base = configuration.hostBaseURL else { throw ScreenSharingError.invalid("viewer needs peer") }
@@ -15,7 +24,7 @@
       let port = try await control.start()
       server = control
       log("control on 127.0.0.1:\(port); host \(base.absoluteString)")
-      showViewerWindow()
+      _ = viewerSurface()
       startTelemetry()
       startClockCalibration(base: base)
       var policy = RigReconnectPolicy()
@@ -196,7 +205,11 @@
     func runSample(seconds: Int, report: URL) async throws -> RigSampleResponse {
       let hudWasEnabled = hudEnabled
       setHUD(false)
-      defer { setHUD(hudWasEnabled) }
+      nativeSession.sampling = true
+      defer {
+        setHUD(hudWasEnabled)
+        nativeSession.sampling = false
+      }
       log("sample: \(seconds) s → \(report.path)")
       return try await withCheckedThrowingContinuation { continuation in
         sampling = Sampling(
@@ -239,30 +252,27 @@
       }
     }
 
-    func showViewerWindow() {
-      let content = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 540))
+    /// The view the session's Metal view and the HUD live in; the shell embeds it in
+    /// the Native session scenario. Created once, by whichever side asks first.
+    func viewerSurface() -> NSView {
+      if let container { return container }
+      let content = RigViewerSurfaceView(frame: NSRect(x: 0, y: 0, width: 960, height: 540))
       let hud = RigHUDView()
+      hud.isHidden = !hudEnabled
       content.addSubview(hud)
-      let window = NSWindow(
-        contentRect: content.frame, styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered,
-        defer: false)
-      window.isReleasedWhenClosed = false
-      window.delegate = self
-      window.title = "Codevisor Screen Sharing Rig · viewer"
-      window.contentView = content
-      window.center()
-      window.makeKeyAndOrderFront(nil)
-      NSApplication.shared.activate()
-      self.window = window
       container = content
       self.hud = hud
       keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-        guard let self, event.window === self.window, event.charactersIgnoringModifiers?.lowercased() == "h",
+        // Only while the surface is on screen and no text field has the keyboard: the shell's
+        // other scenarios share this window.
+        guard let self, let window = self.container?.window, event.window === window,
+          !(window.firstResponder is NSTextView), event.charactersIgnoringModifiers?.lowercased() == "h",
           event.modifierFlags.intersection([.command, .control, .option]).isEmpty
         else { return event }
         self.setHUD(!self.hudEnabled)
         return nil
       }
+      return content
     }
 
     func windowWillClose(_ notification: Notification) {

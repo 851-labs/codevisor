@@ -2,10 +2,11 @@
   import AppKit
   import SwiftUI
 
-  /// The rig's window when launched without arguments: a sidebar of scenarios,
-  /// each a way to exercise the screen-sharing stack outside the product.
-  /// `--config` (the resident two-Mac rig), `probe` and `vnc-server` remain the
-  /// headless entry points the scripts drive.
+  /// The rig's window: a sidebar of scenarios, each a way to exercise the
+  /// screen-sharing stack outside the product. Launched without arguments it
+  /// opens on Raw VNC; the resident viewer (`--config`) opens the same window
+  /// on Native session with its video inside. `probe`, `vnc-server` and the
+  /// `--config` host remain headless entry points the scripts drive.
   enum RigScenario: String, CaseIterable, Identifiable {
     case rawVNC, loopbackServer, nativeSession, probe
     var id: String { rawValue }
@@ -31,17 +32,25 @@
 
   @MainActor
   enum RigShell {
-    /// Opens the shell window and runs the application until it closes.
-    static func run() -> Never {
+    /// Opens the shell window and runs the application until it closes. With
+    /// the resident viewer's `runner`, Native session hosts its video and the
+    /// runner is the window's delegate: closing it stops the session and exits
+    /// cleanly, which the launch agent does not restart.
+    static func run(runner: RigRunner? = nil) -> Never {
       let app = NSApplication.shared
       app.setActivationPolicy(.regular)
-      let controller = NSHostingController(rootView: RigShellView())
+      let controller = NSHostingController(rootView: RigShellView(runner: runner))
       let window = NSWindow(contentViewController: controller)
-      window.title = "Codevisor Screen Sharing Rig"
+      window.title = runner == nil ? "Codevisor Screen Sharing Rig" : "Codevisor Screen Sharing Rig · viewer"
       window.setContentSize(NSSize(width: 1180, height: 760))
       window.styleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
       window.titlebarAppearsTransparent = true
+      window.isReleasedWhenClosed = false
       window.center()
+      if let runner {
+        window.delegate = runner
+        runner.window = window
+      }
       window.makeKeyAndOrderFront(nil)
       app.activate(ignoringOtherApps: true)
       let delegate = RigShellDelegate()
@@ -56,12 +65,19 @@
   }
 
   struct RigShellView: View {
-    @State private var scenario: RigScenario? = .rawVNC
+    let runner: RigRunner?
+    @State private var scenario: RigScenario?
+    @State private var columns: NavigationSplitViewVisibility = .all
     @State private var vnc = RigVNCScenarioModel()
     @State private var loopback = RigLoopbackServerModel()
 
+    init(runner: RigRunner?) {
+      self.runner = runner
+      _scenario = State(initialValue: runner == nil ? .rawVNC : .nativeSession)
+    }
+
     var body: some View {
-      NavigationSplitView {
+      NavigationSplitView(columnVisibility: $columns) {
         List(RigScenario.allCases, selection: $scenario) { scenario in
           Label(scenario.title, systemImage: scenario.systemImage).tag(scenario)
         }
@@ -70,9 +86,15 @@
         switch scenario ?? .rawVNC {
         case .rawVNC: RigVNCScenarioView(model: vnc, loopback: loopback)
         case .loopbackServer: RigLoopbackServerView(model: loopback)
-        case .nativeSession: RigInstructionsView.nativeSession
+        case .nativeSession:
+          if let runner { RigNativeSessionView(runner: runner) } else { RigInstructionsView.nativeSession }
         case .probe: RigInstructionsView.probe
         }
+      }
+      // A sample measures presented frames with nothing else on screen: only the video, no sidebar.
+      .onChange(of: runner?.nativeSession.sampling ?? false) { _, sampling in
+        if sampling { scenario = .nativeSession }
+        columns = sampling ? .detailOnly : .all
       }
     }
   }
@@ -85,7 +107,7 @@
     static let nativeSession = RigInstructionsView(
       title: "Native session",
       lines: [
-        "The two-Mac WebRTC rig runs as LaunchAgents driven by rig.json, not from this window.",
+        "The two-Mac WebRTC rig runs as LaunchAgents driven by rig.json; the viewer opens this window with its video here.",
         "bun run screen-sharing:rig install --host user@mac --host-address 192.168.x.y --capture workload:1920x1080@60",
         "bun run screen-sharing:rig status · sample --seconds 30 · tune paced15-worker · logs · stop --all",
         "See docs/plans/screen-sharing-rig.md and apps/screen-sharing-rig/README.md.",

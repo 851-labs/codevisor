@@ -111,6 +111,11 @@ test("rig plist carries the fixed identity and is byte-stable across calls", () 
   assert.match(first, /<key>CFBundleExecutable<\/key><string>screen-sharing-rig<\/string>/)
   assert.match(first, /<key>NSHighResolutionCapable<\/key><true\/>/)
   assert.match(first, /<key>NSScreenCaptureUsageDescription<\/key>/)
+  assert.match(
+    first,
+    /<key>NSAppTransportSecurity<\/key><dict>\n<key>NSAllowsArbitraryLoads<\/key><true\/>\n<\/dict>/,
+    "signaling over a Tailscale address is plain HTTP outside ATS's private-range exemption"
+  )
   assert.doesNotMatch(first, /w[0-9a-f]{12}/, "the rig identifier must not embed a worktree hash")
 })
 
