@@ -48,11 +48,6 @@
 			path = Codevisor;
 			sourceTree = "<group>";
 		};
-		0D0000000000000000000002 /* Tests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Tests;
-			sourceTree = "<group>";
-		};
 		5C0000000000000000000001 /* ../shared/Screenshots */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../shared/Screenshots;
@@ -91,7 +86,6 @@
 				5C0000000000000000000002 /* ../shared/ScreenshotTests */,
 				0C0000000000000000000010 /* Codevisor */,
 				0C0000000000000000000020 /* Products */,
-				0D0000000000000000000002 /* Tests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -146,7 +140,6 @@
 				0D0000000000000000000007 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				0D0000000000000000000002 /* Tests */,
 				5C0000000000000000000002 /* ../shared/ScreenshotTests */,
 			);
 			name = NavigationTests;
