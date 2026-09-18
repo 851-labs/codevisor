@@ -73,6 +73,20 @@ public extension HarnessFleet {
     }
   }
 
+  /// How a harness's sign-in relates to the fleet, as far as the client knows.
+  enum SharedSignIn: Equatable, Sendable {
+    /// Each machine signs in on its own.
+    case notShared
+    /// One fleet sign-in, not done yet: the harness row is asking for it.
+    case pending
+    /// One fleet sign-in landed recently; machines pick it up on their own.
+    case signedIn
+    /// One fleet sign-in, but the client can't say this machine is catching
+    /// up: no account is known, or one has been there long enough that a
+    /// machine still asking for it is stuck.
+    case unresolved
+  }
+
   struct MachineRow: Identifiable, Equatable, Sendable {
     public var machineId: String
     public var name: String
@@ -112,14 +126,13 @@ public extension HarnessFleet {
 
   /// Machines keep their list order regardless of state, so rows don't
   /// jump while a fleet converges.
-  /// - Parameters:
-  ///   - sharesAccounts: the harness signs in once for the whole fleet, so a
-  ///     machine's "sign in required" is never something that machine does.
-  ///   - sharedSignInPending: no fleet sign-in exists yet (the machine is
-  ///     waiting on the user) as opposed to one it hasn't synced yet.
+  /// A machine's "sign in required" means different things depending on
+  /// where the account lives: waiting on the user (quiet, the harness row
+  /// asks), catching up with an account that exists (busy), or — when the
+  /// client can't tell — something to act on from the machine's row.
   nonisolated static func machineRows(
     harnessId: String, readiness: [String: [MachineReadiness]], machines: [FleetMachine],
-    sharesAccounts: Bool = false, sharedSignInPending: Bool = false
+    sharedSignIn: SharedSignIn = .notShared
   ) -> [MachineRow] {
     machines.map { machine in
       var status: MachineStatus
@@ -130,21 +143,23 @@ public extension HarnessFleet {
       } else {
         status = .syncing
       }
-      if sharesAccounts, status == .signInRequired {
-        status = sharedSignInPending ? .awaitingSignIn : .syncingSignIn
+      if status == .signInRequired {
+        switch sharedSignIn {
+        case .pending: status = .awaitingSignIn
+        case .signedIn: status = .syncingSignIn
+        case .notShared, .unresolved: break
+        }
       }
       return MachineRow(machineId: machine.id, name: machine.name, status: status)
     }
   }
 
   static func status(
-    harnessId: String, sync: ConfigSync, machines: [FleetMachine],
-    sharesAccounts: Bool = false, sharedSignInPending: Bool = false
+    harnessId: String, sync: ConfigSync, machines: [FleetMachine], sharedSignIn: SharedSignIn = .notShared
   ) -> HarnessStatus {
     HarnessStatus(
       machines: machineRows(
-        harnessId: harnessId, readiness: readiness(sync), machines: machines,
-        sharesAccounts: sharesAccounts, sharedSignInPending: sharedSignInPending))
+        harnessId: harnessId, readiness: readiness(sync), machines: machines, sharedSignIn: sharedSignIn))
   }
 
   static func fleetMachines(_ machines: MachineController) -> [FleetMachine] {

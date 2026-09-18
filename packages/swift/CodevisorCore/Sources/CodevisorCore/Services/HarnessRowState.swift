@@ -51,12 +51,10 @@ public struct HarnessRowState: Equatable, Sendable {
     fleetSharedOAuthHarnesses.contains(harnessId) || HarnessSharedCredentials(rawValue: harnessId) != nil
   }
 
-  /// Presence of shared accounts is independent of any machine's local
-  /// probe result, installation, or account override. No secrets leave the replica.
+  /// Whether the replica holds a usable fleet-shared account for the harness.
+  /// No secrets leave the replica.
   @MainActor
-  public static func shared(harnessId: String, sync: ConfigSync, authRequired: Bool = true) -> Self {
-    guard authRequired else { return .init(supportsAccounts: false) }
-    let usesOAuth = fleetSharedOAuthHarnesses.contains(harnessId)
+  public static func hasSharedAccounts(harnessId: String, sync: ConfigSync) -> Bool {
     let source = HarnessSharedCredentials(rawValue: harnessId)
     _ = sync.revisionsByNamespace["harness-shared-accounts"]
     _ = sync.revisionsByNamespace[HarnessSharedCredentials.namespace]
@@ -76,26 +74,35 @@ public struct HarnessRowState: Equatable, Sendable {
       else { return false }
       return true
     }
-    if hasOAuthAccounts { return .init() }
+    if hasOAuthAccounts { return true }
     if harnessId == "opencode",
       case .string(let content) = sync.value(namespace: HarnessSharedCredentials.namespace, key: "profiles:opencode"),
       let profiles = try? JSONDecoder().decode(HarnessAccountsStore.Profiles.self, from: Data(content.utf8)),
       !profiles.profiles.isEmpty
     {
-      return .init()
+      return true
     }
-    if let source {
-      // OpenCode can have credentials in any shared profile, including a
-      // profile other than Default. An empty default profile is a discovery slot.
-      let contents = sync.entries(namespace: HarnessSharedCredentials.namespace).compactMap { entry -> String? in
-        guard entry.deleted != true,
-          entry.key == source.sourceKey || (harnessId == "opencode" && entry.key.hasPrefix("opencode-profile:")),
-          case .string(let value) = entry.value
-        else { return nil }
-        return value
-      }
-      if contents.contains(where: { (try? source.credentials(from: $0).isEmpty) == false }) { return .init() }
+    guard let source else { return false }
+    // OpenCode can have credentials in any shared profile, including a
+    // profile other than Default. An empty default profile is a discovery slot.
+    let contents = sync.entries(namespace: HarnessSharedCredentials.namespace).compactMap { entry -> String? in
+      guard entry.deleted != true,
+        entry.key == source.sourceKey || (harnessId == "opencode" && entry.key.hasPrefix("opencode-profile:")),
+        case .string(let value) = entry.value
+      else { return nil }
+      return value
     }
+    return contents.contains(where: { (try? source.credentials(from: $0).isEmpty) == false })
+  }
+
+  /// Presence of shared accounts is independent of any machine's local
+  /// probe result, installation, or account override.
+  @MainActor
+  public static func shared(harnessId: String, sync: ConfigSync, authRequired: Bool = true) -> Self {
+    guard authRequired else { return .init(supportsAccounts: false) }
+    if hasSharedAccounts(harnessId: harnessId, sync: sync) { return .init() }
+    let usesOAuth = fleetSharedOAuthHarnesses.contains(harnessId)
+    let source = HarnessSharedCredentials(rawValue: harnessId)
     guard usesOAuth || source != nil else {
       // Machine-bound providers retain Accounts in the menu. Their readiness
       // belongs to the machine, not to a synthetic global signed-out state.

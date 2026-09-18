@@ -69,24 +69,22 @@ struct HarnessFleetMachineStatusTests {
     #expect(rows.map(\.status) == [.unreachable, .syncing, .syncing, .syncing])
   }
 
-  @Test("A fleet-shared sign-in that hasn't happened yet is not a per-machine problem")
-  func sharedSignInPending() {
+  @Test(
+    "A machine's 'sign in required' reads differently depending on where the account lives",
+    arguments: [
+      (HarnessFleet.SharedSignIn.notShared, Status.signInRequired),
+      (.pending, .awaitingSignIn),
+      (.signedIn, .syncingSignIn),
+      (.unresolved, .signInRequired),
+    ])
+  func sharedSignIn(sharing: HarnessFleet.SharedSignIn, expected: Status) {
     let readiness: [String: [HarnessFleet.MachineReadiness]] = [
       "a": [.init(harnessId: "claude-code", state: "signInRequired", reason: nil)],
       "b": [.init(harnessId: "claude-code", state: "blocked", reason: "boom")],
     ]
-    let pending = HarnessFleet.machineRows(
-      harnessId: "claude-code", readiness: readiness, machines: [machine("a"), machine("b")],
-      sharesAccounts: true, sharedSignInPending: true)
-    #expect(pending.map(\.status) == [.awaitingSignIn, .blocked(reason: "boom")])
-    // Once the fleet has signed in, a machine still asking for it is syncing, not stuck.
-    let signedIn = HarnessFleet.machineRows(
-      harnessId: "claude-code", readiness: readiness, machines: [machine("a"), machine("b")],
-      sharesAccounts: true, sharedSignInPending: false)
-    #expect(signedIn.map(\.status) == [.syncingSignIn, .blocked(reason: "boom")])
-    // Machine-bound harnesses keep the per-machine sign-in.
-    let bound = HarnessFleet.machineRows(harnessId: "claude-code", readiness: readiness, machines: [machine("a")])
-    #expect(bound.map(\.status) == [.signInRequired])
+    let rows = HarnessFleet.machineRows(
+      harnessId: "claude-code", readiness: readiness, machines: [machine("a"), machine("b")], sharedSignIn: sharing)
+    #expect(rows.map(\.status) == [expected, .blocked(reason: "boom")])
   }
 
   @Test("Rows keep machine order regardless of state")

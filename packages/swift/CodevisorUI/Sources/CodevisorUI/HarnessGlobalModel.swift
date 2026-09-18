@@ -12,8 +12,29 @@ public final class HarnessGlobalModel {
   var uninstall: HarnessFleet.Setting?
   var isLoading = true
   var loadFailed = false
+  /// Harnesses whose fleet account arrived recently, keyed by when the grace
+  /// ends. Machines still asking for a sign-in within it are catching up;
+  /// after it, they need looking at. Readiness reports carry no timestamps,
+  /// so this is the client's only way to tell the two apart.
+  private var signInGraceEnds: [String: Date] = [:]
+  private var signInGraceTasks: [String: Task<Void, Never>] = [:]
+  static let signInGrace: TimeInterval = 90
 
   public init() {}
+
+  func noteFleetSignedIn(_ harnessId: String) {
+    signInGraceEnds[harnessId] = Date.now.addingTimeInterval(Self.signInGrace)
+    signInGraceTasks[harnessId]?.cancel()
+    signInGraceTasks[harnessId] = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(Self.signInGrace))
+      guard !Task.isCancelled else { return }
+      self?.signInGraceEnds[harnessId] = nil
+    }
+  }
+
+  func isSyncingSignIn(_ harnessId: String) -> Bool {
+    signInGraceEnds[harnessId].map { $0 > .now } ?? false
+  }
 
   func add(_ harness: ServerHarness, in environment: AppEnvironment) {
     if let spec = customSpecs[harness.id],

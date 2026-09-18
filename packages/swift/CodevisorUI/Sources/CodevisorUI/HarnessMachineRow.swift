@@ -26,7 +26,7 @@ struct HarnessMachineRow: View {
 
 /// What a machine row can do, supplied by the harness it belongs to.
 struct HarnessMachineActions {
-  /// Nil when the harness signs in once for the whole fleet.
+  /// Signs this machine in, or the whole fleet for a fleet-shared harness.
   var signIn: ((_ machineId: String) -> Void)?
   /// Nil when accounts are fleet-shared or the harness needs none.
   var accounts: ((_ machineId: String) -> Void)?

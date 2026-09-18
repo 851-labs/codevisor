@@ -77,15 +77,21 @@ private struct HarnessFleetRow<Icon: View>: View {
     let shared = HarnessRowState.shared(
       harnessId: setting.id, sync: environment.configSync,
       authRequired: model.catalog.first(where: { $0.id == setting.id })?.auth?.resolvedState != .notRequired)
+    let hasAccount =
+      sharesAccounts && HarnessRowState.hasSharedAccounts(harnessId: setting.id, sync: environment.configSync)
+    let sharedSignIn: HarnessFleet.SharedSignIn =
+      !sharesAccounts
+      ? .notShared
+      : shared.needsSignIn ? .pending : hasAccount && model.isSyncingSignIn(setting.id) ? .signedIn : .unresolved
     let status = HarnessFleet.status(
-      harnessId: setting.id, sync: environment.configSync, machines: machines,
-      sharesAccounts: sharesAccounts, sharedSignInPending: shared.needsSignIn)
+      harnessId: setting.id, sync: environment.configSync, machines: machines, sharedSignIn: sharedSignIn)
     // A disabled harness has nothing to converge: just the name and the toggle.
     let live = setting.enabled
     // One machine is the fleet: its mark and menu fold into the harness row.
     let single = live && machines.count == 1 ? status.machines.first : nil
+    // A fleet-shared sign-in offered from a machine row still signs the fleet in.
     let actions = HarnessMachineActions(
-      signIn: sharesAccounts ? nil : { onSignIn($0, setting.id, true) },
+      signIn: sharesAccounts ? { _ in onAccounts(setting, true) } : { onSignIn($0, setting.id, true) },
       accounts: sharesAccounts || !shared.supportsAccounts ? nil : { onSignIn($0, setting.id, false) })
     let state = HarnessRowState(
       status: live && sharesAccounts && shared.needsSignIn ? "Sign in required" : nil,
@@ -120,6 +126,9 @@ private struct HarnessFleetRow<Icon: View>: View {
       Button("Uninstall…", role: .destructive) { model.uninstall = setting }
     }
     .harnessBlockedDetails(item: $blocked)
+    .onChange(of: hasAccount) { had, has in
+      if has, !had { model.noteFleetSignedIn(setting.id) }
+    }
     if live, machines.count > 1 {
       // Every harness lists the same machines; rows need identity per pair
       // or the list reuses one harness's rows for the next.
