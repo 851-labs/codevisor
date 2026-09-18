@@ -76,11 +76,17 @@ struct SidebarWorkspaceHeaderLabel: View {
   private var title: String { Self.title(for: name) }
 
   var body: some View {
-    HStack(spacing: 6) {
+    // 4pt + the glyphs' side bearings lands at ~6pt of visible gap on
+    // each side of the dot.
+    HStack(spacing: 4) {
       Text(title)
         .truncationMode(.middle)
       if let machineName {
-        Text("· \(machineName)")
+        // Separate view so the dot gets the same spacing on both sides;
+        // inside the string it only had a ~3pt space on the right.
+        Text("·")
+          .foregroundStyle(.tertiary)
+        Text(machineName)
           .foregroundStyle(.tertiary)
       }
     }
