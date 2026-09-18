@@ -81,24 +81,25 @@ public enum TranscriptSendAnimationLayerAnimations {
     return movement
   }
 
-  /// A bounded presentation-only hold that keeps the model layer
-  /// authoritative: it delays painting, and expiry or interruption reveals
-  /// the model value automatically.
+  /// A presentation-only hold that keeps the model layer authoritative: it
+  /// delays painting until the send lifecycle replaces it with the flight or
+  /// a watchdog removes it. Its own bound exists only so a lost watchdog can
+  /// never leave the model value hidden.
   public static func opacityHold() -> CABasicAnimation {
     let hold = CABasicAnimation(keyPath: "opacity")
     hold.fromValue = 0
     hold.toValue = 0
-    hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
+    hold.duration = TranscriptSendAnimationContract.holdSafetyDuration
     hold.isRemovedOnCompletion = true
     return hold
   }
 
-  /// A bounded hold at a pre-send vertical offset.
+  /// A hold at a pre-send vertical offset with the same lifetime rules.
   public static func translationHold(_ translationY: CGFloat) -> CABasicAnimation {
     let hold = CABasicAnimation(keyPath: "transform.translation.y")
     hold.fromValue = translationY
     hold.toValue = translationY
-    hold.duration = TranscriptSendAnimationContract.presentationSafetyDuration
+    hold.duration = TranscriptSendAnimationContract.holdSafetyDuration
     hold.isRemovedOnCompletion = true
     return hold
   }

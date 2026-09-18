@@ -27,6 +27,9 @@ extension VirtualizedTranscriptScrollView {
       CATransaction.commit()
       isApplyingSendCompletion = false
     }
+    // Commit the flight's deferred heights first so the aggregate active
+    // row's measurement can transfer into the precise rows applied next.
+    commitPendingMeasurements()
     applyDeferredSendProjectionIfNeeded()
     commitPendingMeasurements()
     synchronizePendingSendHistoryPositions()

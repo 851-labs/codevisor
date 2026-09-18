@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 import Testing
 @testable import CodevisorUI
 
@@ -38,6 +39,41 @@ struct TranscriptSendAnimationTests {
     #expect(plan.controlPoint1 == CGPoint(x: 0.22, y: 1))
     #expect(plan.controlPoint2 == CGPoint(x: 0.36, y: 1))
     #expect(TranscriptSendAnimationContract.presentationSafetyDuration == 0.71)
+  }
+
+  @Test("Holds outlive every watchdog so a lost watchdog reveals rather than hides")
+  func holdsOutliveTheWatchdogs() {
+    #expect(TranscriptSendAnimationContract.pendingFlightDeadline == 1.0)
+    #expect(
+      TranscriptSendAnimationContract.holdSafetyDuration
+        > TranscriptSendAnimationContract.pendingFlightDeadline
+        + TranscriptSendAnimationContract.presentationSafetyDuration)
+  }
+
+  @Test("A pending deadline flies into a laid-out destination and reveals otherwise")
+  func pendingDeadlineResolution() {
+    #expect(
+      TranscriptSendAnimationContract.pendingDeadlineResolution(
+        targetIsMounted: true, targetIsPresentationReady: true) == .fly)
+    #expect(
+      TranscriptSendAnimationContract.pendingDeadlineResolution(
+        targetIsMounted: true, targetIsPresentationReady: false) == .reveal)
+    #expect(
+      TranscriptSendAnimationContract.pendingDeadlineResolution(
+        targetIsMounted: false, targetIsPresentationReady: false) == .reveal)
+  }
+
+  @Test("The pending lifecycle uses its own deadline")
+  func pendingLifecycleDeadline() {
+    var lifecycle = TranscriptSendPresentationLifecycle(
+      duration: TranscriptSendAnimationContract.pendingFlightDeadline)
+    let deadline = lifecycle.begin(token: 3, at: 5)
+
+    #expect(deadline == 6)
+    #expect(!lifecycle.isExpired(token: 3, at: 5.999))
+    #expect(lifecycle.isExpired(token: 3, at: 6))
+    #expect(lifecycle.cancel() == 3)
+    #expect(!lifecycle.isExpired(token: 3, at: 7))
   }
 
   @Test("Reduce Motion and non-upward travel do not create a lift")
@@ -147,6 +183,17 @@ struct TranscriptSendAnimationTests {
     #expect(!lifecycle.isExpired(token: 7, at: deadline - 0.001))
     #expect(lifecycle.isExpired(token: 7, at: deadline))
     #expect(!lifecycle.isExpired(token: 8, at: deadline + 1))
+  }
+
+  @Test("Presentation holds carry the safety lifetime, not the flight's")
+  func holdsUseTheSafetyLifetime() {
+    let opacity = TranscriptSendAnimationLayerAnimations.opacityHold()
+    let translation = TranscriptSendAnimationLayerAnimations.translationHold(84)
+
+    #expect(opacity.duration == TranscriptSendAnimationContract.holdSafetyDuration)
+    #expect(translation.duration == TranscriptSendAnimationContract.holdSafetyDuration)
+    #expect(opacity.isRemovedOnCompletion)
+    #expect(translation.isRemovedOnCompletion)
   }
 
   @Test("Cancellation returns ownership once and leaves the lifecycle idle")

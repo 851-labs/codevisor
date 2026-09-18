@@ -129,6 +129,10 @@ extension VirtualizedTranscriptScrollView {
       pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
       pendingSendSourceScreenYByRowKey =
         newSendAnimationRequest == nil ? nil : sendHistoryScreenYByRowKey()
+      sendTargetHoldMount = nil
+      if let request = pendingSendAnimationRequest {
+        beginPendingSendLifecycle(token: request.token)
+      }
       synchronizePendingSendTargetVisibility()
       synchronizeSendAssistantVisibility()
     }

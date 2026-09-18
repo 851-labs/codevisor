@@ -127,8 +127,26 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var deferredActivePlaceholderKey: String?
   var scrollCommand = TranscriptScrollCommand()
   var receivedSendAnimationToken: UInt64?
-  var pendingSendAnimationRequest: UserSendAnimationRequest?
+  var pendingSendAnimationRequest: UserSendAnimationRequest? {
+    didSet {
+      guard pendingSendAnimationRequest == nil else { return }
+      _ = pendingSendLifecycle.cancel()
+      pendingSendWatchdog?.cancel()
+      pendingSendWatchdog = nil
+    }
+  }
   var pendingSendAnimationRowKey: String?
+  /// Bounds the pending phase. When it expires the flight starts from
+  /// whatever geometry is ready, or the held model state is revealed if the
+  /// destination never mounted; it never simply lets the holds lapse.
+  var pendingSendLifecycle = TranscriptSendPresentationLifecycle(
+    duration: TranscriptSendAnimationContract.pendingFlightDeadline
+  )
+  var pendingSendWatchdog: Task<Void, Never>?
+  /// The host currently carrying the destination's pending hold. A remount
+  /// of the same row moves the hold to its new host; the same host is never
+  /// re-hidden once its hold has been applied.
+  var sendTargetHoldMount: ObjectIdentifier?
   var pendingSendSourceLayout: VirtualTranscriptLayout?
   var pendingSendSourceScreenYByRowKey: [String: CGFloat]?
   /// Tracks the host that received each pending history lock. If a bounded
@@ -159,6 +177,14 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
   var sendPresentationWatchdog: Task<Void, Never>?
   var sendAnimationCompletion: TranscriptSendAnimationCompletion?
+  /// While a send is pending, in flight, or completing, mounted rows are
+  /// drawn at held or animating positions that differ from model geometry.
+  /// The virtual window must not remove them by model position alone.
+  var isSendPresentationHoldingHosts: Bool {
+    pendingSendAnimationRequest != nil
+      || activeSendAnimationRequest != nil
+      || sendCompletionSourceScreenYByRowKey != nil
+  }
   var presentationRole: TranscriptPresentationRole = .foreground
   var reduceMotion = false
 
@@ -259,6 +285,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     measurementCommitTask?.cancel()
     disclosureAnchorReleaseTask?.cancel()
     sendPresentationWatchdog?.cancel()
+    pendingSendWatchdog?.cancel()
     if let applicationObserver {
       NotificationCenter.default.removeObserver(applicationObserver)
     }

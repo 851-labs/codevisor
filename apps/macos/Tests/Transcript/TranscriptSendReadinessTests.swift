@@ -110,4 +110,193 @@ struct TranscriptSendReadinessTests {
     #expect(view.activeSendAnimationRequest == request)
     #expect(view.mountedHosts[userRow.layoutKey]?.layer?.animation(forKey: TranscriptSendAnimationKeys.flight) != nil)
   }
+
+  /// A mounted, measured, bottom-pinned transcript whose tail is the
+  /// aggregate `.active` bridge (the precise projection has not published).
+  @MainActor
+  private struct ConnectedSendFixture {
+    let view: VirtualizedTranscriptScrollView
+    let window: NSWindow
+    let user: UserMessage
+    let userRow: TranscriptVirtualRow
+    let activeRow: TranscriptVirtualRow
+    let request: UserSendAnimationRequest
+
+    init() {
+      _ = NSApplication.shared
+      view = VirtualizedTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
+      window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+      window.contentView = view
+      view.isPreparingInitialProjection = false
+      view.initialPositionConfigured = true
+      view.initialPositionApplied = true
+      // The precise active projection is still in flight; the send must
+      // not wait for it.
+      view.isActiveProjectionPending = true
+      user = UserMessage(text: "tell me a joke")
+      userRow = TranscriptVirtualRow(
+        id: .message(user.id), content: .message(.user(user), waitingOnBackgroundTask: nil), estimatedHeight: 62
+      )
+      let assistant = AssistantMessage(turn: AssistantTurn(isGenerating: true))
+      activeRow = TranscriptVirtualRow(
+        id: .active(assistant.id), content: .active(.assistant(assistant)), estimatedHeight: 32
+      )
+      let rows = [
+        TranscriptVirtualRow(id: .message(UUID()), content: .error("history"), estimatedHeight: 900),
+        userRow,
+        activeRow,
+        TranscriptVirtualRow(id: .bottomSpacer, content: .bottomSpacer(100), estimatedHeight: 100),
+      ]
+      view.rowContent = { row in AnyView(Color.clear.frame(height: row.estimatedHeight)) }
+      view.layout()
+      _ = view.rowSet.replaceRows(rows)
+      _ = view.activateMeasurementCacheIfNeeded()
+      for row in rows {
+        view.measurements.setExact(row.estimatedHeight, for: row.layoutKey)
+      }
+      view.rebuildDocumentGeometry()
+      for host in view.mountedHosts.values { host.prepareForImmediatePresentation() }
+      view.commitPendingMeasurements()
+      view.scrollToBottom()
+
+      request = UserSendAnimationRequest(token: 1, messageID: user.id, destination: .activeTurn)
+      view.pendingSendAnimationRequest = request
+      view.pendingSendAnimationRowKey = userRow.layoutKey
+      view.pendingSendSourceLayout = VirtualTranscriptLayout(items: [], measuredHeights: [:], spacing: 20)
+      view.pendingSendSourceViewportYByRowKey = view.sendHistoryViewportYByRowKey()
+      view.claimSendAnimation = { [request] in $0 == request }
+      view.synchronizePendingSendTargetVisibility()
+      view.synchronizeSendAssistantVisibility()
+    }
+
+    func tearDown() {
+      view.prepareForDismantle()
+      window.contentView = nil
+    }
+  }
+
+  @Test("A connected send flies before the precise active projection publishes")
+  func connectedSendDoesNotWaitForThePreciseProjection() throws {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let target = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil)
+    #expect(view.isActiveProjectionPending)
+
+    view.startPendingSendAnimationIfPossible()
+
+    #expect(view.pendingSendAnimationRequest == nil)
+    #expect(view.activeSendAnimationRequest == fixture.request)
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.flight) != nil)
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.targetHold) == nil)
+    // The aggregate active row stays hidden until the bubble lands.
+    let active = try #require(view.mountedHosts[fixture.activeRow.layoutKey])
+    #expect(active.layer?.animation(forKey: TranscriptSendAnimationKeys.assistantHold) != nil)
+  }
+
+  @Test("The pending deadline flies into the laid-out bubble when its tail is still unmeasured")
+  func pendingDeadlineForcesTheFlight() throws {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    view.measurements.markStale(fixture.activeRow.layoutKey)
+
+    view.startPendingSendAnimationIfPossible()
+    #expect(view.pendingSendAnimationRequest == fixture.request)
+    #expect(view.activeSendAnimationRequest == nil)
+    let target = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil)
+
+    view.resolvePendingSendDeadline(token: fixture.request.token)
+
+    #expect(view.pendingSendAnimationRequest == nil)
+    #expect(view.activeSendAnimationRequest == fixture.request)
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.flight) != nil)
+  }
+
+  @Test("The pending deadline reveals the held rows when the bubble never laid out")
+  func pendingDeadlineRevealsWithoutADestination() throws {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    view.pendingSendAnimationRowKey = nil
+    let target = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    #expect(target.layer?.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil)
+
+    view.resolvePendingSendDeadline(token: fixture.request.token)
+
+    #expect(view.pendingSendAnimationRequest == nil)
+    #expect(view.activeSendAnimationRequest == nil)
+    for host in view.mountedHosts.values {
+      for key in TranscriptSendAnimationKeys.all {
+        #expect(host.layer?.animation(forKey: key) == nil)
+      }
+    }
+  }
+
+  @Test("The destination hold is applied once per host and never re-applied after removal")
+  func targetHoldIsPerHost() throws {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let target = try #require(view.mountedHosts[fixture.userRow.layoutKey])
+    let layer = try #require(target.layer)
+    #expect(layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil)
+
+    // A later mount pass must not re-hide a row whose hold this host
+    // already received, even if the animation has been removed.
+    layer.removeAnimation(forKey: TranscriptSendAnimationKeys.targetHold)
+    view.synchronizePendingSendTargetVisibility()
+    #expect(layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) == nil)
+
+    // A new send resets the per-host record.
+    view.sendTargetHoldMount = nil
+    view.synchronizePendingSendTargetVisibility()
+    #expect(layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil)
+  }
+
+  @Test("Held rows are not retired by model geometry while a send presentation is running")
+  func heldRowsAreRetainedDuringTheSendPresentation() {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    let mounted = Set(view.mountedHosts.keys)
+    #expect(!mounted.isEmpty)
+
+    view.retireMountedHosts(excluding: [])
+    #expect(Set(view.mountedHosts.keys) == mounted)
+
+    view.startPendingSendAnimationIfPossible()
+    #expect(view.activeSendAnimationRequest == fixture.request)
+    view.retireMountedHosts(excluding: [])
+    #expect(Set(view.mountedHosts.keys) == mounted)
+
+    view.interruptSendPresentation()
+    #expect(!view.isSendPresentationHoldingHosts)
+    view.retireMountedHosts(excluding: [])
+    #expect(view.mountedHosts.isEmpty)
+  }
+
+  @Test("Heights below the flying bubble commit at completion, not mid-flight")
+  func tailHeightsCommitAtCompletion() {
+    let fixture = ConnectedSendFixture()
+    defer { fixture.tearDown() }
+    let view = fixture.view
+    view.startPendingSendAnimationIfPossible()
+    #expect(view.activeSendAnimationRequest == fixture.request)
+    let activeKey = fixture.activeRow.layoutKey
+    let before = view.measurements[activeKey]
+    view.pendingMeasuredHeights[activeKey] = 56
+
+    view.commitPendingMeasurements()
+    #expect(view.pendingMeasuredHeights[activeKey] == 56)
+    #expect(view.measurements[activeKey] == before)
+
+    view.isApplyingSendCompletion = true
+    view.commitPendingMeasurements()
+    view.isApplyingSendCompletion = false
+    #expect(view.pendingMeasuredHeights[activeKey] == nil)
+    #expect(view.measurements[activeKey] == 56)
+  }
 }

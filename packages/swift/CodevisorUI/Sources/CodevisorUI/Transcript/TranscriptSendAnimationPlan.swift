@@ -44,6 +44,16 @@ public enum TranscriptSendAnimationContract {
   /// even if lifecycle interruption prevents the delegate from firing.
   public static let interruptionGraceDuration: TimeInterval = 0.25
   public static let presentationSafetyDuration = duration + interruptionGraceDuration
+  /// How long a pending send may keep the transcript held before the flight
+  /// is forced from whatever geometry is ready. Readiness depends only on
+  /// local mounting and measurement, so this is a safety net rather than a
+  /// budget the ordinary path ever approaches.
+  public static let pendingFlightDeadline: TimeInterval = 1.0
+  /// The Core Animation holds' own lifetime. They exist to be replaced by
+  /// the flight (or removed by a watchdog) long before this elapses; the
+  /// bound only guarantees that a lost watchdog can never leave the model
+  /// layer hidden or displaced.
+  public static let holdSafetyDuration: TimeInterval = 4.0
   public static let controlPoint1 = CGPoint(x: 0.22, y: 1)
   public static let controlPoint2 = CGPoint(x: 0.36, y: 1)
 
@@ -88,6 +98,23 @@ public enum TranscriptSendAnimationContract {
       controlPoint2: controlPoint2
     )
   }
+
+  /// What a pending send does when its deadline passes without the ordinary
+  /// readiness gate opening. The flight only needs its destination row laid
+  /// out; everything below it is deferred to completion anyway. Without a
+  /// laid-out destination there is nothing to fly into, so the held model
+  /// state is revealed and the request consumed.
+  public static func pendingDeadlineResolution(
+    targetIsMounted: Bool,
+    targetIsPresentationReady: Bool
+  ) -> TranscriptSendPendingDeadlineResolution {
+    targetIsMounted && targetIsPresentationReady ? .fly : .reveal
+  }
+}
+
+public enum TranscriptSendPendingDeadlineResolution: Equatable, Sendable {
+  case fly
+  case reveal
 }
 
 /// Token-scoped ownership for one native send presentation.
@@ -99,13 +126,17 @@ public enum TranscriptSendAnimationContract {
 public struct TranscriptSendPresentationLifecycle: Equatable, Sendable {
   public private(set) var activeToken: UInt64?
   public private(set) var deadline: TimeInterval?
+  /// How long a begun presentation may run before its watchdog resolves it.
+  public let duration: TimeInterval
 
-  public init() {}
+  public init(duration: TimeInterval = TranscriptSendAnimationContract.presentationSafetyDuration) {
+    self.duration = duration
+  }
 
   @discardableResult
   public mutating func begin(token: UInt64, at time: TimeInterval) -> TimeInterval {
     activeToken = token
-    let deadline = time + TranscriptSendAnimationContract.presentationSafetyDuration
+    let deadline = time + duration
     self.deadline = deadline
     return deadline
   }

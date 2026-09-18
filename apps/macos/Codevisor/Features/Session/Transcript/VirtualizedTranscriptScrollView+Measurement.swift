@@ -328,10 +328,17 @@ extension VirtualizedTranscriptScrollView {
     let pending = pendingMeasuredHeights
     pendingMeasuredHeights.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
+    let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     for (key, height) in pending {
       guard rowByKey[key] != nil, mountedHosts[key]?.isAttachmentGeometryReady == true,
         measurements.needsCommit(height, for: key)
       else { continue }
+      if let flightDeferralIndex, let index = virtualLayout.indexByKey[key], index >= flightDeferralIndex {
+        // A height change below the flying bubble would re-pin the bottom
+        // and move its destination mid-flight. Completion commits these.
+        pendingMeasuredHeights[key] = height
+        continue
+      }
       if storeMeasuredHeight(height, for: key) {
         committedHeights[key] = height
       }
@@ -345,6 +352,13 @@ extension VirtualizedTranscriptScrollView {
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     startPendingSendAnimationIfPossible()
+  }
+
+  /// The first row index whose height commits wait for flight completion,
+  /// or nil when no flight is running.
+  var sendFlightMeasurementDeferralIndex: Int? {
+    guard let request = activeSendAnimationRequest, !isApplyingSendCompletion else { return nil }
+    return virtualLayout.indexByKey[TranscriptVirtualRow.ID.message(request.messageID).layoutKey]
   }
 
   /// Commits one measurement into the ledger and the revision-keyed caches.

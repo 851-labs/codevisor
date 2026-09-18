@@ -287,6 +287,7 @@ extension VirtualizedTranscriptScrollView {
     measurementCommitTask = nil
     guard !isDetaching else { return }
     let firstVisible = firstVisibleRowForMeasurementCommit
+    let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     let pending = pendingMeasurements
     pendingMeasurements.removeAll(keepingCapacity: true)
     var committedHeights: [String: CGFloat] = [:]
@@ -296,6 +297,12 @@ extension VirtualizedTranscriptScrollView {
       else { continue }
       guard let index = virtualLayout.indexByKey[key] else { continue }
       guard measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible) else {
+        pendingMeasurements[key] = measurement
+        continue
+      }
+      if let flightDeferralIndex, index >= flightDeferralIndex {
+        // A height change below the flying bubble would re-pin the bottom
+        // and move its destination mid-flight. Completion commits these.
         pendingMeasurements[key] = measurement
         continue
       }
@@ -310,6 +317,13 @@ extension VirtualizedTranscriptScrollView {
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     startPendingSendAnimationIfPossible()
+  }
+
+  /// The first row index whose height commits wait for flight completion,
+  /// or nil when no flight is running.
+  var sendFlightMeasurementDeferralIndex: Int? {
+    guard let request = activeSendAnimationRequest, !isApplyingSendCompletion else { return nil }
+    return virtualLayout.indexByKey[TranscriptVirtualRow.ID.message(request.messageID).layoutKey]
   }
 
   var firstVisibleRowForMeasurementCommit: Int? {

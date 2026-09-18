@@ -26,7 +26,12 @@ extension VirtualizedTranscriptScrollView {
     }
   }
 
-  private func beginPendingSendAnimationIfPossible() {
+  /// Readiness is local: the destination row must be laid out and the rows
+  /// below it measured. It never waits on the harness or on the precise
+  /// active projection; both arrive under the flight's deferred projection
+  /// and are revealed at completion. `force` (the pending deadline) skips
+  /// the tail measurement requirement and flies into the laid-out row.
+  func beginPendingSendAnimationIfPossible(force: Bool = false) {
     // Reporting the start to the host (New Chat mutates observable flow
     // state there) can synchronously re-enter this pass via layout. The
     // inner pass would begin the flight and the outer one, resuming to
@@ -58,14 +63,14 @@ extension VirtualizedTranscriptScrollView {
       pendingSendSourceScreenYByRowKey = nil
       return
     }
-    guard request.destination != .activeTurn || !isActiveProjectionPending,
-      initialPositionApplied, bounds.width > 0, bounds.height > 0,
+    guard initialPositionApplied, bounds.width > 0, bounds.height > 0,
       let host = mountedHosts[rowKey], host.isPresentationReady,
-      sendHistoryDestinationIsReady(
-        request: request,
-        sourceLayout: pendingSendSourceLayout,
-        rowKey: rowKey
-      )
+      force
+        || sendHistoryDestinationIsReady(
+          request: request,
+          sourceLayout: pendingSendSourceLayout,
+          rowKey: rowKey
+        )
     else { return }
 
     // Prewarmed destinations do not own animation consumption, but their
@@ -91,6 +96,7 @@ extension VirtualizedTranscriptScrollView {
       pendingSendAnimationRowKey = nil
       pendingSendSourceLayout = nil
       pendingSendSourceScreenYByRowKey = nil
+      sendTargetHoldMount = nil
       return claimed
     }
 
@@ -108,23 +114,20 @@ extension VirtualizedTranscriptScrollView {
       claimAndCompleteWithoutAnimation("reduceMotion")
       return
     }
+    // The holds are owned by this lifecycle and replaced by the flight
+    // below; the pending watchdog resolves the request long before their
+    // own safety bound. If one is nonetheless missing (a lost watchdog),
+    // the model row is already visible and must not be hidden late.
     guard host.layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) != nil else {
-      // If the bounded pending hold expired before exact geometry was
-      // ready, the model row is already visible. Consume the request
-      // without hiding that row a second time.
-      claimAndCompleteWithoutAnimation("targetHoldExpired")
+      claimAndCompleteWithoutAnimation("targetHoldMissing")
       return
     }
     guard pendingSendAssistantPresentationIsIntact() else {
-      // A bounded assistant hold that has expired is already visible.
-      // Never hide it again late merely to run the outgoing flight.
-      claimAndCompleteWithoutAnimation("assistantHoldExpired")
+      claimAndCompleteWithoutAnimation("assistantHoldMissing")
       return
     }
     guard pendingSendHistoryPresentationIsIntact() else {
-      // Existing history has already fallen through to final model
-      // geometry. Do not rewind it just to begin a late flight.
-      claimAndCompleteWithoutAnimation("historyHoldExpired")
+      claimAndCompleteWithoutAnimation("historyHoldMissing")
       return
     }
     let sourceLayout = pendingSendSourceLayout
@@ -257,10 +260,14 @@ extension VirtualizedTranscriptScrollView {
   func synchronizePendingSendTargetVisibility() {
     guard !reduceMotion, let request = pendingSendAnimationRequest else { return }
     let key = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-    guard let host = mountedHosts[key],
-      host.layer.animation(forKey: TranscriptSendAnimationKeys.targetHold) == nil
-    else { return }
-
+    guard let host = mountedHosts[key] else { return }
+    // One hold per host and send. Keyed by host identity rather than by
+    // the animation's presence so a later mount pass can never re-hide a
+    // row that this lifecycle has already handed to the display.
+    let mountID = ObjectIdentifier(host)
+    guard sendTargetHoldMount != mountID else { return }
+    sendTargetHoldMount = mountID
+    host.layer.removeAnimation(forKey: TranscriptSendAnimationKeys.targetHold)
     host.layer.add(
       TranscriptSendAnimationLayerAnimations.opacityHold(), forKey: TranscriptSendAnimationKeys.targetHold)
   }
@@ -415,6 +422,10 @@ extension VirtualizedTranscriptScrollView {
     }
     sendCompletionSourceScreenYByRowKey = nil
     sendCompletionNotifiesCompletion = false
+    // Heights deferred during the flight enter the ledger before the
+    // deferred projection replaces their rows, so the aggregate active
+    // row's measurement carries into the precise rows that succeed it.
+    if !isDetaching { commitPendingMeasurements() }
     applyDeferredSendProjectionIfNeeded()
     if !isDetaching { commitPendingMeasurements() }
     sendPresentationWatchdog?.cancel()
@@ -426,7 +437,11 @@ extension VirtualizedTranscriptScrollView {
     activeSendSourceLayout = nil
     sendHistoryHoldMounts.removeAll(keepingCapacity: true)
     sendAssistantHoldMounts.removeAll(keepingCapacity: true)
+    sendTargetHoldMount = nil
     sendAnimationCompletion = nil
+    // Rows retained for their held presentation can now be reconciled
+    // against model geometry on the next frame.
+    if !isDetaching { requestMountedRowsUpdate() }
   }
 
   func applyDeferredSendProjectionIfNeeded() {
@@ -495,61 +510,5 @@ extension VirtualizedTranscriptScrollView {
     pendingSendSourceLayout = nil
     pendingSendSourceScreenYByRowKey = nil
     finishSendPresentation(notifyCompletion: true, reason: "interrupt")
-  }
-
-  func sendHistoryDestinationIsReady(
-    request: UserSendAnimationRequest,
-    sourceLayout: VirtualTranscriptLayout?,
-    rowKey: String
-  ) -> Bool {
-    guard let targetRow = rowByKey[rowKey],
-      TranscriptSendAnimationContract.isEligibleTarget(targetRow, for: request.destination),
-      let targetIndex = rows.firstIndex(where: { $0.layoutKey == rowKey })
-    else { return false }
-    if request.destination == .activeTurn,
-      !rows[targetIndex...].contains(where: { $0.id.isPreciselyProjectedActiveRow })
-    {
-      // The aggregate `.active` bridge can already be mounted and
-      // measured while its server-adopted identity is still racing the
-      // block projection. Starting from it would defer the real activity
-      // row until flight completion, producing estimate -> measurement
-      // bottom-pin jitter exactly when "Waiting on harness" appears.
-      return false
-    }
-    guard let sourceLayout,
-      sourceLayout.indexByKey[rowKey] == nil,
-      request.destination == .activeTurn
-        || sourceLayout.keys.contains(where: { $0.hasPrefix("message:") })
-    else { return true }
-    return rows[targetIndex...].allSatisfy { row in
-      let key = row.layoutKey
-      guard row.id != .bottomSpacer else { return true }
-      return TranscriptMountedWindowReadiness.isPromotable(
-        key: key,
-        measurements: measurements,
-        hasPendingMeasurement: pendingMeasurements[key] != nil,
-        host: mountedHosts[key]
-      )
-    }
-  }
-
-  func sendHistoryScreenYByRowKey() -> [String: CGFloat] {
-    Dictionary(
-      uniqueKeysWithValues: mountedHosts.map { key, host in
-        (key, host.convert(host.bounds, to: nil).minY)
-      }
-    )
-  }
-
-  func sendAnimationTarget(
-    in host: TranscriptRowHost,
-    rowKey: String
-  ) -> TranscriptSendAnimationTarget? {
-    guard rowByKey[rowKey]?.isUserMessage == true,
-      !host.bounds.isEmpty
-    else { return nil }
-    return TranscriptSendAnimationTarget(
-      rowFrame: host.convert(host.bounds, to: nil)
-    )
   }
 }

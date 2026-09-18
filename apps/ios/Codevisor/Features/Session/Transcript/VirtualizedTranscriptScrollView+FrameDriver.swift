@@ -179,8 +179,10 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
 
   var allowsMeasurementCommit: Bool {
     let firstVisible = firstVisibleRowForMeasurementCommit
+    let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     return pendingMeasurements.keys.contains { key in
       guard let index = virtualLayout.indexByKey[key] else { return false }
+      if let flightDeferralIndex, index >= flightDeferralIndex { return false }
       return measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible)
     }
   }

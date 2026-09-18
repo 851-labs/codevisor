@@ -83,8 +83,12 @@ final class UserSendMorphCoordinator {
       removeProxy()
     }
     stagingWatchdog = watchdog
+    // The transcript resolves a pending send at its own deadline and
+    // cancels the proxy explicitly; this only catches a send that never
+    // reached a transcript at all.
     DispatchQueue.main.asyncAfter(
-      deadline: .now() + TranscriptSendAnimationContract.presentationSafetyDuration,
+      deadline: .now() + TranscriptSendAnimationContract.pendingFlightDeadline
+        + TranscriptSendAnimationContract.presentationSafetyDuration,
       execute: watchdog
     )
   }
