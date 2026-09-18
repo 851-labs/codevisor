@@ -11,6 +11,17 @@ extension Color {
   }
 }
 
+#if canImport(AppKit)
+  extension NSColor {
+    /// Bridges a theming-package RGBA into an AppKit color, in the same sRGB
+    /// space as `Color(rgba:)` so native and SwiftUI fills match.
+    public convenience init(rgba: RGBA) {
+      self.init(
+        srgbRed: rgba.r / 255, green: rgba.g / 255, blue: rgba.b / 255, alpha: rgba.a)
+    }
+  }
+#endif
+
 /// The semantic color tokens every view reads via `@Environment(\.theme)`.
 ///
 /// With no palette (the "System Light"/"System Dark" themes) every token
@@ -53,9 +64,24 @@ public struct Theme: Equatable, Sendable {
 
   /// Inline card/panel fill (tool calls, plans, diffs).
   public var cardBackground: AnyShapeStyle {
-    palette.map { AnyShapeStyle(Color(rgba: $0.cardBackground)) }
-      ?? AnyShapeStyle(.quaternary.opacity(0.4))
+    AnyShapeStyle(cardBackgroundColor)
   }
+
+  /// `cardBackground` as a concrete color. Transcript rows are drawn by two
+  /// renderers (SwiftUI while streaming, AppKit once settled), and both must
+  /// paint the plan card from this one value or the card shows a seam where
+  /// the renderers meet.
+  public var cardBackgroundColor: Color {
+    palette.map { Color(rgba: $0.cardBackground) } ?? Color.themeCardBackground
+  }
+
+  #if canImport(AppKit)
+    /// `cardBackgroundColor` for AppKit drawing. Stays dynamic on the system
+    /// themes so native rows follow light/dark switches like SwiftUI rows.
+    public var cardBackgroundNSColor: NSColor {
+      palette.map { NSColor(rgba: $0.cardBackground) } ?? .themeCardBackground
+    }
+  #endif
 
   /// Quiet card fill for suggestion rows and similar (system: a whisper of
   /// secondary).
@@ -236,6 +262,17 @@ extension Color {
     #endif
   }
 
+  /// The System-theme card fill: the quaternary label color at 40% of its
+  /// own alpha (`.quaternary.opacity(0.4)`). AppKit builds it from the same
+  /// dynamic color so native and SwiftUI rows are indistinguishable.
+  static var themeCardBackground: Color {
+    #if canImport(AppKit)
+      Color(nsColor: .themeCardBackground)
+    #else
+      Color(uiColor: .quaternaryLabel).opacity(Theme.systemCardFillOpacity)
+    #endif
+  }
+
   static var themeSeparator: Color {
     #if canImport(AppKit)
       Color(nsColor: .separatorColor)
@@ -244,3 +281,27 @@ extension Color {
     #endif
   }
 }
+
+extension Theme {
+  /// Fraction of the quaternary label alpha used for system-theme card fills.
+  static let systemCardFillOpacity: CGFloat = 0.4
+}
+
+#if canImport(AppKit)
+  extension NSColor {
+    /// See `Color.themeCardBackground`.
+    ///
+    /// Resolved inside a dynamic provider on purpose: `withAlphaComponent`
+    /// replaces the alpha rather than scaling it, and calling it on the
+    /// dynamic `quaternaryLabelColor` freezes the color to whichever
+    /// appearance is current at that moment (a dark-built fill is white on a
+    /// light window). The provider re-derives the fill per appearance, so a
+    /// native row built in dark mode still paints correctly after a switch.
+    static var themeCardBackground: NSColor {
+      NSColor(name: nil) { _ in
+        let base = NSColor.quaternaryLabelColor.usingColorSpace(.sRGB) ?? .quaternaryLabelColor
+        return base.withAlphaComponent(base.alphaComponent * Theme.systemCardFillOpacity)
+      }
+    }
+  }
+#endif

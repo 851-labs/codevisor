@@ -18,16 +18,10 @@ struct TranscriptMarkdownRowStyle {
 
   init(markdown: MarkdownTheme, appTheme: Theme) {
     self.markdown = markdown
-    if let background = appTheme.palette?.cardBackground {
-      planBackground = NSColor(
-        srgbRed: CGFloat(background.r) / 255,
-        green: CGFloat(background.g) / 255,
-        blue: CGFloat(background.b) / 255,
-        alpha: CGFloat(background.a)
-      )
-    } else {
-      planBackground = NSColor.quaternaryLabelColor.withAlphaComponent(0.4)
-    }
+    // Same value the SwiftUI plan rows fill with (`theme.cardBackground`):
+    // a plan card is drawn row by row by whichever renderer mounted each
+    // row, so any difference here shows up as a visible seam.
+    planBackground = appTheme.cardBackgroundNSColor
     planBorder = NSColor(appTheme.separator)
   }
 }
