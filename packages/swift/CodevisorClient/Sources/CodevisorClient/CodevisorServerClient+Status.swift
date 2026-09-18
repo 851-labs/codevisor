@@ -45,6 +45,19 @@ public struct ServerMigrationProgress: Decodable, Equatable, Sendable {
   public var completed: Int
   public var total: Int
   public var error: String?
+
+  public init(id: String, name: String, completed: Int, total: Int, error: String? = nil) {
+    self.id = id
+    self.name = name
+    self.completed = completed
+    self.total = total
+    self.error = error
+  }
+
+  public var fractionCompleted: Double? {
+    guard total > 0 else { return nil }
+    return min(1, max(0, Double(completed) / Double(total)))
+  }
 }
 
 public struct ServerInfo: Decodable, Equatable, Sendable {

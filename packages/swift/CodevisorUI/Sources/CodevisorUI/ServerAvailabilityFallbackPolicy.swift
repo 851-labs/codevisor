@@ -10,15 +10,14 @@ public enum ServerAvailabilityFallbackPolicy {
   /// Only remote machines qualify (the local server has nothing to fall
   /// back to), only while the wait is open-ended — connecting or failed —
   /// and never during a known-finite transition (server update or restart,
-  /// app update, data migration), where the honest answer is "wait".
+  /// app update), where the honest answer is "wait".
   public static func offersLocalMachine(
     isLocal: Bool,
     availability: ServerAvailability,
     hasLocalMachine: Bool,
-    appUpdateInProgress: Bool = false,
-    migrationInProgress: Bool = false
+    appUpdateInProgress: Bool = false
   ) -> Bool {
-    guard !isLocal, hasLocalMachine, !appUpdateInProgress, !migrationInProgress else {
+    guard !isLocal, hasLocalMachine, !appUpdateInProgress else {
       return false
     }
     switch availability {

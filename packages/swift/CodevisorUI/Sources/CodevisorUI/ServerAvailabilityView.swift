@@ -1,16 +1,16 @@
 import CodevisorCore
 import SwiftUI
 
-/// The shared detail-area state used while a machine's server is starting,
-/// reconnecting, or migrating. Keeping this at the navigation boundary means
-/// cached sidebars/lists stay useful without mounting views that would issue
-/// requests before the server is ready.
+/// The shared detail-area state used while a machine's server is starting
+/// or reconnecting. Keeping this at the navigation boundary means cached
+/// sidebars/lists stay useful without mounting views that would issue
+/// requests before the server is ready. (The local server's blocking data
+/// upgrade is presented app-wide by the macOS app, not here.)
 public struct ServerAvailabilityView: View {
   private let machineId: String
   private let availability: ServerAvailability
   private let machineName: String
   private let isLocal: Bool
-  private let dataUpgradeProgress: LocalDataUpgradeProgress?
   private let startupProgress: LocalServerStartupProgress?
   private let appUpdateInProgress: Bool
   private let retry: () -> Void
@@ -34,7 +34,6 @@ public struct ServerAvailabilityView: View {
     availability: ServerAvailability,
     machineName: String,
     isLocal: Bool,
-    dataUpgradeProgress: LocalDataUpgradeProgress? = nil,
     startupProgress: LocalServerStartupProgress? = nil,
     appUpdateInProgress: Bool = false,
     useLocalMachine: (() -> Void)? = nil,
@@ -45,7 +44,6 @@ public struct ServerAvailabilityView: View {
     self.availability = availability
     self.machineName = machineName
     self.isLocal = isLocal
-    self.dataUpgradeProgress = dataUpgradeProgress
     self.startupProgress = startupProgress
     self.appUpdateInProgress = appUpdateInProgress
     self.retry = retry
@@ -61,8 +59,7 @@ public struct ServerAvailabilityView: View {
             .font(.system(size: 38, weight: .medium))
             .foregroundStyle(.orange)
         } else if !showsStartupProgress {
-          ProgressView(value: progressFraction)
-            .progressViewStyle(.circular)
+          ProgressView()
             .controlSize(.large)
         }
 
@@ -94,22 +91,6 @@ public struct ServerAvailabilityView: View {
             }
           }
           .frame(maxWidth: 360)
-        }
-
-        if startupProgress?.work == nil, let dataUpgradeProgress,
-          dataUpgradeProgress.state == "running",
-          dataUpgradeProgress.total > 0
-        {
-          VStack(spacing: 6) {
-            ProgressView(
-              value: Double(dataUpgradeProgress.completed),
-              total: Double(dataUpgradeProgress.total)
-            )
-            Text("\(dataUpgradeProgress.completed) of \(dataUpgradeProgress.total)")
-              .font(.caption.monospacedDigit())
-              .foregroundStyle(.tertiary)
-          }
-          .frame(maxWidth: 320)
         }
 
         if isFailed || offersLocalMachine || offersSlowStartRestart {
@@ -155,31 +136,19 @@ public struct ServerAvailabilityView: View {
     return false
   }
 
-  private var activeMigration: LocalDataUpgradeProgress? {
-    guard let dataUpgradeProgress,
-      dataUpgradeProgress.state == "running" || dataUpgradeProgress.state == "failed"
-    else { return nil }
-    return dataUpgradeProgress
-  }
-
-  private var progressFraction: Double? {
-    activeMigration?.state == "running" ? activeMigration?.fractionCompleted : nil
-  }
-
   private var offersLocalMachine: Bool {
     useLocalMachine != nil
       && ServerAvailabilityFallbackPolicy.offersLocalMachine(
         isLocal: isLocal,
         availability: availability,
         hasLocalMachine: true,
-        appUpdateInProgress: appUpdateInProgress,
-        migrationInProgress: activeMigration != nil
+        appUpdateInProgress: appUpdateInProgress
       )
   }
 
-  /// The local server is starting (not updating or migrating).
+  /// The local server is starting (not updating).
   private var isLocalStartWait: Bool {
-    guard isLocal, !appUpdateInProgress, activeMigration == nil else { return false }
+    guard isLocal, !appUpdateInProgress else { return false }
     if case .waiting(.starting) = availability { return true }
     return false
   }
@@ -190,7 +159,6 @@ public struct ServerAvailabilityView: View {
 
   private var isFailed: Bool {
     if appUpdateInProgress { return false }
-    if activeMigration?.state == "failed" { return true }
     if case .failed = availability { return true }
     return false
   }
@@ -200,16 +168,12 @@ public struct ServerAvailabilityView: View {
   /// lasts long enough to be useful.
   private var isActivelyWaiting: Bool {
     if appUpdateInProgress { return true }
-    if activeMigration?.state == "running" { return true }
     if case .waiting = availability { return true }
     return false
   }
 
   private var title: String {
     if appUpdateInProgress { return "Updating Codevisor" }
-    if let migration = activeMigration {
-      return migration.state == "failed" ? "Server Data Update Failed" : "Updating Server Data"
-    }
     return switch availability {
     case let .waiting(reason):
       switch reason {
@@ -231,14 +195,6 @@ public struct ServerAvailabilityView: View {
     }
     if showsStartupProgress, let startupProgress {
       return startupProgress.label + (startIsSlow ? "\nThis step is taking longer than expected." : "")
-    }
-    if let migration = activeMigration {
-      if migration.state == "failed" {
-        return migration.error ?? "Codevisor couldn't finish updating the server's data."
-      }
-      return migration.name.isEmpty
-        ? "Your cached workspaces are safe. Codevisor will continue when the update finishes."
-        : "\(migration.name)\nYour cached workspaces are safe. Codevisor will continue automatically."
     }
     return switch availability {
     case let .waiting(reason):

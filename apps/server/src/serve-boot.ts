@@ -304,3 +304,44 @@ export const restoreTerminalPersistence = (
   persistence.restore()
   persistence.installExitHooks()
 }
+
+/// The `serve` arguments a self-updated runtime is re-launched with: the
+/// same bind, data, identity, and auth as this process. `--boot-id` and the
+/// status sidecars are deliberately absent — the new boot mints its own.
+export const selfUpdateServeArgs = (options: {
+  readonly host: string
+  readonly port: number
+  readonly databasePath: string
+  readonly serverId: string
+  readonly authMode: string
+  readonly directPathMode: string
+  readonly name: string | undefined
+  readonly kind: string | undefined
+}): ReadonlyArray<string> => [
+  "--host",
+  options.host,
+  "--port",
+  String(options.port),
+  "--db",
+  options.databasePath,
+  "--serverId",
+  options.serverId,
+  "--auth",
+  options.authMode,
+  "--direct-path",
+  options.directPathMode,
+  ...(options.name === undefined ? [] : ["--name", options.name]),
+  ...(options.kind === undefined ? [] : ["--kind", options.kind])
+]
+
+/// The terminal upgrade report for a database that could not open or
+/// migrate: what the sidecar and the boot health answer carry to the app
+/// and to remote clients.
+export const databaseStartupFailure = (error: string): DataUpgradeProgress => ({
+  state: "failed",
+  id: "database-startup",
+  name: "Applying update",
+  completed: 0,
+  total: 0,
+  error
+})

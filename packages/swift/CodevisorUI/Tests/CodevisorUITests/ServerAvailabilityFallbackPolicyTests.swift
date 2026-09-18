@@ -67,12 +67,5 @@ struct ServerAvailabilityFallbackPolicyTests {
         hasLocalMachine: true,
         appUpdateInProgress: true
       ))
-    #expect(
-      !ServerAvailabilityFallbackPolicy.offersLocalMachine(
-        isLocal: false,
-        availability: .waiting(.connecting),
-        hasLocalMachine: true,
-        migrationInProgress: true
-      ))
   }
 }

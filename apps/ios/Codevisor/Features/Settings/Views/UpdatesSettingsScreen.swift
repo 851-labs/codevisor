@@ -113,7 +113,15 @@ struct UpdatesSettingsScreen: View {
   private func trailing(for component: UpdateComponent) -> some View {
     switch component.phase {
     case .updating:
-      ProgressView()
+      // Measurable progress (a download, a data migration) draws a bar
+      // like macOS; otherwise an indeterminate spinner.
+      if let progress = component.progress {
+        ProgressView(value: progress)
+          .progressViewStyle(.linear)
+          .frame(width: 72)
+      } else {
+        ProgressView()
+      }
     case .failed:
       Button("Retry") { Task { await center.update(component) } }
         .buttonStyle(.bordered)

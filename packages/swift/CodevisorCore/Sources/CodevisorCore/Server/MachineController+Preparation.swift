@@ -73,6 +73,16 @@ extension MachineController {
         // token is accepted before ordinary requests are released.
         _ = try await client.info()
       } catch {
+        if await probeDataUpgrade(for: machineId, client: client) != nil {
+          // Booting through a data upgrade: a known-finite wait. Ordinary
+          // requests still fail fast (the composer shows the wait), and the
+          // retry polls at the update cadence so Settings › Updates follows
+          // the migration live instead of backing off to a minute.
+          let label = connection(for: machineId).status?.label ?? "Updating server data…"
+          markFailed(for: machineId, message: label)
+          schedulePreparationRetry(for: machineId, delay: updatePollInterval)
+          return
+        }
         let message = serverErrorMessage(error)
         markFailed(for: machineId, message: message)
         connection(for: machineId).status = MachineStatus(

@@ -33,6 +33,38 @@ extension SyncFakeServerClient {
     }
   }
 
+  /// Makes the server boot through a data upgrade: one health report per
+  /// poll, then ready — or, with `failure`, a failed upgrade that never
+  /// recovers. `immediately` models a machine found mid-migration by a
+  /// client that did not ask for the update; otherwise the migration
+  /// begins with the next simulated restart.
+  func configureMigration(
+    reports: [ServerMigrationProgress],
+    failure: String? = nil,
+    immediately: Bool = false
+  ) {
+    lock.withLock {
+      _migrationReports = reports
+      _migrationFailure = failure
+      _migrationArmed = !immediately
+      _migrationActive = immediately
+    }
+  }
+
+  /// A migrating server refuses every route but health.
+  static let migratingFailure = CodevisorServerClientError.httpStatus(
+    503, "{\"error\":\"Server is updating its data\"}")
+
+  /// Whether the simulated boot is still inside its data upgrade. Once the
+  /// reports are spent (and no failure is configured) the real server takes
+  /// the socket over, so every route answers again — regardless of which
+  /// route a client happens to try first. Callers hold `lock`.
+  private func migrationStillRunning() -> Bool {
+    guard _migrationActive else { return false }
+    if _migrationReports.isEmpty, _migrationFailure == nil { _migrationActive = false }
+    return _migrationActive
+  }
+
   /// Makes `applyServerUpdate()` decline as busy (chats still running).
   func configureBusy(_ value: Bool) {
     lock.withLock { _busy = value }
@@ -253,7 +285,21 @@ extension SyncFakeServerClient {
 
   func health() async throws -> ServerHealth {
     lock.withLock {
-      ServerHealth(
+      if migrationStillRunning() {
+        if !_migrationReports.isEmpty {
+          return ServerHealth(
+            ok: false, version: currentVersion, database: "migrating", bootId: bootId,
+            buildNumber: currentBuildNumber, migration: _migrationReports.removeFirst())
+        }
+        if let failure = _migrationFailure {
+          return ServerHealth(
+            ok: false, version: currentVersion, database: "failed", bootId: bootId,
+            buildNumber: currentBuildNumber,
+            migration: ServerMigrationProgress(
+              id: "database-startup", name: "Applying update", completed: 0, total: 0, error: failure))
+        }
+      }
+      return ServerHealth(
         ok: true,
         version: currentVersion,
         database: "ready",
@@ -276,6 +322,7 @@ extension SyncFakeServerClient {
 
   func info() async throws -> ServerInfo {
     let (version, id): (String, String) = try lock.withLock {
+      if migrationStillRunning() { throw Self.migratingFailure }
       if downtimeRemaining > 0 {
         downtimeRemaining -= 1
         throw ServerDownError()
@@ -290,9 +337,10 @@ extension SyncFakeServerClient {
     return info
   }
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {
-    lock.withLock {
+    try lock.withLock {
       _updateInfoChannels.append(channel)
       _updateInfoRefreshes.append(refresh)
+      if migrationStillRunning() { throw Self.migratingFailure }
       if applyingProgressReports {
         if applyProgressReports.isEmpty {
           applyingProgressReports = false
@@ -386,6 +434,13 @@ extension SyncFakeServerClient {
     if let targetBuildNumber { currentBuildNumber = targetBuildNumber }
     updateApplied = true
     bootId = "boot-after-update"
+    if _migrationArmed {
+      // The replacement binds its port and reports its data upgrade in
+      // place of plain downtime.
+      _migrationArmed = false
+      _migrationActive = true
+      downtimeRemaining = 0
+    }
   }
   func issuePairingToken() async throws -> ServerPairingToken {
     ServerPairingToken(token: "hm_test", createdAt: "2026-06-30T00:00:00.000Z")

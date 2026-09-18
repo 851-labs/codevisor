@@ -5,6 +5,12 @@ import Foundation
 /// file (like the navigation-sync extension) to keep the core controller
 /// file within size limits.
 extension MachineController {
+  /// How long a replacement server may report a running data upgrade
+  /// before the update is declared stuck. Mirrors the local server's
+  /// startup budget: migrations are resumable, so a genuine one that runs
+  /// this long is wedged, not slow.
+  static let migrationMaximumDuration: Duration = .seconds(10 * 60)
+
   public func serverUpdatePhase(for machineId: String) -> ServerUpdatePhase {
     connectionsById[machineId]?.updatePhase ?? .idle
   }
@@ -123,6 +129,7 @@ extension MachineController {
       var deadline = updateScheduler.now() + pollBudget
       var lastInstallProgress: Double?
       var lastInstallMessage: String?
+      var migrationStartedAt: ContinuousClock.Instant?
       while updateScheduler.now() < deadline {
         try? await updateScheduler.sleep(updatePollInterval)
         // The machine's own progress report: draining, installing (on
@@ -164,6 +171,30 @@ extension MachineController {
           default:
             break
           }
+        }
+        // The replacement server is booting through a data upgrade: it
+        // answers health with the migration in flight while every other
+        // route is refused. Follow it live. Keep waiting while it keeps
+        // answering — one long step reports no granular progress — but
+        // bounded, so a wedged migration still ends in a failure.
+        if let health = await probeDataUpgrade(for: machineId, client: client) {
+          let migration = connection.dataUpgradeProgress
+          if health.database == "failed" {
+            let message = migration?.error ?? "The server couldn't finish updating its data."
+            connection.updatePhase = .failed(message)
+            markFailed(for: machineId, message: message)
+            return
+          }
+          let startedAt = migrationStartedAt ?? updateScheduler.now()
+          migrationStartedAt = startedAt
+          if updateScheduler.now() - startedAt < Self.migrationMaximumDuration {
+            deadline = max(deadline, updateScheduler.now() + pollBudget)
+          }
+          connection.updateProgress = migration?.fractionCompleted
+          connection.updateStatusMessage =
+            migration.map { $0.name.isEmpty ? "Updating server data…" : $0.name }
+            ?? "Updating server data…"
+          continue
         }
         guard let info = try? await client.info() else {
           connection.updateProgress = nil

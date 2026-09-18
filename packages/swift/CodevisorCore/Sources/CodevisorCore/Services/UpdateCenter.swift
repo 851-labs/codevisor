@@ -203,12 +203,22 @@ public final class UpdateCenter {
       // update IS the app update row above. Builds without a self-updater
       // (development) update the local server by rebuilding, never here.
       if machine.isLocal { return nil }
+      // A machine booting through a data upgrade has a row even before
+      // this client ever read its release state: the migration IS the
+      // update in progress, whoever asked for it.
       guard let connection = machines.connectionsById[machine.id],
-        let info = connection.updateInfo
+        connection.updateInfo != nil || connection.dataUpgradeProgress != nil
       else { return nil }
+      let info = connection.updateInfo
+      let migration = connection.updatePhase == .idle ? connection.dataUpgradeProgress : nil
       let phase: UpdateComponent.Phase =
         switch connection.updatePhase {
-        case .idle: .idle
+        case .idle:
+          if let migration {
+            migration.error.map(UpdateComponent.Phase.failed) ?? .updating
+          } else {
+            .idle
+          }
         case .updating: .updating
         case let .failed(message): .failed(message)
         }
@@ -220,16 +230,18 @@ public final class UpdateCenter {
         subjectId: "",
         // The machine's Codevisor, whatever form it takes there.
         title: "Codevisor",
-        installedVersion: AppUpdateModel.displayedVersion(
-          info.currentVersion,
-          buildNumber: info.currentBuildNumber,
-          usesAlphaChannel: info.channel == "alpha"
-        ),
-        latestVersion: info.latestVersion,
-        updateAvailable: info.updateAvailable,
+        installedVersion: info.map {
+          AppUpdateModel.displayedVersion(
+            $0.currentVersion,
+            buildNumber: $0.currentBuildNumber,
+            usesAlphaChannel: $0.channel == "alpha"
+          )
+        },
+        latestVersion: info?.latestVersion,
+        updateAvailable: info?.updateAvailable ?? false,
         phase: phase,
-        statusMessage: phase == .updating ? connection.updateStatusMessage : nil,
-        progress: phase == .updating ? connection.updateProgress : nil
+        statusMessage: phase == .updating ? (migration?.name ?? connection.updateStatusMessage) : nil,
+        progress: phase == .updating ? (migration?.fractionCompleted ?? connection.updateProgress) : nil
       )
     }
   }

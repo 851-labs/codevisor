@@ -69,9 +69,6 @@ extension NewChatView {
         availability: composerServerAvailability,
         machineName: composerMachine.name,
         isLocal: composerMachine.isLocal,
-        dataUpgradeProgress: composerMachine.isLocal
-          ? environment.localServer?.dataUpgradeProgress
-          : nil,
         startupProgress: composerMachine.isLocal ? environment.localServer?.startupProgress : nil,
         appUpdateInProgress: environment.appUpdate.isUpdating,
         restart: composerMachine.isLocal ? { AppRelauncher.relaunch() } : nil
@@ -123,14 +120,9 @@ extension NewChatView {
     environment.machines.availability(for: composerServerId)
   }
 
+  /// The local server's data upgrade is presented app-wide (see
+  /// `ServerDataUpgradePresentation`), not here.
   private var blocksComposerServerContent: Bool {
-    if environment.appUpdate.isUpdating { return true }
-    if composerMachine.isLocal,
-      let progress = environment.localServer?.dataUpgradeProgress,
-      progress.state == "running" || progress.state == "failed"
-    {
-      return true
-    }
-    return false
+    environment.appUpdate.isUpdating
   }
 }

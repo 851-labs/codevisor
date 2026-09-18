@@ -5,6 +5,7 @@ import type { AddressInfo, Socket } from "node:net"
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
 
+import type { BootListener } from "./boot-listener.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
 import { ClientControlBroker } from "./infra/client-control.js"
@@ -49,39 +50,8 @@ import type {
 import { handleRequest } from "./server-router.js"
 
 export * from "./server-context.js"
+export { defaultServerConfig } from "./server-config.js"
 export { reconcileOrphanedSessionTurns, reconcileStaleStreamingTurns }
-
-export const defaultServerConfig = (
-  overrides: Partial<CodevisorServerConfig> = {}
-): CodevisorServerConfig => ({
-  id: overrides.id ?? "local",
-  name: overrides.name ?? "Local Codevisor",
-  version: overrides.version ?? "0.1.0",
-  bootId: overrides.bootId ?? "test-boot",
-  processId: overrides.processId ?? process.pid,
-  appOwned: overrides.appOwned ?? false,
-  buildNumber: overrides.buildNumber,
-  sourceRevision: overrides.sourceRevision,
-  serviceManaged: overrides.serviceManaged ?? false,
-  kind: overrides.kind ?? "local",
-  host: overrides.host ?? "127.0.0.1",
-  port: overrides.port ?? 49361,
-  directPathEnabled: overrides.directPathEnabled ?? true,
-  worktreeNameStyle: overrides.worktreeNameStyle ?? "production",
-  auth: overrides.auth ?? {
-    allowLocalhostWithoutAuth: true,
-    requireBearerToken: false
-  },
-  onShutdownRequested: overrides.onShutdownRequested,
-  updater: overrides.updater,
-  restartSnapshotPath: overrides.restartSnapshotPath,
-  restartDrainTimeoutMs: overrides.restartDrainTimeoutMs,
-  sessionActivity: overrides.sessionActivity,
-  screenSharing: overrides.screenSharing,
-  screenSharingVNC: overrides.screenSharingVNC,
-  cloudDeviceId: overrides.cloudDeviceId,
-  cloud: overrides.cloud
-})
 
 export const makeCodevisorServerApp = (
   services: CodevisorServerServices,
@@ -345,9 +315,14 @@ export const makeCodevisorServerApp = (
   return app
 }
 
+/// `bootListener` is the socket `serve` bound before the data upgrades ran
+/// (see boot-listener.ts). When present its boot handlers are detached and
+/// the real handlers take over the same server, so clients never see a
+/// refused-connection gap between "migrating" and "recovering".
 export const startCodevisorServer = (
   services: CodevisorServerServices,
-  config: CodevisorServerConfig
+  config: CodevisorServerConfig,
+  bootListener?: BootListener
 ): Effect.Effect<RunningCodevisorServer, ServerError> =>
   Effect.gen(function* () {
     const fanout = yield* makeEventFanout
@@ -355,8 +330,10 @@ export const startCodevisorServer = (
     // An accidental second `serve` against the same data directory once
     // shadow-bound the loopback address of a live server and hijacked its
     // clients mid-turn. Refuse to start when the port is already served;
-    // ephemeral ports (tests) cannot conflict and skip the probe.
+    // ephemeral ports (tests) cannot conflict and skip the probe. A boot
+    // listener already holds the port (and ran this probe before binding).
     if (
+      bootListener === undefined &&
       config.port !== 0 &&
       (yield* Effect.promise(() => hasExistingListener(config.host, config.port)))
     ) {
@@ -378,14 +355,22 @@ export const startCodevisorServer = (
       try: () =>
         new Promise<RunningCodevisorServer>((resolve, reject) => {
           let app: ReturnType<typeof makeCodevisorServerApp> | undefined
-          const server = createServer((request, response) => {
+          const onRequest = (request: IncomingMessage, response: ServerResponse): void => {
             if (app === undefined) {
               response.writeHead(503, { "Content-Type": "application/json" })
               response.end(JSON.stringify({ error: "Server recovery is still in progress" }))
               return
             }
             app.handleRequest(request, response)
-          })
+          }
+          let server: Server
+          if (bootListener === undefined) {
+            server = createServer(onRequest)
+          } else {
+            bootListener.detach()
+            server = bootListener.server
+            server.on("request", onRequest)
+          }
           server.on("connect", (request, socket, head) => {
             if (app === undefined) {
               socket.destroy()
@@ -400,8 +385,7 @@ export const startCodevisorServer = (
             }
             app.handleUpgrade(request, socket as Socket, head)
           })
-          server.once("error", reject)
-          server.listen(config.port, config.host, async () => {
+          const onListening = async (): Promise<void> => {
             server.off("error", reject)
             const address = server.address()
             /* v8 ignore next -- TCP listen always returns AddressInfo here. */
@@ -435,7 +419,13 @@ export const startCodevisorServer = (
               url: `http://${config.host}:${port}`,
               close: closeServer(server, app)
             })
-          })
+          }
+          server.once("error", reject)
+          if (bootListener === undefined) {
+            server.listen(config.port, config.host, () => void onListening())
+          } else {
+            void onListening()
+          }
         }),
       /* v8 ignore next -- startup errors are surfaced by Node before a server is returned. */
       catch: (cause) =>

@@ -369,6 +369,10 @@ struct RootView: View {
     // count and Settings › Updates, and the resume of an update-all the
     // app's own restart interrupted.
     .modifier(UpdateCenterUpkeep())
+    // The local server's blocking data upgrade: a non-dismissable sheet
+    // over the whole window, wherever the user is, instead of a card only
+    // the New Chat page used to show.
+    .modifier(ServerDataUpgradePresentation())
     // codevisor://add-machine deeplinks, printed by `codevisor setup` on a
     // remote machine. Extracted into its own modifier: inlining the
     // alerts here pushed this already-large chain past the Swift type

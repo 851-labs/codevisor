@@ -20,6 +20,7 @@ extension MachineController {
         serverId: info.id,
         features: Set(info.features ?? [])
       )
+      connection.dataUpgradeProgress = nil
       // Persist the direct↔cloud link on the record itself: dedup and
       // the relay fallback must both survive relaunches whose direct
       // probe never succeeds.
@@ -68,6 +69,10 @@ extension MachineController {
         // Say so, so the user fixes the token instead of chasing a
         // phantom network problem.
         connection.status = MachineStatus(isReachable: false, label: "Invalid connection token")
+      } else if await probeDataUpgrade(for: id, client: client) != nil {
+        // Booting through a data upgrade: the probe recorded the
+        // migration and set the status label. Not a network problem, so
+        // the (slow) relay fallback is not worth trying.
       } else if let relayed = await probeRelayFallback(forMachineId: id) {
         // The direct route is down but the machine answers through
         // its cloud relay — reachable, just not directly.
@@ -78,6 +83,36 @@ extension MachineController {
           "Status probe for \(id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
       }
     }
+  }
+
+  /// Tells "unreachable" from "booting through a data upgrade". A server
+  /// binds its port before its blocking migrations run and answers
+  /// `/v1/health` with `ok: false` and the migration in flight while every
+  /// other route is refused. Records that report on the connection (cleared
+  /// once the server answers ready) with a matching status label, and
+  /// returns the health while the upgrade runs; nil otherwise.
+  @discardableResult
+  func probeDataUpgrade(
+    for machineId: String,
+    client: any CodevisorServerClienting
+  ) async -> ServerHealth? {
+    let connection = connection(for: machineId)
+    guard let health = try? await client.health(), health.database != "ready" else {
+      connection.dataUpgradeProgress = nil
+      return nil
+    }
+    let failed = health.database == "failed"
+    let genericFailure = "The server couldn't finish updating its data."
+    var migration =
+      health.migration
+      ?? ServerMigrationProgress(id: "data-upgrade", name: "Updating server data", completed: 0, total: 0)
+    if failed, migration.error == nil { migration.error = genericFailure }
+    connection.dataUpgradeProgress = migration
+    connection.status = MachineStatus(
+      isReachable: false,
+      label: failed ? "Server data update failed" : "Updating server data…"
+    )
+    return health
   }
 
   #if DEBUG

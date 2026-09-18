@@ -34,6 +34,11 @@ import { makeBlobStore } from "@codevisor/sync"
 import { makeTerminalManager } from "@codevisor/terminal"
 import { Effect } from "effect"
 
+import {
+  FAILED_UPGRADE_GRACE_MS,
+  startBootListenerIfPortFree,
+  type BootListener
+} from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCustomHarnessStore } from "./infra/custom-harness-store.js"
@@ -55,7 +60,9 @@ import {
   bundledVersion,
   bundledBuildMetadata,
   backgroundTerminalIntegration,
-  resolveServeModes
+  resolveServeModes,
+  selfUpdateServeArgs,
+  databaseStartupFailure
 } from "./serve-boot.js"
 import { makeSelfUpdater } from "./serve-self-updater.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
@@ -82,6 +89,8 @@ export const runServe = (
   let startupLease: ServerLease | undefined
   let stopOwnerMonitor: (() => void) | undefined
   let startupCompleted = false
+  let bootListener: BootListener | undefined
+  let upgradeFailed = false
 
   const program = Effect.gen(function* () {
     const host = args.host ?? "127.0.0.1"
@@ -107,7 +116,9 @@ export const runServe = (
     const bootId = args["boot-id"]!
     const reportUpgrade = (progress: DataUpgradeProgress): void => {
       writeDataUpgradeStatus(upgradeStatusPath, bootId, progress)
+      bootListener?.report(progress)
       if (progress.state === "running") startup.work(progress)
+      if (progress.state === "failed") upgradeFailed = true
     }
     const serviceManaged = args["service-managed"] === "1"
     const appOwned = args["app-owned"] === "1" || serviceManaged
@@ -141,6 +152,21 @@ export const runServe = (
     )
     startupLease = lease
     stopOwnerMonitor = ownerPid === undefined ? undefined : monitorAppOwner({ ownerPid, lease })
+    // Answer /v1/health while the blocking data upgrades below run, so a
+    // remote client can follow "updating chat history, 40%" instead of
+    // seeing a refused connection.
+    bootListener = yield* Effect.promise(() =>
+      startBootListenerIfPortFree({
+        host,
+        port,
+        version,
+        bootId,
+        processId: process.pid,
+        appOwned,
+        serviceManaged,
+        ...buildMetadata
+      })
+    )
     startup.checkpoint("openingDatabase")
     // Standalone installs used to default the database into the OS temp
     // directory; relocate that data the first time we start against a canonical
@@ -172,16 +198,7 @@ export const runServe = (
       onDataUpgradeProgress: reportUpgrade
     }).pipe(
       Effect.tapError((cause) =>
-        Effect.sync(() =>
-          writeDataUpgradeStatus(upgradeStatusPath, bootId, {
-            state: "failed",
-            id: "database-startup",
-            name: "Applying update",
-            completed: 0,
-            total: 0,
-            error: cause.message
-          })
-        )
+        Effect.sync(() => reportUpgrade(databaseStartupFailure(cause.message)))
       )
     )
     const attachments = makeAttachmentStore(dirname(databasePath))
@@ -201,22 +218,16 @@ export const runServe = (
             currentBuildNumber: buildMetadata.buildNumber,
             db,
             dataDir: dirname(databasePath),
-            serveArgs: [
-              "--host",
+            serveArgs: selfUpdateServeArgs({
               host,
-              "--port",
-              String(port),
-              "--db",
+              port,
               databasePath,
-              "--serverId",
               serverId,
-              "--auth",
               authMode,
-              "--direct-path",
               directPathMode,
-              ...(args.name === undefined ? [] : ["--name", args.name]),
-              ...(args.kind === undefined ? [] : ["--kind", args.kind])
-            ]
+              name: args.name,
+              kind: args.kind
+            })
           })
     startup.checkpoint("restoringTerminals")
     const terminal = makeTerminalManager()
@@ -450,8 +461,11 @@ export const runServe = (
         sessionActivity,
         ...screenSharingProvider(dirname(databasePath)),
         updater
-      })
+      }),
+      bootListener
     )
+    // The real server owns the socket now.
+    bootListener = undefined
     startupCompleted = true
     startup.checkpoint("ready")
     console.log(`Codevisor server listening at ${server.url}`)
@@ -473,6 +487,8 @@ export const runServe = (
       await startupLease?.release().catch(() => undefined)
     }
     console.error(failureMessage(cause))
+    // A failed data upgrade stays readable for a moment (see BootListener.close).
+    await bootListener?.close(upgradeFailed ? { afterMs: FAILED_UPGRADE_GRACE_MS } : undefined)
     // Startup may have opened long-lived helpers; setting exitCode alone
     // would leave this dedicated server process alive indefinitely.
     process.exit(1)

@@ -1,9 +1,11 @@
 import { request, Server } from "node:http"
+import type { AddressInfo } from "node:net"
 
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
+import { startBootListener } from "./boot-listener.js"
 import { readTailnetPeers } from "./infra/tailnet.js"
 import {
   defaultDatabasePath,
@@ -132,6 +134,49 @@ describe("@codevisor/server", () => {
     const server = await starting
     runningServers.push(server)
     expect(await (await fetch(`${server.url}/v1/health`)).json()).toMatchObject({ ok: true })
+  })
+
+  it("takes over the boot listener's socket so health flips from migrating to ready", async () => {
+    const { services } = await makeServices("server-a")
+    const listener = await startBootListener({
+      host: "127.0.0.1",
+      port: 0,
+      version: "0.1.0",
+      bootId: "boot-a",
+      processId: process.pid,
+      appOwned: false,
+      serviceManaged: false,
+      log: () => undefined
+    })
+    expect(listener).toBeDefined()
+    const port = (listener!.server.address() as AddressInfo).port
+    listener!.report({
+      state: "running",
+      id: "canonical-session-chat-v1",
+      name: "Updating chat history",
+      completed: 1,
+      total: 2
+    })
+    expect(await (await fetch(`http://127.0.0.1:${port}/v1/health`)).json()).toMatchObject({
+      ok: false,
+      database: "migrating",
+      migration: { name: "Updating chat history", completed: 1, total: 2 }
+    })
+
+    const server = await run(
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ id: "server-a", port, bootId: "boot-a" }),
+        listener
+      )
+    )
+    runningServers.push(server)
+    expect(server.port).toBe(port)
+    expect(await (await fetch(`${server.url}/v1/health`)).json()).toMatchObject({
+      ok: true,
+      database: "ready",
+      bootId: "boot-a"
+    })
   })
 
   it("fails startup cleanly when orphan reconciliation cannot read sessions", async () => {

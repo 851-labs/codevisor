@@ -32,6 +32,12 @@ public final class MachineConnection {
   public internal(set) var updateStatusMessage: String?
   /// Fraction reported by an updater that supports measurable progress.
   public internal(set) var updateProgress: Double?
+  /// The migration a health probe last reported while this machine's
+  /// server was booting through a data upgrade (`database != "ready"`);
+  /// `error` set means that upgrade failed. Nil once the server answers
+  /// ready. Set by any probe — the Updates pane follows a migration on a
+  /// machine this client did not ask to update.
+  public internal(set) var dataUpgradeProgress: ServerMigrationProgress?
 
   /// This machine's live shell-event subscription. Every machine holds its
   /// own; selection changes never touch another machine's stream.
@@ -160,11 +166,20 @@ extension MachineController {
   /// `.failed` — every later request for the machine failed instantly and
   /// offline — and nothing retried until the next app foreground or an
   /// explicit user retry.
-  func schedulePreparationRetry(for machineId: String) {
+  ///
+  /// `delay` overrides the backoff for a known-finite wait (the server is
+  /// booting through a data upgrade): a steady cadence that follows the
+  /// migration live, and not counted as a failure.
+  func schedulePreparationRetry(for machineId: String, delay override: Duration? = nil) {
     let connection = connection(for: machineId)
     connection.preparationRetryTask?.cancel()
-    connection.preparationFailures += 1
-    let delay = preparationRetryBaseDelay * min(60, 1 << min(connection.preparationFailures, 6))
+    let delay: Duration
+    if let override {
+      delay = override
+    } else {
+      connection.preparationFailures += 1
+      delay = preparationRetryBaseDelay * min(60, 1 << min(connection.preparationFailures, 6))
+    }
     let sleep = preparationSleep
     connection.preparationRetryTask = Task { [weak self] in
       try? await sleep(delay)

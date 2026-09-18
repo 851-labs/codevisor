@@ -372,6 +372,14 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var updateApplied = false
   var bootId = "boot-before-update"
   var downtimeRemaining = 0
+  /// Simulated boot listener: while active, `health()` answers with the
+  /// next migration report (`ok: false`, `database: "migrating"`) and every
+  /// other route is refused with 503, exactly as a server booting through
+  /// its data upgrades does. Armed reports activate on the next restart.
+  var _migrationReports: [ServerMigrationProgress] = []
+  var _migrationFailure: String?
+  var _migrationArmed = false
+  var _migrationActive = false
   var _infoId = "local"
   var _appliedUpdates = 0
   var _updateInfoChannels: [ServerUpdateChannel] = []
