@@ -181,7 +181,8 @@ private struct GPUFixture {
   }
 }
 
-/// The render target's pixels, copied into shared memory so they can be inspected.
+/// The render target's pixels, copied into CPU-readable memory so they can be
+/// inspected.
 private struct Rendered {
   private let pixels: [UInt8]
   private let width: Int
@@ -189,11 +190,23 @@ private struct Rendered {
   init(texture: any MTLTexture, device: any MTLDevice, queue: any MTLCommandQueue) throws {
     let descriptor = MTLTextureDescriptor.texture2DDescriptor(
       pixelFormat: .bgra8Unorm, width: texture.width, height: texture.height, mipmapped: false)
-    descriptor.storageMode = .shared
+    // A discrete GPU does not write a `.shared` texture back anywhere the CPU
+    // can see it: on a Radeon Pro 5300M the copy below lands as zeroes, with
+    // the command buffer still reporting completion. `.managed` plus an
+    // explicit synchronize is the readback that holds on unified and discrete
+    // memory alike; iOS has unified memory and no managed mode.
+    #if os(macOS)
+      descriptor.storageMode = .managed
+    #else
+      descriptor.storageMode = .shared
+    #endif
     let staging = try #require(device.makeTexture(descriptor: descriptor))
     let buffer = try #require(queue.makeCommandBuffer())
     let blit = try #require(buffer.makeBlitCommandEncoder())
     blit.copy(from: texture, to: staging)
+    #if os(macOS)
+      blit.synchronize(resource: staging)
+    #endif
     blit.endEncoding()
     buffer.commit()
     buffer.waitUntilCompleted()
