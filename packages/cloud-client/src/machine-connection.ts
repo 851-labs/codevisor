@@ -17,6 +17,7 @@ import {
   type CancelTimeout,
   type CloudSocket,
   type MachineConnectionState,
+  isCredentialRejection,
   type MachineDisconnectReason,
   type SocketFactory
 } from "./machine-socket.js"
@@ -198,6 +199,7 @@ export class CloudMachineConnection {
     }
     socket.onmessage = (data) => this.#onMessage(socket, data)
     socket.onclose = (code) => this.#onSocketClosed(socket, code)
+    socket.onrejected = (status) => this.#onUpgradeRejected(socket, status)
   }
 
   #onMessage(socket: CloudSocket, data: string | Uint8Array): void {
@@ -308,19 +310,29 @@ export class CloudMachineConnection {
     this.#clearLivenessTimers()
     this.#suspendOrDrop()
     this.options.onDisconnect?.({ kind: "socket-closed", code })
-    if (code === 4201) {
-      this.#discardResumeState()
-      this.#receiver.dropAll("peer-gone")
-      this.#setState("revoked")
-      return
-    }
-    if (code === 4200) {
-      this.#discardResumeState()
-      this.#receiver.dropAll("peer-gone")
-      this.#setState("unsupported-protocol")
-      return
-    }
+    if (code === 4201) return this.#fail("revoked")
+    if (code === 4200) return this.#fail("unsupported-protocol")
     this.#scheduleReconnect()
+  }
+
+  /// The relay answered the upgrade with an HTTP status. The transport never
+  /// opened, so there is nothing to tear down beyond our own bookkeeping.
+  #onUpgradeRejected(socket: CloudSocket, status: number): void {
+    if (this.#socket !== socket) return
+    this.#socket = undefined
+    this.#clearLivenessTimers()
+    this.#suspendOrDrop()
+    this.options.onDisconnect?.({ kind: "upgrade-rejected", status })
+    if (isCredentialRejection(status)) return this.#fail("revoked")
+    this.#scheduleReconnect()
+  }
+
+  /// Terminal: the hub will not take these credentials back. Drop everything
+  /// held for resume and stop reconnecting; a new start() begins afresh.
+  #fail(state: "revoked" | "unsupported-protocol"): void {
+    this.#discardResumeState()
+    this.#receiver.dropAll("peer-gone")
+    this.#setState(state)
   }
 
   #forceReconnect(socket: CloudSocket, reason: MachineDisconnectReason): void {

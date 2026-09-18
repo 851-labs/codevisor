@@ -43,6 +43,7 @@ export class FakeSocket implements CloudSocket {
   onopen: (() => void) | null = null
   onmessage: ((data: string | Uint8Array) => void) | null = null
   onclose: ((code: number) => void) | null = null
+  onrejected: ((status: number) => void) | null = null
 
   send(data: string | Uint8Array): void {
     if (this.sendError !== undefined) throw this.sendError

@@ -212,7 +212,7 @@ export const routeSync = async (
   if (request.method === "PUT") {
     const body = await readSchema(request, PutSyncRequestSchema)
     const result = await run(services.db.mergeSyncEntries(namespace, body.entries))
-    if (namespace === "harness-shared-accounts") await services.sharedAccounts?.reconcile()
+    if (namespace === "harness-shared-accounts") await services.sharedAccounts?.reconcileRemote()
     if (result.changed.length > 0) {
       void appendAndPublish(services.db, fanout, "sync.changed", namespace, {
         namespace,

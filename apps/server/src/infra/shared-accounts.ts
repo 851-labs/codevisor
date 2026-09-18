@@ -365,6 +365,13 @@ export const makeSharedAccounts = (options: {
     store,
     providers,
     reconcile,
+    /// For changes that arrived from another machine through sync: held
+    /// credentials may predate them (a global sign-out), so drop them first.
+    /// The periodic sweep must not, or every read would go remote again.
+    reconcileRemote: async (): Promise<void> => {
+      vault.invalidate()
+      await reconcile()
+    },
     probe,
     accounts,
     storedAccounts: async (harnessId: string) =>

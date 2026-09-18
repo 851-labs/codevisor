@@ -136,9 +136,19 @@ const socketFactory = (url: string, headers: Record<string, string>): CloudSocke
     terminate: () => socket.terminate(),
     onopen: null,
     onmessage: null,
-    onclose: null
+    onclose: null,
+    onrejected: null
   }
   socket.on("open", () => adapted.onopen?.())
+  // With a listener attached, ws leaves a non-101 response to us instead of
+  // collapsing it into an error + close 1006. Surface the status, then drop
+  // the request; any close ws still reports refers to a socket already
+  // detached by the connection.
+  socket.on("unexpected-response", (request, response) => {
+    response.resume()
+    request.destroy()
+    adapted.onrejected?.(response.statusCode ?? 0)
+  })
   socket.on("message", (data, isBinary) => {
     // Binary frames carry relay envelope batches; text frames JSON control.
     if (isBinary) {
@@ -296,7 +306,10 @@ const makeBridge = (
       if (state === "connected") options.log(`Cloud: connected to ${credentials.serverUrl}`)
       if (state === "reconnecting") options.log("Cloud: reconnecting to relay")
       if (state === "revoked") {
-        options.log("Cloud: this machine's credential was revoked; disconnecting.")
+        options.log(
+          "Cloud: the relay no longer accepts this machine's credential; disconnecting. " +
+            "Reconnect from Settings › Cloud or run `codevisor auth login`."
+        )
       }
       if (state === "unsupported-protocol") {
         options.log("Cloud: relay requires a newer server version; disconnecting.")
@@ -305,6 +318,8 @@ const makeBridge = (
     onDisconnect: (reason) => {
       if (reason.kind === "socket-closed") {
         options.log(`Cloud: relay socket closed with code ${reason.code}`)
+      } else if (reason.kind === "upgrade-rejected") {
+        options.log(`Cloud: relay refused the connection with HTTP ${reason.status}`)
       } else if (reason.kind === "welcome-timeout") {
         options.log("Cloud: relay handshake timed out; replacing the socket")
       } else if (reason.kind === "heartbeat-timeout") {

@@ -212,6 +212,34 @@ describe("connection lifecycle", () => {
     expect(outdated.connection.state).toBe("unsupported-protocol")
   })
 
+  it("stops retrying when the relay refuses the credential at the upgrade", () => {
+    for (const status of [401, 403]) {
+      const h = harness()
+      h.connection.start()
+      h.sockets[0]!.onrejected?.(status)
+      expect(h.connection.state).toBe("revoked")
+      expect(h.reconnects).toHaveLength(0)
+      expect(h.disconnects).toEqual([{ kind: "upgrade-rejected", status }])
+      // The aborted request may still report a close; it belongs to nobody now.
+      h.sockets[0]!.onclose?.(1006)
+      expect(h.reconnects).toHaveLength(0)
+    }
+  })
+
+  it("keeps retrying after other upgrade failures", () => {
+    const h = harness()
+    h.connection.start()
+    h.sockets[0]!.onrejected?.(503)
+    expect(h.connection.state).toBe("reconnecting")
+    expect(h.reconnects).toHaveLength(1)
+    h.reconnects[0]!.callback()
+    h.sockets[1]!.onrejected?.(429)
+    expect(h.reconnects).toHaveLength(2)
+    // Stale rejection from the superseded socket is ignored.
+    h.sockets[0]!.onrejected?.(401)
+    expect(h.connection.state).toBe("reconnecting")
+  })
+
   it("stops cleanly and ignores the resulting close event", () => {
     const h = harness()
     const socket = connect(h)

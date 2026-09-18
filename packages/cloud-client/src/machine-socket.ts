@@ -17,6 +17,10 @@ export interface CloudSocket {
   onopen: (() => void) | null
   onmessage: ((data: string | Uint8Array) => void) | null
   onclose: ((code: number) => void) | null
+  /// The upgrade was answered with an HTTP status instead of 101. Without
+  /// this, a refused credential is indistinguishable from a dropped TCP
+  /// connection (both surface as close 1006) and gets retried forever.
+  onrejected?: ((status: number) => void) | null
 }
 
 export type SocketFactory = (url: string, headers: Record<string, string>) => CloudSocket
@@ -32,11 +36,17 @@ export type MachineConnectionState =
 
 export type MachineDisconnectReason =
   | { kind: "socket-closed"; code: number }
+  | { kind: "upgrade-rejected"; status: number }
   | { kind: "welcome-timeout" }
   | { kind: "heartbeat-timeout" }
   | { kind: "send-failed"; phase: "hello" | "heartbeat" }
 
 export type CancelTimeout = () => void
+
+/// HTTP statuses on the upgrade that mean the relay will never accept this
+/// credential again (revoked or unknown key). Everything else — 429, 5xx, a
+/// Cloudflare interstitial — is treated as transient and retried.
+export const isCredentialRejection = (status: number): boolean => status === 401 || status === 403
 
 /// Exponential backoff with full jitter; exported for tests and reuse.
 export const reconnectDelayMs = (

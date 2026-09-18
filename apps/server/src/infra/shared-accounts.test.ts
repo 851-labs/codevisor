@@ -184,10 +184,32 @@ describe("automatic shared accounts", () => {
     await b.shared.inherit("codex")
     expect((await b.shared.probe(id))?.authState).toBe("authenticated")
     await a.shared.logout(id, true)
-    await expect(b.shared.context(id)).rejects.toThrow("signed out")
     await f.sync(a, b)
-    await b.shared.reconcile()
+    await expect(b.shared.context(id)).rejects.toThrow("signed out")
     expect(await b.shared.accounts("codex", true)).toEqual([])
+  })
+
+  it("drops locally held credentials when a change arrives from another machine", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(100_000)
+    const f = fleet(),
+      a = await f.machine("a", native("alice")),
+      b = await f.machine("b", native("alice"))
+    await a.shared.reconcile()
+    await f.sync(a, b)
+    const id = sharedOAuthIdentity(native("alice"))
+    const credential = (await b.shared.store.get(id))!.credential!
+    expect((await b.vault.token(credential)).subject).toBe("alice")
+    // Revoked at the coordinator, but B still holds a confirmed credential
+    // inside its revalidation window and keeps serving it.
+    await a.vault.revoke(credential)
+    expect((await b.vault.token(credential)).subject).toBe("alice")
+    // The periodic sweep leaves held credentials alone…
+    await b.shared.reconcile()
+    expect((await b.vault.token(credential)).subject).toBe("alice")
+    // …while a sync-driven reconcile re-reads them.
+    await b.shared.reconcileRemote()
+    await expect(b.vault.token(credential)).rejects.toThrow("signed out")
   })
 
   it("captures an isolated managed login and refreshes it from a second machine", async () => {

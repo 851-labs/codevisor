@@ -372,6 +372,8 @@ describe("provider accounts across machines", () => {
     const access = `header.${Buffer.from(JSON.stringify({ sub: "alice", next: true })).toString("base64url")}.signature`
     await atomicWriteJson(path, { anthropic: { ...credential(), access, expires: 7_200_000 } })
     await a.shared.providers.reconcile()
+    // B holds a still-valid mirror; the newer one is adopted at revalidation.
+    vi.setSystemTime(Date.now() + 5 * 60_000)
     expect((await b.vault.token(row.credential)).accessToken).toBe(access)
     await atomicWriteJson(join(b.dataDir, ".pi", "agent", "auth.json"), {
       anthropic: credential("bob")

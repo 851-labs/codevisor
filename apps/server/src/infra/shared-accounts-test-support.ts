@@ -126,7 +126,7 @@ export const fleet = () => {
     to: Awaited<ReturnType<typeof machine>>
   ) => {
     await run(to.db.mergeSyncEntries(SHARED_ACCOUNTS_NAMESPACE, await from.shared.store.entries()))
-    await to.shared.reconcile()
+    await to.shared.reconcileRemote()
   }
   return { machine, sync, rotate, records }
 }

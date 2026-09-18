@@ -103,14 +103,14 @@ export const createAuth = (env: CloudEnv) => {
       }),
       /// Long-lived per-machine credentials, listed/revoked from app settings.
       /// Metadata carries the machine's deviceId + static public key.
-      apiKey({
-        enableMetadata: true,
-        rateLimit: {
-          enabled: true,
-          timeWindow: 1000 * 60 * 60 * 24,
-          maxRequests: 10_000
-        }
-      })
+      ///
+      /// No per-key budget: the plugin's default limiter (10 verifications a
+      /// day, raised to 10k at launch) counts every relay handshake and
+      /// credential command a daemon makes, so a busy machine eventually
+      /// failed verification exactly like a revoked one and showed up offline
+      /// on every other client. The option overrides the per-row
+      /// `rate_limit_enabled` flag, so existing keys need no migration.
+      apiKey({ enableMetadata: true, rateLimit: { enabled: false } })
     ]
   })
 }

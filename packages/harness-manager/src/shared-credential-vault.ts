@@ -46,6 +46,10 @@ export const openSharedCredential = (
   return bundle
 }
 
+/// The coordinator is consulted at most this often for a credential that is
+/// otherwise serving fine: reads inside the window come from memory.
+const REVALIDATE_AFTER_MS = 5 * 60_000
+
 export interface SharedCredentialVaultConfig {
   readonly coordinate: CredentialCoordinator
   readonly rotate: (bundle: SharedTokenBundle) => Promise<SharedTokenBundle>
@@ -53,6 +57,10 @@ export interface SharedCredentialVaultConfig {
   readonly elapsed?: () => number
   readonly wait?: () => Promise<void>
   readonly readCached?: (id: string) => Promise<CoordinatedCredential | undefined>
+  /// How long a credential fetched from the coordinator is served from memory
+  /// before a read consults the coordinator again. Bounds how long a sign-out
+  /// on another machine can go unnoticed here. 0 consults it on every read.
+  readonly revalidateAfterMs?: number
   /// Durable local receipt lets a restarted process retry publication without
   /// ever retrying the provider exchange. Never log its encrypted contents.
   readonly receipt: {
@@ -62,12 +70,33 @@ export interface SharedCredentialVaultConfig {
   }
 }
 
+/// Access tokens closer to expiry than this are refreshed instead of served,
+/// so a long request never starts on a token that dies underneath it.
+const minimumValidityMs = (harnessId: SharedTokenBundle["harnessId"]): number =>
+  ["pi", "opencode", "grok-build"].includes(harnessId) ? 6 * 60_000 : 60_000
+
+/// Reads are local-first. The coordinator exists to elect a single refresher
+/// across machines and to hold the sealed result; it is not the read path. A
+/// credential fetched from it is served from memory until it nears expiry, a
+/// provider rejects it, this process has an uncommitted refresh receipt, or
+/// the revalidation window lapses. Cloud traffic is therefore proportional to
+/// refreshes and windows, not to how often callers ask for a token.
 export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) => {
   const now = config.now ?? Date.now
   const elapsed = config.elapsed ?? (() => performance.now())
   const wait = config.wait ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 150)))
+  const revalidateAfterMs = config.revalidateAfterMs ?? REVALIDATE_AFTER_MS
   const flights = new Map<string, Promise<SharedTokenBundle>>()
-  const cached = new Map<string, CoordinatedCredential>()
+  /// Credentials as last confirmed by the coordinator, with the bundle already
+  /// opened so the local path never decrypts per call.
+  const cached = new Map<
+    string,
+    { credential: CoordinatedCredential; bundle: SharedTokenBundle; verifiedAt: number }
+  >()
+  /// Receipts this process wrote and has not yet committed. A pending receipt
+  /// means the cached credential predates a refresh whose outcome the
+  /// coordinator has not confirmed, so it must not be served locally.
+  const pendingReceipts = new Set<string>()
   const remember = (
     reference: SharedCredentialReference,
     credential: CoordinatedCredential | undefined
@@ -77,22 +106,53 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       cached.delete(reference.id)
       throw new SharedCredentialError("revoked")
     }
-    cached.set(reference.id, credential)
-    return openSharedCredential(reference, credential.sealed)
+    const bundle = openSharedCredential(reference, credential.sealed)
+    cached.set(reference.id, { credential, bundle, verifiedAt: now() })
+    return bundle
+  }
+  const writeReceipt = async (id: string, value: { operationId: string; sealed: string }) => {
+    pendingReceipts.add(id)
+    await config.receipt.write(id, value)
+  }
+  const removeReceipt = async (id: string) => {
+    await config.receipt.remove(id)
+    pendingReceipts.delete(id)
   }
   const recover = async (reference: SharedCredentialReference) => {
     const receipt = await config.receipt.read(reference.id)
-    if (receipt === undefined) return
+    if (receipt === undefined) {
+      pendingReceipts.delete(reference.id)
+      return
+    }
     const committed = await config.coordinate(reference.id, { action: "commit", ...receipt })
     if (committed.status !== "ready" && committed.status !== "revoked")
       throw new SharedCredentialError("reauthenticate")
-    await config.receipt.remove(reference.id)
+    await removeReceipt(reference.id)
     remember(reference, committed.credential)
+  }
+  const serves = (bundle: SharedTokenBundle, rejectedAccessToken: string | undefined) =>
+    bundle.expiresAt > now() + minimumValidityMs(bundle.harnessId) &&
+    bundle.accessToken !== rejectedAccessToken
+  /// The bundle the coordinator last confirmed, while that confirmation is
+  /// still inside the window and no refresh of ours awaits its commit.
+  const held = (reference: SharedCredentialReference): SharedTokenBundle | undefined => {
+    const entry = cached.get(reference.id)
+    if (entry === undefined || pendingReceipts.has(reference.id)) return undefined
+    return now() - entry.verifiedAt < revalidateAfterMs ? entry.bundle : undefined
+  }
+  const local = (
+    reference: SharedCredentialReference,
+    rejectedAccessToken: string | undefined
+  ): SharedTokenBundle | undefined => {
+    const bundle = held(reference)
+    return bundle !== undefined && serves(bundle, rejectedAccessToken) ? bundle : undefined
   }
   const read = async (
     reference: SharedCredentialReference,
     rejectedAccessToken?: string
   ): Promise<SharedTokenBundle> => {
+    const held = local(reference, rejectedAccessToken)
+    if (held !== undefined) return held
     let state
     try {
       await recover(reference)
@@ -101,7 +161,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       if (cause instanceof SharedCredentialError) throw cause
       const previous = config.readCached
         ? await config.readCached(reference.id).catch(() => undefined)
-        : cached.get(reference.id)
+        : cached.get(reference.id)?.credential
       if (previous !== undefined) {
         if (previous.revoked) throw new SharedCredentialError("revoked")
         const token = openSharedCredential(reference, previous.sealed)
@@ -113,11 +173,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     const deadline = elapsed() + 8_000
     for (;;) {
       const bundle = remember(reference, state.credential)
-      const minimumValidity = ["pi", "opencode", "grok-build"].includes(bundle.harnessId)
-        ? 6 * 60_000
-        : 60_000
-      if (bundle.expiresAt > now() + minimumValidity && bundle.accessToken !== rejectedAccessToken)
-        return bundle
+      if (serves(bundle, rejectedAccessToken)) return bundle
       if (bundle.ownership !== "managed" || !bundle.refreshToken)
         throw new SharedCredentialError("reauthenticate")
       const operationId = randomUUID()
@@ -151,7 +207,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
         throw new SharedCredentialError("reauthenticate")
       }
       const sealed = sealSharedCredential(reference, rotated)
-      await config.receipt.write(reference.id, { operationId, sealed })
+      await writeReceipt(reference.id, { operationId, sealed })
       const committed = await config.coordinate(reference.id, {
         action: "commit",
         operationId,
@@ -161,7 +217,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
         throw new SharedCredentialError(
           committed.status === "revoked" ? "revoked" : "reauthenticate"
         )
-      await config.receipt.remove(reference.id)
+      await removeReceipt(reference.id)
       return remember(reference, committed.credential)
     }
   }
@@ -197,6 +253,12 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
     ): Promise<void> => {
       if (bundle.ownership !== "external" || bundle.refreshToken !== undefined)
         throw new Error("Invalid external credential")
+      const isNewer = (previous: SharedTokenBundle) =>
+        previous.accessToken !== bundle.accessToken && previous.expiresAt <= bundle.expiresAt
+      // Discovery republishes on every sweep; a mirror the coordinator already
+      // confirmed makes that sweep free.
+      const confirmed = held(reference)
+      if (confirmed !== undefined && !isNewer(confirmed)) return
       const state = await config.coordinate(reference.id, { action: "read" })
       const previous = remember(reference, state.credential)
       if (
@@ -207,8 +269,7 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
         previous.harnessId !== bundle.harnessId
       )
         return
-      if (previous.accessToken === bundle.accessToken || previous.expiresAt > bundle.expiresAt)
-        return
+      if (!isNewer(previous)) return
       const operationId = randomUUID()
       const acquired = await config.coordinate(reference.id, {
         action: "acquire",
@@ -219,21 +280,24 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       const started = await config.coordinate(reference.id, { action: "start", operationId })
       if (started.status !== "acquired") return
       const sealed = sealSharedCredential(reference, bundle)
-      await config.receipt.write(reference.id, { operationId, sealed })
+      await writeReceipt(reference.id, { operationId, sealed })
       const committed = await config.coordinate(reference.id, {
         action: "commit",
         operationId,
         sealed
       })
       if (committed.status !== "ready") throw new SharedCredentialError("offline")
-      await config.receipt.remove(reference.id)
+      await removeReceipt(reference.id)
       remember(reference, committed.credential)
     },
+    /// Drop held credentials so the next read consults the coordinator: a
+    /// change from another machine (a sign-out) need not wait for the window.
+    invalidate: (): void => cached.clear(),
     revoke: async (reference: SharedCredentialReference): Promise<void> => {
       const result = await config.coordinate(reference.id, { action: "revoke" })
       if (result.status !== "revoked") throw new SharedCredentialError("offline")
       cached.delete(reference.id)
-      await config.receipt.remove(reference.id)
+      await removeReceipt(reference.id)
     }
   }
 }

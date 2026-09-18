@@ -184,6 +184,74 @@ describe("encrypted shared credential vault", () => {
     expect(f.config.rotate).not.toHaveBeenCalled()
   })
 
+  it("serves a confirmed credential locally until invalidated or the window lapses", async () => {
+    const f = fixture()
+    const coordinate = vi.fn(f.config.coordinate)
+    const vault = makeSharedCredentialVault({ ...f.config, coordinate })
+    const ref = await vault.create(refreshed)
+    coordinate.mockClear()
+    for (const token of await Promise.all(Array.from({ length: 50 }, () => vault.token(ref))))
+      expect(token).toEqual(refreshed)
+    expect(coordinate).not.toHaveBeenCalled()
+    vault.invalidate()
+    expect(await vault.token(ref)).toEqual(refreshed)
+    expect(coordinate).toHaveBeenCalledTimes(1)
+    // A sign-out elsewhere is honored no later than the window.
+    await f.coordinate("b")(ref.id, { action: "revoke" })
+    expect(await vault.token(ref)).toEqual(refreshed)
+    f.setTime(100_000 + 5 * 60_000)
+    await expect(vault.token(ref)).rejects.toThrow("signed out")
+    expect(coordinate).toHaveBeenCalledTimes(2)
+    expect(coordinate).toHaveBeenLastCalledWith(ref.id, { action: "read" })
+    expect(f.config.rotate).not.toHaveBeenCalled()
+  })
+
+  it("never serves a token nearing expiry or one the provider rejected from memory", async () => {
+    const f = fixture()
+    const coordinate = vi.fn(f.config.coordinate)
+    const vault = makeSharedCredentialVault({ ...f.config, coordinate })
+    const ref = await vault.create({ ...original, expiresAt: refreshed.expiresAt })
+    coordinate.mockClear()
+    expect((await vault.token(ref)).accessToken).toBe(original.accessToken)
+    expect(coordinate).not.toHaveBeenCalled()
+    expect((await vault.token(ref, original.accessToken)).accessToken).toBe(refreshed.accessToken)
+    expect(f.config.rotate).toHaveBeenCalledOnce()
+    coordinate.mockClear()
+    expect((await vault.token(ref)).accessToken).toBe(refreshed.accessToken)
+    expect(coordinate).not.toHaveBeenCalled()
+    const third = { ...refreshed, accessToken: "third-access", expiresAt: 20_000_000 }
+    f.config.rotate.mockResolvedValueOnce(third)
+    f.setTime(refreshed.expiresAt - 60_000)
+    expect(await vault.token(ref)).toEqual(third)
+    expect(coordinate).toHaveBeenCalledWith(ref.id, { action: "read" })
+    expect(f.config.rotate).toHaveBeenCalledTimes(2)
+  })
+
+  it("commits an uncommitted receipt before serving anything, even inside the window", async () => {
+    const f = fixture()
+    let loseCommit = true
+    const coordinate = vi.fn<CredentialCoordinator>(async (id, command) => {
+      const result = await f.config.coordinate(id, command)
+      if (command.action === "commit" && loseCommit) {
+        loseCommit = false
+        throw new Error("lost response")
+      }
+      return result
+    })
+    const vault = makeSharedCredentialVault({ ...f.config, coordinate })
+    const ref = await vault.create({ ...original, expiresAt: refreshed.expiresAt })
+    await expect(vault.token(ref, original.accessToken)).rejects.toThrow("lost response")
+    expect(f.receipts.size).toBe(1)
+    coordinate.mockClear()
+    expect(await vault.token(ref)).toEqual(refreshed)
+    expect(coordinate.mock.calls[0]?.[1].action).toBe("commit")
+    expect(f.receipts.size).toBe(0)
+    expect(f.config.rotate).toHaveBeenCalledOnce()
+    coordinate.mockClear()
+    expect(await vault.token(ref)).toEqual(refreshed)
+    expect(coordinate).not.toHaveBeenCalled()
+  })
+
   it("forces refresh on rejection, but accepts a newer token another machine already published", async () => {
     const f = fixture()
     const vault = makeSharedCredentialVault(f.config)
@@ -206,6 +274,8 @@ describe("encrypted shared credential vault", () => {
     const updated = { ...external, accessToken: "native-new", expiresAt: refreshed.expiresAt }
     await vault.publishExternal(ref, updated)
     expect(await vault.token(ref)).toEqual(updated)
+    await vault.publishExternal(ref, external)
+    f.setTime(100_000 + 5 * 60_000)
     await vault.publishExternal(ref, external)
     expect(await vault.token(ref)).toEqual(updated)
     expect(f.config.rotate).not.toHaveBeenCalled()
@@ -244,6 +314,7 @@ describe("encrypted shared credential vault", () => {
     let hold = true
     const vault = makeSharedCredentialVault({
       ...f.config,
+      revalidateAfterMs: 0,
       coordinate: async (id, command) => {
         if (command.action === "read" && hold) {
           entered.resolve()
