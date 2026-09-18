@@ -16,6 +16,9 @@ public enum Motion {
   /// Geometry duration for inserting a workspace split.
   public static let splitDuration = 0.22
 
+  /// Duration of `listReflow`, for work that must wait until rows settle.
+  public static let listReflowDuration = 0.2
+
   // MARK: - Animations
 
   /// Entrance of freshly revealed disclosure content (fade + slight drift).
@@ -41,7 +44,7 @@ public enum Motion {
   /// settle so their new positions remain easy to track without making a
   /// frequent action feel delayed or playful.
   public static func listReflow(reduceMotion: Bool = false) -> Animation? {
-    reduceMotion ? nil : .smooth(duration: 0.2)
+    reduceMotion ? nil : .smooth(duration: listReflowDuration)
   }
 
   /// Panel-scale show/hide (e.g. the terminal pane group).

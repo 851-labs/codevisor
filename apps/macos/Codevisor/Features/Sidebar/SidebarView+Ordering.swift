@@ -3,18 +3,17 @@ import CodevisorUI
 import SwiftUI
 
 extension SidebarView {
-  func moveWorkspace(_ sourceID: UUID, to destinationID: UUID) {
-    var ids = workspaceItems.map(\.workspace.id)
-    guard sourceID != destinationID,
-      let source = ids.firstIndex(of: sourceID),
-      let destination = ids.firstIndex(of: destinationID),
+  /// Applies a live reorder while a header is dragged. Each call persists
+  /// optimistically; the sync model coalesces the server writes.
+  func moveWorkspace(_ sourceID: UUID, toIndex index: Int) {
+    let ids = workspaceItems.map(\.workspace.id)
+    let reordered = ListReorder.moving(sourceID, to: index, in: ids)
+    guard reordered != ids,
       let workspace = environment.workspaces.workspace(id: sourceID)
     else { return }
-    ids.remove(at: source)
-    ids.insert(sourceID, at: destination)
     withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
       environment.workspaceSync.reorderWorkspace(
-        id: sourceID, visibleIDs: ids,
+        id: sourceID, visibleIDs: reordered,
         client: environment.machines.client(for: workspace.serverId)
       )
     }

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import CodevisorCore
 
 extension SidebarView {
@@ -42,38 +41,41 @@ extension SidebarView {
     workspaceRevision += 1
   }
 
-  @ViewBuilder
+  /// One workspace: its header (the reorder handle) over its tab rows.
+  /// Both report their frames so a drag can compare the lifted header
+  /// against whole sections and land back on the header precisely.
   func workspaceSection(_ item: SidebarWorkspaceListItem) -> some View {
-    workspaceHeader(item)
-      .draggable(String.self, id: \.self) { item.workspace.id.uuidString }
-      .onDragSessionUpdated { session in
-        switch session.phase {
-        case .initial, .active:
-          draggingWorkspaceID = item.workspace.id
-        case .ended, .dataTransferCompleted:
-          if draggingWorkspaceID == item.workspace.id { draggingWorkspaceID = nil }
-        @unknown default:
-          break
+    let id = item.workspace.id
+    return VStack(alignment: .leading, spacing: 1) {
+      workspaceHeader(item)
+        // The lifted row stays dimmed in place while its ghost travels.
+        .opacity(draggingWorkspaceID == id ? 0.4 : 1)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(Self.reorderSpace))
+        } action: { frame in
+          recordWorkspaceHeaderFrame(frame, for: id)
         }
-      }
-      .opacity(draggingWorkspaceID == item.workspace.id ? 0.4 : 1)
-      .onDrop(
-        of: [.text],
-        delegate: WorkspaceDropDelegate(
-          workspaceID: item.workspace.id,
-          draggingWorkspaceID: $draggingWorkspaceID,
-          moveWorkspace: moveWorkspace
-        )
-      )
+        .gesture(workspaceReorderGesture(for: id))
 
-    workspaceTabRows(item)
+      workspaceTabRows(item)
+    }
+    .onGeometryChange(for: CGRect.self) { proxy in
+      proxy.frame(in: .named(Self.reorderSpace))
+    } action: { frame in
+      recordWorkspaceSectionFrame(frame, for: id)
+    }
+    .onDisappear { forgetWorkspaceGeometry(for: id) }
+  }
+
+  func machineName(for item: SidebarWorkspaceListItem) -> String? {
+    let machine = environment.machines.machine(for: item.workspace.serverId)
+    return machine?.isLocal == false ? machine?.name : nil
   }
 
   private func workspaceHeader(_ item: SidebarWorkspaceListItem) -> some View {
-    let machine = environment.machines.machine(for: item.workspace.serverId)
-    return SidebarWorkspaceHeader(
+    SidebarWorkspaceHeader(
       name: item.workspace.name,
-      machineName: machine?.isLocal == false ? machine?.name : nil,
+      machineName: machineName(for: item),
       isReordering: isReordering,
       onArchive: { archiveWorkspace(item.workspace) },
       onRename: {

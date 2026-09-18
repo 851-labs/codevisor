@@ -12,21 +12,15 @@ struct SidebarWorkspaceHeader: View {
 
   @State private var isHovered = false
 
+  /// Insets around the label. The reorder ghost reuses these so it can
+  /// land pixel-for-pixel on the row it was lifted from.
+  static let horizontalPadding: CGFloat = 10
+  static let topPadding: CGFloat = 12
+  static let bottomPadding: CGFloat = 4
+
   var body: some View {
     HStack(spacing: 6) {
-      HStack(spacing: 6) {
-        Text(title)
-          .truncationMode(.middle)
-        if let machineName {
-          Text("· \(machineName)")
-            .foregroundStyle(.tertiary)
-        }
-      }
-      .font(.subheadline.weight(.semibold))
-      .lineLimit(1)
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(.isHeader)
-      .help(machineName.map { "\(title) · \($0)" } ?? title)
+      SidebarWorkspaceHeaderLabel(name: name, machineName: machineName)
 
       Spacer(minLength: 0)
 
@@ -42,9 +36,9 @@ struct SidebarWorkspaceHeader: View {
       }
     }
     .foregroundStyle(.secondary)
-    .padding(.horizontal, 10)
-    .padding(.top, 12)
-    .padding(.bottom, 4)
+    .padding(.horizontal, Self.horizontalPadding)
+    .padding(.top, Self.topPadding)
+    .padding(.bottom, Self.bottomPadding)
     .contentShape(Rectangle())
     .hoverTracking($isHovered)
     .contextMenu {
@@ -65,6 +59,35 @@ struct SidebarWorkspaceHeader: View {
   }
 
   private var title: String {
+    SidebarWorkspaceHeaderLabel.title(for: name)
+  }
+}
+
+/// The header's name (and remote machine) text, shared with the reorder
+/// ghost so the lifted row and its stand-in never drift apart in style.
+struct SidebarWorkspaceHeaderLabel: View {
+  let name: String
+  let machineName: String?
+
+  static func title(for name: String) -> String {
     name.isEmpty ? "Workspace" : name
+  }
+
+  private var title: String { Self.title(for: name) }
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(title)
+        .truncationMode(.middle)
+      if let machineName {
+        Text("· \(machineName)")
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .font(.subheadline.weight(.semibold))
+    .lineLimit(1)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isHeader)
+    .help(machineName.map { "\(title) · \($0)" } ?? title)
   }
 }

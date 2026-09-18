@@ -28,7 +28,8 @@ struct SidebarView: View {
   /// Bumped after workspace mutations (backfill sweep, renames) so the
   /// non-observable repository is re-read.
   @State var workspaceRevision = 0
-  @State var draggingWorkspaceID: UUID?
+  @State var workspaceDrag: SidebarWorkspaceDrag?
+  @State var workspaceGeometry = SidebarWorkspaceGeometryStore()
   @ClientPreference("sidebar.showArchived", default: false) var showArchived
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
@@ -41,7 +42,7 @@ struct SidebarView: View {
   @State var restoreRequest: ArchivedRestoreRequest?
 
   var list: ProjectListModel { environment.projectList }
-  var isReordering: Bool { draggingWorkspaceID != nil }
+  var isReordering: Bool { workspaceDrag != nil }
   var itemTitleFont: Font { .body }
 
   var isNewChatSelected: Bool {
@@ -80,7 +81,7 @@ struct SidebarView: View {
         // A plain VStack: lazy row materialization re-measures the
         // content mid-bounce, which reads as random overscroll snaps.
         VStack(alignment: .leading, spacing: 1) {
-          // `.geometryGroup()` makes each row translate as one
+          // `.geometryGroup()` makes each section translate as one
           // rigid unit during reflows. Without it a row whose
           // content changes in the same transaction as its move
           // (the state change that reorders a chat also restyles
@@ -109,6 +110,11 @@ struct SidebarView: View {
 
       SidebarUpdateFooter(center: environment.updateCenter)
     }
+    // Section frames and the reorder ghost share this space, so the ghost
+    // can be placed over whichever row it was lifted from or lands on.
+    .coordinateSpace(.named(Self.reorderSpace))
+    .overlay(alignment: .topLeading) { workspaceReorderGhost }
+    .task(id: settlingWorkspaceID) { await finishSettledWorkspaceDrag() }
   }
 
   private var sidebarInteractionView: some View {
