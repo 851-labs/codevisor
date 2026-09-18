@@ -11,14 +11,21 @@ final class ScreenSharingSenderRecovery {
   private let frameSender: ScreenSharingFrameSender
   private let idleNotifier: ScreenSharingSourceIdleNotifier
   private var refreshRateLimit = ScreenSharingRefreshRateLimit()
+  private let nowNs: @Sendable () -> Int64
 
+  /// `videoRefresh` is the channel contract rather than the WebRTC carrier, and the clock and sleeper are injectable,
+  /// so the recovery schedule can be driven as a state machine without a negotiated peer. The defaults are the
+  /// production wiring: the shared monotonic clock and `Task.sleep`.
   init(
     metrics: ScreenSharingMetrics, codecFactory: ScreenSharingCodecFactory, frameSender: ScreenSharingFrameSender,
-    videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
+    videoRefresh: any ScreenSharingMessageChannel<ScreenSharingVideoRefreshMessage>,
+    nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs },
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.metrics = metrics
     self.codecFactory = codecFactory
     self.frameSender = frameSender
+    self.nowNs = nowNs
     let monitor = codecFactory.sourceIdleMonitor
     // Announce idle once per activity period so the viewer can verify that
     // the newest frame arrived despite loss that no later packet reveals.
@@ -48,7 +55,8 @@ final class ScreenSharingSenderRecovery {
           metrics.observe("sourceIdleNoticeDelay", milliseconds: Double(now - submitted) / 1_000_000)
         }
         return true
-      })
+      },
+      nowNs: nowNs, sleep: sleep)
   }
 
   /// A frame was submitted: the idle notifier's activity period restarts.
@@ -60,7 +68,7 @@ final class ScreenSharingSenderRecovery {
   func handle(_ message: ScreenSharingVideoRefreshMessage) {
     guard case .keyframe = message else { return }
     metrics.increment("videoRefreshRequestsReceived")
-    guard refreshRateLimit.allow(nowNs: ScreenSharingMetrics.nowNs) else {
+    guard refreshRateLimit.allow(nowNs: nowNs()) else {
       metrics.increment("videoRefreshRequestsThrottled")
       return
     }

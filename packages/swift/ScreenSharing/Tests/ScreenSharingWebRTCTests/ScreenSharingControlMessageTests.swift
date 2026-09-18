@@ -60,6 +60,44 @@ struct ScreenSharingControlMessageTests {
     #expect(bytes.drain().1)
   }
 
+  @Test func packetsAreBatchedInArrivalOrderAndOnlyTheFirstOfABatchSchedulesADrain() {
+    var inbox = ScreenSharingControlInbox()
+    // Only the arrival that finds no drain outstanding asks for one; the rest
+    // of the batch rides along with it.
+    #expect(inbox.enqueue(Data([1])) == true)
+    #expect(inbox.enqueue(Data([2])) == false)
+    #expect(inbox.enqueue(Data([3])) == false)
+    let batch = inbox.drain()
+    #expect(batch.0 == [Data([1]), Data([2]), Data([3])] && !batch.1)
+    #expect(inbox.drain().0.isEmpty)
+    // The drain released the schedule, so the next arrival asks for a new one
+    // rather than waiting for a drain that will never come.
+    #expect(inbox.enqueue(Data([4])) == true)
+    #expect(inbox.drain().0 == [Data([4])])
+  }
+
+  @Test func aDrainRestoresTheByteBudgetButNeverClearsAFailure() {
+    var inbox = ScreenSharingControlInbox()
+    let full = Data(repeating: 9, count: ScreenSharingControlMessage.maximumBytes)
+    for _ in 0..<16 { _ = inbox.enqueue(full) }
+    let first = inbox.drain()
+    #expect(first.0.count == 16 && !first.1)
+    // A second batch of the same size still fits, so the budget went out with
+    // the packets instead of accumulating across drains.
+    for _ in 0..<16 { _ = inbox.enqueue(full) }
+    let second = inbox.drain()
+    #expect(second.0.count == 16 && !second.1)
+
+    #expect(inbox.enqueue(Data(repeating: 9, count: ScreenSharingControlMessage.maximumBytes + 1)) == true)
+    let failure = inbox.drain()
+    #expect(failure.0.isEmpty && failure.1)
+    // The failure latches, because the channel is torn down on it: nothing
+    // after it is admitted and every later drain keeps reporting it.
+    #expect(inbox.enqueue(Data([1])) == true)
+    let after = inbox.drain()
+    #expect(after.0.isEmpty && after.1)
+  }
+
   @Test func fractionalTrackpadMovementIsPreservedAndInvalidDeltasDoNotContaminateIt() {
     var scroll = ScreenSharingScrollAccumulator()
     #expect(scroll.add(x: 0.4, y: -0.4) == (0, 0))

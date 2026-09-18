@@ -13,10 +13,15 @@ final class ScreenSharingReceiverRecovery {
   /// Diagnostic: the first channel send after a verified shortfall decision.
   private let requestSendMeasurement = ScreenSharingEncoderRefreshRequest()
 
+  /// `videoRefresh` is the channel contract rather than the WebRTC carrier, and the clock and sleeper are injectable,
+  /// so the grace, refresh and retry schedule can be driven as a state machine without a negotiated peer. The defaults
+  /// are the production wiring: the shared monotonic clock and `Task.sleep`.
   init(
     metrics: ScreenSharingMetrics, codecFactory: ScreenSharingCodecFactory,
-    videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>,
-    grace: Duration?, graceExtensions: Int?
+    videoRefresh: any ScreenSharingMessageChannel<ScreenSharingVideoRefreshMessage>,
+    grace: Duration?, graceExtensions: Int?,
+    nowNs: @escaping @Sendable () -> Int64 = { ScreenSharingMetrics.nowNs },
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.metrics = metrics
     self.codecFactory = codecFactory
@@ -30,7 +35,8 @@ final class ScreenSharingReceiverRecovery {
           metrics.label("sourceIdleRequestSentAtNs", String(ScreenSharingMetrics.nowNs))
         }
         return true
-      })
+      },
+      nowNs: nowNs, sleep: sleep)
     // A verified shortfall drives the existing keyframe recovery path and
     // keeps its target until the announced content is decoded.
     deliveryVerifier = ScreenSharingDeliveryVerifier(
@@ -82,7 +88,8 @@ final class ScreenSharingReceiverRecovery {
           metrics.increment("sourceIdleRetriesExecuted")
           metrics.label("sourceIdleRetryLatestExecutedAtNs", String(now))
         }
-      })
+      },
+      sleep: sleep)
     codecFactory.refreshSignal.onChange { [weak self] event in
       // Recovery state trace (viewer clock): when keyframe recovery became
       // pending and when a decoded keyframe cleared it.
