@@ -53,6 +53,29 @@ import Testing
     // No counter name mentions a pool drop: absence of callbacks is not measured here.
     #expect(counters.keys.allSatisfy { !$0.lowercased().contains("drop") })
   }
+
+  /// The total is what a report divides by, so it has to be the number of callbacks that actually
+  /// happened: every bucket counted once, and the missing-image sub-count of complete callbacks not
+  /// counted a second time.
+  @Test func theCallbackTotalCountsEachCallbackExactlyOnce() {
+    let metrics = ScreenSharingMetrics()
+    #expect(Accounting.callbackTotal(counters: [:]) == 0)
+    var callbacks = 0
+    for (status, hasImage) in [
+      (0, true), (0, false), (1, true), (2, true), (3, true), (4, true), (5, true), (99, true),
+    ] {
+      Accounting.record(valid: true, rawStatus: status, hasImage: hasImage, metrics: metrics)
+      callbacks += 1
+    }
+    Accounting.record(valid: false, rawStatus: 0, hasImage: true, metrics: metrics)
+    Accounting.record(valid: true, rawStatus: nil, hasImage: true, metrics: metrics)
+    callbacks += 2
+    let counters = metrics.snapshot().counters
+    #expect(counters["captureSamplesWithoutImage"] == 1)  // a complete callback that carried no image
+    #expect(Accounting.callbackTotal(counters: counters) == callbacks)
+    // Counters this accounting never writes cannot inflate the total.
+    #expect(Accounting.callbackTotal(counters: counters.merging(["capturedFrames": 900]) { a, _ in a }) == callbacks)
+  }
 }
 
 @Suite struct ScreenSharingOwnedWorkloadLifecycleTests {

@@ -1,5 +1,8 @@
+import CodevisorTestSupport
 import Foundation
+import ScreenSharingTesting
 import Testing
+
 @testable import ScreenSharing
 
 /// The in-memory channel pair keeps the native channel's contract: ordered
@@ -8,7 +11,7 @@ import Testing
 @MainActor
 struct ScreenSharingLocalChannelTests {
   @Test func deliversInOrderThroughTheHopAndNeverReentrantly() {
-    let hop = ManualHop()
+    let hop = ScreenSharingManualHop()
     let (viewer, host) = ScreenSharingLocalChannel<Int>.pair(hop: hop.schedule)
     var hostReceived: [Int] = []
     var viewerReceived: [Int] = []
@@ -29,7 +32,7 @@ struct ScreenSharingLocalChannelTests {
   }
 
   @Test func closingOneEndMakesBothUnavailableAndRefusesLaterSends() {
-    let hop = ManualHop()
+    let hop = ScreenSharingManualHop()
     let (viewer, host) = ScreenSharingLocalChannel<String>.pair(hop: hop.schedule)
     var viewerAvailability: [Bool] = []
     var hostAvailability: [Bool] = []
@@ -51,18 +54,62 @@ struct ScreenSharingLocalChannelTests {
     #expect(hostAvailability == [false] && viewerAvailability == [false])
   }
 
-  /// Queued main-actor work that a test releases explicitly.
-  @MainActor
-  private final class ManualHop {
-    private var queued: [@Sendable @MainActor () -> Void] = []
-    nonisolated init() {}
-    nonisolated func schedule(_ work: @escaping @Sendable @MainActor () -> Void) {
-      MainActor.assumeIsolated { queued.append(work) }
+  @Test func aBurstKeepsItsOrderThroughOneHopAndCountsOnlyAcceptedSends() {
+    let hop = ScreenSharingManualHop()
+    let (viewer, host) = ScreenSharingLocalChannel<Int>.pair(hop: hop.schedule)
+    var received: [Int] = []
+    host.onMessage = { received.append($0) }
+    for value in 1...64 { #expect(viewer.send(value)) }
+    #expect(viewer.sentCount == 64)
+    hop.drain()
+    #expect(received == Array(1...64))
+    host.close()
+    #expect(!viewer.send(65))
+    #expect(viewer.sentCount == 64)
+  }
+
+  @Test func closingFromInsideDeliveryDropsTheRestOfTheBatch() {
+    let hop = ScreenSharingManualHop()
+    let (viewer, host) = ScreenSharingLocalChannel<Int>.pair(hop: hop.schedule)
+    var received: [Int] = []
+    host.onMessage = { value in
+      received.append(value)
+      if value == 2 { host.close() }
     }
-    func drain() {
-      let batch = queued
-      queued = []
-      for work in batch { work() }
+    for value in 1...3 { #expect(viewer.send(value)) }
+    hop.drain()
+    // The third message was already queued; a channel that closed mid-batch never delivers it.
+    #expect(received == [1, 2])
+    hop.drain()
+    #expect(received == [1, 2])
+  }
+
+  @Test func anAvailabilityCallbackCannotSendOnTheChannelItIsReportingClosed() {
+    let hop = ScreenSharingManualHop()
+    let (viewer, host) = ScreenSharingLocalChannel<String>.pair(hop: hop.schedule)
+    var refusedInsideCallback: Bool?
+    viewer.onAvailabilityChanged = { available in
+      #expect(!available)
+      refusedInsideCallback = !viewer.send("from the callback")
     }
+    host.onMessage = { _ in Issue.record("a closed channel delivered a message") }
+    viewer.close()
+    #expect(refusedInsideCallback == true)
+    hop.drainAll()
+  }
+
+  /// The default hop is a main-actor task, so delivery is asynchronous even without a test hop.
+  @Test func theDefaultHopDeliversOnTheMainActorAfterTheSendReturns() async {
+    let (viewer, host) = ScreenSharingLocalChannel<Int>.pair()
+    let delivered = TestSignal()
+    var received: [Int] = []
+    host.onMessage = { value in
+      received.append(value)
+      delivered.signal()
+    }
+    #expect(viewer.send(7))
+    #expect(received.isEmpty)
+    await delivered.wait()
+    #expect(received == [7])
   }
 }

@@ -9,8 +9,8 @@
     public var onStopped: ((String) -> Void)?
     private var generation = 0
     private var starting = false
-    private var stream: SCStream?
-    private var output: CaptureOutput?
+    private var stream: (any ScreenSharingCaptureStream)?
+    private var output: ScreenSharingCaptureOutput?
     private let queueDepth: Int
     private let pixelFormat: OSType
     private let copySurface: Bool
@@ -54,7 +54,7 @@
         throw ScreenSharingError.unavailable("Selected display is unavailable.")
       }
       try await startResolved(
-        filter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration,
+        target: SCContentFilter(display: display, excludingWindows: []), configuration: configuration,
         sink: sink, metrics: metrics, generation: generation)
     }
 
@@ -98,7 +98,7 @@
         "\(window.frame.width)x\(window.frame.height)@\(window.frame.minX),\(window.frame.minY)")
       metrics.label("captureOwnedWindowOnScreen", String(window.isOnScreen))
       try await startResolved(
-        filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration,
+        target: SCContentFilter(desktopIndependentWindow: window), configuration: configuration,
         sink: sink, metrics: metrics, generation: generation)
     }
 
@@ -108,6 +108,17 @@
       pickedFilter: SCContentFilter, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
     ) async throws {
+      try await start(target: pickedFilter, configuration: configuration, sink: sink, metrics: metrics)
+    }
+
+    /// The start transaction over an ALREADY RESOLVED target: refuse a concurrent start, take a
+    /// generation, and run the shared start path in it. The picker hands its filter straight to
+    /// this; the display and owned-window entry points resolve a filter first and then call
+    /// `startResolved` with the generation they took.
+    func start(
+      target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
+      sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics
+    ) async throws {
       guard stream == nil, !starting else { throw ScreenSharingError.invalid("Capture is already running.") }
       generation += 1
       let generation = generation
@@ -115,11 +126,11 @@
       defer { if self.generation == generation { starting = false } }
       try Task.checkCancellation()
       try await startResolved(
-        filter: pickedFilter, configuration: configuration, sink: sink, metrics: metrics, generation: generation)
+        target: target, configuration: configuration, sink: sink, metrics: metrics, generation: generation)
     }
 
     private func startResolved(
-      filter: SCContentFilter, configuration: ScreenSharingVideoConfiguration,
+      target: any ScreenSharingCaptureTarget, configuration: ScreenSharingVideoConfiguration,
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics, generation: Int
     ) async throws {
       guard (3...8).contains(queueDepth) else { throw ScreenSharingError.invalid("Capture queue depth must be 3...8.") }
@@ -135,19 +146,19 @@
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
       metrics.label("captureSurface", copySurface ? "separate pool experiment" : "SCK surface")
-      metrics.label("captureContentStyle", String(describing: filter.style))
-      metrics.label("captureContentWidthPoints", String(Double(filter.contentRect.width)))
-      metrics.label("captureContentHeightPoints", String(Double(filter.contentRect.height)))
-      metrics.label("captureContentPixelScale", String(filter.pointPixelScale))
-      let output = CaptureOutput(sink: sink, metrics: metrics, copySurface: copySurface) { [weak self] message in
+      let content = target.captureContent
+      metrics.label("captureContentStyle", content.style)
+      metrics.label("captureContentWidthPoints", String(content.widthPoints))
+      metrics.label("captureContentHeightPoints", String(content.heightPoints))
+      metrics.label("captureContentPixelScale", String(content.pointPixelScale))
+      let output = ScreenSharingCaptureOutput(sink: sink, metrics: metrics, copySurface: copySurface) {
+        [weak self] message in
         Task { @MainActor in
           guard let self, self.generation == generation else { return }
           self.onStopped?(message)
         }
       }
-      let stream = SCStream(
-        filter: filter, configuration: streamConfiguration, delegate: output)
-      try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: output.queue)
+      let stream = try target.makeCaptureStream(configuration: streamConfiguration, output: output)
       self.output = output
       self.stream = stream
       do {
@@ -261,7 +272,10 @@
     }
   }
 
-  private final class CaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+  /// Internal so a capture target can attach it to whatever stream it creates. Both delegate
+  /// callbacks forward to a method that takes no `SCStream`, which is what makes the sample and
+  /// error paths reachable from a test that has no stream to hand back.
+  final class ScreenSharingCaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let queue = DispatchQueue(label: "codevisor.screen-sharing.capture", qos: .userInteractive)
     let sink: any ScreenSharingFrameSink
     let metrics: ScreenSharingMetrics
@@ -279,6 +293,10 @@
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+      deliver(sampleBuffer, of: type)
+    }
+
+    func deliver(_ sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
       guard type == .screen else { return }
       let attachments =
         CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
@@ -320,6 +338,10 @@
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
+      handleStop(error: error)
+    }
+
+    func handleStop(error: any Error) {
       metrics.label("captureError", error.localizedDescription)
       onStopped(error.localizedDescription)
     }
