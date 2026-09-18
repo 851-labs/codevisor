@@ -222,7 +222,7 @@
 			outputPaths = ();
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nnode \"$SRCROOT/../../scripts/finalize-chromium-helpers.ts\"\n";
+			shellScript = "export PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nbun \"$SRCROOT/../../scripts/finalize-chromium-helpers.ts\"\n";
 		};
 		CEF000000000000000000001 /* Embed Chromium */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -234,7 +234,7 @@
 			outputPaths = ();
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nnode \"$SRCROOT/../../scripts/embed-chromium.ts\"\n";
+			shellScript = "export PATH=\"$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nbun \"$SRCROOT/../../scripts/embed-chromium.ts\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
