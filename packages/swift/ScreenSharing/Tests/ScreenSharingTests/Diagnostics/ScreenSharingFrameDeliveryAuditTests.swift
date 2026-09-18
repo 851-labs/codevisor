@@ -4,7 +4,6 @@ import QuartzCore
 import Testing
 
 @testable import ScreenSharing
-@testable import ScreenSharingWebRTC
 
 /// The receiver-only frame-delivery audit: injected clock, window edges,
 /// capacity/overflow, identity across decoder generations and reused buffers,
