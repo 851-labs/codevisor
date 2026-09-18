@@ -455,8 +455,13 @@ const closeServer = (server: Server, app: CodevisorServerApp): Effect.Effect<voi
       new Promise<void>((resolve, reject) => {
         void Effect.runPromise(app.close)
           .catch(swallowError)
-          /* v8 ignore next -- normal test shutdown closes cleanly. */
-          .finally(() => server.close((error) => (error === undefined ? resolve() : reject(error))))
+          .finally(() =>
+            server.close((error) => {
+              /* v8 ignore next -- normal test shutdown closes cleanly. */
+              if (error !== undefined) return reject(error)
+              resolve()
+            })
+          )
       }),
     /* v8 ignore next -- normal test shutdown closes cleanly. */
     catch: (cause) =>

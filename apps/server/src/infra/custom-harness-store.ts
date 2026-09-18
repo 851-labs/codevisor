@@ -16,10 +16,20 @@ import { codevisorRoot } from "./data-dir.js"
 ///
 /// `root` resolves the directory holding `harnesses.json`. Tests point it at a
 /// temporary directory so they never read or rewrite the developer's own
-/// ~/.codevisor/harnesses.json.
+/// ~/.codevisor/harnesses.json. `probe` is the handshake boundary: the real
+/// one spawns the agent binary under the login-shell environment; tests
+/// substitute an in-memory fake.
+export interface CustomHarnessProbe {
+  readonly resolveShellEnv: () => Promise<NodeJS.ProcessEnv>
+  readonly testAcpConnection: typeof testAcpConnection
+}
+
+const liveProbe: CustomHarnessProbe = { resolveShellEnv, testAcpConnection }
+
 export const makeCustomHarnessStore = (
   agents: AgentRuntimeService,
-  root: () => string = codevisorRoot
+  root: () => string = codevisorRoot,
+  probe: CustomHarnessProbe = liveProbe
 ): CustomHarnessStore => ({
   list: async () => (await loadCustomHarnesses(root())).specs,
   replace: async (specs) => {
@@ -28,12 +38,12 @@ export const makeCustomHarnessStore = (
     await Effect.runPromise(agents.refreshEnvironment)
   },
   test: async (spec) =>
-    testAcpConnection(
+    probe.testAcpConnection(
       {
         args: spec.args === undefined ? [] : [...spec.args],
         command: spec.command,
         ...(spec.env === undefined ? {} : { env: spec.env })
       },
-      { env: await resolveShellEnv() }
+      { env: await probe.resolveShellEnv() }
     )
 })

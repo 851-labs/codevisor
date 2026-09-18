@@ -7,7 +7,7 @@ import type { CustomHarnessSpec } from "@codevisor/api"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { makeAgents } from "../test-support-agents.js"
-import { makeCustomHarnessStore } from "./custom-harness-store.js"
+import { makeCustomHarnessStore, type CustomHarnessProbe } from "./custom-harness-store.js"
 
 const roots: Array<string> = []
 
@@ -78,5 +78,57 @@ describe("custom harness store", () => {
     expect(agents.environmentRefreshes).toHaveLength(1)
     // The persisted file is the source of truth a later boot reads back.
     expect(await store.list()).toEqual([spec])
+  })
+
+  /// Records what the handshake boundary was asked to launch, and under which
+  /// environment, without spawning anything.
+  const recordingProbe = (): {
+    readonly probe: CustomHarnessProbe
+    readonly launches: Array<Parameters<CustomHarnessProbe["testAcpConnection"]>>
+  } => {
+    const launches: Array<Parameters<CustomHarnessProbe["testAcpConnection"]>> = []
+    return {
+      launches,
+      probe: {
+        resolveShellEnv: async () => ({ PATH: "/login-shell/bin" }),
+        testAcpConnection: async (...call) => {
+          launches.push(call)
+          return { agentName: "Mine", ok: true, protocolVersion: 1 }
+        }
+      }
+    }
+  }
+
+  it("probes a spec's launch under the login-shell environment", async () => {
+    const root = await makeRoot()
+    const { agents } = recordingAgents()
+    const { probe, launches } = recordingProbe()
+    const store = makeCustomHarnessStore(agents, () => root, probe)
+
+    const result = await store.test({
+      ...spec,
+      args: ["--acp"],
+      env: { MY_AGENT_TOKEN: "secret" }
+    })
+
+    expect(result).toEqual({ agentName: "Mine", ok: true, protocolVersion: 1 })
+    expect(launches).toEqual([
+      [
+        { args: ["--acp"], command: "my-agent", env: { MY_AGENT_TOKEN: "secret" } },
+        { env: { PATH: "/login-shell/bin" } }
+      ]
+    ])
+  })
+
+  it("probes a bare spec with no args and no env of its own", async () => {
+    const root = await makeRoot()
+    const { agents } = recordingAgents()
+    const { probe, launches } = recordingProbe()
+
+    await makeCustomHarnessStore(agents, () => root, probe).test(spec)
+
+    expect(launches).toEqual([
+      [{ args: [], command: "my-agent" }, { env: { PATH: "/login-shell/bin" } }]
+    ])
   })
 })
