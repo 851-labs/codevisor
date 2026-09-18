@@ -8,6 +8,7 @@ extension MachineController {
   static let shellSyncEventKinds: Set<String> = [
     "navigation.changed",
     "harness.lifecycle.updated",
+    "harness.auth.updated",
     "plugin.state.updated",
     "plugin.updated",
     "mcp.updated",
@@ -140,6 +141,12 @@ extension MachineController {
       // Update detection / install progress changed a harness — bump
       // the catalog revision so mounted pickers and settings refetch.
       onHarnessLifecycleChanged?(serverId)
+    case "harness.auth.updated":
+      // A sign-in probe finished or an account changed state (a native
+      // login adopted during onboarding, a Terminal sign-out, an expired
+      // token) — bump the catalog revision so onboarding, settings, and
+      // pickers refetch instead of sitting on "Checking sign-in…".
+      onHarnessAuthChanged?(serverId)
     case "plugin.state.updated":
       // A plugin started, stopped, crashed, or the installed list
       // changed — bump the revision so state chips and cards refetch.

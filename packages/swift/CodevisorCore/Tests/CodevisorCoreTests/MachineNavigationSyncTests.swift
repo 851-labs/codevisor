@@ -161,6 +161,38 @@ struct MachineNavigationSyncTests {
     #expect(fake.listSessionCallCount == before)
   }
 
+  @Test("A settled sign-in probe invalidates the harness catalog without a lifecycle re-read")
+  func authEventInvalidatesCatalog() async throws {
+    // Onboarding fetches the catalog passively; the server resolves the
+    // account in the background and announces it with `harness.auth.updated`.
+    // Without this hop the row stays on "Checking sign-in…" indefinitely.
+    let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])
+    let controller = MachineController(
+      store: InMemoryStore(),
+      projectList: makeProjectList(),
+      clientFactory: { _ in fake }
+    )
+    await controller.refreshNavigationState(for: "local")
+    defer { controller.stopEventSync() }
+
+    let barrier = TestSignal()
+    let authChanged = TestSignal()
+    let lifecycleChanged = TestSignal()
+    controller.onHarnessAuthChanged = { serverId in
+      #expect(serverId == "local")
+      authChanged.signal()
+    }
+    controller.onHarnessLifecycleChanged = { _ in lifecycleChanged.signal() }
+    controller.onPluginUpdated = { _, _ in barrier.signal() }
+    fake.emit(
+      kind: "harness.auth.updated", subjectId: "claude-code",
+      payload: .object(["id": .string("shared-1"), "authState": .string("authenticated")]))
+    fake.emit(kind: "plugin.updated", subjectId: "barrier", payload: .object([:]))
+    await barrier.wait()
+    #expect(authChanged.value == 1)
+    #expect(lifecycleChanged.value == 0)
+  }
+
   @Test("A cold catch-up still presents the blocking catch-up state")
   func coldCatchUpBlocks() async throws {
     let fake = NavigationSyncFakeServerClient(projects: [], sessions: [])

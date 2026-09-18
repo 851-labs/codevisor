@@ -28,6 +28,7 @@ export const makeHarnessLoginOperations = (
     accountCommand,
     accountEnv,
     acpLoginMethods,
+    announce,
     apiKeyPath,
     claudeLogins,
     codexLogins,
@@ -306,9 +307,11 @@ export const makeHarnessLoginOperations = (
   }
 
   const logout = async (accountId: string, sharedScope = false): Promise<HarnessAccount> => {
-    const shared = await config.sharedAccounts?.()?.logout(accountId)
-    if (shared !== undefined) return shared
     const account = await run(config.db.getHarnessAccount(accountId))
+    // A shared sign-out settles its own state without a probe; announce it so
+    // every mounted catalog — not just the client that clicked — follows.
+    const shared = await config.sharedAccounts?.()?.logout(accountId)
+    if (shared !== undefined) return announce(account, shared)
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     if (account.harnessId === "grok-build") return grok.logout(account, sharedScope)
     await rm(apiKeyPath(account), { force: true })

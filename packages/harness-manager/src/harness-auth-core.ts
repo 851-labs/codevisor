@@ -25,6 +25,17 @@ import type {
   HarnessAuthManagerConfig
 } from "./harness-auth-types.js"
 
+/// The account fields a probe can move that clients render. `lastCheckedAt`
+/// is deliberately excluded: it changes on every probe.
+const accountOutcomeChanged = (previous: HarnessAccount, next: HarnessAccount) =>
+  previous.authState !== next.authState ||
+  previous.authMethod !== next.authMethod ||
+  (previous.detail ?? null) !== (next.detail ?? null) ||
+  previous.canLogin !== next.canLogin ||
+  previous.canLogout !== next.canLogout ||
+  (previous.email ?? null) !== (next.email ?? null) ||
+  (previous.organizationId ?? null) !== (next.organizationId ?? null)
+
 export interface CodexLoginEntry {
   readonly accountId: string
   readonly client: Awaited<ReturnType<typeof spawnCodexClient>>
@@ -199,17 +210,28 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       typeof update.detail === "string"
         ? { ...update, detail: clampFailureDetail(update.detail) ?? null }
         : update
+    const previous = await run(config.db.getHarnessAccount(account.id))
     const saved = await run(config.db.updateHarnessAccountAuth(account.id, clamped))
-    const value = publicAccount(saved)
-    emit({ kind: "harness.account.updated", subjectId: account.harnessId, payload: value })
-    emit({ kind: "harness.auth.updated", subjectId: account.harnessId, payload: value })
-    return value
+    return announce(previous, publicAccount(saved))
+  }
+
+  /// Publishes an account's settled state. Clients refetch the whole catalog
+  /// on `harness.auth.updated`, and that refetch re-probes — so emit only when
+  /// something they render changed; a probe that merely stamps
+  /// `lastCheckedAt` must not start a loop.
+  const announce = (previous: HarnessAccount | undefined, next: HarnessAccount) => {
+    if (previous === undefined || accountOutcomeChanged(previous, next)) {
+      emit({ kind: "harness.account.updated", subjectId: next.harnessId, payload: next })
+      emit({ kind: "harness.auth.updated", subjectId: next.harnessId, payload: next })
+    }
+    return next
   }
 
   return {
     accountCommand,
     accountEnv,
     acpLoginMethods,
+    announce,
     apiKeyPath,
     catalogNow,
     claudeLogins,

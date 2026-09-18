@@ -178,13 +178,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     const previous = await run(config.db.getHarnessAccount(accountId))
     if (previous?.harnessId === "grok-build") return grok.account(previous, sharedScope)
     const shared = await config.sharedAccounts?.()?.probe(accountId)
-    if (shared !== undefined) {
-      if (previous?.authState !== shared.authState || previous?.detail !== shared.detail) {
-        core.emit({ kind: "harness.account.updated", subjectId: shared.harnessId, payload: shared })
-        core.emit({ kind: "harness.auth.updated", subjectId: shared.harnessId, payload: shared })
-      }
-      return shared
-    }
+    if (shared !== undefined) return core.announce(previous, shared)
     const current = probes.get(accountId)
     if (current !== undefined) return current
     const pending = (async () => {

@@ -77,6 +77,26 @@ struct AppEnvironmentTests {
     #expect(environment.harnessCatalogRevision(for: "remote") == 0)
   }
 
+  @Test("A settled sign-in probe on a machine invalidates only that machine's catalog")
+  func harnessAuthEventInvalidatesCatalog() {
+    let environment = AppEnvironment.preview()
+    environment.machines.onHarnessAuthChanged?("local")
+    #expect(environment.harnessCatalogRevision(for: "local") == 1)
+    #expect(environment.harnessCatalogRevision(for: "remote") == 0)
+  }
+
+  @Test("Fleet-synced shared accounts invalidate every machine's catalog")
+  func sharedAccountsNamespaceInvalidatesCatalog() {
+    let environment = AppEnvironment.preview()
+    let before = environment.machines.allMachines.map {
+      environment.harnessCatalogRevision(for: $0.id)
+    }
+    environment.applySyncedNamespace("harness-shared-accounts")
+    for (machine, revision) in zip(environment.machines.allMachines, before) {
+      #expect(environment.harnessCatalogRevision(for: machine.id) == revision + 1)
+    }
+  }
+
   @Test("Plugin update revisions are isolated per machine and per plugin")
   func pluginUpdateRevisionInvalidation() {
     let environment = AppEnvironment.preview()

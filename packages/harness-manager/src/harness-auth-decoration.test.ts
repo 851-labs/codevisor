@@ -259,3 +259,105 @@ it("probes the selected shared account and publishes readiness when its credenti
   expect(events).toHaveLength(2)
   stop()
 })
+
+it("announces a shared sign-out so catalogs on other clients follow", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-shared-logout-"))
+  directories.push(directory)
+  const db = await run(makeDatabase({ filename: join(directory, "db.sqlite"), serverId: "test" }))
+  databases.push(db)
+  await run(
+    db.saveHarnessAccount({
+      id: "shared-selected",
+      harnessId: "claude-code",
+      label: "alice@example.test",
+      profileKind: "managed",
+      authState: "authenticated",
+      canLogin: true,
+      canLogout: true
+    })
+  )
+  // The shared store settles sign-out state itself, without a probe.
+  const logout = vi.fn(async (id: string) =>
+    run(
+      db.updateHarnessAccountAuth(id, {
+        authState: "expired",
+        canLogout: false,
+        detail: "This account has been signed out."
+      })
+    )
+  )
+  const manager = makeHarnessAuthManager({
+    db,
+    dataDir: directory,
+    agents: {} as AgentRuntimeService,
+    terminal: {} as TerminalManagerService,
+    resolveEnv: async () => ({ HOME: directory }),
+    sharedAccounts: () =>
+      ({
+        reconcile: async () => {},
+        logout
+      }) as unknown as import("./shared-account-integration.js").SharedAccountIntegration
+  })
+  const events: string[] = [],
+    stop = manager.subscribe((event) => events.push(event.kind))
+  expect(await manager.logout("shared-selected")).toMatchObject({ authState: "expired" })
+  expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
+  // Signing out an already signed-out account changes nothing clients render.
+  await manager.logout("shared-selected")
+  expect(events).toHaveLength(2)
+  stop()
+})
+
+it("emits auth events only when a probe changes what clients render", async () => {
+  // Clients refetch the catalog on `harness.auth.updated`, and that refetch
+  // re-probes. A probe that only stamps `lastCheckedAt` must stay silent or
+  // the two would chase each other forever.
+  const directory = mkdtempSync(join(tmpdir(), "codevisor-auth-quiet-probe-"))
+  directories.push(directory)
+  const db = await run(
+    makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
+  )
+  databases.push(db)
+  await run(
+    db.saveHarnessAccount({
+      id: "gemini-account",
+      harnessId: "gemini",
+      profileKind: "default",
+      label: "Existing Gemini CLI account",
+      authState: "checking",
+      canLogin: true,
+      canLogout: false
+    })
+  )
+  let state: "authenticated" | "unauthenticated" = "authenticated"
+  const probeHarnessAuth = vi.fn(() =>
+    Effect.succeed({ state, methods: [], canLogout: state === "authenticated" })
+  )
+  const manager = makeHarnessAuthManager({
+    agents: { probeHarnessAuth } as unknown as AgentRuntimeService,
+    dataDir: directory,
+    db,
+    terminal: {} as TerminalManagerService,
+    resolveEnv: () => Promise.resolve({ HOME: directory })
+  })
+  const events: string[] = []
+  manager.subscribe((event) => events.push(event.kind))
+
+  await manager.refresh("gemini")
+  expect(events).toEqual(["harness.account.updated", "harness.auth.updated"])
+
+  await manager.refresh("gemini")
+  expect(probeHarnessAuth).toHaveBeenCalledTimes(2)
+  expect(events).toHaveLength(2)
+  await expect(run(db.getHarnessAccount("gemini-account"))).resolves.toMatchObject({
+    authState: "authenticated",
+    lastCheckedAt: expect.any(String)
+  })
+
+  state = "unauthenticated"
+  await manager.refresh("gemini")
+  expect(events).toHaveLength(4)
+  await expect(run(db.getHarnessAccount("gemini-account"))).resolves.toMatchObject({
+    authState: "unauthenticated"
+  })
+})

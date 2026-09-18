@@ -31,12 +31,10 @@ import { makeSharedProviderAccounts } from "./shared-provider-accounts.js"
 
 const LOCAL = "local.shared-accounts"
 const run = Effect.runPromise
-const publicAccount = ({
-  profileKey: _key,
-  createdAt: _created,
-  updatedAt: _updated,
-  ...account
-}: HarnessAccountRecord): HarnessAccount => account
+const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
+  const { profileKey: _key, createdAt: _created, updatedAt: _updated, ...account } = record
+  return account
+}
 
 export const makeSharedAccounts = (options: {
   readonly db: CodevisorDatabaseService
@@ -84,8 +82,10 @@ export const makeSharedAccounts = (options: {
     return vault.token(account.credential, rejected)
   }
   const gateway = makeSharedClaudeGateway({ token })
-  const saveLocal = async (account: SharedHarnessAccount) => {
+  const saveLocal = async (account: SharedHarnessAccount, adopted?: SharedTokenBundle) => {
     const existing = await run(db.getHarnessAccount(account.id))
+    // A grant adopted from a live token is signed in now; seed the row so onboarding offers it.
+    const live = adopted !== undefined && adopted.expiresAt > Date.now() + 30_000
     return run(
       db.saveHarnessAccount({
         id: account.id,
@@ -95,10 +95,11 @@ export const makeSharedAccounts = (options: {
         label: account.label,
         ...(account.email ? { email: account.email } : {}),
         ...(account.organizationId ? { organizationId: account.organizationId } : {}),
-        authMethod: existing?.authMethod ?? "oauth",
-        authState: existing?.authState ?? "checking",
+        authMethod: existing?.authMethod ?? adopted?.authMethod ?? "oauth",
+        authState: existing?.authState ?? (live ? "authenticated" : "checking"),
         canLogin: true,
-        canLogout: account.credential !== undefined,
+        // The probe owns canLogout once a row exists; a machine sign-out keeps the grant.
+        canLogout: existing?.canLogout ?? account.credential !== undefined,
         ...(existing?.detail ? { detail: existing.detail } : {})
       })
     )
@@ -164,7 +165,7 @@ export const makeSharedAccounts = (options: {
       })
     }
     const saved = (await store.get(id))!
-    await saveLocal(saved)
+    await saveLocal(saved, previous?.credential && !explicit ? undefined : bundle)
     if (nativeId && nativeId !== id) {
       await setLocal(`alias:${nativeId}`, id)
       if (bundle.harnessId === "claude-code")
@@ -244,17 +245,15 @@ export const makeSharedAccounts = (options: {
   }
   const probe = async (id: string, shared = false): Promise<HarnessAccount | undefined> => {
     if (pending.has(id)) return undefined
-    if ((await local(`pending:${id}`)) === true)
-      return publicAccount(
-        await run(
-          db.updateHarnessAccountAuth(id, {
-            authState: "checking",
-            canLogin: true,
-            canLogout: false,
-            detail: null
-          })
-        )
-      )
+    if ((await local(`pending:${id}`)) === true) {
+      const update = {
+        authState: "checking" as const,
+        canLogin: true,
+        canLogout: false,
+        detail: null
+      }
+      return publicAccount(await run(db.updateHarnessAccountAuth(id, update)))
+    }
     const account = await resolve(id)
     const native = await run(db.getHarnessAccount(id))
     if (!account && native && !sharedHarness(native.harnessId)) return undefined

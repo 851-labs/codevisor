@@ -157,6 +157,11 @@ public final class MachineController {
   /// — the AppEnvironment bridges it to its harness-catalog revision so
   /// mounted pickers and settings panes refetch.
   @ObservationIgnored public var onHarnessLifecycleChanged: ((String) -> Void)?
+  /// Invoked when a `harness.auth.updated` event arrives for a machine — a
+  /// sign-in probe settled or an account changed state there. The
+  /// AppEnvironment bridges it to the same catalog revision, without the
+  /// update-center inventory re-read a lifecycle change also triggers.
+  @ObservationIgnored public var onHarnessAuthChanged: ((String) -> Void)?
   /// Invoked when a `plugin.state.updated` event arrives for a machine —
   /// the AppEnvironment bridges it to its plugin-state revision so mounted
   /// settings panes and New Tab cards refetch.

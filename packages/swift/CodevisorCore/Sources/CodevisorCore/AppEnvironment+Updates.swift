@@ -138,7 +138,7 @@ extension AppEnvironment {
     // them all stale — the reconcile-response hook refines per machine
     // as applies actually land.
     if namespace == "harnesses" || namespace == "harness-accounts"
-      || namespace == "harness-credentials"
+      || namespace == "harness-credentials" || namespace == "harness-shared-accounts"
     {
       for machine in machines.allMachines {
         harnessCatalogDidChange(onServer: machine.id)
