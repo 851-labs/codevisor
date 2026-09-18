@@ -143,32 +143,41 @@ describe("streaming turn sweeps and prompt gating", () => {
       items: [{ role: "assistant", isGenerating: true }]
     })
 
-    // Unowned and quiet: the sweep closes every stranded row.
+    // A turn the harness started on its own (task-notification follow-up
+    // after a background task or subagent) has no prompt drain, but its
+    // `turnState: started` registered it as live — equally untouchable, no
+    // matter how long its current tool call has been silent.
+    const liveTurn = emptyRouteState()
+    liveTurn.activeTurnSessions.add(session.id)
+    liveTurn.activeTurnSessions.add(turnless.id)
+    liveTurn.activeTurnSessions.add(midTranscript.id)
+    expect(await reconcileStaleStreamingTurns(services, fanout, liveTurn, "server-a")).toBe(0)
+    expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
+      items: [{ role: "assistant", isGenerating: true }]
+    })
+
+    // Unowned and quiet: the sweep closes every stranded row — silently. A
+    // lost terminal event is not the user's problem, so the row settles as
+    // an ordinary finished response with no failure status or stop detail.
     expect(
       await reconcileStaleStreamingTurns(services, fanout, emptyRouteState(), "server-a")
     ).toBe(3)
     const repairedPage = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(repairedPage).toMatchObject({
-      items: [
-        {
-          role: "assistant",
-          isGenerating: false,
-          stopReason: "interrupted",
-          stopDetail: expect.stringContaining("stopped streaming")
-        }
-      ]
+      items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
     })
+    expect(repairedPage.items[0]).not.toHaveProperty("stopDetail")
     // The orphaned question was paired before the turn ended.
     expect(repairedPage.pendingQuestion).toBeUndefined()
     // The turnless row is closed by a terminal event without turn fields.
     expect(await run(services.db.getTranscriptPage(turnless.id, undefined, 8))).toMatchObject({
-      items: [{ role: "assistant", isGenerating: false, stopReason: "interrupted" }]
+      items: [{ role: "assistant", isGenerating: false, stopReason: "end_turn" }]
     })
     // The mid-transcript row is repaired quietly — the conversation had
     // already moved on, so no terminal turn event is published.
     expect(await run(services.db.getTranscriptPage(midTranscript.id, undefined, 8))).toMatchObject({
       items: [
-        { role: "assistant", isGenerating: false, stopReason: "interrupted" },
+        { role: "assistant", isGenerating: false, stopReason: "end_turn" },
         { role: "user", text: "hello?" }
       ]
     })
@@ -182,7 +191,8 @@ describe("streaming turn sweeps and prompt gating", () => {
           event.kind === "session.updated" &&
           typeof event.payload === "object" &&
           event.payload !== null &&
-          (event.payload as { stopReason?: string }).stopReason === "interrupted"
+          (event.payload as { stopReason?: string; turnState?: string }).turnState === "ended" &&
+          (event.payload as { stopReason?: string }).stopReason === "end_turn"
       )
     ).toBe(true)
 

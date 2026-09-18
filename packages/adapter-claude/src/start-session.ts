@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type {
+  Query,
   getSessionInfo as sdkGetSessionInfo,
   Options as ClaudeOptions
 } from "@anthropic-ai/claude-agent-sdk"
@@ -20,6 +21,7 @@ import { handleMessage } from "./messages.js"
 import { applyClaudeModelFromProvider, currentClaudeModelFor, metadataFor } from "./models.js"
 import { holdClaudeApproval, holdClaudePlanApproval, holdClaudeQuestion } from "./questions.js"
 import { InputQueue, type ClaudeQueryFn, type ClaudeSession } from "./session.js"
+import { resumeSessionAfterStreamDeath } from "./stream-recovery.js"
 import { applyTaskCreate, emitTaskPlanUpdate } from "./tasks.js"
 import { failDeferredPrompts, finishActiveTurn } from "./turn-lifecycle.js"
 
@@ -43,6 +45,8 @@ export interface StartSessionDeps {
   readonly locateClaude: (definition: HarnessDefinition) => string
   readonly queryFn: ClaudeQueryFn
   readonly readFile: (path: string) => string | undefined
+  /// Delay before resuming a turn whose SDK stream died; doubles per attempt.
+  readonly streamRecoveryBackoffMs: number
   readonly wrapCommand: ((key: string, command: string) => string) | undefined
 }
 
@@ -57,6 +61,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     locateClaude,
     queryFn,
     readFile,
+    streamRecoveryBackoffMs,
     wrapCommand
   } = deps
 
@@ -227,6 +232,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
       abort,
       truncationCount: 0,
       transientRetries: 0,
+      streamRecoveries: 0,
       lastAssistantError: undefined,
       lastErrorText: undefined,
       lastUsageLimitText: undefined,
@@ -276,10 +282,18 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     // server process's event log.
     emitBackgroundTasks(created)
 
-    const pump = async (): Promise<void> => {
+    const resumeAfterStreamDeath = (): Promise<boolean> =>
+      resumeSessionAfterStreamDeath(created, {
+        backoffMs: streamRecoveryBackoffMs,
+        options,
+        pump,
+        queryFn
+      })
+
+    const pump = async (query: Query): Promise<void> => {
       let streamFailure: string | undefined
       try {
-        for await (const message of q) {
+        for await (const message of query) {
           if (message.type === "system" && message.subtype === "init") {
             applyClaudeModelFromProvider(created, message.model)
             if (message.fast_mode_state !== undefined) {
@@ -354,16 +368,20 @@ export const makeStartSession = (deps: StartSessionDeps) => {
           })
         }
       } finally {
+        // Only the pump for the *current* query owns the session's stream
+        // state; a superseded query ending late must not disturb its
+        // successor.
+        if (created.q !== query) return
         created.streamEnded = true
         // The SDK stream ended (query closed, aborted, or threw) with a turn
-        // still in flight and no final `result` to close it. Without this the
-        // client would show "working"/"Thinking…" forever and the awaited
-        // prompt would never settle. End the turn defensively so state can't
-        // get wedged.
+        // still in flight and no final `result` to close it. Resume the turn
+        // where possible — the user sees output pause and continue, nothing
+        // else. Otherwise end the turn defensively so state can't get wedged
+        // and the awaited prompt settles.
         if (created.turnActive) {
           if (created.interruptRequested) {
             await finishActiveTurn(created, "cancelled")
-          } else {
+          } else if (!(await resumeAfterStreamDeath())) {
             await finishActiveTurn(
               created,
               "end_turn",
@@ -374,7 +392,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         }
       }
     }
-    pump().catch(() => undefined)
+    pump(q).catch(() => undefined)
 
     // Best-effort model list: the control channel usually answers before the
     // first turn, but session creation must not hang on it.

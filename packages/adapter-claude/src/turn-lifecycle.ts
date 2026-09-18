@@ -149,6 +149,7 @@ export const ensureTurnStarted = (
   // true, so this never fires mid-recovery) and drop any stale error state.
   session.truncationCount = 0
   session.transientRetries = 0
+  session.streamRecoveries = 0
   session.lastAssistantError = undefined
   session.lastErrorText = undefined
   session.lastUsageLimitText = undefined

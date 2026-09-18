@@ -8,6 +8,7 @@ import {
   FakeQuery,
   initMessage,
   makeProvider,
+  resultMessage,
   run,
   streamEvent
 } from "./test-support.js"
@@ -90,9 +91,62 @@ describe("ClaudeProvider", () => {
     ).rejects.toThrow("older than the required")
   })
 
-  it("ends an in-flight turn if the SDK stream dies without a final result", async () => {
+  it("resumes an in-flight turn on a fresh query when the SDK stream dies", async () => {
     const fake = new FakeQuery()
-    const provider = makeProvider(fake)
+    const resumed = new FakeQuery()
+    fake.successors.push(resumed)
+    const provider = makeProvider(fake, undefined, undefined, { streamRecoveryBackoffMs: 0 })
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("do work"))
+    await fake.nextPrompt()
+    fake.push(
+      streamEvent({
+        content_block: { id: "tool-x", name: "Bash", type: "tool_use" },
+        index: 0,
+        type: "content_block_start"
+      })
+    )
+    await fake.drain()
+
+    // The SDK stream ends mid-turn with no `result` (CLI crashed / pipe
+    // closed). The turn is NOT ended: the same CLI session is resumed on a
+    // fresh query and nudged to continue — invisible to the user.
+    fake.finish()
+    await resumed.nextPrompt()
+    // Resumed by the id the first query was started with, and without the
+    // fresh-session `--session-id` flag that would conflict with it.
+    expect(resumed.options?.resume).toBe(fake.options?.extraArgs?.["session-id"])
+    expect(resumed.options?.resume).toBeTypeOf("string")
+    expect(resumed.options?.extraArgs).toBeUndefined()
+    // The nudge tells the model its process was interrupted, so it re-runs a
+    // cut-off tool call instead of waiting on results that will never come.
+    expect(resumed.userMessages).toHaveLength(1)
+    expect(String(resumed.userMessages[0]?.message.content)).toContain("interrupted and restarted")
+    expect(events.map((event) => event.payload as Record<string, unknown>)).not.toContainEqual(
+      expect.objectContaining({ turnState: "ended" })
+    )
+
+    // The resumed query finishes the turn normally: one turn, one clean end.
+    resumed.push(resultMessage())
+    const result = await promptPromise
+    expect(result.stopReason).toBe("end_turn")
+    const ended = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.turnState === "ended")
+    expect(ended).toHaveLength(1)
+    expect(ended[0]).not.toHaveProperty("stopDetail")
+  })
+
+  it("ends the turn with a retryable reason once stream resumptions are exhausted", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake, undefined, undefined, { streamRecoveryBackoffMs: 0 })
     const events: Array<RuntimeEvent> = []
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
@@ -113,7 +167,8 @@ describe("ClaudeProvider", () => {
     )
     await fake.drain()
 
-    // The SDK stream ends mid-turn with no `result` (query closed/crashed).
+    // No successor queries: every resumption gets the same dead stream back,
+    // so the bounded recovery gives up and the turn ends visibly.
     fake.finish()
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")

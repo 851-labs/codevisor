@@ -146,25 +146,18 @@ describe("durable session turns", () => {
     // in-progress turn.
     expect(
       (await run(services.db.getTranscriptPage(archived.id, undefined, 8))).items.at(-1)
-    ).toMatchObject({
-      isGenerating: false,
-      stopReason: "interrupted",
-      stopDetail: "The server restarted before this response finished."
-    })
+    ).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
     const splitPage = await run(services.db.getTranscriptPage(splitBrain.id, undefined, 8))
     expect(splitPage.items.map((item) => item.isGenerating)).toEqual([false, false])
     expect(splitPage.items.at(0)).toMatchObject({
       role: "assistant",
       isGenerating: false,
-      stopReason: "interrupted",
-      stopDetail: "The server restarted before this response finished."
+      stopReason: "end_turn"
     })
-    expect(page.items.at(-1)).toMatchObject({
-      isGenerating: false,
-      stopReason: "interrupted",
-      stopDetail:
-        "The server restarted before this turn finished. Reopen the chat to reconnect its agent session, then send a message to continue."
-    })
+    expect(splitPage.items.at(0)).not.toHaveProperty("stopDetail")
+    // Closed silently: a restart is not something the user acts on.
+    expect(page.items.at(-1)).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
+    expect(page.items.at(-1)).not.toHaveProperty("stopDetail")
     const events = await run(services.db.listSubjectEvents(session.id))
     expect(events.map((event) => event.payload)).toContainEqual(
       expect.objectContaining({
@@ -175,7 +168,7 @@ describe("durable session turns", () => {
     )
     expect(events.map((event) => event.payload)).toContainEqual(
       expect.objectContaining({
-        stopReason: "interrupted",
+        stopReason: "end_turn",
         turnId: "orphaned-turn",
         turnState: "ended"
       })
@@ -353,7 +346,7 @@ describe("durable session turns", () => {
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 8))
     expect(page.items).toMatchObject([
       { role: "user", text: "do not lose me", isGenerating: false },
-      { role: "assistant", stopReason: "interrupted", isGenerating: false }
+      { role: "assistant", stopReason: "end_turn", isGenerating: false }
     ])
     expect(await run(services.db.listPromptQueue(session.id))).toEqual([])
     expect(await run(services.db.listProcessingPromptQueue(session.id))).toEqual([])
@@ -372,7 +365,7 @@ describe("durable session turns", () => {
     )
     expect(dispatchedPage.items).toMatchObject([
       { role: "user", text: "already dispatched", attachments: [attachment] },
-      { role: "assistant", stopReason: "interrupted" }
+      { role: "assistant", stopReason: "end_turn" }
     ])
     expect(await run(services.db.listProcessingPromptQueue(dispatchedSession.id))).toEqual([])
     expect(await run(services.db.listProcessingPromptQueue(attachedMissingSession.id))).toEqual([])
@@ -407,13 +400,7 @@ describe("durable session turns", () => {
 
     expect(agents.loads).toEqual([])
     expect(await run(services.db.getTranscriptPage(session.id, undefined, 8))).toMatchObject({
-      items: [
-        {
-          isGenerating: false,
-          stopReason: "interrupted",
-          stopDetail: expect.stringContaining("Reopen the chat to reconnect its agent session")
-        }
-      ]
+      items: [{ isGenerating: false, stopReason: "end_turn" }]
     })
     expect(
       (await jsonRequest(server, `/v1/sessions/${session.id}/connect`, { method: "POST" })).status

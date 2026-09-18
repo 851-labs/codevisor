@@ -191,7 +191,8 @@ export interface RouteState {
   /// the fanout. Unlike `activePromptSessions` (turns this process
   /// dispatched), this also sees turns the harness starts on its own — a
   /// task-notification follow-up after a background task finishes. Prompt
-  /// dispatch holds while a session is in here.
+  /// dispatch holds while a session is in here, and the stale-turn sweep
+  /// never closes a session that is (see `hasLiveTurn`).
   readonly activeTurnSessions: Set<string>
   /// Sessions whose queue drain was held because a turn was active.
   /// Re-drained when that turn's terminal event arrives.

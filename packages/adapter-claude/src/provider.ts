@@ -43,6 +43,9 @@ export interface ClaudeProviderConfig {
   /// Bounded wait for Claude to produce its normal terminal result after an
   /// interrupt. Exposed for deterministic unit tests.
   readonly cancelGraceMs?: number
+  /// Delay before resuming a turn whose SDK stream died (doubles per attempt).
+  /// Exposed for deterministic unit tests.
+  readonly streamRecoveryBackoffMs?: number
   /// When set (and `wrapCommand` is present), background Bash commands are
   /// rewritten to tee their output through a server-owned terminal so clients
   /// can attach to the live process; foreground commands are untouched.
@@ -100,6 +103,7 @@ export const makeClaudeProvider = (
     locateClaude,
     queryFn,
     readFile,
+    streamRecoveryBackoffMs: config.streamRecoveryBackoffMs ?? 1_000,
     wrapCommand
   })
   const handleFor = makeClaudeSessionHandle(cancelGraceMs)

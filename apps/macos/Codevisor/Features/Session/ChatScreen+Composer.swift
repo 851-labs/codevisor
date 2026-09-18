@@ -42,10 +42,6 @@ extension ChatScreen {
         )
       }
       composerNoticeRail
-      // Sibling of the notice rail rather than another branch of it: a
-      // stalled turn needs its escape hatch even while a dismissible
-      // configuration warning is on screen.
-      StalledTurnNoticeView(controller: controller)
       // ComposerCard owns all of its states, including blocking agent
       // questions and plan approvals, so they share one stable glass
       // identity while the content and surface geometry change.

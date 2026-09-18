@@ -26,12 +26,7 @@ export const reconcileOrphanedSessionTurns = async (
       // Archived sessions get no turn restoration, but a stale streaming row
       // must still be closed — unarchiving would otherwise resurface it as an
       // endless in-progress turn.
-      await run(
-        services.db.failStaleAssistantChatItems(
-          session.id,
-          "The server restarted before this response finished."
-        )
-      )
+      await run(services.db.closeStaleAssistantChatItems(session.id))
       continue
     }
     const page = await run(services.db.getTranscriptPage(session.id, undefined, 1))
@@ -42,13 +37,13 @@ export const reconcileOrphanedSessionTurns = async (
     // by the turn-ending path below with full restore context; older rows —
     // stranded mid-transcript when a previous process died or a concurrent
     // writer stole the projection pointer — would otherwise render as an
-    // endless in-progress turn that no future event can ever finish.
+    // endless in-progress turn that no future event can ever finish. Like
+    // the runtime sweep, this is invisible housekeeping: the text that
+    // arrived settles as an ordinary finished response. A restart is not the
+    // user's problem to act on, and the chat reconnects its agent session
+    // the moment it is next opened.
     await run(
-      services.db.failStaleAssistantChatItems(
-        session.id,
-        "The server restarted before this response finished.",
-        hasOrphanedTurn ? active.id : undefined
-      )
+      services.db.closeStaleAssistantChatItems(session.id, hasOrphanedTurn ? active.id : undefined)
     )
     // The database projection always supplies the full background-task
     // snapshot; the API field is optional only for older remote clients.
@@ -91,8 +86,8 @@ export const reconcileOrphanedSessionTurns = async (
     }
     // A prompt remains durably claimed until its provider call finishes. If
     // the process died while dispatching it, make sure the user's input is
-    // represented exactly once, then create a deterministic interrupted turn
-    // when the provider had not emitted one yet. The claim is acknowledged
+    // represented exactly once, then close a deterministic turn for it when the
+    // provider had not emitted one yet. The claim is acknowledged
     // only after another durable generating row exists, so every crash point
     // leaves at least one marker for the next startup pass to reconcile.
     for (const item of processingPrompts) {
@@ -128,30 +123,40 @@ export const reconcileOrphanedSessionTurns = async (
         ? {}
         : { initiatedBy: "user", turnId: terminalTurnId, turnState: "ended" }),
       serverId,
-      stopDetail:
-        "The server restarted before this turn finished. Reopen the chat to reconnect its agent session, then send a message to continue.",
-      stopReason: "interrupted"
+      stopReason: "end_turn"
     })
   }
 }
 
-/// How long a session's event log must be quiet before a still-streaming
-/// assistant row with no in-process owner counts as orphaned. Long silent
-/// tool runs are protected by the `activePromptSessions` check (their prompt
-/// drain is still awaiting the provider), so this window only has to absorb
-/// projection/event races. It deliberately matches the clients' 300s
-/// stalled-turn threshold.
-const staleStreamingTurnQuietMs = 5 * 60 * 1000
+/// Whether this process knows the session's newest turn to be alive: either a
+/// prompt drain dispatched it (`activePromptSessions`) or its `turnState:
+/// started` event was observed on the fanout (`activeTurnSessions`, which also
+/// covers turns the harness starts on its own — a task-notification follow-up
+/// after a background task or subagent finishes). Liveness is tracked, never
+/// inferred from event timing: a turn quiet for ten minutes inside one long
+/// tool call is still alive.
+export const hasLiveTurn = (routeState: RouteState, sessionId: string): boolean =>
+  routeState.activePromptSessions.has(sessionId) || routeState.activeTurnSessions.has(sessionId)
 
-const staleStreamingTurnDetail =
-  "This response stopped streaming and was closed after a period of inactivity. Send a message to continue."
+/// How long a session's event log must be quiet before an unowned
+/// still-streaming assistant row is treated as orphaned. Ownership
+/// (`hasLiveTurn`) is the real criterion; this window only absorbs the race
+/// between a row appearing in the database and its turn registering in
+/// process memory, so it can be short — stuck rows heal sooner.
+const staleStreamingTurnQuietMs = 2 * 60 * 1000
 
 /// The runtime counterpart of `reconcileOrphanedSessionTurns`: that pass heals
 /// rows stranded by a dead *process* at startup, this one heals rows stranded
-/// by a dead *turn* while the server keeps running (harness crash, lost
-/// terminal event). Without it, a stuck `streaming` row renders as an endless
-/// in-progress turn to every client — including freshly relaunched ones —
-/// until the next server restart. Returns the number of repaired rows.
+/// by a dead *turn* while the server keeps running (lost terminal event, a
+/// terminal write that failed). Without it, a stuck `streaming` row renders as
+/// an endless in-progress turn to every client — including freshly relaunched
+/// ones — until the next server restart.
+///
+/// Healing is invisible housekeeping: the row settles as an ordinary finished
+/// response and the turn ends with a plain `end_turn`. There is nothing for
+/// the user to do about a lost event, so nothing is rendered about it — the
+/// text that arrived simply stops being "in progress". Returns the number of
+/// repaired rows.
 export const reconcileStaleStreamingTurns = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
@@ -162,10 +167,10 @@ export const reconcileStaleStreamingTurns = async (
   const staleSessions = await run(services.db.listQuietStreamingSessions(cutoff))
   let repaired = 0
   for (const sessionId of staleSessions) {
-    // A prompt drain in this process still owns the turn: `agents.prompt` is
-    // awaited for the turn's full duration, and quiet stretches are normal
-    // during long tool runs. Leave it alone — it can still finish normally.
-    if (routeState.activePromptSessions.has(sessionId)) continue
+    // A live turn is never touched, however quiet: long silent tool runs and
+    // subagent waits are normal, and the turn's own terminal event (or the
+    // adapter's stream-death handling) will close it.
+    if (hasLiveTurn(routeState, sessionId)) continue
     const page = await run(services.db.getTranscriptPage(sessionId, undefined, 1))
     const active = page.items.at(-1)
     const hasOrphanedTurn = active?.role === "assistant" && active.isGenerating
@@ -184,11 +189,7 @@ export const reconcileStaleStreamingTurns = async (
     }
 
     repaired += await run(
-      services.db.failStaleAssistantChatItems(
-        sessionId,
-        staleStreamingTurnDetail,
-        hasOrphanedTurn ? active.id : undefined
-      )
+      services.db.closeStaleAssistantChatItems(sessionId, hasOrphanedTurn ? active.id : undefined)
     )
     if (!hasOrphanedTurn) continue
 
@@ -200,8 +201,7 @@ export const reconcileStaleStreamingTurns = async (
         ? {}
         : { initiatedBy: "user", turnId: active.turnId, turnState: "ended" }),
       serverId,
-      stopDetail: staleStreamingTurnDetail,
-      stopReason: "interrupted"
+      stopReason: "end_turn"
     })
     repaired += 1
   }

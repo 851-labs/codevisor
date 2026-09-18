@@ -65,6 +65,16 @@ const recoveryBackoffMs = (retryIndex: number): number =>
 /// visible user message (the `user` echo carries no tool_result to forward).
 const CONTINUE_PROMPT = "Please continue."
 
+/// The nudge after the CLI process died mid-turn and the session was resumed
+/// on a fresh query. Unlike a truncation continue, the model's last step may
+/// not have happened: an in-flight tool call was cut off and any background
+/// commands died with the process. Say so, so it re-runs what it needs
+/// instead of waiting for results that will never arrive.
+const RESUME_AFTER_INTERRUPTION_PROMPT =
+  "Your previous process was interrupted and restarted. Any tool call that was in flight " +
+  "did not complete and any background commands it started are gone. Continue the task " +
+  "from where it left off, re-running whatever was interrupted."
+
 type TurnResolution =
   | { readonly kind: "continue" }
   | { readonly kind: "retry"; readonly delayMs: number; readonly attempt: number }
@@ -204,14 +214,21 @@ const describeStop = (subtype: string, lastError: string): string => {
   }
 }
 
-const pushContinuePrompt = (session: ClaudeSession): void => {
+const pushHiddenUserMessage = (session: ClaudeSession, content: string): void => {
   session.input.push({
-    message: { content: CONTINUE_PROMPT, role: "user" },
+    message: { content, role: "user" },
     parent_tool_use_id: null,
     session_id: session.sdkSessionId,
     type: "user"
   })
 }
+
+const pushContinuePrompt = (session: ClaudeSession): void =>
+  pushHiddenUserMessage(session, CONTINUE_PROMPT)
+
+/// Restarts the model after a stream-death resume (see `start-session.ts`).
+export const pushResumeAfterInterruptionPrompt = (session: ClaudeSession): void =>
+  pushHiddenUserMessage(session, RESUME_AFTER_INTERRUPTION_PROMPT)
 
 /// Resumes the live turn after a recoverable stop by pushing a continue nudge.
 /// A positive delay (transient backoff) is scheduled; the callback bails if the

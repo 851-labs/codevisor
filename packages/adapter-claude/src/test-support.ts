@@ -76,6 +76,10 @@ export class FakeQuery {
   readonly flagSettings: Array<Record<string, unknown>> = []
   promptInput: AsyncIterable<SDKUserMessage> | undefined
   options: ClaudeOptions | undefined
+  /// Queries handed out for later `queryFn` calls, in order — a session that
+  /// resumes after its stream dies asks for a fresh query. When empty, the
+  /// same (already finished) fake is returned again.
+  readonly successors: Array<FakeQuery> = []
   readonly userMessages: Array<SDKUserMessage> = []
   interruptImplementation: (() => Promise<void>) | undefined
 
@@ -286,15 +290,18 @@ export const makeProvider = (
     checkVersion,
     ...(getSessionInfo === undefined ? {} : { getSessionInfo }),
     queryFn: (input) => {
-      fake.promptInput = input.prompt
-      fake.options = input.options
+      // The session's first query is always `fake`; later calls (a resume
+      // after the stream died) take the next scripted successor.
+      const target = fake.promptInput === undefined ? fake : (fake.successors.shift() ?? fake)
+      target.promptInput = input.prompt
+      target.options = input.options
       void (async () => {
         for await (const message of input.prompt) {
-          fake.userMessages.push(message)
-          fake.changed()
+          target.userMessages.push(message)
+          target.changed()
         }
       })()
-      return fake as never
+      return target as never
     },
     readFile: (path) => (path === "/tmp/existing.txt" ? "line1\nline2\nline3\n" : undefined)
   })

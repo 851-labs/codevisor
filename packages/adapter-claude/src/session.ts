@@ -144,8 +144,11 @@ export interface ClaudeSession {
   readonly key: string
   readonly sdkSessionId: string
   readonly cwd: string
-  readonly q: Query
-  readonly input: InputQueue
+  /// The live SDK query and its input queue. Replaced together when the
+  /// stream dies mid-turn and the session resumes on a fresh query (see
+  /// `start-session.ts`); everything else reads them through the session.
+  q: Query
+  input: InputQueue
   readonly emit: RuntimeEmit
   readonly getSessionInfo: typeof sdkGetSessionInfo
   readonly abort: AbortController
@@ -176,6 +179,11 @@ export interface ClaudeSession {
   /// Visible transient retries (529 overload / rate-limit / server error) in the
   /// current turn (capped by MAX_TRANSIENT_RETRIES). Reset when a new turn starts.
   transientRetries: number
+  /// Invisible stream resumptions in the current turn: the SDK stream ended
+  /// (CLI crashed, pipe closed) with no `result`, and the session was resumed
+  /// on a fresh query with a continue nudge. Capped by
+  /// MAX_STREAM_RECOVERIES; reset when a new turn starts.
+  streamRecoveries: number
   /// The most recent SDK assistant-message `error` (overloaded/rate_limit/
   /// authentication_failed/…) seen since the last `result`. Lets `handleResult`
   /// tell a transient failure (retry) from a permanent one (surface). Consumed

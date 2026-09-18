@@ -23,7 +23,6 @@ struct IOSComposerAccessoryStack: View {
 
   private var hasCriticalAccessory: Bool {
     controller.configurationValidationError != nil
-      || controller.isTakingLongerThanExpected
   }
 
   private var hasInformationalAccessory: Bool {
@@ -111,7 +110,6 @@ struct IOSComposerAccessoryStack: View {
         .transition(.opacity)
       }
 
-      IOSStalledTurnNoticeView(controller: controller)
     }
     .padding(.bottom, hasVisibleAccessory ? ComposerGlassStyle.clusterSpacing : 0)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: hasVisibleAccessory)
@@ -133,33 +131,6 @@ struct IOSComposerAccessoryStack: View {
     )
     .sheet(isPresented: $isPresentingQueue) {
       IOSPromptQueueSheet(controller: controller)
-    }
-  }
-}
-
-/// Isolates provider-activity writes from SessionTranscriptView. These values
-/// change during an active turn and should only invalidate this one caption
-/// rail, mirroring the macOS stalled-turn view's Observation boundary.
-private struct IOSStalledTurnNoticeView: View {
-  let controller: SessionController
-
-  var body: some View {
-    if controller.isTakingLongerThanExpected {
-      ComposerNoticeRail(
-        "Taking longer than expected"
-          + (controller.providerActivityPhase.map { " during \($0.label)" } ?? ""),
-        kind: .warning,
-        systemImage: "clock.badge.exclamationmark",
-        actionTitle: "Stop and reconnect",
-        action: {
-          Task {
-            await controller.stop()
-            if !controller.isSending {
-              await controller.reconnect()
-            }
-          }
-        }
-      )
     }
   }
 }
