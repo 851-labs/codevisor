@@ -1,4 +1,5 @@
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import Foundation
 
 /// Exercises the real encrypted channel using in-memory clipboards. Never

@@ -1,5 +1,6 @@
 #if os(macOS)
-  import CodevisorScreenSharing
+  import ScreenSharing
+  import ScreenSharingWebRTC
   import CoreGraphics
   import CoreVideo
   import Foundation

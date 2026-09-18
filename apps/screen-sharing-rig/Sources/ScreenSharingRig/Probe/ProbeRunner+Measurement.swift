@@ -1,7 +1,7 @@
 import ScreenSharingDiagnostics
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
+  import ScreenSharing
   import Foundation
   import QuartzCore
   import ScreenCaptureKit

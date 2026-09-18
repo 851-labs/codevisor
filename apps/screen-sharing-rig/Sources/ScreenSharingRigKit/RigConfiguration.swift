@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// One resident rig process's configuration, read once from `rig.json`.

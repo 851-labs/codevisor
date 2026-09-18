@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// What was built and from where; shown on both ends so a sample can never be

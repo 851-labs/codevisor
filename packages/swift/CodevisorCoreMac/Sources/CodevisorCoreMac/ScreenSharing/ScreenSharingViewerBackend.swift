@@ -1,10 +1,8 @@
 import CodevisorClient
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import ComposableArchitecture
 import Foundation
-import ScreenSharingRFB
-import ScreenSharingVNC
-import ScreenSharingViewer
 
 /// What a backend tells the viewer about one connection attempt, in order.
 /// `opened` may repeat after `reconnecting`; `ended` is terminal and the stream

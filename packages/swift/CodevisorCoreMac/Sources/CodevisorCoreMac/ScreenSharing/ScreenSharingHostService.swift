@@ -1,7 +1,7 @@
 import AppKit
 import CodevisorCore
-import CodevisorScreenSharing
-import ScreenSharingHostInput
+import ScreenSharing
+import ScreenSharingWebRTC
 import Foundation
 import OSLog
 
@@ -287,7 +287,7 @@ final class ScreenSharingHostService {
           do {
             try await session.capture.start(
               displayID: session.displayID, configuration: session.configuration,
-              sender: session.peer.frameSender, metrics: session.metrics)
+              sink: session.peer.frameSender, metrics: session.metrics)
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             session.state = "viewing"
             self.indicator.show(display: session.display.name) { [weak self, weak session] in

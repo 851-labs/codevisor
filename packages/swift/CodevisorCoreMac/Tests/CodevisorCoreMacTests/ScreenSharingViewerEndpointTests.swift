@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import CodevisorTestSupport
 import CustomDump
 import Foundation

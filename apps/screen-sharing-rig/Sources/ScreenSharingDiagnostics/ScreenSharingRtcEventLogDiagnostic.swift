@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 import QuartzCore
 

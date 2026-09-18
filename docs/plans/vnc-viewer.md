@@ -51,7 +51,7 @@ and `ScreenSharingViewingSession` seams.
 Stages 1–3 have landed. What exists:
 
 - `packages/swift/ScreenSharingRFB` (protocol, 36 fixture and loopback tests) and
-  `packages/swift/ScreenSharingRFBLoopback` (the in-process server used by tests and the rig).
+  `ScreenSharingTesting` (`packages/swift/ScreenSharing/Sources/ScreenSharingTesting`, the in-process server used by tests and the rig).
 - `CodevisorCoreMac/ScreenSharing/VNC`: `VNCScreenSharingSession`, `VNCHostEmulator`,
   `VNCKeyTranslator`, `VNCInputTranslator`, `VNCFramePublisher`,
   `ScreenSharingViewerBackend.vnc(target:password:)` and `dispatchingVNC(password:)`,

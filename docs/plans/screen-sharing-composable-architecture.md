@@ -1,6 +1,6 @@
 # Screen Sharing composable architecture
 
-Status: Implemented on `screen-sharing-composable-architecture`; the native path was tophatted in the dev app (connect, Fit/Actual Size, hide and re-show reconnect with the persisted preference, Connection Details, Clipboard menu). This refactor keeps the shipped Mac-to-Mac path behavior-identical and cuts the seams a second backend (a standard VNC/RFB viewer) plugs into later. No VNC code lands here. See [the native implementation plan](native-screen-sharing.md) for the shipped feature and [the media package README](../../packages/swift/CodevisorScreenSharing/README.md) for measured results.
+Status: Implemented on `screen-sharing-composable-architecture`; the native path was tophatted in the dev app (connect, Fit/Actual Size, hide and re-show reconnect with the persisted preference, Connection Details, Clipboard menu). This refactor keeps the shipped Mac-to-Mac path behavior-identical and cuts the seams a second backend (a standard VNC/RFB viewer) plugs into later. No VNC code lands here. See [the native implementation plan](native-screen-sharing.md) for the shipped feature and [the media package README](../../packages/swift/ScreenSharing/README.md) for measured results.
 
 **Why**
 
@@ -16,6 +16,9 @@ A plugin per layer (`Capture × Codec × Transport × Input`) is right for the n
 One further cut governs where each technique applies. The **control plane** (visibility, display choice, connect/reconnect/stop, lease requests, failure messages) changes a few times a minute and is where a reducer, dependency injection and exhaustive tests pay off. The **data plane** (60 fps frames, ~1 kHz input, 1 Hz lease heartbeats, clipboard chunks) stays as it is: mailboxes, closures and main-actor objects, no actions per frame.
 
 ## Target graph
+
+> Superseded on 2026-09-18. The graph below is the one this branch landed; the targets were later consolidated into three under `packages/swift/ScreenSharing` (`ScreenSharing`, WebRTC-free; `ScreenSharingWebRTC`, the peer; `ScreenSharingTesting`, the loopback RFB server), with the former `ScreenSharingCore`, `ScreenSharingViewer`, `ScreenSharingVNC`, `ScreenSharingRFB` and `ScreenSharingHostInput` targets becoming folders of `ScreenSharing`. The rule this section states, that a VNC backend never depends on WebRTC, is now enforced by linkage rather than by a comment: `ScreenSharing` does not link the framework. Current layout: [the engine README](../../packages/swift/ScreenSharing/README.md).
+
 
 ```mermaid
 flowchart TB
@@ -137,7 +140,7 @@ Each step compiles and passes on its own; they are ordered so the native path ne
 
 ## Validation
 
-- `swift test --package-path packages/swift --filter 'ScreenSharing'` — every screen-sharing suite in all four targets.
+- `swift test --package-path packages/swift --filter 'ScreenSharing'` — every screen-sharing suite (since 2026-09-18: `ScreenSharingTests`, `ScreenSharingWebRTCTests` and the CoreMac feature tests).
 - `bun run swift:format:check && bun run swift:lint`.
 - `bun run build:macos` — the app links the new target graph and Xcode resolves `ComposableArchitecture`.
 - Tophat the shipped path in the dev app: open a Screen Sharing pane against a local Mac, connect, request control, transfer clipboard text, toggle Fit/Actual Size, hide and re-show the pane, and confirm the Connection Details popover still populates.

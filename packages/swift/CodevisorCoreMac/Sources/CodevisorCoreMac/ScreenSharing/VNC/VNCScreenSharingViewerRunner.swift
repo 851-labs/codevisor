@@ -1,9 +1,6 @@
 import CodevisorClient
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
-import ScreenSharingRFB
-import ScreenSharingVNC
-import ScreenSharingViewer
 
 extension ScreenSharingViewerBackend {
   typealias VNCOpen = @Sendable () async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)

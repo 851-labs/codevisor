@@ -1,4 +1,5 @@
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import Foundation
 
 /// Pure semantics for the owned-window diagnostic's observations. Platform

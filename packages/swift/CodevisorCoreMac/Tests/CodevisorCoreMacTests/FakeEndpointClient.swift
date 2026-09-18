@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import ComposableArchitecture
 import Foundation
 @testable import CodevisorCoreMac

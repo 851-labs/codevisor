@@ -1,6 +1,6 @@
 import CodevisorClient
 import Foundation
-import ScreenSharingRFB
+import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 

@@ -17,7 +17,8 @@ let package = Package(
     .target(
       name: "ScreenSharingRigKit",
       dependencies: [
-        .product(name: "CodevisorScreenSharing", package: "CodevisorKit"),
+        .product(name: "ScreenSharing", package: "CodevisorKit"),
+        .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
         "ScreenSharingDiagnostics",
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
@@ -27,13 +28,10 @@ let package = Package(
       dependencies: [
         "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
         .product(name: "CodevisorClient", package: "CodevisorKit"),
-        .product(name: "CodevisorScreenSharing", package: "CodevisorKit"),
+        .product(name: "ScreenSharing", package: "CodevisorKit"),
+        .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
+        .product(name: "ScreenSharingTesting", package: "CodevisorKit"),
         "ScreenSharingDiagnostics",
-        .product(name: "ScreenSharingHostInput", package: "CodevisorKit"),
-        .product(name: "ScreenSharingRFB", package: "CodevisorKit"),
-        .product(name: "ScreenSharingRFBLoopback", package: "CodevisorKit"),
-        .product(name: "ScreenSharingVNC", package: "CodevisorKit"),
-        .product(name: "ScreenSharingViewer", package: "CodevisorKit"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -42,7 +40,10 @@ let package = Package(
     // interval records, encoder drop log, owned-window session) that product code never links.
     .target(
       name: "ScreenSharingDiagnostics",
-      dependencies: [.product(name: "CodevisorScreenSharing", package: "CodevisorKit")],
+      dependencies: [
+        .product(name: "ScreenSharing", package: "CodevisorKit"),
+        .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
+      ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     // Private CoreGraphics virtual-display declarations; rig only, see the header.

@@ -1,10 +1,9 @@
 import CodevisorClient
-import CodevisorScreenSharing
+import ScreenSharing
 import CodevisorTestSupport
 import CustomDump
 import Foundation
-import ScreenSharingRFBLoopback
-import ScreenSharingVNC
+import ScreenSharingTesting
 import Testing
 @testable import CodevisorCoreMac
 

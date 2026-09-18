@@ -1,7 +1,6 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 import OSLog
-import ScreenSharingViewer
 
 /// One connected viewing endpoint, for any backend: the surface rendering the
 /// session's frames, the control channel and input forwarding the lease

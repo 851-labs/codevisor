@@ -1,7 +1,7 @@
 #if os(macOS)
   import AppKit
   import CGVirtualDisplayPrivate
-  import CodevisorScreenSharing
+  import ScreenSharing
   import Foundation
 
   /// One virtual display owned by the rig host, created through CoreGraphics'

@@ -1,5 +1,5 @@
 import ScreenSharingDiagnostics
-import CodevisorScreenSharing
+import ScreenSharing
 
 /// Per-second interval means; never present percentiles of these as per-frame p95.
 struct ProbeTransportTimeline {

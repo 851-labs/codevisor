@@ -1,9 +1,6 @@
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
-  import ScreenSharingRFB
-  import ScreenSharingVNC
-  import ScreenSharingViewer
+  import ScreenSharing
   import SwiftUI
 
   /// A VNC server by host, port and password, rendered into the product's own

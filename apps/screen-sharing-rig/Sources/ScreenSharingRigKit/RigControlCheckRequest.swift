@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// A repeatable control check: the viewer asks for control, sends N clicks at one normalized point, then

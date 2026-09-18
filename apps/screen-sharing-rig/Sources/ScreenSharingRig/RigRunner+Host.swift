@@ -1,10 +1,9 @@
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
+  import ScreenSharing
+  import ScreenSharingWebRTC
   import ScreenSharingDiagnostics
-  import ScreenSharingHostInput
   import Foundation
-  import ScreenSharingDiagnostics
   import QuartzCore
   import ScreenCaptureKit
   import ScreenSharingRigKit
@@ -135,7 +134,7 @@
         let metrics = session.metrics
         _ = try await workload.start(timeoutSeconds: 10) {
           try await capture.start(
-            ownedWindowID: workload.windowID, configuration: video, sender: sender, metrics: metrics)
+            ownedWindowID: workload.windowID, configuration: video, sink: sender, metrics: metrics)
         }
         log("owned workload window \(workload.windowID) captured at \(width)×\(height)@\(fps)")
       case .virtual(let width, let height, let fps):
@@ -159,7 +158,7 @@
         let metrics = session.metrics
         let displayID = virtualDisplay.displayID
         _ = try await workload.start(timeoutSeconds: 10) {
-          try await capture.start(displayID: displayID, configuration: video, sender: sender, metrics: metrics)
+          try await capture.start(displayID: displayID, configuration: video, sink: sender, metrics: metrics)
         }
         session.metrics.label("captureSelection", "virtual display \(displayID) with the owned workload window")
         installHostControl(in: session, displayID: displayID)
@@ -170,7 +169,7 @@
         let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
-          displayID: virtualDisplay.displayID, configuration: video, sender: session.frameSender,
+          displayID: virtualDisplay.displayID, configuration: video, sink: session.frameSender,
           metrics: session.metrics)
         session.metrics.label("captureSelection", "bare virtual display \(virtualDisplay.displayID)")
         installHostControl(in: session, displayID: virtualDisplay.displayID)
@@ -190,7 +189,7 @@
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(display: display, including: [application], exceptingWindows: []),
-          configuration: video, sender: session.frameSender, metrics: session.metrics)
+          configuration: video, sink: session.frameSender, metrics: session.metrics)
         session.metrics.label(
           "captureSelection", "application \(bundle) (\(application.applicationName)) on display \(display.displayID)")
         log("application \(bundle) captured on display \(display.displayID)")
@@ -204,7 +203,7 @@
         session.capture = capture
         try await capture.start(
           pickedFilter: SCContentFilter(desktopIndependentWindow: window), configuration: video,
-          sender: session.frameSender, metrics: session.metrics)
+          sink: session.frameSender, metrics: session.metrics)
         session.metrics.label(
           "captureSelection",
           "window \(id) \"\(window.title ?? "")\" of \(window.owningApplication?.bundleIdentifier ?? "?")")
@@ -214,7 +213,7 @@
         let capture = ScreenSharingCapture(captureIntervalFPS: configuration.tuning.captureIntervalFPS)
         session.capture = capture
         try await capture.start(
-          displayID: id, configuration: video, sender: session.frameSender, metrics: session.metrics)
+          displayID: id, configuration: video, sink: session.frameSender, metrics: session.metrics)
         installHostControl(in: session, displayID: id)
         log("display \(id) captured")
       }

@@ -1,5 +1,5 @@
 import Testing
-import CodevisorScreenSharing
+import ScreenSharing
 @testable import ScreenSharingDiagnostics
 
 struct ScreenSharingEncoderDropLogTests {

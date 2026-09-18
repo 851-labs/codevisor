@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 @preconcurrency import ScreenCaptureKit
 
 /// A diagnostic process owns one picker and one stream. Keep the picker active

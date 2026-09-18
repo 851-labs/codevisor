@@ -1,5 +1,5 @@
 import ScreenSharingDiagnostics
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// One per-second view of a session, derived from the process's own metrics

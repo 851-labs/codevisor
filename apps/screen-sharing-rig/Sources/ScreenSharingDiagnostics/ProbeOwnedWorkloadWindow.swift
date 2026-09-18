@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 import CoreGraphics
 
 /// The diagnostic's one owned workload window, the only thing its

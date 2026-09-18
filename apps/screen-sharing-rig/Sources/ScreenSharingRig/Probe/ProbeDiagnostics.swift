@@ -1,6 +1,6 @@
 import ScreenSharingDiagnostics
 import Foundation
-import CodevisorScreenSharing
+import ScreenSharing
 
 /// Validates bounded diagnostic windows and reserves no files during option parsing.
 struct ProbeDiagnostics {

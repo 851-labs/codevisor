@@ -25,16 +25,10 @@ let package = Package(
     .library(name: "CodevisorCoreMac", targets: ["CodevisorCoreMac"]),
     .library(name: "CodevisorUI", targets: ["CodevisorUI"]),
     .library(name: "Autocomplete", targets: ["Autocomplete"]),
-    .library(name: "CodevisorScreenSharing", targets: ["CodevisorScreenSharing"]),
-    // Consumed by the dev-only executable under apps/screen-sharing-rig.
-    .library(name: "ScreenSharingHostInput", targets: ["ScreenSharingHostInput"]),
-    .library(name: "ScreenSharingRFB", targets: ["ScreenSharingRFB"]),
-    // The VNC viewing session over the RFB client; the rig links it without CodevisorCoreMac.
-    .library(name: "ScreenSharingVNC", targets: ["ScreenSharingVNC"]),
-    // The viewer surface (Metal view, input capture, cursor) any viewing session renders into.
-    .library(name: "ScreenSharingViewer", targets: ["ScreenSharingViewer"]),
-    // Consumed by the rig's `vnc-server` subcommand.
-    .library(name: "ScreenSharingRFBLoopback", targets: ["ScreenSharingRFBLoopback"]),
+    // Screen sharing, in three targets: the WebRTC-free engine, the WebRTC peer, and test doubles.
+    .library(name: "ScreenSharing", targets: ["ScreenSharing"]),
+    .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
+    .library(name: "ScreenSharingTesting", targets: ["ScreenSharingTesting"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
   ],
   dependencies: [
@@ -44,81 +38,25 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture.git", exact: "1.26.2"),
   ],
   targets: [
-    // WebRTC-, Metal- and capture-free contracts and value types of screen sharing: frames, the mailbox,
-    // metrics, input/control/clipboard messages, the message-channel and viewing-session contracts. A
-    // backend that is not the native WebRTC pipeline depends on this target only. See
-    // docs/plans/screen-sharing-composable-architecture.md. The dev-only executable (the rig, whose `probe` subcommand is the
-    // single-process diagnostic) is its own package under apps/ and consumes this package's products.
-    // The RFB (VNC) protocol: handshake, authentication, client/server messages and the
-    // Raw/CopyRect/ZRLE decoders into a BGRA framebuffer. Pure protocol over an abstract
-    // transport; no screen-sharing types, so it is testable byte for byte. See docs/plans/vnc-viewer.md.
-    .systemLibrary(name: "CZlib", path: "CZlib"),
+    // MARK: ScreenSharing (the engine, WebRTC-free: session and message contracts, frames and the
+    // mailbox, metrics, ScreenCaptureKit capture, VideoToolbox codecs, the Metal renderer, the AppKit
+    // viewer surface, host input injection, the RFB protocol and the VNC viewing session. Links CZlib
+    // and system frameworks only, so a backend that is not the native WebRTC pipeline, and every test
+    // of these parts, never loads the binary framework. See docs/plans/screen-sharing-composable-architecture.md.)
+    .systemLibrary(name: "CZlib", path: "ScreenSharing/CZlib"),
     .target(
-      name: "ScreenSharingRFB",
+      name: "ScreenSharing",
       dependencies: ["CZlib"],
-      path: "ScreenSharingRFB/Sources/ScreenSharingRFB",
+      path: "ScreenSharing/Sources/ScreenSharing",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    // An in-process VNC server (scripted handshake, every encoding, a message log) for the
-    // protocol and viewer tests and for the rig; never linked by product modules.
+    // The native transport: the WebRTC peer, its data channels, sender and receiver endpoints with
+    // their recovery, the codec factory bridging VideoToolbox into WebRTC, and the pinned field
+    // trials. The only target that links WebRTC.
     .target(
-      name: "ScreenSharingRFBLoopback",
-      dependencies: ["ScreenSharingRFB"],
-      path: "ScreenSharingRFBLoopback/Sources/ScreenSharingRFBLoopback",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    // VNC as a ScreenSharingViewingSession: frames into the mailbox, the locally granted control
-    // lease driving RFB input, the clipboard bridge. Media package + RFB only, so the rig and the
-    // product share it. See docs/plans/screen-sharing-vps.md.
-    .target(
-      name: "ScreenSharingVNC",
-      dependencies: ["CodevisorScreenSharing", "ScreenSharingRFB"],
-      path: "ScreenSharingVNC/Sources/ScreenSharingVNC",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    // The AppKit surface a viewing session renders into and captures input from: the scroll
-    // view, fit-to-window, the input surface with its keyboard capture, and the input forwarder.
-    // Host-input aware, so it sits above the media package; the product and the rig share it.
-    .target(
-      name: "ScreenSharingViewer",
-      dependencies: ["CodevisorScreenSharing", "ScreenSharingHostInput"],
-      path: "ScreenSharingViewer/Sources/ScreenSharingViewer",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .testTarget(
-      name: "ScreenSharingViewerTests",
-      dependencies: ["ScreenSharingViewer", "CodevisorTestSupport"],
-      path: "ScreenSharingViewer/Tests/ScreenSharingViewerTests",
-      swiftSettings: [.swiftLanguageMode(.v6)],
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
-    ),
-    .testTarget(
-      name: "ScreenSharingVNCTests",
-      dependencies: ["ScreenSharingVNC", "ScreenSharingRFBLoopback", "CodevisorTestSupport"],
-      path: "ScreenSharingVNC/Tests/ScreenSharingVNCTests",
-      swiftSettings: [.swiftLanguageMode(.v6)],
-      // SwiftPM's macOS test bundle loader needs the sibling binary framework.
-      linkerSettings: [
-        .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
-      ]
-    ),
-    .testTarget(
-      name: "ScreenSharingRFBTests",
-      dependencies: ["ScreenSharingRFB", "ScreenSharingRFBLoopback", "CodevisorTestSupport"],
-      path: "ScreenSharingRFB/Tests/ScreenSharingRFBTests",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .target(
-      name: "ScreenSharingCore",
-      path: "ScreenSharingCore/Sources/ScreenSharingCore",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .target(
-      name: "CodevisorScreenSharing",
-      dependencies: ["ScreenSharingCore", .product(name: "WebRTC", package: "WebRTC")],
-      path: "CodevisorScreenSharing/Sources/CodevisorScreenSharing",
+      name: "ScreenSharingWebRTC",
+      dependencies: ["ScreenSharing", .product(name: "WebRTC", package: "WebRTC")],
+      path: "ScreenSharing/Sources/ScreenSharingWebRTC",
       resources: [
         .copy("Resources/WebRTC-LICENSE.txt"),
         .copy("Resources/WebRTC-ThirdPartyNotices-macOS.md"),
@@ -126,18 +64,24 @@ let package = Package(
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
-    // The host's control lease and CGEvent injection: product code, extracted so the rig can exercise
-    // the real path without linking the rest of CodevisorCoreMac.
+    // Test doubles: the in-process VNC server (scripted handshake, every encoding, a message log)
+    // the suites and the rig drive. Never a dependency of a product target.
     .target(
-      name: "ScreenSharingHostInput",
-      dependencies: ["CodevisorScreenSharing"],
-      path: "CodevisorCoreMac/HostInput",
+      name: "ScreenSharingTesting",
+      dependencies: ["ScreenSharing"],
+      path: "ScreenSharing/Sources/ScreenSharingTesting",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
-      name: "CodevisorScreenSharingTests",
-      dependencies: ["CodevisorScreenSharing", "CodevisorTestSupport"],
-      path: "CodevisorScreenSharing/Tests/CodevisorScreenSharingTests",
+      name: "ScreenSharingTests",
+      dependencies: ["ScreenSharing", "ScreenSharingTesting", "CodevisorTestSupport"],
+      path: "ScreenSharing/Tests/ScreenSharingTests",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "ScreenSharingWebRTCTests",
+      dependencies: ["ScreenSharingWebRTC", "CodevisorTestSupport"],
+      path: "ScreenSharing/Tests/ScreenSharingWebRTCTests",
       swiftSettings: [.swiftLanguageMode(.v6)],
       // SwiftPM's macOS test bundle loader needs the sibling binary framework.
       linkerSettings: [
@@ -378,8 +322,7 @@ let package = Package(
     .target(
       name: "CodevisorCoreMac",
       dependencies: [
-        "CodevisorCore", "CodevisorScreenSharing", "ScreenSharingHostInput", "ScreenSharingRFB", "ScreenSharingVNC",
-        "ScreenSharingViewer",
+        "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",
@@ -442,10 +385,8 @@ let package = Package(
         "CodevisorCoreMac",
         "CodevisorCore",
         "ACPKit",
-        "ScreenSharingRFB",
-        "ScreenSharingRFBLoopback",
-        "ScreenSharingVNC",
-        "ScreenSharingViewer",
+        "ScreenSharing",
+        "ScreenSharingTesting",
       ],
       path: "CodevisorCoreMac/Tests/CodevisorCoreMacTests",
       swiftSettings: [.swiftLanguageMode(.v6)],

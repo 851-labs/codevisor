@@ -1,4 +1,5 @@
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import Foundation
 
 public struct RigOfferRequest: Codable, Sendable {

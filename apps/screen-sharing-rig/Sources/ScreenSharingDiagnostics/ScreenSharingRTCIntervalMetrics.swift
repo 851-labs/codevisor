@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// W3C cumulative seconds/count pairs become weighted interval means, not

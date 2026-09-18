@@ -1,6 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
-import ScreenSharingHostInput
+import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 

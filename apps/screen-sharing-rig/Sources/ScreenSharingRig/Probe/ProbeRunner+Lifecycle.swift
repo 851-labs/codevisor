@@ -1,8 +1,8 @@
 import ScreenSharingDiagnostics
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
-  import ScreenSharingDiagnostics
+  import ScreenSharing
+  import ScreenSharingWebRTC
   import Foundation
   import QuartzCore
   import ScreenCaptureKit

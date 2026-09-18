@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 import QuartzCore
 
 /// Drawing window and view shared by the visible desktop workload and the

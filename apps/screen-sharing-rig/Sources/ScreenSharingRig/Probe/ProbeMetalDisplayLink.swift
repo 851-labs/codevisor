@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 import QuartzCore
 
 /// Owns the probe's alternative display driver. The application still uses

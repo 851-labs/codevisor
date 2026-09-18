@@ -1,6 +1,6 @@
 # Screen Sharing rig
 
-A two-Mac development loop for the native screen-sharing engine: one resident host process and one resident viewer process, signed with a stable identity, deployed with one command, showing live numbers. It is a consumer of `CodevisorScreenSharing`, never shipped, and never installed on a user's machine. Design and status: [docs/plans/screen-sharing-rig.md](../../../docs/plans/screen-sharing-rig.md).
+A two-Mac development loop for the native screen-sharing engine: one resident host process and one resident viewer process, signed with a stable identity, deployed with one command, showing live numbers. It is a consumer of `ScreenSharing` and `ScreenSharingWebRTC`, never shipped, and never installed on a user's machine. Design and status: [docs/plans/screen-sharing-rig.md](../../../docs/plans/screen-sharing-rig.md).
 
 ## Layout
 

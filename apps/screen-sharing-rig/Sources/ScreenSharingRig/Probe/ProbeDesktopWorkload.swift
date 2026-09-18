@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 import ScreenSharingDiagnostics
 import QuartzCore
 

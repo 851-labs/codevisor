@@ -1,5 +1,5 @@
 import AppKit
-import CodevisorScreenSharing
+import ScreenSharing
 
 @MainActor
 final class ScreenSharingPasteboard {

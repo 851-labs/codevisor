@@ -1,6 +1,6 @@
 import CodevisorClient
 import Foundation
-import ScreenSharingRFB
+import ScreenSharing
 
 /// RFB bytes over the server's VNC socket route: every binary message is a
 /// run of bytes from the machine's loopback VNC server, in order. A read hands

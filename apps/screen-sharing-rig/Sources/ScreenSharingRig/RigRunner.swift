@@ -1,10 +1,9 @@
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
+  import ScreenSharing
+  import ScreenSharingWebRTC
   import ScreenSharingDiagnostics
   import Foundation
-  import ScreenSharingDiagnostics
-  import ScreenSharingHostInput
   import ScreenSharingRigKit
 
   /// One media session of the rig: a peer, its metrics, and whatever source or

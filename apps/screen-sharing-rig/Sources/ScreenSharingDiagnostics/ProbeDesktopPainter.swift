@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import CoreImage
 import CoreText
 import Foundation

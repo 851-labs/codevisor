@@ -156,8 +156,8 @@ function build({ debug = false, install = true } = {}) {
   cpSync(join(bin, rigIdentity.executableName), executable)
   cpSync(join(bin, "WebRTC.framework"), framework, { recursive: true, verbatimSymlinks: true })
   cpSync(
-    join(bin, "CodevisorKit_CodevisorScreenSharing.bundle"),
-    join(contents, "Resources/CodevisorKit_CodevisorScreenSharing.bundle"),
+    join(bin, "CodevisorKit_ScreenSharingWebRTC.bundle"),
+    join(contents, "Resources/CodevisorKit_ScreenSharingWebRTC.bundle"),
     {
       recursive: true
     }

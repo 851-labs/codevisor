@@ -1,7 +1,7 @@
 #if os(macOS)
   import Foundation
-  import ScreenSharingRFB
-  import ScreenSharingRFBLoopback
+  import ScreenSharing
+  import ScreenSharingTesting
   import SwiftUI
 
   /// The in-process VNC server from the tests, with the animated desktop the

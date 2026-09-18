@@ -3,7 +3,7 @@ import CoreText
 import CoreVideo
 import Foundation
 import ImageIO
-import CodevisorScreenSharing
+import ScreenSharing
 
 package enum ProbeCodecPattern {
   package static func make(width: Int, height: Int, sequence: Int) throws -> CVPixelBuffer {

@@ -1,7 +1,7 @@
 #if os(macOS)
   import Foundation
-  import ScreenSharingRFB
-  import ScreenSharingRFBLoopback
+  import ScreenSharing
+  import ScreenSharingTesting
 
   /// `screen-sharing-rig vnc-server`: a VNC server on 127.0.0.1 with an
   /// animated desktop, logging the input it receives. The tophat target for

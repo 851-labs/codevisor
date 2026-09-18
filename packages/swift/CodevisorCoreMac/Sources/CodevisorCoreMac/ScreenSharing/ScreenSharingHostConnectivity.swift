@@ -1,5 +1,6 @@
 import CodevisorClient
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import CryptoKit
 import Foundation
 

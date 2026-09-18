@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Testing
 
 @testable import ScreenSharingRigKit

@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 /// Readiness gate for the owned workload window's first completed draw.

@@ -1,4 +1,4 @@
-import CodevisorScreenSharing
+import ScreenSharing
 import Foundation
 
 public struct RigMetricsBody: Codable, Sendable {

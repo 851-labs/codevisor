@@ -1,11 +1,8 @@
 import AppKit
-import CodevisorScreenSharing
-import ScreenSharingViewer
+import ScreenSharing
 import CodevisorTestSupport
 import CoreVideo
 import Foundation
-import ScreenSharingRFB
-import ScreenSharingVNC
 import Testing
 @testable import CodevisorCoreMac
 

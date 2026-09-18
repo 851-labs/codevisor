@@ -1,8 +1,8 @@
 import ScreenSharingDiagnostics
 #if os(macOS)
   import AppKit
-  import CodevisorScreenSharing
-  import ScreenSharingDiagnostics
+  import ScreenSharing
+  import ScreenSharingWebRTC
   import Foundation
   import QuartzCore
   import ScreenCaptureKit
@@ -10,7 +10,7 @@ import ScreenSharingDiagnostics
 
   /// `screen-sharing-rig probe …`: the single-process diagnostic — both peers in this
   /// process over a loopback exchange, with the measurement and recovery experiments
-  /// described in packages/swift/CodevisorScreenSharing/README.md. Owns the process
+  /// described in packages/swift/ScreenSharing/README.md. Owns the process
   /// once dispatched: it installs the field trials and runs its own application loop.
   @MainActor
   enum ProbeCommand {
@@ -383,7 +383,7 @@ import ScreenSharingDiagnostics
             beforeStart = workload.observation("immediately before capture.start (probe call, not the framework start)")
             try await capture.start(
               ownedWindowID: workload.windowID, configuration: options.configuration,
-              sender: sender.frameSender, metrics: senderMetrics)
+              sink: sender.frameSender, metrics: senderMetrics)
           }
           ready["observationBeforeCaptureStart"] = beforeStart  // also retained in workload.snapshots
           var afterStart = workload.observation("after capture.start returned")
@@ -407,7 +407,7 @@ import ScreenSharingDiagnostics
           self.capture = capture
           try await capture.start(
             pickedFilter: pickedFilter, configuration: options.configuration,
-            sender: sender.frameSender, metrics: senderMetrics)
+            sink: sender.frameSender, metrics: senderMetrics)
         } else if let display = options.displayID {
           let capture = ScreenSharingCapture(
             queueDepth: options.captureQueueDepth, pixelFormat: options.capturePixelFormat,
@@ -415,7 +415,7 @@ import ScreenSharingDiagnostics
           self.capture = capture
           try await capture.start(
             displayID: display, configuration: options.configuration,
-            sender: sender.frameSender, metrics: senderMetrics)
+            sink: sender.frameSender, metrics: senderMetrics)
         } else {
           let source = try SyntheticSource(
             configuration: options.configuration,

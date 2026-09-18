@@ -1,5 +1,6 @@
 import CodevisorClient
-import CodevisorScreenSharing
+import ScreenSharing
+import ScreenSharingWebRTC
 import Foundation
 
 /// A viewing session the native backend can negotiate: the generic contract
