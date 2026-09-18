@@ -17,10 +17,14 @@ struct ScreenSharingVideoSurfaceLetterboxTests {
   @Test func defaultsToTheNativeWindowSurfaceInsteadOfBlack() throws {
     let surface = try makeSurface()
     defer { surface.stop() }
-    surface.appearance = NSAppearance(named: .aqua)
+    let aqua = try #require(NSAppearance(named: .aqua))
+    surface.appearance = aqua
     let clear = surface.metal.clearColor
-    let expected = try #require(
-      NSColor.windowBackgroundColor.usingColorSpace(.sRGB), "window background resolves in sRGB")
+    // Resolve the expectation under the same appearance the surface uses, so
+    // the test does not depend on the machine's light/dark setting.
+    var resolved: NSColor?
+    aqua.performAsCurrentDrawingAppearance { resolved = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) }
+    let expected = try #require(resolved, "window background resolves in sRGB")
     #expect(abs(clear.red - Double(expected.redComponent)) < 0.01)
     #expect(abs(clear.green - Double(expected.greenComponent)) < 0.01)
     #expect(abs(clear.blue - Double(expected.blueComponent)) < 0.01)
