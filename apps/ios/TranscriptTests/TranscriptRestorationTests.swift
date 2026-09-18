@@ -38,7 +38,7 @@ struct TranscriptRestorationTests {
     let userRow = TranscriptVirtualRow(
       id: .message(user.id),
       content: destination == .optimistic
-        ? .optimistic(user, showsStartingAgent: false)
+        ? .optimistic(user)
         : .message(.user(user), waitingOnBackgroundTask: nil),
       estimatedHeight: 700)
     let assistantRow = try #require(

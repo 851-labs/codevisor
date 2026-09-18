@@ -141,12 +141,17 @@ extension SessionController {
       handleSetupFailure(message, returnsToNewChat: showsSetupPhases)
       return
     }
+    // No "Starting <agent>" phase here: the transcript already shows the
+    // optimistic "Waiting on harness…" line once the worktree is up, and
+    // that line stays through connect, the runtime-configuration replay
+    // (whose first call is what actually spawns the harness) and the
+    // prompt, until the live turn replaces it in place. A phase row that
+    // vanished after the cheap `/open` round trip left the transcript
+    // looking frozen for the seconds the spawn really took.
     status = .connecting("Starting \(harness.name)…")
-    if showsSetupPhases { beginSetupPhase(.startingAgent(named: harness.name)) }
     do {
       let model = try await connect(harnessId: harness.id)
       self.model = model
-      setupPhases.removeAll { $0.id == SessionSetupPhase.agentPhaseId }
       status = .idle
       await applyPendingRuntimeConfiguration(to: model)
       await applyPendingGoal(to: model)

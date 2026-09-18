@@ -8,7 +8,7 @@ import TranscriptKit
 struct TranscriptSendAnimationTargetingTests {
   private typealias Row = TranscriptPresentationRow
 
-  @Test(arguments: [Row.ID.setup, .backgroundTask, .updateGate, .connecting, .serverWait])
+  @Test(arguments: [Row.ID.setup, .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait])
   func progressWaitsForTheUserMessageToLand(rowID: TranscriptPresentationRow.ID) {
     for existedBeforeSend in [false, true] {
       for phase in [TranscriptSendPresentationPhase.pending, .active] {
@@ -45,7 +45,7 @@ struct TranscriptSendAnimationTargetingTests {
   @Test func optimisticSendTargetsAnyUserRow() {
     let user = UserMessage(text: "hi")
     let optimistic = Row(
-      id: .message(user.id), content: .optimistic(user, showsStartingAgent: false), estimatedHeight: 1)
+      id: .message(user.id), content: .optimistic(user), estimatedHeight: 1)
     let settledUser = Row(
       id: .message(user.id), content: .message(.user(user), waitingOnBackgroundTask: nil), estimatedHeight: 1)
     let status = Row(id: .error, content: .error("x"), estimatedHeight: 1)
@@ -58,7 +58,7 @@ struct TranscriptSendAnimationTargetingTests {
   @Test func activeTurnTargetsOnlyTheSettledUserMessage() {
     let user = UserMessage(text: "hi")
     let optimistic = Row(
-      id: .message(user.id), content: .optimistic(user, showsStartingAgent: false), estimatedHeight: 1)
+      id: .message(user.id), content: .optimistic(user), estimatedHeight: 1)
     let settledUser = Row(
       id: .message(user.id), content: .message(.user(user), waitingOnBackgroundTask: nil), estimatedHeight: 1)
 

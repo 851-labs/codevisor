@@ -13,7 +13,7 @@ extension TranscriptSendAnimationContract {
     rowExistedBeforeSend: Bool
   ) -> Bool {
     switch rowID {
-    case .setup, .backgroundTask, .updateGate, .connecting, .serverWait:
+    case .setup, .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait:
       return phase != .idle
     default:
       return shouldHoldAssistantRow(

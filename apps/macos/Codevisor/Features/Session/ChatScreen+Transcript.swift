@@ -221,22 +221,15 @@ extension ChatScreen {
 
     if settled.isEmpty, !controller.hasActiveItem {
       if let message = pendingMessage {
-        let showsStartingAgent = controller.setupPhases.isEmpty
         result.append(
           .init(
             // The settled model adopts this exact id, so the native
             // virtualizer keeps one host — and one layer animation —
             // across the optimistic-to-settled handoff.
             id: .message(message.id),
-            content: .optimistic(
-              message,
-              showsStartingAgent: showsStartingAgent
-            ),
+            content: .optimistic(message),
             estimatedHeight: 90,
-            measurementRevision: Self.optimisticMeasurementRevision(
-              for: message,
-              showsStartingAgent: showsStartingAgent
-            )
+            measurementRevision: Self.optimisticMeasurementRevision(for: message)
           ))
       }
       if !controller.setupPhases.isEmpty {
@@ -347,12 +340,9 @@ extension ChatScreen {
       result.append(
         .init(
           id: .message(message.id),
-          content: .optimistic(message, showsStartingAgent: false),
+          content: .optimistic(message),
           estimatedHeight: 90,
-          measurementRevision: Self.optimisticMeasurementRevision(
-            for: message,
-            showsStartingAgent: false
-          )
+          measurementRevision: Self.optimisticMeasurementRevision(for: message)
         ))
     }
     if let waitingDescription, waitingAssistantID == nil, !controller.hasActiveItem {
@@ -421,23 +411,18 @@ extension ChatScreen {
     return hasher.finalize()
   }
 
-  /// Optimistic content may temporarily include the startup indicator below
-  /// the user bubble. Give that presentation its own revision so the stable
-  /// message id preserves the host without preserving a stale row height
-  /// after the model adopts the message.
-  static func optimisticMeasurementRevision(
-    for message: UserMessage,
-    showsStartingAgent: Bool
-  ) -> Int {
+  /// The stable message id preserves the host across the optimistic-to-
+  /// settled handoff; this revision keeps it from preserving a stale row
+  /// height when the message's content changes underneath it.
+  static func optimisticMeasurementRevision(for message: UserMessage) -> Int {
     var hasher = Hasher()
-    hasher.combine(2)
+    hasher.combine(3)
     hasher.combine(message.text.utf8.count)
     hasher.combine(message.attachments.count)
     for attachment in message.attachments {
       hasher.combine(attachment.id)
       hasher.combine(attachment.sizeBytes)
     }
-    hasher.combine(showsStartingAgent)
     return hasher.finalize()
   }
 

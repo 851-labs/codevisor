@@ -59,6 +59,7 @@ public struct SessionSetupPhase: Identifiable, Equatable, Sendable {
   }
 
   public var isRunning: Bool { outcome == .running }
+  public var isSucceeded: Bool { outcome == .succeeded }
 
   public var failureMessage: String? {
     if case let .failed(message) = outcome { return message }

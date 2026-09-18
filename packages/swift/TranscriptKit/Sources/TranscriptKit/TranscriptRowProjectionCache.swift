@@ -2,62 +2,8 @@ import CoreGraphics
 import CodevisorProtocol
 import Foundation
 
-/// Immutable transcript input copied from the UI actor before row projection.
-/// All expensive, transcript-wide work operates on this value on the
-/// projection actor; AppKit/UIKit only mount the resulting visible rows.
-public struct TranscriptProjectionInput: Sendable {
-  public enum ConnectionStatus: Equatable, Sendable {
-    case idle
-    case connecting(String)
-    case failed(String)
-  }
-
-  public let settledConversation: [ConversationItem]
-  public let pendingUserMessage: UserMessage?
-  /// Immutable value represented by the projected active row. The native
-  /// row may observe newer token content only while the live item keeps this
-  /// identity; at a turn boundary this snapshot keeps the old response on
-  /// screen until the replacement projection commits.
-  public let activeItem: ConversationItem?
-  public var hasActiveItem: Bool { activeItem != nil }
-  public let setupPhases: [SessionSetupPhase]
-  public let waitingBackgroundTaskDescription: String?
-  public let waitingHarnessUpdateName: String?
-  public let isLoadingInitialHistory: Bool
-  public let serverWaitMessage: String?
-  public let sessionErrorMessage: String?
-  public let status: ConnectionStatus
-  public let activityMessage: String?
-
-  public init(
-    settledConversation: [ConversationItem],
-    pendingUserMessage: UserMessage?,
-    activeItem: ConversationItem?,
-    setupPhases: [SessionSetupPhase],
-    waitingBackgroundTaskDescription: String?,
-    waitingHarnessUpdateName: String?,
-    isLoadingInitialHistory: Bool,
-    serverWaitMessage: String?,
-    sessionErrorMessage: String?,
-    status: ConnectionStatus,
-    activityMessage: String? = nil
-  ) {
-    self.settledConversation = settledConversation
-    self.pendingUserMessage = pendingUserMessage
-    self.activeItem = activeItem
-    self.setupPhases = setupPhases
-    self.waitingBackgroundTaskDescription = waitingBackgroundTaskDescription
-    self.waitingHarnessUpdateName = waitingHarnessUpdateName
-    self.isLoadingInitialHistory = isLoadingInitialHistory
-    self.serverWaitMessage = serverWaitMessage
-    self.sessionErrorMessage = sessionErrorMessage
-    self.status = status
-    self.activityMessage = activityMessage
-  }
-}
-
-/// A cheap version token. Copying the input above is copy-on-write; this key
-/// lets SwiftUI cancel stale preparations without comparing the transcript.
+/// A cheap version token. Copying `TranscriptProjectionInput` is copy-on-write;
+/// this key lets SwiftUI cancel stale preparations without comparing the transcript.
 public struct TranscriptProjectionKey: Hashable, Sendable {
   public let sessionID: UUID
   public let controllerRevision: UInt64
@@ -121,6 +67,9 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case activeAttachment(UUID, sourceID: String, ordinal: Int)
     case active(UUID)
     case setup
+    /// The optimistic first send's "Waiting on harness…" line, shown before
+    /// the model exists and replaced in place by the real active row.
+    case startingAgent
     case backgroundTask
     case updateGate
     case connecting
@@ -160,6 +109,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       // when it moves from the live slot into settled history.
       case let .active(id): "message:\(id.uuidString)"
       case .setup: "special:setup"
+      case .startingAgent: "special:starting-agent"
       case .backgroundTask: "special:background"
       case .updateGate: "special:update-gate"
       case .connecting: "special:connecting"
@@ -182,7 +132,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         true
       case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,
         .activeResult, .activeWorkedHeader, .activeWorkedItem, .activeChrome,
-        .activeMarkdown, .activeAttachment, .setup,
+        .activeMarkdown, .activeAttachment, .setup, .startingAgent,
         .backgroundTask, .updateGate, .connecting, .serverWait, .error,
         .statusError, .bottomSpacer:
         false
@@ -218,7 +168,7 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       case .active, .message, .assistantPlanning, .plan, .planHeader,
         .planMarkdown, .assistantResult, .assistantWorkedHeader,
         .assistantWorkedItem, .assistantChrome, .assistantMarkdown,
-        .assistantAttachment, .setup, .backgroundTask, .updateGate,
+        .assistantAttachment, .setup, .startingAgent, .backgroundTask, .updateGate,
         .connecting, .serverWait, .error, .statusError, .bottomSpacer:
         false
       }
@@ -238,8 +188,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         let .assistantMarkdown(id, _, _, _), let .activeMarkdown(id, _, _, _),
         let .assistantAttachment(id, _, _), let .activeAttachment(id, _, _):
         id
-      case .setup, .backgroundTask, .updateGate, .connecting, .serverWait, .error,
-        .statusError, .bottomSpacer:
+      case .setup, .startingAgent, .backgroundTask, .updateGate, .connecting, .serverWait,
+        .error, .statusError, .bottomSpacer:
         nil
       }
     }
@@ -264,7 +214,8 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case assistantAttachment(TranscriptAssistantAttachment)
     case active(ConversationItem)
     case setup([SessionSetupPhase])
-    case optimistic(UserMessage, showsStartingAgent: Bool)
+    case optimistic(UserMessage)
+    case startingAgent
     case backgroundTask(String)
     case updateGate(String)
     case connecting(String)
@@ -413,15 +364,13 @@ public actor TranscriptRowProjectionCache {
 
     if settled.isEmpty, !input.hasActiveItem {
       if let message = pendingMessage {
-        let showsStartingAgent = !hasSetup && input.activityMessage == nil
         rows.append(
           .init(
             id: .message(message.id),
-            content: .optimistic(message, showsStartingAgent: showsStartingAgent),
+            content: .optimistic(message),
             estimatedHeight: 90,
             measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(
-              for: message,
-              showsStartingAgent: showsStartingAgent
+              for: message
             )
           ))
       }
@@ -431,6 +380,14 @@ public actor TranscriptRowProjectionCache {
             id: .setup,
             content: .setup(input.setupPhases),
             estimatedHeight: 80
+          ))
+      }
+      if pendingMessage != nil, showsOptimisticAgentActivity(input) {
+        rows.append(
+          .init(
+            id: .startingAgent,
+            content: .startingAgent,
+            estimatedHeight: TranscriptAssistantRowProjection.activityRowEstimatedHeight
           ))
       }
       if !input.isLoadingInitialHistory, pendingMessage == nil, input.activityMessage == nil {
@@ -512,11 +469,10 @@ public actor TranscriptRowProjectionCache {
       rows.append(
         .init(
           id: .message(message.id),
-          content: .optimistic(message, showsStartingAgent: false),
+          content: .optimistic(message),
           estimatedHeight: 90,
           measurementRevision: TranscriptAssistantRowProjection.optimisticMeasurementRevision(
-            for: message,
-            showsStartingAgent: false
+            for: message
           )
         ))
     }

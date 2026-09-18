@@ -340,7 +340,7 @@ enum TranscriptAssistantRowProjection {
       message.turn.planDocument?.isEmpty != false,
       message.turn.retryStatus != nil || message.turn.showsActivityIndicator
     else { return 320 }
-    return 32
+    return activityRowEstimatedHeight
   }
 
 }
@@ -424,21 +424,22 @@ extension TranscriptAssistantRowProjection {
     return false
   }
 
-  static func optimisticMeasurementRevision(
-    for message: UserMessage,
-    showsStartingAgent: Bool
-  ) -> Int {
+  static func optimisticMeasurementRevision(for message: UserMessage) -> Int {
     var hasher = Hasher()
-    hasher.combine(2)
+    hasher.combine(3)
     hasher.combine(message.text.utf8.count)
     hasher.combine(message.attachments.count)
     for attachment in message.attachments {
       hasher.combine(attachment.id)
       hasher.combine(attachment.sizeBytes)
     }
-    hasher.combine(showsStartingAgent)
     return hasher.finalize()
   }
+
+  /// One shimmering activity line ("Waiting on harness…"). The optimistic
+  /// placeholder and a fresh active turn reserve the same height so the
+  /// handoff between them never moves the bottom-pinned transcript.
+  static let activityRowEstimatedHeight: CGFloat = 32
 
   private static func attachmentMeasurementRevision(
     _ attachment: TranscriptAssistantAttachment

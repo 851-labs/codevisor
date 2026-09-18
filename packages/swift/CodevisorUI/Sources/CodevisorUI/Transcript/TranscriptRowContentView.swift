@@ -137,14 +137,15 @@ public struct TranscriptRowContentView: View {
       TranscriptActiveItemRow(controller: controller, projectedItem: item, leaves: leaves)
     case let .setup(phases):
       leaves.setup(phases)
-    case let .optimistic(message, showsStartingAgent):
+    case let .optimistic(message):
       if !message.text.isEmpty || !message.attachments.isEmpty {
         leaves.userMessage(message)
-        if showsStartingAgent {
-          ShimmeringText.startingAgent
-            .suppressedDuringStreamingTextEntrance()
-        }
       }
+    case .startingAgent:
+      // The same line the active turn shows before its first provider
+      // event, so the model's real bubble replaces this one seamlessly.
+      ChatActivityRow(AssistantTurnActivity.waitingOnHarnessMessage)
+        .suppressedDuringStreamingTextEntrance()
     case let .backgroundTask(description):
       ChatActivityRow("Waiting on \(description)...")
         .suppressedDuringStreamingTextEntrance()

@@ -8,6 +8,11 @@ public struct AssistantTurnActivity: Equatable {
   public let message: String
   public let followsResponse: Bool
 
+  /// Shown from the moment a prompt is committed until the provider's first
+  /// event. The optimistic first-send placeholder uses the same words so the
+  /// handoff into the live turn is invisible.
+  public static let waitingOnHarnessMessage = "Waiting on harness..."
+
   public static func resolve(
     turn: AssistantTurn,
     isWaitingOnUser: Bool,
@@ -32,7 +37,7 @@ public struct AssistantTurnActivity: Equatable {
       }
     }
     guard turn.showsActivityIndicator else { return nil }
-    return Self(message: turn.isThinking ? "Thinking…" : "Waiting on harness...", followsResponse: false)
+    return Self(message: turn.isThinking ? "Thinking…" : waitingOnHarnessMessage, followsResponse: false)
   }
 }
 

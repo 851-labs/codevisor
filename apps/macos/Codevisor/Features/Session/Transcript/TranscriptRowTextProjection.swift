@@ -17,7 +17,7 @@ enum TranscriptRowTextProjection {
     case let .message(item, waitingOnBackgroundTask: _):
       guard case let .user(message) = item, !message.text.isEmpty else { return [] }
       return [message.text]
-    case let .optimistic(message, showsStartingAgent: _):
+    case let .optimistic(message):
       return message.text.isEmpty ? [] : [message.text]
     case let .active(item):
       guard case let .user(message) = item, !message.text.isEmpty else { return [] }

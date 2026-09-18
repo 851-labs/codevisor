@@ -294,10 +294,10 @@ extension VirtualizedTranscriptScrollView {
       return
     }
     for (key, host) in mountedHosts {
-      guard
+      guard let row = rowByKey[key],
         TranscriptSendAnimationContract.shouldHoldAssistantRow(
           phase: context.phase,
-          rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+          rowID: row.id,
           rowExistedBeforeSend: context.sourceLayout?.indexByKey[key] != nil
         ), host.layer != nil
       else { continue }
@@ -311,10 +311,10 @@ extension VirtualizedTranscriptScrollView {
   func pendingSendAssistantPresentationIsIntact() -> Bool {
     guard pendingSendAnimationRequest != nil else { return true }
     return mountedHosts.allSatisfy { key, host in
-      guard
+      guard let row = rowByKey[key],
         TranscriptSendAnimationContract.shouldHoldAssistantRow(
           phase: .pending,
-          rowIsActive: rowByKey[key]?.id.isActiveRow == true,
+          rowID: row.id,
           rowExistedBeforeSend: pendingSendSourceLayout?.indexByKey[key] != nil
         )
       else { return true }
