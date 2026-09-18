@@ -41,13 +41,22 @@ public struct HarnessRowState: Equatable, Sendable {
     }
   }
 
+  /// Harnesses whose OAuth accounts are fleet-shared: one sign-in on any
+  /// machine serves them all.
+  public static let fleetSharedOAuthHarnesses = ["claude-code", "codex", "pi", "opencode", "grok-build"]
+
+  /// Whether accounts for this harness live in the fleet (shared OAuth or
+  /// shared credentials) rather than on each machine.
+  public static func sharesFleetAccounts(harnessId: String) -> Bool {
+    fleetSharedOAuthHarnesses.contains(harnessId) || HarnessSharedCredentials(rawValue: harnessId) != nil
+  }
+
   /// Presence of shared accounts is independent of any machine's local
   /// probe result, installation, or account override. No secrets leave the replica.
   @MainActor
   public static func shared(harnessId: String, sync: ConfigSync, authRequired: Bool = true) -> Self {
     guard authRequired else { return .init(supportsAccounts: false) }
-    let oauthHarnesses = ["claude-code", "codex", "pi", "opencode", "grok-build"]
-    let usesOAuth = oauthHarnesses.contains(harnessId)
+    let usesOAuth = fleetSharedOAuthHarnesses.contains(harnessId)
     let source = HarnessSharedCredentials(rawValue: harnessId)
     _ = sync.revisionsByNamespace["harness-shared-accounts"]
     _ = sync.revisionsByNamespace[HarnessSharedCredentials.namespace]

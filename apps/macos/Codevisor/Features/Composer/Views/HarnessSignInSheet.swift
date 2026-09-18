@@ -13,6 +13,8 @@ struct HarnessSignInSheet: View {
 
   let serverId: String
   let harnessId: String
+  /// Lands in the sign-in flow rather than the account list.
+  var startsSignIn = false
   @State private var harness: ServerHarness?
   @State private var loadFailed = false
 
@@ -57,7 +59,8 @@ struct HarnessSignInSheet: View {
             finish()
           }
         },
-        showsHeader: false
+        showsHeader: false,
+        signInRequest: startsSignIn ? HarnessMachineSignIn(profileId: harnessId == "opencode" ? "default" : nil) : nil
       )
     } else if loadFailed {
       ContentUnavailableView {

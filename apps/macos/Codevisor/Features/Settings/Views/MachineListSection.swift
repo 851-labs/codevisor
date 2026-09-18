@@ -8,7 +8,7 @@ import SwiftUI
 /// controls are for small supplementary content only.
 struct MachinePaneRoute: Hashable {
   enum Pane: Hashable {
-    case mcps, harnesses, plugins, skills
+    case mcps, plugins, skills
   }
 
   let pane: Pane

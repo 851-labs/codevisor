@@ -15,6 +15,8 @@ struct HarnessSignInRequest: Identifiable {
   let harnessId: String
   /// Skips the lookup when the presenter already holds the harness row.
   var initialHarness: ServerHarness?
+  /// Lands in the sign-in flow rather than the account list.
+  var startsSignIn = false
 
   var id: String { "\(serverId)|\(harnessId)" }
 
@@ -26,10 +28,11 @@ struct HarnessSignInRequest: Identifiable {
     )
   }
 
-  init(serverId: String, harnessId: String, initialHarness: ServerHarness? = nil) {
+  init(serverId: String, harnessId: String, initialHarness: ServerHarness? = nil, startsSignIn: Bool = false) {
     self.serverId = serverId
     self.harnessId = harnessId
     self.initialHarness = initialHarness
+    self.startsSignIn = startsSignIn
   }
 
   init?(notification: Notification) {
@@ -95,7 +98,9 @@ struct HarnessSignInSheet: View {
       HarnessAuthenticationScreen(
         serverId: request.serverId,
         harness: harness,
-        onAuthenticated: { finish() }
+        onAuthenticated: { finish() },
+        signInRequest: request.startsSignIn
+          ? HarnessMachineSignIn(profileId: request.harnessId == "opencode" ? "default" : nil) : nil
       )
     } else if loadFailed {
       ContentUnavailableView {

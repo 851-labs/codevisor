@@ -32,15 +32,6 @@ public extension HarnessFleet {
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
-  static func pendingChanges(_ sync: ConfigSync, machineKey: String) -> [MachineReadiness] {
-    let preferences = Dictionary(uniqueKeysWithValues: settings(sync, includingUninstalled: true).map { ($0.id, $0) })
-    return (readiness(sync)[machineKey] ?? []).filter { row in
-      if ["blocked", "installing", "uninstalling"].contains(row.state) { return true }
-      guard !row.overridden, let wanted = preferences[row.harnessId] else { return false }
-      return row.installed != wanted.installed
-    }
-  }
-
   static func set(_ setting: Setting, in sync: ConfigSync) {
     sync.set(
       namespace: "harnesses", key: setting.id,
@@ -49,9 +40,5 @@ public extension HarnessFleet {
         "enabled": .bool(setting.enabled), "installed": .bool(setting.installed),
         "uninstall": .bool(!setting.installed),
       ]))
-  }
-
-  static func overrideCount(_ sync: ConfigSync, machineKey: String) -> Int {
-    readiness(sync)[machineKey]?.filter(\.overridden).count ?? 0
   }
 }

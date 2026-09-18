@@ -127,10 +127,10 @@ struct ModelPickerSheet: View {
             }
           }
         }
-        if search.isEmpty, let machine = machine {
+        if search.isEmpty {
           Section {
             NavigationLink {
-              HarnessMachineSettingsScreen(machine: machine)
+              HarnessesSettingsScreen()
             } label: {
               Label("Manage Harnesses", systemImage: "cpu")
             }
@@ -141,10 +141,6 @@ struct ModelPickerSheet: View {
       .textInputAutocapitalization(.never)
       .autocorrectionDisabled()
     }
-  }
-
-  private var machine: CodevisorMachine? {
-    environment.machines.machine(for: controller.project.serverId)
   }
 
   private var showsUnavailableState: Bool {
@@ -172,16 +168,13 @@ struct ModelPickerSheet: View {
     }
   }
 
-  @ViewBuilder
   private var manageHarnessesLink: some View {
-    if let machine {
-      NavigationLink {
-        HarnessMachineSettingsScreen(machine: machine)
-      } label: {
-        Text("Manage Harnesses…")
-      }
-      .buttonStyle(.borderedProminent)
+    NavigationLink {
+      HarnessesSettingsScreen()
+    } label: {
+      Text("Manage Harnesses…")
     }
+    .buttonStyle(.borderedProminent)
   }
 
   /// A centered spinner holding a step's place while its options load.

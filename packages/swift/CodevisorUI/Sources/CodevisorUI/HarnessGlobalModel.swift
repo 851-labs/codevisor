@@ -29,7 +29,7 @@ public final class HarnessGlobalModel {
     showsPicker = false
   }
 
-  func loadCatalog(in environment: AppEnvironment) async {
+  public func loadCatalog(in environment: AppEnvironment) async {
     isLoading = true
     var found: [String: ServerHarness] = [:]
     var loaded = false

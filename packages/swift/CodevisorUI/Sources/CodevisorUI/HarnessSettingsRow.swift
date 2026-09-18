@@ -1,8 +1,10 @@
 import CodevisorCore
 import SwiftUI
 
-/// The same row in onboarding, shared settings, and each machine's settings.
-public struct HarnessSettingsRow<Icon: View, Actions: View>: View {
+/// The same row in onboarding and the shared list; the accessory slot
+/// carries whatever sits between the status and the controls (an attention
+/// indicator, a single machine's action).
+public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: View {
   @Environment(\.theme) private var theme
   private let name: String
   private let state: HarnessRowState
@@ -10,12 +12,13 @@ public struct HarnessSettingsRow<Icon: View, Actions: View>: View {
   private let isChanging: Bool
   private let signIn: () -> Void
   private let icon: Icon
+  private let accessory: Accessory
   private let actions: Actions
 
   public init(
     name: String, state: HarnessRowState, isEnabled: Binding<Bool>, isChanging: Bool = false,
     signIn: @escaping () -> Void,
-    @ViewBuilder icon: () -> Icon, @ViewBuilder actions: () -> Actions
+    @ViewBuilder icon: () -> Icon, @ViewBuilder accessory: () -> Accessory, @ViewBuilder actions: () -> Actions
   ) {
     self.name = name
     self.state = state
@@ -23,6 +26,7 @@ public struct HarnessSettingsRow<Icon: View, Actions: View>: View {
     self.isChanging = isChanging
     self.signIn = signIn
     self.icon = icon()
+    self.accessory = accessory()
     self.actions = actions()
   }
 
@@ -36,6 +40,7 @@ public struct HarnessSettingsRow<Icon: View, Actions: View>: View {
         }
       }
       Spacer(minLength: 8)
+      accessory
       if state.isBusy {
         ProgressView().controlSize(.small)
       }
@@ -71,5 +76,17 @@ public struct HarnessSettingsRow<Icon: View, Actions: View>: View {
       #endif
     }
     .padding(.vertical, 4)
+  }
+}
+
+extension HarnessSettingsRow where Accessory == EmptyView {
+  public init(
+    name: String, state: HarnessRowState, isEnabled: Binding<Bool>, isChanging: Bool = false,
+    signIn: @escaping () -> Void,
+    @ViewBuilder icon: () -> Icon, @ViewBuilder actions: () -> Actions
+  ) {
+    self.init(
+      name: name, state: state, isEnabled: isEnabled, isChanging: isChanging, signIn: signIn,
+      icon: icon, accessory: { EmptyView() }, actions: actions)
   }
 }

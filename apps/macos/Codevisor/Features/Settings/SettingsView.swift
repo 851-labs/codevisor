@@ -96,7 +96,7 @@ final class SettingsRouter {
   /// EVERY change until the observed location equals this target —
   /// a one-shot flag here is exactly how Back used to jump two pages.
   @ObservationIgnored var pendingAppliedLocation: SettingsLocation?
-  /// Consumed by the destination machine pane after its harness catalog loads.
+  /// Consumed by the Harnesses pane when it appears.
   var pendingHarnessAccountRequest: HarnessAccountSettingsRequest?
 
   var currentLocation: SettingsLocation {
@@ -159,20 +159,21 @@ final class SettingsRouter {
     selectedTab = .updates
   }
 
-  /// Opens the Harnesses pane, optionally inside one machine's page.
+  /// Opens the Harnesses pane. The list is harness-major, so a machine
+  /// only informs which rows the caller cares about; the pane is one page.
   func showHarnesses(machineId: String? = nil) {
     pendingHarnessAccountRequest = nil
-    panePath = machineId.map { [.machine(MachinePaneRoute(pane: .harnesses, machineId: $0))] } ?? []
+    panePath = []
     selectedTab = .agents
   }
 
-  /// Opens one machine's Harnesses page and presents one harness's accounts.
+  /// Opens the Harnesses pane and presents one harness's accounts on one machine.
   func showHarnessAccounts(machineId: String, harnessId: String) {
     pendingHarnessAccountRequest = HarnessAccountSettingsRequest(
       machineId: machineId,
       harnessId: harnessId
     )
-    panePath = [.machine(MachinePaneRoute(pane: .harnesses, machineId: machineId))]
+    panePath = []
     selectedTab = .agents
   }
 
@@ -431,8 +432,6 @@ extension SettingsView {
       switch route.pane {
       case .mcps:
         McpMachinePane(machine: machine)
-      case .harnesses:
-        HarnessMachinePane(machine: machine, opensPendingAccountRequest: true)
       case .plugins:
         PluginMachinePane(machine: machine)
       case .skills:

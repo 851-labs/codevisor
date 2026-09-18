@@ -43,7 +43,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @State private var sharedHostError = false
   @State private var isWorking = false
 
-  private var sharesOAuth: Bool { ["claude-code", "codex", "pi", "opencode", "grok-build"].contains(harnessId) }
+  private var sharesOAuth: Bool { HarnessRowState.fleetSharedOAuthHarnesses.contains(harnessId) }
 
   public init(
     harnessId: String, harnessName: String, startsSignIn: Bool = false,
@@ -141,9 +141,9 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           .environment(\.sharedHarnessAccounts, true)
           .environment(\.harnessMachineSignIn, { machineSignIn = $0 })
       }
-    } else {
-      machinePicker(initialSignInRequest)
     }
+    // Machine-bound accounts never reach this sheet: the harness list
+    // opens them on the machine directly.
   }
 
   private var initialSignInRequest: HarnessMachineSignIn? {
@@ -174,19 +174,19 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   }
 }
 
-public struct HarnessAccountMachinePicker<Editor: View>: View {
+struct HarnessAccountMachinePicker<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
   let harnessId: String
   let editor: (CodevisorMachine, ServerHarness) -> Editor
   @State private var harnesses: [String: ServerHarness] = [:]
   @State private var failed: Set<String> = []
 
-  public init(harnessId: String, @ViewBuilder editor: @escaping (CodevisorMachine, ServerHarness) -> Editor) {
+  init(harnessId: String, @ViewBuilder editor: @escaping (CodevisorMachine, ServerHarness) -> Editor) {
     self.harnessId = harnessId
     self.editor = editor
   }
 
-  public var body: some View {
+  var body: some View {
     Form {
       Section("Machines") {
         ForEach(environment.machines.allMachines) { machine in
