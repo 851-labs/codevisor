@@ -68,7 +68,7 @@ struct NewTabPageView: View {
       NewTabOption(id: "chat", title: "New Chat", kind: .chat),
       NewTabOption(id: "browser", title: "New Browser", kind: .browser),
       NewTabOption(id: "terminal", title: "New Terminal", kind: .terminal),
-      NewTabOption(id: "files", title: "Open File…", kind: .files),
+      NewTabOption(id: "files", title: "Open File", kind: .files),
     ]
       + (supportsScreenSharing
         ? [NewTabOption(id: "screen-sharing", title: "Screen Sharing", kind: .screenSharing)] : []) + pluginOptions

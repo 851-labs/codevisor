@@ -89,7 +89,7 @@ private struct FilePaneActions: View {
 
   var body: some View {
     Menu {
-      Button("Open File…", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
+      Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
         .keyboardShortcut("o", modifiers: .command)
       if model.document.isMarkdown {
         Button(
