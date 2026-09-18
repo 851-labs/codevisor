@@ -3,7 +3,8 @@ import SwiftUI
 /// A compact section heading above a workspace's always-visible tabs.
 struct SidebarWorkspaceHeader: View {
   let name: String
-  /// Only remote workspaces include their machine's name.
+  /// Where the workspace lives: a remote machine's name, or "This Mac" for
+  /// local ones. Nil only when the workspace's machine is unknown.
   let machineName: String?
   let isReordering: Bool
   let onArchive: () -> Void
@@ -63,8 +64,8 @@ struct SidebarWorkspaceHeader: View {
   }
 }
 
-/// The header's name (and remote machine) text, shared with the reorder
-/// ghost so the lifted row and its stand-in never drift apart in style.
+/// The header's name (and machine) text, shared with the reorder ghost so
+/// the lifted row and its stand-in never drift apart in style.
 struct SidebarWorkspaceHeaderLabel: View {
   let name: String
   let machineName: String?

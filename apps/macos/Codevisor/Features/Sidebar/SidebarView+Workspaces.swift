@@ -67,9 +67,11 @@ extension SidebarView {
     .onDisappear { forgetWorkspaceGeometry(for: id) }
   }
 
+  /// Where the workspace lives. Nil when its machine is unknown — an
+  /// unresolved server isn't necessarily this one, so it stays unlabeled.
   func machineName(for item: SidebarWorkspaceListItem) -> String? {
     let machine = environment.machines.machine(for: item.workspace.serverId)
-    return machine?.isLocal == false ? machine?.name : nil
+    return machine.map { $0.isLocal ? "This Mac" : $0.name }
   }
 
   private func workspaceHeader(_ item: SidebarWorkspaceListItem) -> some View {
