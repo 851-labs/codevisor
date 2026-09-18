@@ -5,8 +5,8 @@ import CodevisorCoreMac
 import CodevisorUI
 
 /// The Computer Use permissions checklist, optionally including onboarding's
-/// Full Disk Access request. Computer Use probes are cheap and non-prompting,
-/// so those statuses refresh once a second and on window activation.
+/// Full Disk Access request. All probes are cheap and non-prompting, so
+/// statuses refresh once a second and on window activation.
 struct ComputerUsePermissionRowsView: View {
   let model: ComputerUsePermissionsModel
   /// Onboarding also offers optional file access, independent of Computer Use.
@@ -65,7 +65,14 @@ struct ComputerUsePermissionRowsView: View {
       }
       if includesFullDiskAccess {
         Divider()
-        FullDiskAccessPermissionRow()
+        permissionRow(
+          symbol: "internaldrive",
+          title: "Full Disk Access",
+          subtitle: "Accesses protected files",
+          granted: model.isFullDiskAccessGranted
+        ) {
+          model.requestFullDiskAccess()
+        }
       }
     }
   }

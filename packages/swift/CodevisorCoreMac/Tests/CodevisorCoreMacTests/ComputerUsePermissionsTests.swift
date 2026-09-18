@@ -7,6 +7,7 @@ struct ComputerUsePermissionsTests {
   private final class ProbeState: @unchecked Sendable {
     var accessibility = false
     var screenRecording = false
+    var fullDiskAccess = false
     var accessibilityPrompts = 0
     var screenRecordingPrompts = 0
     var openedPanes: [SystemSettingsPane] = []
@@ -16,6 +17,7 @@ struct ComputerUsePermissionsTests {
     ComputerUsePermissionProbes(
       isAccessibilityGranted: { state.accessibility },
       isScreenRecordingGranted: { state.screenRecording },
+      isFullDiskAccessGranted: { state.fullDiskAccess },
       promptForAccessibility: { state.accessibilityPrompts += 1 },
       promptForScreenRecording: { state.screenRecordingPrompts += 1 },
       openSettingsPane: { pane in state.openedPanes.append(pane) }
@@ -148,6 +150,48 @@ struct ComputerUsePermissionsTests {
     #expect(!preGranted.screenRecordingGrantedThisRun)
   }
 
+  @Test("Full Disk Access tracks live status without gating Computer Use")
+  @MainActor
+  func fullDiskAccessIsOptional() {
+    let state = ProbeState()
+    state.accessibility = true
+    state.screenRecording = true
+    let model = ComputerUsePermissionsModel(probes: probes(state))
+
+    #expect(!model.isFullDiskAccessGranted)
+    #expect(model.allGranted)
+
+    // No consent dialog exists: the request goes straight to the pane.
+    model.requestFullDiskAccess()
+    #expect(state.openedPanes == [.fullDiskAccess])
+
+    state.fullDiskAccess = true
+    model.refresh()
+    #expect(model.isFullDiskAccessGranted)
+
+    // Granted: never reopens the pane.
+    model.requestFullDiskAccess()
+    #expect(state.openedPanes == [.fullDiskAccess])
+  }
+
+  @Test("Full Disk Access probe reports only a successful open as granted")
+  func fullDiskAccessProbeReadsFile() throws {
+    let dir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("fda-probe-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let readable = dir.appendingPathComponent("TCC.db").path
+    FileManager.default.createFile(atPath: readable, contents: Data())
+    #expect(fullDiskAccessProbe(path: readable))
+
+    // Missing or unreadable: not granted, never a false checkmark.
+    #expect(!fullDiskAccessProbe(path: dir.appendingPathComponent("missing.db").path))
+    let unreadable = dir.appendingPathComponent("locked.db").path
+    FileManager.default.createFile(atPath: unreadable, contents: Data(), attributes: [.posixPermissions: 0o000])
+    #expect(!fullDiskAccessProbe(path: unreadable))
+  }
+
   @Test("Requests prompt once, then fall back to the System Settings pane")
   @MainActor
   func requestsPromptOnceThenOpenSettings() {
@@ -185,5 +229,8 @@ struct ComputerUsePermissionsTests {
     #expect(
       SystemSettingsPane.screenRecording.url?.absoluteString
         == "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+    #expect(
+      SystemSettingsPane.fullDiskAccess.url?.absoluteString
+        == "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
   }
 }

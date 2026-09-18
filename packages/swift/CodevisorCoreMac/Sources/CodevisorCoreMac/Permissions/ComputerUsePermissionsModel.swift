@@ -18,6 +18,8 @@ public enum SystemSettingsPane: String, Sendable {
 public struct ComputerUsePermissionProbes: Sendable {
   public var isAccessibilityGranted: @Sendable () -> Bool
   public var isScreenRecordingGranted: @Sendable () -> Bool
+  /// Full Disk Access has no status API; see `fullDiskAccessProbe`.
+  public var isFullDiskAccessGranted: @Sendable () -> Bool
   /// Shows the one-time system Accessibility consent dialog (also adds the
   /// app to the Privacy list). No-ops after the first refusal.
   public var promptForAccessibility: @Sendable () -> Void
@@ -29,12 +31,14 @@ public struct ComputerUsePermissionProbes: Sendable {
   public init(
     isAccessibilityGranted: @escaping @Sendable () -> Bool,
     isScreenRecordingGranted: @escaping @Sendable () -> Bool,
+    isFullDiskAccessGranted: @escaping @Sendable () -> Bool,
     promptForAccessibility: @escaping @Sendable () -> Void,
     promptForScreenRecording: @escaping @Sendable () -> Void,
     openSettingsPane: @escaping @MainActor @Sendable (SystemSettingsPane) -> Void
   ) {
     self.isAccessibilityGranted = isAccessibilityGranted
     self.isScreenRecordingGranted = isScreenRecordingGranted
+    self.isFullDiskAccessGranted = isFullDiskAccessGranted
     self.promptForAccessibility = promptForAccessibility
     self.promptForScreenRecording = promptForScreenRecording
     self.openSettingsPane = openSettingsPane
@@ -45,6 +49,7 @@ public struct ComputerUsePermissionProbes: Sendable {
   public static let live = ComputerUsePermissionProbes(
     isAccessibilityGranted: { AXIsProcessTrusted() },
     isScreenRecordingGranted: { CGPreflightScreenCaptureAccess() },
+    isFullDiskAccessGranted: { fullDiskAccessProbe() },
     promptForAccessibility: {
       _ = AXIsProcessTrustedWithOptions(
         ["AXTrustedCheckOptionPrompt": true] as CFDictionary
@@ -68,10 +73,27 @@ public struct ComputerUsePermissionProbes: Sendable {
   public static let granted = ComputerUsePermissionProbes(
     isAccessibilityGranted: { true },
     isScreenRecordingGranted: { true },
+    isFullDiskAccessGranted: { true },
     promptForAccessibility: {},
     promptForScreenRecording: {},
     openSettingsPane: { _ in }
   )
+}
+
+/// Full Disk Access has neither a status API nor a consent dialog — it is
+/// only ever granted by hand in System Settings — so the status check is a
+/// read of a file guarded by that permission alone. The user's TCC database
+/// exists on every account and belongs to no other TCC category, so a
+/// denied open fails silently with EPERM instead of raising a folder-access
+/// or per-service prompt. `open(2)` rather than an `access(2)`-style
+/// readability check: POSIX bits pass while TCC still blocks the real open.
+func fullDiskAccessProbe(
+  path: String = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
+) -> Bool {
+  let fd = open(path, O_RDONLY)
+  guard fd >= 0 else { return false }
+  close(fd)
+  return true
 }
 
 /// Whether launch should present the permissions dialog to an already-
@@ -105,6 +127,10 @@ public func computerUsePermissionsGateNeeded(
 public final class ComputerUsePermissionsModel {
   public private(set) var isAccessibilityGranted: Bool
   public private(set) var isScreenRecordingGranted: Bool
+  /// Optional file access offered alongside Computer Use during onboarding.
+  /// Not part of `allGranted`: it never gates Computer Use. macOS itself
+  /// offers the relaunch after the grant, so no restart nudge here.
+  public private(set) var isFullDiskAccessGranted: Bool
   /// True when Screen Recording was granted after this process started.
   /// macOS applies that grant to *new* processes, so captures can fail
   /// until relaunch; the UI offers a restart when this is set.
@@ -123,9 +149,12 @@ public final class ComputerUsePermissionsModel {
     let screenRecording = probes.isScreenRecordingGranted()
     isAccessibilityGranted = accessibility
     isScreenRecordingGranted = screenRecording
+    isFullDiskAccessGranted = probes.isFullDiskAccessGranted()
     screenRecordingGrantedAtStart = screenRecording
   }
 
+  /// Both Computer Use permissions. Full Disk Access is optional and
+  /// deliberately excluded.
   public var allGranted: Bool {
     isAccessibilityGranted && isScreenRecordingGranted
   }
@@ -133,6 +162,7 @@ public final class ComputerUsePermissionsModel {
   public func refresh() {
     isAccessibilityGranted = probes.isAccessibilityGranted()
     isScreenRecordingGranted = probes.isScreenRecordingGranted()
+    isFullDiskAccessGranted = probes.isFullDiskAccessGranted()
     if isScreenRecordingGranted, !screenRecordingGrantedAtStart {
       screenRecordingGrantedThisRun = true
     }
@@ -165,6 +195,13 @@ public final class ComputerUsePermissionsModel {
     openPaneUnlessGranted(.screenRecording) { [weak self] in
       self?.isScreenRecordingGranted ?? true
     }
+  }
+
+  /// No system consent dialog exists for Full Disk Access; the Privacy pane
+  /// is the only way to grant it.
+  public func requestFullDiskAccess() {
+    guard !isFullDiskAccessGranted else { return }
+    probes.openSettingsPane(.fullDiskAccess)
   }
 
   private func openPaneUnlessGranted(
