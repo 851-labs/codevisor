@@ -9,6 +9,7 @@ import { requestMacScreenSharing } from "@codevisor/automation"
 import type { TerminalManagerService } from "@codevisor/terminal"
 
 import {
+  backgroundTerminalSocketPath,
   startBackgroundTerminalHost,
   wrapBackgroundCommand
 } from "./infra/background-terminal-host.js"
@@ -262,9 +263,10 @@ export const backgroundTerminalIntegration = async (
   try {
     const host = await startBackgroundTerminalHost({
       registry,
-      // tmpdir keeps the path under the unix-socket length limit (the data
-      // dir under Application Support routinely is not).
-      socketPath: join(tmpdir(), `codevisor-bg-${process.pid}.sock`)
+      // The data dir under Application Support routinely exceeds the unix
+      // socket path limit, and so does TMPDIR once a dev runner points it
+      // into a deep worktree; the helper picks a location that fits.
+      socketPath: backgroundTerminalSocketPath(tmpdir(), process.pid)
     })
     const runtimeDir = dirname(fileURLToPath(import.meta.url))
     return {

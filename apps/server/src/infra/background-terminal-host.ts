@@ -6,6 +6,7 @@ import { unlinkSync } from "node:fs"
 /// the process as an external terminal and forwards terminal input/kill
 /// back down the socket. One connection == one background process.
 import { createServer, type Server, type Socket } from "node:net"
+import { join } from "node:path"
 
 import { trackProcessTree } from "@codevisor/processes"
 
@@ -24,6 +25,28 @@ export interface BackgroundTerminalHostRegistry {
     readonly exit: (exitCode?: number) => void
     readonly remove: () => void
   }
+}
+
+/// Unix socket paths are bounded by `sun_path`: 104 bytes on macOS and the
+/// BSDs (terminator included), 108 on Linux. 103 usable bytes is the budget
+/// that fits everywhere the server runs.
+export const UNIX_SOCKET_PATH_BUDGET = 103
+
+/// Where the background-command socket lives. Prefer `tmpDir` (normally
+/// TMPDIR, which the dev runner points inside the worktree to keep instances
+/// isolated) when the result fits the budget; otherwise fall back to the
+/// system-wide `fallbackDir`, the same escape hatch tmux and ssh use, since
+/// the pid already keeps the file name unique.
+export const backgroundTerminalSocketPath = (
+  tmpDir: string,
+  pid: number,
+  fallbackDir = "/tmp"
+): string => {
+  const name = `codevisor-bg-${pid}.sock`
+  const preferred = join(tmpDir, name)
+  return Buffer.byteLength(preferred) <= UNIX_SOCKET_PATH_BUDGET
+    ? preferred
+    : join(fallbackDir, name)
 }
 
 export interface BackgroundTerminalHost {

@@ -14,6 +14,7 @@
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join } from "node:path"
 
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
@@ -123,6 +124,18 @@ export async function sweepStaleContainers(
 
 export const DEV_CONTAINER_IMAGE = "node:22-bookworm"
 
+/// Shared across worktrees like the other pinned artifacts: bun's install
+/// cache is content-addressed by package@version, so the Linux dependency
+/// downloads happen once per machine instead of once per worktree. bun is
+/// built for concurrent use of one cache. Everything else in the container
+/// state (bun binary, node_modules, install signature) stays per worktree.
+export function linuxBunCacheRoot(environment = process.env) {
+  return (
+    environment.CODEVISOR_LINUX_BUN_CACHE ??
+    join(homedir(), ".codevisor-development", "artifacts", "linux-bun-cache")
+  )
+}
+
 export async function ensureDevContainerImage(engine) {
   const binary = engine === "apple" ? "container" : "docker"
   const listed = await tryEngine(
@@ -162,11 +175,13 @@ export async function containerHostAddress(engine) {
 /// the dev cloud hub.
 export async function prepareDevContainers({ repoRoot, containerRoot, engine, worktreeHash }) {
   const stateRoot = join(containerRoot, "state")
-  await mkdir(stateRoot, { recursive: true })
+  const bunCache = linuxBunCacheRoot()
+  await Promise.all([stateRoot, bunCache].map((d) => mkdir(d, { recursive: true })))
   const { appRoot, changed } = await syncLinuxWorkspace(repoRoot, containerRoot)
   await ensureDevContainerImage(engine)
   await sweepStaleContainers(engine, worktreeHash)
   const entryScript = join(repoRoot, "scripts", "dev-container-entry.sh")
+  const nativesCheck = join(repoRoot, "scripts", "dev-container-natives.mjs")
   // The two server containers share this state and workspace; their first
   // boots would race the same bun download and node_modules install
   // (cross-VM file locks do not serialize virtiofs mounts). Provision
@@ -188,7 +203,13 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
       "--volume",
       `${stateRoot}:/codevisor-state`,
       "--volume",
+      `${bunCache}:/codevisor-bun-cache`,
+      "--volume",
+      `${bunCache}:/codevisor-bun-cache`,
+      "--volume",
       `${entryScript}:/entry.sh`,
+      "--volume",
+      `${nativesCheck}:/natives-check.mjs`,
       DEV_CONTAINER_IMAGE,
       "sh",
       "/entry.sh",
@@ -200,7 +221,9 @@ export async function prepareDevContainers({ repoRoot, containerRoot, engine, wo
     worktreeHash,
     appRoot,
     stateRoot,
+    bunCache,
     entryScript,
+    nativesCheck,
     hostAddress: await containerHostAddress(engine)
   }
 }
@@ -354,7 +377,8 @@ export async function launchDevRemoteServer({
       { cwd: repoRoot, env: environment, stdio: "inherit" }
     )
   }
-  const { engine, worktreeHash, appRoot, stateRoot, entryScript } = containerContext
+  const { engine, worktreeHash, appRoot, stateRoot, bunCache, entryScript, nativesCheck } =
+    containerContext
   const binary = engine === "apple" ? "container" : "docker"
   const toContainerPath = (hostPath) => hostPath.replace(remoteRootHost, "/codevisor-data")
   const containerName = `codevisor-dev-${serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${worktreeHash.slice(0, 10)}`
@@ -387,11 +411,15 @@ export async function launchDevRemoteServer({
     `${appRoot}:/codevisor`,
     "--volume",
     `${stateRoot}:/codevisor-state`,
+    "--volume",
+    `${bunCache}:/codevisor-bun-cache`,
     ...homeMounts.flatMap(({ host, container }) => ["--volume", `${host}:${container}`]),
     "--volume",
     `${remoteRootHost}:/codevisor-data`,
     "--volume",
     `${entryScript}:/entry.sh`,
+    "--volume",
+    `${nativesCheck}:/natives-check.mjs`,
     "--publish",
     `127.0.0.1:${port}:${port}`,
     // The server runs as root in here, and Claude Code refuses

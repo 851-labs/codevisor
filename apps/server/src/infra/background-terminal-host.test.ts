@@ -7,8 +7,10 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
+  backgroundTerminalSocketPath,
   shellQuote,
   startBackgroundTerminalHost,
+  UNIX_SOCKET_PATH_BUDGET,
   wrapBackgroundCommand,
   type BackgroundTerminalHost,
   type BackgroundTerminalHostRegistry
@@ -227,5 +229,53 @@ describe("background terminal host", () => {
         Buffer.from("npm run dev", "utf8").toString("base64")
       ].join(" ")
     )
+  })
+})
+
+describe("backgroundTerminalSocketPath", () => {
+  it("keeps the socket inside the temp dir when the path fits sun_path", () => {
+    expect(backgroundTerminalSocketPath("/var/folders/t", 42, "/fallback")).toBe(
+      "/var/folders/t/codevisor-bg-42.sock"
+    )
+  })
+
+  it("falls back to the system temp dir when the preferred path would overflow", () => {
+    // A worktree-scoped TMPDIR such as ~/codevisor/<uuid>/<name>/tmp/runtime/temp.
+    const deepTmp = `/${"w".repeat(95)}`
+    const path = backgroundTerminalSocketPath(deepTmp, 68425, "/fallback")
+    expect(path).toBe("/fallback/codevisor-bg-68425.sock")
+    expect(Buffer.byteLength(path)).toBeLessThanOrEqual(UNIX_SOCKET_PATH_BUDGET)
+  })
+
+  it("uses the exact budget boundary", () => {
+    const name = "codevisor-bg-7.sock"
+    // "/" + dir + "/" + name must total exactly the budget.
+    const fitting = `/${"x".repeat(UNIX_SOCKET_PATH_BUDGET - name.length - 2)}`
+    expect(backgroundTerminalSocketPath(fitting, 7, "/fallback")).toBe(`${fitting}/${name}`)
+    expect(backgroundTerminalSocketPath(`${fitting}x`, 7, "/fallback")).toBe(`/fallback/${name}`)
+  })
+
+  it("measures the budget in bytes, not characters", () => {
+    // 45 two-byte characters: 45 characters but 90 bytes — over budget with the name.
+    const multibyte = `/${"é".repeat(45)}`
+    expect(backgroundTerminalSocketPath(multibyte, 7, "/fallback")).toBe(
+      "/fallback/codevisor-bg-7.sock"
+    )
+  })
+
+  it("rejects listening on a path over the OS limit, which is why the budget exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bg-long-"))
+    const registry: BackgroundTerminalHostRegistry = {
+      register: () => {
+        throw new Error("no wrapper should connect")
+      }
+    }
+    try {
+      await expect(
+        startBackgroundTerminalHost({ socketPath: join(root, "p".repeat(120), "s.sock"), registry })
+      ).rejects.toThrow()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

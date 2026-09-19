@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join } from "node:path"
 
 export const IOS_DEVELOPMENT_BUNDLE_IDENTIFIER = "com.851labs.Codevisor.Development.iOS"
@@ -72,7 +73,14 @@ export function developmentLayout(repoRoot, environment = process.env) {
         derivedData: join(buildRoot, "pixelbook", "DerivedData"),
         sourcePackages: join(buildRoot, "pixelbook", "SourcePackages")
       },
-      packageCache: join(buildRoot, "swift-package-cache"),
+      // Shared across worktrees like the Ghostty and Chromium artifacts.
+      // SwiftPM's package cache is an append-only store of git mirrors and
+      // checksummed binary artifacts keyed by origin — Xcode shares it
+      // machine-wide by default, and SwiftPM serializes access itself. Which
+      // commits a worktree checks out stays per worktree (sourcePackages).
+      packageCache:
+        environment.CODEVISOR_SWIFT_PACKAGE_CACHE ??
+        join(homedir(), ".codevisor-development", "artifacts", "swift-package-cache"),
       bunCache: join(buildRoot, "bun-cache"),
       nodeGyp: join(buildRoot, "node-gyp"),
       generated: join(buildRoot, "generated"),

@@ -13,7 +13,7 @@ bun run dev:macos
 bun run dev:ios
 ```
 
-The runners install locked dependencies, resolve GhosttyKit when needed, and keep build/runtime state under the worktree's ignored `tmp/`. Do not run `bun install`, `xcodebuild`, the server, or Ghostty build scripts separately.
+The runners install locked dependencies, resolve the shared GhosttyKit and Chromium/CEF artifacts (version-pinned, under `~/.codevisor-development/artifacts/`), and keep all other build/runtime state under the worktree's ignored `tmp/`. Do not run `bun install`, `xcodebuild`, the server, or Ghostty build scripts separately.
 
 Before `dev:ios` or `dev`, run `bun run ios-simulator` in a separate persistent background task and wait for `Simulator ready`. It creates this worktree's device and opens the project in Xcode and the simulator UI. The default device type is `iPhone 17 Pro`; select another installed type/runtime with `bun run ios-simulator --device="iPhone 17" --runtime=27.0`. Device selection belongs to this command. The dev runners fail early with a startup hint if the owner or its exact booted device is missing.
 

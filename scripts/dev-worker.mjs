@@ -5,7 +5,7 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
-import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import { bootstrapDevelopment, ensureNativeFrameworks } from "./dev-bootstrap.mjs"
 import {
   applyCloudDevMigrations,
   prepareCloudSession,
@@ -121,37 +121,51 @@ console.log(`  worktrees:${worktreesDirectory}`)
 console.log(`  icon:     ${developmentIconColor.hex}`)
 if (includesIOS) console.log(`  targets:  macOS + iOS (${simulator.name})`)
 
-await bootstrapDevelopment(repoRoot, { environment: process.env, ghostty: true })
-await run("bun", ["run", "--cwd", "apps/server", "build"])
-
-// The local cloud instance: real Workers runtime (workerd) with local D1 and
-// Durable Objects, persisted under tmp/ like all other dev state. Started
-// before the app build so it is healthy — and the dev session is signed in —
-// by the time the servers spawn and need CODEVISOR_DEV_CLOUD_TOKEN.
-// cwd apps/cloud so bunx resolves the workspace's wrangler version — a
-// stray/global wrangler brings its own (older) workerd, which cannot read
-// local D1/DO state written by the workspace version. Failures fall through
-// to prepareCloudSession's "continuing without it" path instead of crashing.
-await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
-// Containerized dev remotes: Dev Direct and Dev Cloud run as
-// real Linux machines so config-plane sync is tested across genuinely
-// separate filesystems. Falls back to same-host processes when no engine
-// is available — never boots a stopped Docker daemon.
-const containerEngine = wantsContainers
-  ? await resolveContainerEngine(containerEnginePreference)
-  : undefined
-if (wantsContainers && containerEngine === undefined) {
-  console.warn("No usable container engine; dev remotes run as same-host processes.")
+// Install once, then run the independent preparation tracks concurrently.
+// Cold, each is bound by a different resource — the SwiftPM clone by the
+// network, the Chromium wrapper build by CPU, the Linux container install by
+// both — so they overlap almost entirely instead of queueing.
+await bootstrapDevelopment(repoRoot, { environment: process.env })
+const macOSProject = ["-project", "apps/macos/Codevisor.xcodeproj", "-scheme", "Codevisor"]
+const prepareServers = async () => {
+  await run("bun", ["run", "--cwd", "apps/server", "build"])
+  // The local cloud instance: real Workers runtime (workerd) with local D1 and
+  // Durable Objects, persisted under tmp/ like all other dev state. Started
+  // before the app build so it is healthy — and the dev session is signed in —
+  // by the time the servers spawn and need CODEVISOR_DEV_CLOUD_TOKEN.
+  // cwd apps/cloud so bunx resolves the workspace's wrangler version — a
+  // stray/global wrangler brings its own (older) workerd, which cannot read
+  // local D1/DO state written by the workspace version. Failures fall through
+  // to prepareCloudSession's "continuing without it" path instead of crashing.
+  await applyCloudDevMigrations({ cloudPersistPath, repoRoot, run })
+  // Containerized dev remotes: Dev Direct and Dev Cloud run as
+  // real Linux machines so config-plane sync is tested across genuinely
+  // separate filesystems. Falls back to same-host processes when no engine
+  // is available — never boots a stopped Docker daemon.
+  const containerEngine = wantsContainers
+    ? await resolveContainerEngine(containerEnginePreference)
+    : undefined
+  if (wantsContainers && containerEngine === undefined) {
+    console.warn("No usable container engine; dev remotes run as same-host processes.")
+  }
+  if (containerEngine === undefined) return undefined
+  return prepareDevContainers({
+    repoRoot,
+    containerRoot: join(layout.tmpRoot, "container"),
+    engine: containerEngine,
+    worktreeHash: instanceHash
+  })
 }
-const containerContext =
-  containerEngine === undefined
+const [containerContext] = await Promise.all([
+  prepareServers(),
+  ensureNativeFrameworks(repoRoot, { environment: process.env }),
+  reuseMacOSBuild
     ? undefined
-    : await prepareDevContainers({
-        repoRoot,
-        containerRoot: join(layout.tmpRoot, "container"),
-        engine: containerEngine,
-        worktreeHash: instanceHash
+    : runXcodebuild(repoRoot, "macos", [...macOSProject, "-resolvePackageDependencies"], {
+        environment: process.env,
+        layout
       })
+])
 
 const cloud = spawnCloudDev({
   cloud: { cloudExtraVariables, cloudPersistPath, cloudPort, cloudUrl },
@@ -168,10 +182,7 @@ if (!reuseMacOSBuild) {
       repoRoot,
       "macos",
       [
-        "-project",
-        "apps/macos/Codevisor.xcodeproj",
-        "-scheme",
-        "Codevisor",
+        ...macOSProject,
         "-configuration",
         "Debug",
         `CODEVISOR_DEV_PRODUCT_NAME=${appName}`,

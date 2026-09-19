@@ -2,8 +2,11 @@ import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { access, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+
+import { withArtifactLock } from "./artifact-lock.mjs"
 
 export const chromiumVersion = "152.0.5+gb129680+chromium-152.0.7977.54"
 export const chromiumHelperName = (productName) =>
@@ -35,15 +38,30 @@ async function digest(path, algorithm = "sha256") {
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest("hex")
 }
-export async function ensureChromium(
-  repoRoot,
-  environment = process.env,
-  architectures = [process.arch === "arm64" ? "arm64" : "x86_64"]
-) {
-  const cache = join(repoRoot, "tmp/build/chromium")
-  const output = join(repoRoot, "apps/macos/Frameworks/Chromium")
-  await mkdir(cache, { recursive: true })
-  await mkdir(output, { recursive: true })
+/// Shared across worktrees, like the GhosttyKit framework: the CEF SDK and
+/// its wrapper library are pinned by chromiumVersion + checksum and rarely
+/// change, so every worktree on the same version reuses one download and one
+/// wrapper build. Each version has its own keyed directories, so branches on
+/// different versions coexist. Per-worktree outputs stay in the worktree.
+export function chromiumArtifactsRoot(environment = process.env) {
+  return (
+    environment.CODEVISOR_CHROMIUM_ARTIFACTS_ROOT ??
+    join(homedir(), ".codevisor-development", "artifacts", "chromium")
+  )
+}
+
+const sharedPaths = (cache, arch) => {
+  const name = `cef_binary_${chromiumVersion}_${artifacts[arch].platform}`
+  const build = join(cache, `wrapper-${chromiumVersion}-${arch}`)
+  return {
+    name,
+    sdk: join(cache, name),
+    build,
+    wrapper: join(build, "libcef_dll_wrapper/libcef_dll_wrapper.a")
+  }
+}
+
+async function ensureCmake(cache, repoRoot, environment) {
   const cmake = join(cache, "build-tools/bin/cmake")
   if (!(await exists(cmake))) {
     await run("python3", ["-m", "venv", join(cache, "build-tools")], repoRoot, environment)
@@ -54,51 +72,71 @@ export async function ensureChromium(
       environment
     )
   }
-  for (const arch of [...new Set(architectures)]) {
-    const artifact = artifacts[arch]
-    if (!artifact) throw new Error(`Unsupported Chromium architecture: ${arch}`)
-    const name = `cef_binary_${chromiumVersion}_${artifact.platform}`
-    const sdk = join(cache, name)
-    if (!(await exists(join(sdk, "include/cef_version.h")))) {
-      const archive = join(cache, `${name}.tar.bz2`)
-      if (!(await exists(archive)) || (await digest(archive, "sha1")) !== artifact.sha1) {
-        const temporary = archive + ".partial"
-        await run(
-          "curl",
-          [
-            "--fail",
-            "--location",
-            "--retry",
-            "3",
-            "--output",
-            temporary,
-            `https://cef-builds.spotifycdn.com/${name}.tar.bz2`
-          ],
-          repoRoot,
-          environment
-        )
-        if ((await digest(temporary, "sha1")) !== artifact.sha1)
-          throw new Error("CEF archive checksum mismatch")
-        await rename(temporary, archive)
-      }
-      await run("tar", ["-xjf", archive, "-C", cache], repoRoot, environment)
-    }
-    const build = join(cache, `wrapper-${chromiumVersion}-${arch}`)
-    const wrapper = join(build, "libcef_dll_wrapper/libcef_dll_wrapper.a")
-    if (!(await exists(wrapper))) {
+  return cmake
+}
+
+async function ensureSdkAndWrapper(cache, cmake, arch, repoRoot, environment) {
+  const { name, sdk, build, wrapper } = sharedPaths(cache, arch)
+  if (!(await exists(join(sdk, "include/cef_version.h")))) {
+    const archive = join(cache, `${name}.tar.bz2`)
+    if (!(await exists(archive)) || (await digest(archive, "sha1")) !== artifacts[arch].sha1) {
+      const temporary = archive + ".partial"
       await run(
-        cmake,
-        ["-S", sdk, "-B", build, `-DPROJECT_ARCH=${arch}`, "-DCMAKE_BUILD_TYPE=Release"],
+        "curl",
+        [
+          "--fail",
+          "--location",
+          "--retry",
+          "3",
+          "--output",
+          temporary,
+          `https://cef-builds.spotifycdn.com/${name}.tar.bz2`
+        ],
         repoRoot,
         environment
       )
-      await run(
-        cmake,
-        ["--build", build, "--target", "libcef_dll_wrapper", "-j", "8"],
-        repoRoot,
-        environment
-      )
+      if ((await digest(temporary, "sha1")) !== artifacts[arch].sha1)
+        throw new Error("CEF archive checksum mismatch")
+      await rename(temporary, archive)
     }
+    await run("tar", ["-xjf", archive, "-C", cache], repoRoot, environment)
+  }
+  if (!(await exists(wrapper))) {
+    await run(
+      cmake,
+      ["-S", sdk, "-B", build, `-DPROJECT_ARCH=${arch}`, "-DCMAKE_BUILD_TYPE=Release"],
+      repoRoot,
+      environment
+    )
+    await run(
+      cmake,
+      ["--build", build, "--target", "libcef_dll_wrapper", "-j", "8"],
+      repoRoot,
+      environment
+    )
+  }
+}
+
+export async function ensureChromium(
+  repoRoot,
+  environment = process.env,
+  architectures = [process.arch === "arm64" ? "arm64" : "x86_64"]
+) {
+  const cache = chromiumArtifactsRoot(environment)
+  const output = join(repoRoot, "apps/macos/Frameworks/Chromium")
+  const archs = [...new Set(architectures)]
+  for (const arch of archs) {
+    if (!artifacts[arch]) throw new Error(`Unsupported Chromium architecture: ${arch}`)
+  }
+  await mkdir(output, { recursive: true })
+  // The shared inputs are provisioned by one worktree at a time; the others
+  // wait, then find them in place and skip straight to their own outputs.
+  await withArtifactLock(join(cache, ".lock"), async () => {
+    const cmake = await ensureCmake(cache, repoRoot, environment)
+    for (const arch of archs) await ensureSdkAndWrapper(cache, cmake, arch, repoRoot, environment)
+  })
+  for (const arch of archs) {
+    const { sdk, wrapper } = sharedPaths(cache, arch)
     const destination = join(output, arch)
     await mkdir(destination, { recursive: true })
     for (const [source, name] of [

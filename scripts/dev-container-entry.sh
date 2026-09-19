@@ -1,14 +1,18 @@
 #!/bin/sh
 # In-container bootstrap for the dev remote servers (Dev Direct / Dev Cloud).
 #
-# Runs inside a stock node image with two bind mounts from the worktree's
+# Runs inside a stock node image with bind mounts from the worktree's
 # ignored tmp/:
-#   /codevisor        — the Linux workspace copy (dists + manifests) that
-#                       scripts/dev-containers.mjs assembles; this script
-#                       installs Linux node_modules INTO it, so every byte
-#                       stays under the worktree's tmp/ and dies with it.
-#   /codevisor-state  — shared per-worktree cache (the bun binary, the bun
-#                       install cache) so second boots take seconds.
+#   /codevisor          — the Linux workspace copy (dists + manifests) that
+#                         scripts/dev-containers.mjs assembles; this script
+#                         installs Linux node_modules INTO it, so every byte
+#                         stays under the worktree's tmp/ and dies with it.
+#   /codevisor-state    — per-worktree state (the bun binary, the install
+#                         signature) so second boots take seconds.
+#   /codevisor-bun-cache — the machine-wide bun install cache shared by every
+#                         worktree (content-addressed, so always safe).
+#   /natives-check.mjs  — scripts/dev-container-natives.mjs, which proves the
+#                         native addons load after an install.
 #
 # Everything after the first-boot install is just: node dist/main.js serve …
 # — the identical command the same-host dev servers run on macOS.
@@ -39,7 +43,7 @@ if [ ! -x "$BUN" ]; then
 fi
 
 # node-pty's install script invokes node-gyp directly; provision it once
-# into the tmp-mounted cache so rebuilds never pay npm again.
+# into the tmp-mounted cache so installs never pay npm for it again.
 export PATH="$STATE/npm-tools/bin:$PATH"
 if ! command -v node-gyp >/dev/null 2>&1; then
   echo "[container] installing node-gyp into tmp-mounted cache"
@@ -61,12 +65,21 @@ if [ ! -d node_modules ] || [ "$LOCK_SIGNATURE" != "$INSTALLED_SIGNATURE" ]; the
   # install scripts on retry — natives then load nothing. Start clean;
   # the bun cache keeps this fast.
   rm -rf node_modules
-  BUN_INSTALL_CACHE_DIR="$STATE/bun-cache" "$BUN" install --frozen-lockfile
-  # Trusted natives must actually load before this install counts.
-  if ! node -e "require('better-sqlite3'); require('node-pty')" 2>/dev/null; then
-    echo "[container] native addons missing after install; rebuilding"
-    npm rebuild better-sqlite3 node-pty
-    node -e "require('better-sqlite3'); require('node-pty')"
+  # The machine-wide Linux bun cache when the runner mounted it (see
+  # linuxBunCacheRoot in dev-containers.mjs), else a per-worktree one.
+  if [ -d /codevisor-bun-cache ]; then BUN_CACHE=/codevisor-bun-cache; else BUN_CACHE="$STATE/bun-cache"; fi
+  BUN_INSTALL_CACHE_DIR="$BUN_CACHE" "$BUN" install --frozen-lockfile
+  # The native addons must load — from the workspaces that declare them,
+  # the only place bun's isolated linker links them — before this install
+  # counts. There is deliberately no repair step: after a clean install a
+  # failure here means an addon's Linux build broke, and the fix belongs in
+  # the lockfile or the image, not in an ad-hoc rebuild by another package
+  # manager that runs the package's own build scripts.
+  echo "[container] verifying native addons"
+  if ! node /natives-check.mjs "$APP"; then
+    echo "[container] native addons failed to load after a clean install (see above)." >&2
+    echo "[container] Delete the worktree's tmp/container to retry from scratch." >&2
+    exit 1
   fi
   echo "$LOCK_SIGNATURE" > "$STATE/installed.signature"
 fi
