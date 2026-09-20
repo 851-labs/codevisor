@@ -199,16 +199,20 @@ public final class SessionModel {
   @ObservationIgnored var toolOwnerItemIds: [String: UUID] = [:]
   @ObservationIgnored var settledIndexById: [UUID: Int] = [:]
 
-  /// Background tasks with no attachable terminal (subagents, poll-and-resume
-  /// tasks). Tasks WITH a `terminalKey` render as terminal tabs instead of
-  /// the waiting indicator — a dev server is running, not being waited on.
+  /// Background work that verifiably completes AND re-invokes the agent:
+  /// running subagents. Same rule the server's sidebar attention state uses
+  /// (`holdsInProgress`), so the transcript's "Waiting on…" line and the
+  /// sidebar dot never disagree. Shells and watchers (`Bash
+  /// run_in_background`, `Monitor`) are excluded whether or not they have a
+  /// terminal tab: a dev server or a `tail -f` may never exit, and treating
+  /// it as pending work pins the chat "in progress" for up to its timeout.
   public var waitingBackgroundTasks: [BackgroundTaskInfo] {
-    backgroundTasks.filter { $0.terminalKey == nil }
+    backgroundTasks.filter { $0.taskType == "subagent" }
   }
 
-  /// True when the turn is over but the agent still owns background work —
-  /// the "this chat is not stuck" signal. Terminal-backed tasks are excluded:
-  /// their tab is the affordance.
+  /// True when the turn is over but a subagent still owns the chat — the
+  /// "this chat is not stuck" signal. Any other background task means the
+  /// turn is done as far as the user is concerned.
   public var isWaitingOnBackgroundTasks: Bool {
     !isSending && !waitingBackgroundTasks.isEmpty
   }

@@ -40,11 +40,14 @@ const sessionHasActiveGoal = (sqlite: Database.Database, sessionId: string): boo
   sessionGoalSnapshot(sqlite, sessionId)?.status === "active"
 
 /// Only work that verifiably completes AND re-invokes the agent holds a
-/// finished turn in `inProgress`: running subagents. Background shells
-/// (`terminalKey` mirrors, codex/acp `shell` tasks) deliberately do not — a
-/// dev server left running must not pin a chat in progress forever. If a
-/// shell exit later re-invokes the agent, that continuation is its own turn
-/// and settles into one more unread revision.
+/// finished turn in `inProgress`: running subagents. Background shells and
+/// watchers (`terminalKey` mirrors, codex/acp `shell` tasks, Claude's
+/// `Monitor`/`local_bash`) deliberately do not — a dev server or a `tail -f`
+/// that never fires must not pin a chat in progress until its timeout. If
+/// one later re-invokes the agent, that continuation is its own turn and
+/// settles into one more unread revision. The native clients apply the same
+/// rule to the transcript's "Waiting on…" line
+/// (`SessionModel.waitingBackgroundTasks`), so the two surfaces agree.
 const holdsInProgress = (task: BackgroundTask): boolean => task.taskType === "subagent"
 
 const sessionIsHeld = (sqlite: Database.Database, sessionId: string): boolean => {

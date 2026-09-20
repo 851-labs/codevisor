@@ -60,9 +60,10 @@ extension SessionModelTests {
           "backgroundTasks": .array([
             .object([
               "id": .string("bg-1"),
-              "description": .string("Run npm test"),
+              "description": .string("Explore the test suite"),
               "status": .string("running"),
-              "taskType": .string("shell"),
+              "taskType": .string("subagent"),
+              "toolUseId": .string("tool-0"),
             ])
           ])
         ])
@@ -70,16 +71,47 @@ extension SessionModelTests {
     await settleUntil { !model.backgroundTasks.isEmpty }
     #expect(
       model.backgroundTasks == [
-        BackgroundTaskInfo(id: "bg-1", description: "Run npm test", status: "running", taskType: "shell")
+        BackgroundTaskInfo(
+          id: "bg-1",
+          description: "Explore the test suite",
+          status: "running",
+          taskType: "subagent",
+          toolUseId: "tool-0"
+        )
       ])
     #expect(model.isWaitingOnBackgroundTasks)
     #expect(model.hasBackgroundTaskSnapshot)
+
+    // A watcher with no terminal (Claude's `Monitor`, a `tail -f` that may
+    // never fire) is not pending work: the turn is done for the user.
+    client.emit(
+      ServerEventEnvelope(
+        id: 6,
+        serverId: "local",
+        kind: "session.updated",
+        subjectId: sessionId.uuidString,
+        createdAt: "2026-06-30T00:00:02.250Z",
+        payload: .object([
+          "backgroundTasks": .array([
+            .object([
+              "id": .string("bg-1b"),
+              "description": .string("bun run check — failures only"),
+              "status": .string("running"),
+              "taskType": .string("local_bash"),
+              "toolUseId": .string("tool-0b"),
+            ])
+          ])
+        ])
+      ))
+    await settleUntil { model.backgroundTasks.first?.id == "bg-1b" }
+    #expect(model.waitingBackgroundTasks.isEmpty)
+    #expect(model.isWaitingOnBackgroundTasks == false)
 
     // A task with an attachable terminal renders as a terminal tab, not
     // the waiting indicator: it is running, not being waited on.
     client.emit(
       ServerEventEnvelope(
-        id: 6,
+        id: 7,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -113,7 +145,7 @@ extension SessionModelTests {
     // The empty replace-on-update snapshot clears the indicator.
     client.emit(
       ServerEventEnvelope(
-        id: 7,
+        id: 8,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -298,7 +330,7 @@ extension SessionModelTests {
         transcriptStateItem(id: itemId, sessionId: sessionId, hasDetails: true)
       ], hasMore: false, eventCursor: 5,
       backgroundTasks: [
-        BackgroundTaskInfo(id: "bg-9", description: "Long build", status: "running", taskType: "shell")
+        BackgroundTaskInfo(id: "bg-9", description: "Long build", status: "running", taskType: "subagent")
       ])
     client.transcriptDetailsByItem[itemId.uuidString] = ServerTranscriptItemDetails(
       itemId: itemId.uuidString, revision: 1, eventCursor: 5,
