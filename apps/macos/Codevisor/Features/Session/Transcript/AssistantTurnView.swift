@@ -39,7 +39,6 @@ struct AssistantTurnView: View {
   /// `@State`: it only matters while the turn is generating/settling, which
   /// is the mounted active row. A settled remount resets it harmlessly.
   @State private var hasAutoCollapsed = false
-  @State private var isHovered = false
 
   init(
     turn: AssistantTurn,
@@ -187,17 +186,6 @@ struct AssistantTurnView: View {
         )
       }
 
-      if presentation.showsEpilogue,
-        let final = finalText, case let .text(_, markdown) = final
-      {
-        if !turn.isGenerating {
-          // Copies just the final answer text, not the worked/tool
-          // content. Hidden until hover so the transcript stays clean.
-          MessageCopyButton(text: markdown, help: "Copy response", isRevealed: isHovered)
-            .opacity(isHovered ? 1 : 0)
-        }
-      }
-
       if presentation.showsEpilogue, let activity, activity.followsResponse {
         AssistantTurnActivityView(activity)
       }
@@ -218,9 +206,6 @@ struct AssistantTurnView: View {
         quickLook: quickLook, attachmentImages: attachmentImages, openDocument: openFileDocument)
     )
     .frame(maxWidth: .infinity, alignment: .leading)
-    // Whole-row hover target, full width and height: AppKit tracking
-    // (not .onHover) so the transparent regions count too.
-    .hoverTracking($isHovered)
     .onChange(of: turn.isGenerating) { _, generating in
       if generating {
         if !hasAutoCollapsed {

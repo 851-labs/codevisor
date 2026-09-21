@@ -126,11 +126,6 @@ struct AssistantTurnBody: View {
         }
       }
       if presentation.showsEpilogue {
-        if case let .text(_, markdown) = finalText {
-          if !isGenerating {
-            MessageCopyButton(text: markdown, help: "Copy response")
-          }
-        }
         if let activity, activity.followsResponse {
           AssistantTurnActivityView(activity)
         }
