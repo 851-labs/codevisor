@@ -182,6 +182,8 @@ export const makeAgents = (): AgentRuntimeService & {
         sinks.set(sessionId, sink)
         return sessionId
       }),
+    reconcileConfigValue: (_harnessId, option, value) =>
+      option.id === "model" && value.endsWith("-legacy") ? value.slice(0, -7) : undefined,
     inspectHarness: (harnessId, cwd, _account, configSelections) =>
       Effect.sync(() => {
         inspections.push([harnessId, cwd])

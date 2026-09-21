@@ -52,7 +52,6 @@ struct ComposerCard: View {
   /// as a window sheet (matching the add-project flow) instead of the
   /// detached app-modal window `NSOpenPanel.runModal()` produces.
   @State private var isPickingFiles = false
-  @State private var controlTypingFocus = ComposerControlTypingFocus()
 
   /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
   private static let slashMenuMaxHeight: CGFloat = 220
@@ -92,7 +91,6 @@ struct ComposerCard: View {
         .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       } else {
         standardContent
-          .environment(\.composerControlTypingFocus, controlTypingFocus)
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       }
     }
@@ -200,10 +198,7 @@ private extension ComposerCard {
             onSubmit: submitOrAcceptSlash,
             onKeyCommand: handleKeyCommand,
             onPasteAttachments: handlePastedAttachments,
-            onTextViewReady: { textView in
-              controlTypingFocus.editor = textView
-              onTextViewReady?(textView)
-            }
+            onTextViewReady: onTextViewReady
           )
           .frame(height: editorHeight)
           .writingToolsAffordanceVisibility(.hidden)
@@ -315,7 +310,6 @@ private extension ComposerCard {
         .contentShape(Rectangle())
     }
     .buttonStyle(HoverIconButtonStyle())
-    .composerKeyboardButton(action: pickFiles)
     .help("Attach files")
     .accessibilityLabel("Attach files")
   }
@@ -367,7 +361,6 @@ private extension ComposerCard {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .composerKeyboardButton(action: stop)
         .foregroundStyle(isStopButtonHovered ? .primary : .secondary)
         .onHover { isStopButtonHovered = $0 }
         .help("Stop")

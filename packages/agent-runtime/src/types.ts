@@ -370,6 +370,11 @@ export interface AgentProvider {
     definition: HarnessDefinition,
     account?: HarnessAccountContext
   ) => Promise<ReadonlyArray<import("./agent-sessions.js").AgentSessionSummary>>
+  /// Maps a saved picker value the option list no longer offers verbatim
+  /// onto the entry it now names, or `undefined` when it is really gone.
+  /// Pure: consults only the offered options. Claude uses it for model ids
+  /// that change between CLI releases.
+  readonly reconcileConfigValue?: (option: SessionConfigOption, value: string) => string | undefined
   readonly readUsageLimits?: (
     definition: HarnessDefinition,
     cwd: string,

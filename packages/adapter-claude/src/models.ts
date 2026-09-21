@@ -1,4 +1,4 @@
-import { findKnownModel, highestThinkingLevel, sanitizeModelValue } from "@codevisor/agent-runtime"
+import { findKnownModel, sanitizeModelValue } from "@codevisor/agent-runtime"
 import type { SessionConfigOption, SessionModeState } from "@codevisor/api"
 
 import type { ClaudeModel, ClaudeSession } from "./session.js"
@@ -47,7 +47,7 @@ export const metadataFor = (
   if (session.models.length > 0) {
     options.push({
       category: "model",
-      currentValue: currentModel?.value ?? session.models[0]?.value ?? session.currentModel,
+      currentValue: currentModel?.value ?? session.currentModel,
       id: "model",
       name: "Model",
       options: session.models.map((model) => ({ name: model.name, value: model.value }))
@@ -107,22 +107,52 @@ const claudeModelFamily = (value: string): string | undefined => {
   )
 }
 
-const knownClaudeModelFromProvider = (
-  models: ReadonlyArray<ClaudeModel>,
+const knownClaudeModelFromProvider = <Model extends { readonly value: string }>(
+  models: ReadonlyArray<Model>,
   value: string
-): ClaudeModel | undefined => {
+): Model | undefined => {
   const exact = findKnownModel(models, value)
   if (exact !== undefined) return exact
 
   // Claude's runtime events use concrete ids (`claude-opus-4-8`) while
   // supportedModels can expose settable aliases (`opus[1m]`). Reconcile a
-  // concrete id only when its family identifies exactly one picker option;
-  // choosing between multiple aliases would invent information the event
-  // does not carry (for example ordinary vs 1M context).
+  // concrete id by family; when the family offers several aliases they
+  // differ by context window, and the id's own `[1m]` suffix says which
+  // one applies. Anything still ambiguous stays unresolved rather than
+  // inventing information the value does not carry.
   const family = claudeModelFamily(value)
   if (family === undefined) return undefined
   const familyMatches = models.filter((model) => claudeModelFamily(model.value) === family)
-  return familyMatches.length === 1 ? familyMatches[0] : undefined
+  if (familyMatches.length <= 1) return familyMatches[0]
+  const wantsLongContext = hasLongContextSuffix(value)
+  const sameWindow = familyMatches.filter(
+    (model) => hasLongContextSuffix(model.value) === wantsLongContext
+  )
+  return sameWindow.length === 1 ? sameWindow[0] : undefined
+}
+
+const hasLongContextSuffix = (value: string): boolean => /\[1m\]$/i.test(sanitizeModelValue(value))
+
+/// The picker row a requested model maps to. Fable's concrete id changes
+/// between CLI releases (`claude-fable-5` → `claude-fable-5[1m]` →
+/// `claude-fable-5-1[1m]`), so a value remembered by an older release or a
+/// stale catalog still needs to land on the current row rather than being
+/// treated as some other model.
+export const resolveClaudeModel = <Model extends { readonly value: string }>(
+  models: ReadonlyArray<Model>,
+  value: string
+): Model | undefined => knownClaudeModelFromProvider(models, sanitizeModelValue(value))
+
+/// The id to hand the CLI for a picker request. Unknown values are refused
+/// instead of being sent through and then reported back as another row.
+export const resolveRequestedClaudeModel = (session: ClaudeSession, value: string): string => {
+  const sanitized = sanitizeModelValue(value)
+  if (session.models.length === 0) return sanitized
+  const matched = resolveClaudeModel(session.models, sanitized)
+  if (matched === undefined) {
+    throw new Error(`Model "${sanitized}" is not available in this Claude session`)
+  }
+  return matched.value
 }
 
 /// Applies a provider-reported model where it maps unambiguously to the
@@ -149,18 +179,19 @@ export const currentClaudeModelFor = (session: ClaudeSession): ClaudeModel | und
     session.currentModel = sanitizeModelValue(session.currentModel)
     return undefined
   }
-  const matched = findKnownModel(session.models, session.currentModel)
+  const matched = knownClaudeModelFromProvider(session.models, session.currentModel)
   if (matched !== undefined) {
     session.currentModel = matched.value
     return matched
   }
+  // A model the session was told about but the picker cannot name stays
+  // as reported: presenting it as the list's first row would misreport
+  // what the CLI is actually running. Only an unset model takes the
+  // first entry, which is the CLI's own default.
+  if (session.currentModel.length > 0 && session.currentModel !== "default") return undefined
   const fallback = session.models[0]
   if (fallback === undefined) return undefined
-  const hadUntrustedModel = session.currentModel.length > 0 && session.currentModel !== "default"
   session.currentModel = fallback.value
-  if (hadUntrustedModel) {
-    session.currentEffort = highestThinkingLevel(fallback.supportedEffortLevels) ?? "default"
-  }
   return fallback
 }
 

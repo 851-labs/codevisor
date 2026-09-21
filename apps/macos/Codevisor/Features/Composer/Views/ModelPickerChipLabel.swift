@@ -3,6 +3,9 @@ import SwiftUI
 struct ModelPickerChipLabel: View {
   let group: ModelMenuGroup?
   let modelName: String?
+  /// A pick is on its way to the harness; the name is already the chosen
+  /// one, the spinner says it has not been confirmed yet.
+  var isLoading = false
 
   var body: some View {
     HStack(spacing: 5) {
@@ -22,6 +25,11 @@ struct ModelPickerChipLabel: View {
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
+        if isLoading {
+          ProgressView()
+            .controlSize(.mini)
+            .accessibilityHidden(true)
+        }
       } else {
         Text("Select a harness")
           .foregroundStyle(.secondary)

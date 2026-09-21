@@ -22,7 +22,7 @@ import {
 import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
-import { metadataFor } from "./models.js"
+import { metadataFor, resolveClaudeModel } from "./models.js"
 import { makeClaudeSessionHandle } from "./session-handle.js"
 import type { ClaudeQueryFn } from "./session.js"
 import { makeStartSession } from "./start-session.js"
@@ -173,6 +173,15 @@ export const makeClaudeProvider = (
           sessionId: session.key
         }
       }),
+    // A chat saved under an older release's Fable id (`claude-fable-5[1m]`)
+    // still means "Fable": land it on the row the current CLI offers.
+    reconcileConfigValue: (option, value) => {
+      if (option.category !== "model" && option.id !== "model") return undefined
+      const offered = option.options.flatMap((entry) =>
+        "value" in entry ? [entry] : entry.options
+      )
+      return resolveClaudeModel(offered, value)?.value
+    },
     readUsageLimits: (definition, cwd, account) =>
       adapterPromise("readUsageLimits", async () => {
         const session = await startSession(

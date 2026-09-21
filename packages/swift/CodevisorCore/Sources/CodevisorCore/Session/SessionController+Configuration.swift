@@ -273,20 +273,6 @@ extension SessionController {
     clearAutomaticSelection()
     let optionBeforeChange = configOptions.first { $0.id == configId }
     let previousValue = optionBeforeChange?.currentValue
-    let changesModel =
-      optionBeforeChange?.category == SessionConfigOption.Category.model
-      || configId == "model"
-    let modelResolutionRevision: UInt64? =
-      if changesModel, previousValue != value {
-        beginModelConfigurationResolution()
-      } else {
-        nil
-      }
-    defer {
-      if let modelResolutionRevision {
-        finishModelConfigurationResolution(modelResolutionRevision)
-      }
-    }
     var accepted = true
     if let model {
       if let harnessId = activeHarnessId { pendingConfigByHarness[harnessId]?[configId] = nil }
@@ -296,7 +282,11 @@ extension SessionController {
         configOptionsByHarness[harnessId] = model.configOptions
       }
     } else {
-      // Not connected yet: remember it and apply before submitting work.
+      // Not connected yet: stage it and apply before submitting work. No
+      // temporary harness inspection here: that launched a CLI process per
+      // pick and, whenever the process could not honor the request, it
+      // silently replaced the choice with the harness default. First send
+      // validates against the real runtime instead.
       if let harnessId = selectedHarnessId {
         pendingConfigByHarness[harnessId, default: [:]][configId] = value
         var options =
@@ -305,13 +295,6 @@ extension SessionController {
         if let index = options.firstIndex(where: { $0.id == configId }) {
           options[index].currentValue = value
           configOptionsByHarness[harnessId] = options
-        }
-        if let modelResolutionRevision {
-          accepted = await resolveDraftConfiguration(
-            harnessId: harnessId,
-            expectedModelValue: value,
-            revision: modelResolutionRevision
-          )
         }
       }
     }
@@ -347,66 +330,6 @@ extension SessionController {
 
   public func dismissConfigurationAdjustment() {
     configurationAdjustmentMessage = nil
-  }
-
-  private func beginModelConfigurationResolution() -> UInt64 {
-    modelConfigurationResolutionRevision &+= 1
-    isResolvingModelConfiguration = true
-    return modelConfigurationResolutionRevision
-  }
-
-  private func finishModelConfigurationResolution(_ revision: UInt64) {
-    guard modelConfigurationResolutionRevision == revision else { return }
-    isResolvingModelConfiguration = false
-  }
-
-  /// A draft has no durable runtime to ask when its model changes. Resolve
-  /// the same configuration against a temporary harness inspection so new
-  /// chat and resumed chat expose identical model-dependent controls.
-  private func resolveDraftConfiguration(
-    harnessId: String,
-    expectedModelValue: String,
-    revision: UInt64
-  ) async -> Bool {
-    guard let serverClient else { return true }
-    let cacheRevision = configCache.capabilityRevision(forServer: project.serverId)
-    var selections = Dictionary(
-      uniqueKeysWithValues: configOptions.map { ($0.id, $0.currentValue) }
-    )
-    selections.merge(pendingConfigByHarness[harnessId] ?? [:]) { _, pending in pending }
-    selections["model"] = expectedModelValue
-    do {
-      let response = try await serverClient.capabilities(
-        cwd: capabilityCwd,
-        harnessId: harnessId,
-        configSelections: selections
-      )
-      guard modelConfigurationResolutionRevision == revision,
-        pendingConfigByHarness[harnessId]?["model"] == expectedModelValue,
-        cacheRevision == configCache.capabilityRevision(forServer: project.serverId),
-        let capability = response.harnesses.first(where: { $0.harness.id == harnessId }),
-        !capability.configOptions.isEmpty
-      else { return true }
-
-      guard
-        configCache.store(
-          capability,
-          forServer: project.serverId,
-          ifRevision: cacheRevision
-        )
-      else { return true }
-      configOptionsByHarness[harnessId] = capability.configOptions
-      pendingConfigByHarness[harnessId] = Dictionary(
-        uniqueKeysWithValues: capability.configOptions.map { ($0.id, $0.currentValue) }
-      )
-      return capability.configOptions.first {
-        $0.category == SessionConfigOption.Category.model || $0.id == "model"
-      }?.currentValue == expectedModelValue
-    } catch {
-      // Keep the optimistic draft selection queued. First connection
-      // remains the final validator if this best-effort inspection fails.
-      return true
-    }
   }
 
   /// Validates an automatically carried machine-switch selection against a

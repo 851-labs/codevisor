@@ -514,10 +514,16 @@ extension CodevisorServerClient {
     let response: SetConfigResponse = try await send(
       "/v1/sessions/\(id.uuidString)/config",
       method: "POST",
-      body: SetConfigBody(configId: configId, value: value)
+      body: SetConfigBody(configId: configId, value: value),
+      // A model change can wait on the harness's own availability check
+      // (Claude runs one per pick, with a deadline of its own). Bound the
+      // wait instead of inheriting URLSession's 60-second default.
+      timeout: Self.configRequestTimeout
     )
     return response.configOptions
   }
+
+  static let configRequestTimeout: TimeInterval = 20
 
   @discardableResult
   public func setSessionGoal(

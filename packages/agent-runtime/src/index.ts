@@ -1,6 +1,6 @@
 import type { EventEnvelope, Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { Context, Effect, Layer } from "effect"
+import { Cause, Context, Effect, Layer } from "effect"
 
 import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
@@ -116,6 +116,11 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         const list = provider.listAgentSessions
         return list === undefined ? [] : await list(definition, account)
       }),
+    reconcileConfigValue: (harnessId, option, value) => {
+      const definition = state.catalog.find((candidate) => candidate.id === harnessId)
+      const provider = definition === undefined ? undefined : providers.get(definition.provider)
+      return provider?.reconcileConfigValue?.(option, value)
+    },
     readHarnessUsageLimits: (harnessId, cwd, account) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
@@ -213,9 +218,16 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
               "value" in entry ? [entry.value] : entry.options.map((nested) => nested.value)
             ) ?? []
           if (!selectableValues.includes(value) || option?.currentValue === value) continue
-          configOptions = yield* created.handle
-            .setConfigOption(configId, value)
-            .pipe(Effect.catchCause(() => Effect.succeed(configOptions)))
+          configOptions = yield* created.handle.setConfigOption(configId, value).pipe(
+            Effect.catchCause((cause) => {
+              // Report, don't pretend: the returned snapshot shows what was
+              // actually applied, and the log says why the request wasn't.
+              console.error(
+                `[agent-runtime] inspectHarness(${harnessId}) could not apply ${configId}=${value}: ${Cause.pretty(cause)}`
+              )
+              return Effect.succeed(configOptions)
+            })
+          )
         }
         void Effect.runPromise(created.handle.close).catch(() => undefined)
         return { ...created.metadata, configOptions }

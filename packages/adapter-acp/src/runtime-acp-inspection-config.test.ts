@@ -76,4 +76,38 @@ describe("@codevisor/agent-runtime inspection configuration", () => {
     expect(inspected.configOptions).toEqual(configOptions)
     expect(closeCount).toBe(1)
   })
+
+  it("routes saved-value reconciliation to the harness's provider", () => {
+    const option = {
+      category: "model",
+      currentValue: "default",
+      id: "model",
+      name: "Model",
+      options: [
+        { name: "Default", value: "default" },
+        { name: "Pro", value: "pro" }
+      ]
+    }
+    const custom = {
+      createSession: () => Effect.die("unused"),
+      id: "claude" as const,
+      loadSession: () => Effect.die("unused"),
+      readiness: () => ({ state: "ready" }) as const,
+      reconcileConfigValue: (candidate: { readonly id: string }, value: string) =>
+        candidate.id === "model" && value === "pro-legacy" ? "pro" : undefined
+    }
+    const runtime = makeAcpAgentRuntime({
+      env: { PATH: "/bin" },
+      executableExists: () => true,
+      locateExecutable: (name) => `/bin/${name}`,
+      providers: { claude: custom as never }
+    })
+
+    expect(runtime.reconcileConfigValue("claude-code", option, "pro-legacy")).toBe("pro")
+    expect(runtime.reconcileConfigValue("claude-code", option, "gone")).toBeUndefined()
+    // A provider without the hook, and an id outside the catalog, both say
+    // the value is gone rather than guessing.
+    expect(runtime.reconcileConfigValue("codex", option, "pro-legacy")).toBeUndefined()
+    expect(runtime.reconcileConfigValue("not-a-harness", option, "pro-legacy")).toBeUndefined()
+  })
 })

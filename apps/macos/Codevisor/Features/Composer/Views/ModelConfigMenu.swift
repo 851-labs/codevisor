@@ -16,9 +16,17 @@ struct ModelConfigMenu: View {
   private var favoriteModelIDs: [ModelPickerFavorite]
   @State private var isPresented = false
   @State private var isParametersPresented = false
-  @State private var isSwitchingHarness = false
-  @State private var pendingModelValue: String?
-  @State private var pendingModelGroupId: String?
+  /// The pick most recently handed to the controller. The chip shows it
+  /// (with a spinner) until the task that applied it finishes; a newer
+  /// pick supersedes an older in-flight one instead of waiting on it.
+  @State private var pendingSelection: PendingSelection?
+  @State private var selectionRevision: UInt64 = 0
+
+  private struct PendingSelection {
+    let groupId: String
+    let modelValue: String
+    let modelName: String
+  }
 
   var body: some View {
     // A background revalidation must not replace an already-usable model
@@ -64,9 +72,7 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search models")
     .autocompleteEmptyMessage("No matching models")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .composerKeyboardButton(shape: .chip, isPresenting: isPresented) { isPresented.toggle() }
     .fixedSize(horizontal: false, vertical: true)
-    .disabled(isSwitchingHarness)
     .help("Choose model")
     .accessibilityLabel("Model")
     .accessibilityValue(controller.modelOption?.currentName ?? "No model selected")
@@ -75,9 +81,15 @@ private extension ModelConfigMenu {
   private var modelSelection: Binding<ModelPickerFavorite> {
     Binding(
       get: {
-        ModelPickerFavorite(
-          harnessID: pendingModelGroupId ?? controller.activeHarnessId ?? "active",
-          modelValue: pendingModelValue ?? controller.modelOption?.currentValue ?? ""
+        if let pendingSelection {
+          return ModelPickerFavorite(
+            harnessID: pendingSelection.groupId,
+            modelValue: pendingSelection.modelValue
+          )
+        }
+        return ModelPickerFavorite(
+          harnessID: controller.activeHarnessId ?? "active",
+          modelValue: controller.modelOption?.currentValue ?? ""
         )
       },
       set: { favorite in
@@ -85,7 +97,7 @@ private extension ModelConfigMenu {
           let model = group.modelOption.options.first(where: { $0.value == favorite.modelValue }),
           !isCurrent(model, in: group)
         else { return }
-        choose(model: model.value, in: group)
+        choose(model, in: group)
       }
     )
   }
@@ -104,15 +116,10 @@ private extension ModelConfigMenu {
     .autocompleteSearchLabel("Search model parameters")
     .autocompleteEmptyMessage("No matching parameters")
     .buttonStyle(HoverIconButtonStyle(shape: .chip))
-    .composerKeyboardButton(shape: .chip, isPresenting: isParametersPresented) { isParametersPresented.toggle() }
     .fixedSize()
-    .disabled(isLoadingSettings)
     .help("Model parameters")
     .accessibilityLabel("Model parameters")
     .accessibilityValue(parameterAccessibilityValue)
-    .onChange(of: isLoadingSettings) { _, isLoading in
-      if isLoading { isParametersPresented = false }
-    }
   }
 
   private func parameterSelection(_ option: SessionConfigOption) -> Binding<String> {
@@ -183,32 +190,41 @@ private extension ModelConfigMenu {
     _ model: SessionConfigSelectOption,
     in group: ModelMenuGroup
   ) -> Bool {
-    if let pendingModelValue, let pendingModelGroupId {
-      return pendingModelGroupId == group.id && pendingModelValue == model.value
+    if let pendingSelection {
+      return pendingSelection.groupId == group.id && pendingSelection.modelValue == model.value
     }
     return controller.activeHarnessId == group.id
       && group.modelOption.currentValue == model.value
   }
 
-  private func choose(model value: String, in group: ModelMenuGroup) {
-    isSwitchingHarness = true
-    pendingModelValue = value
-    pendingModelGroupId = group.id
+  private func choose(_ model: SessionConfigSelectOption, in group: ModelMenuGroup) {
+    selectionRevision &+= 1
+    let revision = selectionRevision
+    pendingSelection = PendingSelection(
+      groupId: group.id,
+      modelValue: model.value,
+      modelName: model.name
+    )
     isPresented = false
     Task {
       if controller.activeHarnessId != group.id, controller.canChooseHarness {
         await controller.selectHarness(group.id)
       }
       if let liveModel = controller.modelOption {
-        await controller.setConfigOption(liveModel.id, value)
+        await controller.setConfigOption(liveModel.id, model.value)
       }
-      isSwitchingHarness = false
-      pendingModelValue = nil
-      pendingModelGroupId = nil
+      // Only the newest pick clears the pending state: an older one
+      // finishing late must not flash its outcome over a newer choice.
+      guard revision == selectionRevision else { return }
+      pendingSelection = nil
     }
   }
 
-  private var isLoadingSettings: Bool { isSwitchingHarness || controller.isResolvingModelConfiguration }
+  /// The parameter list can change with the model, so it reads as
+  /// refreshing while a model pick (here or a machine switch) is settling.
+  private var isRefreshingParameters: Bool {
+    pendingSelection != nil || controller.isResolvingModelConfiguration
+  }
 
   private var settingsOptions: [SessionConfigOption] {
     ModelParameterMenu.options(from: controller.configOptions)
@@ -217,7 +233,8 @@ private extension ModelConfigMenu {
   private var parameterAccessibilityValue: String {
     let summary = summarizedSettingsOptions.map { "\($0.name), \($0.currentName)" }
       .joined(separator: ", ")
-    return summary.isEmpty ? "Default" : summary
+    let value = summary.isEmpty ? "Default" : summary
+    return isRefreshingParameters ? "\(value), updating" : value
   }
 
   private var summarizedSettingsOptions: [SessionConfigOption] {
@@ -231,9 +248,15 @@ private extension ModelConfigMenu {
 
   private var modelChipLabel: some View {
     ModelPickerChipLabel(
-      group: activeModelGroup,
-      modelName: controller.modelOption?.currentName
+      group: pendingModelGroup ?? activeModelGroup,
+      modelName: pendingSelection?.modelName ?? controller.modelOption?.currentName,
+      isLoading: pendingSelection != nil
     )
+  }
+
+  private var pendingModelGroup: ModelMenuGroup? {
+    guard let pendingSelection else { return nil }
+    return modelGroups.first { $0.id == pendingSelection.groupId }
   }
 
   private var activeModelGroup: ModelMenuGroup? {
@@ -242,9 +265,16 @@ private extension ModelConfigMenu {
   }
 
   private var parameterChipLabel: some View {
-    Text(parameterChipSummary)
-      .foregroundStyle(.secondary)
-      .lineLimit(1)
-      .contentShape(Rectangle())
+    HStack(spacing: 5) {
+      Text(parameterChipSummary)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+      if isRefreshingParameters {
+        ProgressView()
+          .controlSize(.mini)
+          .accessibilityHidden(true)
+      }
+    }
+    .contentShape(Rectangle())
   }
 }

@@ -9,6 +9,12 @@ struct ModelPickerSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Bindable var controller: SessionController
+  /// A pick the composer is still applying; its row shows a spinner in the
+  /// checkmark slot if the sheet is reopened before it settles.
+  var pending: PendingModelSelection?
+  /// Tapping a row hands the pick to the composer chip, which owns the
+  /// in-flight state, and the sheet closes right away.
+  let onChoose: (SessionConfigSelectOption, String) -> Void
 
   /// Pushed screens live here, not in a view-destination link: the model
   /// step re-branches whenever capabilities reload (returning from a
@@ -20,11 +26,6 @@ struct ModelPickerSheet: View {
 
   @State private var path: [Destination] = []
   @State private var search = ""
-  @State private var isSwitchingHarness = false
-  /// The model value tapped while a cross-harness switch is in flight, so
-  /// that row shows the progress spinner in its checkmark slot.
-  @State private var pendingModelValue: String?
-  @State private var pendingModelGroupId: String?
 
   private struct HarnessGroup: Identifiable {
     let id: String
@@ -91,7 +92,6 @@ struct ModelPickerSheet: View {
     }
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
-    .interactiveDismissDisabled(isSwitchingHarness)
   }
 
   @ViewBuilder
@@ -110,19 +110,14 @@ struct ModelPickerSheet: View {
             Section {
               ForEach(values) { value in
                 Button {
-                  choose(model: value.value, in: group)
+                  onChoose(value, group.id)
+                  dismiss()
                 } label: {
                   HStack {
                     Text(value.name)
                       .foregroundStyle(Color.primary)
                     Spacer()
-                    if isSwitchingHarness,
-                      pendingModelValue == value.value,
-                      pendingModelGroupId == group.id
-                    {
-                      // A cross-harness pick shows
-                      // progress while the harness (and
-                      // its thinking levels) loads.
+                    if let pending, pending.groupId == group.id, pending.modelValue == value.value {
                       ProgressView()
                         .controlSize(.small)
                     } else if isCurrent(value, in: group) {
@@ -131,7 +126,6 @@ struct ModelPickerSheet: View {
                     }
                   }
                 }
-                .disabled(isSwitchingHarness)
               }
             } header: {
               HStack(spacing: 6) {
@@ -208,29 +202,7 @@ struct ModelPickerSheet: View {
   }
 
   private func isCurrent(_ value: SessionConfigSelectOption, in group: HarnessGroup) -> Bool {
-    group.id == controller.activeHarnessId && group.modelOption.currentValue == value.value
+    if pending != nil { return false }
+    return group.id == controller.activeHarnessId && group.modelOption.currentValue == value.value
   }
-
-  // MARK: - Selection
-
-  /// Picking a model under another harness selects that harness first (new
-  /// chats only), then applies the model and returns to the composer.
-  private func choose(model value: String, in group: HarnessGroup) {
-    isSwitchingHarness = true
-    pendingModelValue = value
-    pendingModelGroupId = group.id
-    Task {
-      if controller.activeHarnessId != group.id, controller.canChooseHarness {
-        await controller.selectHarness(group.id)
-      }
-      if let live = controller.modelOption {
-        await controller.setConfigOption(live.id, value)
-      }
-      isSwitchingHarness = false
-      pendingModelValue = nil
-      pendingModelGroupId = nil
-      dismiss()
-    }
-  }
-
 }

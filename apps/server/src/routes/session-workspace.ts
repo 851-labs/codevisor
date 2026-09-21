@@ -360,7 +360,7 @@ export const ensureAgentSessionFor = async (
       await run(services.agents.closeAgentSession(agentSessionId))
       throw new HttpFailure(409, "Workspace was archived while starting its agent")
     }
-    return restoreSessionConfigSelections(services, sessionId, metadata)
+    return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
   }
   const agentSessionId = session.agentSessionId ?? sessionId
   const sink = sessionEventSink(services, fanout, serverId, sessionId)
@@ -379,7 +379,7 @@ export const ensureAgentSessionFor = async (
     await run(services.agents.closeAgentSession(agentSessionId))
     throw new HttpFailure(409, "Workspace was archived while starting its agent")
   }
-  return restoreSessionConfigSelections(services, sessionId, metadata)
+  return restoreSessionConfigSelections(services, sessionId, session.harnessId, metadata)
 }
 
 const selectableValues = (option: SessionConfigOption): ReadonlySet<string> =>
@@ -409,6 +409,7 @@ const configRestorePriority = (option: SessionConfigOption | undefined): number 
 const restoreSessionConfigSelections = async (
   services: CodevisorServerServices,
   sessionId: string,
+  harnessId: string,
   metadata: AgentSessionMetadata
 ): Promise<AgentSessionMetadata> => {
   // No option list is not an answer: the Claude adapter returns none when its
@@ -430,23 +431,34 @@ const restoreSessionConfigSelections = async (
   })
   for (const [configId, value] of ordered) {
     const option = configOptions.find((candidate) => candidate.id === configId)
-    if (
-      option === undefined ||
-      option.currentValue === value ||
-      !selectableValues(option).has(value)
-    ) {
+    if (option === undefined || option.currentValue === value) continue
+    // A saved value the runtime no longer offers verbatim may still name a
+    // current entry under a newer id (Claude's Fable id drifts between CLI
+    // releases). The provider says which; a value it cannot place is gone
+    // and falls through to the runtime's default.
+    const restored = selectableValues(option).has(value)
+      ? value
+      : services.agents.reconcileConfigValue(harnessId, option, value)
+    if (restored === undefined || !selectableValues(option).has(restored)) {
+      console.error(
+        `[session-config] ${sessionId}: saved ${configId}=${value} is no longer offered; using ${option.currentValue}`
+      )
       continue
     }
+    if (option.currentValue === restored) continue
     try {
       configOptions = await run(
-        services.agents.setConfigOption(metadata.sessionId, configId, value)
+        services.agents.setConfigOption(metadata.sessionId, configId, restored)
       )
-    } catch {
+    } catch (error) {
       // A harness can reject a value between advertising it and applying it.
       // Session open must still succeed. Keep its current value for this
       // runtime, but retain the user's saved snapshot so the
       // next reconnect can retry instead of turning a transient startup race
       // into a permanent preference change.
+      console.error(
+        `[session-config] ${sessionId}: could not restore ${configId}=${restored}: ${String(error)}`
+      )
       restoreFailed = true
     }
   }

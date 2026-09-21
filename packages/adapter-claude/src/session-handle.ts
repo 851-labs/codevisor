@@ -11,7 +11,12 @@ import { claudeContent } from "./attachments.js"
 import { emitBackgroundTasks } from "./background-tasks.js"
 import { pauseGoalForForcedCancellation, pushGoalCommand } from "./goals.js"
 import { deferred } from "./internal.js"
-import { effortLevelsFor, metadataFor, supportsFastMode } from "./models.js"
+import {
+  effortLevelsFor,
+  metadataFor,
+  resolveRequestedClaudeModel,
+  supportsFastMode
+} from "./models.js"
 import { answerClaudeQuestion, cancelClaudePendingQuestions } from "./questions.js"
 import type { ClaudeSession } from "./session.js"
 import {
@@ -152,8 +157,9 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
     setConfigOption: (configId, value) =>
       adapterPromise("setConfigOption", async () => {
         if (configId === "model") {
-          await session.q.setModel(value)
-          session.currentModel = value
+          const model = resolveRequestedClaudeModel(session, value)
+          await session.q.setModel(model)
+          session.currentModel = model
           // Effort validity depends on the model; reset rather than carry an
           // unsupported level over.
           if (!effortLevelsFor(session).includes(session.currentEffort)) {

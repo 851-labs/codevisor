@@ -19,7 +19,6 @@ struct ComposerNavigationButton: View {
         .contentShape(Circle())
     }
     .buttonStyle(.plain)
-    .composerKeyboardButton(action: action)
     .onHover { isHovered = $0 }
     .help(help)
     .accessibilityLabel(accessibilityLabel)

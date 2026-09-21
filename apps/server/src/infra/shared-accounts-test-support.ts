@@ -39,7 +39,12 @@ export const fleet = () => {
   ) => {
     const { services } = await makeServices(id)
     const dataDir = await mkdtemp(join(tmpdir(), "shared-account-test-"))
-    onTestFinished(() => rm(dataDir, { recursive: true, force: true }))
+    // The real Codex CLI keeps syncing its bundled skills into this HOME for
+    // a moment after the test's last request; retry the removal instead of
+    // failing on ENOTEMPTY when that write lands mid-delete.
+    onTestFinished(() =>
+      rm(dataDir, { force: true, maxRetries: 10, recursive: true, retryDelay: 100 })
+    )
     let bundle = initial
     const receipts = new Map<string, { operationId: string; sealed: string }>()
     const vault = makeSharedCredentialVault({

@@ -63,7 +63,6 @@ struct ModeChip: View {
         .contentShape(Circle())
     }
     .buttonStyle(.plain)
-    .composerKeyboardButton(action: onRemove)
     .disabled(isRemoveDisabled)
     .onHover { hovering in
       var transaction = Transaction()

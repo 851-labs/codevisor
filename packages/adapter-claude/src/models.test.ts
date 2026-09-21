@@ -282,6 +282,112 @@ describe("ClaudeProvider", () => {
     expect(afterModel.configOptions).not.toContainEqual(expect.objectContaining({ id: "speed" }))
   })
 
+  it("lands a model saved under an older release's Fable id on the current Fable row", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue(RELEASE_MODELS)
+    const created = await run(makeProvider(fake).createSession(definition, "/tmp", async () => {}))
+
+    const options = await run(created.handle.setConfigOption("model", "claude-fable-5[1m]"))
+
+    expect(fake.models).toEqual(["claude-fable-5-1[1m]"])
+    expect(options).toContainEqual(
+      expect.objectContaining({ currentValue: "claude-fable-5-1[1m]", id: "model" })
+    )
+    expect(options).toContainEqual(expect.objectContaining({ currentValue: "high", id: "effort" }))
+  })
+
+  it("refuses a model the session cannot name instead of reporting the first row", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue(RELEASE_MODELS)
+    const createPromise = run(makeProvider(fake).createSession(definition, "/tmp", async () => {}))
+    fake.push(initMessage("sdk-session-1", "claude-fable-5-1[1m]"))
+    const created = await createPromise
+
+    await expect(run(created.handle.setConfigOption("model", "gpt-5"))).rejects.toThrow(
+      /Model "gpt-5" is not available/
+    )
+
+    expect(fake.models).toEqual([])
+    const options = await run(created.handle.setConfigOption("effort", "medium"))
+    expect(options).toContainEqual(
+      expect.objectContaining({ currentValue: "claude-fable-5-1[1m]", id: "model" })
+    )
+  })
+
+  it("reconciles a concrete id by context window when its family has two aliases", async () => {
+    const fake = new FakeQuery()
+    vi.spyOn(fake, "supportedModels").mockResolvedValue(RELEASE_MODELS)
+    const events: Array<RuntimeEvent> = []
+    const createPromise = run(
+      makeProvider(fake).createSession(definition, "/tmp", async (event) => {
+        events.push(event)
+      })
+    )
+    fake.push(initMessage("sdk-session-1", "claude-sonnet-5[1m]"))
+    const created = await createPromise
+
+    const options = await run(created.handle.setConfigOption("effort", "low"))
+    expect(options).toContainEqual(
+      expect.objectContaining({ currentValue: "sonnet[1m]", id: "model" })
+    )
+
+    fake.push(
+      systemMessage("model_refusal_fallback", {
+        fallback_model: "claude-opus-4-8",
+        original_model: "claude-sonnet-5[1m]"
+      })
+    )
+    await fake.drain()
+    expect(configUpdates(events).at(-1)).toMatchObject({ configId: "model", value: "opus" })
+  })
+
+  it("keeps a reported model the picker cannot name instead of the first row", async () => {
+    const fake = new FakeQuery()
+    const deliverModels = stallModelList(fake)
+    const events: Array<RuntimeEvent> = []
+    await createWithLostModelListRace(fake, events)
+    fake.push(initMessage("sdk-session-1", "claude-mythos-5"))
+    await fake.drain()
+
+    deliverModels([
+      { description: "", displayName: "Sonnet", value: "sonnet" },
+      { description: "", displayName: "Opus", value: "opus" }
+    ])
+    await fake.drain()
+
+    expect(configUpdates(events)).toEqual([
+      expect.objectContaining({
+        configId: "model",
+        value: "claude-mythos-5",
+        configOptions: [expect.objectContaining({ currentValue: "claude-mythos-5", id: "model" })]
+      })
+    ])
+  })
+
+  it("maps a stale saved model id onto the offered row for restore", () => {
+    const provider = makeProvider(new FakeQuery())
+    const option = {
+      category: "model",
+      currentValue: "sonnet",
+      id: "model",
+      name: "Model",
+      options: RELEASE_MODELS.map((model) => ({ name: model.displayName, value: model.value }))
+    }
+
+    expect(provider.reconcileConfigValue?.(option, "claude-fable-5")).toBe("claude-fable-5-1[1m]")
+    expect(provider.reconcileConfigValue?.(option, "claude-fable-5[1m]")).toBe(
+      "claude-fable-5-1[1m]"
+    )
+    expect(provider.reconcileConfigValue?.(option, "claude-opus-4-8")).toBe("opus")
+    expect(provider.reconcileConfigValue?.(option, "gpt-5")).toBeUndefined()
+    expect(
+      provider.reconcileConfigValue?.(
+        { ...option, category: "thought_level", id: "effort" },
+        "sonnet"
+      )
+    ).toBeUndefined()
+  })
+
   it("seeds the speed from the init message's fast mode state", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
@@ -329,6 +435,29 @@ const createWithLostModelListRace = async (fake: FakeQuery, events: Array<Runtim
   await vi.advanceTimersByTimeAsync(3000)
   return pending
 }
+
+/// The list a current Claude CLI release offers: aliases for every family
+/// except Fable, whose row carries a concrete id that changes per release.
+const RELEASE_MODELS: SupportedModels = [
+  {
+    description: "",
+    displayName: "Sonnet",
+    supportedEffortLevels: ["low", "medium", "high"],
+    supportsEffort: true,
+    value: "sonnet"
+  },
+  { description: "", displayName: "Sonnet 5 (1M context)", value: "sonnet[1m]" },
+  {
+    description: "",
+    displayName: "Fable",
+    supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+    supportsEffort: true,
+    value: "claude-fable-5-1[1m]"
+  },
+  { description: "", displayName: "Opus", value: "opus" },
+  { description: "", displayName: "Opus (1M context)", value: "opus[1m]" },
+  { description: "", displayName: "Haiku", value: "haiku" }
+]
 
 const configUpdates = (events: ReadonlyArray<RuntimeEvent>): Array<Record<string, unknown>> =>
   events

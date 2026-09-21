@@ -89,6 +89,15 @@ export interface AgentRuntimeService {
     harnessId: string,
     account?: HarnessAccountContext
   ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
+  /// The value a saved selection should be restored as when the live
+  /// option list no longer offers it verbatim: the provider's own
+  /// reconciliation (harness ids drift between releases), or `undefined`
+  /// when the value is really gone.
+  readonly reconcileConfigValue: (
+    harnessId: string,
+    option: SessionConfigOption,
+    value: string
+  ) => string | undefined
   readonly readHarnessUsageLimits: (
     harnessId: string,
     cwd: string,

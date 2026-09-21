@@ -27,10 +27,6 @@ public struct HoverIconButtonStyle: ButtonStyle {
     fileprivate var chipInsets: CGSize {
       self == .chip ? CGSize(width: 5, height: 3) : .zero
     }
-
-    public var focusEffectShape: some Shape {
-      HoverButtonFocusShape(highlight: self)
-    }
   }
 
   var shape: HighlightShape = .circle
@@ -60,11 +56,6 @@ private struct HoverIconButtonBody: View {
       // highlights read as one family.
       .frame(minHeight: shape == .chip ? 26 : nil)
       .background(shape.fill(isHovered ? Color.primary.opacity(0.06) : .clear))
-      #if os(macOS)
-        // Native buttons, including the New chat configuration pickers,
-        // draw their focus ring around the same bounds as the hover fill.
-        .contentShape(.focusEffect, shape)
-      #endif
       // Chips give the padding back so the fill overflows the label
       // instead of pushing the row apart.
       .padding(.horizontal, -chipInsets.width)
@@ -79,13 +70,5 @@ private struct HoverIconButtonBody: View {
 
   private var chipInsets: CGSize {
     shape.chipInsets
-  }
-}
-
-private struct HoverButtonFocusShape: Shape {
-  let highlight: HoverIconButtonStyle.HighlightShape
-
-  func path(in rect: CGRect) -> Path {
-    highlight.path(in: rect.insetBy(dx: -highlight.chipInsets.width, dy: -highlight.chipInsets.height))
   }
 }

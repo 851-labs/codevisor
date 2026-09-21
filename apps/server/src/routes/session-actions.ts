@@ -31,9 +31,9 @@ import type {
   RouteState
 } from "../server-context.js"
 import { drainPromptQueue, publishPromptQueue } from "./prompt-queue.js"
+import { applySessionConfigPick } from "./session-config.js"
 import {
   applySessionUpdate,
-  configSelectionsFromOptions,
   createSessionIfMissing,
   ensureAgentSessionFor,
   findSession
@@ -373,22 +373,7 @@ export const routeSessionActions = async (
       "config",
       payload,
       async () => {
-        const agentSession = await ensureAgentSessionFor(
-          services,
-          fanout,
-          config.id,
-          configSessionId
-        )
-        const configOptions = await run(
-          services.agents.setConfigOption(agentSession.sessionId, payload.configId, payload.value)
-        )
-        await run(
-          services.db.replaceSessionConfigSelections(
-            configSessionId,
-            configSelectionsFromOptions(configOptions)
-          )
-        )
-        return { configId: payload.configId, configOptions }
+        return applySessionConfigPick(services, fanout, config.id, configSessionId, payload)
       }
     )
     return true
