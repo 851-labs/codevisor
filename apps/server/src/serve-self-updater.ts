@@ -11,11 +11,14 @@ import {
   channelFromSyncedValue,
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
+  defaultSparkleFeedURL,
   fetchLatestServerRelease,
+  fetchLatestSparkleRelease,
   isNewerRelease,
   parseSha256,
   readAppUpdateApplyState,
   readMachineUpdateChannel,
+  readMachineUpdateFeedURL,
   sha256File
 } from "@codevisor/updater"
 import type { ServerRelease, ServerUpdateChannel } from "@codevisor/updater"
@@ -75,6 +78,8 @@ export const makeSelfUpdater = (options: {
   readonly db: CodevisorDatabaseService
   readonly dataDir: string
   readonly serveArgs: ReadonlyArray<string>
+  /// Injected by tests; production uses the global fetch.
+  readonly fetch?: typeof globalThis.fetch | undefined
 }): CodevisorServerUpdater => {
   // Per-channel: an alpha check must never satisfy a stable one (or vice
   // versa) — they read different manifests.
@@ -114,6 +119,39 @@ export const makeSelfUpdater = (options: {
     return lastApply === undefined ? info : { ...info, lastApply }
   }
 
+  const fetchManifestRelease = (
+    channel: ServerUpdateChannel,
+    target: string
+  ): Promise<ServerRelease | undefined> =>
+    fetchLatestServerRelease({
+      channel,
+      repository: GITHUB_RELEASE_REPOSITORY,
+      legacyBaseURL: LEGACY_RELEASE_BASE_URL,
+      target,
+      fetch: options.fetch
+    })
+
+  // On an app-hosted Mac the install is done by the host app's Sparkle, from
+  // its appcast — so "latest" is read from that same document. The manifests
+  // stay as a reachability fallback only: if the feed is down, Sparkle's own
+  // install would fail with its own message anyway. Standalone servers
+  // install from the manifests and keep reading them.
+  const resolveRelease = async (
+    channel: ServerUpdateChannel
+  ): Promise<ServerRelease | undefined> => {
+    const target = releaseTarget()
+    if (target === undefined) return undefined
+    if (appHosted()) {
+      const release = await fetchLatestSparkleRelease({
+        feedURL: readMachineUpdateFeedURL(options.dataDir) ?? defaultSparkleFeedURL(),
+        channel,
+        fetch: options.fetch
+      }).catch(() => undefined)
+      if (release !== undefined) return release
+    }
+    return fetchManifestRelease(channel, target)
+  }
+
   const check = async (checkOptions?: {
     readonly force?: boolean
     readonly channel?: ServerUpdateChannel
@@ -129,15 +167,7 @@ export const makeSelfUpdater = (options: {
     }
     let release: ServerRelease | undefined
     try {
-      const target = releaseTarget()
-      if (target !== undefined) {
-        release = await fetchLatestServerRelease({
-          channel,
-          repository: GITHUB_RELEASE_REPOSITORY,
-          legacyBaseURL: LEGACY_RELEASE_BASE_URL,
-          target
-        })
-      }
+      release = await resolveRelease(channel)
     } catch {
       // Offline or unreachable: report the last known state.
     }
@@ -203,12 +233,7 @@ export const makeSelfUpdater = (options: {
 
     let release = cached.get(channel)?.release
     if (release === undefined || release.version !== info.latestVersion) {
-      release = await fetchLatestServerRelease({
-        channel,
-        repository: GITHUB_RELEASE_REPOSITORY,
-        legacyBaseURL: LEGACY_RELEASE_BASE_URL,
-        target
-      })
+      release = await fetchManifestRelease(channel, target)
     }
     if (release === undefined || release.version !== info.latestVersion) {
       throw new Error(`Release assets for Codevisor server ${info.latestVersion} are unavailable`)

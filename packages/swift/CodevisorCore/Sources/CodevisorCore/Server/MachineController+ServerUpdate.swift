@@ -72,6 +72,27 @@ extension MachineController {
     Task { await self.connectMachine(machineId) }
   }
 
+  /// Why a reachable server is still not on the requested release when
+  /// the wait ran out: it restarted onto some other build (the machine's
+  /// installer chose differently — try again), or it never restarted.
+  static func notConvergedMessage(
+    initial: ServerHealth?, current: ServerHealth?, refreshed: ServerUpdateInfo?
+  ) -> String {
+    let rebooted = initial?.bootId != nil && current?.bootId != nil && initial?.bootId != current?.bootId
+    let advanced: Bool =
+      if let before = initial?.buildNumber, let after = current?.buildNumber { after > before } else { false }
+    guard rebooted || advanced else {
+      return "The server is still running the previous version and never restarted. Check it on the machine directly."
+    }
+    let installed =
+      refreshed.map {
+        AppUpdateModel.displayedVersion(
+          $0.currentVersion, buildNumber: $0.currentBuildNumber, usesAlphaChannel: $0.channel == "alpha")
+      } ?? current?.version ?? "a different version"
+    let latest = refreshed?.latestVersion ?? "a newer release"
+    return "The server restarted into \(installed), but \(latest) is still available. Try updating again."
+  }
+
   /// Asks a machine's server to update itself, then waits for it to
   /// restart into the newer version before refreshing its state and
   /// resubscribing to its event stream. Tracks progress on THAT machine's
@@ -127,6 +148,13 @@ extension MachineController {
       // deadline), so this never waits forever.
       let pollBudget = updatePollInterval * updatePollAttempts
       var deadline = updateScheduler.now() + pollBudget
+      // The build to wait for. The accepted target comes from the
+      // machine's release check; the install itself may land elsewhere
+      // (an app-hosted Mac's Sparkle can resume a download it staged
+      // before a newer release appeared), and the machine reports the
+      // build it is really installing. Converging on THAT build keeps a
+      // successful install from reading as a server that never returned.
+      var targetBuildNumber = applied.targetBuildNumber
       var lastInstallProgress: Double?
       var lastInstallMessage: String?
       var migrationStartedAt: ContinuousClock.Instant?
@@ -168,6 +196,10 @@ extension MachineController {
             lastInstallMessage = message
             connection.updateProgress = progress
             connection.updateStatusMessage = message
+            if let installing = lastApply.targetBuildNumber, installing != targetBuildNumber {
+              targetBuildNumber = installing
+              deadline = max(deadline, updateScheduler.now() + pollBudget)
+            }
           default:
             break
           }
@@ -202,7 +234,7 @@ extension MachineController {
           continue
         }
         var converged = false
-        if let targetBuild = applied.targetBuildNumber,
+        if let targetBuild = targetBuildNumber,
           let currentBuild = (try? await client.health())?.buildNumber
         {
           // Build numbers are the one release marker that agrees
@@ -247,6 +279,25 @@ extension MachineController {
           resumeEventStream(for: machineId)
           return
         }
+      }
+      // Out of time. A machine that answers is not gone: keep it usable,
+      // and say what actually happened instead of "did not come back".
+      if (try? await client.info()) != nil {
+        markReady(for: machineId)
+        let refreshed = try? await client.updateInfo(refresh: true, channel: updateChannel)
+        if let refreshed { connection.updateInfo = refreshed }
+        await refreshStatus(for: machineId)
+        resumeEventStream(for: machineId)
+        guard refreshed?.updateAvailable != false else {
+          // It landed on the target after all; the deadline just beat it.
+          connection.updatePhase = .idle
+          _ = await projectList.refreshFromServer(serverId: machineId, client: client)
+          return
+        }
+        connection.updatePhase = .failed(
+          Self.notConvergedMessage(
+            initial: initialHealth, current: try? await client.health(), refreshed: refreshed))
+        return
       }
       let message = "The server did not come back after updating. Check it on the machine directly."
       connection.updatePhase = .failed(message)

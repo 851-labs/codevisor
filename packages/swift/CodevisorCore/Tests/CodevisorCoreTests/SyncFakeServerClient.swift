@@ -357,9 +357,14 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var currentVersion = "0.1.0"
   var latestVersion = "0.1.0"
   var installedVersionAfterUpdate: String?
+  /// The build the simulated restart lands on when it differs from the
+  /// accepted target (an installer that resumed an older download).
+  var installedBuildNumberAfterUpdate: Int?
   var updateApplied = false
   var bootId = "boot-before-update"
   var downtimeRemaining = 0
+  /// How many `info()` probes a simulated restart refuses before answering.
+  var restartDowntime = 3
   /// Simulated boot listener: while active, `health()` answers with the
   /// next migration report (`ok: false`, `database: "migrating"`) and every
   /// other route is refused with 503, exactly as a server booting through

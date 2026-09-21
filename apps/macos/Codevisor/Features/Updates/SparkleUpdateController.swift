@@ -29,6 +29,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
   /// The local server has been drained (and possibly stopped) for the
   /// install in flight; an abort after this point must bring it back.
   private var serverPreparedForUpdate = false
+  /// The build Sparkle is installing in the active session (its
+  /// `sparkle:version`). Sparkle may resume an update it downloaded
+  /// earlier rather than the feed's newest item, so a remote client
+  /// converges on this build, not on the one it asked for.
+  private var installTargetBuild: Int?
 
   init(
     model: AppUpdateModel,
@@ -65,6 +70,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     // /v1/update from this preference, never a client's.
     AppUpdateHandoff.clearStatus()
     AppUpdateHandoff.writeChannel(allowsAlpha: model.allowsAlphaUpdates)
+    // The server's update check reads the feed Sparkle will install from:
+    // one document decides what "latest" means on this machine.
+    if let feedURL = feedURLString(for: updater) {
+      AppUpdateHandoff.writeFeedURL(feedURL)
+    }
     model.checkHandler = { [weak self] _ in
       guard let self, !self.updater.sessionInProgress else { return }
       self.updater.checkForUpdateInformation()
@@ -92,6 +102,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     ServerLifecycleLog.default.note("update: install requested")
     installSessionActive = true
     serverPreparedForUpdate = false
+    installTargetBuild = nil
     reportProgress("Checking for the update…")
     driver.armInstall()
     Task { @MainActor [weak self] in
@@ -116,6 +127,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
       state: "installing",
       message: message,
       targetVersion: model.availableRelease?.version,
+      targetBuildNumber: installTargetBuild,
       progress: model.progress
     )
   }
@@ -136,6 +148,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     ServerLifecycleLog.default.error("update: install failed: \(message)")
     installSessionActive = false
     serverPreparedForUpdate = false
+    installTargetBuild = nil
     updateLeaseHandoff?.cancel()
     updateLeaseHandoff = nil
     AppUpdateHandoff.writeStatus(state: "failed", message: message)
@@ -197,6 +210,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     if installSessionActive {
       // Committed from here: the row shows progress, the composer stops
       // accepting turns, and a quit request is not confirmed.
+      installTargetBuild = Int(item.versionString)
       model.reportInstalling(version: version, releasePageURL: releasePageURL)
       reportProgress("Downloading…")
     }
@@ -219,9 +233,13 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     Log.updates.log("install: Sparkle will install \(version, privacy: .public)")
     ServerLifecycleLog.default.note("update: installing \(version)")
     if installSessionActive {
+      // A resumed download skips the "found" callback; this one always
+      // fires, so the build Sparkle is really installing is known here.
+      installTargetBuild = Int(item.versionString)
       AppUpdateHandoff.writeStatus(
         state: "installing",
-        targetVersion: version
+        targetVersion: version,
+        targetBuildNumber: installTargetBuild
       )
     }
     model.reportInstalling(

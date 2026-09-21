@@ -9,9 +9,14 @@ import Foundation
 ///   preference, so the server's update checks must read the same
 ///   preference — otherwise a remote client's requested channel can make
 ///   check and install disagree and an "update" never converges.
+/// - The FEED file is the exact appcast URL Sparkle installs from. The
+///   server reads "latest" from that same document, so what it reports and
+///   what Sparkle installs can no longer disagree.
 /// - The STATUS file reports the unattended Sparkle session's progress and
 ///   outcome, which the server mirrors into `/v1/update` as `lastApply` so
-///   a remote client sees "failed: <why>" instead of timing out.
+///   a remote client sees "failed: <why>" instead of timing out — and the
+///   build Sparkle is actually installing, which may be older than the
+///   feed's newest when Sparkle resumes an earlier download.
 ///
 /// The app writes; the server only reads. File names must match the
 /// server-side constants in `@codevisor/updater`'s app-hosted module.
@@ -19,6 +24,11 @@ public enum AppUpdateHandoff {
   public static func defaultChannelURL() -> URL {
     CodevisorAppVariant.serverDataDirectoryURL()
       .appendingPathComponent("app-update-channel")
+  }
+
+  public static func defaultFeedURL() -> URL {
+    CodevisorAppVariant.serverDataDirectoryURL()
+      .appendingPathComponent("app-update-feed")
   }
 
   public static func defaultStatusURL() -> URL {
@@ -32,11 +42,18 @@ public enum AppUpdateHandoff {
     try? Data("\(allowsAlpha ? "alpha" : "stable")\n".utf8).write(to: url, options: .atomic)
   }
 
+  /// Records the appcast Sparkle resolves updates from. Called at startup
+  /// (the feed is fixed per build; only development runs override it).
+  public static func writeFeedURL(_ feedURL: String, to url: URL = defaultFeedURL()) {
+    try? Data("\(feedURL)\n".utf8).write(to: url, options: .atomic)
+  }
+
   private struct Status: Encodable {
     let progress: Double?
     let state: String
     let message: String?
     let targetVersion: String?
+    let targetBuildNumber: Int?
     let at: String
   }
 
@@ -47,6 +64,7 @@ public enum AppUpdateHandoff {
     state: String,
     message: String? = nil,
     targetVersion: String? = nil,
+    targetBuildNumber: Int? = nil,
     progress: Double? = nil,
     at date: Date = Date(),
     to url: URL = defaultStatusURL()
@@ -58,6 +76,7 @@ public enum AppUpdateHandoff {
       state: state,
       message: message,
       targetVersion: targetVersion,
+      targetBuildNumber: targetBuildNumber,
       at: formatter.string(from: date)
     )
     guard let payload = try? JSONEncoder().encode(status) else { return }
