@@ -92,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if chromiumShutdownInProgress { return .terminateCancel }
     let skip = skipsNextConfirmation
     skipsNextConfirmation = false
-    guard !skip, let settings, settings.confirmBeforeQuitting else { return terminateBrowsers(sender) }
+    guard !skip, let settings, settings.shouldConfirmBeforeQuitting else { return terminateBrowsers(sender) }
     // Sparkle quits the app itself to swap the bundle in; the user already
     // chose "Install and Relaunch", and a cancelled quit would leave the
     // installer waiting on this process forever.

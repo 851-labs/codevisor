@@ -10,6 +10,15 @@ struct ModelPickerSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Bindable var controller: SessionController
 
+  /// Pushed screens live here, not in a view-destination link: the model
+  /// step re-branches whenever capabilities reload (returning from a
+  /// browser sign-in, or the sign-in itself changing the catalog), and a
+  /// link unmounted by that pops whatever it pushed — mid-auth.
+  private enum Destination: Hashable {
+    case manageHarnesses
+  }
+
+  @State private var path: [Destination] = []
   @State private var search = ""
   @State private var isSwitchingHarness = false
   /// The model value tapped while a cross-harness switch is in flight, so
@@ -54,8 +63,13 @@ struct ModelPickerSheet: View {
   }
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       modelStep
+        .navigationDestination(for: Destination.self) { destination in
+          switch destination {
+          case .manageHarnesses: HarnessesSettingsScreen()
+          }
+        }
         .navigationTitle("Models")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -129,9 +143,7 @@ struct ModelPickerSheet: View {
         }
         if search.isEmpty {
           Section {
-            NavigationLink {
-              HarnessesSettingsScreen()
-            } label: {
+            NavigationLink(value: Destination.manageHarnesses) {
               Label("Manage Harnesses", systemImage: "cpu")
             }
           }
@@ -169,9 +181,7 @@ struct ModelPickerSheet: View {
   }
 
   private var manageHarnessesLink: some View {
-    NavigationLink {
-      HarnessesSettingsScreen()
-    } label: {
+    NavigationLink(value: Destination.manageHarnesses) {
       Text("Manage Harnesses…")
     }
     .buttonStyle(.borderedProminent)

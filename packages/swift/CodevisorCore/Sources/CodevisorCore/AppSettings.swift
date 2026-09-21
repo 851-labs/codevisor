@@ -226,6 +226,12 @@ public final class AppSettingsModel {
   public var shareCrashReports: Bool { settings.shareCrashReports }
   public var alphaUpdatesEnabled: Bool { settings.alphaUpdatesEnabled }
   public var confirmBeforeQuitting: Bool { settings.confirmBeforeQuitting }
+  /// Whether ⌘Q should ask first. Never during onboarding: granting a
+  /// system permission there has macOS offer "Quit & Reopen", and a
+  /// confirmation sheet makes that relaunch silently fail.
+  public var shouldConfirmBeforeQuitting: Bool {
+    settings.hasCompletedOnboarding && settings.confirmBeforeQuitting
+  }
 
   /// Whether a harness is enabled (not turned off by the user).
   public func isHarnessEnabled(_ id: String) -> Bool {

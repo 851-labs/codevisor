@@ -30,20 +30,10 @@ public struct HarnessGlobalSection<Icon: View>: View {
     self.icon = icon
   }
 
-  private var settings: [HarnessFleet.Setting] {
-    HarnessFleet.settings(environment.configSync).map { setting in
-      guard let harness = model.catalog.first(where: { $0.id == setting.id }) else { return setting }
-      var result = setting
-      result.name = harness.name
-      result.symbolName = harness.symbolName
-      return result
-    }
-  }
-
   public var body: some View {
     let machines = HarnessFleet.fleetMachines(environment.machines)
     Section {
-      ForEach(settings) { setting in
+      ForEach(HarnessFleet.settings(environment.configSync, catalog: model.catalog)) { setting in
         HarnessFleetRow(
           setting: setting, machines: machines, model: model,
           onAccounts: onAccounts, onSignIn: onSignIn, onEditCustom: onEditCustom
@@ -59,10 +49,25 @@ public struct HarnessGlobalSection<Icon: View>: View {
   }
 }
 
+extension HarnessFleet {
+  /// The catalog rows, with the display name and symbol a machine reports
+  /// for the harness taking precedence over what the row was authored with.
+  static func settings(_ sync: ConfigSync, catalog: [ServerHarness]) -> [Setting] {
+    settings(sync).map { setting in
+      guard let harness = catalog.first(where: { $0.id == setting.id }) else { return setting }
+      var result = setting
+      result.name = harness.name
+      result.symbolName = harness.symbolName
+      return result
+    }
+  }
+}
+
 /// One harness across the fleet: its row, then its machines. Reads the
 /// replica on every render so the rows follow machines as they converge.
 private struct HarnessFleetRow<Icon: View>: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   let setting: HarnessFleet.Setting
   let machines: [HarnessFleet.FleetMachine]
   let model: HarnessGlobalModel
@@ -70,7 +75,6 @@ private struct HarnessFleetRow<Icon: View>: View {
   let onSignIn: (_ machineId: String, _ harnessId: String, _ startsSignIn: Bool) -> Void
   let onEditCustom: ((HarnessFleet.Setting) -> Void)?
   @ViewBuilder let icon: () -> Icon
-  @State private var blocked: HarnessBlockedMachine?
 
   var body: some View {
     let sharesAccounts = HarnessRowState.sharesFleetAccounts(harnessId: setting.id)
@@ -87,14 +91,14 @@ private struct HarnessFleetRow<Icon: View>: View {
       harnessId: setting.id, sync: environment.configSync, machines: machines, sharedSignIn: sharedSignIn)
     // A disabled harness has nothing to converge: just the name and the toggle.
     let live = setting.enabled
-    // One machine is the fleet: its mark and menu fold into the harness row.
+    // One machine is the fleet: its action folds into the harness row.
     let single = live && machines.count == 1 ? status.machines.first : nil
     // A fleet-shared sign-in offered from a machine row still signs the fleet in.
     let actions = HarnessMachineActions(
       signIn: sharesAccounts ? { _ in onAccounts(setting, true) } : { onSignIn($0, setting.id, true) },
       accounts: sharesAccounts || !shared.supportsAccounts ? nil : { onSignIn($0, setting.id, false) })
+    // The Sign In… button says it; a caption would only repeat it.
     let state = HarnessRowState(
-      status: live && sharesAccounts && shared.needsSignIn ? "Sign in required" : nil,
       needsSignIn: live && sharesAccounts && shared.needsSignIn,
       supportsAccounts: sharesAccounts && shared.supportsAccounts)
     HarnessSettingsRow(
@@ -110,22 +114,27 @@ private struct HarnessFleetRow<Icon: View>: View {
     ) {
       icon()
     } accessory: {
+      // The one thing to do about the fleet's accounts sits beside the
+      // status, not behind the menu (which keeps the rare actions).
+      if state.showsAccounts {
+        Button("Accounts…") { onAccounts(setting, false) }
+          .harnessRowButton(theme)
+      }
       if let single {
-        HarnessMachineMark(status: single.status)
+        HarnessMachineActionButton(row: single, harnessName: setting.name, actions: actions)
+        // One machine has nothing to converge with, so a check or a
+        // warning would only restate the button beside it. Progress still
+        // shows while the machine is installing or catching up.
+        if single.status.isBusy {
+          HarnessMachineMark(status: single.status)
+        }
       }
     } actions: {
-      if state.showsAccounts {
-        Button("Accounts…", systemImage: "person.crop.circle") { onAccounts(setting, false) }
-      }
-      if let single {
-        HarnessMachineMenuItems(row: single, harnessName: setting.name, actions: actions, blocked: $blocked)
-      }
       if let onEditCustom, model.customSpecs[setting.id] != nil {
         Button("Edit…", systemImage: "pencil") { onEditCustom(setting) }
       }
       Button("Uninstall…", role: .destructive) { model.uninstall = setting }
     }
-    .harnessBlockedDetails(item: $blocked)
     .onChange(of: hasAccount) { had, has in
       if has, !had { model.noteFleetSignedIn(setting.id) }
     }

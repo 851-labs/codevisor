@@ -7,19 +7,15 @@ import os
 import CodevisorUI
 
 /// First-launch onboarding, presented as a short paginated flow:
-/// 1. Welcome, 2. Choose your harnesses, 3. System permissions,
-/// 4. Choose your projects, 5. Choose analytics and crash-report sharing,
-/// 6. Optionally sign in to Codevisor Cloud.
+/// 1. Welcome, 2. Sign in with GitHub, 3. Choose your harnesses,
+/// 4. System permissions, 5. Choose your projects, 6. Analytics and
+/// crash-report sharing.
+/// Signing in comes before harnesses on purpose: the harness step shows the
+/// account's shared fleet, so a second Mac sees what will sync to it
+/// (and what it adds) instead of a list that looks like a first install.
 /// The project step is a multi-select over suggested folders; completing it
 /// adds every selected folder as a project and opens a new chat in the first.
 struct OnboardingView: View {
-  /// A failed harness enable/disable request, pending display in an alert.
-  struct ToggleError: Identifiable {
-    let id = UUID()
-    let title: String
-    let message: String
-  }
-
   @Environment(AppEnvironment.self) var environment
   @Environment(\.theme) var theme
 
@@ -28,20 +24,37 @@ struct OnboardingView: View {
   var onComplete: (Project?) -> Void
 
   /// Raw values are persisted as mid-flow resume state, so existing cases
-  /// must never be reordered — new steps are appended. Flow order matches
-  /// raw-value order (Back navigates via `rawValue - 1`), so `account`
-  /// lands last, after analytics.
+  /// must never be reordered or renumbered — new steps are appended. The
+  /// order the user walks is `flow`, which is free to change.
   enum Step: Int, CaseIterable {
     case welcome, harnesses, permissions, project, analytics, account
+
+    /// The order steps are shown in.
+    static let flow: [Step] = [.welcome, .account, .harnesses, .permissions, .project, .analytics]
+
+    var position: Int { Self.flow.firstIndex(of: self) ?? 0 }
+    var next: Step? { Self.flow.indices.contains(position + 1) ? Self.flow[position + 1] : nil }
+    var previous: Step? { position > 0 ? Self.flow[position - 1] : nil }
   }
 
-  /// Where harness detection stands. Distinguishes "the server isn't up
+  /// Where the harness step stands. Distinguishes "the server isn't up
   /// yet / can't be reached" from "reachable, but nothing installed" — the
-  /// two used to collapse into a false "No harnesses found".
+  /// two used to collapse into a false "No harnesses found" — and the
+  /// fleet convergence that runs before the list may render.
   enum HarnessDetection: Equatable {
     case connecting
+    /// Pulling the account's shared state from its other machines. The
+    /// list waits: shown early, a second Mac looks exactly like a first.
+    case syncing
     case unreachable(String)
     case loaded
+
+    var isSettled: Bool {
+      switch self {
+      case .connecting, .syncing: false
+      case .unreachable, .loaded: true
+      }
+    }
   }
 
   init(
@@ -60,26 +73,24 @@ struct OnboardingView: View {
 
   @State var cloudAuthentication = CloudAuthenticationCoordinator()
   @State var isSigningInToCloud = false
-  @State var showsEmailSignIn = false
   @State var step: Step
   /// Which way the current step change is travelling, so the slide matches.
   @State var isNavigatingBack = false
-  /// The full catalog — installed harnesses get toggles, the rest get
-  /// install hints.
+  /// This Mac's catalog, as its server reports it. Seeds the shared fleet
+  /// and the first new-chat picker.
   @State var harnesses: [ServerHarness] = []
   @State var detection: HarnessDetection = .connecting
-  @State var isRescanning = false
-  @State var rescanError: String?
+  /// The page's height, so the harness step can size its own scrolling list.
+  @State var viewportHeight: CGFloat = 700
+  /// The same list model and sheets Settings › Harnesses uses.
+  @State var fleetModel = HarnessGlobalModel()
+  @State var fleetPresenter = HarnessFleetPresenter()
   /// The project step's selection state (suggestions, picks, clones) —
   /// the same model the new-chat empty state uses.
   @State var projectSetup = ProjectSetupModel()
   @State var showingFolderPicker = false
   @State var showingGitClone = false
   @State var isFinishing = false
-  @State var showsNotInstalled = false
-  @State var authenticationHarness: HarnessAccountsPresentation<ServerHarness>?
-  @State var detailHarness: ServerHarness?
-  @State var toggleError: ToggleError?
   /// Sharing is selected initially, but nothing is persisted or sent until
   /// the user continues past the final onboarding step.
   @State var shareAnalytics = true
@@ -89,9 +100,6 @@ struct OnboardingView: View {
   @State var permissions = ComputerUsePermissionsModel(
     probes: AppPreview.isRunning ? .granted : .live
   )
-
-  var installedHarnesses: [ServerHarness] { harnesses.filter(\.isReady) }
-  var notInstalledHarnesses: [ServerHarness] { harnesses.filter { !$0.isReady } }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -111,6 +119,7 @@ struct OnboardingView: View {
           .padding(.vertical, 32)
         }
         .scrollIndicators(.hidden)
+        .onChange(of: geometry.size.height, initial: true) { _, height in viewportHeight = height }
       }
       footer
         .frame(maxWidth: 560)
@@ -122,21 +131,8 @@ struct OnboardingView: View {
     .task { await detectHarnesses() }
     .onChange(of: environment.harnessCatalogRevision(for: CodevisorMachine.local.id)) { _, _ in
       // Install progress events invalidate the catalog — refetch so the
-      // row flips from Installing… to installed without "Detect again".
+      // seed and the first new-chat picker see what just landed.
       Task { await refreshHarnessList() }
-    }
-    .onChange(of: harnesses) { previous, current in
-      // Continue the user's intent: an install started here that just
-      // finished and needs sign-in opens the auth sheet directly.
-      guard authenticationHarness == nil, step == .harnesses else { return }
-      for harness in current where harness.isReady {
-        let before = previous.first { $0.id == harness.id }
-        guard before?.lifecycle?.resolvedPhase == .installing, before?.isReady != true,
-          harness.requiresAuthentication
-        else { continue }
-        authenticationHarness = .init(harness, startsSignIn: true)
-        break
-      }
     }
     .fileImporter(
       isPresented: $showingFolderPicker,
@@ -147,20 +143,7 @@ struct OnboardingView: View {
         projectSetup.addPickedFolders(urls)
       }
     }
-    .sheet(item: $authenticationHarness) { presentation in
-      let harness = presentation.selection
-      HarnessAuthenticationView(
-        harness: harness, onChange: { replaceHarness($0) },
-        signInRequest: presentation.startsSignIn
-          ? HarnessMachineSignIn(profileId: harness.id == "opencode" ? "default" : nil) : nil
-      )
-      .environment(\.settingsMachineId, CodevisorMachine.local.id)
-    }
-    .sheet(item: $detailHarness) { harness in
-      HarnessDetailSheet(harness: harness)
-        .environment(\.settingsMachineId, CodevisorMachine.local.id)
-    }
-    .sheet(isPresented: $showsEmailSignIn) { CloudEmailAuthSheet(cloud: environment.cloud) }
+    .harnessFleetSheets(fleetPresenter, model: fleetModel)
     .sheet(isPresented: $showingGitClone) {
       GitCloneSheet(
         client: environment.machines.client(for: CodevisorMachine.local.id),
@@ -169,23 +152,12 @@ struct OnboardingView: View {
         projectSetup.cloneCompleted(project)
       }
     }
-    .alert(
-      toggleError?.title ?? "",
-      isPresented: Binding(
-        get: { toggleError != nil },
-        set: { if !$0 { toggleError = nil } }
-      ),
-      presenting: toggleError
-    ) { _ in
-      Button("OK") {}
-    } message: { error in
-      Text(error.message)
-    }
   }
 
-  /// The project step earns extra width for its two-column suggestion grid.
+  /// The project step earns extra width for its two-column suggestion grid;
+  /// the harness step for the Settings form it embeds.
   private var contentMaxWidth: CGFloat {
-    step == .project ? 560 : 460
+    step == .project || step == .harnesses ? 560 : 460
   }
 
   /// Steps slide the way the user is travelling: forward pulls the next
@@ -208,14 +180,14 @@ struct OnboardingView: View {
     .frame(width: 900, height: 700)
 }
 
-#Preview("Harnesses") {
-  OnboardingView(initialStep: .harnesses) { _ in }
+#Preview("Account") {
+  OnboardingView(initialStep: .account) { _ in }
     .environment(AppEnvironment.preview(hasOnboarded: false))
     .frame(width: 900, height: 700)
 }
 
-#Preview("Analytics") {
-  OnboardingView(initialStep: .analytics) { _ in }
+#Preview("Harnesses") {
+  OnboardingView(initialStep: .harnesses) { _ in }
     .environment(AppEnvironment.preview(hasOnboarded: false))
     .frame(width: 900, height: 700)
 }
@@ -226,8 +198,8 @@ struct OnboardingView: View {
     .frame(width: 900, height: 700)
 }
 
-#Preview("Account") {
-  OnboardingView(initialStep: .account) { _ in }
+#Preview("Analytics") {
+  OnboardingView(initialStep: .analytics) { _ in }
     .environment(AppEnvironment.preview(hasOnboarded: false))
     .frame(width: 900, height: 700)
 }

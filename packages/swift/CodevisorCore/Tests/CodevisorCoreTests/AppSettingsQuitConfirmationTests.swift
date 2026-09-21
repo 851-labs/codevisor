@@ -21,6 +21,22 @@ struct AppSettingsQuitConfirmationTests {
     #expect(AppSettingsModel(store: store).confirmBeforeQuitting)
   }
 
+  @Test("Never asks until onboarding has finished")
+  @MainActor
+  func onboardingSkipsConfirmation() {
+    let model = AppSettingsModel(store: InMemoryStore())
+    #expect(model.confirmBeforeQuitting)
+    // System Settings' "Quit & Reopen" after a permission grant must
+    // succeed mid-onboarding, where relaunching is expected.
+    #expect(model.shouldConfirmBeforeQuitting == false)
+
+    model.completeOnboarding(importExternalSessions: false)
+    #expect(model.shouldConfirmBeforeQuitting)
+
+    model.setConfirmBeforeQuitting(false)
+    #expect(model.shouldConfirmBeforeQuitting == false)
+  }
+
   @Test("Legacy settings payloads without the key keep asking")
   func legacyPayloadDefaultsOn() throws {
     let legacy = Data(#"{"hasCompletedOnboarding":true}"#.utf8)

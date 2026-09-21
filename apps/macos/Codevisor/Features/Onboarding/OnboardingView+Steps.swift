@@ -66,7 +66,7 @@ extension OnboardingView {
   // MARK: - Privacy
 
   /// A compact final-step consent card. Both choices start selected, remain
-  /// independent, and are not persisted until the user continues.
+  /// independent, and are not persisted until the user finishes.
   private var analyticsStep: some View {
     VStack(spacing: 0) {
       Image(systemName: "chart.line.uptrend.xyaxis")
@@ -148,17 +148,18 @@ extension OnboardingView {
 
   // MARK: - Cloud account
 
-  /// The optional last step: connect the Codevisor Cloud account. Signing
-  /// in is never required — "Skip for now" finishes setup, and the account
-  /// stays available in Settings → Account. A dev environment may already
+  /// Sign-in is required on the Mac and GitHub is the one provider: the
+  /// same credential later drives repository access, and the harness step
+  /// that follows reads the account's fleet. A dev environment may already
   /// be signed in (bootstrap adopts the dev cloud token), in which case the
   /// confirmation shows instead of the button.
   private var accountStep: some View {
     VStack(spacing: 20) {
       stepHeader(
-        symbol: "icloud",
-        title: "Connect your machines",
-        subtitle: "Sign in to see and connect to all of your machines from anywhere. End-to-end encrypted."
+        symbol: "person.crop.circle",
+        title: "Sign in to Codevisor",
+        subtitle:
+          "Your harnesses, accounts, and machines stay in sync on every device you sign in to. End-to-end encrypted."
       )
 
       Group {
@@ -170,12 +171,6 @@ extension OnboardingView {
                 title: "Sign in with GitHub",
                 icon: .asset("GitHubMark")
               ) { startCloudSignIn() }
-            }
-            if environment.cloud.supportsAppleSignIn {
-              CloudAppleSignInButton { startCloudSignIn(provider: .apple) }
-            }
-            if environment.cloud.supportsEmailSignIn {
-              CloudEmailSignInButton { showsEmailSignIn = true }
             }
             if environment.cloud.developmentAccountAvailable {
               CloudSignInProviderButton(

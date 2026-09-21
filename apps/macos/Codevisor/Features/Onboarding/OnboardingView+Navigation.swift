@@ -34,7 +34,7 @@ extension OnboardingView {
 
   private var pageDots: some View {
     HStack(spacing: 6) {
-      ForEach(Step.allCases, id: \.rawValue) { dot in
+      ForEach(Step.flow, id: \.rawValue) { dot in
         Capsule()
           .fill(dot == step ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary))
           .frame(width: dot == step ? 18 : 7, height: 7)
@@ -42,7 +42,7 @@ extension OnboardingView {
     }
     .animation(.smooth(duration: 0.3), value: step)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
+    .accessibilityLabel("Step \(step.position + 1) of \(Step.flow.count)")
   }
 
   /// One button occupies the trailing slot. Until both permissions are
@@ -55,14 +55,6 @@ extension OnboardingView {
         .buttonStyle(.bordered)
         .controlSize(.large)
         .frame(minWidth: 96)
-    } else if step == .account, !environment.cloud.state.isSignedIn {
-      // Sign-in is optional; until it happens the only way forward is
-      // to skip, which finishes setup exactly like Continue would.
-      Button("Skip for Now") { advance() }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .frame(minWidth: 96)
-        .disabled(isFinishing)
     } else {
       primaryButton
     }
@@ -95,11 +87,11 @@ extension OnboardingView {
   private var primaryTitle: String {
     switch step {
     case .welcome: return "Get Started"
-    case .permissions: return "Continue"
-    case .harnesses: return "Continue"
-    case .project: return "Continue"
-    case .analytics: return "Continue"
     case .account: return "Continue"
+    case .harnesses: return "Continue"
+    case .permissions: return "Continue"
+    case .project: return "Continue"
+    case .analytics: return "Finish"
     }
   }
 
@@ -107,11 +99,13 @@ extension OnboardingView {
     if isFinishing { return true }
     switch step {
     case .welcome: return false
+    // Sign-in is required on the Mac: the fleet the next step shows, and
+    // the machines the app connects, belong to an account.
+    case .account: return !environment.cloud.state.isSignedIn
+    case .harnesses: return !detection.isSettled
     case .permissions: return !permissions.allGranted
-    case .harnesses: return detection == .connecting
     case .project: return projectSetup.selectedFolders.isEmpty
     case .analytics: return false
-    case .account: return false
     }
   }
 
@@ -131,7 +125,7 @@ extension OnboardingView {
   }
 
   private func goBack() {
-    guard let previous = Step(rawValue: step.rawValue - 1) else { return }
+    guard let previous = step.previous else { return }
     navigate(to: previous, back: true)
   }
 
@@ -154,14 +148,15 @@ extension OnboardingView {
   private func advance() {
     switch step {
     case .welcome:
+      navigate(to: .account, back: false)
+    case .account:
+      // Continue is disabled until signed in; the harness step reads the
+      // account's fleet the moment it appears.
       navigate(to: .harnesses, back: false)
     case .harnesses:
       navigate(to: .permissions, back: false)
-      // The Harnesses settings page lists only the shared catalog, which
-      // machines never publish into — give every harness the user kept on
-      // its row now, exactly as "Add Harness…" would.
-      HarnessFleet.seed(from: harnesses, in: environment.configSync)
-      // The catalog is already loaded, so make the first new-chat picker
+      // The shared catalog was seeded when the list rendered. The local
+      // catalog is already loaded, so make the first new-chat picker
       // available immediately. The capability warm below replaces this
       // provisional seed with model/mode metadata when it finishes.
       environment.configCache.seedHarnesses(
@@ -184,10 +179,6 @@ extension OnboardingView {
     case .analytics:
       environment.setShareAnalytics(shareAnalytics)
       environment.setShareCrashReports(shareCrashReports)
-      navigate(to: .account, back: false)
-    case .account:
-      // Signing in is optional — Continue (signed in) and Skip for Now
-      // (signed out) both land here and finish setup.
       finish()
     }
   }

@@ -2,30 +2,30 @@ import SwiftUI
 import AppKit
 import CodevisorCore
 import CodevisorCoreMac
-import UniformTypeIdentifiers
 import os
 import CodevisorUI
 
 extension OnboardingView {
   // MARK: - Harnesses
 
+  /// The account's harness fleet, exactly as Settings › Harnesses shows it
+  /// afterwards. On a first Mac that is this machine's catalog; on another
+  /// it is the fleet this Mac just joined — every harness lists each
+  /// machine, so what will install here and what this Mac contributes are
+  /// the same rows, not two explanations.
   var harnessesStep: some View {
     VStack(spacing: 20) {
       stepHeader(
         symbol: "terminal",
         title: "Choose your harnesses",
-        subtitle: "Choose which harnesses to use on this Mac."
+        subtitle: "Harnesses you turn on sync to every Mac signed in to your account."
       )
 
       switch detection {
       case .connecting:
-        VStack(spacing: 10) {
-          ProgressView()
-            .controlSize(.small)
-          Text("Checking agents…")
-            .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 20)
+        progress("Checking agents…")
+      case .syncing:
+        progress("Syncing your account…")
       case let .unreachable(message):
         VStack(spacing: 12) {
           Label {
@@ -48,156 +48,74 @@ extension OnboardingView {
           }
         }
       case .loaded:
-        if installedHarnesses.isEmpty {
-          noHarnessesContent
-        } else {
-          VStack(alignment: .leading, spacing: 12) {
-            VStack(spacing: 0) {
-              ForEach(Array(installedHarnesses.enumerated()), id: \.element.id) { index, harness in
-                harnessRow(harness)
-                if index < installedHarnesses.count - 1 { Divider() }
-              }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
-
-            if !notInstalledHarnesses.isEmpty {
-              DisclosureGroup(isExpanded: $showsNotInstalled) {
-                notInstalledList
-                  .padding(.top, 8)
-              } label: {
-                Text("Not installed (\(notInstalledHarnesses.count))")
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
-        }
+        fleetCard
       }
     }
     .frame(maxWidth: .infinity)
   }
 
-  /// The "nothing installed" empty state: every known harness with an
-  /// install hint, plus a rescan that picks up a fresh install in place —
-  /// the server re-resolves its PATH, so no relaunch is needed.
-  private var noHarnessesContent: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Label {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("No harnesses found").fontWeight(.medium)
-          Text("Install one below, then detect again — no restart needed.")
-            .font(.callout).foregroundStyle(.secondary)
-        }
-      } icon: {
-        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.statusWarn)
-      }
+  private func progress(_ title: String) -> some View {
+    VStack(spacing: 10) {
+      ProgressView()
+        .controlSize(.small)
+      Text(title)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.vertical, 20)
+  }
 
-      notInstalledList
-
-      Button {
-        Task { await rescanHarnesses() }
-      } label: {
-        if isRescanning {
-          HStack(spacing: 6) {
-            ProgressView().controlSize(.small)
-            Text("Detecting…")
+  /// Settings › Harnesses, verbatim — the same `Form`, section, rows, and
+  /// footer — sized to the step so it scrolls on its own inside the page.
+  private var fleetCard: some View {
+    Form {
+      if HarnessFleet.settings(environment.configSync).isEmpty {
+        Section {
+          Label {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("No harnesses yet").fontWeight(.medium)
+              Text("Add one to install it on this Mac. No restart needed.")
+                .font(.callout).foregroundStyle(.secondary)
+            }
+          } icon: {
+            Image(systemName: "terminal").foregroundStyle(.secondary)
           }
-        } else {
-          Label("Detect again", systemImage: "arrow.clockwise")
         }
       }
-      .disabled(isRescanning)
-
-      if let rescanError {
-        Text(rescanError)
-          .font(.callout)
-          .foregroundStyle(theme.statusWarn)
-          .fixedSize(horizontal: false, vertical: true)
+      HarnessGlobalSection(
+        model: fleetModel,
+        onAccounts: { fleetPresenter.showAccounts($0, startsSignIn: $1) },
+        onSignIn: { fleetPresenter.showSignIn(machineId: $0, harnessId: $1, startsSignIn: $2) }
+      ) { id, symbol in
+        HarnessIcon(harnessId: id, fallbackSymbolName: symbol, size: 18)
       }
     }
+    .settingsPaneFormStyle(theme)
+    .frame(height: fleetListHeight)
   }
 
-  private var notInstalledList: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      ForEach(Array(notInstalledHarnesses.enumerated()), id: \.element.id) { index, harness in
-        HarnessInstallHintRow(harness: harness)
-          .padding(.vertical, 8)
-        if index < notInstalledHarnesses.count - 1 { Divider() }
-      }
-    }
-    .padding(.horizontal, 14)
-    .padding(.vertical, 4)
-    .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackground))
-  }
-
-  private func harnessRow(_ harness: ServerHarness) -> some View {
-    let state = HarnessRowState.machine(harness)
-    return HarnessSettingsRow(
-      name: harness.name, state: state,
-      isEnabled: Binding(
-        get: { harness.isDesiredEnabled },
-        set: { enabled in Task { await setHarness(harness, enabled: enabled) } }),
-      signIn: {
-        authenticationHarness = .init(harness, startsSignIn: true)
-      }
-    ) {
-      HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
-    } actions: {
-      if state.showsAccounts {
-        Button("Accounts…") {
-          authenticationHarness = .init(harness, startsSignIn: false)
-        }
-      }
-      Button("Get Info…") { detailHarness = harness }
-    }
-    .padding(.vertical, 6)
-  }
-
-  private func setHarness(_ harness: ServerHarness, enabled: Bool) async {
-    updateHarnessDesiredEnabled(harness.id, enabled: enabled)
-    do {
-      let updated = try await environment.machines.client(for: CodevisorMachine.local.id)
-        .setHarnessDesiredEnabled(id: harness.id, enabled: enabled)
-      environment.settings.setHarness(harness.id, enabled: updated.isDesiredEnabled)
-      replaceHarness(updated)
-    } catch {
-      replaceHarness(harness)
-      Log.server.error(
-        "Setting harness \(harness.id, privacy: .public) enabled=\(enabled, privacy: .public) during onboarding failed: \(String(describing: error), privacy: .public)"
-      )
-      toggleError = ToggleError(
-        title: enabled ? "Couldn't turn on \(harness.name)" : "Couldn't turn off \(harness.name)",
-        message: ErrorReporter.userFacingMessage(for: error)
-      )
-    }
-  }
-
-  private func updateHarnessDesiredEnabled(_ id: String, enabled: Bool) {
-    guard let index = harnesses.firstIndex(where: { $0.id == id }) else { return }
-    harnesses[index].desiredEnabled = enabled
-  }
-
-  func replaceHarness(_ harness: ServerHarness) {
-    guard let index = harnesses.firstIndex(where: { $0.id == harness.id }) else { return }
-    harnesses[index] = harness
+  /// Everything below the step header, so the list fills the page and the
+  /// page itself never has to scroll behind it.
+  private var fleetListHeight: CGFloat {
+    max(280, viewportHeight - 64 - 190)
   }
 
   // MARK: - Detection
 
-  /// Waits for the local server, then loads the harness catalog with a
-  /// short retry tail. Onboarding shows on first launch — exactly when the
-  /// server is cold-starting — so querying immediately used to hit a closed
-  /// port and misreport "No harnesses found".
   /// Light refetch (no PATH re-resolve) when a lifecycle event invalidated
-  /// the catalog — flips rows through Installing… → installed live.
+  /// the catalog — the seed and the new-chat picker follow installs live.
   func refreshHarnessList() async {
     guard detection == .loaded else { return }
     if let loaded = try? await environment.harnessService(for: CodevisorMachine.local.id).allHarnesses() {
       harnesses = loaded
+      HarnessFleet.seed(from: harnesses, in: environment.configSync)
     }
   }
 
+  /// Waits for the local server, loads this Mac's catalog with a short
+  /// retry tail, then converges with the account's fleet before the list
+  /// renders. Onboarding shows on first launch — exactly when the server
+  /// is cold-starting — so querying immediately used to hit a closed port
+  /// and misreport "No harnesses found".
   func detectHarnesses() async {
     detection = .connecting
     projectSetup.isLoadingRecommendations = true
@@ -208,42 +126,69 @@ extension OnboardingView {
     }
     // Safety net past the health wait: a handful of quick retries, not
     // one instantly-failing shot.
+    var loaded: [ServerHarness]?
     for attempt in 0..<8 {
-      if let loaded = try? await environment.harnessService(for: CodevisorMachine.local.id)
-        .allHarnesses()
-      {
-        harnesses = loaded
-        detection = .loaded
-        // Suggest project folders from the user's most recent harness
-        // sessions so the project step offers one-click choices.
-        projectSetup.recommendations = await environment.recommendedProjectsWithFallback(
-          serverId: CodevisorMachine.local.id
-        )
-        projectSetup.isLoadingRecommendations = false
-        return
-      }
+      loaded = try? await environment.harnessService(for: CodevisorMachine.local.id).allHarnesses()
+      if loaded != nil { break }
       if attempt < 7 {
         try? await Task.sleep(for: .milliseconds(500))
       }
     }
+    guard let loaded else {
+      projectSetup.isLoadingRecommendations = false
+      detection = .unreachable(serverFailureMessage)
+      return
+    }
+    harnesses = loaded
+    await joinFleet()
+    detection = .loaded
+    // Suggest project folders from the user's most recent harness
+    // sessions so the project step offers one-click choices.
+    projectSetup.recommendations = await environment.recommendedProjectsWithFallback(
+      serverId: CodevisorMachine.local.id
+    )
     projectSetup.isLoadingRecommendations = false
-    detection = .unreachable(serverFailureMessage)
   }
 
-  /// Re-detects on demand after the user installs a CLI; the server
-  /// re-resolves its PATH first.
-  private func rescanHarnesses() async {
-    isRescanning = true
-    defer { isRescanning = false }
-    do {
-      harnesses = try await environment.harnessService(for: CodevisorMachine.local.id)
-        .rescanHarnesses()
-      rescanError = nil
-    } catch {
-      Log.onboarding.error("Harness rescan failed: \(String(describing: error), privacy: .public)")
-      rescanError =
-        "Couldn't check for installed agents. Make sure the Codevisor server is running, then try again."
+  /// Pulls the account's shared state from its reachable machines, then
+  /// adds what this Mac has ready to the fleet — additively: a harness the
+  /// fleet already knows keeps the preference authored elsewhere. Bounded
+  /// so a machine that answers slowly can't hold the step; anything it
+  /// missed lands on the next sweep and the list follows the replica.
+  private func joinFleet() async {
+    if !AppPreview.isRunning, environment.cloud.state.isSignedIn || !environment.cloud.hasCompletedBootstrap {
+      detection = .syncing
+      await withTaskGroup(of: Void.self) { group in
+        group.addTask { await pullFleet() }
+        group.addTask { try? await Task.sleep(for: .seconds(20)) }
+        await group.next()
+        group.cancelAll()
+      }
     }
+    HarnessFleet.seed(from: harnesses, in: environment.configSync)
+  }
+
+  private func pullFleet() async {
+    // A relaunch mid-flow resumes here while the persisted session is
+    // still being validated; the roster is empty until that lands.
+    while !environment.cloud.hasCompletedBootstrap, !Task.isCancelled {
+      try? await Task.sleep(for: .milliseconds(100))
+    }
+    guard environment.cloud.state.isSignedIn else { return }
+    await environment.cloud.refreshMachines()
+    // Machines the account reports offline can't answer; probing them
+    // only waits out a relay timeout.
+    let offline = Set(environment.cloud.machines.filter { !$0.online }.map(\.deviceId))
+    let ids = environment.machines.allMachines.map(\.id).filter { id in
+      guard let device = CodevisorMachine.cloudDeviceId(forMachineId: id) else { return true }
+      return !offline.contains(device)
+    }
+    await withTaskGroup(of: Void.self) { group in
+      for id in ids {
+        group.addTask { await environment.prepareMachine(id) }
+      }
+    }
+    await environment.configSync.synchronizeAll()
   }
 
   private var serverFailureMessage: String {
