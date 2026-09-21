@@ -288,6 +288,8 @@ struct MachineControllerUpdateTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureDrain(polls: drainPolls)
+    // Still down when the budget runs out AND at the final reachability probe.
+    fake.configureRestartDowntime(polls: 4)
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),

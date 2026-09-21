@@ -18,12 +18,14 @@ extension SyncFakeServerClient {
     latest: String,
     installedVersion: String? = nil,
     currentBuildNumber: Int? = nil,
-    targetBuildNumber: Int? = nil
+    targetBuildNumber: Int? = nil,
+    installedBuildNumber: Int? = nil
   ) {
     lock.withLock {
       currentVersion = current
       latestVersion = latest
       installedVersionAfterUpdate = installedVersion
+      installedBuildNumberAfterUpdate = installedBuildNumber
       self.currentBuildNumber = currentBuildNumber
       self.targetBuildNumber = targetBuildNumber
       applyFailureMessage = nil
@@ -63,6 +65,11 @@ extension SyncFakeServerClient {
     guard _migrationActive else { return false }
     if _migrationReports.isEmpty, _migrationFailure == nil { _migrationActive = false }
     return _migrationActive
+  }
+
+  /// How long the simulated restart stays unreachable, in `info()` probes.
+  func configureRestartDowntime(polls: Int) {
+    lock.withLock { restartDowntime = polls }
   }
 
   /// Makes `applyServerUpdate()` decline as busy (chats still running).
@@ -429,10 +436,17 @@ extension SyncFakeServerClient {
   /// The server restarts: unreachable for a few probes, then back on the
   /// new version. Callers hold `lock`.
   private func performSimulatedRestart() {
-    downtimeRemaining = 3
+    downtimeRemaining = restartDowntime
     currentVersion = installedVersionAfterUpdate ?? latestVersion
-    if let targetBuildNumber { currentBuildNumber = targetBuildNumber }
-    updateApplied = true
+    if let installedBuildNumberAfterUpdate {
+      // Landed on a build of its own choosing; still "behind" when short
+      // of the target, so the next check keeps offering the update.
+      currentBuildNumber = installedBuildNumberAfterUpdate
+      updateApplied = targetBuildNumber.map { installedBuildNumberAfterUpdate >= $0 } ?? true
+    } else {
+      if let targetBuildNumber { currentBuildNumber = targetBuildNumber }
+      updateApplied = true
+    }
     bootId = "boot-after-update"
     if _migrationArmed {
       // The replacement binds its port and reports its data upgrade in

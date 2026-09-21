@@ -170,14 +170,24 @@ public struct ServerUpdateApplyState: Decodable, Equatable, Sendable {
   public var state: String
   public var message: String?
   public var targetVersion: String?
+  /// The build the host app's Sparkle is actually installing — possibly
+  /// older than the feed's newest when Sparkle resumes an earlier download.
+  public var targetBuildNumber: Int?
   public var at: String
 
-  public init(state: String, message: String? = nil, targetVersion: String? = nil, progress: Double? = nil, at: String)
-  {
+  public init(
+    state: String,
+    message: String? = nil,
+    targetVersion: String? = nil,
+    targetBuildNumber: Int? = nil,
+    progress: Double? = nil,
+    at: String
+  ) {
     self.progress = progress
     self.state = state
     self.message = message
     self.targetVersion = targetVersion
+    self.targetBuildNumber = targetBuildNumber
     self.at = at
   }
 }

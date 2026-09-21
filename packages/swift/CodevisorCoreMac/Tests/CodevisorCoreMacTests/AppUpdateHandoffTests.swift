@@ -22,6 +22,28 @@ struct AppUpdateHandoffTests {
     #expect(try String(contentsOf: url, encoding: .utf8) == "stable\n")
   }
 
+  @Test("The feed file carries the appcast URL Sparkle installs from")
+  func feedWrites() throws {
+    let url = temporaryURL("feed")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    AppUpdateHandoff.writeFeedURL("https://updates.codevisor.dev/appcast-x64.xml", to: url)
+    #expect(try String(contentsOf: url, encoding: .utf8) == "https://updates.codevisor.dev/appcast-x64.xml\n")
+  }
+
+  @Test("Status reports carry the build being installed")
+  func statusCarriesTargetBuild() throws {
+    let url = temporaryURL("status.json")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    AppUpdateHandoff.writeStatus(
+      state: "installing", targetVersion: "0.1.102-alpha.660", targetBuildNumber: 660, to: url)
+
+    let report = try JSONDecoder().decode(ServerUpdateApplyState.self, from: Data(contentsOf: url))
+    #expect(report.targetBuildNumber == 660)
+    #expect(report.targetVersion == "0.1.102-alpha.660")
+  }
+
   @Test("Status reports carry state, reason, target, and timestamp")
   func statusWrites() throws {
     let url = temporaryURL("status.json")
@@ -59,6 +81,7 @@ struct AppUpdateHandoffTests {
     #expect(payload["at"] is String)
     #expect(payload.keys.contains("message") == false)
     #expect(payload.keys.contains("targetVersion") == false)
+    #expect(payload.keys.contains("targetBuildNumber") == false)
   }
 
   @Test("Clearing removes a previous session's report")

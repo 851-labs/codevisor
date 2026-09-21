@@ -88,6 +88,10 @@ export const UpdateApplyState = Schema.Struct({
   state: Schema.Literals(["draining", "installing", "failed"]),
   message: Schema.optional(Schema.String),
   targetVersion: Schema.optional(Schema.String),
+  /// The build the host app's Sparkle is actually installing. Sparkle may
+  /// resume an update it downloaded earlier instead of the feed's newest
+  /// item; a client waiting for the restart converges on this build.
+  targetBuildNumber: Schema.optional(Schema.Number),
   at: Schema.String
 })
 export type UpdateApplyState = typeof UpdateApplyState.Type

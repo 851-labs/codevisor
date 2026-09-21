@@ -10,6 +10,10 @@ export interface AppcastItem {
   /// sparkle:version — the monotonically increasing build number.
   readonly build?: string
   readonly minimumSystemVersion?: string
+  /// sparkle:channel — absent on the default (stable) channel.
+  readonly channel?: string
+  /// The item's <link>: the release page.
+  readonly link?: string
   /// Full-zip enclosure.
   readonly url: string
   readonly length?: number
@@ -45,6 +49,8 @@ export const parseAppcast = (xml: string): ReadonlyArray<AppcastItem> => {
     const shortVersion = tagText(block, "sparkle:shortVersionString")
     const build = tagText(block, "sparkle:version")
     const minimumSystemVersion = tagText(block, "sparkle:minimumSystemVersion")
+    const channel = tagText(block, "sparkle:channel")
+    const link = tagText(block, "link")
     const edSignature = attribute(enclosure, "sparkle:edSignature")
     const length = Number(attribute(enclosure, "length"))
     items.push({
@@ -52,6 +58,8 @@ export const parseAppcast = (xml: string): ReadonlyArray<AppcastItem> => {
       ...(shortVersion === undefined ? {} : { shortVersion }),
       ...(build === undefined ? {} : { build }),
       ...(minimumSystemVersion === undefined ? {} : { minimumSystemVersion }),
+      ...(channel === undefined ? {} : { channel }),
+      ...(link === undefined ? {} : { link }),
       ...(Number.isFinite(length) && length > 0 ? { length } : {}),
       ...(edSignature === undefined ? {} : { edSignature })
     })

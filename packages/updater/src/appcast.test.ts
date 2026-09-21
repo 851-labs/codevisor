@@ -63,6 +63,27 @@ describe("appcast", () => {
     expect(selectLatestAppcastItem(parseAppcast(bare))?.url).toBe("https://example.com/bare.zip")
   })
 
+  it("reads the release channel and page link when present", () => {
+    const tagged = `<rss><channel><link>https://updates.example.com/</link>
+      <item>
+        <link>https://example.com/releases/v1.2.0-alpha.7</link>
+        <sparkle:version>7</sparkle:version>
+        <sparkle:channel>alpha</sparkle:channel>
+        <enclosure url="https://example.com/alpha.zip" />
+      </item>
+      <item><enclosure url="https://example.com/stable.zip" /></item>
+    </channel></rss>`
+    expect(parseAppcast(tagged)).toEqual([
+      {
+        build: "7",
+        channel: "alpha",
+        link: "https://example.com/releases/v1.2.0-alpha.7",
+        url: "https://example.com/alpha.zip"
+      },
+      { url: "https://example.com/stable.zip" }
+    ])
+  })
+
   it("returns nothing for feeds without items", () => {
     expect(parseAppcast("<rss></rss>")).toEqual([])
     expect(selectLatestAppcastItem([])).toBeUndefined()

@@ -6,11 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   APP_UPDATE_CHANNEL_FILE,
+  APP_UPDATE_FEED_FILE,
   APP_UPDATE_STATUS_FILE,
   APP_UPDATE_STATUS_TTL_MS,
   channelFromSyncedValue,
   readAppUpdateApplyState,
-  readMachineUpdateChannel
+  readMachineUpdateChannel,
+  readMachineUpdateFeedURL
 } from "./app-hosted.js"
 
 describe("channelFromSyncedValue", () => {
@@ -56,6 +58,34 @@ describe("app-hosted update files", () => {
     it("is undefined when the file cannot be read", () => {
       mkdirSync(join(dataDir, APP_UPDATE_CHANNEL_FILE))
       expect(readMachineUpdateChannel(dataDir)).toBeUndefined()
+    })
+  })
+
+  describe("readMachineUpdateFeedURL", () => {
+    it("is undefined when the host app never wrote a feed", () => {
+      expect(readMachineUpdateFeedURL(dataDir)).toBeUndefined()
+    })
+
+    it("reads the app's Sparkle feed URL", () => {
+      writeFileSync(
+        join(dataDir, APP_UPDATE_FEED_FILE),
+        "https://updates.codevisor.dev/appcast-x64.xml\n"
+      )
+      expect(readMachineUpdateFeedURL(dataDir)).toBe(
+        "https://updates.codevisor.dev/appcast-x64.xml"
+      )
+      writeFileSync(join(dataDir, APP_UPDATE_FEED_FILE), "http://127.0.0.1:8000/appcast.xml")
+      expect(readMachineUpdateFeedURL(dataDir)).toBe("http://127.0.0.1:8000/appcast.xml")
+    })
+
+    it("rejects anything that is not an http(s) URL", () => {
+      for (const contents of ["file:///tmp/appcast.xml", "not a url", "", "  \n"]) {
+        writeFileSync(join(dataDir, APP_UPDATE_FEED_FILE), contents)
+        expect(readMachineUpdateFeedURL(dataDir)).toBeUndefined()
+      }
+      rmSync(join(dataDir, APP_UPDATE_FEED_FILE))
+      mkdirSync(join(dataDir, APP_UPDATE_FEED_FILE))
+      expect(readMachineUpdateFeedURL(dataDir)).toBeUndefined()
     })
   })
 
@@ -118,6 +148,17 @@ describe("app-hosted update files", () => {
       expect(readAppUpdateApplyState(dataDir, now)?.progress).toBe(expected)
       writeStatus({ state: "failed", progress, at })
       expect(readAppUpdateApplyState(dataDir, now)?.progress).toBeUndefined()
+    })
+
+    it.each([
+      [660, 660],
+      [0, undefined],
+      [-3, undefined],
+      [66.5, undefined],
+      ["660", undefined]
+    ])("reads the build being installed %s", (targetBuildNumber, expected) => {
+      writeStatus({ state: "installing", targetBuildNumber, at })
+      expect(readAppUpdateApplyState(dataDir, now)?.targetBuildNumber).toBe(expected)
     })
 
     it("ignores stale reports left behind by an interrupted session", () => {
