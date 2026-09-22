@@ -329,6 +329,9 @@ package final class ScreenSharingDeliveryVerifier {
   private let sleep: @Sendable (Duration) async throws -> Void
   private var task: Task<Void, Never>?
   private var retryTask: Task<Void, Never>?
+  /// The grace window in progress, if any. It completes right after reporting
+  /// its outcome, so awaiting it observes the verdict.
+  package var pendingGrace: Task<Void, Never>? { task }
   private var revision: UInt64 = 0
   private var retries = 0
   private var closed = false

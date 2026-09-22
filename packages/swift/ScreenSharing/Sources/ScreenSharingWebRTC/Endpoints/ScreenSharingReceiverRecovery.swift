@@ -128,6 +128,9 @@ final class ScreenSharingReceiverRecovery {
   }
 
   /// The owned tasks to await after close.
+  /// The delivery verifier's grace window in progress, if any.
+  var pendingDeliveryVerification: Task<Void, Never>? { deliveryVerifier.pendingGrace }
+
   func close() -> [Task<Void, Never>] {
     [refreshRequester.close(), deliveryVerifier.close()].compactMap { $0 }
   }

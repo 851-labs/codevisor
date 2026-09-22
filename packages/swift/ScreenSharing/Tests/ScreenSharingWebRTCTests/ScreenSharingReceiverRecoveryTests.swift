@@ -99,7 +99,13 @@ struct ScreenSharingReceiverRecoveryTests {
     #expect(harness.counters["sourceIdleVerifiedAfterGrace"] == nil)
 
     harness.audit.decoded(sourceTimestampNs: 900, nowNs: 2)
-    await harness.awaitSignalHop { harness.clock.advance(by: grace) }
+    // The grace task reports its verdict and then finishes, so its completion
+    // is the verdict's event. The clock's own change signal fires as soon as
+    // the sleeper is resumed, before the task has run.
+    let verification = harness.recovery.pendingDeliveryVerification
+    #expect(verification != nil)
+    harness.clock.advance(by: grace)
+    await verification?.value
     #expect(harness.counters["sourceIdleVerifiedAfterGrace"] == 1)
     #expect(harness.labels["sourceIdleOutcome"] == "verified during grace")
     #expect(harness.labels["sourceIdleTargetDecodedAtNs"] == "2")

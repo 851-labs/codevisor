@@ -48,9 +48,19 @@ test("releases the lock when the action throws", async (t) => {
 test("a second acquirer waits for the holder to release, then proceeds", async (t) => {
   const lockPath = await lockFixture(t)
   const holderMayFinish = deferred()
-  const holder = withArtifactLock(lockPath, () => holderMayFinish.promise, {
-    retryDelay: () => assert.fail("holder must not wait")
-  })
+  const holderEntered = deferred()
+  const holder = withArtifactLock(
+    lockPath,
+    () => {
+      holderEntered.resolve()
+      return holderMayFinish.promise
+    },
+    { retryDelay: () => assert.fail("holder must not wait") }
+  )
+  // Start the waiter only once the holder is inside its action, i.e. provably
+  // owns the lock file. Both acquirers first await a mkdir, so starting them
+  // back to back would leave which one creates the lock to scheduler luck.
+  await holderEntered.promise
   // The waiter observes contention exactly once, then is released only after
   // the holder has finished and removed the lock — no timing involved.
   const waiterSawContention = deferred()
