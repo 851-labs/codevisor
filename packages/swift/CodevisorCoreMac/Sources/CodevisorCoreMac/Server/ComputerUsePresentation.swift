@@ -126,14 +126,16 @@ enum ComputerUseCursorPalette {
 /// promptly.
 public let computerUseIdleReleaseAfter: TimeInterval = 60
 
-/// Sessions whose last tool call is older than the idle window.
+/// Sessions whose last tool call is older than the idle window. Pinned
+/// sessions — someone is watching their live preview — are never idle.
 func computerUseIdleSessions(
   lastActivity: [String: Date],
   now: Date,
-  releaseAfter: TimeInterval = computerUseIdleReleaseAfter
+  releaseAfter: TimeInterval = computerUseIdleReleaseAfter,
+  pinned: Set<String> = []
 ) -> [String] {
   lastActivity
-    .filter { now.timeIntervalSince($0.value) >= releaseAfter }
+    .filter { !pinned.contains($0.key) && now.timeIntervalSince($0.value) >= releaseAfter }
     .map(\.key)
     .sorted()
 }

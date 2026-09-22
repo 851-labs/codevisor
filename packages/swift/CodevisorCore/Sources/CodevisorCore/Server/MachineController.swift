@@ -93,6 +93,9 @@ public struct MachineStatus: Sendable, Equatable {
 
   /// Whether the server can drive a native screen-sharing session.
   public var supportsScreenSharing: Bool { features.contains("screen-sharing-v1") }
+  /// The machine can stream the window a chat's agent controls through
+  /// Computer Use to that chat's viewers.
+  public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
 }
 
 /// The transport a machine's traffic currently rides.

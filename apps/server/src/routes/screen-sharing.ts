@@ -12,6 +12,19 @@ import {
 } from "../server-context.js"
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const computerUsePrefix = "computer-use:"
+const computerUseTarget =
+  /^computer-use:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * A live view of the window a chat's agent controls through Computer Use,
+ * addressed as `computer-use:<chat session id>` and viewed from that chat's
+ * pane. Everything else addresses a display from a Screen Sharing pane.
+ */
+const computerUseSessionId = (displayId: string | undefined): string | undefined =>
+  displayId !== undefined && computerUseTarget.test(displayId)
+    ? displayId.slice(computerUsePrefix.length).toLowerCase()
+    : undefined
 
 export const routeScreenSharing = async (
   services: CodevisorServerServices,
@@ -50,10 +63,17 @@ export const routeScreenSharing = async (
       Buffer.byteLength(payload.offer) > 256 * 1024 ||
       !payload.offer.includes("a=fingerprint:sha-256 ") ||
       payload.displayId === undefined ||
-      !uuid.test(payload.displayId))
+      (!uuid.test(payload.displayId) && computerUseSessionId(payload.displayId) === undefined))
   )
     throw new HttpFailure(400, "Invalid Screen Sharing offer or display")
+  if (
+    payload.displayId !== undefined &&
+    !uuid.test(payload.displayId) &&
+    computerUseSessionId(payload.displayId) === undefined
+  )
+    throw new HttpFailure(400, "Invalid Screen Sharing display")
   if (["start", "restart", "heartbeat"].includes(payload.operation)) {
+    const sessionId = computerUseSessionId(payload.displayId)
     const workspace = (await run(services.db.listWorkspaces)).find(
       (item) => item.id.toLowerCase() === payload.workspaceId.toLowerCase()
     )
@@ -66,7 +86,11 @@ export const routeScreenSharing = async (
       pane === undefined ||
       pane.workspaceId.toLowerCase() !== workspace.id.toLowerCase() ||
       pane.providerId !== "codevisor" ||
-      pane.paneType !== "screen-sharing"
+      (sessionId === undefined
+        ? pane.paneType !== "screen-sharing"
+        : pane.paneType !== "chat" ||
+          pane.resourceKind !== "session" ||
+          String(pane.resourceId).toLowerCase() !== sessionId)
     )
       throw new HttpFailure(404, "Screen Sharing pane is no longer available")
   }

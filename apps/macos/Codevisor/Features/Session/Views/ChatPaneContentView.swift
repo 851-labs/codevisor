@@ -61,6 +61,10 @@ struct ChatPaneContentView: View {
               controller: controller
             )
           )
+          .environment(
+            \.computerUsePiPPane,
+            ComputerUsePiPPane(workspaceId: hostWorkspace.id, paneId: descriptor.id)
+          )
           .id(chatSession.id)
           .onChange(of: chatSession, initial: true) { _, updatedSession in
             store.reconcile(controller, for: updatedSession, project: chatProject)

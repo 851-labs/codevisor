@@ -1,5 +1,6 @@
 import SwiftUI
 import CodevisorCore
+import CodevisorCoreMac
 import ACPKit
 import CodevisorUI
 import StreamMarkdown
@@ -16,6 +17,34 @@ extension ChatScreen {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .allowsHitTesting(false)
     }
+  }
+
+  /// A live view of the window this chat's agent is controlling through
+  /// Computer Use, on this Mac or the chat's host Mac. Experimental:
+  /// `CODEVISOR_COMPUTER_USE_PIP=1`.
+  @ViewBuilder
+  var computerUsePiPOverlay: some View {
+    if ComputerUseLivePreviewConfiguration.isEnabled,
+      let chatSessionID = controller.serverSession?.id,
+      let source = computerUsePiPSource
+    {
+      ComputerUsePiPOverlay(
+        chatSessionID: chatSessionID,
+        source: source,
+        isTurnRunning: controller.isSending
+      )
+      .id(chatSessionID)
+      .padding(12)
+    }
+  }
+
+  private var computerUsePiPSource: ComputerUsePiPModel.Source? {
+    let serverId = controller.project.serverId
+    if serverId == CodevisorMachine.local.id { return .local }
+    guard let computerUsePiPPane,
+      environment.machines.statusByMachineId[serverId]?.supportsComputerUseStreaming == true
+    else { return nil }
+    return .remote(client: environment.machines.client(for: serverId), pane: computerUsePiPPane)
   }
 
   /// One container and namespace coordinate every Liquid Glass shape in the

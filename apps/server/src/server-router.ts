@@ -223,7 +223,9 @@ export const handleRequest = async (
           "browser-proxy-v1",
           "browser-http-proxy-v1",
           "browser-state-v1",
-          ...(config.screenSharing === undefined ? [] : ["screen-sharing-v1"]),
+          ...(config.screenSharing === undefined
+            ? []
+            : ["screen-sharing-v1", "computer-use-stream-v1"]),
           "canonical-chat-v1",
           "session-event-stream-v1",
           "transcript-pagination-v1",

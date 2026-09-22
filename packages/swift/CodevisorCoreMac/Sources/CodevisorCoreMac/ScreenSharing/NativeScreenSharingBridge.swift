@@ -6,6 +6,10 @@ import CodevisorCore
 final class NativeScreenSharingBridge: @unchecked Sendable {
   @MainActor private var host: ScreenSharingHostService?
   @MainActor private var hostGeneration = 0
+  /// Live views of Computer Use windows (`computer-use:` targets). Separate
+  /// from display sharing: view-only, several viewers, no exclusive lease.
+  @MainActor private var computerUseHost: ComputerUseLivePreviewHost?
+  @MainActor private var computerUseObservation: UUID?
   private let lock = NSLock()
   private var generation = 0
   private var enabled = false
@@ -32,14 +36,20 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
         if self.hostGeneration != generation {
           let previous = self.host
           self.host = nil
+          self.shutdownComputerUseHost()
           await previous?.shutdown()
           guard self.lock.withLock({ self.enabled && self.generation == generation }) else {
             throw BridgeError("Screen Sharing host is stopped.")
           }
         }
+        self.hostGeneration = generation
+        if request.displayId?.hasPrefix(ComputerUseStreamTarget.prefix) == true {
+          let host = self.computerUseHost ?? self.makeComputerUseHost()
+          result.finish(.success(try JSONEncoder().encode(await host.handle(request))))
+          return
+        }
         let host = self.host ?? ScreenSharingHostService()
         self.host = host
-        self.hostGeneration = generation
         result.finish(.success(try JSONEncoder().encode(await host.handle(request))))
       } catch { result.finish(.failure(error)) }
     }
@@ -54,8 +64,25 @@ final class NativeScreenSharingBridge: @unchecked Sendable {
       guard self.hostGeneration == generation else { return }
       let host = self.host
       self.host = nil
+      self.shutdownComputerUseHost()
       await host?.shutdown()
     }
+  }
+
+  @MainActor private func makeComputerUseHost() -> ComputerUseLivePreviewHost {
+    let host = ComputerUseLivePreviewHost()
+    computerUseHost = host
+    computerUseObservation = ComputerUseLivePreview.shared.observe { [weak host] in
+      host?.activityChanged()
+    }
+    return host
+  }
+
+  @MainActor private func shutdownComputerUseHost() {
+    if let computerUseObservation { ComputerUseLivePreview.shared.stopObserving(computerUseObservation) }
+    computerUseObservation = nil
+    computerUseHost?.shutdown()
+    computerUseHost = nil
   }
 
   private final class Reply: @unchecked Sendable {

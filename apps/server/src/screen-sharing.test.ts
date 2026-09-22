@@ -231,4 +231,52 @@ describe("native Screen Sharing signaling", () => {
     expect(failed.status).toBe(503)
     expect(JSON.stringify(failed.body)).not.toContain("secret")
   })
+
+  it("streams a chat's Computer Use window only to that chat's pane", async () => {
+    const helper = vi.fn(async (request: ScreenSharingRequest) => ({
+      ...reply,
+      status: request.operation === "start" ? "connecting" : "viewing",
+      answer: "fixture answer"
+    }))
+    const { server, services, project, workspace, request, post } = await fixture(helper)
+    expect((await jsonRequest(server, "/v1/info")).body).toMatchObject({
+      features: expect.arrayContaining(["computer-use-stream-v1"])
+    })
+    const session = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const other = await run(
+      services.db.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const chatPane = await run(
+      services.db.upsertWorkspacePane(workspace.id, {
+        id: randomUUID(),
+        providerId: "codevisor",
+        paneType: "chat",
+        title: "Chat",
+        resourceKind: "session",
+        resourceId: session.id
+      })
+    )
+    const target = {
+      ...request,
+      paneId: chatPane.id,
+      displayId: `computer-use:${session.id.toUpperCase()}`
+    }
+    for (const operation of ["capabilities", "start", "restart", "heartbeat", "stop"] as const) {
+      expect((await post({ ...target, operation })).status).toBe(200)
+    }
+    expect(helper).toHaveBeenCalledTimes(5)
+
+    // Another chat's agent, a display pane, or a malformed target are refused.
+    expect((await post({ ...target, displayId: `computer-use:${other.id}` })).status).toBe(404)
+    expect((await post({ ...request, displayId: target.displayId })).status).toBe(404)
+    for (const displayId of ["computer-use:", "computer-use:invalid", "window:1"]) {
+      expect((await post({ ...target, displayId })).status).toBe(400)
+      expect((await post({ ...target, operation: "heartbeat", displayId })).status).toBe(400)
+    }
+    // A chat pane cannot address a display.
+    expect((await post({ ...target, displayId: randomUUID() })).status).toBe(404)
+    expect(helper).toHaveBeenCalledTimes(5)
+  })
 })

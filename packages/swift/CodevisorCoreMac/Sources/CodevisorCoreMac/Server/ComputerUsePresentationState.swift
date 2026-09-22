@@ -115,6 +115,16 @@ final class ComputerUsePresentationState: NSObject {
       windowID: targetWindowID,
       windowFrame: windowFrame
     )
+    ComputerUseLivePreview.shared.apply(
+      .activated(
+        sessionID: sessionID,
+        appName: appName,
+        pid: pid,
+        windowID: targetWindowID,
+        windowFrame: windowFrame,
+        colorIndex: colorIndex
+      )
+    )
     startVisibilityMonitoringIfNeeded()
     refreshCursorVisibility()
   }
@@ -122,6 +132,7 @@ final class ComputerUsePresentationState: NSObject {
   func moveCursor(sessionID: String, to screenStatePoint: CGPoint, pulse: Bool) {
     lastActivityBySession[sessionID] = Date()
     guard var presentation = sessions[sessionID] else { return }
+    ComputerUseLivePreview.shared.apply(.cursorMoved(sessionID: sessionID, point: screenStatePoint))
     presentation.idleTimer?.invalidate()
     presentation.idleTimer = nil
     let target = appKitPoint(fromScreenStatePoint: screenStatePoint)
@@ -158,6 +169,7 @@ final class ComputerUsePresentationState: NSObject {
   }
 
   func systemStopped(key: ComputerUseShareKey) {
+    ComputerUseLivePreview.shared.apply(.stopped(sessionID: key.sessionID, pid: key.pid))
     ComputerUseControlStatusItem.shared.remove(key: key)
     if let presentation = sessions[key.sessionID], presentation.pid == key.pid {
       presentation.idleTimer?.invalidate()
@@ -171,6 +183,7 @@ final class ComputerUsePresentationState: NSObject {
   /// The user chose "Stop Using …" for one agent's control of one app.
   /// Revokes exactly that session/app pairing; other agents keep going.
   func stopUsing(key: ComputerUseShareKey) {
+    ComputerUseLivePreview.shared.apply(.stopped(sessionID: key.sessionID, pid: key.pid))
     ComputerUseRevocations.shared.insert(key)
     if let presentation = sessions[key.sessionID], presentation.pid == key.pid {
       presentation.idleTimer?.invalidate()
@@ -187,6 +200,7 @@ final class ComputerUsePresentationState: NSObject {
   /// quit was not a user decision about Computer Use, and the same session
   /// may legitimately control a relaunched instance.
   func targetTerminated(pid: pid_t) {
+    ComputerUseLivePreview.shared.apply(.terminated(pid: pid))
     let sessionIDs = sessions.filter { $0.value.pid == pid }.map(\.key)
     for sessionID in sessionIDs {
       if let presentation = sessions.removeValue(forKey: sessionID) {
@@ -204,6 +218,7 @@ final class ComputerUsePresentationState: NSObject {
   /// quiet, without ending it: the next tool call re-attaches implicitly,
   /// keeping the same cursor colour, and any revocation still stands.
   private func releaseIdle(sessionID: String) {
+    ComputerUseLivePreview.shared.apply(.idled(sessionID: sessionID))
     if let presentation = sessions.removeValue(forKey: sessionID) {
       presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
@@ -215,9 +230,13 @@ final class ComputerUsePresentationState: NSObject {
   }
 
   func releaseIdleSessions() {
+    let pinned = Set(
+      lastActivityBySession.keys.filter { ComputerUseNativeSharing.shared.hasSinks(sessionID: $0) }
+    )
     for sessionID in computerUseIdleSessions(
       lastActivity: lastActivityBySession,
-      now: Date()
+      now: Date(),
+      pinned: pinned
     ) {
       Log.computerUse.log(
         "Releasing idle Computer Use attachment for session \(sessionID, privacy: .public)"
@@ -226,7 +245,14 @@ final class ComputerUsePresentationState: NSObject {
     }
   }
 
+  /// Restarts a live session's idle window, e.g. when its last viewer leaves.
+  func touch(sessionID: String) {
+    guard sessions[sessionID] != nil else { return }
+    lastActivityBySession[sessionID] = Date()
+  }
+
   func end(sessionID: String) {
+    ComputerUseLivePreview.shared.apply(.stopped(sessionID: sessionID, pid: nil))
     if let presentation = sessions.removeValue(forKey: sessionID) {
       presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
@@ -239,6 +265,7 @@ final class ComputerUsePresentationState: NSObject {
   }
 
   func endAll() {
+    ComputerUseLivePreview.shared.apply(.removeAll)
     for presentation in sessions.values {
       presentation.idleTimer?.invalidate()
       presentation.cursorPanel.orderOut(nil)
