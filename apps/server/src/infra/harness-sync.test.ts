@@ -2,7 +2,6 @@ import type { CustomHarnessSpec } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
 import { makeServices, run } from "../test-support.js"
-import { setHarnessOverride } from "./harness-preferences.js"
 import {
   HARNESSES_SYNC_NAMESPACE,
   reconcileHarnesses,
@@ -63,11 +62,27 @@ const makeWorld = async (serverId: string): Promise<World> => {
 }
 
 describe("harness sync", () => {
-  it("keeps detected installations and local custom definitions out of global settings", async () => {
+  it("promotes what a machine already runs into the catalog; idle CLIs and local custom definitions stay out", async () => {
     const world = await makeWorld("server-a")
     world.state.harnesses = [
-      { id: "claude", enabled: true, installed: true, authenticated: true },
-      { id: "codex", enabled: false, installed: false, authenticated: true }
+      {
+        id: "claude",
+        name: "Claude Code",
+        symbolName: "sparkle",
+        enabled: true,
+        installed: true,
+        authenticated: true
+      },
+      // Installed but never signed in: not something the user set up.
+      { id: "cursor", enabled: true, installed: true, authenticated: false },
+      // Installed and signed in but switched off locally.
+      { id: "amp", enabled: false, installed: true, authenticated: true },
+      { id: "codex", enabled: true, installed: false, authenticated: true },
+      // A user-defined ACP harness: lives in the catalog as a `custom:` spec
+      // row, never as a plain preference row.
+      { id: "mybot", source: "custom", enabled: true, installed: true, authenticated: true },
+      // No display identity reported: the row still lands; clients name it.
+      { id: "goose", enabled: true, installed: true, authenticated: true }
     ]
     world.state.customs = [
       { id: "mybot", name: "My Bot", command: "mybot", args: ["--acp"], env: { B: "2", A: "1" } },
@@ -75,10 +90,27 @@ describe("harness sync", () => {
     ]
 
     const first = await reconcileHarnesses(world.deps)
-    expect(first.status.published).toEqual([])
-    expect(first.changedEntries).toEqual([])
-    expect(await run(world.deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))).toEqual([])
+    expect(first.status.published).toEqual(["claude", "goose"])
+    expect(first.changedEntries.map((entry) => entry.key).toSorted()).toEqual(["claude", "goose"])
+    const entries = await run(world.deps.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
+    expect(entries.find((entry) => entry.key === "claude")).toMatchObject({
+      value: {
+        name: "Claude Code",
+        symbolName: "sparkle",
+        enabled: true,
+        installed: true,
+        uninstall: false
+      },
+      timestamp: { deviceId: "server-a" }
+    })
+    expect(entries.find((entry) => entry.key === "goose")?.value).toEqual({
+      enabled: true,
+      installed: true,
+      uninstall: false
+    })
+    expect(entries.map((entry) => entry.key).toSorted()).toEqual(["claude", "goose"])
 
+    // Promotion happens once; the row is now authored.
     expect((await reconcileHarnesses(world.deps)).status).toEqual({
       published: [],
       applied: [],
@@ -86,6 +118,35 @@ describe("harness sync", () => {
       installing: [],
       blocked: []
     })
+  })
+
+  it("never promotes over an authored row, a tombstone, or an uninstall directive", async () => {
+    const world = await makeWorld("server-authored")
+    await run(
+      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
+        { key: "claude", value: { enabled: false, installed: true }, timestamp: at(10) },
+        {
+          key: "codex",
+          value: { enabled: false, installed: false, uninstall: true },
+          timestamp: at(11)
+        },
+        { key: "amp", value: null, deleted: true, timestamp: at(12) }
+      ])
+    )
+    world.state.harnesses = [
+      { id: "claude", enabled: true, installed: true, authenticated: true },
+      { id: "codex", enabled: true, installed: true, authenticated: true },
+      { id: "amp", enabled: true, installed: true, authenticated: true }
+    ]
+    const result = await reconcileHarnesses(world.deps)
+    expect(result.status.published).toEqual([])
+    expect(result.changedEntries).toEqual([])
+    // The catalog wins over the machine's own state.
+    expect(world.calls.enabled).toEqual([
+      ["claude", false],
+      ["codex", false]
+    ])
+    expect(world.calls.uninstalls).toEqual(["codex"])
   })
 
   it("first contact defers to the fleet: adopts, installs, and retries", async () => {
@@ -160,54 +221,24 @@ describe("harness sync", () => {
     ])
   })
 
-  it("keeps an override through global changes, then restores inheritance", async () => {
+  it("follows the catalog even when a stale machine-local override row is present", async () => {
+    // Rows left behind by the retired override layer (an old uninstall on
+    // this machine) must not shadow a catalog that later re-enabled the harness.
     const world = await makeWorld("server-local")
-    world.state.harnesses = [{ id: "claude", enabled: true, installed: true, authenticated: true }]
+    world.state.harnesses = [{ id: "grok", enabled: false, installed: true, authenticated: true }]
     await run(
-      world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        { key: "claude", value: { enabled: true, installed: true }, timestamp: at(10) }
+      world.deps.db.mergeSyncEntries("local.harness-overrides", [
+        { key: "grok", value: { enabled: false, installed: false }, timestamp: at(5) }
       ])
     )
-    await setHarnessOverride(world.deps.db, "claude", { enabled: false })
-    await reconcileHarnesses(world.deps)
-    expect(world.calls.enabled).toEqual([["claude", false]])
     await run(
       world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
-        {
-          key: "claude",
-          value: { enabled: false, installed: false, uninstall: true },
-          timestamp: at(20)
-        }
+        { key: "grok", value: { enabled: true, installed: true }, timestamp: at(10) }
       ])
     )
     await reconcileHarnesses(world.deps)
+    expect(world.calls.enabled).toEqual([["grok", true]])
     expect(world.calls.uninstalls).toEqual([])
-    await setHarnessOverride(world.deps.db, "claude", undefined)
-    await reconcileHarnesses(world.deps)
-    expect(world.calls.uninstalls).toEqual(["claude"])
-  })
-
-  it("keeps a local uninstall across reconnects without changing another machine", async () => {
-    const local = await makeWorld("local")
-    const other = await makeWorld("other")
-    const entries = [
-      { key: "claude", value: { enabled: true, installed: true }, timestamp: at(10) }
-    ]
-    for (const world of [local, other]) {
-      await run(world.deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, entries))
-      world.state.harnesses = [
-        { id: "claude", enabled: false, installed: false, authenticated: true }
-      ]
-    }
-    await setHarnessOverride(local.deps.db, "claude", { enabled: false, installed: false })
-    await reconcileHarnesses(local.deps)
-    await reconcileHarnesses(local.deps)
-    await reconcileHarnesses(other.deps)
-    expect(local.calls.installs).toEqual([])
-    expect(other.calls.installs).toEqual(["claude"])
-    await setHarnessOverride(local.deps.db, "claude", undefined)
-    await reconcileHarnesses(local.deps)
-    expect(local.calls.installs).toEqual(["claude"])
   })
 
   it("reports unavailable uninstall and preserves locally edited custom definitions", async () => {
@@ -242,7 +273,12 @@ describe("harness sync", () => {
         .status.blocked
     ).toEqual([{ id: "claude", reason: "Busy" }])
     expect(world.state.customs[0]?.name).toBe("Local")
-    await setHarnessOverride(world.deps.db, "bot", undefined)
+    // Forgetting the local edit lets the shared definition apply again.
+    await run(
+      world.deps.db.mergeSyncEntries("local.harness-custom-overrides", [
+        { key: "bot", value: null, deleted: true, timestamp: at(20) }
+      ])
+    )
     await reconcileHarnesses(world.deps)
     expect(world.state.customs[0]?.name).toBe("Global")
   })

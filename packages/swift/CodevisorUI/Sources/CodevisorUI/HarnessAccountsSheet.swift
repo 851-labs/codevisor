@@ -37,21 +37,26 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   let harnessId: String
   let harnessName: String
   let startsSignIn: Bool
+  /// The machine to host the sign-in when the caller has one in mind (the
+  /// chat that hit the error); any online machine with the harness works.
+  let preferredMachineId: String?
   let editor: (String?, ServerHarness, HarnessMachineSignIn?) -> Editor
   @State private var machineSignIn: HarnessMachineSignIn?
-  @State private var sharedHost: (id: String, harness: ServerHarness)?
+  @State private var sharedHost: HarnessFleet.SharedHost?
   @State private var sharedHostError = false
   @State private var isWorking = false
 
-  private var sharesOAuth: Bool { HarnessRowState.fleetSharedOAuthHarnesses.contains(harnessId) }
+  private var descriptor: HarnessDescriptor { HarnessRegistry.descriptor(for: harnessId) }
+  private var sharesOAuth: Bool { descriptor.fleetSignInNeedsMachine }
 
   public init(
-    harnessId: String, harnessName: String, startsSignIn: Bool = false,
+    harnessId: String, harnessName: String, startsSignIn: Bool = false, preferredMachineId: String? = nil,
     @ViewBuilder editor: @escaping (String?, ServerHarness, HarnessMachineSignIn?) -> Editor
   ) {
     self.harnessId = harnessId
     self.harnessName = harnessName
     self.startsSignIn = startsSignIn
+    self.preferredMachineId = preferredMachineId
     self.editor = editor
   }
 
@@ -63,7 +68,8 @@ public struct HarnessAccountsSheet<Editor: View>: View {
         #if os(iOS)
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
-            if sharesOAuth && sharedHost == nil || !sharesOAuth && !["pi", "opencode"].contains(harnessId) {
+            // Editors that host their own navigation bring their own Close.
+            if sharesOAuth && sharedHost == nil || !sharesOAuth {
               HarnessAccountsCloseToolbar()
             }
           }
@@ -81,8 +87,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
       }
       .frame(
         width: harnessId == "opencode" ? 760 : 560,
-        height: harnessId == "opencode"
-          ? 540 : (["claude-code", "codex", "grok-build"].contains(harnessId) ? 380 : 480))
+        height: harnessId == "opencode" ? 540 : (descriptor.usesFleetAccountRows ? 380 : 480))
     #endif
     .task { if sharesOAuth { await loadSharedHost() } }
     .sheet(item: $machineSignIn) { request in
@@ -111,7 +116,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @ViewBuilder private var content: some View {
     if sharesOAuth {
       if let sharedHost {
-        editor(sharedHost.id, sharedHost.harness, initialSignInRequest)
+        editor(sharedHost.machineId, sharedHost.harness, initialSignInRequest)
           .environment(\.sharedHarnessAccounts, true)
           .environment(\.harnessMachineSignIn, nil)
       } else if sharedHostError {
@@ -152,16 +157,11 @@ public struct HarnessAccountsSheet<Editor: View>: View {
 
   private func loadSharedHost() async {
     sharedHostError = false
-    for machine in environment.machines.allMachines {
-      guard environment.machines.statusByMachineId[machine.id]?.isReachable != false else { continue }
-      if let harness = try? await environment.machines.client(for: machine.id).listHarnesses().first(where: {
-        $0.id == harnessId
-      }), harness.isReady {
-        sharedHost = (machine.id, harness)
-        return
-      }
-    }
-    sharedHostError = true
+    let host = await HarnessFleet.findSharedHost(
+      harnessId: harnessId, preferred: preferredMachineId, environment: environment)
+    guard !Task.isCancelled else { return }
+    sharedHost = host
+    sharedHostError = host == nil
   }
 
   private func machinePicker(_ request: HarnessMachineSignIn?) -> some View {

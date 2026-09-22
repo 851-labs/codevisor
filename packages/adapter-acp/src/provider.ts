@@ -11,6 +11,7 @@ import {
   type CreatedAgentSession,
   type HarnessDefinition,
   type HarnessAccountContext,
+  withoutEnv,
   type LoadedAgentSession,
   type ProviderEnvironment,
   type ProviderId,
@@ -144,7 +145,7 @@ export const makeAcpProvider = (
           command: launch.command,
           cwd,
           env: {
-            ...environment.env,
+            ...withoutEnv(environment.env, account?.unsetEnv),
             ...(definition.launch?.kind === "executable" ? definition.launch.env : undefined),
             ...account?.env
           },

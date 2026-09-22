@@ -93,9 +93,11 @@ private struct HarnessFleetRow<Icon: View>: View {
     let live = setting.enabled
     // One machine is the fleet: its action folds into the harness row.
     let single = live && machines.count == 1 ? status.machines.first : nil
-    // A fleet-shared sign-in offered from a machine row still signs the fleet in.
+    // Fleet-shared accounts belong to the harness row: its Sign In… /
+    // Accounts… button is the one place to act, so machine rows under it
+    // only report. Machine-bound harnesses act on the machine's row.
     let actions = HarnessMachineActions(
-      signIn: sharesAccounts ? { _ in onAccounts(setting, true) } : { onSignIn($0, setting.id, true) },
+      signIn: sharesAccounts ? nil : { onSignIn($0, setting.id, true) },
       accounts: sharesAccounts || !shared.supportsAccounts ? nil : { onSignIn($0, setting.id, false) })
     // The Sign In… button says it; a caption would only repeat it.
     let state = HarnessRowState(

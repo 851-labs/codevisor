@@ -92,6 +92,7 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     if (account?.profileKind === "managed") {
       for (const name of CLAUDE_AUTH_OVERRIDE_ENV_VARS) delete accountEnv[name]
     }
+    for (const name of account?.unsetEnv ?? []) delete accountEnv[name]
     Object.assign(accountEnv, account?.env)
     // Filled in below; the hook and pump close over it.
     let session: ClaudeSession | undefined

@@ -17,23 +17,23 @@ public extension HarnessAccountsStore {
     }
   }
 
+  /// The namespaces a shared provider list depends on. Pulling the whole
+  /// replica here made every account click wait on unrelated planes.
+  static let sharedProviderNamespaces = ["harness-shared-accounts", HarnessSharedCredentials.namespace]
+
   func listOpenCodeAuthProviders(accountId: String) async throws -> [ServerOpenCodeAuthProvider] {
     guard isShared else { return try await client.listOpenCodeAuthProviders(accountId: accountId) }
     var catalog: [ServerOpenCodeAuthProvider] = []
     if !machineId.isEmpty {
-      await sync.synchronize(machineId: machineId)
+      await sync.synchronize(machineId: machineId, namespaces: Self.sharedProviderNamespaces)
       catalog = try await shared("opencode", .init(action: "providers", accountId: accountId)).openCodeProviders ?? []
-    } else {
-      for machine in environment.machines.allMachines {
-        guard environment.machines.statusByMachineId[machine.id]?.isReachable != false else { continue }
-        let remote = environment.machines.client(for: machine.id)
-        if let accounts = try? await remote.listHarnessAccounts(harnessId: "opencode"),
-          let account = accounts.first(where: { $0.profileKind == "default" }),
-          let providers = try? await remote.listOpenCodeAuthProviders(accountId: account.id)
-        {
-          catalog = providers
-          break
-        }
+    } else if let host = await HarnessFleet.findSharedHost(harnessId: "opencode", environment: environment) {
+      let remote = environment.machines.client(for: host.machineId)
+      if let accounts = try? await remote.listHarnessAccounts(harnessId: "opencode"),
+        let account = accounts.first(where: { $0.profileKind == "default" }),
+        let providers = try? await remote.listOpenCodeAuthProviders(accountId: account.id)
+      {
+        catalog = providers
       }
     }
     let credentials = try HarnessSharedCredentials.opencode.credentials(
@@ -67,7 +67,7 @@ public extension HarnessAccountsStore {
         accountId: accountId, providerId: providerId, methodId: methodId, inputs: inputs, apiKey: apiKey)
     }
     guard let apiKey else {
-      await sync.synchronize(machineId: machineId)
+      await sync.synchronize(machineId: machineId, namespaces: Self.sharedProviderNamespaces)
       guard
         let flow = try await shared(
           "opencode",
@@ -119,14 +119,10 @@ public extension HarnessAccountsStore {
     var catalog: [ServerPiAuthProvider] = []
     if !machineId.isEmpty {
       catalog = try await shared("pi", .init(action: "providers")).piProviders ?? []
-    } else {
-      for machine in environment.machines.allMachines {
-        guard environment.machines.statusByMachineId[machine.id]?.isReachable != false else { continue }
-        if let providers = try? await environment.machines.client(for: machine.id).listPiAuthProviders() {
-          catalog = providers
-          break
-        }
-      }
+    } else if let host = await HarnessFleet.findSharedHost(harnessId: "pi", environment: environment),
+      let providers = try? await environment.machines.client(for: host.machineId).listPiAuthProviders()
+    {
+      catalog = providers
     }
     let credentials = try HarnessSharedCredentials.pi.credentials(from: HarnessSharedCredentials.pi.content(in: sync))
     let ids = Set(catalog.map(\.id)).union(credentials.map(\.id)).union(["anthropic", "openai", "google", "openrouter"])

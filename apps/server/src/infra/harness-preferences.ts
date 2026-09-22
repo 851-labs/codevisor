@@ -1,58 +1,38 @@
 import type { Harness, HarnessPreference, HarnessSettings } from "@codevisor/api"
 import type { CodevisorDatabaseService } from "@codevisor/db"
-import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
+import { latestSyncTimestamp, nextSyncTimestamp, type SyncEntryRecord } from "@codevisor/sync"
 import { Effect } from "effect"
 
-export const HARNESS_OVERRIDES_NAMESPACE = "local.harness-overrides"
+/// The fleet catalog is the ONE desired-state document for harnesses: what
+/// the user wants enabled and installed, everywhere. There is no
+/// machine-local override layer — a machine either follows the catalog or,
+/// for harnesses the catalog doesn't mention yet, its own discovery default.
+/// Every write path (Settings toggle, Install, Uninstall, PATCH) lands here,
+/// so the Settings list and the composer's picker can never disagree.
+export const HARNESSES_SYNC_NAMESPACE = "harnesses"
+/// Custom harness definitions edited on this machine keep their local copy
+/// instead of following the shared definition. Unrelated to enable/install.
+export const CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE = "local.harness-custom-overrides"
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
-export const harnessPreference = (
-  value: unknown,
-  global = false
-): HarnessPreference | undefined => {
+export const harnessPreference = (value: unknown): HarnessPreference | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const candidate = value as Record<string, unknown>
-  if (
-    global &&
-    (typeof candidate.enabled !== "boolean" || typeof candidate.installed !== "boolean")
-  )
+  if (typeof candidate.enabled !== "boolean" || typeof candidate.installed !== "boolean")
     return undefined
   // Legacy `installed: false` recorded absence, never permission to uninstall.
-  if (global && candidate.installed !== true && candidate.uninstall !== true) return undefined
-  const enabled = typeof candidate.enabled === "boolean" ? candidate.enabled : undefined
-  const installed = typeof candidate.installed === "boolean" ? candidate.installed : undefined
-  if (enabled === undefined && installed === undefined) return undefined
-  return {
-    ...(enabled === undefined ? {} : { enabled }),
-    ...(installed === undefined ? {} : { installed })
-  }
+  if (candidate.installed !== true && candidate.uninstall !== true) return undefined
+  return { enabled: candidate.enabled, installed: candidate.installed }
 }
 
 export const readHarnessSettings = async (
   db: CodevisorDatabaseService
 ): Promise<Map<string, HarnessSettings>> => {
-  const [global, overrides, customs] = await Promise.all([
-    run(db.getSyncEntries("harnesses")),
-    run(db.getSyncEntries(HARNESS_OVERRIDES_NAMESPACE)),
-    run(db.getSyncEntries("local.harness-custom-overrides"))
-  ])
   const result = new Map<string, HarnessSettings>()
-  for (const entry of global) {
+  for (const entry of await run(db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))) {
     if (entry.deleted || entry.key.startsWith("custom:")) continue
-    const preference = harnessPreference(entry.value, true)
-    if (preference !== undefined) result.set(entry.key, { global: preference })
-  }
-  for (const entry of overrides) {
-    if (entry.deleted) continue
     const preference = harnessPreference(entry.value)
-    if (preference !== undefined)
-      result.set(entry.key, { ...result.get(entry.key), override: preference })
-  }
-  for (const entry of customs) {
-    if (!entry.deleted) {
-      const current = result.get(entry.key)
-      result.set(entry.key, { ...current, override: current?.override ?? {} })
-    }
+    if (preference !== undefined) result.set(entry.key, { global: preference })
   }
   return result
 }
@@ -60,45 +40,49 @@ export const readHarnessSettings = async (
 export const effectiveHarnessPreference = (
   settings: HarnessSettings | undefined
 ): HarnessPreference => {
-  const effective = settings?.override ?? settings?.global ?? {}
+  const effective = settings?.global ?? {}
   return effective.installed === false ? { ...effective, enabled: false } : effective
 }
 
-export const setHarnessOverride = async (
+export interface HarnessCatalogIdentity {
+  readonly id: string
+  readonly name: string
+  readonly symbolName: string
+}
+
+/// Writes one harness's desired state into the fleet catalog, in the exact
+/// shape the Settings page authors (name and symbol ride along so a row
+/// written by a machine renders like one written by a client). Returns the
+/// entries that changed so the caller can publish `sync.changed`.
+export const setHarnessPreference = async (
   db: CodevisorDatabaseService,
-  id: string,
-  preference: HarnessPreference | undefined
-): Promise<void> => {
-  const entries = await run(db.getSyncEntries(HARNESS_OVERRIDES_NAMESPACE))
-  const previous = entries.find((entry) => entry.key === id && !entry.deleted)
-  await run(
-    db.mergeSyncEntries(HARNESS_OVERRIDES_NAMESPACE, [
+  serverId: string,
+  harness: HarnessCatalogIdentity,
+  preference: { readonly enabled: boolean; readonly installed: boolean }
+): Promise<ReadonlyArray<SyncEntryRecord>> => {
+  const entries = await run(db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))
+  const previous = entries.find((entry) => entry.key === harness.id && !entry.deleted)
+  const previousFields =
+    typeof previous?.value === "object" && previous.value !== null
+      ? (previous.value as Record<string, unknown>)
+      : {}
+  const result = await run(
+    db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, [
       {
-        key: id,
-        value:
-          preference === undefined
-            ? null
-            : { ...harnessPreference(previous?.value), ...preference },
-        ...(preference === undefined ? { deleted: true } : {}),
-        timestamp: nextSyncTimestamp("local", latestSyncTimestamp(entries), Date.now())
+        key: harness.id,
+        value: {
+          ...previousFields,
+          name: harness.name,
+          symbolName: harness.symbolName,
+          enabled: preference.enabled,
+          installed: preference.installed,
+          uninstall: !preference.installed
+        },
+        timestamp: nextSyncTimestamp(serverId, latestSyncTimestamp(entries), Date.now())
       }
     ])
   )
-  if (preference === undefined) {
-    for (const namespace of ["local.harness-custom-overrides", "local.harnesses-applied"]) {
-      const entries = await run(db.getSyncEntries(namespace))
-      await run(
-        db.mergeSyncEntries(namespace, [
-          {
-            key: namespace === "local.harnesses-applied" ? `custom:${id}` : id,
-            value: null,
-            deleted: true,
-            timestamp: nextSyncTimestamp("local", latestSyncTimestamp(entries), Date.now())
-          }
-        ])
-      )
-    }
-  }
+  return result.changed
 }
 
 export const decorateHarnessSettings = async (

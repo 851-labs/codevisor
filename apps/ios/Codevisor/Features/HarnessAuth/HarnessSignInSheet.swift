@@ -44,11 +44,12 @@ struct HarnessSignInRequest: Identifiable {
   }
 }
 
-/// The in-flow sign-in surface: presents the full harness authentication
-/// experience (browser, device-code, API-key, or terminal flows) for ONE
-/// harness on ONE machine, wherever the need surfaces — the model picker's
-/// "sign in required" rows, an auth-dead chat — so nobody has to know
-/// Settings exists to get a fleet machine working.
+/// The in-flow sign-in surface, wherever the need surfaces — the model
+/// picker's "sign in required" rows, an auth-dead chat — so nobody has to
+/// know Settings exists to get a fleet machine working. Fleet-shared
+/// harnesses land on the fleet's accounts sheet (the machine the request
+/// came from is just the preferred sign-in host); only harnesses whose
+/// accounts truly live on one machine get that machine's flow.
 struct HarnessSignInSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -59,6 +60,24 @@ struct HarnessSignInSheet: View {
   @State private var loadFailed = false
 
   var body: some View {
+    if HarnessRegistry.descriptor(for: request.harnessId).sharesFleetAccounts {
+      HarnessAccountsSheet(
+        harnessId: request.harnessId,
+        harnessName: HarnessRegistry.displayName(
+          for: request.harnessId,
+          reported: HarnessFleet.settings(environment.configSync).first { $0.id == request.harnessId }?.name),
+        startsSignIn: request.startsSignIn,
+        preferredMachineId: request.serverId
+      ) { machineId, harness, signInRequest in
+        HarnessAuthenticationScreen(serverId: machineId ?? "", harness: harness, signInRequest: signInRequest)
+      }
+      .onDisappear { environment.harnessCatalogDidChange(onServer: request.serverId) }
+    } else {
+      machineSheet
+    }
+  }
+
+  private var machineSheet: some View {
     NavigationStack {
       content
         .navigationTitle(title)
@@ -89,7 +108,7 @@ struct HarnessSignInSheet: View {
   }
 
   private var title: String {
-    harness?.name ?? request.harnessId
+    HarnessRegistry.displayName(for: request.harnessId, reported: harness?.name)
   }
 
   @ViewBuilder

@@ -328,9 +328,6 @@ public extension CodevisorServerClienting {
   func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }
-  func resetHarnessOverride(id: String) async throws -> ServerHarness {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }

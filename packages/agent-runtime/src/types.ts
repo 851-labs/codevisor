@@ -258,11 +258,29 @@ export interface ProviderEnvironment {
 /// Server-resolved account profile for one harness invocation. Credentials
 /// remain owned by the harness inside this profile; Codevisor passes only the
 /// profile environment to child processes.
+/// A copy of `env` without the variables an account context asks to hide
+/// from the harness process. Adapters call this on the parent environment
+/// before layering the account's own `env` on top.
+export const withoutEnv = <T extends Readonly<Record<string, string | undefined>>>(
+  env: T,
+  unset: ReadonlyArray<string> | undefined
+): T => {
+  if (unset === undefined || unset.length === 0) return env
+  const result: Record<string, string | undefined> = { ...env }
+  for (const name of unset) delete result[name]
+  return result as T
+}
+
 export interface HarnessAccountContext {
   readonly id: string
   readonly profileKind: "default" | "managed"
   readonly profilePath?: string
   readonly env?: Readonly<Record<string, string>>
+  /// Inherited variables the harness process must NOT see (a user's own
+  /// `GROK_AUTH`, say). Adapters drop these from the parent environment before
+  /// applying `env`. Setting a variable to "" is not the same: several CLIs
+  /// treat an empty-but-present credential as "supplied", not "absent".
+  readonly unsetEnv?: ReadonlyArray<string>
   /// Host-owned credentials: adapters never receive the rotating refresh token.
   readonly oauth?: {
     readonly token: (rejectedAccessToken?: string) => Promise<{

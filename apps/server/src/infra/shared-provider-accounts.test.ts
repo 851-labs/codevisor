@@ -463,6 +463,12 @@ describe("provider accounts across machines", () => {
     expect(runtime.env!.GROK_AUTH_PROVIDER_COMMAND).not.toContain("access")
     expect(JSON.stringify(runtime)).not.toContain("grok-refresh")
     expect(runtime.env!.GROK_HOME).toContain(host.dataDir)
+    // OAuth through the provider command: no inline credential and no API
+    // key may reach the process, not even as empty strings (Grok treats an
+    // empty `GROK_AUTH` as supplied and then refuses `session/new`).
+    expect(runtime.env).not.toHaveProperty("GROK_AUTH")
+    expect(runtime.env).not.toHaveProperty("XAI_API_KEY")
+    expect(runtime.unsetEnv).toEqual(expect.arrayContaining(["GROK_AUTH", "XAI_API_KEY"]))
     await host.shared.providers.remove("grok-build", "default", "xai")
     const disabled = await host.shared.providers.context(account("grok-build"), {
       id: "grok-build-default",

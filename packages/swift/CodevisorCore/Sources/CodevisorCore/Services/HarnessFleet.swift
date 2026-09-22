@@ -11,12 +11,10 @@ public enum HarnessFleet {
     public let harnessId: String
     public let state: String
     public let reason: String?
-    public let overridden: Bool
     public let installed: Bool?
     public var id: String { harnessId }
 
-    public init(harnessId: String, state: String, reason: String?, overridden: Bool = false, installed: Bool? = nil) {
-      self.overridden = overridden
+    public init(harnessId: String, state: String, reason: String?, installed: Bool? = nil) {
       self.installed = installed
       self.harnessId = harnessId
       self.state = state
@@ -39,10 +37,8 @@ public enum HarnessFleet {
         else { return nil }
         let reason: String? =
           if case .string(let text) = fields["reason"] ?? .null { text } else { nil }
-        let overridden = fields["overridden"] == .bool(true)
         let installed: Bool? = if case .bool(let value) = fields["installed"] { value } else { nil }
-        return MachineReadiness(
-          harnessId: id, state: state, reason: reason, overridden: overridden, installed: installed)
+        return MachineReadiness(harnessId: id, state: state, reason: reason, installed: installed)
       }
     }
     return result

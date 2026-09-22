@@ -45,7 +45,7 @@ struct HarnessSignInSheet: View {
 
   private var title: String {
     let machine = environment.machines.machine(for: serverId)?.name ?? "this machine"
-    return "Sign in to \(harness?.name ?? harnessId) on \(machine)"
+    return "Sign in to \(HarnessRegistry.displayName(for: harnessId, reported: harness?.name)) on \(machine)"
   }
 
   @ViewBuilder
@@ -87,16 +87,42 @@ struct HarnessSignInTarget: Identifiable {
 }
 
 extension View {
-  /// Presents the sign-in sheet bound to an optional harness id (auth-dead
-  /// chats know only the id).
+  /// Presents sign-in for an optional harness id (auth-dead chats know only
+  /// the id and the machine they ran on). Fleet-shared harnesses land on the
+  /// fleet's accounts sheet with that machine as the preferred host; only
+  /// harnesses whose accounts truly live on one machine get its flow.
   func harnessSignInSheet(harnessId: Binding<String?>, serverId: String) -> some View {
-    sheet(
+    modifier(HarnessSignInSheetModifier(harnessId: harnessId, serverId: serverId))
+  }
+}
+
+private struct HarnessSignInSheetModifier: ViewModifier {
+  @Environment(AppEnvironment.self) private var environment
+  @Binding var harnessId: String?
+  let serverId: String
+
+  func body(content: Content) -> some View {
+    content.sheet(
       item: Binding(
-        get: { harnessId.wrappedValue.map(HarnessSignInTarget.init(harnessId:)) },
-        set: { harnessId.wrappedValue = $0?.harnessId }
+        get: { harnessId.map(HarnessSignInTarget.init(harnessId:)) },
+        set: { harnessId = $0?.harnessId }
       )
     ) { target in
-      HarnessSignInSheet(serverId: serverId, harnessId: target.harnessId)
+      if HarnessRegistry.descriptor(for: target.harnessId).sharesFleetAccounts {
+        HarnessAccountsSheet(
+          harnessId: target.harnessId,
+          harnessName: HarnessRegistry.displayName(
+            for: target.harnessId,
+            reported: HarnessFleet.settings(environment.configSync).first { $0.id == target.harnessId }?.name),
+          preferredMachineId: serverId
+        ) { machineId, harness, request in
+          HarnessAuthenticationView(harness: harness, onChange: { _ in }, showsHeader: false, signInRequest: request)
+            .environment(\.settingsMachineId, machineId)
+        }
+        .onDisappear { environment.harnessCatalogDidChange(onServer: serverId) }
+      } else {
+        HarnessSignInSheet(serverId: serverId, harnessId: target.harnessId)
+      }
     }
   }
 }

@@ -8,12 +8,18 @@ import {
 } from "@codevisor/sync"
 import { Effect } from "effect"
 
-import { effectiveHarnessPreference, readHarnessSettings } from "./harness-preferences.js"
+import {
+  effectiveHarnessPreference,
+  HARNESSES_SYNC_NAMESPACE,
+  readHarnessSettings
+} from "./harness-preferences.js"
 
-/// Shared desired settings are explicit. Machine overrides take precedence;
-/// local discovery never edits the shared catalog. Custom definitions follow
-/// the same inheritance rule, with local edits retained on their machine.
-export const HARNESSES_SYNC_NAMESPACE = "harnesses"
+/// The fleet catalog is the one desired-state document. Machines apply it;
+/// a harness a machine already runs (installed, enabled, signed in) that the
+/// catalog has never heard of is promoted into it so the Settings list and
+/// the composer's picker describe the same fleet. Custom definitions follow
+/// the catalog too, with local edits retained on their machine.
+export { HARNESSES_SYNC_NAMESPACE }
 const APPLIED_NAMESPACE = "local.harnesses-applied"
 const CUSTOM_PREFIX = "custom:"
 
@@ -26,6 +32,12 @@ export interface LocalHarnessState {
   /// Whether an enable may apply right now (signed in, or auth not needed).
   readonly authenticated: boolean
   readonly phase?: string | undefined
+  /// Display identity, carried into the catalog row a promotion writes.
+  readonly name?: string | undefined
+  readonly symbolName?: string | undefined
+  /// `"custom"` for user-defined ACP harnesses, which live in the catalog as
+  /// `custom:` spec rows and are never promoted as plain preference rows.
+  readonly source?: string | undefined
 }
 
 export interface HarnessSyncDeps {
@@ -123,9 +135,40 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
     clock = nextSyncTimestamp(deps.serverId, clock, now())
     return clock
   }
-  // The shared catalog is authored explicitly by the global Settings page.
-  // Discovery and machine mutations never publish shared preferences.
-  const changedEntries: ReadonlyArray<SyncEntryRecord> = []
+  // ── Promote: a harness this machine already runs but the catalog has never
+  // mentioned (no row, not even a tombstone) becomes a catalog row, exactly
+  // as onboarding's seed would have written it. Only harnesses that are
+  // installed, enabled and signed in qualify — an idle CLI that merely
+  // exists on disk stays out until someone adds it. Authored rows, including
+  // uninstall directives, are never touched.
+  const authored = new Set(replica.map((entry) => entry.key))
+  const promotions: Array<SyncEntryRecord> = []
+  for (const local of locals) {
+    if (
+      authored.has(local.id) ||
+      local.source === "custom" ||
+      !local.installed ||
+      !local.enabled ||
+      !local.authenticated
+    )
+      continue
+    promotions.push({
+      key: local.id,
+      value: {
+        ...(local.name === undefined ? {} : { name: local.name }),
+        ...(local.symbolName === undefined ? {} : { symbolName: local.symbolName }),
+        enabled: true,
+        installed: true,
+        uninstall: false
+      },
+      timestamp: stamp()
+    })
+    published.push(local.id)
+  }
+  const changedEntries: ReadonlyArray<SyncEntryRecord> =
+    promotions.length > 0
+      ? (await run(deps.db.mergeSyncEntries(HARNESSES_SYNC_NAMESPACE, promotions))).changed
+      : []
   const merged = replica
   const preferences = await readHarnessSettings(deps.db)
   for (const [id, settings] of preferences) {

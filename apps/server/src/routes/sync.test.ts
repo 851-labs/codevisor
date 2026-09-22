@@ -215,19 +215,28 @@ describe("/v1/sync", () => {
     )
     const server = await startWithApp({ ...services, customHarnesses })
 
-    // Local discoveries stay out of the shared catalog.
+    // The harness this machine already runs (ready, enabled, nothing to sign
+    // in to) is promoted into the shared catalog; the custom spec applies.
     const first = await jsonRequest(server, "/v1/sync/harnesses/reconcile", { method: "POST" })
     expect(first.status).toBe(200)
     expect(first.body).toMatchObject({
-      published: [],
+      published: ["codex"],
       applied: ["custom:fleetbot"],
       blocked: []
     })
     expect(replaced.at(-1)?.length).toBe(2)
     const doc = await jsonRequest(server, "/v1/sync/harnesses")
-    expect(
-      (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries[0]?.value
-    ).toEqual({ id: "fleetbot", name: "Fleet Bot", command: "fleetbot" })
+    const entries = (doc.body as { entries: Array<{ key: string; value: unknown }> }).entries
+    expect(entries.find((entry) => entry.key === "custom:fleetbot")?.value).toEqual({
+      id: "fleetbot",
+      name: "Fleet Bot",
+      command: "fleetbot"
+    })
+    expect(entries.find((entry) => entry.key === "codex")?.value).toMatchObject({
+      enabled: true,
+      installed: true,
+      uninstall: false
+    })
 
     // A machine whose codex is NOT installed, told to install it, with no
     // lifecycle manager: blocked, never failed.

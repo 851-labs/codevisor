@@ -136,6 +136,7 @@ export const makeSharedProviderRuntime = (options: {
       ...base.env,
       CODEVISOR_PROVIDER_AUTH: manifestPath
     }
+    let unsetEnv: ReadonlyArray<string> | undefined = base.unsetEnv
     if (harness === "pi") {
       const source = dirname(nativePath)
       await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
@@ -191,22 +192,28 @@ export const makeSharedProviderRuntime = (options: {
       await atomicWriteJson(join(root, "data", "opencode", "auth.json"), auth)
     } else {
       runtimeEnv.GROK_HOME = root
-      runtimeEnv.GROK_AUTH = ""
       runtimeEnv.GROK_AUTH_PATH = join(root, "auth.json")
-      runtimeEnv.XAI_API_KEY = grokApiKey ?? ""
+      // Grok treats an empty-but-present `GROK_AUTH` (or provider command) as
+      // a supplied credential, ignores its external provider, and refuses
+      // `session/new` with "Authentication required". Anything inherited from
+      // the user's shell is removed from the process environment instead.
+      const grokUnset = [
+        "GROK_AUTH",
+        ...(grokApiKey ? ["GROK_AUTH_PROVIDER_COMMAND"] : ["XAI_API_KEY"])
+      ]
+      for (const name of grokUnset) delete runtimeEnv[name]
+      unsetEnv = [...new Set([...(base.unsetEnv ?? []), ...grokUnset])]
+      if (grokApiKey) runtimeEnv.XAI_API_KEY = grokApiKey
       await atomicWriteJson(join(root, "auth.json"), {})
       const source = dirname(nativePath)
       await mkdir(join(source, "sessions"), { recursive: true, mode: 0o700 })
       for (const name of ["sessions", "config.toml"]) {
         await linkResource(join(source, name), join(root, name))
       }
-      if (grokApiKey) {
-        runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = ""
-        return { ...base, env: runtimeEnv }
-      }
+      if (grokApiKey) return { ...base, env: runtimeEnv, unsetEnv }
       if (!manifest.providers.xai) {
         runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = "false"
-        return { ...base, env: runtimeEnv }
+        return { ...base, env: runtimeEnv, unsetEnv }
       }
       const managed = manifest.providers.xai!
       // curl reads the capability from a private config, never command-line
@@ -226,7 +233,7 @@ export const makeSharedProviderRuntime = (options: {
       runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = `/bin/sh ${quote(command)}`
       runtimeEnv.GROK_AUTH_PROVIDER_LABEL = "Codevisor"
     }
-    return { ...base, env: runtimeEnv }
+    return { ...base, env: runtimeEnv, ...(unsetEnv === undefined ? {} : { unsetEnv }) }
   }
   return {
     materialize: (...args: Parameters<typeof materialize>) => {

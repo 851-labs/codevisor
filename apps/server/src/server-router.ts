@@ -376,7 +376,7 @@ export const handleRequest = async (
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
     }
-    if (await routeHarnesses(services, request, response, url)) {
+    if (await routeHarnesses(services, config, fanout, request, response, url)) {
       return
     }
     if (await routeBrowserUse(services, request, response, url)) {

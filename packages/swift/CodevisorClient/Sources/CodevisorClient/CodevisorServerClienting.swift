@@ -103,7 +103,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// they finish.
   func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo
   func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted
-  func resetHarnessOverride(id: String) async throws -> ServerHarness
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted
   /// Dual-install: the bundled desktop app's version/update state (nil
   /// when the harness has no bundled app). Computed server-side on demand.

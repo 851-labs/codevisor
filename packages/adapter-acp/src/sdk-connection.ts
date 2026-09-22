@@ -37,6 +37,7 @@ export interface AcpAuthControls {
     readonly id: string
     readonly name: string
     readonly description?: string
+    readonly external?: boolean
   }>
   readonly canLogout: boolean
 }
@@ -83,6 +84,16 @@ export interface AcpSdkConnectionOptions {
 }
 
 /* v8 ignore start -- stdio ACP adapter is exercised by integration/packaging smoke tests. */
+/// ACP's auth-required signal: the reserved -32000 code, or the phrase agents
+/// put in the message when they don't use the code.
+const isAuthenticationRequired = (cause: unknown): boolean => {
+  const error = cause as { code?: number; message?: string } | undefined
+  return (
+    error?.code === -32000 ||
+    error?.message?.toLowerCase().includes("authentication required") === true
+  )
+}
+
 export const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
@@ -118,11 +129,7 @@ export const sdkConnection = (
             canLogout: auth.canLogout
           }
         } catch (cause) {
-          const error = cause as { code?: number; message?: string }
-          if (
-            error.code === -32000 ||
-            error.message?.toLowerCase().includes("authentication required")
-          ) {
+          if (isAuthenticationRequired(cause)) {
             return {
               state: "unauthenticated" as const,
               methods: auth.methods,
@@ -190,10 +197,26 @@ export const sdkConnection = (
     }),
     createSession: (cwd, toolGateway) =>
       adapterPromise("createSession", async () => {
-        const response = (await connection.agent.request(acp.methods.agent.session.new, {
-          cwd,
-          mcpServers: mcpServers(toolGateway)
-        })) as NewSessionResponse
+        const params = { cwd, mcpServers: mcpServers(toolGateway) }
+        let response: NewSessionResponse
+        try {
+          response = (await connection.agent.request(
+            acp.methods.agent.session.new,
+            params
+          )) as NewSessionResponse
+        } catch (cause) {
+          // An agent whose sign-in is delegated to the host (Grok's
+          // GROK_AUTH_PROVIDER_COMMAND) still wants the client to pick that
+          // method before its first session. There is nothing to ask the
+          // user, so select it and try once more; any other failure is real.
+          const external = auth.methods.find((method) => method.external === true)
+          if (external === undefined || !isAuthenticationRequired(cause)) throw cause
+          await connection.agent.request(acp.methods.agent.authenticate, { methodId: external.id })
+          response = (await connection.agent.request(
+            acp.methods.agent.session.new,
+            params
+          )) as NewSessionResponse
+        }
         if (options.piStartupInfoBySession !== undefined) {
           const startupInfo = extractPiStartupInfo(response)
           if (startupInfo !== undefined) {

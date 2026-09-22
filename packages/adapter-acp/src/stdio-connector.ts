@@ -271,7 +271,10 @@ export const makeStdioAcpConnectorWithOptions = (
           methods: (initialized?.authMethods ?? []).map((method) => ({
             id: method.id,
             name: method.name,
-            ...(method.description == null ? {} : { description: method.description })
+            ...(method.description == null ? {} : { description: method.description }),
+            ...((method as { _meta?: Record<string, unknown> })._meta?.external_provider === true
+              ? { external: true }
+              : {})
           })),
           canLogout: initialized?.agentCapabilities?.auth?.logout != null
         },

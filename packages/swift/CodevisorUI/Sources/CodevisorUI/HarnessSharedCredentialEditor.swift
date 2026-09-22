@@ -138,22 +138,19 @@ struct HarnessSharedCredentialEditor: View {
       providers[id] = HarnessSharedCredentials.providerName(id)
     }
     providerId = "openai"
-    for machine in environment.machines.allMachines {
-      guard environment.machines.statusByMachineId[machine.id]?.isReachable != false else { continue }
-      let client = environment.machines.client(for: machine.id)
-      if source == .pi, let catalog = try? await client.listPiAuthProviders() {
-        for provider in catalog where provider.methods.contains("api_key") { providers[provider.id] = provider.name }
-        return
-      }
-      if source == .opencode,
-        let accounts = try? await client.listHarnessAccounts(harnessId: source.rawValue),
-        let account = accounts.first(where: { $0.profileKind == "default" }),
-        let catalog = try? await client.listOpenCodeAuthProviders(accountId: account.id)
-      {
-        for provider in catalog where provider.methods.contains(where: { $0.type == "api" && $0.prompts.isEmpty }) {
-          providers[provider.id] = provider.name
-        }
-        return
+    guard let host = await HarnessFleet.findSharedHost(harnessId: source.rawValue, environment: environment)
+    else { return }
+    let client = environment.machines.client(for: host.machineId)
+    if source == .pi, let catalog = try? await client.listPiAuthProviders() {
+      for provider in catalog where provider.methods.contains("api_key") { providers[provider.id] = provider.name }
+    }
+    if source == .opencode,
+      let accounts = try? await client.listHarnessAccounts(harnessId: source.rawValue),
+      let account = accounts.first(where: { $0.profileKind == "default" }),
+      let catalog = try? await client.listOpenCodeAuthProviders(accountId: account.id)
+    {
+      for provider in catalog where provider.methods.contains(where: { $0.type == "api" && $0.prompts.isEmpty }) {
+        providers[provider.id] = provider.name
       }
     }
   }

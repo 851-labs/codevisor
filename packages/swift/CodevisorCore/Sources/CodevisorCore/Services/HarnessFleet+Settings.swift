@@ -26,8 +26,13 @@ public extension HarnessFleet {
         case .bool(let installed) = fields["installed"],
         installed || (includingUninstalled && fields["uninstall"] == .bool(true))
       else { return nil }
-      let name: String = if case .string(let name) = fields["name"] { name } else { entry.key }
-      let symbol: String = if case .string(let symbol) = fields["symbolName"] { symbol } else { "terminal" }
+      // Rows written before names rode along (or by a server that only knew
+      // the id) still render with a real name, never `claude-code`.
+      let descriptor = HarnessRegistry.descriptor(for: entry.key)
+      let name: String =
+        if case .string(let name) = fields["name"], !name.isEmpty { name } else { descriptor.displayName }
+      let symbol: String =
+        if case .string(let symbol) = fields["symbolName"], !symbol.isEmpty { symbol } else { descriptor.symbolName }
       return Setting(id: entry.key, name: name, symbolName: symbol, enabled: enabled, installed: installed)
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }

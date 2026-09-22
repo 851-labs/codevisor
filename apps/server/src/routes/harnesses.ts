@@ -2,15 +2,17 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 
 import type { Harness, HarnessCapability } from "@codevisor/api"
-import {
-  HarnessPreference,
-  UpdateHarnessRequest as UpdateHarnessRequestSchema
-} from "@codevisor/api"
+import { UpdateHarnessRequest as UpdateHarnessRequestSchema } from "@codevisor/api"
 import { parseCustomHarnessDocument } from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 
-import { decorateHarnessSettings, setHarnessOverride } from "../infra/harness-preferences.js"
 import {
+  decorateHarnessSettings,
+  HARNESSES_SYNC_NAMESPACE,
+  setHarnessPreference
+} from "../infra/harness-preferences.js"
+import {
+  appendAndPublish,
   existingDirectory,
   HttpFailure,
   matchRoute,
@@ -20,11 +22,17 @@ import {
   swallowError,
   writeJson
 } from "../server-context.js"
-import type { CodevisorServerServices } from "../server-context.js"
+import type {
+  CodevisorServerConfig,
+  CodevisorServerServices,
+  EventFanout
+} from "../server-context.js"
 import { routeHarnessAuth } from "./harness-auth-routes.js"
 
 export const routeHarnesses = async (
   services: CodevisorServerServices,
+  config: CodevisorServerConfig,
+  fanout: EventFanout,
   request: IncomingMessage,
   response: ServerResponse,
   url: URL
@@ -33,15 +41,28 @@ export const routeHarnesses = async (
     return true
   }
 
-  const overrideId = matchRoute(url.pathname, "/v1/harnesses/:id/override")
-  if (overrideId !== undefined && (request.method === "PATCH" || request.method === "DELETE")) {
-    if (!services.agents.catalog.some((item) => item.id === overrideId))
-      throw new HttpFailure(404, "Harness not found")
-    const preference =
-      request.method === "DELETE" ? undefined : await readSchema(request, HarnessPreference)
-    await setHarnessOverride(services.db, overrideId, preference)
-    writeJson(response, 200, (await discoverHarnesses(services, false, overrideId, true))[0])
-    return true
+  /// Every desired-state mutation on this machine writes the fleet catalog
+  /// (the one document Settings renders) and publishes the change so open
+  /// clients see the row move without waiting for a sync sweep.
+  const writeCatalog = async (
+    harnessId: string,
+    preference: { readonly enabled: boolean; readonly installed: boolean }
+  ): Promise<void> => {
+    const definition = services.agents.catalog.find((item) => item.id === harnessId)
+    /* v8 ignore next -- PATCH answers 404 and the lifecycle manager 409 for unknown ids before this runs. */
+    if (definition === undefined) throw new HttpFailure(404, "Harness not found")
+    // Every write stamps a fresh timestamp, so the merge always reports a
+    // change worth publishing.
+    const changed = await setHarnessPreference(
+      services.db,
+      config.id,
+      { id: definition.id, name: definition.name, symbolName: definition.symbolName },
+      preference
+    )
+    void appendAndPublish(services.db, fanout, "sync.changed", HARNESSES_SYNC_NAMESPACE, {
+      namespace: HARNESSES_SYNC_NAMESPACE,
+      entries: changed
+    }).catch(swallowError)
   }
 
   const uninstallId = matchRoute(url.pathname, "/v1/harnesses/:id/uninstall")
@@ -52,7 +73,7 @@ export const routeHarnesses = async (
         writeJson(response, 200, await services.lifecycle.uninstallInfo(uninstallId))
       } else {
         const outcome = await services.lifecycle.beginUninstall(uninstallId)
-        await setHarnessOverride(services.db, uninstallId, { installed: false, enabled: false })
+        await writeCatalog(uninstallId, { installed: false, enabled: false })
         writeJson(response, 202, { accepted: true, ...outcome })
       }
     } catch (cause) {
@@ -94,7 +115,7 @@ export const routeHarnesses = async (
     const methodId = typeof body.methodId === "string" ? body.methodId : undefined
     try {
       const { terminalId } = await services.lifecycle.beginInstall(installHarnessId, methodId)
-      await setHarnessOverride(services.db, installHarnessId, { installed: true, enabled: true })
+      await writeCatalog(installHarnessId, { installed: true, enabled: true })
       writeJson(response, 202, { accepted: true, terminalId })
     } catch (cause) {
       throw conflictFrom(cause)
@@ -243,10 +264,17 @@ export const routeHarnesses = async (
     const payload = await readSchema(request, UpdateHarnessRequestSchema)
     if (!services.agents.catalog.some((item) => item.id === harnessId))
       throw new HttpFailure(404, "Harness not found")
-    await setHarnessOverride(services.db, harnessId, {
-      enabled: payload.enabled,
-      ...(payload.enabled ? { installed: true } : {})
-    })
+    // Disabling never uninstalls: the row keeps `installed` as authored (or
+    // true when this machine is the one introducing it to the catalog).
+    const current = (await run(services.db.getSyncEntries(HARNESSES_SYNC_NAMESPACE))).find(
+      (entry) => entry.key === harnessId && !entry.deleted
+    )
+    const installed =
+      payload.enabled ||
+      (typeof current?.value === "object" &&
+        current.value !== null &&
+        (current.value as Record<string, unknown>).installed !== false)
+    await writeCatalog(harnessId, { enabled: payload.enabled, installed })
     await run(services.db.setHarnessEnabled(harnessId, payload.enabled))
     const harness = (await discoverHarnesses(services)).find(
       (candidate) => candidate.id === harnessId
@@ -315,7 +343,12 @@ export const discoverCapabilities = async (
               ? {}
               : { supportsGoals: metadata.supportsGoals })
           }
-        } catch {
+        } catch (cause) {
+          // The picker hides a harness with no model option, so a swallowed
+          // failure here looks exactly like "not enabled" to the user. Say why.
+          console.error(
+            `[harnesses] inspecting ${harness.id} failed; it will be missing from the model picker: ${conflictFrom(cause).message}`
+          )
           return {
             harness,
             configOptions: []

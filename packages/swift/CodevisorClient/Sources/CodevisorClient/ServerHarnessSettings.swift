@@ -27,16 +27,6 @@ public struct ServerHarnessUninstallInfo: Codable, Equatable, Sendable {
 }
 
 public extension ServerHarness {
-  var hasOverride: Bool { settings?.override != nil }
-  var settingsSource: String {
-    if hasOverride { return "Override" }
-    return settings?.global == nil ? "Local" : "Global"
-  }
-  var settingsSummary: String {
-    guard hasOverride, let global = settings?.global else { return settingsSource }
-    if global.installed == false { return "Override · Globally uninstalled" }
-    return global.enabled == true ? "Override · Globally enabled" : "Override · Globally disabled"
-  }
   var isLifecycleBusy: Bool {
     guard let phase = lifecycle?.resolvedPhase else { return false }
     return phase == .installing || phase == .uninstalling || phase == .updating || phase == .pendingUpdate

@@ -124,7 +124,7 @@ struct HarnessAuthenticationView: View {
         }
       }
       Section {
-        if !isShared, !["claude-code", "codex"].contains(harness.id),
+        if !isShared, !HarnessRegistry.descriptor(for: harness.id).usesFleetAccountRows,
           let source = HarnessSharedCredentials(rawValue: harness.id)
         {
           HarnessSharedAccountRows(source: source)
@@ -309,7 +309,7 @@ extension HarnessAuthenticationView {
       "Signing out…", accountId: account.id,
       action: {
         let updated = try await client.logoutHarnessAccount(harnessId: harness.id, accountId: account.id)
-        if isShared, ["claude-code", "codex"].contains(harness.id) {
+        if isShared, HarnessRegistry.descriptor(for: harness.id).supportsMultipleAccounts {
           model.accounts.removeAll { $0.id == account.id }
         } else if let index = model.accounts.firstIndex(where: { $0.id == account.id }) {
           model.accounts[index] = updated
@@ -333,7 +333,9 @@ extension HarnessAuthenticationView {
   }
 
   private func selectLoginMethod(_ method: ServerHarnessAuthMethod, for account: ServerHarnessAccount) {
-    if isShared, !["claude-code", "codex", "grok-build"].contains(harness.id), method.kind != "apiKey" {
+    // Fleet credentials (OpenCode, Pi) sign in through a machine; fleet
+    // account rows sign in right here.
+    if isShared, !HarnessRegistry.descriptor(for: harness.id).usesFleetAccountRows, method.kind != "apiKey" {
       machineSignIn?(HarnessMachineSignIn())
       return
     }

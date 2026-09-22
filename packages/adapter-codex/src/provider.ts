@@ -5,6 +5,7 @@ import {
   type AgentProvider,
   type AgentRuntimeError,
   type AgentSessionSummary,
+  withoutEnv,
   type BackgroundTerminalIntegration,
   type CreatedAgentSession,
   type HarnessAccountContext,
@@ -116,7 +117,7 @@ export const makeCodexProvider = (
       command,
       cwd,
       env: {
-        ...parentEnv,
+        ...withoutEnv(parentEnv, account?.unsetEnv),
         ...account?.env,
         ...(toolGateway === undefined
           ? {}

@@ -96,10 +96,6 @@ extension CodevisorServerClient {
     try await send("/v1/harnesses/\(id)/uninstall", method: "POST", body: Optional<EmptyBody>.none)
   }
 
-  public func resetHarnessOverride(id: String) async throws -> ServerHarness {
-    try await send("/v1/harnesses/\(id)/override", method: "DELETE", body: Optional<EmptyBody>.none)
-  }
-
   public func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
     return try await send(

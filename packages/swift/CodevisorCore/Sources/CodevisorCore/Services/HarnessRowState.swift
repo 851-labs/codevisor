@@ -41,14 +41,10 @@ public struct HarnessRowState: Equatable, Sendable {
     }
   }
 
-  /// Harnesses whose OAuth accounts are fleet-shared: one sign-in on any
-  /// machine serves them all.
-  public static let fleetSharedOAuthHarnesses = ["claude-code", "codex", "pi", "opencode", "grok-build"]
-
-  /// Whether accounts for this harness live in the fleet (shared OAuth or
-  /// shared credentials) rather than on each machine.
+  /// Whether accounts for this harness live in the fleet (shared account
+  /// rows or shared credentials) rather than on each machine.
   public static func sharesFleetAccounts(harnessId: String) -> Bool {
-    fleetSharedOAuthHarnesses.contains(harnessId) || HarnessSharedCredentials(rawValue: harnessId) != nil
+    HarnessRegistry.descriptor(for: harnessId).sharesFleetAccounts
   }
 
   /// Whether the replica holds a usable fleet-shared account for the harness.
@@ -101,7 +97,7 @@ public struct HarnessRowState: Equatable, Sendable {
   public static func shared(harnessId: String, sync: ConfigSync, authRequired: Bool = true) -> Self {
     guard authRequired else { return .init(supportsAccounts: false) }
     if hasSharedAccounts(harnessId: harnessId, sync: sync) { return .init() }
-    let usesOAuth = fleetSharedOAuthHarnesses.contains(harnessId)
+    let usesOAuth = HarnessRegistry.descriptor(for: harnessId).fleetSignInNeedsMachine
     let source = HarnessSharedCredentials(rawValue: harnessId)
     guard usesOAuth || source != nil else {
       // Machine-bound providers retain Accounts in the menu. Their readiness

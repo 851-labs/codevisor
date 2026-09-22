@@ -201,13 +201,20 @@ describe("harness update checks", () => {
       terminalId: "uninstall-terminal",
       lifecycle: { phase: "uninstalling" }
     })
+    // Install and uninstall both author the fleet catalog — the one document
+    // Settings renders — never a machine-local layer.
     expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
-      { settings: { override: { enabled: false, installed: false } } }
+      { settings: { global: { enabled: false, installed: false } }, desiredEnabled: false }
     ])
     expect(
       (await jsonRequest(server, "/v1/harnesses/unknown/uninstall", { method: "POST" })).status
     ).toBe(409)
-    expect(await run(services.db.getSyncEntries("harnesses"))).toEqual([])
+    expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
+      {
+        key: "codex",
+        value: { name: "Codex", enabled: false, installed: false, uninstall: true }
+      }
+    ])
 
     expect(calls).toEqual([
       "install codex brew",
@@ -219,37 +226,57 @@ describe("harness update checks", () => {
     ])
   })
 
-  it("changes and resets only this machine’s override", async () => {
-    const { services } = await makeServices("overrides")
+  it("enable and disable author the fleet catalog, so Settings and the picker agree", async () => {
+    const { services } = await makeServices("catalog-writes")
     await run(
       services.db.mergeSyncEntries("harnesses", [
         {
           key: "codex",
-          value: { enabled: true, installed: true },
+          value: { name: "Codex", enabled: true, installed: true },
           timestamp: { wallMs: 1, counter: 0, deviceId: "test" }
         }
       ])
     )
     const server = await startWithApp(services)
-    const changed = await jsonRequest(server, "/v1/harnesses/codex/override", {
+    const disabled = await jsonRequest(server, "/v1/harnesses/codex", {
       method: "PATCH",
       body: JSON.stringify({ enabled: false })
     })
-    expect(changed.status).toBe(200)
-    expect(changed.body).toMatchObject({
+    expect(disabled.status).toBe(200)
+    expect(disabled.body).toMatchObject({
       enabled: false,
-      settings: { global: { enabled: true }, override: { enabled: false } }
+      desiredEnabled: false,
+      settings: { global: { enabled: false, installed: true } }
     })
-    const reset = await jsonRequest(server, "/v1/harnesses/codex/override", { method: "DELETE" })
-    expect(reset.status).toBe(200)
-    expect(reset.body).toMatchObject({
+    expect((disabled.body as Harness).settings?.override).toBeUndefined()
+    // Disabling never turned into an uninstall directive.
+    expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
+      { key: "codex", value: { name: "Codex", enabled: false, installed: true, uninstall: false } }
+    ])
+
+    const enabled = await jsonRequest(server, "/v1/harnesses/codex", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: true })
+    })
+    expect(enabled.body).toMatchObject({
       desiredEnabled: true,
-      settings: { global: { enabled: true } }
+      settings: { global: { enabled: true, installed: true } }
     })
-    expect((reset.body as Harness).settings?.override).toBeUndefined()
+    // A stale row from the retired machine-local override layer changes nothing.
+    await run(
+      services.db.mergeSyncEntries("local.harness-overrides", [
+        {
+          key: "codex",
+          value: { enabled: false, installed: false },
+          timestamp: { wallMs: 2, counter: 0, deviceId: "test" }
+        }
+      ])
+    )
     expect(
-      (await jsonRequest(server, "/v1/harnesses/unknown/override", { method: "DELETE" })).status
-    ).toBe(404)
+      ((await jsonRequest(server, "/v1/harnesses")).body as Array<Harness>).find(
+        (harness) => harness.id === "codex"
+      )
+    ).toMatchObject({ desiredEnabled: true })
     expect(
       (
         await jsonRequest(server, "/v1/harnesses/unknown", {

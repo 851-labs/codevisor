@@ -12,7 +12,6 @@ import {
   type PluginReadinessRow
 } from "../infra/config-sync.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
-import { readHarnessSettings } from "../infra/harness-preferences.js"
 import {
   HARNESSES_SYNC_NAMESPACE,
   reconcileHarnesses,
@@ -96,6 +95,9 @@ export const reconcileForNamespace = async (
           const decorated = await discoverHarnesses(services, false, undefined, true)
           return raw.map((harness) => ({
             id: harness.id,
+            name: harness.name,
+            symbolName: harness.symbolName,
+            source: harness.source,
             enabled: harness.enabled,
             installed: harness.readiness.state === "ready",
             // Mirrors the PATCH enable gate: without an auth service there
@@ -267,7 +269,6 @@ export const refreshHarnessReadiness = async (
 ): Promise<void> => {
   try {
     const blockedById = new Map(blocked.map(({ id, reason }) => [id, reason]))
-    const preferences = await readHarnessSettings(services.db)
     const rows: HarnessReadinessRow[] = (await discoverHarnessesFromStoredAuthState(services)).map(
       (harness) => {
         const authed =
@@ -299,7 +300,6 @@ export const refreshHarnessReadiness = async (
         return {
           id: harness.id,
           state,
-          overridden: preferences.get(harness.id)?.override !== undefined,
           installed,
           ...(reason ? { reason } : {})
         }

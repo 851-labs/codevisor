@@ -16,8 +16,10 @@ import Foundation
   var client: any CodevisorServerClienting { environment.machines.client(for: machineId) }
   var sync: ConfigSync { environment.configSync }
   static let namespace = HarnessSharedCredentials.namespace
+  /// Fleet accounts kept as server-side rows go over one RPC; fleet
+  /// credentials (OpenCode, Pi) are assembled from the replica below.
   func usesSharedOAuth(_ harnessId: String) -> Bool {
-    isShared && ["claude-code", "codex", "grok-build"].contains(harnessId)
+    isShared && HarnessRegistry.descriptor(for: harnessId).usesFleetAccountRows
   }
 
   func shared(
@@ -181,7 +183,7 @@ import Foundation
       ServerHarnessAuth.self,
       [
         "state": .string("authenticated"), "accounts": .array([]),
-        "supportsMultipleAccounts": .bool(["opencode", "codex", "claude-code"].contains(id)),
+        "supportsMultipleAccounts": .bool(HarnessRegistry.descriptor(for: id).supportsMultipleAccounts),
         "loginMethods": .array([
           .object(["id": .string("apiKey"), "name": .string("API Key"), "kind": .string("apiKey")]),
           .object([

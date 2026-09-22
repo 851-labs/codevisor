@@ -82,6 +82,10 @@ export interface AcpAgentConnection {
         readonly id: string
         readonly name: string
         readonly description?: string
+        /// The agent delegates this method to a host-provided credential
+        /// (`_meta.external_provider`): selecting it needs no user
+        /// interaction, only an `authenticate` request.
+        readonly external?: boolean
       }>
       readonly canLogout: boolean
       readonly detail?: string

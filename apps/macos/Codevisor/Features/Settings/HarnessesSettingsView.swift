@@ -24,9 +24,12 @@ struct HarnessesSettingsView: View {
     .settingsPaneFormStyle(theme)
     .harnessFleetSheets(presenter, model: globalModel)
     .onChange(of: settingsRouter.pendingHarnessAccountRequest, initial: true) { _, request in
-      // A chat's auth error deep-links to one harness on one machine.
+      // A chat's auth error deep-links with the harness and the machine it
+      // ran on; the presenter decides whether accounts are the fleet's or
+      // that machine's.
       guard let request else { return }
-      presenter.showSignIn(machineId: request.machineId, harnessId: request.harnessId, startsSignIn: false)
+      presenter.present(
+        harnessId: request.harnessId, machineId: request.machineId, startsSignIn: false, in: environment)
       settingsRouter.pendingHarnessAccountRequest = nil
     }
     .background {
