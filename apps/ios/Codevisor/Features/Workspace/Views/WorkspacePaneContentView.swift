@@ -8,6 +8,10 @@ import SwiftUI
 struct WorkspacePaneContentView: View {
   @Environment(AppEnvironment.self) private var environment
   let pane: PaneDescriptorState
+  /// The identity the chat pane's transcript surface is cached under.
+  var surfacePaneID: UUID?
+  /// Stable layout namespace for a draft adopting its workspace in place.
+  var layoutNamespaceToken: UUID?
   let filePaneModel: (PaneDescriptorState) -> FilePaneModel
   var onOpenFiles: (() -> Void)? = nil
   /// Resolved via the cache (and the draft controller) so an already-live
@@ -60,7 +64,7 @@ struct WorkspacePaneContentView: View {
         SessionTranscriptView(
           controller: controller,
           presentationSurface: TranscriptPresentationSurfaceCache.shared.surface(
-            for: .init(paneID: pane.id, isNewChat: isNewChatPresentation), controller: controller
+            for: .init(paneID: surfacePaneID ?? pane.id, isNewChat: isNewChatPresentation), controller: controller
           ),
           // A draft picks where it will run; sending fixes that, so
           // the chips animate away in place.
@@ -73,6 +77,7 @@ struct WorkspacePaneContentView: View {
           onSendAnimationStarted: onSendAnimationStarted,
           onComposerWillSend: onComposerWillSend,
           preservesComposerFocusOnSend: preservesComposerFocusOnSend,
+          layoutNamespaceToken: layoutNamespaceToken,
           composerTextEditorHandoffRole: composerTextEditorHandoffRole,
           composerTextEditorHandoffID: composerTextEditorHandoffID
         )

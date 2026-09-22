@@ -31,6 +31,10 @@ struct HomeSidebarList: View {
   let sections: [HomeSidebarSection]
   let actions: HomeSidebarActions
   let refresh: () async -> Void
+  /// The split layout's selection, by pane id. Present, the list is a
+  /// native `.sidebar` selection list; absent, it is the phone's grouped
+  /// list of buttons that push.
+  var selection: Binding<UUID?>? = nil
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var drag: WorkspaceDrag?
@@ -67,53 +71,76 @@ struct HomeSidebarList: View {
     return drag.order.compactMap { byID[$0] }
   }
 
-  var body: some View {
-    List {
-      ForEach(displayedSections) { section in
-        Section {
-          if drag == nil {
-            ForEach(section.rows) { row in
-              HomeSidebarTabRowView(
-                row: row,
-                serverId: section.serverId,
-                onOpen: { actions.open(row, section) },
-                onClose: { actions.close(row, section) },
-                onRename: row.renamableTabId == nil ? nil : { actions.rename(row, section) }
-              )
-            }
-            if section.rows.isEmpty {
-              Text("No tabs")
-                .foregroundStyle(.tertiary)
-            }
+  /// The sections, shared by both list styles.
+  @ViewBuilder
+  private func sectionContent(isSelectionList: Bool) -> some View {
+    ForEach(displayedSections) { section in
+      Section {
+        if drag == nil {
+          ForEach(section.rows) { row in
+            HomeSidebarTabRowView(
+              row: row,
+              serverId: section.serverId,
+              onOpen: { actions.open(row, section) },
+              onClose: { actions.close(row, section) },
+              onRename: row.renamableTabId == nil ? nil : { actions.rename(row, section) },
+              isSelectionRow: isSelectionList
+            )
+            .tag(row.id)
           }
-        } header: {
-          header(section)
+          if section.rows.isEmpty {
+            Text("No tabs")
+              .foregroundStyle(.tertiary)
+          }
         }
+      } header: {
+        header(section)
       }
     }
-    .listStyle(.insetGrouped)
-    .scrollDisabled(drag != nil)
-    .animation(Motion.listReflow(reduceMotion: reduceMotion), value: drag?.order)
-    .onGeometryChange(for: CGRect.self) { proxy in
-      proxy.frame(in: .global)
-    } action: { frame in
-      listFrame = frame
+  }
+
+  /// The split layout uses the platform sidebar: its selection highlight,
+  /// spacing, overlay dismissal, and swipe handling are the system's. The
+  /// phone keeps its grouped cards.
+  @ViewBuilder
+  private var styledList: some View {
+    if let selection {
+      List(selection: selection) {
+        sectionContent(isSelectionList: true)
+      }
+      .listStyle(.sidebar)
+    } else {
+      List {
+        sectionContent(isSelectionList: false)
+      }
+      .listStyle(.insetGrouped)
     }
-    // Outside the reflow animation above: the floating header answers the
-    // finger immediately.
-    .overlay(alignment: .topLeading) {
-      floatingHeader
-    }
-    // The collapse moves every slot; keep the hole under the finger as
-    // they settle, not only when the finger itself moves.
-    .onChange(of: headerFrames) { _, _ in
-      reconcileOrder()
-    }
-    .sensoryFeedback(.impact(weight: .medium), trigger: liftFeedback)
-    .sensoryFeedback(.selection, trigger: drag?.order)
-    .refreshable {
-      await refresh()
-    }
+  }
+
+  var body: some View {
+    styledList
+      .scrollDisabled(drag != nil)
+      .animation(Motion.listReflow(reduceMotion: reduceMotion), value: drag?.order)
+      .onGeometryChange(for: CGRect.self) { proxy in
+        proxy.frame(in: .global)
+      } action: { frame in
+        listFrame = frame
+      }
+      // Outside the reflow animation above: the floating header answers the
+      // finger immediately.
+      .overlay(alignment: .topLeading) {
+        floatingHeader
+      }
+      // The collapse moves every slot; keep the hole under the finger as
+      // they settle, not only when the finger itself moves.
+      .onChange(of: headerFrames) { _, _ in
+        reconcileOrder()
+      }
+      .sensoryFeedback(.impact(weight: .medium), trigger: liftFeedback)
+      .sensoryFeedback(.selection, trigger: drag?.order)
+      .refreshable {
+        await refresh()
+      }
   }
 
   private func header(_ section: HomeSidebarSection) -> some View {

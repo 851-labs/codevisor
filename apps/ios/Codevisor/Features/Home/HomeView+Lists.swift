@@ -63,7 +63,8 @@ extension HomeView {
     HomeSidebarList(
       sections: sidebarSections,
       actions: sidebarActions,
-      refresh: refreshNavigation
+      refresh: refreshNavigation,
+      selection: layoutMode == .split ? splitSelection : nil
     )
   }
 

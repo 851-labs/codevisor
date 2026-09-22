@@ -9,16 +9,14 @@ extension HomeView {
     Button {
       presentedSettingsDestination = .root
     } label: {
-      Image(systemName: "gearshape")
+      Label("Settings", systemImage: "gearshape")
     }
-    .accessibilityLabel("Settings")
   }
 
   var machineConnectionWarningButton: some View {
     Button(action: openFailedMachineSettings) {
-      Image(systemName: "exclamationmark.icloud")
+      Label("Machine connection issues", systemImage: "exclamationmark.icloud")
     }
-    .accessibilityLabel("Machine connection issues")
     .accessibilityHint("Opens Machines settings")
   }
 

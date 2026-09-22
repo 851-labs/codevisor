@@ -48,6 +48,10 @@ struct SessionTranscriptView: View {
   /// real workspace route mounts underneath. Ordinary chats still dismiss
   /// the keyboard on send.
   var preservesComposerFocusOnSend = false
+  /// A draft adopting its workspace in place (the New Chat page, not the
+  /// sheet) hashes this instead of the controller's preview namespace, so
+  /// adoption does not invalidate layout and cut the first send short.
+  var layoutNamespaceToken: UUID? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var composerTextEditorHandoffID: UUID? = nil
   @Environment(\.accessibilityReduceMotion) var reduceMotion

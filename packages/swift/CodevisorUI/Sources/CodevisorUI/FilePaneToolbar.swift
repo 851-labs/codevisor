@@ -87,6 +87,16 @@ private struct FilePaneActions: View {
   @Bindable var model: FilePaneModel
   let onNewTab: () -> Void
 
+  /// iOS draws every New Tab action with the stacked-squares glyph; the
+  /// Mac keeps its plain plus.
+  static var newTabSymbol: String {
+    #if os(iOS)
+      "plus.square.on.square"
+    #else
+      "plus"
+    #endif
+  }
+
   var body: some View {
     Menu {
       Button("Open File", systemImage: "doc.text.magnifyingglass") { model.openExplorer() }
@@ -112,7 +122,7 @@ private struct FilePaneActions: View {
       Divider()
       Button("Reload from Machine", systemImage: "arrow.clockwise") { Task { await model.document.refresh() } }
       Divider()
-      Button("New Tab", systemImage: "plus") { onNewTab() }
+      Button("New Tab", systemImage: Self.newTabSymbol) { onNewTab() }
     } label: {
       Image(systemName: "ellipsis")
     }

@@ -19,6 +19,8 @@ struct TerminalPaneView: View {
 
   @State private var status: String?
   @StateObject private var keyController = TerminalKeyController()
+  /// Beside another pane, only the active leaf offers the keyboard button.
+  @Environment(\.workspaceLeafIsActive) private var isActiveLeaf
 
   var body: some View {
     ZStack(alignment: .bottom) {
@@ -44,7 +46,7 @@ struct TerminalPaneView: View {
           .padding(.horizontal, 10)
           .padding(.bottom, 4)
           .transition(.move(edge: .bottom).combined(with: .opacity))
-      } else {
+      } else if isActiveLeaf {
         HStack {
           Spacer()
           ShowKeyboardButton { keyController.showKeyboard() }
@@ -57,7 +59,9 @@ struct TerminalPaneView: View {
     .animation(.snappy(duration: 0.25), value: keyController.keyboardVisible)
     // Extend the black surface under the keyboard too — otherwise the
     // keyboard's rounded corners reveal the (light) window background.
-    .background(Color.black.ignoresSafeArea(.all, edges: .all))
+    // Bottom only: beside another pane, or across iPhone Duo's fold, the
+    // fill must stay inside this pane's own column.
+    .background(Color.black.ignoresSafeArea([.container, .keyboard], edges: .bottom))
     // The terminal surface is always black; render the glass bar, keyboard
     // button, and status capsule in dark appearance to match.
     .environment(\.colorScheme, .dark)

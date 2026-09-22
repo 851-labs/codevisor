@@ -17,6 +17,8 @@ struct IOSNavigationDiagnosticState: Equatable {
   let isDraft: Bool
   let blocksServerContent: Bool
   let expectsNativeBack: Bool
+  /// Hosted as a split view's detail (no back button, depth 1 is normal).
+  let hostedInSplitDetail: Bool
   let expectsLeadingButton: Bool
   let expectsTrailingButton: Bool
   let contentPhase: String
@@ -30,6 +32,7 @@ struct IOSNavigationDiagnosticState: Equatable {
       "draft=\(isDraft)",
       "blocked=\(blocksServerContent)",
       "expectBack=\(expectsNativeBack)",
+      "splitDetail=\(hostedInSplitDetail)",
       "expectLeading=\(expectsLeadingButton)",
       "expectTrailing=\(expectsTrailingButton)",
       "content=\(contentPhase)",
@@ -219,9 +222,12 @@ extension View {
           !state.expectsTrailingButton
           || labels.contains("New tab")
           || labels.contains("Cancel")
+        // A split view's detail column may host the screen beside, not
+        // under, the stack's top controller; ownership is only expected
+        // for a pushed screen.
         let anomaly =
           !barVisible
-          || !topOwnsProbe
+          || (!topOwnsProbe && !state.hostedInSplitDetail)
           || !hasExpectedLabel
           || (state.expectsNativeBack
             && navigationController.viewControllers.count > 1

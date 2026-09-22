@@ -4,10 +4,18 @@ import Foundation
 import SwiftUI
 
 extension HomeView {
+  /// Split layouts (agent-driven `split`/`move`/`resize`) are advertised
+  /// only while the unfolded display can render them.
+  static let rendersSplitLayouts = true
+
+  var clientLayoutIsCompact: Bool {
+    layoutMode == .stack || !Self.rendersSplitLayouts
+  }
+
   func clientControlContext(serverId: String) -> NativeClientContext {
     let workspaceId: UUID?
-    if case let .workspace(selectedServer, id, _, _, _)? = path.last, selectedServer == serverId {
-      workspaceId = id
+    if let presented = navigation.presentedWorkspace, presented.serverId == serverId {
+      workspaceId = presented.workspaceId
     } else {
       workspaceId = nil
     }
@@ -15,9 +23,10 @@ extension HomeView {
       repository: environment.workspaces, serverId: serverId,
       workspaceId: workspaceId, isActive: scenePhase == .active
     )
-    context.capabilities = ClientCapabilities(settingsSections: SettingsSheet.clientSections, compact: true)
+    context.capabilities = ClientCapabilities(
+      settingsSections: SettingsSheet.clientSections, compact: clientLayoutIsCompact)
     context.page = ClientPageContext(
-      page: path.isEmpty ? "home" : "workspace",
+      page: navigation.clientPage,
       settingsSection: presentedSettingsDestination == nil ? nil : clientSettingsSection,
       presentation: presentedSettingsDestination != nil ? "settings" : (presentedNewChatFlow == nil ? nil : "new_chat")
     )
@@ -46,12 +55,12 @@ extension HomeView {
     })
     environment.workspaces.save(selected)
     environment.workspaceSync.noteLocalMutation()
-    path = [
+    navigation.select(
       .workspace(
         serverId: serverId, workspaceId: workspace.id, anchorSessionId: anchor,
-        preferredChatSessionId: nil, preferredPaneId: pane?.id
+        preferredChatSessionId: nil, preferredPaneId: pane?.id, preferredLeafId: tab?.activeLeafId
       )
-    ]
+    )
   }
 
   func controlClient(serverId: String, action: ClientUIAction) async throws {
@@ -64,7 +73,7 @@ extension HomeView {
       else {
         throw ClientControlError("Workspace is unavailable on this machine")
       }
-      let updated = try request.applying(to: workspace, compact: true)
+      let updated = try request.applying(to: workspace, compact: clientLayoutIsCompact)
       environment.workspaces.save(updated)
       environment.workspaceSync.noteLocalMutation()
       workspaceRevision += 1
@@ -98,7 +107,11 @@ extension HomeView {
     switch request.page {
     case "home":
       try await dismissClientSettings()
-      path = []
+      if layoutMode == .split {
+        selectDetail(nil)
+      } else {
+        navigation.popToRoot()
+      }
     case "new_chat":
       guard presentedSettingsDestination == nil else {
         throw ClientControlError("Dismiss Settings before opening New Chat")

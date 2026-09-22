@@ -14,6 +14,12 @@ struct WorkspaceScreen: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.dismiss) var dismiss
   @Environment(\.accessibilityReduceMotion) var accessibilityReduceMotion
+  /// Stack (compact, native back) or split detail (iPhone Duo unfolded).
+  @Environment(\.homeLayoutMode) var homeLayoutMode
+  /// A tiled split sidebar already names this screen.
+  @Environment(\.homeSidebarIsTiled) var homeSidebarIsTiled
+  /// iPhone Duo moved the bar items into its side strip.
+  @Environment(\.workspaceBarsAreVertical) var barsAreVertical
   /// The workspace's chat, or nil while the native New Chat sheet owns the
   /// draft composer. Its first send adopts a real session in place; Home then
   /// mounts an ordinary workspace route backed by the same cached controller
@@ -30,6 +36,8 @@ struct WorkspaceScreen: View {
   /// A sidebar tab row names the exact pane to show (a terminal, browser,
   /// plugin, or New Tab page) instead of the workspace's last selection.
   var preferredPaneId: UUID? = nil
+  /// The split leaf holding that pane, activated on a regular-width layout.
+  var preferredLeafId: UUID? = nil
   /// Existing workspaces receive their cached-or-new controller from Home
   /// during destination construction, so the transcript shell is available
   /// on the first frame instead of waiting for this view's async task.
@@ -285,6 +293,20 @@ struct WorkspaceScreen: View {
         // workspace's previously selected terminal/chat while the
         // destination task applies the requested pane.
         DelayedWorkspaceLoadingView()
+      } else if let tab = splitTab {
+        // The unfolded display shows the tab's leaves side by side; the
+        // compact display keeps one pane at a time below.
+        WorkspaceSplitContainerView(
+          tab: tab,
+          paneState: panes,
+          leaf: { leafId, pane in
+            paneContent(pane)
+              .id(paneViewIdentities[pane.id] ?? pane.id)
+              .environment(\.workspaceLeafIsActive, leafId == tab.activeLeafId)
+          },
+          onActivate: { pane in select(pane) },
+          onTreeChanged: { root in persistSplitTree(root) }
+        )
       } else if let pane = activePane {
         paneContent(pane)
           .id(paneViewIdentities[pane.id] ?? pane.id)
@@ -295,8 +317,11 @@ struct WorkspaceScreen: View {
     // Native navigation back to the workspaces list: the system back
     // button and the edge swipe-to-go-back gesture. Hiding the back
     // button for a custom sidebar button disabled the interactive pop.
-    .navigationTitle(baseTitle)
-    .navigationSubtitle(chatSubtitle)
+    // Beside a tiled sidebar the title repeats the selected row and costs
+    // the transcript its height; it returns once the sidebar is collapsed
+    // or floating, when nothing else names the screen.
+    .navigationTitle(homeSidebarIsTiled ? "" : baseTitle)
+    .navigationSubtitle(homeSidebarIsTiled ? "" : chatSubtitle)
     .navigationBarBackButtonHidden(isNewChatPresentation)
     .navigationBarTitleDisplayMode(.inline)
     // Sent chats align their title and subtitle to the leading edge; drafts keep a centered title.
@@ -314,7 +339,10 @@ struct WorkspaceScreen: View {
           blocksServerContent: blocksServerContent,
           isDraft: isDraft,
           onDismissNewChat: { dismissNewChatPresentation() },
-          onAddTab: { addTab() }
+          onAddTab: { addTab() },
+          showsOpenBeside: homeLayoutMode == .split,
+          onOpenBeside: { openBeside() },
+          showsBackMorph: !barsAreVertical
         )
       }
     }
@@ -360,11 +388,11 @@ struct WorkspaceScreen: View {
     .onChange(of: environment.workspaceSync.revision) { _, _ in
       synchronizePaneStateFromWorkspace()
     }
-    .onChange(of: preferredPaneId) { _, paneId in
-      guard let paneId else { return }
-      var state = panes
-      state.selectPane(id: paneId)
-      paneBinding.wrappedValue = state
+    // The split layout re-targets this screen rather than mounting a new
+    // one, so a sidebar tap arrives as a route change and must move the
+    // selection in place — including when it names a chat instead of a pane.
+    .onChange(of: preferredRoute) { _, _ in
+      applyPreferredRoute()
     }
     .iosNavigationDiagnostics(navigationDiagnosticState)
   }
@@ -391,7 +419,7 @@ struct WorkspaceScreen: View {
     environment.machines.availability(for: resolvedServerId)
   }
 
-  private var blocksServerContent: Bool {
+  var blocksServerContent: Bool {
     if isDraft { return false }
     // Machine preparation runs on every foreground. A cached chat remains
     // mounted, preserving its native surface, scroll position and composer.
@@ -404,45 +432,6 @@ struct WorkspaceScreen: View {
       return false
     }
     return true
-  }
-
-  private var navigationDiagnosticState: IOSNavigationDiagnosticState {
-    let identifier = workspaceId ?? activeSessionId ?? draftPlaceholderId
-    let contentPhase: String
-    if blocksServerContent {
-      contentPhase = "server-blocked"
-    } else if isDraft {
-      contentPhase = draftController == nil ? "draft-missing" : "draft-ready"
-    } else if let pane = activePane, pane.kind == .chat {
-      if let controller = chatController(for: pane) {
-        if controller.model != nil {
-          contentPhase = "model-ready"
-        } else if controller.isConnecting {
-          contentPhase = "connecting"
-        } else if controller.isLoadingInitialHistory {
-          contentPhase = "history-loading-idle"
-        } else {
-          contentPhase = "model-missing-idle"
-        }
-      } else {
-        contentPhase = "controller-missing"
-      }
-    } else {
-      contentPhase = "non-chat"
-    }
-    return IOSNavigationDiagnosticState(
-      screen: "workspace",
-      identifier: String(identifier.uuidString.prefix(8)),
-      isNewChatPresentation: isNewChatPresentation,
-      hasStarted: presentsAsStarted,
-      isDraft: isDraft,
-      blocksServerContent: blocksServerContent,
-      expectsNativeBack: !isNewChatPresentation,
-      expectsLeadingButton: false,
-      expectsTrailingButton: isNewChatPresentation
-        || (!blocksServerContent && !isDraft),
-      contentPhase: contentPhase
-    )
   }
 
   private var baseTitle: String {

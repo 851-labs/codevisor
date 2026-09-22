@@ -21,6 +21,13 @@ extension WorkspaceScreen {
   func paneContent(_ pane: PaneDescriptorState) -> some View {
     WorkspacePaneContentView(
       pane: pane,
+      // Sync may re-id a pane (a first chat's pane takes its session's
+      // id); the transcript surface follows the original identity so the
+      // mounted transcript — and any send in flight — is not rebuilt.
+      surfacePaneID: paneViewIdentities[pane.id] ?? pane.id,
+      // Until Home promotes the route (after the first send lands), the
+      // page is a draft whose workspace adoption must not relayout.
+      layoutNamespaceToken: sessionId == nil ? draftPlaceholderId : nil,
       filePaneModel: { filePaneModel(for: $0) },
       onOpenFiles: { openFiles(pane) },
       chatController: { chatController(for: $0) },

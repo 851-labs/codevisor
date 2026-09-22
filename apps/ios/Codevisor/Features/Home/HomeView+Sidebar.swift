@@ -190,7 +190,7 @@ extension HomeView {
       "home.openPane",
       "workspace=\(shortID(section.id)) pane=\(shortID(row.id)) pathBefore=\(navigationPathSummary(path))"
     )
-    path.append(
+    openRoute(
       .workspace(
         serverId: section.serverId,
         workspaceId: section.id,
@@ -251,7 +251,7 @@ extension HomeView {
       client: environment.machines.client(for: section.serverId)
     )
     bumpWorkspaceRevision()
-    path.append(
+    openRoute(
       .workspace(
         serverId: section.serverId,
         workspaceId: section.id,

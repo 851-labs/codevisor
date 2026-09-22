@@ -14,6 +14,7 @@ struct HomeView: View {
   @Environment(AppEnvironment.self) var environment
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) var scenePhase
+  @Environment(\.horizontalSizeClass) var horizontalSizeClass
 
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
@@ -22,14 +23,14 @@ struct HomeView: View {
   @State var onboardingStart = OnboardingView.Step.welcome
   // Bootstrap adds the dev machine a beat after first render; the grace
   // period keeps onboarding from flashing over an already-paired install.
-  @State private var readyForOnboarding = false
+  @State var readyForOnboarding = false
   /// First-launch budget: with nothing cached the spinner is allowed,
   /// but it may never outlive the wait — after this it becomes retry.
   @State var initialSyncDeadlineExpired = false
   @State var clientSettingsSection = "root"
   @State var clientPresentationCompletion = ClientPresentationCompletion()
   @State var presentedSettingsDestination: SettingsDestination?
-  @State private var pendingHarnessSignIn: HarnessSignInRequest?
+  @State var pendingHarnessSignIn: HarnessSignInRequest?
   @State var newChatFlow: NewChatFlow?
   /// Presentation and promotion have different lifetimes. SwiftUI owns this
   /// item only while the native sheet exists; `newChatFlow` deliberately
@@ -38,14 +39,47 @@ struct HomeView: View {
   /// is constructed with a non-nil flow on the very first presentation.
   @State var presentedNewChatFlow: NewChatFlow?
   @State var newChatSheetPath = NavigationPath()
-  // A typed path lets Home identify the workspace currently presented and
-  // pop it when a remote server refresh archives that chat.
-  @State var path: [HomeRoute] = []
-  @State private var pendingDeeplink: MachineDeeplink?
-  @State private var deeplinkError: String?
+  /// One navigation truth for both containers: the compact stack's path,
+  /// and the split detail selection (its last entry). A typed path lets
+  /// Home identify the workspace currently presented and pop it when a
+  /// remote server refresh archives that chat.
+  @State var navigation = HomeNavigationState()
+  /// Which container is mounted, latched from the horizontal size class.
+  @State var layoutMode: HomeLayoutMode = .stack
+  /// The hosting bar has moved its items into iPhone Duo's side strip.
+  @State var barsAreVertical = false
+  /// A sidebar tap the workspace has not recorded as its selection yet, so
+  /// the highlight lands on the tapped row without flicking back first.
+  @State var pendingSidebarSelection: UUID?
+  /// The split view's column visibility. `.doubleColumn` is the two-column
+  /// default; driving it lets a selection dismiss an overlay sidebar.
+  @State var sidebarColumnVisibility: NavigationSplitViewVisibility = .doubleColumn
+  /// Where the detail column starts: a tiled sidebar pushes it in, an
+  /// overlay sidebar (portrait, laptop pose) floats above it at zero.
+  @State var detailLeadingInset: CGFloat = 0
+  /// A selection dismissed an overlay sidebar, so widening into a tiled
+  /// layout (rotating to landscape) should bring the sidebar back.
+  @State var sidebarAutoCollapsed = false
+  /// The split container's last width, to tell widening from narrowing.
+  @State var splitContainerWidth: CGFloat = 0
+  /// A size-class change that arrived mid-promotion, applied once it ends.
+  @State var pendingLayoutMode: HomeLayoutMode?
+  /// The session a detail draft was promoted into; keeps its identity.
+  @State var promotedDraftSessionId: UUID?
+  /// Bumped when Home enters New Chat afresh so the draft remounts.
+  @State var draftGeneration = UUID()
+  /// One-shot keyboard focus for the detail draft after a layout swap.
+  @State var detailComposerFocusRequest: UUID?
+  /// The workspace route a detail draft's first send produced, applied once
+  /// the send animation lands so the chrome swap cannot cut it short.
+  @State var pendingDraftPromotion: HomeRoute?
+  /// Pages pushed within the split detail (a pane's sub-navigation).
+  @State var detailPath = NavigationPath()
+  @State var pendingDeeplink: MachineDeeplink?
+  @State var deeplinkError: String?
   /// A codevisor://install-plugin deeplink (the web plugin directory's
   /// "Open in Codevisor" button), staged until the install sheet presents.
-  @State private var pendingPluginInstall: PendingPluginInstall?
+  @State var pendingPluginInstall: PendingPluginInstall?
   @State var renamingWorkspace: Workspace?
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
@@ -57,6 +91,17 @@ struct HomeView: View {
     @State private var didHandleDiagnosticSessionLaunch = false
     @State private var didHandleDiagnosticNewChatLaunch = false
   #endif
+
+  /// The stack path, proxied so route helpers read and write one value.
+  var path: [HomeRoute] {
+    get { navigation.path }
+    nonmutating set { navigation.path = newValue }
+  }
+
+  /// Opening pushes on the compact stack and replaces the split detail.
+  func openRoute(_ route: HomeRoute) {
+    navigation.open(route, mode: layoutMode)
+  }
 
   var machines: MachineController { environment.machines }
   var projectList: ProjectListModel { environment.projectList }
@@ -70,7 +115,7 @@ struct HomeView: View {
     return nil
   }
 
-  private var hasRemoteMachines: Bool {
+  var hasRemoteMachines: Bool {
     machines.allMachines.contains { !$0.isLocal }
   }
 
@@ -92,7 +137,7 @@ struct HomeView: View {
   /// Consent is required even for an existing installation with paired machines.
   /// After consent, onboarding stays open until a machine is paired; the empty
   /// state can reopen it later.
-  private var showsOnboarding: Binding<Bool> {
+  var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
         readyForOnboarding && !showsSampleSidebar && presentedSettingsDestination == nil
@@ -102,33 +147,37 @@ struct HomeView: View {
     )
   }
 
-  private var hasAIDataSharingConsent: Bool {
+  var hasAIDataSharingConsent: Bool {
     aiDataSharingConsentVersion == AIDataSharingConsent.currentVersion
   }
 
-  private var showsNewChatButton: Bool {
+  var showsNewChatButton: Bool {
     if showsSampleSidebar { return true }
     guard hasAIDataSharingConsent else { return false }
     return hasRemoteMachines && !(sidebarSections.isEmpty && !anyMachineSynced)
   }
 
   var body: some View {
-    NavigationStack(path: $path) {
+    hoistedPresentations(
       Group {
-        if showsSampleSidebar {
-          #if DEBUG
-            sampleSidebar
-          #endif
-        } else if !hasRemoteMachines {
-          noMachineState
-        } else {
-          refreshableNavigationContent
+        switch layoutMode {
+        case .stack: stackContainer
+        case .split: splitContainer
         }
+      }
+      // Folding and unfolding iPhone Duo changes the size class, never
+      // the orientation; the container follows the width alone.
+      .onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in
+        applyLayoutMode(for: sizeClass)
+      }
+      .onChange(of: newChatFlow?.id) { _, flowId in
+        guard flowId == nil, let pending = pendingLayoutMode else { return }
+        commitLayoutMode(pending)
       }
       .onChange(of: activeSessions.map(\.id), initial: true) { _, _ in
         backfillWorkspacesIfNeeded()
       }
-      .onChange(of: path, initial: true) { oldPath, newPath in
+      .onChange(of: navigation.path, initial: true) { oldPath, newPath in
         IOSNavigationDiagnostics.record(
           "home.path",
           "old=\(navigationPathSummary(oldPath)) new=\(navigationPathSummary(newPath))"
@@ -137,122 +186,9 @@ struct HomeView: View {
       .onChange(of: presentedWorkspaceDisposition, initial: true) { _, disposition in
         applyPresentedWorkspaceDisposition(disposition)
       }
-      // No title: the workspace headers are the page's headings, and the
-      // bar keeps only its two buttons. The pushed workspace's back button
-      // falls back to the system "Back" label.
-      .navigationTitle("")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        // Settings on the left; Home itself is the fleet's, so there is
-        // no machine switcher — selection follows the chat you open, and
-        // machines are managed in Settings.
-        ToolbarItem(placement: .topBarLeading) { settingsButton }
-        if !failedSyncMachines.isEmpty {
-          ToolbarItem(placement: .topBarLeading) {
-            machineConnectionWarningButton
-          }
-        }
-        if showsNewChatButton {
-          ToolbarSpacer(.flexible, placement: .bottomBar)
-          ToolbarItem(placement: .bottomBar) { newChatButton }
-            .matchedTransitionSource(id: Self.newChatTransitionID, in: newChatTransition)
-        }
-      }
-      .navigationDestination(for: HomeRoute.self) { route in
-        switch route {
-        case let .workspace(
-          serverId,
-          workspaceId,
-          anchorSessionId,
-          preferredChatSessionId,
-          preferredPaneId
-        ):
-          workspaceDestination(
-            serverId: serverId,
-            workspaceId: workspaceId,
-            anchorSessionId: anchorSessionId,
-            preferredChatSessionId: preferredChatSessionId,
-            preferredPaneId: preferredPaneId
-          )
-        }
-      }
-      .modifier(
-        HomeSidebarAlerts(
-          renamingWorkspace: $renamingWorkspace,
-          workspaceRenameTitle: $workspaceRenameTitle,
-          renamingTab: $renamingTab,
-          tabRenameTitle: $tabRenameTitle,
-          onRenameWorkspace: { renameWorkspace($0) },
-          onRenameTab: { renameSidebarTab($0, to: $1) }
-        )
-      )
-      .sheet(item: $presentedSettingsDestination, onDismiss: { clientPresentationCompletion.complete("settings") }) {
-        destination in
-        SettingsSheet(initialDestination: destination, onSectionChange: { clientSettingsSection = $0 })
-          .id(destination.id)
-      }
-      .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
-        presentedSettingsDestination = .root
-      }
-      .harnessSignInSheet(request: $pendingHarnessSignIn)
-      .onReceive(NotificationCenter.default.publisher(for: .codevisorHarnessSignIn)) {
-        notification in
-        pendingHarnessSignIn = HarnessSignInRequest(notification: notification)
-      }
-      .sheet(item: $presentedNewChatFlow, onDismiss: handleNewChatSheetDismissed) {
-        flow in
-        newChatSheet(flow)
-      }
-      .fullScreenCover(isPresented: showsOnboarding) {
-        onboardingStart = .welcome
-      } content: {
-        OnboardingView(start: hasRemoteMachines || onboardingDismissed ? .connect : onboardingStart)
-          .interactiveDismissDisabled(!hasAIDataSharingConsent)
-          // The QR flow lands here: alerts must present over the
-          // cover, so it carries its own copy of the deeplink
-          // alerts, active while it is the visible context.
-          .modifier(
-            MachineDeeplinkAlerts(
-              pending: $pendingDeeplink,
-              error: $deeplinkError,
-              isActive: true
-            )
-          )
-      }
-      // Parse and route codevisor:// deeplinks in one modifier;
-      // diagnostic chat opens come back through these closures.
-      .modifier(
-        HomeExternalRouting(
-          pendingDeeplink: $pendingDeeplink,
-          pendingPluginInstall: $pendingPluginInstall,
-          openDiagnosticSession: { id in
-            #if DEBUG || NAVIGATION_DIAGNOSTICS
-              openDiagnosticSession(id)
-            #endif
-          },
-          openDiagnosticNewChat: { text in
-            #if DEBUG || NAVIGATION_DIAGNOSTICS
-              presentDiagnosticNewChat(text: text)
-            #endif
-          }
-        )
-      )
-      .modifier(
-        MachineDeeplinkAlerts(
-          pending: $pendingDeeplink,
-          error: $deeplinkError,
-          isActive: !showsOnboarding.wrappedValue
-        )
-      )
-      .task {
-        try? await Task.sleep(for: .milliseconds(300))
-        readyForOnboarding = true
-        #if DEBUG || NAVIGATION_DIAGNOSTICS
-          await handleDiagnosticSessionLaunchIfNeeded()
-          await handleDiagnosticNewChatLaunchIfNeeded()
-        #endif
-      }
-    }
+    )
+    .environment(\.homeLayoutMode, layoutMode)
+    .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
     .modifier(
       ClientControlModifier(
         name: UIDevice.current.name, platform: "ios",
@@ -267,7 +203,7 @@ struct HomeView: View {
     /// `CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS` (default 4000) — taps
     /// send through the composer's real button path. Custom-scheme
     /// deeplinks can't do this headlessly: the system confirms them.
-    private func handleDiagnosticNewChatLaunchIfNeeded() async {
+    func handleDiagnosticNewChatLaunchIfNeeded() async {
       let environmentValues = ProcessInfo.processInfo.environment
       guard !didHandleDiagnosticNewChatLaunch,
         let text = environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_TEXT"], !text.isEmpty
@@ -297,7 +233,7 @@ struct HomeView: View {
 
     /// `CODEVISOR_DIAGNOSTIC_SESSION_ID` opens a persisted chat at launch
     /// (and optionally a follow-up) without desktop automation.
-    private func handleDiagnosticSessionLaunchIfNeeded() async {
+    func handleDiagnosticSessionLaunchIfNeeded() async {
       guard !didHandleDiagnosticSessionLaunch,
         let value = ProcessInfo.processInfo.environment["CODEVISOR_DIAGNOSTIC_SESSION_ID"],
         let id = UUID(uuidString: value)

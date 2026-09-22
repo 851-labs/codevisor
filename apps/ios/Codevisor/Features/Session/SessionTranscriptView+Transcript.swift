@@ -230,6 +230,10 @@ extension SessionTranscriptView {
       // invalidating here would cut the first send short. The destination
       // uses the authoritative file namespace in its separate cache.
       hasher.combine(composerTextEditorHandoffID)
+    } else if let layoutNamespaceToken {
+      // An in-place draft: same reasoning as the sheet above. The token
+      // drops once the route becomes the workspace, after the send lands.
+      hasher.combine(layoutNamespaceToken)
     } else {
       hasher.combine(controller.previewCacheNamespace)
     }

@@ -43,7 +43,7 @@ struct HomeSidebarSectionHeader: View {
     Group {
       Menu {
         Button(action: onNewTab) {
-          Label("New Tab", systemImage: "plus")
+          Label("New Tab", systemImage: "plus.square.on.square")
         }
         Divider()
         Button(action: onRename) {

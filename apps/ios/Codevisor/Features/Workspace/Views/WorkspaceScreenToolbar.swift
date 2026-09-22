@@ -11,14 +11,24 @@ struct WorkspaceScreenToolbar: ToolbarContent {
   let isDraft: Bool
   let onDismissNewChat: () -> Void
   let onAddTab: () -> Void
+  /// The unfolded iPhone Duo display can hold two panes; a long press on
+  /// New tab offers to open beside the current one.
+  var showsOpenBeside = false
+  var onOpenBeside: () -> Void = {}
+  /// The decorative back chevron materializes at the top-left as the
+  /// sheet's chrome becomes the conversation's. With iPhone Duo's vertical
+  /// strip the real back button lives on the side, so the morph would
+  /// appear in one place and land in another; skip it there.
+  var showsBackMorph = true
 
   var body: some ToolbarContent {
-    if isNewChatPresentation {
+    if isNewChatPresentation, showsBackMorph {
       ToolbarItem(id: "workspace-back", placement: .topBarLeading) {
         GlassEffectContainer {
           if showsConversationControls {
             Button(action: onDismissNewChat) {
-              Image(systemName: "chevron.left")
+              Label("Back", systemImage: "chevron.left")
+                .labelStyle(.iconOnly)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(width: 44, height: 44)
             }
@@ -27,7 +37,6 @@ struct WorkspaceScreenToolbar: ToolbarContent {
             .glassEffectID("workspace-back", in: glassNamespace)
             .glassEffectTransition(.materialize)
             .transition(.blurReplace)
-            .accessibilityLabel("Back")
           }
         }
         .frame(width: 44, height: 44)
@@ -39,15 +48,28 @@ struct WorkspaceScreenToolbar: ToolbarContent {
       }
       .sharedBackgroundVisibility(.hidden)
     }
+    // The primary action stays visible when iPhone Duo's vertical strip
+    // overflows; every item carries a title for the overflow menu.
+    if #available(iOS 27.0, *) {
+      primaryAction.visibilityPriority(.high)
+    } else {
+      primaryAction
+    }
+  }
+
+  private var primaryAction: some ToolbarContent {
     ToolbarItem(id: "workspace-primary-action", placement: .topBarTrailing) {
       if isNewChatPresentation {
         Button {
           onDismissNewChat()
         } label: {
-          Image(systemName: showsConversationControls ? "plus" : "xmark")
-            .contentTransition(.symbolEffect(.replace.magic(fallback: .offUp)))
+          Label {
+            Text(showsConversationControls ? "New tab" : "Cancel")
+          } icon: {
+            Image(systemName: showsConversationControls ? "plus.square.on.square" : "xmark")
+              .contentTransition(.symbolEffect(.replace.magic(fallback: .offUp)))
+          }
         }
-        .accessibilityLabel(showsConversationControls ? "New tab" : "Cancel")
         .allowsHitTesting(!isPromotingNewChat)
         .onChange(of: isPromotingNewChat, initial: true) { _, isPromoting in
           // Animate only the toolbar's state. Animating the workspace's
@@ -57,13 +79,25 @@ struct WorkspaceScreenToolbar: ToolbarContent {
           }
         }
         // Tabs belong to a workspace; an unsent draft has none yet.
+      } else if !blocksServerContent, !isDraft, showsOpenBeside {
+        Menu {
+          Button(action: onAddTab) {
+            Label("New Tab", systemImage: "plus.square.on.square")
+          }
+          Button(action: onOpenBeside) {
+            Label("Open Beside", systemImage: "rectangle.split.2x1")
+          }
+        } label: {
+          Label("New tab", systemImage: "plus.square.on.square")
+        } primaryAction: {
+          onAddTab()
+        }
       } else if !blocksServerContent, !isDraft {
         Button {
           onAddTab()
         } label: {
-          Image(systemName: "plus")
+          Label("New tab", systemImage: "plus.square.on.square")
         }
-        .accessibilityLabel("New tab")
       }
     }
   }

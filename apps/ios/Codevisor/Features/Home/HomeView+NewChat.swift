@@ -7,6 +7,22 @@ import UIKit
 /// route, and the canonical workspace destination.
 extension HomeView {
   func presentNewChat(serverId: String? = nil) {
+    if layoutMode == .split {
+      // The unfolded display shows New Chat as the detail page, like
+      // macOS; the sheet and its promotion stay compact-only. Already on
+      // an unsent draft, the button just brings the keyboard back.
+      // From a floating sidebar, get it out of the composer's way.
+      defer { dismissOverlaySidebarAfterSelection() }
+      if navigation.selection?.isNewChat ?? false, promotedDraftSessionId == nil {
+        detailComposerFocusRequest = UUID()
+        return
+      }
+      promotedDraftSessionId = nil
+      draftGeneration = UUID()
+      detailComposerFocusRequest = UUID()
+      selectDetail(.newChat(serverId: serverId))
+      return
+    }
     newChatSheetPath = NavigationPath()
     let flow = NewChatFlow()
     flow.requestedServerId = serverId
@@ -169,7 +185,7 @@ extension HomeView {
     surface.expand(session: presentationSession)
   }
 
-  private func markPromotedWorkspaceReady(_ sessionId: UUID) {
+  func markPromotedWorkspaceReady(_ sessionId: UUID) {
     guard let flow = newChatFlow, flow.sessionId == sessionId else { return }
     flow.isWorkspaceReady = true
     finishNewChatPromotionIfReady(flow)
@@ -202,7 +218,8 @@ extension HomeView {
     workspaceId: UUID,
     anchorSessionId: UUID?,
     preferredChatSessionId: UUID?,
-    preferredPaneId: UUID? = nil
+    preferredPaneId: UUID? = nil,
+    preferredLeafId: UUID? = nil
   ) -> some View {
     let controller = projectList.sessions.first(where: {
       $0.serverId == serverId && $0.id == anchorSessionId
@@ -221,6 +238,7 @@ extension HomeView {
       workspaceId: workspaceId,
       preferredChatSessionId: preferredChatSessionId,
       preferredPaneId: preferredPaneId,
+      preferredLeafId: preferredLeafId,
       initialController: controller,
       onWorkspaceReady: markPromotedWorkspaceReady,
       // The canonical route lays out under the sheet but does not
@@ -348,6 +366,7 @@ extension HomeView {
             composerTextEditorHandoffRole: .promotionSource,
             composerTextEditorHandoffID: liveFlow.id
           )
+          .detectsVerticalBars()
         }
         .background {
           NewChatPresentationReader { session in

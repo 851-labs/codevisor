@@ -6,18 +6,22 @@ func navigationPathSummary(_ routes: [HomeRoute]) -> String {
   return "["
     + routes.map { route in
       switch route {
+      case let .newChat(serverId):
+        return "newChat(\(serverId ?? "-"))"
       case let .workspace(
         serverId,
         workspaceId,
         anchorSessionId,
         preferredChatSessionId,
-        preferredPaneId
+        preferredPaneId,
+        preferredLeafId
       ):
         let preferred = preferredChatSessionId.map(navigationShortID) ?? "nil"
         let pane = preferredPaneId.map(navigationShortID) ?? "nil"
+        let leaf = preferredLeafId.map(navigationShortID) ?? "nil"
         let workspace = navigationShortID(workspaceId)
         let anchor = anchorSessionId.map(navigationShortID) ?? "nil"
-        return "workspace(\(serverId)/\(workspace)/\(anchor)/\(preferred)/\(pane))"
+        return "workspace(\(serverId)/\(workspace)/\(anchor)/\(preferred)/\(pane)/\(leaf))"
       }
     }.joined(separator: ",") + "]"
 }

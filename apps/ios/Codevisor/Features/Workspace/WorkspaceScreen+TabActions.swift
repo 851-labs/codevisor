@@ -3,11 +3,54 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
+/// What a route asks this screen to show. A pushed screen reads it once at
+/// mount; a split detail is reused, so it re-reads it on every change.
+struct WorkspacePreferredRoute: Equatable {
+  var chatSessionId: UUID?
+  var paneId: UUID?
+}
+
 // MARK: - Tab actions
 
 /// The workspace's few tab operations. Switching tabs happens from the
 /// sidebar, which pushes the workspace on the chosen pane.
 extension WorkspaceScreen {
+  var preferredRoute: WorkspacePreferredRoute {
+    WorkspacePreferredRoute(chatSessionId: preferredChatSessionId, paneId: preferredPaneId)
+  }
+
+  /// Applies the route's preferred chat/pane to the mounted pane state,
+  /// mirroring what `prepare()` does on a first mount. A chat the
+  /// workspace has not opened yet is added and published, as there.
+  func applyPreferredRoute() {
+    // A screen that has not mounted its panes yet is prepare()'s to route.
+    guard paneState != nil else { return }
+    var state = panes
+    var openedPane: PaneDescriptorState?
+    if let preferredChatSessionId {
+      if let pane = state.panes.first(where: {
+        $0.kind == .chat && $0.chatSessionId == preferredChatSessionId
+      }) {
+        state.selectPane(id: pane.id)
+      } else {
+        openedPane = state.addChatPane(sessionId: preferredChatSessionId)
+      }
+    }
+    if let preferredPaneId {
+      // A pane sync already removed falls back to the last selection.
+      state.selectPane(id: preferredPaneId)
+    }
+    guard state != panes else { return }
+    paneBinding.wrappedValue = state
+    if let openedPane { publishPane(openedPane) }
+    IOSNavigationDiagnostics.record(
+      "workspace.applyPreferredRoute",
+      "chat=\(preferredChatSessionId.map(Self.diagnosticID) ?? "nil") "
+        + "pane=\(preferredPaneId.map(Self.diagnosticID) ?? "nil") "
+        + "selected=\(state.selectedPaneId.map(Self.diagnosticID) ?? "nil")"
+    )
+  }
+
   func select(_ pane: PaneDescriptorState) {
     var state = panes
     state.selectPane(id: pane.id)
@@ -43,6 +86,9 @@ extension WorkspaceScreen {
     if pane.kind == .document { FilePaneCache.shared.remove(paneId: pane.id) }
     if pane.kind == .chat {
       TranscriptPresentationSurfaceCache.shared.remove(paneID: pane.id)
+      if let original = paneViewIdentities[pane.id], original != pane.id {
+        TranscriptPresentationSurfaceCache.shared.remove(paneID: original)
+      }
     }
     if pane.kind == .chat, let sessionId = pane.chatSessionId,
       let closed = environment.projectList.sessions.first(where: {

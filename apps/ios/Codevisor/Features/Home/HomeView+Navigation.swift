@@ -36,7 +36,7 @@ extension HomeView {
     )
     // Push first. Workspace pane selection, controller creation, history,
     // and transcript projection all begin from the destination's tasks.
-    path.append(
+    openRoute(
       .workspace(
         serverId: session.serverId,
         workspaceId: workspaceId,
@@ -113,7 +113,7 @@ extension HomeView {
   /// moves to a surviving sibling chat, or leaves the workspace entirely.
   var presentedWorkspaceDisposition: WorkspaceRouteDisposition {
     _ = environment.workspaceSync.revision
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _)? = path.last else {
+    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = path.last else {
       return .keep
     }
     guard let anchorSessionId else {
@@ -130,7 +130,7 @@ extension HomeView {
   }
 
   func applyPresentedWorkspaceDisposition(_ disposition: WorkspaceRouteDisposition) {
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _)? = path.last else {
+    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = path.last else {
       return
     }
     IOSNavigationDiagnostics.record(
@@ -142,18 +142,24 @@ extension HomeView {
       break
     case let .selectSession(sessionId):
       guard sessionId != anchorSessionId else { return }
-      path[path.count - 1] = .workspace(
-        serverId: serverId,
-        workspaceId: workspaceId,
-        anchorSessionId: sessionId,
-        preferredChatSessionId: sessionId
+      navigation.replaceTop(
+        with: .workspace(
+          serverId: serverId,
+          workspaceId: workspaceId,
+          anchorSessionId: sessionId,
+          preferredChatSessionId: sessionId
+        )
       )
     case .dismiss:
       // WorkspaceScreen may currently have a pane cover above it;
       // clearing the owning stack closes the whole workspace and
       // returns to the navigation list in one state transition.
       newChatFlow = nil
-      path.removeAll()
+      if layoutMode == .split {
+        selectDetail(nil)
+      } else {
+        path.removeAll()
+      }
     }
   }
 

@@ -2,54 +2,55 @@ import CodevisorCore
 import CoreGraphics
 import Foundation
 
-/// A local split insertion whose geometry is still being presented. The
-/// workspace tree is already canonical; this value affects only the entering
-/// shell and when its pane content becomes interactive.
-struct WorkspaceSplitOpening: Equatable, Identifiable {
-  let id = UUID()
-  let leafId: UUID
-  let edge: SplitEdge
-}
-
 /// The flat presentation of a split tree. Leaves remain siblings keyed by their
 /// persistent group ids, so wrapping or collapsing a branch changes geometry
 /// without changing the SwiftUI ownership path of surviving pane content.
-struct WorkspaceSplitLayoutSnapshot {
-  struct Leaf: Identifiable {
-    let id: UUID
-    let frame: CGRect
+/// Shared by the macOS split view and the iPhone Duo split container.
+public struct WorkspaceSplitLayoutSnapshot: Equatable {
+  public struct Leaf: Identifiable, Equatable {
+    public let id: UUID
+    public let frame: CGRect
   }
 
-  struct DividerID: Hashable {
-    let branchPath: [Int]
-    let childIndex: Int
+  public struct DividerID: Hashable {
+    public let branchPath: [Int]
+    public let childIndex: Int
   }
 
-  struct Divider: Identifiable {
-    let id: DividerID
-    let branchPath: [Int]
-    let childIndex: Int
-    let isHorizontal: Bool
-    let lineFrame: CGRect
-    let gripFrame: CGRect
-    let contentLength: CGFloat
-    let sourceFractions: [Double]
-    let beforeLeafID: UUID?
-    let afterLeafID: UUID?
+  public struct Divider: Identifiable, Equatable {
+    public let id: DividerID
+    public let branchPath: [Int]
+    public let childIndex: Int
+    public let isHorizontal: Bool
+    public let lineFrame: CGRect
+    public let gripFrame: CGRect
+    public let contentLength: CGFloat
+    public let sourceFractions: [Double]
+    public let beforeLeafID: UUID?
+    public let afterLeafID: UUID?
   }
 
-  var leaves: [Leaf] = []
-  var dividers: [Divider] = []
+  /// The smallest a child may render along the split axis; below this the
+  /// fractions are floored so every pane stays usable.
+  public static let defaultMinChildWidth: CGFloat = 320
+  public static let defaultMinChildHeight: CGFloat = 280
 
-  static func make(
+  public var leaves: [Leaf] = []
+  public var dividers: [Divider] = []
+
+  public static func make(
     node: SplitNode,
-    size: CGSize
+    size: CGSize,
+    minChildWidth: CGFloat = defaultMinChildWidth,
+    minChildHeight: CGFloat = defaultMinChildHeight
   ) -> WorkspaceSplitLayoutSnapshot {
     var result = WorkspaceSplitLayoutSnapshot()
     result.append(
       node,
       in: CGRect(origin: .zero, size: size),
-      branchPath: []
+      branchPath: [],
+      minChildWidth: minChildWidth,
+      minChildHeight: minChildHeight
     )
     return result
   }
@@ -57,7 +58,9 @@ struct WorkspaceSplitLayoutSnapshot {
   private mutating func append(
     _ node: SplitNode,
     in frame: CGRect,
-    branchPath: [Int]
+    branchPath: [Int],
+    minChildWidth: CGFloat,
+    minChildHeight: CGFloat
   ) {
     switch node {
     case let .group(id, _):
@@ -68,10 +71,7 @@ struct WorkspaceSplitLayoutSnapshot {
       let isHorizontal = orientation == .horizontal
       let axisLength = isHorizontal ? frame.width : frame.height
       let contentLength = max(axisLength - CGFloat(children.count - 1), 0)
-      let minChildLength =
-        isHorizontal
-        ? WorkspaceSplitDragCoordinator.minChildWidth
-        : WorkspaceSplitDragCoordinator.minChildHeight
+      let minChildLength = isHorizontal ? minChildWidth : minChildHeight
       let sourceFractions = children.map(\.fraction)
       let fractions = SplitNode.flooredFractions(
         sourceFractions,
@@ -84,24 +84,16 @@ struct WorkspaceSplitLayoutSnapshot {
         let length = contentLength * CGFloat(fractions[index])
         let childFrame =
           if isHorizontal {
-            CGRect(
-              x: cursor,
-              y: frame.minY,
-              width: length,
-              height: frame.height
-            )
+            CGRect(x: cursor, y: frame.minY, width: length, height: frame.height)
           } else {
-            CGRect(
-              x: frame.minX,
-              y: cursor,
-              width: frame.width,
-              height: length
-            )
+            CGRect(x: frame.minX, y: cursor, width: frame.width, height: length)
           }
         append(
           children[index].node,
           in: childFrame,
-          branchPath: branchPath + [index]
+          branchPath: branchPath + [index],
+          minChildWidth: minChildWidth,
+          minChildHeight: minChildHeight
         )
         cursor += length
 
@@ -137,8 +129,9 @@ struct WorkspaceSplitLayoutSnapshot {
   }
 }
 
-private extension SplitNode {
-  var directLeafID: UUID? {
+extension SplitNode {
+  /// The group id when this node is itself a leaf.
+  public var directLeafID: UUID? {
     guard case let .group(id, _) = self else { return nil }
     return id
   }
