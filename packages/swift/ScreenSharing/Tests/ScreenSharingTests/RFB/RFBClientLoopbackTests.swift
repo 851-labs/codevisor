@@ -192,11 +192,18 @@ struct RFBClientLoopbackTests {
     configuration.encoding = .zrle
     let harness = try await Harness(configuration: configuration)
     defer { harness.stop() }
+    // The server answers the client's initial request the moment it
+    // arrives, so painting before consuming that reply races it: the
+    // snapshot could land between the two paints. Settle it first; the
+    // enqueued frame is then encoded only after both paints.
+    let initial = await harness.nextUpdate()
+    #expect(initial?.width == 1920 && initial?.height == 1080)
     try harness.server.paint(RFBRectangle(x: 0, y: 0, width: 1920, height: 1080), blue: 1, green: 2, red: 3)
     try harness.server.paint(RFBRectangle(x: 1000, y: 500, width: 1, height: 1), blue: 4, green: 4, red: 4)
     harness.server.enqueue([.zrle(RFBRectangle(x: 0, y: 0, width: 1920, height: 1080))])
-    let first = await harness.nextUpdate()  // whole-frame reply to the initial request
-    #expect(first?.pixel(x: 1919, y: 1079) == [1, 2, 3])
-    #expect(first?.pixel(x: 1000, y: 500) == [4, 4, 4])
+    let frame = await harness.nextUpdate()
+    #expect(frame?.update.rectangles == [RFBRectangle(x: 0, y: 0, width: 1920, height: 1080)])
+    #expect(frame?.pixel(x: 1919, y: 1079) == [1, 2, 3])
+    #expect(frame?.pixel(x: 1000, y: 500) == [4, 4, 4])
   }
 }
