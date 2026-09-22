@@ -86,7 +86,7 @@ struct McpMachinePane: View {
         servers.append(created)
         servers.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         if created.authType == "oauth" {
-          Task { try? await beginOAuth(created) }
+          Task { await beginOAuth(created) }
         }
       }
     }
@@ -95,7 +95,7 @@ struct McpMachinePane: View {
         let updated = try await client.updateMcpServer(id: server.id, request: values.updateBody)
         replace(server, with: updated)
         if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
-          Task { try? await beginOAuth(updated) }
+          Task { await beginOAuth(updated) }
         }
       }
     }
@@ -199,7 +199,7 @@ struct McpMachinePane: View {
       computerPermissions: machine.isLocal ? permissions : nil,
       setPreferredBrowser: { await setPreferredBrowser($0) },
       installBrowserExtension: { await installBrowserExtension() },
-      beginOAuth: { try await beginOAuth(server) },
+      beginOAuth: { await beginOAuth(server) },
       setEnabled: { await setEnabled(server, enabled: $0) },
       showDetails: { selectedServer = server },
       edit: { editingServer = server },

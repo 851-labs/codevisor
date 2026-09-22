@@ -16,7 +16,7 @@ struct McpManagedServerRow: View {
   let computerPermissions: ComputerUsePermissionsModel?
   let setPreferredBrowser: (String) async -> Void
   let installBrowserExtension: () async -> Void
-  let beginOAuth: () async throws -> Void
+  let beginOAuth: () async -> Void
   let setEnabled: (Bool) async -> Void
   let showDetails: () -> Void
   let edit: () -> Void
@@ -93,7 +93,7 @@ struct McpManagedServerRow: View {
         && ["needsAuthorization", "expired", "error"].contains(server.connectionState)
       if needsAuthorization {
         Button("Connect…") {
-          Task { try? await beginOAuth() }
+          Task { await beginOAuth() }
         }
         .settingsActionTint(theme)
         .controlSize(.small)

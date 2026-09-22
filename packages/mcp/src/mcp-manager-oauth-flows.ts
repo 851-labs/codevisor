@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { auth } from "@modelcontextprotocol/sdk/client/auth.js"
+import { OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js"
 
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -46,10 +47,24 @@ export const makeMcpOAuthFlows = (core: McpManagerCore, deps: McpOAuthFlowDeps):
       oauth: { ...value.oauth, redirectUrl, state: oauthState }
     }))
     const provider = oauthProvider(id, redirectUrl)
-    const result = await auth(provider, {
-      serverUrl: requireHttpUrl(server.url),
-      ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
-    })
+    const authorize = () =>
+      auth(provider, {
+        serverUrl: requireHttpUrl(server.url),
+        ...(server.oauthScope === undefined ? {} : { scope: server.oauthScope })
+      })
+    let result: Awaited<ReturnType<typeof auth>>
+    try {
+      result = await authorize()
+    } catch (cause) {
+      // auth() first tries to refresh saved tokens, and the SDK only
+      // recovers from invalid_grant/invalid_client. Providers answer a
+      // dead refresh token with other codes too (YC: invalid_target), and
+      // a Connect press must still reach the browser: drop the stale
+      // tokens and start a fresh authorization.
+      if (!(cause instanceof OAuthError)) throw cause
+      await provider.invalidateCredentials?.("tokens")
+      result = await authorize()
+    }
     if (result === "AUTHORIZED") {
       await saveRecord(await record(id), {
         connectionState: "needsAuthorization",

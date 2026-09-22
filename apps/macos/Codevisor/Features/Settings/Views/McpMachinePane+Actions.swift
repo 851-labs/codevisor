@@ -106,9 +106,23 @@ extension McpMachinePane {
     }
   }
 
-  func beginOAuth(_ server: ServerMcpServer) async throws {
-    let flow = try await client.startMcpOAuth(id: server.id)
-    guard let url = URL(string: flow.authorizationUrl) else { return }
+  /// Starts the OAuth flow and polls until the server connects. Failures
+  /// surface in the pane: a silently swallowed error reads as a dead
+  /// Connect button.
+  func beginOAuth(_ server: ServerMcpServer) async {
+    let url: URL
+    do {
+      let flow = try await client.startMcpOAuth(id: server.id)
+      guard let parsed = URL(string: flow.authorizationUrl) else {
+        errorMessage = "\(server.name) returned an invalid sign-in URL."
+        return
+      }
+      url = parsed
+      errorMessage = nil
+    } catch {
+      errorMessage = ErrorReporter.userFacingMessage(for: error)
+      return
+    }
     NSWorkspace.shared.open(url)
     for _ in 0..<60 {
       try? await Task.sleep(for: .seconds(2))
