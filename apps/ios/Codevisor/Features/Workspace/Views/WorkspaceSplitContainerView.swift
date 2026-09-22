@@ -26,18 +26,25 @@ struct WorkspaceSplitContainerView<Leaf: View>: View {
   private var root: SplitNode { liveRoot ?? tab.root }
 
   var body: some View {
-    if #available(iOS 27.1, *), let pair = twoLeafPair {
-      ArrangementView {
-        leafView(pair.first)
-      } secondary: {
-        leafView(pair.second)
+    // The arrangement view is iOS 27.1 SDK API. Release CI builds with the
+    // iOS 27.0 SDK, where it doesn't exist; `#available` alone still has to
+    // compile against it.
+    #if canImport(SwiftUI, _version: 8.0.85)
+      if #available(iOS 27.1, *), let pair = twoLeafPair {
+        ArrangementView {
+          leafView(pair.first)
+        } secondary: {
+          leafView(pair.second)
+        }
+        // Both axes: the system splits by aspect and re-orients to keep one
+        // pane per half as the device folds.
+        .arrangementViewStyle(.split.axes([.horizontal, .vertical]))
+      } else {
+        snapshotLayout
       }
-      // Both axes: the system splits by aspect and re-orients to keep one
-      // pane per half as the device folds.
-      .arrangementViewStyle(.split.axes([.horizontal, .vertical]))
-    } else {
+    #else
       snapshotLayout
-    }
+    #endif
   }
 
   /// Exactly two leaves under one split — the arrangement view's shape.
