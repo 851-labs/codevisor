@@ -80,7 +80,7 @@ extension SessionModel {
       .filter(\.hasRenderableTranscriptContent)
     if case .assistant = items.last {
       settledConversation = Array(items.dropLast())
-      activeItem = items.last
+      activeItem = preservingLocalTurnStart(items.last)
       if !hasActiveItem { hasActiveItem = true }
     } else {
       settledConversation = items
@@ -88,6 +88,23 @@ extension SessionModel {
       if hasActiveItem { hasActiveItem = false }
     }
     rebuildSettledIndex()
+  }
+
+  /// A snapshot taken before the provider reported the turn started carries
+  /// no `startedAt` for the running turn. Adopting that nil resets an elapsed
+  /// timer that is already counting correctly, so a value we already hold for
+  /// the SAME item wins over the server's absence. Identity must match: a
+  /// different turn's start time would be a fabricated elapsed duration.
+  private func preservingLocalTurnStart(_ incoming: ConversationItem?) -> ConversationItem? {
+    guard case let .assistant(incomingMessage)? = incoming,
+      incomingMessage.turn.startedAt == nil,
+      case let .assistant(current) = activeItem,
+      current.id == incomingMessage.id,
+      let localStart = current.turn.startedAt
+    else { return incoming }
+    var message = incomingMessage
+    message.turn.startedAt = localStart
+    return .assistant(message)
   }
 
   /// Read/replace by display index (settled items first, then the active

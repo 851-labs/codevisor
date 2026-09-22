@@ -37,7 +37,11 @@ extension TranscriptReducer {
     }
     if let index {
       entries[index] = .text(id: id, markdown: existing)
-    } else {
+    } else if !existing.isEmpty {
+      // A zero-length span contributes no content and shifts no later
+      // offset, so it is never materialized. Whitespace-only spans DO carry
+      // length that subsequent patch offsets are measured against, so they
+      // are stored and filtered at presentation (`isBlankText`) instead.
       entries.append(.text(id: id, markdown: existing))
     }
     let newest = patch.stateRevision >= (old?.revision ?? 0) || replaces

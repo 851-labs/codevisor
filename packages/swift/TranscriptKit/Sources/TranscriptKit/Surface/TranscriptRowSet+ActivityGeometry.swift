@@ -45,7 +45,7 @@ extension TranscriptRowSet {
     }
     let turn = message.turn
     guard turn.isGenerating, !turn.isThinking, turn.retryStatus == nil,
-      turn.entries.isEmpty, turn.attachments.isEmpty, turn.subagents.isEmpty,
+      turn.entries.allSatisfy(\.isBlankText), turn.attachments.isEmpty, turn.subagents.isEmpty,
       turn.planDocument == nil, !turn.hasDeferredWorkedDetails,
       turn.stopDetail == nil,
       let prompt = rows[..<index].last(where: { $0.isUserMessage }),

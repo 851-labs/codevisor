@@ -107,6 +107,9 @@ extension AssistantTurn {
     for entry in source {
       switch entry {
       case let .text(id, markdown):
+        // A blank span is a stream artifact, not reasoning. Emitting it
+        // would add an empty row to the worked disclosure.
+        guard !entry.isBlankText else { continue }
         flush()
         items.append(.text(id: id, markdown: markdown))
       case let .tool(call) where call.kind == .agent || subagents[call.toolCallId] != nil:

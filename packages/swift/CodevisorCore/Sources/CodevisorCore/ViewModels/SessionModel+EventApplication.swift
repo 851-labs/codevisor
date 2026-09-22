@@ -174,6 +174,7 @@ extension SessionModel {
     case let .assistantItemStarted(itemId):
       ensureAssistantTurn()
       adoptActiveAssistantItemIdentity(itemId)
+      markActiveTurnStartedIfNeeded()
     case let .assistantFinalized(markdown, messageId, attachments):
       ensureAssistantTurn()
       guard case .assistant(var message) = activeItem else { return }
@@ -549,5 +550,19 @@ extension SessionModel {
     settleActiveItem()
     startActiveBubble()
     if !isSending { isSending = true }
+  }
+
+  /// Stamps the running turn's start time from the provider's "turn started"
+  /// signal. This is the only live event that can supply one to a turn that
+  /// already exists: `ensureAssistantTurn` returns early for an
+  /// already-generating turn, and a server row created at prompt-accept time
+  /// carries no `startedAt` until the harness actually starts the turn.
+  /// Without this the elapsed label renders a frozen "Working for 0s" until
+  /// some unrelated full-history snapshot happens to carry the server value,
+  /// at which point it jumps to the true elapsed time.
+  func markActiveTurnStartedIfNeeded() {
+    guard case .assistant(var message) = activeItem, message.turn.startedAt == nil else { return }
+    message.turn.startedAt = now()
+    activeItem = .assistant(message)
   }
 }

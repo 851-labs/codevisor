@@ -334,7 +334,9 @@ enum TranscriptAssistantRowProjection {
   /// transcript before the precise projection arrives.
   static func activeFallbackEstimatedHeight(for item: ConversationItem) -> CGFloat {
     guard case let .assistant(message) = item,
-      message.turn.entries.isEmpty,
+      // Blank spans render nothing, so a turn holding only those is still
+      // a bare activity row and must keep its 32pt reservation.
+      message.turn.entries.allSatisfy(\.isBlankText),
       message.turn.attachments.isEmpty,
       message.turn.subagents.isEmpty,
       message.turn.planDocument?.isEmpty != false,

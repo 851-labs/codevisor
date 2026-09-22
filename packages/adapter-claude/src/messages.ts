@@ -309,19 +309,28 @@ const handleStreamEvent = (
           parentId === undefined
             ? session.currentMessageId
             : session.subagentMessageIds.get(parentId)
-        if (parentId === undefined && String(delta.text ?? "").length > 0) {
-          session.currentMessageTextStreamed = true
+        // A zero-length delta carries neither text nor a phase to retro-tag
+        // with, so it is pure stream noise. Forwarding it created an empty
+        // text span that clients counted as the final answer, retiring the
+        // activity indicator with nothing to show in its place. The
+        // deliberate zero-length `phase: "commentary"` retro-tag emitted on
+        // tool start is a separate call and still flows.
+        const text = String(delta.text ?? "")
+        if (text.length > 0) {
+          if (parentId === undefined) {
+            session.currentMessageTextStreamed = true
+          }
+          void session.emit({
+            kind: "session.output",
+            payload: {
+              content: { text, type: "text" },
+              sessionUpdate: "agent_message_chunk",
+              ...(messageId === undefined ? {} : { messageId }),
+              ...(parentId === undefined ? {} : { parentToolCallId: parentId })
+            },
+            subjectId: session.key
+          })
         }
-        void session.emit({
-          kind: "session.output",
-          payload: {
-            content: { text: String(delta.text ?? ""), type: "text" },
-            sessionUpdate: "agent_message_chunk",
-            ...(messageId === undefined ? {} : { messageId }),
-            ...(parentId === undefined ? {} : { parentToolCallId: parentId })
-          },
-          subjectId: session.key
-        })
       } else if (delta.type === "thinking_delta") {
         void session.emit({
           kind: "session.output",

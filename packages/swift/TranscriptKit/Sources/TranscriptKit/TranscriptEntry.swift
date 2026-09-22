@@ -22,6 +22,18 @@ public enum TranscriptEntry: Identifiable, Sendable, Equatable {
     if case .text = self { return true }
     return false
   }
+
+  /// A text span carrying nothing a reader can see — empty, or whitespace
+  /// only. Harnesses legitimately stream these (Claude retro-tags a preamble
+  /// with a zero-length chunk, and a message can open with a bare newline),
+  /// so they reach the transcript as ordinary spans. They must never count
+  /// as content: doing so retires the activity indicator and hands the UI a
+  /// "final answer" that renders nothing, leaving reserved blank space where
+  /// the shimmer belongs.
+  var isBlankText: Bool {
+    guard case let .text(_, markdown) = self else { return false }
+    return markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
 }
 
 /// The streamed thread of one subagent (text spans and tool calls), nested
@@ -281,7 +293,8 @@ extension AssistantTurn {
   /// `WorkedItems` can drop it from either slice.
   public var finalTextIndex: Int? {
     entries.indices.reversed().first { index in
-      guard case let .text(id, _) = entries[index] else { return false }
+      let entry = entries[index]
+      guard case let .text(id, _) = entry, !entry.isBlankText else { return false }
       return textPhases[id] != .commentary
     }
   }

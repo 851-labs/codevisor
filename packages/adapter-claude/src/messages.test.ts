@@ -325,6 +325,47 @@ describe("ClaudeProvider", () => {
     expect(chunks).toHaveLength(1)
   })
 
+  it("drops contentless text deltas so the activity indicator survives", async () => {
+    const fake = new FakeQuery()
+    const provider = makeProvider(fake)
+    const events: Array<RuntimeEvent> = []
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      events.push(event)
+    }
+    const createPromise = run(provider.createSession(definition, "/tmp", emit))
+    fake.push(initMessage())
+    const created = await createPromise
+
+    const promptPromise = run(created.handle.prompt("hi"))
+    await fake.nextPrompt()
+    fake.push(streamEvent({ message: { id: "msg-1" }, type: "message_start" }))
+    // Carries neither text nor a phase to retro-tag with. Forwarding it
+    // created an empty text span that clients counted as the final answer,
+    // retiring the activity shimmer with nothing to show in its place.
+    fake.push(
+      streamEvent({
+        delta: { text: "", type: "text_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(
+      streamEvent({
+        delta: { text: "The answer is 42.", type: "text_delta" },
+        index: 0,
+        type: "content_block_delta"
+      })
+    )
+    fake.push(resultMessage())
+    await promptPromise
+
+    const chunks = events
+      .map((event) => event.payload as Record<string, unknown>)
+      .filter((payload) => payload.sessionUpdate === "agent_message_chunk")
+    const texts = chunks.map((payload) => (payload.content as Record<string, unknown>).text)
+    expect(texts).toEqual(["The answer is 42."])
+  })
+
   it("retro-tags streamed preamble text as commentary when a tool call starts in the same message", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
