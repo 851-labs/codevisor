@@ -54,8 +54,12 @@ struct ScreenSharingToolbar: ToolbarContent {
 
   private var controlActions: some View {
     Picker("Interaction mode", selection: $store.interactionMode.sending(\.interactionModeChanged)) {
-      Text("View").tag(ScreenSharingViewer.InteractionMode.view)
-      Text("Control").tag(ScreenSharingViewer.InteractionMode.control)
+      Label("View", systemImage: "binoculars").labelStyle(.iconOnly)
+        .help("View only")
+        .tag(ScreenSharingViewer.InteractionMode.view)
+      Label("Control", systemImage: "cursorarrow.click.2").labelStyle(.iconOnly)
+        .help("Control this Mac")
+        .tag(ScreenSharingViewer.InteractionMode.control)
     }
     .pickerStyle(.segmented).labelsHidden().fixedSize()
     .help("Send mouse, keyboard and app shortcuts to this Mac. Control–Option–Escape returns to viewing.")
