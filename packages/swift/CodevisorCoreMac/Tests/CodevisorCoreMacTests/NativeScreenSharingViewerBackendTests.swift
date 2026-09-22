@@ -41,6 +41,23 @@ struct NativeScreenSharingViewerBackendTests {
     expectNoDifference(operations, [.capabilities, .start, .stop])
   }
 
+  @Test func aPinnedTargetIsNamedOnEveryRequest() async throws {
+    let target = "computer-use:0f8fad5b-d9cb-469f-a165-70867728950e"
+    let harness = NativeBackendHarness(target: target)
+    _ = try await harness.backend.discover()
+    harness.connect(target)
+    await awaitObserved { harness.log.events.contains(.ready) }
+    await harness.clock.waitForSleep(.seconds(8))
+    harness.clock.advance(by: .seconds(8))
+    await harness.clock.waitForSleep(.seconds(8))
+    await harness.cancelConsumers()
+    await harness.transport.stopped.wait()
+    let requests = await harness.transport.requests
+    expectNoDifference(
+      requests.map(\.operation), [.capabilities, .capabilities, .start, .heartbeat, .stop])
+    #expect(requests.allSatisfy { $0.displayId == target })
+  }
+
   @Test func networkLossAfterVideoReplacesMediaWithinTheSameSession() async throws {
     let harness = NativeBackendHarness()
     harness.connect()

@@ -70,11 +70,12 @@ extension ScreenSharingViewerBackend {
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
-    vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") }
+    vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
+    target: String? = nil
   ) -> Self {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface, vncOpen: vncOpen)
+      makeSurface: makeSurface, vncOpen: vncOpen, target: target)
     return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
   }
 }
@@ -96,14 +97,19 @@ private final class NativeScreenSharingViewerRunner {
   /// are routed to the VNC runner even before discovery has run.
   private var provider: String?
   private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
+  /// A target every request names, including capabilities, heartbeat and
+  /// stop — a Computer Use live view is addressed by it end to end.
+  private let target: String?
 
   init(
     client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
-    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen
+    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
+    target: String? = nil
   ) {
+    self.target = target
     self.client = client
     self.workspaceId = workspaceId
     self.paneId = paneId
@@ -268,8 +274,8 @@ private final class NativeScreenSharingViewerRunner {
     _ operation: ServerScreenSharingRequest.Operation, viewerId: UUID, displayId: String? = nil, offer: String? = nil
   ) -> ServerScreenSharingRequest {
     .init(
-      operation: operation, workspaceId: workspaceId, paneId: paneId, viewerId: viewerId, displayId: displayId,
-      offer: offer)
+      operation: operation, workspaceId: workspaceId, paneId: paneId, viewerId: viewerId,
+      displayId: displayId ?? target, offer: offer)
   }
 
   private struct ViewerError: LocalizedError {

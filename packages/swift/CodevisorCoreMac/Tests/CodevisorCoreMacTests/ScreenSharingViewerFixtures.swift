@@ -188,7 +188,8 @@ final class NativeBackendHarness {
     transport: SharingTransport = SharingTransport(),
     vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen = { _ in
       throw RFBError.transport("No VNC display in this test.")
-    }
+    },
+    target: String? = nil
   ) {
     self.transport = transport
     let client = CodevisorServerClient(config: .init(requestTransport: transport))
@@ -207,7 +208,7 @@ final class NativeBackendHarness {
         surfaces.append(surface)
         return surface
       },
-      vncOpen: vncOpen)
+      vncOpen: vncOpen, target: target)
   }
 
   /// Consumes one connection's events into the log until the stream ends or the consumer is cancelled.

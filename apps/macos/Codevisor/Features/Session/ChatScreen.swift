@@ -27,6 +27,7 @@ struct ChatScreen: View {
   @Environment(\.openFileDocument) var openFileDocument
   @Environment(\.codeHighlightTheme) var codeHighlightTheme
   @Environment(AppEnvironment.self) var environment
+  @Environment(\.computerUsePiPPane) var computerUsePiPPane
   @Bindable var controller: SessionController
   /// The session screen's focus coordinator (shared with the terminals).
   let focus: TerminalFocusController
@@ -104,6 +105,7 @@ struct ChatScreen: View {
         serverId: controller.project.serverId
       )
       .overlay(alignment: .bottom) { bottomChromeOverlay }
+      .overlay(alignment: .topTrailing) { computerUsePiPOverlay }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true

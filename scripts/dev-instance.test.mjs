@@ -38,3 +38,13 @@ test("ordinary development does not acquire a screen-sharing diagnostic profile"
   assert.equal(Object.hasOwn(launch, profileKey), false)
   assert.equal(Object.hasOwn(supplied, profileKey), false)
 })
+
+test("the Computer Use picture-in-picture opt-in survives dev sanitization", () => {
+  const key = "CODEVISOR_COMPUTER_USE_PIP"
+  for (const selection of ["1", "", "yes"]) {
+    const supplied = { [key]: selection, PATH: "/usr/bin" }
+    sanitizeAmbientEnvironment(supplied)
+    const launch = localDevelopmentEnvironment(developmentLayout("/repo/worktree", {}), supplied)
+    assert.equal(launch[key], selection)
+  }
+})
