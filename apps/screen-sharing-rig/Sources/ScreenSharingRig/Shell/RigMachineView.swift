@@ -11,7 +11,7 @@
   /// One machine, viewed exactly as the product's Screen Sharing pane views
   /// it: the product's `ScreenSharingViewer` feature (discovery, the control
   /// lease, clipboard, diagnostics) over the product's backend for it. The rig
-  /// only supplies a server machine's token.
+  /// only supplies a server machine's token or a VNC machine's password.
   @MainActor
   @Observable
   final class RigMachineModel {
@@ -20,6 +20,8 @@
     /// What the rig is doing before the store exists (token, first contact), or why that failed.
     private(set) var preparing: String?
     private(set) var failure: String?
+    /// Set while a Keychain-password VNC machine waits for the user to type its password.
+    private(set) var passwordPrompt: PasswordPrompt?
     @ObservationIgnored private var prepareTask: Task<Void, Never>?
     @ObservationIgnored private var visible = false
 
@@ -35,20 +37,36 @@
       store?.send(.paneDisappeared)
     }
 
-    /// A failed pane starts over from the token, so a rotated token is picked up too.
+    /// A failed pane starts over from the token or the stored password, so a
+    /// rotated token or a changed password is picked up too.
     func retry() {
       store?.send(.paneClosed)
       store = nil
       prepare()
     }
 
-    private func prepare() {
+    /// Connects with the password the user typed; it is kept only once the server accepts it.
+    func signIn(password: String, remember: Bool) {
+      store?.send(.paneClosed)
+      store = nil
+      prepare(typed: RigVNCSignIn.Typed(password: password, remember: remember))
+    }
+
+    /// Removes this machine's stored VNC password and asks for it again.
+    func forgetPassword() {
+      guard case .vnc(_, _, .keychain) = machine.connection else { return }
+      RigKeychain.vncPasswords.delete(machine.id)
+      retry()
+    }
+
+    private func prepare(typed: RigVNCSignIn.Typed? = nil) {
       prepareTask?.cancel()
       failure = nil
+      passwordPrompt = nil
       let machine = machine
       prepareTask = Task { [weak self] in
         do {
-          let backend = try await Self.backend(machine) { self?.preparing = $0 }
+          let backend = try await Self.backend(machine, typed: typed) { self?.preparing = $0 }
           guard let self, !Task.isCancelled else { return }
           self.preparing = nil
           self.prepareTask = nil
@@ -59,6 +77,11 @@
           }
           self.store = store
           if self.visible { store.send(.paneAppeared) }
+        } catch let prompt as PasswordPrompt {
+          guard let self, !Task.isCancelled else { return }
+          self.preparing = nil
+          self.prepareTask = nil
+          self.passwordPrompt = prompt
         } catch {
           guard let self, !Task.isCancelled else { return }
           self.preparing = nil
@@ -70,12 +93,25 @@
 
     /// The backend the product's pane would use for this machine: `.native`
     /// over its Codevisor server, or `.vnc` straight to a VNC server.
+    /// A Keychain-password machine is signed in first (one handshake), so a
+    /// missing or rejected password asks the user instead of failing the pane.
     private static func backend(
-      _ machine: RigMachine, progress: @MainActor (String) -> Void
+      _ machine: RigMachine, typed: RigVNCSignIn.Typed?, progress: @MainActor (String) -> Void
     ) async throws -> ScreenSharingViewerBackend {
       let retinaDesktop = RigMachineSettings.retinaDesktop(machine.id)
       switch machine.connection {
-      case .vnc(let host, let port, let password):
+      case .vnc(let host, let port, let source):
+        if source == .keychain { progress("Signing in to \(host)…") }
+        let outcome = try await RigVNCSignIn.signIn(
+          machineId: machine.id, password: source, typed: typed, store: RigKeychain.vncPasswords
+        ) { password in
+          try await VNCConnection.open(host: host, port: port, password: password).client.close()
+        }
+        let password: String?
+        switch outcome {
+        case .signedIn(let accepted): password = accepted
+        case .needsPassword(let reason): throw PasswordPrompt(reason: reason)
+        }
         return .vnc(
           displayId: RigMachine.vncDisplayId(port: port),
           open: { try await VNCConnection.open(host: host, port: port, password: password) },
@@ -96,11 +132,12 @@
     private static func client(
       _ id: String, url: URL, sshTarget: String, fresh: Bool, progress: @MainActor (String) -> Void
     ) async throws -> CodevisorServerClient {
-      var token = fresh ? nil : RigMachineTokenStore.read(id)
+      var token = fresh ? nil : RigKeychain.machineTokens.read(id)
       if token == nil {
         progress("Asking \(sshTarget) for its token…")
         let fetched = try await RigMachineTokenStore.fetch(sshTarget: sshTarget)
-        RigMachineTokenStore.save(fetched, for: id)
+        // Not fatal: without it the next launch asks the machine again.
+        try? RigKeychain.machineTokens.save(fetched, for: id)
         token = fetched
       }
       progress("Connecting to \(url.host() ?? id)…")
@@ -111,40 +148,19 @@
     }
   }
 
+  /// Why the rig is asking for a VNC password: nil before the first attempt, else the server's rejection.
+  struct PasswordPrompt: Error, Equatable {
+    let reason: String?
+  }
+
   struct RigMachineError: LocalizedError {
     let errorDescription: String?
     init(_ message: String) { errorDescription = message }
   }
 
-  /// Machine tokens in the login Keychain, keyed by catalog id; fetched with
-  /// `ssh <target> codevisor token` when missing or rejected.
+  /// Fetches a server machine's token (`ssh <target> codevisor token`) when
+  /// the Keychain has none or the server rejected it.
   enum RigMachineTokenStore {
-    private static let service = "com.codevisor.ScreenSharingRig.machine-token"
-
-    static func read(_ id: String) -> String? {
-      let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-        kSecAttrAccount as String: id, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-      ]
-      var item: CFTypeRef?
-      guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
-        return nil
-      }
-      return String(data: data, encoding: .utf8)
-    }
-
-    static func save(_ token: String, for id: String) {
-      let match: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-        kSecAttrAccount as String: id,
-      ]
-      SecItemDelete(match as CFDictionary)
-      var add = match
-      add[kSecValueData as String] = Data(token.utf8)
-      add[kSecAttrLabel as String] = "Codevisor Screen Sharing Rig: \(id) token"
-      SecItemAdd(add as CFDictionary, nil)
-    }
-
     static func fetch(sshTarget: String) async throws -> String {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
@@ -190,6 +206,8 @@
           } else {
             connection(store)
           }
+        } else if let prompt = model.passwordPrompt {
+          RigVNCPasswordForm(machine: model.machine, prompt: prompt) { model.signIn(password: $0, remember: $1) }
         } else if let message = model.failure {
           failure(message) { model.retry() }
         } else {
@@ -204,6 +222,7 @@
       }
       // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }
+      .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.forgetPassword)) { _ in model.forgetPassword() }
       .onAppear {
         RigMenuTarget.shared.selectedMachineId = model.machine.id
         model.appeared()
@@ -254,6 +273,54 @@
     private func banner(_ message: String) -> some View {
       Text(message).font(.caption).foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
+    }
+  }
+
+  /// A VNC machine's password, asked in place of the video. Remembered in the
+  /// login Keychain by default; kept only once the server has accepted it.
+  private struct RigVNCPasswordForm: View {
+    let machine: RigMachine
+    let prompt: PasswordPrompt
+    let submit: (String, Bool) -> Void
+    @State private var password = ""
+    @State private var remember = true
+    @FocusState private var focused: Bool
+
+    var body: some View {
+      VStack(spacing: 4) {
+        VStack(spacing: 8) {
+          Image(systemName: "lock.display").font(.largeTitle).foregroundStyle(.secondary)
+          Text("Enter the VNC password for \(machine.name)").font(.headline)
+        }
+        Form {
+          if let reason = prompt.reason {
+            Section {
+              Label(reason, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+            }
+          }
+          Section {
+            SecureField("Password", text: $password, prompt: Text("Required"))
+              .focused($focused).onSubmit(connect)
+            Toggle("Remember in Keychain", isOn: $remember)
+          }
+        }
+        .formStyle(.grouped)
+        .scrollDisabled(true)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 400)
+        HStack {
+          Spacer()
+          Button("Connect", action: connect).keyboardShortcut(.defaultAction).disabled(password.isEmpty)
+        }
+        .frame(width: 400 - 40)
+      }
+      .padding(24)
+      .onAppear { focused = true }
+    }
+
+    private func connect() {
+      guard !password.isEmpty else { return }
+      submit(password, remember)
     }
   }
 

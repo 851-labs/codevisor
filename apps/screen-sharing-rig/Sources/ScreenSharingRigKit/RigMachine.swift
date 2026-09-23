@@ -5,13 +5,14 @@ import Foundation
 /// product's pane reaches it, or a VNC server reached directly (the rig's
 /// loopback server while it runs). A server's bearer token is not stored
 /// here; the rig asks the machine for it once over SSH (`codevisor token`)
-/// and keeps it in the Keychain.
+/// and keeps it in the Keychain. Nor is a VNC machine's password: the rig asks
+/// the user once (`RigVNCPassword.keychain`).
 public struct RigMachine: Sendable, Equatable, Identifiable, Hashable {
   public enum Connection: Sendable, Equatable, Hashable {
     /// A Codevisor server; `sshTarget` (`user@host`) can run `codevisor token` non-interactively.
     case server(URL, sshTarget: String)
     /// A VNC server by address, with no Codevisor server in front of it.
-    case vnc(host: String, port: UInt16, password: String?)
+    case vnc(host: String, port: UInt16, password: RigVNCPassword)
   }
 
   public let id: String
@@ -41,7 +42,8 @@ public struct RigMachine: Sendable, Equatable, Identifiable, Hashable {
   public static func loopback(port: UInt16, password: String?) -> RigMachine {
     RigMachine(
       id: "loopback", name: "Loopback server", detail: "The rig's test VNC server on 127.0.0.1:\(port)",
-      connection: .vnc(host: "127.0.0.1", port: port, password: password), systemImage: "arrow.triangle.2.circlepath")
+      connection: .vnc(host: "127.0.0.1", port: port, password: password.map(RigVNCPassword.fixed) ?? .none),
+      systemImage: "arrow.triangle.2.circlepath")
   }
 
   /// The machines every rig window starts with.
@@ -51,6 +53,13 @@ public struct RigMachine: Sendable, Equatable, Identifiable, Hashable {
       name: "Contabo VPS",
       detail: "Xfce over the server's VNC socket, via Tailscale",
       connection: .server(URL(string: "http://contabo-vps.tail6fc9a.ts.net:49361")!, sshTarget: "root@164.68.121.169"),
-      systemImage: "server.rack")
+      systemImage: "server.rack"),
+    // Apple's own Screen Sharing server, with "VNC viewers may control screen with password" on.
+    RigMachine(
+      id: "tuftlord-mac",
+      name: "tuftlord",
+      detail: "macOS Screen Sharing (VNC password) on tuftlords-macbook-pro.local",
+      connection: .vnc(host: "tuftlords-macbook-pro.local", port: 5900, password: .keychain),
+      systemImage: "laptopcomputer"),
   ]
 }

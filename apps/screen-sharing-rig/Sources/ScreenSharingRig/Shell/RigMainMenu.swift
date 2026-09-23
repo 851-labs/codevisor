@@ -1,5 +1,6 @@
 #if os(macOS)
   import AppKit
+  import ScreenSharingRigKit
 
   /// The standard menu bar. The rig runs `NSApplication` by hand, not as a
   /// SwiftUI `App`, so nothing installs one for it, and on macOS the usual
@@ -13,6 +14,8 @@
     static let toggleSidebar = Notification.Name("RigMainMenu.toggleSidebar")
     /// Posted by View → Reconnect; the selected machine starts its connection over.
     static let reconnect = Notification.Name("RigMainMenu.reconnect")
+    /// Posted by View → Forget Password; the selected machine drops its stored VNC password and asks again.
+    static let forgetPassword = Notification.Name("RigMainMenu.forgetPassword")
 
     static func install(appName: String = "Codevisor Screen Sharing Rig") {
       let main = NSMenu()
@@ -53,6 +56,9 @@
       view.addItem(
         withTitle: "Retina Remote Desktop", action: #selector(RigMenuTarget.toggleRetinaDesktop(_:)), keyEquivalent: ""
       ).target = RigMenuTarget.shared
+      view.addItem(
+        withTitle: "Forget Password", action: #selector(RigMenuTarget.forgetPassword(_:)), keyEquivalent: ""
+      ).target = RigMenuTarget.shared
       view.addItem(.separator())
       let sidebar = view.addItem(
         withTitle: "Toggle Sidebar", action: #selector(RigMenuTarget.toggleSidebar(_:)), keyEquivalent: "s")
@@ -92,9 +98,18 @@
       NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+      if item.action == #selector(forgetPassword(_:)) {
+        // Only a machine whose password lives in the Keychain has one to forget.
+        let machine = RigMachine.catalog.first { $0.id == selectedMachineId }
+        guard case .vnc(_, _, .keychain) = machine?.connection else { return false }
+        return true
+      }
       guard item.action == #selector(toggleRetinaDesktop(_:)) else { return true }
       item.state = selectedMachineId.map(RigMachineSettings.retinaDesktop) == true ? .on : .off
       return selectedMachineId != nil
+    }
+    @objc func forgetPassword(_ sender: Any?) {
+      NotificationCenter.default.post(name: RigMainMenu.forgetPassword, object: nil)
     }
     @objc func reconnect(_ sender: Any?) {
       NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
