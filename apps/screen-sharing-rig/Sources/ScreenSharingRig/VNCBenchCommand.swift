@@ -49,7 +49,9 @@
           guard let profile = RFBNetworkProfile.named(name) else { throw VNCBenchError("unknown profile \(name)") }
           var runs: [[VNCBenchMetric: Double]] = []
           for index in 0..<options.runs {
-            let measured = try await measure(scene: scene, profile: profile, options: options)
+            let measured = try await withWatchdog("\(scene)/\(name) run \(index + 1)") {
+              try await measure(scene: scene, profile: profile, options: options)
+            }
             print("  \(scene)/\(name) run \(index + 1)/\(options.runs): \(summary(measured))")
             runs.append(measured)
           }
@@ -80,6 +82,21 @@
       return comparison.regressions.isEmpty ? 0 : 1
     }
 
+    /// A run that stalls fails instead of hanging the benchmark (and `vnc:validate`) forever.
+    private static func withWatchdog<T: Sendable>(
+      _ name: String, limit: Duration = .seconds(180), _ work: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+      try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await work() }
+        group.addTask {
+          try await Task.sleep(for: limit)
+          throw VNCBenchError("\(name) took longer than \(limit); stopping")
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
+      }
+    }
+
     // MARK: One run
 
     private static func measure(
@@ -88,7 +105,7 @@
       let input = scene == "input"
       let server = try await ServerProcess.start(
         scene: input ? "idle" : scene, echo: input, seed: options.seed, width: options.width, height: options.height)
-      defer { server.stop() }
+      defer { server.stop() }  // `stop` doesn't wait: the next run's server takes a fresh port anyway
       let transport = RFBShapedTransport(
         try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), profile: profile,
         clock: ContinuousClock())
@@ -201,10 +218,13 @@
     private final class ServerProcess: @unchecked Sendable {
       let process: Process
       let port: UInt16
+      /// Finishes when the process has exited, from its termination handler.
+      let exited: Task<Void, Never>
 
-      private init(process: Process, port: UInt16) {
+      private init(process: Process, port: UInt16, exited: Task<Void, Never>) {
         self.process = process
         self.port = port
+        self.exited = exited
       }
 
       static func start(scene: String, echo: Bool, seed: UInt64, width: Int, height: Int) async throws -> ServerProcess
@@ -219,6 +239,11 @@
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.standardError
+        // Never `waitUntilExit` from a concurrency thread: it waits on a run loop those threads don't
+        // service and can hang after the process is gone (seen in 851-2328's first validation).
+        let (termination, finished) = AsyncStream<Void>.makeStream()
+        process.terminationHandler = { _ in finished.finish() }
+        let exited = Task { for await _ in termination {} }
         try process.run()
         let lines = output.fileHandleForReading.bytes.lines
         let ready = Task { () -> UInt16? in
@@ -240,12 +265,12 @@
           process.terminate()
           throw VNCBenchError("the vnc-server for \(scene) didn't report a port within 10 s")
         }
-        return ServerProcess(process: process, port: port)
+        return ServerProcess(process: process, port: port, exited: exited)
       }
 
+      /// Asks the server to exit. Callers that need it gone await `exited`.
       func stop() {
-        process.terminate()
-        process.waitUntilExit()
+        if process.isRunning { process.terminate() }
       }
     }
 
@@ -272,10 +297,13 @@
       try? power.run()
       power.waitUntilExit()
       let battery = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      var loads = [Double](repeating: 0, count: 3)
+      getloadavg(&loads, 3)
       return VNCBenchReport.Machine(
         model: String(decoding: model.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self),
         system: "\(version.majorVersion).\(version.minorVersion)",
-        power: battery.contains("AC Power") ? "AC" : battery.contains("Battery Power") ? "battery" : "unknown")
+        power: battery.contains("AC Power") ? "AC" : battery.contains("Battery Power") ? "battery" : "unknown",
+        load: loads[0])
     }
 
     private static func summary(_ metrics: [VNCBenchMetric: Double]) -> String {
