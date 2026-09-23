@@ -28,6 +28,20 @@
     private var tracking: NSTrackingArea?
     private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
     private var videoSize = CGSize(width: 1920, height: 1080)
+    /// The remote pointer when the backend reports it (VNC Cursor/PointerPos,
+    /// 851-2311): its shape is the local cursor while controlling, so the
+    /// pointer moves without a network round trip; while viewing, an overlay
+    /// shows it where the host put it. Without a shape the remote draws its own
+    /// pointer into the video and the local one is hidden, as before.
+    private var remoteShape: RFBCursorShape?
+    private var remoteImage: CGImage?
+    private var remotePosition: RFBPoint?
+    private var shapedCursor: NSCursor?
+    private let cursorOverlay = ScreenSharingCursorOverlay()
+    /// What the pointer looks like over the video while controlling.
+    var controlCursor: NSCursor { shapedCursor ?? Self.remoteCursor }
+    /// Whether the view-mode overlay is showing, and where (for tests).
+    var remoteCursorOverlayFrame: CGRect? { cursorOverlay.isHidden ? nil : cursorOverlay.frame }
     /// The fill around the remote display: the letterbox bars an aspect-fit
     /// leaves, and the whole surface before the first frame. Apple's Screen
     /// Sharing seats the remote screen on the window surface rather than black
@@ -49,6 +63,8 @@
         offMainPreparation: profile?.offMainPreparation ?? false)
       super.init(frame: .zero)
       addSubview(metal)
+      cursorOverlay.isHidden = true
+      addSubview(cursorOverlay)
       metal.onFrameSize = { [weak self] size in
         self?.videoSize = size
         self?.needsLayout = true
@@ -81,7 +97,60 @@
     public override func layout() {
       super.layout()
       metal.frame = bounds
+      refreshRemoteCursor()
       window?.invalidateCursorRects(for: self)
+    }
+
+    public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {
+      switch update {
+      case .shape(let shape):
+        remoteShape = shape.isHidden ? nil : shape
+        remoteImage = remoteShape.flatMap(Self.image)
+      case .position(let point):
+        remotePosition = point
+      }
+      refreshRemoteCursor()
+      window?.invalidateCursorRects(for: self)
+    }
+
+    /// Rebuilds the shaped cursor at the video's current on-screen scale and
+    /// places (or hides) the view-mode overlay.
+    private func refreshRemoteCursor() {
+      let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
+      if let shape = remoteShape, let image = remoteImage, scale.isFinite, scale > 0 {
+        let size = NSSize(width: CGFloat(shape.width) * scale, height: CGFloat(shape.height) * scale)
+        shapedCursor = NSCursor(
+          image: NSImage(cgImage: image, size: size),
+          hotSpot: NSPoint(x: CGFloat(shape.hotspotX) * scale, y: CGFloat(shape.hotspotY) * scale))
+      } else {
+        shapedCursor = nil
+      }
+      guard !input.active, let shape = remoteShape, let image = remoteImage, let position = remotePosition,
+        let frame = ScreenSharingVideoGeometry.cursorFrame(
+          x: Double(position.x), y: Double(position.y), hotspotX: Double(shape.hotspotX),
+          hotspotY: Double(shape.hotspotY), cursorWidth: Double(shape.width), cursorHeight: Double(shape.height),
+          surfaceWidth: bounds.width, surfaceHeight: bounds.height, videoWidth: videoSize.width,
+          videoHeight: videoSize.height)
+      else {
+        cursorOverlay.isHidden = true
+        return
+      }
+      cursorOverlay.frame = CGRect(
+        x: frame.x, y: isFlipped ? frame.y : bounds.height - frame.y - frame.height, width: frame.width,
+        height: frame.height)
+      cursorOverlay.layer?.contents = image
+      cursorOverlay.isHidden = false
+    }
+
+    /// Premultiplied BGRA (the shape's layout) as a CGImage.
+    static func image(_ shape: RFBCursorShape) -> CGImage? {
+      guard let provider = CGDataProvider(data: Data(shape.pixels) as CFData) else { return nil }
+      return CGImage(
+        width: shape.width, height: shape.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: shape.width * 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+          .union(.byteOrder32Little),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
     /// Input first, then the renderer's terminal stop (arrival subscription,
@@ -121,17 +190,21 @@
         y: (drawable.height - videoSize.height * scale) / 2,
         width: videoSize.width * scale, height: videoSize.height * scale)
       let rect = convert(metal.convertFromBacking(video), from: metal).intersection(bounds)
-      if !rect.isEmpty { addCursorRect(rect, cursor: Self.remoteCursor) }
+      if !rect.isEmpty { addCursorRect(rect, cursor: controlCursor) }
     }
     func controlCursorChanged() {
+      refreshRemoteCursor()
       window?.invalidateCursorRects(for: self)
-      if !input.active, NSCursor.current === Self.remoteCursor { NSCursor.arrow.set() }
+      if !input.active, isControlCursor(NSCursor.current) { NSCursor.arrow.set() }
     }
     public override func cursorUpdate(with event: NSEvent) {
-      if input.active, pointer(event, clamp: false) != nil { Self.remoteCursor.set() } else { NSCursor.arrow.set() }
+      if input.active, pointer(event, clamp: false) != nil { controlCursor.set() } else { NSCursor.arrow.set() }
     }
     public override func mouseExited(with event: NSEvent) {
-      if NSCursor.current === Self.remoteCursor { NSCursor.arrow.set() }
+      if isControlCursor(NSCursor.current) { NSCursor.arrow.set() }
+    }
+    private func isControlCursor(_ cursor: NSCursor?) -> Bool {
+      cursor === Self.remoteCursor || (shapedCursor != nil && cursor === shapedCursor)
     }
     public override func mouseEntered(with event: NSEvent) { cursorUpdate(with: event) }
     public override func mouseMoved(with event: NSEvent) {
@@ -159,5 +232,17 @@
         videoWidth: videoSize.width, videoHeight: videoSize.height, clamp: clamp)
     }
 
+  }
+
+  /// The view-mode remote pointer: drawn over the video, never hit by the mouse.
+  final class ScreenSharingCursorOverlay: NSView {
+    override init(frame: NSRect) {
+      super.init(frame: frame)
+      wantsLayer = true
+      layer?.contentsGravity = .resize
+      layer?.magnificationFilter = .nearest
+    }
+    required init?(coder: NSCoder) { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
   }
 #endif

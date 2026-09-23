@@ -14,7 +14,9 @@ import ScreenSharing
 /// advertises.
 public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.
-  public static let implementedEncodings: Set<RFBEncoding> = [.raw, .copyRect, .zrle, .desktopSize]
+  public static let implementedEncodings: Set<RFBEncoding> = [
+    .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition,
+  ]
 
   public struct Configuration: Sendable {
     public var version = RFBProtocolVersion.v3_8
@@ -30,6 +32,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     /// Answer every pointer event with an `echoMarker` at the pointer, so
     /// input-to-update latency is measurable in one process.
     public var echoPointer = false
+    /// Sent with the first update to a client that advertises the Cursor pseudo-encoding.
+    public var cursor: RFBCursorShape?
     public init() {}
   }
 
@@ -39,6 +43,10 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     case copy(RFBRectangle, fromX: Int, fromY: Int)
     /// CopyRect whose move the framebuffer already holds (scenes apply their changes in order).
     case moved(RFBRectangle, fromX: Int, fromY: Int)
+    /// Cursor pseudo-encoding: the pointer's shape.
+    case cursor(RFBCursorShape)
+    /// PointerPos pseudo-encoding: the server moved the pointer.
+    case pointer(RFBPoint)
     case desktopSize(width: Int, height: Int)
   }
 
@@ -58,6 +66,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var connections = 0
   private var echoes = 0
   private var sceneFrameUnsent = false
+  private var clientEncodings: Set<Int32> = []
   /// Every client message as it arrives, for a live server's log.
   public var onClientMessage: (@Sendable (RFBClientMessage) -> Void)?
 
@@ -155,6 +164,27 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     if pendingRequest { flushPendingLocked() }
   }
 
+  /// The encodings the client advertised in its last SetEncodings.
+  public var advertisedEncodings: Set<Int32> { lock.withLock { clientEncodings } }
+
+  /// Sends a cursor shape, if the client advertised the Cursor pseudo-encoding.
+  public func setCursor(_ shape: RFBCursorShape) {
+    lock.withLock {
+      guard clientEncodings.contains(RFBEncoding.cursor.rawValue) else { return }
+      pending.append(.cursor(shape))
+      if pendingRequest { flushPendingLocked() }
+    }
+  }
+
+  /// Moves the pointer server-side, if the client advertised PointerPos.
+  public func movePointer(to point: RFBPoint) {
+    lock.withLock {
+      guard clientEncodings.contains(RFBEncoding.pointerPosition.rawValue) else { return }
+      pending.append(.pointer(point))
+      if pendingRequest { flushPendingLocked() }
+    }
+  }
+
   public func sendBell() { write([2]) }
 
   public func sendCutText(_ text: String) {
@@ -246,15 +276,22 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       onClientMessage?(message)
       lock.withLock {
         messages.append(message)
+        if case .setEncodings(let encodings) = message {
+          clientEncodings = Set(encodings)
+          if let cursor = configuration.cursor, clientEncodings.contains(RFBEncoding.cursor.rawValue) {
+            pending.append(.cursor(cursor))
+          }
+        }
         if configuration.echoPointer, case .pointerEvent(_, let x, let y) = message {
           echoLocked(x: Int(x), y: Int(y))
         }
         if case .framebufferUpdateRequest(let incremental, _) = message {
-          if !pending.isEmpty {
-            flushPendingLocked()
-          } else if !incremental {
+          if !incremental {
+            // A full request always gets the whole frame, after anything already queued.
             let full = RFBRectangle(x: 0, y: 0, width: framebuffer.width, height: framebuffer.height)
-            pending = [configuration.encoding == .zrle ? .zrle(full) : .raw(full)]
+            pending.append(configuration.encoding == .zrle ? .zrle(full) : .raw(full))
+            flushPendingLocked()
+          } else if !pending.isEmpty {
             flushPendingLocked()
           } else {
             pendingRequest = true
@@ -293,6 +330,13 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         if deflater == nil { deflater = try RFBZlibDeflater() }
         let compressed = try deflater!.deflate(zrleTiles(rect))
         writer.u32(UInt32(compressed.count)); writer.append(compressed)
+      case .cursor(let shape):
+        header(
+          &writer, RFBRectangle(x: shape.hotspotX, y: shape.hotspotY, width: shape.width, height: shape.height), .cursor
+        )
+        writer.append(shape.encodedPayload())
+      case .pointer(let point):
+        header(&writer, RFBRectangle(x: point.x, y: point.y, width: 0, height: 0), .pointerPosition)
       case .desktopSize(let width, let height):
         header(&writer, RFBRectangle(x: 0, y: 0, width: width, height: height), .desktopSize)
         // A scene resizes and repaints before sending; resizing again would clear its content.

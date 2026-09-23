@@ -11,14 +11,16 @@ struct RFBProtocolTypesTests {
     #expect(RFBEncoding.copyRect.rawValue == 1)
     #expect(RFBEncoding.zrle.rawValue == 16)
     #expect(RFBEncoding.desktopSize.rawValue == -223)
-    #expect(Set(RFBEncoding.allCases) == [.raw, .copyRect, .zrle, .desktopSize])
+    #expect(RFBEncoding.cursor.rawValue == -239)
+    #expect(RFBEncoding.pointerPosition.rawValue == -232)
+    #expect(Set(RFBEncoding.allCases) == [.raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition])
   }
 
   /// SetEncodings is a preference list, so the order is meaningful: the
   /// cheapest-to-decode real encoding first, pseudo-encodings last.
   @Test func supportedEncodingsAreAdvertisedInPreferenceOrder() {
-    #expect(RFBEncoding.supported == [.zrle, .copyRect, .raw, .desktopSize])
-    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223])
+    #expect(RFBEncoding.supported == [.zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition])
+    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232])
     #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 

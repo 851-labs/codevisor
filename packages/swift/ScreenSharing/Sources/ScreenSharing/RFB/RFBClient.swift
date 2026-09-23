@@ -102,6 +102,8 @@ public actor RFBClient {
     let count = Int(try await stream.u16())
     var rectangles: [RFBRectangle] = []
     var resized = false
+    var cursor: RFBCursorShape?
+    var pointer: RFBPoint?
     for _ in 0..<count {
       let x = Int(try await stream.u16()), y = Int(try await stream.u16())
       let width = Int(try await stream.u16()), height = Int(try await stream.u16())
@@ -126,10 +128,23 @@ public actor RFBClient {
       case .desktopSize:
         try framebuffer.resize(width: width, height: height)
         resized = true
+      case .cursor:
+        // x and y are the hotspot; the payload is sized before it is read.
+        guard width <= RFBCursorShape.maximumDimension, height <= RFBCursorShape.maximumDimension else {
+          throw RFBError.malformed("cursor \(width) × \(height)")
+        }
+        let payload = try await stream.bytes(
+          width * height * 4 + RFBCursorShape.maskLength(width: width, height: height))
+        cursor = try RFBCursorShape.decode(width: width, height: height, hotspotX: x, hotspotY: y, payload: payload)
+      case .pointerPosition:
+        pointer = RFBPoint(x: x, y: y)
       case nil:
         throw RFBError.unsupportedEncoding(encoding)
       }
     }
-    return RFBUpdate(rectangles: rectangles, resized: resized)
+    var update = RFBUpdate(rectangles: rectangles, resized: resized)
+    update.cursor = cursor
+    update.pointer = pointer
+    return update
   }
 }

@@ -21,6 +21,13 @@
     /// The fill around the remote display (letterbox bars, and everything
     /// before the first frame). Surfaces that don't paint one ignore it.
     func setLetterboxColor(_ color: NSColor)
+    /// The remote pointer: its shape (the local cursor while controlling) and
+    /// the host's moves (drawn over the video while viewing).
+    func showRemoteCursor(_ update: ScreenSharingCursorUpdate)
+  }
+
+  extension ScreenSharingViewerSurface {
+    public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {}
   }
 
   extension ScreenSharingViewerSurface {
