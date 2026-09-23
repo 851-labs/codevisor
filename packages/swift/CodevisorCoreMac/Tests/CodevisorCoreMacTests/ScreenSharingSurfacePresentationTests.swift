@@ -22,7 +22,7 @@ struct ScreenSharingSurfacePresentationTests {
     let framebuffer = try RFBFramebuffer(width: 1440, height: 900)
     try framebuffer.fill(RFBRectangle(x: 0, y: 0, width: 1440, height: 900), blue: 200, green: 120, red: 40)
     let publisher = VNCFramePublisher()
-    if publishBeforeWindow { publisher.publish(framebuffer, to: mailbox, metrics: metrics) }
+    if publishBeforeWindow { publisher.publish(framebuffer, changed: nil, to: mailbox, metrics: metrics) }
     let window = NSWindow(
       contentRect: NSRect(x: 40, y: 40, width: 480, height: 300), styleMask: [.titled], backing: .buffered, defer: false
     )
@@ -31,7 +31,7 @@ struct ScreenSharingSurfacePresentationTests {
     window.makeKeyAndOrderFront(nil)
     if !publishBeforeWindow {
       try? await Task.sleep(for: .milliseconds(300))
-      publisher.publish(framebuffer, to: mailbox, metrics: metrics)
+      publisher.publish(framebuffer, changed: nil, to: mailbox, metrics: metrics)
     }
     let presented = await awaitPolled(timeout: .seconds(6)) { presentations > 0 }
     let counters = metrics.snapshot().counters.filter {
@@ -65,7 +65,7 @@ struct ScreenSharingSurfacePresentationTests {
     try? await Task.sleep(for: .milliseconds(300))
     for i in 0..<3 {
       try framebuffer.fill(RFBRectangle(x: 0, y: 0, width: 1440, height: 900), blue: UInt8(50 * i), green: 120, red: 40)
-      publisher.publish(framebuffer, to: mailbox, metrics: metrics)
+      publisher.publish(framebuffer, changed: nil, to: mailbox, metrics: metrics)
       try? await Task.sleep(for: .milliseconds(400))
       let c = metrics.snapshot().counters
       print(
