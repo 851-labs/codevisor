@@ -105,7 +105,9 @@ struct ScreenSharingKeyboardCaptureTests {
   }
 
   private func keyEvent(code: UInt16, down: Bool = true) throws -> CGEvent {
-    try #require(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
+    let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
+    event.flags = []  // not whatever modifiers happen to be held on this Mac
+    return event
   }
 }
 

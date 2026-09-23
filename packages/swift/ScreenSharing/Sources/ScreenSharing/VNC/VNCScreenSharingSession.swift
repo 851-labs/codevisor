@@ -180,8 +180,10 @@
     }
 
     private func observeBandwidth(bytes: Int, duration: Duration) {
-      guard !closed, let level = quality.observe(bytes: bytes, duration: duration) else { return }
-      metrics.label("vncQuality", quality.description)
+      guard !closed else { return }
+      let change = quality.observe(bytes: bytes, duration: duration)
+      metrics.label("vncQuality", quality.detail)
+      guard let level = change else { return }
       let client = client
       Task { try? await client.setQualityLevel(level) }
     }

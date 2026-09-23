@@ -12,9 +12,10 @@
 //   rig-ax PID resize W H            set the main window's size
 //   rig-ax PID wait TEXT SECONDS     until a static text contains TEXT
 //   rig-ax PID has ROLE LABEL        an element of ROLE labelled LABEL exists (e.g. a pop-up's value)
-//   rig-ax PID colours PNG           "N B": distinct colours and the share of near-black samples on a grid
-//                                    over the image's right 3/4 and lower 3/4 (the video, clear of sidebar
-//                                    and toolbar); a blank frame has 1 colour, a half-painted one lots of black
+//   rig-ax PID colours PNG           "N B": distinct colours on a grid over the image's right 3/4 and lower
+//                                    3/4 (the video, clear of sidebar and toolbar), and the larger share of
+//                                    near-black samples in that area's right half or bottom half. A blank
+//                                    frame has 1 colour; a half-repainted desktop has a half that is ~all black
 // Exit status 0 on success, 1 when the element or text isn't there.
 import AppKit
 import ApplicationServices
@@ -201,17 +202,22 @@ case "colours" where arguments.count == 4:
   else { done(false, "unreadable image") }
   let step = cg.bitsPerPixel / 8
   var colours = Set<UInt32>()
-  var samples = 0
-  var black = 0
+  // [right half, bottom half] of the sampled area: samples and near-black samples.
+  var halves = [(0, 0), (0, 0)]
   for y in stride(from: cg.height / 4, to: cg.height, by: max(1, cg.height / 60)) {
     for x in stride(from: cg.width / 4, to: cg.width, by: max(1, cg.width / 60)) {
       let offset = y * cg.bytesPerRow + x * step
       colours.insert(UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2]))
-      samples += 1
-      if bytes[offset] < 12, bytes[offset + 1] < 12, bytes[offset + 2] < 12 { black += 1 }
+      let dark = bytes[offset] < 12 && bytes[offset + 1] < 12 && bytes[offset + 2] < 12
+      let right = x >= cg.width / 4 + (cg.width * 3 / 4) / 2, bottom = y >= cg.height / 4 + (cg.height * 3 / 4) / 2
+      for (index, inside) in [right, bottom].enumerated() where inside {
+        halves[index].0 += 1
+        if dark { halves[index].1 += 1 }
+      }
     }
   }
-  done(true, "\(colours.count) \(Double(black) / Double(max(samples, 1)))")
+  let black = halves.map { Double($0.1) / Double(max($0.0, 1)) }.max() ?? 1
+  done(true, "\(colours.count) \(black)")
 
 default:
   done(false, "unknown command \(arguments.dropFirst(2).joined(separator: " "))")

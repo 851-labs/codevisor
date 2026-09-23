@@ -247,21 +247,22 @@ function videoSize() {
 /// The window capture shows a picture, not a blank frame; the first picture follows connecting within seconds.
 function desktopOnScreen(name, file) {
   step(name, () => {
-    // A picture: many colours and little black (a desktop that hasn't repainted after a resize is mostly black).
+    // A picture: many colours, and neither the right nor the bottom half all black (what a desktop that
+    // hasn't repainted after growing looks like; a black terminal window doesn't fill a half).
     let colours = 0
     let black = 1
     for (let attempt = 0; attempt < 20; attempt += 1) {
       ;[colours, black] = ax("colours", capture(file)).stdout.trim().split(" ").map(Number)
-      if (colours > 8 && black < 0.3)
+      if (colours > 8 && black < 0.95)
         return {
           ok: true,
-          detail: `${colours} colours, ${Math.round(black * 100)}% black, after ${attempt + 1} capture(s) 1 s apart`
+          detail: `${colours} colours, darkest half ${Math.round(black * 100)}% black, after ${attempt + 1} capture(s) 1 s apart`
         }
       pause(1000)
     }
     return {
       ok: false,
-      detail: `no picture: ${colours} colours, ${Math.round(black * 100)}% black`
+      detail: `no picture: ${colours} colours, darkest half ${Math.round(black * 100)}% black`
     }
   })
 }
@@ -275,8 +276,13 @@ function contaboFlow() {
       pause(500)
     }
     const shown = ax("wait", "VNC · WebSocket", "10")
+    // The route line names the transport, update mode and quality (e.g. "VNC · WebSocket · continuous · JPEG 4").
+    const route =
+      ax("texts")
+        .stdout.split("\n")
+        .find((text) => text.includes("VNC · WebSocket")) ?? ""
     ax("press", "Connection Details")
-    return { ok: shown.status === 0, detail: shown.stdout.trim() }
+    return { ok: shown.status === 0, detail: route.trim() }
   })
   desktopOnScreen("the Contabo desktop is on screen", "contabo")
   // 851-2315: the machine's Retina Remote Desktop setting doubles the remote desktop; always switched back.
@@ -310,6 +316,19 @@ function contaboFlow() {
           return { ok: true, detail: `${size.width} × ${size.height}` }
       }
       return { ok: false, detail: `still ${JSON.stringify(videoSize())}` }
+    })
+    // After a while of streaming the quality policy has seen the link (851-2329): report what it chose.
+    step("the route after streaming", () => {
+      pause(20000)
+      if (ax("press", "Connection Details").status !== 0)
+        return { ok: true, detail: "Connection Details unavailable" }
+      const texts = ax("texts")
+        .stdout.split("\n")
+        .map((text) => text.trim())
+      ax("press", "Connection Details")
+      const route = texts.find((text) => text.includes("VNC · ")) ?? ""
+      const at = texts.indexOf("Receiving")
+      return { ok: true, detail: `${route}${at >= 0 ? `; receiving ${texts[at + 1]}` : ""}` }
     })
   }
 }

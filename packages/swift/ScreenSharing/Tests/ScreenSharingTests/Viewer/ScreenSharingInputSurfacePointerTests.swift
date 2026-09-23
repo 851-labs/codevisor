@@ -258,6 +258,9 @@ private final class PointerFixture {
   /// stops belonging to this fixture's window, rather than silently routing
   /// nothing.
   private func windowed(_ event: CGEvent) throws -> NSEvent {
+    // A nil-source event starts with the modifier keys physically held right now: a developer
+    // holding ⌘ during the suite made these scrolls carry Command. No modifiers, explicitly.
+    event.flags = []
     event.setIntegerValueField(try #require(CGEventField(rawValue: 51)), value: Int64(window.windowNumber))
     let native = try #require(NSEvent(cgEvent: event))
     #expect(native.window === window)
