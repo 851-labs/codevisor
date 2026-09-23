@@ -1,5 +1,7 @@
 # VNC viewer
 
+Validation of every change: [vnc-validation.md](vnc-validation.md) (skill `vnc-change`).
+
 Standard RFB/VNC servers as a second screen-sharing backend, added on top of the
 composable architecture (`docs/plans/screen-sharing-composable-architecture.md`).
 The pane, reducer, control lease, endpoint, surface, renderer and clipboard
