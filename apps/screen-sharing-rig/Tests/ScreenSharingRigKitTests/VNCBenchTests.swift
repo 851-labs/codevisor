@@ -59,6 +59,17 @@ struct VNCBenchTests {
       VNCBenchComparison(baseline: noisy, current: report(80, latency: 25, mbps: 5, spread: 0.02)).regressions.isEmpty)
   }
 
+  @Test func cpuPerUpdateHasAWiderBandThanOtherMetrics() {
+    func report(_ cpu: Double) -> VNCBenchReport {
+      VNCBenchReport(
+        machine: .init(model: "m", system: "s", power: "AC"), build: "b",
+        cases: [VNCBenchCase(scene: "typing", profile: "wan150", runs: [[.cpuMsPerUpdate: cpu]])])
+    }
+    #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.4)).regressions.isEmpty, "+20 %")
+    #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.6)).regressions.count == 1, "+30 %")
+    #expect(VNCBenchComparison(baseline: report(2.0), current: report(0.4)).improvements.count == 1, "−80 %")
+  }
+
   @Test func sub_millisecondLatencyChangesAreNoise() {
     func report(_ latency: Double) -> VNCBenchReport {
       VNCBenchReport(

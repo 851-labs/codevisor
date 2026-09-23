@@ -41,6 +41,7 @@
     "vnc:bench": "bun scripts/vnc-bench.mjs",
     "vnc:interop": "bun scripts/vnc-interop.mjs",
     "vnc:tophat": "bun scripts/vnc-tophat.mjs",
+    "vnc:validate": "bun scripts/vnc-validate.mjs",
     "swift:test": "node scripts/test-swift.mjs",
     "swift:test:macos-transcript": "bun scripts/test-macos-transcript.mjs",
     "swift:build:ios": "bun scripts/build-native.mjs ios -quiet",

@@ -32,9 +32,10 @@ the checklist for applying it.
 
 ## Prove it
 
-1. `bun run vnc:validate` (affected suites, `vnc:interop`, `vnc-bench` against
-   the baseline, scripted tophat). It must exit 0. Until 851-2328 exists, run
-   the pieces that exist and say which layers are missing.
+1. `bun run vnc:validate --issue 851-XXXX` (VNC suites, `vnc:interop`,
+   `vnc-bench` against the baseline, `vnc:tophat`). It must exit 0 and writes
+   `docs/measurements/vnc/<date>-<issue>/validate.md`. Needs OrbStack running
+   (`orbctl start`) and Accessibility permission for the terminal.
 2. Check the report: acceptance criteria met, metric target met, no metric
    outside the issue's scope worse than the noise band.
 3. For UI-visible changes also follow the `tophat` skill. Launch the rig in
@@ -44,8 +45,9 @@ the checklist for applying it.
 ## Land it
 
 1. Commit with the report summary in the body and a
-   `Validation: docs/measurements/vnc/<date>-<issue>/report.md` trailer. Update
-   the baseline only when this issue improves a metric, in the same commit.
+   `Validation: docs/measurements/vnc/<date>-<issue>/validate.md` trailer.
+   Update the baseline (`--save-baseline`) only when this issue improves a
+   metric, in the same commit. Land it as a pull request and merge it.
 2. Post the summary (and screenshots) on the Linear issue, move it to Done,
    and go back to "Pick the work".
 

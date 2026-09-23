@@ -34,6 +34,14 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
     }
   }
 
+  /// The smallest noise band for this metric. Client CPU per update is
+  /// mostly idle overhead on high-latency profiles (few updates share the
+  /// same background timers) and moves with machine load: an unchanged build
+  /// read +13 % and +19 % at load ≈ 7 (851-2328), so it gets 25 %.
+  public var minimumRelativeNoise: Double {
+    self == .cpuMsPerUpdate ? 0.25 : VNCBenchComparison.minimumNoise
+  }
+
   public var label: String {
     switch self {
     case .updatesPerSecond: "updates/s"
@@ -99,10 +107,13 @@ public struct VNCBenchReport: Codable, Equatable, Sendable {
     public var model: String
     public var system: String
     public var power: String
-    public init(model: String, system: String, power: String) {
+    /// One-minute load average when the run started; nil in older reports.
+    public var load: Double?
+    public init(model: String, system: String, power: String, load: Double? = nil) {
       self.model = model
       self.system = system
       self.power = power
+      self.load = load
     }
   }
 
@@ -126,7 +137,10 @@ public struct VNCBenchReport: Codable, Equatable, Sendable {
     let metrics = VNCBenchMetric.allCases.filter { metric in cases.contains { $0.median[metric] != nil } }
     var lines = [
       "# vnc-bench", "",
-      "Machine: \(machine.model), macOS \(machine.system), \(machine.power). Build: `\(build)`.", "",
+      "Machine: \(machine.model), macOS \(machine.system), \(machine.power)"
+        + (machine.load.map { String(format: ", load %.1f", $0) } ?? "") + ". Build: `\(build)`.",
+      machine.load.map { $0 > Double(ProcessInfo.processInfo.activeProcessorCount) / 2 } == true
+        ? "\n**Busy machine:** load is above half the cores; expect wider spreads." : "",
       "Median of \(cases.first?.runs.count ?? 0) run(s) per case; ± is the noise band (largest run deviation).", "",
       "| scene | profile | " + metrics.map(\.label).joined(separator: " | ") + " |",
       "| --- | --- | " + metrics.map { _ in "---:" }.joined(separator: " | ") + " |",
@@ -185,7 +199,7 @@ public struct VNCBenchComparison: Sendable {
       let (before, after) = (base[key]!, now[key]!)
       for metric in VNCBenchMetric.allCases {
         guard let old = before.median[metric], let new = after.median[metric] else { continue }
-        let band = max(before.spread[metric] ?? 0, after.spread[metric] ?? 0, Self.minimumNoise)
+        let band = max(before.spread[metric] ?? 0, after.spread[metric] ?? 0, metric.minimumRelativeNoise)
         let tolerance = max(abs(old) * band, metric.absoluteFloor)
         let change = new - old
         let verdict: Verdict

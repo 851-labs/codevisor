@@ -66,8 +66,10 @@ baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
   update, bytes copied per update, presented fps.
 - **Statistics:** N runs per scene and profile; median and p95. An A/A run
   (same build twice) sets the noise band per metric: the larger of both
-  sides' run spread and 10 %, and at least a per-metric absolute floor
-  (1 ms for latencies). A change is a regression when a metric is worse by
+  sides' run spread and 10 % (25 % for client CPU per update, which is mostly
+  idle overhead on high-latency profiles and moves with machine load), and at
+  least a per-metric absolute floor (1 ms for latencies). Reports record the
+  load average and flag a busy machine. A change is a regression when a metric is worse by
   more than the noise band.
 - **Baselines:** `docs/measurements/vnc/baseline-<machine>.json`, updated only
   by a ticket that improves a metric, in the same commit. Reports record the
@@ -83,13 +85,19 @@ when everything blocking it is done):
    write them into the issue first.
 2. Add the failing L1/L2 test (and the reference server's side).
 3. Implement.
-4. Run `bun run vnc:validate`: affected Swift suites, `vnc:interop`,
-   `vnc-bench` compared with the baseline, and the scripted tophat. It writes
-   `docs/measurements/vnc/<date>-<issue>/report.md` and exits non-zero on any
-   failure or out-of-noise regression.
-5. Commit with the report summary and a `Validation: docs/measurements/vnc/…`
-   trailer (the pre-commit suite runs as usual). Post the summary and
-   screenshots on the issue, move it to Done, and pick the next ready issue.
+4. Run `bun run vnc:validate --issue 851-XXXX`: the VNC Swift suites and the
+   rig package's tests, `vnc:interop`, `vnc-bench` compared with the
+   baseline, and `vnc:tophat`. It writes
+   `docs/measurements/vnc/<date>-<issue>/validate.md` and exits non-zero on
+   any failure or out-of-noise regression. `--skip LAYER` only for a layer
+   the change cannot affect, with the reason in the commit; `--save-baseline`
+   only when the issue improves a metric. Add a hand-written `report.md`
+   beside it for anything the layers don't show (acceptance criteria, manual
+   steps such as typing).
+5. Commit with the summary and a `Validation: docs/measurements/vnc/…`
+   trailer (the pre-commit suite runs as usual). Open a pull request, merge
+   it once validated, post the summary and screenshots on the issue, move it
+   to Done, and pick the next ready issue.
 
 Stop and ask instead of continuing when:
 
