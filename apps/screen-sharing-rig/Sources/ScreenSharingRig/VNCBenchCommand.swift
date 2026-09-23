@@ -14,10 +14,11 @@
   enum VNCBenchCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-bench [--scenes typing,scroll,photo,input] [--profiles lan,wan150]
-                                          [--runs 3] [--frames 40] [--size 1280x800] [--seed 1]
+                                          [--runs 3] [--frames 40] [--size 1280x800] [--seed 1] [--pace 60]
                                           [--out DIR] [--baseline FILE] [--build HASH]
       Scenes: \(VNCBenchOptions.sceneNames.joined(separator: ", ")) ("input" measures pointer echo latency).
       Profiles: \(VNCBenchOptions.profileNames.joined(separator: ", ")).
+      --pace: scene frames per second, like a real app (default 60); 0 plays a frame per request.
       --out writes bench.json and bench.md; --baseline compares and exits 1 on a regression
       beyond the noise band. Prefer `bun run vnc:bench`, which builds in release mode.
       """
@@ -104,7 +105,8 @@
     ) async throws -> [VNCBenchMetric: Double] {
       let input = scene == "input"
       let server = try await ServerProcess.start(
-        scene: input ? "idle" : scene, echo: input, seed: options.seed, width: options.width, height: options.height)
+        scene: input ? "idle" : scene, echo: input, seed: options.seed, pace: options.pace, width: options.width,
+        height: options.height)
       defer { server.stop() }  // `stop` doesn't wait: the next run's server takes a fresh port anyway
       let transport = RFBShapedTransport(
         try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), profile: profile,
@@ -227,15 +229,16 @@
         self.exited = exited
       }
 
-      static func start(scene: String, echo: Bool, seed: UInt64, width: Int, height: Int) async throws -> ServerProcess
-      {
+      static func start(
+        scene: String, echo: Bool, seed: UInt64, pace: Int, width: Int, height: Int
+      ) async throws -> ServerProcess {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: Bundle.main.executablePath ?? CommandLine.arguments[0])
         process.arguments =
           [
             "vnc-server", "--port", "0", "--no-password", "--size", "\(width)x\(height)", "--scene", scene, "--seed",
             "\(seed)",
-          ] + (echo ? ["--echo"] : [])
+          ] + (echo ? ["--echo"] : []) + (pace > 0 ? ["--scene-fps", "\(pace)"] : [])
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.standardError

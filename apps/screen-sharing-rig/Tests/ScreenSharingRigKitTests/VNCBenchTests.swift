@@ -68,6 +68,7 @@ struct VNCBenchTests {
     #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.4)).regressions.isEmpty, "+20 %")
     #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.6)).regressions.count == 1, "+30 %")
     #expect(VNCBenchComparison(baseline: report(2.0), current: report(0.4)).improvements.count == 1, "−80 %")
+    #expect(VNCBenchComparison(baseline: report(0.47), current: report(0.91)).regressions.isEmpty, "< 0.5 ms")
   }
 
   @Test func sub_millisecondLatencyChangesAreNoise() {
@@ -121,5 +122,8 @@ struct VNCBenchTests {
     let defaults = try VNCBenchOptions(arguments: [])
     #expect(defaults.scenes == ["typing", "scroll", "photo", "input"])
     #expect(defaults.profiles == ["lan", "wan150"])
+    #expect(defaults.pace == 60)
+    #expect(try VNCBenchOptions(arguments: ["--pace", "0"]).pace == 0)
+    #expect(throws: (any Error).self) { try VNCBenchOptions(arguments: ["--pace", "999"]) }
   }
 }

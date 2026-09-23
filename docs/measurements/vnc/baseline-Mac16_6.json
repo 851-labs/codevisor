@@ -1,366 +1,367 @@
 {
-  "build" : "d070e5249584+dirty",
+  "build" : "0b8ba6bd518b+dirty",
   "cases" : [
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
         "bytesPerUpdate" : 63.75,
-        "cpuMsPerUpdate" : 0.4044249999999999,
-        "megabitsPerSecond" : 0.1472475895894395,
-        "updateLatencyP50Ms" : 3.336083,
-        "updateLatencyP95Ms" : 3.399875,
-        "updatesPerSecond" : 288.7207639008618
+        "cpuMsPerUpdate" : 0.46545000000000003,
+        "megabitsPerSecond" : 0.031189805061807227,
+        "updateLatencyP50Ms" : 16.167209,
+        "updateLatencyP95Ms" : 23.179708,
+        "updatesPerSecond" : 61.1564805133475
       },
       "profile" : "lan",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 0.4134999999999998,
-          "megabitsPerSecond" : 0.1463227448098408,
-          "updateLatencyP50Ms" : 3.349542,
-          "updateLatencyP95Ms" : 3.399875,
-          "updatesPerSecond" : 286.9073427643937
+          "cpuMsPerUpdate" : 0.46545000000000003,
+          "megabitsPerSecond" : 0.03138800369546969,
+          "updateLatencyP50Ms" : 15.922833,
+          "updateLatencyP95Ms" : 23.179708,
+          "updatesPerSecond" : 61.5451052852347
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 0.39639999999999986,
-          "megabitsPerSecond" : 0.1472475895894395,
-          "updateLatencyP50Ms" : 3.336083,
-          "updateLatencyP95Ms" : 3.397209,
-          "updatesPerSecond" : 288.7207639008618
+          "cpuMsPerUpdate" : 0.3628000000000001,
+          "megabitsPerSecond" : 0.03097973018577574,
+          "updateLatencyP50Ms" : 16.359542,
+          "updateLatencyP95Ms" : 23.97225,
+          "updatesPerSecond" : 60.74456899171713
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 0.4044249999999999,
-          "megabitsPerSecond" : 0.1511859571190529,
-          "updateLatencyP50Ms" : 3.328459,
-          "updateLatencyP95Ms" : 3.426291,
-          "updatesPerSecond" : 296.4430531746135
+          "cpuMsPerUpdate" : 0.72435,
+          "megabitsPerSecond" : 0.031189805061807227,
+          "updateLatencyP50Ms" : 16.167209,
+          "updateLatencyP95Ms" : 21.573375,
+          "updatesPerSecond" : 61.1564805133475
         }
       ],
       "scene" : "typing",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.022439265624033852,
-        "megabitsPerSecond" : 0.02674656706160327,
-        "updateLatencyP50Ms" : 0.004034372046498876,
-        "updateLatencyP95Ms" : 0.0077696974153460855,
-        "updatesPerSecond" : 0.02674656706160318
+        "cpuMsPerUpdate" : 0.5562359007412182,
+        "megabitsPerSecond" : 0.006735369958715467,
+        "updateLatencyP50Ms" : 0.015115534165482678,
+        "updateLatencyP95Ms" : 0.06929910419924197,
+        "updatesPerSecond" : 0.006735369958715532
       }
     },
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
-        "bytesPerUpdate" : 63.75,
-        "cpuMsPerUpdate" : 1.731875000000001,
-        "megabitsPerSecond" : 0.003230192141303795,
-        "updateLatencyP50Ms" : 156.395208,
-        "updateLatencyP95Ms" : 164.48433400000002,
-        "updatesPerSecond" : 6.333710080987833
+        "bytesPerUpdate" : 63.575,
+        "cpuMsPerUpdate" : 1.5400750000000003,
+        "megabitsPerSecond" : 0.0031343092491616844,
+        "updateLatencyP50Ms" : 162.004292,
+        "updateLatencyP95Ms" : 170.680083,
+        "updatesPerSecond" : 6.162621410070162
       },
       "profile" : "wan150",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 1.5618,
-          "megabitsPerSecond" : 0.0032305776070850364,
-          "updateLatencyP50Ms" : 156.255625,
-          "updateLatencyP95Ms" : 164.882,
-          "updatesPerSecond" : 6.33446589624517
+          "bytesPerUpdate" : 63.575,
+          "cpuMsPerUpdate" : 1.5952999999999997,
+          "megabitsPerSecond" : 0.003157308912506972,
+          "updateLatencyP50Ms" : 159.964459,
+          "updateLatencyP95Ms" : 170.680083,
+          "updatesPerSecond" : 6.207842926675132
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 1.8255249999999994,
-          "megabitsPerSecond" : 0.003230192141303795,
-          "updateLatencyP50Ms" : 156.75483300000002,
-          "updateLatencyP95Ms" : 164.48433400000002,
-          "updatesPerSecond" : 6.333710080987833
+          "bytesPerUpdate" : 63.575,
+          "cpuMsPerUpdate" : 1.5048249999999999,
+          "megabitsPerSecond" : 0.0031343092491616844,
+          "updateLatencyP50Ms" : 162.12175000000002,
+          "updateLatencyP95Ms" : 169.820625,
+          "updatesPerSecond" : 6.162621410070162
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 63.75,
-          "cpuMsPerUpdate" : 1.731875000000001,
-          "megabitsPerSecond" : 0.003227198597931293,
-          "updateLatencyP50Ms" : 156.395208,
-          "updateLatencyP95Ms" : 164.179083,
-          "updatesPerSecond" : 6.327840388100575
+          "bytesPerUpdate" : 63.575,
+          "cpuMsPerUpdate" : 1.5400750000000003,
+          "megabitsPerSecond" : 0.003125227588181818,
+          "updateLatencyP50Ms" : 162.004292,
+          "updateLatencyP95Ms" : 174.024834,
+          "updatesPerSecond" : 6.144765214671289
         }
       ],
       "scene" : "typing",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.09820281486827905,
-        "megabitsPerSecond" : 0.00092673848537487,
-        "updateLatencyP50Ms" : 0.002299463037256375,
-        "updateLatencyP95Ms" : 0.002417652735244602,
-        "updatesPerSecond" : 0.0009267384853748937
+        "cpuMsPerUpdate" : 0.03585864324789338,
+        "megabitsPerSecond" : 0.007338032566964875,
+        "updateLatencyP50Ms" : 0.012591228138572942,
+        "updateLatencyP95Ms" : 0.019596609875095986,
+        "updatesPerSecond" : 0.00733803256696477
       }
     },
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
         "bytesPerUpdate" : 40688.85,
-        "cpuMsPerUpdate" : 0.7513249999999999,
-        "megabitsPerSecond" : 58.711079965711164,
-        "updateLatencyP50Ms" : 5.252583,
-        "updateLatencyP95Ms" : 6.436041,
-        "updatesPerSecond" : 180.3659969675696
+        "cpuMsPerUpdate" : 1.3594999999999995,
+        "megabitsPerSecond" : 19.992732529683884,
+        "updateLatencyP50Ms" : 16.204625,
+        "updateLatencyP95Ms" : 20.569083,
+        "updatesPerSecond" : 61.419567429664035
       },
       "profile" : "lan",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 0.8016499999999995,
-          "megabitsPerSecond" : 57.489972781078905,
-          "updateLatencyP50Ms" : 5.3905840000000005,
-          "updateLatencyP95Ms" : 6.436041,
-          "updatesPerSecond" : 176.6146400705565
+          "cpuMsPerUpdate" : 0.6436500000000012,
+          "megabitsPerSecond" : 20.05930470702081,
+          "updateLatencyP50Ms" : 16.15475,
+          "updateLatencyP95Ms" : 19.728625,
+          "updatesPerSecond" : 61.62408346211804
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 0.7253750000000003,
-          "megabitsPerSecond" : 60.962858136129476,
-          "updateLatencyP50Ms" : 5.161792,
-          "updateLatencyP95Ms" : 6.03525,
-          "updatesPerSecond" : 187.283672726464
+          "cpuMsPerUpdate" : 1.3594999999999995,
+          "megabitsPerSecond" : 19.992732529683884,
+          "updateLatencyP50Ms" : 16.597583999999998,
+          "updateLatencyP95Ms" : 20.569083,
+          "updatesPerSecond" : 61.419567429664035
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 0.7513249999999999,
-          "megabitsPerSecond" : 58.711079965711164,
-          "updateLatencyP50Ms" : 5.252583,
-          "updateLatencyP95Ms" : 6.443125,
-          "updatesPerSecond" : 180.3659969675696
+          "cpuMsPerUpdate" : 1.3831999999999998,
+          "megabitsPerSecond" : 19.97936712362986,
+          "updateLatencyP50Ms" : 16.204625,
+          "updateLatencyP95Ms" : 23.915542000000002,
+          "updatesPerSecond" : 61.37850763670471
         }
       ],
       "scene" : "scroll",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.06698166572388731,
-        "megabitsPerSecond" : 0.038353547094235205,
-        "updateLatencyP50Ms" : 0.02627297845650434,
-        "updateLatencyP95Ms" : 0.06227290969712604,
-        "updatesPerSecond" : 0.03835354709423543
+        "cpuMsPerUpdate" : 0.526553880102978,
+        "megabitsPerSecond" : 0.0033298188348233225,
+        "updateLatencyP50Ms" : 0.024249805225359897,
+        "updateLatencyP95Ms" : 0.1626936407422734,
+        "updatesPerSecond" : 0.0033298188348234153
       }
     },
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
-        "bytesPerUpdate" : 40688.85,
-        "cpuMsPerUpdate" : 2.8573000000000013,
-        "megabitsPerSecond" : 1.8915198854956599,
-        "updateLatencyP50Ms" : 170.744959,
-        "updateLatencyP95Ms" : 179.909792,
-        "updatesPerSecond" : 5.810928194995864
+        "bytesPerUpdate" : 40731.825,
+        "cpuMsPerUpdate" : 2.5264500000000023,
+        "megabitsPerSecond" : 1.8855443095120543,
+        "updateLatencyP50Ms" : 171.929583,
+        "updateLatencyP95Ms" : 183.376,
+        "updatesPerSecond" : 5.786459081786951
       },
       "profile" : "wan150",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 2.9266250000000005,
-          "megabitsPerSecond" : 1.8915198854956599,
-          "updateLatencyP50Ms" : 170.744959,
-          "updateLatencyP95Ms" : 179.909792,
-          "updatesPerSecond" : 5.810928194995864
+          "bytesPerUpdate" : 40731.825,
+          "cpuMsPerUpdate" : 2.600025,
+          "megabitsPerSecond" : 1.8753192628783033,
+          "updateLatencyP50Ms" : 172.033667,
+          "updateLatencyP95Ms" : 183.43675000000002,
+          "updatesPerSecond" : 5.755079912569298
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 2.6822000000000012,
-          "megabitsPerSecond" : 1.9009791246434613,
-          "updateLatencyP50Ms" : 170.0255,
-          "updateLatencyP95Ms" : 177.923583,
-          "updatesPerSecond" : 5.83998787334694
+          "bytesPerUpdate" : 40731.825,
+          "cpuMsPerUpdate" : 2.5264500000000023,
+          "megabitsPerSecond" : 1.8855443095120543,
+          "updateLatencyP50Ms" : 171.929583,
+          "updateLatencyP95Ms" : 180.986375,
+          "updatesPerSecond" : 5.786459081786951
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 40688.85,
-          "cpuMsPerUpdate" : 2.8573000000000013,
-          "megabitsPerSecond" : 1.8837775203445377,
-          "updateLatencyP50Ms" : 171.66358300000002,
-          "updateLatencyP95Ms" : 180.943208,
-          "updatesPerSecond" : 5.787142916132238
+          "bytesPerUpdate" : 40731.825,
+          "cpuMsPerUpdate" : 2.501825000000002,
+          "megabitsPerSecond" : 1.8907006745630166,
+          "updateLatencyP50Ms" : 169.96187500000002,
+          "updateLatencyP95Ms" : 183.376,
+          "updatesPerSecond" : 5.80228321025088
         }
       ],
       "scene" : "scroll",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.06128162951037691,
-        "megabitsPerSecond" : 0.005000866879769925,
-        "updateLatencyP50Ms" : 0.005380094413212062,
-        "updateLatencyP95Ms" : 0.011040027215416947,
-        "updatesPerSecond" : 0.005000866879769903
+        "cpuMsPerUpdate" : 0.029121890399571596,
+        "megabitsPerSecond" : 0.005422862025659356,
+        "updateLatencyP50Ms" : 0.011444848324909784,
+        "updateLatencyP95Ms" : 0.013031285446296108,
+        "updatesPerSecond" : 0.00542286202565924
       }
     },
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
         "bytesPerUpdate" : 3038227.175,
-        "cpuMsPerUpdate" : 8.050975,
-        "megabitsPerSecond" : 374.374240081373,
-        "updateLatencyP50Ms" : 64.66695899999999,
-        "updateLatencyP95Ms" : 65.75175,
-        "updatesPerSecond" : 15.402659944337975
+        "cpuMsPerUpdate" : 8.254150000000005,
+        "megabitsPerSecond" : 376.9992545348322,
+        "updateLatencyP50Ms" : 64.34375,
+        "updateLatencyP95Ms" : 64.966291,
+        "updatesPerSecond" : 15.510659375513624
       },
       "profile" : "lan",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 8.013724999999999,
-          "megabitsPerSecond" : 377.66735071737924,
-          "updateLatencyP50Ms" : 64.094583,
-          "updateLatencyP95Ms" : 64.84804199999999,
-          "updatesPerSecond" : 15.538146465190643
+          "cpuMsPerUpdate" : 8.254150000000005,
+          "megabitsPerSecond" : 379.8765997244863,
+          "updateLatencyP50Ms" : 63.861000000000004,
+          "updateLatencyP95Ms" : 64.817834,
+          "updatesPerSecond" : 15.629040302281144
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 8.050975,
-          "megabitsPerSecond" : 374.374240081373,
-          "updateLatencyP50Ms" : 64.66695899999999,
-          "updateLatencyP95Ms" : 65.75175,
-          "updatesPerSecond" : 15.402659944337975
+          "cpuMsPerUpdate" : 8.376325000000001,
+          "megabitsPerSecond" : 373.52625201977276,
+          "updateLatencyP50Ms" : 64.757916,
+          "updateLatencyP95Ms" : 66.755292,
+          "updatesPerSecond" : 15.367771668513102
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
           "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 8.497699999999998,
-          "megabitsPerSecond" : 362.8123206781717,
-          "updateLatencyP50Ms" : 65.330792,
-          "updateLatencyP95Ms" : 71.097958,
-          "updatesPerSecond" : 14.92697467060588
+          "cpuMsPerUpdate" : 8.244999999999997,
+          "megabitsPerSecond" : 376.9992545348322,
+          "updateLatencyP50Ms" : 64.34375,
+          "updateLatencyP95Ms" : 64.966291,
+          "updatesPerSecond" : 15.510659375513624
         }
       ],
       "scene" : "photo",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.055487068336443596,
-        "megabitsPerSecond" : 0.030883319858460895,
-        "updateLatencyP50Ms" : 0.010265412356873177,
-        "updateLatencyP95Ms" : 0.08130898417152402,
-        "updatesPerSecond" : 0.030883319858461024
+        "cpuMsPerUpdate" : 0.01480164523300361,
+        "megabitsPerSecond" : 0.009212226478656176,
+        "updateLatencyP50Ms" : 0.007502671199611397,
+        "updateLatencyP95Ms" : 0.02753737318942833,
+        "updatesPerSecond" : 0.009212226478656101
       }
     },
     {
       "median" : {
         "bytesCopiedPerUpdate" : 4096000,
-        "bytesPerUpdate" : 3038227.175,
-        "cpuMsPerUpdate" : 30.15809999999999,
-        "megabitsPerSecond" : 32.12342504927199,
-        "updateLatencyP50Ms" : 759.264791,
-        "updateLatencyP95Ms" : 770.868834,
-        "updatesPerSecond" : 1.32163524972717
+        "bytesPerUpdate" : 3038226.025,
+        "cpuMsPerUpdate" : 27.64312499999999,
+        "megabitsPerSecond" : 32.55960166056809,
+        "updateLatencyP50Ms" : 748.566458,
+        "updateLatencyP95Ms" : 766.835041,
+        "updatesPerSecond" : 1.3395811154540456
       },
       "profile" : "wan150",
       "runs" : [
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 31.325375,
-          "megabitsPerSecond" : 31.982307621885518,
-          "updateLatencyP50Ms" : 761.0305830000001,
-          "updateLatencyP95Ms" : 771.4114159999999,
-          "updatesPerSecond" : 1.3158293381190924
+          "bytesPerUpdate" : 3038226.025,
+          "cpuMsPerUpdate" : 27.18002499999999,
+          "megabitsPerSecond" : 32.57257215908077,
+          "updateLatencyP50Ms" : 748.566458,
+          "updateLatencyP95Ms" : 761.271959,
+          "updatesPerSecond" : 1.3401147532745186
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 30.15809999999999,
-          "megabitsPerSecond" : 32.15941718198059,
-          "updateLatencyP50Ms" : 756.678666,
-          "updateLatencyP95Ms" : 770.868834,
-          "updatesPerSecond" : 1.323116052948731
+          "bytesPerUpdate" : 3038226.025,
+          "cpuMsPerUpdate" : 27.985274999999994,
+          "megabitsPerSecond" : 32.55960166056809,
+          "updateLatencyP50Ms" : 748.994458,
+          "updateLatencyP95Ms" : 766.835041,
+          "updatesPerSecond" : 1.3395811154540456
         },
         {
           "bytesCopiedPerUpdate" : 4096000,
-          "bytesPerUpdate" : 3038227.175,
-          "cpuMsPerUpdate" : 30.01545000000001,
-          "megabitsPerSecond" : 32.12342504927199,
-          "updateLatencyP50Ms" : 759.264791,
-          "updateLatencyP95Ms" : 766.611334,
-          "updatesPerSecond" : 1.32163524972717
+          "bytesPerUpdate" : 3038226.025,
+          "cpuMsPerUpdate" : 27.64312499999999,
+          "megabitsPerSecond" : 32.52044993907026,
+          "updateLatencyP50Ms" : 747.203584,
+          "updateLatencyP95Ms" : 769.382958,
+          "updatesPerSecond" : 1.3379703185130154
         }
       ],
       "scene" : "photo",
       "spread" : {
         "bytesCopiedPerUpdate" : 0,
         "bytesPerUpdate" : 0,
-        "cpuMsPerUpdate" : 0.038705190313713764,
-        "megabitsPerSecond" : 0.0043929757542982475,
-        "updateLatencyP50Ms" : 0.00340609103787604,
-        "updateLatencyP95Ms" : 0.00552298888243799,
-        "updatesPerSecond" : 0.004392975754298371
+        "cpuMsPerUpdate" : 0.016752809242804527,
+        "megabitsPerSecond" : 0.0012024631598993474,
+        "updateLatencyP50Ms" : 0.0018206452953306565,
+        "updateLatencyP95Ms" : 0.007254600667107501,
+        "updatesPerSecond" : 0.001202463159899201
       }
     },
     {
       "median" : {
-        "inputLatencyP50Ms" : 3.498166,
-        "inputLatencyP95Ms" : 3.53275
+        "inputLatencyP50Ms" : 3.423416,
+        "inputLatencyP95Ms" : 3.543125
       },
       "profile" : "lan",
       "runs" : [
         {
-          "inputLatencyP50Ms" : 3.498166,
-          "inputLatencyP95Ms" : 3.53275
+          "inputLatencyP50Ms" : 3.3814159999999998,
+          "inputLatencyP95Ms" : 3.541709
         },
         {
-          "inputLatencyP50Ms" : 3.50225,
-          "inputLatencyP95Ms" : 3.548875
+          "inputLatencyP50Ms" : 3.423416,
+          "inputLatencyP95Ms" : 3.543125
         },
         {
-          "inputLatencyP50Ms" : 3.491958,
-          "inputLatencyP95Ms" : 3.5256670000000003
+          "inputLatencyP50Ms" : 3.435416,
+          "inputLatencyP95Ms" : 3.554417
         }
       ],
       "scene" : "input",
       "spread" : {
-        "inputLatencyP50Ms" : 0.0017746441992747032,
-        "inputLatencyP95Ms" : 0.004564432807303014
+        "inputLatencyP50Ms" : 0.012268447655791834,
+        "inputLatencyP95Ms" : 0.0031870171106015395
       }
     },
     {
       "median" : {
-        "inputLatencyP50Ms" : 158.87741699999998,
-        "inputLatencyP95Ms" : 166.09937499999998
+        "inputLatencyP50Ms" : 163.70237500000002,
+        "inputLatencyP95Ms" : 170.130166
       },
       "profile" : "wan150",
       "runs" : [
         {
-          "inputLatencyP50Ms" : 159.135417,
-          "inputLatencyP95Ms" : 166.958875
+          "inputLatencyP50Ms" : 162.31025,
+          "inputLatencyP95Ms" : 169.57783400000002
         },
         {
-          "inputLatencyP50Ms" : 158.847041,
-          "inputLatencyP95Ms" : 164.957459
+          "inputLatencyP50Ms" : 163.70237500000002,
+          "inputLatencyP95Ms" : 170.54675
         },
         {
-          "inputLatencyP50Ms" : 158.87741699999998,
-          "inputLatencyP95Ms" : 166.09937499999998
+          "inputLatencyP50Ms" : 163.821666,
+          "inputLatencyP95Ms" : 170.130166
         }
       ],
       "scene" : "input",
       "spread" : {
-        "inputLatencyP50Ms" : 0.0016238934700204108,
-        "inputLatencyP95Ms" : 0.006874896428719138
+        "inputLatencyP50Ms" : 0.008504000018326071,
+        "inputLatencyP95Ms" : 0.00324652595707206
       }
     }
   ],
   "machine" : {
+    "load" : 2.57861328125,
     "model" : "Mac16,6",
     "power" : "AC",
     "system" : "27.2"
