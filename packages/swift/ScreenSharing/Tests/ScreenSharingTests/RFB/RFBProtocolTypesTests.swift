@@ -15,9 +15,11 @@ struct RFBProtocolTypesTests {
     #expect(RFBEncoding.pointerPosition.rawValue == -232)
     #expect(RFBEncoding.fence.rawValue == -312)
     #expect(RFBEncoding.continuousUpdates.rawValue == -313)
+    #expect(RFBEncoding.extendedDesktopSize.rawValue == -308)
     #expect(
       Set(RFBEncoding.allCases) == [
         .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+        .extendedDesktopSize,
       ])
   }
 
@@ -27,8 +29,9 @@ struct RFBProtocolTypesTests {
     #expect(
       RFBEncoding.supported == [
         .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+        .extendedDesktopSize,
       ])
-    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232, -312, -313])
+    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232, -312, -313, -308])
     #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 

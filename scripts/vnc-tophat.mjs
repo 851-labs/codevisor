@@ -192,6 +192,20 @@ function loopbackFlow() {
       detail: `${before.width}×${before.height} → ${after.width}×${after.height}${motion.detail ? `; ${motion.detail}` : ""}`
     }
   })
+  step("the remote desktop follows the window (ExtendedDesktopSize)", () => {
+    // The Loopback server starts at 1280 × 800; after the resize and the viewer's debounce it follows the pane.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      pause(500)
+      ax("press", "Connection Details")
+      const video = ax("texts")
+        .stdout.split("\n")
+        .find((line) => /^\d+ × \d+$/.test(line.trim()))
+      ax("press", "Connection Details")
+      if (video && video.trim() !== "1280 × 800")
+        return { ok: true, detail: `video ${video.trim()}` }
+    }
+    return { ok: false, detail: "Connection Details still reports 1280 × 800" }
+  })
   axStep("back to the server tab", "select", "Loopback VNC server")
   axStep("stop the server", "press", "Stop")
 }

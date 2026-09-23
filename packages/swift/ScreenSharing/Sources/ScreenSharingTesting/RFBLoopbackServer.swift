@@ -16,6 +16,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.
   public static let implementedEncodings: Set<RFBEncoding> = [
     .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+    .extendedDesktopSize,
   ]
 
   public struct Configuration: Sendable {
@@ -39,6 +40,10 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     public var continuousUpdates = false
     /// Speak Fence: request one from clients that advertise it, and answer theirs. Off by default.
     public var fences = false
+    /// ExtendedDesktopSize: announce the layout to clients that advertise it and
+    /// accept (or refuse) their SetDesktopSize. Unsupported by default.
+    public var desktopResize: DesktopResize = .unsupported
+    public enum DesktopResize: Sendable { case unsupported, accept, refuse }
     public init() {}
   }
 
@@ -52,6 +57,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     case cursor(RFBCursorShape)
     /// PointerPos pseudo-encoding: the server moved the pointer.
     case pointer(RFBPoint)
+    /// ExtendedDesktopSize: the layout, or the answer to a SetDesktopSize (a
+    /// successful one has already resized the framebuffer).
+    case extendedDesktopSize(RFBDesktopSizeResult)
     case desktopSize(width: Int, height: Int)
   }
 
@@ -67,7 +75,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var pendingRequest = false
   private var pending: [Rectangle] = []
   private var messages: [RFBClientMessage] = []
-  private var deflater: RFBZlibDeflater?
+  var deflater: RFBZlibDeflater?
   private var connections = 0
   private var echoes = 0
   private var sceneFrameUnsent = false
@@ -314,6 +322,11 @@ public final class RFBLoopbackServer: @unchecked Sendable {
           if let cursor = configuration.cursor, clientEncodings.contains(RFBEncoding.cursor.rawValue) {
             pending.append(.cursor(cursor))
           }
+          if configuration.desktopResize != .unsupported,
+            clientEncodings.contains(RFBEncoding.extendedDesktopSize.rawValue)
+          {
+            pending.append(.extendedDesktopSize(layoutLocked(reason: .server, status: .ok)))
+          }
         }
         if case .enableContinuousUpdates(let enable, _) = message, configuration.continuousUpdates {
           continuous = enable
@@ -322,6 +335,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
           } else {
             client?.send(content: Data([150]), completion: .idempotent)  // EndOfContinuousUpdates: stopped
           }
+        }
+        if case .setDesktopSize(let width, let height, _) = message {
+          resizeRequestedLocked(width: width, height: height)
         }
         if case .fence(let flags, let payload) = message {
           fenceLog.append((flags, payload))
@@ -350,6 +366,31 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     }
   }
 
+  private func layoutLocked(
+    reason: RFBDesktopSizeResult.Reason, status: RFBDesktopSizeResult.Status
+  )
+    -> RFBDesktopSizeResult
+  {
+    RFBDesktopSizeResult(
+      reason: reason, status: status, width: framebuffer.width, height: framebuffer.height,
+      screens: [RFBScreen(id: 1, x: 0, y: 0, width: framebuffer.width, height: framebuffer.height)])
+  }
+
+  /// SetDesktopSize: resize and repaint (black, then whatever is painted next), or refuse.
+  private func resizeRequestedLocked(width: Int, height: Int) {
+    guard configuration.desktopResize != .unsupported else { return }
+    let accepted =
+      configuration.desktopResize == .accept && (1...RFBFramebuffer.maximumDimension).contains(width)
+      && (1...RFBFramebuffer.maximumDimension).contains(height)
+      && (try? framebuffer.resize(width: width, height: height)) != nil
+    pending.append(.extendedDesktopSize(layoutLocked(reason: .thisClient, status: accepted ? .ok : .prohibited)))
+    if accepted {
+      let full = RFBRectangle(x: 0, y: 0, width: width, height: height)
+      pending.append(configuration.encoding == .zrle ? .zrle(full) : .raw(full))
+    }
+    if pendingRequest || continuous { flushPendingLocked() }
+  }
+
   static func fenceBytes(flags: UInt32, payload: [UInt8]) -> [UInt8] {
     var writer = RFBByteWriter()
     writer.u8(248); writer.pad(3); writer.u32(flags); writer.u8(UInt8(payload.count)); writer.append(payload)
@@ -363,90 +404,5 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     sceneFrameUnsent = false
     guard let client, let bytes = try? encode(rectangles) else { return }
     client.send(content: Data(bytes), completion: .idempotent)
-  }
-
-  private func encode(_ rectangles: [Rectangle]) throws -> [UInt8] {
-    var writer = RFBByteWriter()
-    writer.u8(0); writer.pad(1); writer.u16(UInt16(rectangles.count))
-    for rectangle in rectangles {
-      switch rectangle {
-      case .raw(let rect):
-        header(&writer, rect, .raw)
-        writer.append(rows(rect))
-      case .copy(let rect, let fromX, let fromY):
-        header(&writer, rect, .copyRect)
-        writer.u16(UInt16(fromX)); writer.u16(UInt16(fromY))
-        try framebuffer.copy(rect, fromX: fromX, fromY: fromY)
-      case .moved(let rect, let fromX, let fromY):
-        header(&writer, rect, .copyRect)
-        writer.u16(UInt16(fromX)); writer.u16(UInt16(fromY))
-      case .zrle(let rect):
-        header(&writer, rect, .zrle)
-        if deflater == nil { deflater = try RFBZlibDeflater() }
-        let compressed = try deflater!.deflate(zrleTiles(rect))
-        writer.u32(UInt32(compressed.count)); writer.append(compressed)
-      case .cursor(let shape):
-        header(
-          &writer, RFBRectangle(x: shape.hotspotX, y: shape.hotspotY, width: shape.width, height: shape.height), .cursor
-        )
-        writer.append(shape.encodedPayload())
-      case .pointer(let point):
-        header(&writer, RFBRectangle(x: point.x, y: point.y, width: 0, height: 0), .pointerPosition)
-      case .desktopSize(let width, let height):
-        header(&writer, RFBRectangle(x: 0, y: 0, width: width, height: height), .desktopSize)
-        // A scene resizes and repaints before sending; resizing again would clear its content.
-        if framebuffer.width != width || framebuffer.height != height {
-          try framebuffer.resize(width: width, height: height)
-        }
-      }
-    }
-    return writer.bytes
-  }
-
-  private func header(_ writer: inout RFBByteWriter, _ rect: RFBRectangle, _ encoding: RFBEncoding) {
-    writer.u16(UInt16(rect.x)); writer.u16(UInt16(rect.y))
-    writer.u16(UInt16(rect.width)); writer.u16(UInt16(rect.height))
-    writer.s32(encoding.rawValue)
-  }
-
-  private func rows(_ rect: RFBRectangle) -> [UInt8] {
-    var bytes: [UInt8] = []
-    bytes.reserveCapacity(rect.width * rect.height * 4)
-    for y in rect.y..<rect.maxY {
-      let start = (y * framebuffer.width + rect.x) * 4
-      bytes.append(contentsOf: framebuffer.pixels[start..<start + rect.width * 4])
-    }
-    return bytes
-  }
-
-  /// Solid tiles where the tile is one colour, raw tiles otherwise.
-  private func zrleTiles(_ rect: RFBRectangle) -> [UInt8] {
-    var bytes: [UInt8] = []
-    var tileY = rect.y
-    while tileY < rect.maxY {
-      let tileHeight = min(RFBZRLEDecoder.tile, rect.maxY - tileY)
-      var tileX = rect.x
-      while tileX < rect.maxX {
-        let tileWidth = min(RFBZRLEDecoder.tile, rect.maxX - tileX)
-        var cpixels: [UInt8] = []
-        cpixels.reserveCapacity(tileWidth * tileHeight * 3)
-        for y in tileY..<tileY + tileHeight {
-          for x in tileX..<tileX + tileWidth {
-            let index = (y * framebuffer.width + x) * 4
-            cpixels.append(contentsOf: framebuffer.pixels[index..<index + 3])
-          }
-        }
-        let first = Array(cpixels.prefix(3))
-        let solid = stride(from: 0, to: cpixels.count, by: 3).allSatisfy { Array(cpixels[$0..<$0 + 3]) == first }
-        if solid {
-          bytes.append(1); bytes.append(contentsOf: first)
-        } else {
-          bytes.append(0); bytes.append(contentsOf: cpixels)
-        }
-        tileX += RFBZRLEDecoder.tile
-      }
-      tileY += RFBZRLEDecoder.tile
-    }
-    return bytes
   }
 }

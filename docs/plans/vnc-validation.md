@@ -71,7 +71,13 @@ baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
   least a per-metric absolute floor (1 ms for latencies). Reports record the
   load average and flag a busy machine. A change is a regression when a metric is worse by
   more than the noise band.
-- **Baselines:** `docs/measurements/vnc/baseline-<machine>.json`, updated only
+- **A/B in one session:** `vnc:validate` runs `vnc:bench --against-main`: it
+  builds `origin/main` in `tmp/vnc-bench/main-worktree`, benchmarks it first,
+  then benchmarks the change and compares the two. Stored baselines drift with
+  the machine's state (an unchanged build's CPU per update read 0.57 ms one
+  session and 1.45 ms another), so the gate never compares across sessions.
+- **Baselines:** `docs/measurements/vnc/baseline-<machine>.json`, the historical
+  record (not the gate's reference), updated only
   by a ticket that improves a metric, in the same commit. Reports record the
   hardware, macOS version, build hash and power state; run on AC power with no
   other heavy load.

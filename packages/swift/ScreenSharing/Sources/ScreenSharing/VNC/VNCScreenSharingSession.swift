@@ -29,14 +29,29 @@
     private let sender: Task<Void, Never>
     /// The read loop; its value is the error that ended it.
     private var run: Task<any Error, Never>!
+    // Remote desktop follows the viewer (ExtendedDesktopSize, 851-2314).
+    private let sleep: @Sendable (Duration) async throws -> Void
+    private var resizeSupported = false
+    private var resizeRefused = false
+    private var screenID: UInt32 = 0
+    private var desktopSize: (width: Int, height: Int)
+    private var desiredSize: (width: Int, height: Int)?
+    private var resizeTask: Task<Void, Never>?
+    /// How long the viewer's size must hold before the remote desktop is asked to follow.
+    public static let resizeDebounce: Duration = .milliseconds(400)
+    /// The remote desktop sizes the session asks for.
+    public static let desktopSizeRange = (width: 320...8192, height: 240...8192)
     public private(set) var closed = false
 
     public init(
       client: RFBClient, parameters: RFBServerParameters, metrics: ScreenSharingMetrics = ScreenSharingMetrics(),
-      keys: VNCKeyTranslator = VNCKeyTranslator()
+      keys: VNCKeyTranslator = VNCKeyTranslator(),
+      sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
       self.client = client
       self.metrics = metrics
+      self.sleep = sleep
+      desktopSize = (parameters.width, parameters.height)
       transportName = client.transportName
       translator = VNCInputTranslator(width: parameters.width, height: parameters.height, keys: keys)
       // Input arrives synchronously and often; one task writes it in order.
@@ -66,6 +81,9 @@
                 metrics.increment("vncCursorShapes")
               }
               if let pointer = update.pointer { cursor.append(.position(pointer)) }
+              if let result = update.desktopSize {
+                Task { @MainActor in self?.desktopSizeChanged(result) }
+              }
               if !cursor.isEmpty {
                 // One hop per update keeps shape-then-position order.
                 Task { @MainActor in cursor.forEach { self?.onCursorChanged?($0) } }
@@ -101,6 +119,7 @@
     public func close() {
       guard !closed else { return }
       closed = true
+      resizeTask?.cancel()
       emulator.close()
       outbox.finish()
       sender.cancel()
@@ -110,7 +129,49 @@
       onCursorChanged = nil
     }
 
+    /// Asks the server to make the remote desktop `width` × `height` once the
+    /// size has held for `resizeDebounce`; only when the server supports it,
+    /// hasn't refused, and the size differs.
+    public func requestDesktopSize(width: Int, height: Int) {
+      desiredSize = (
+        min(max(width, Self.desktopSizeRange.width.lowerBound), Self.desktopSizeRange.width.upperBound),
+        min(max(height, Self.desktopSizeRange.height.lowerBound), Self.desktopSizeRange.height.upperBound)
+      )
+      resizeTask?.cancel()
+      let sleep = sleep
+      resizeTask = Task { [weak self] in
+        do { try await sleep(Self.resizeDebounce) } catch { return }
+        self?.sendDesktopSizeIfNeeded()
+      }
+    }
+
+    private func sendDesktopSizeIfNeeded() {
+      resizeTask = nil
+      guard !closed, resizeSupported, !resizeRefused, let desired = desiredSize,
+        desired != desktopSize
+      else { return }
+      outbox.yield(
+        .setDesktopSize(
+          width: desired.width, height: desired.height,
+          screens: [RFBScreen(id: screenID, x: 0, y: 0, width: desired.width, height: desired.height)]))
+      metrics.increment("vncResizeRequests")
+    }
+
+    private func desktopSizeChanged(_ result: RFBDesktopSizeResult) {
+      let firstLayout = !resizeSupported
+      resizeSupported = true
+      if let screen = result.screens.first { screenID = screen.id }
+      if result.reason == .thisClient, result.status != .ok {
+        // The server won't resize for us: keep scaling the desktop to fit.
+        resizeRefused = true
+        metrics.label("vncResize", "refused (\(result.status))")
+      }
+      // A size asked for before the server said it could resize.
+      if firstLayout, resizeTask == nil { sendDesktopSizeIfNeeded() }
+    }
+
     private func resized(width: Int, height: Int) {
+      desktopSize = (width, height)
       translator.width = width
       translator.height = height
       metrics.label("videoSize", "\(width) × \(height)")

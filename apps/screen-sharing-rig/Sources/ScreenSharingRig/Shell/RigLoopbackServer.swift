@@ -41,6 +41,7 @@
       configuration.cursor = .referenceArrow  // drawn locally by the viewer while controlling (851-2311)
       configuration.continuousUpdates = true  // pushed updates, paced by fences (851-2312)
       configuration.fences = true
+      configuration.desktopResize = .accept  // the desktop follows the viewer's window (851-2314)
       status = "Starting…"
       Task { [weak self] in
         do {
@@ -64,13 +65,19 @@
     }
 
     private func paint(server: RFBLoopbackServer, width: Int, height: Int, fps: Int, encoding: RFBEncoding) {
-      let full = RFBRectangle(x: 0, y: 0, width: width, height: height)
       painting = Task { [weak self] in
         var painter = VNCServerCommand.Painter(width: width, height: height)
         var first = true
         while !Task.isCancelled {
           try? await Task.sleep(for: .milliseconds(1000 / max(1, fps)))
           guard let self else { return }
+          // The viewer may have resized the desktop (ExtendedDesktopSize, 851-2314): paint the size it is now.
+          let size = (server.framebuffer.width, server.framebuffer.height)
+          if (painter.width, painter.height) != size {
+            painter = VNCServerCommand.Painter(width: size.0, height: size.1)
+            first = true
+          }
+          let full = RFBRectangle(x: 0, y: 0, width: size.0, height: size.1)
           if first || self.animated {
             try? server.paint(full, pixels: painter.nextFrame())
             first = false

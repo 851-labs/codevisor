@@ -7,6 +7,8 @@ import Testing
 /// layer L3) or a tunnel to a test box (`VNC_TEST_HOST=127.0.0.1
 /// VNC_TEST_PORT=5901 VNC_TEST_PASSWORD=codevisor`). Reports the handshake,
 /// the first update and the timing, so a stall can be placed.
+/// Serialized: the tests share one desktop, and one of them resizes it.
+@Suite(.serialized)
 struct RFBInteropTests {
   /// The container's known desktop: `VNC_TEST_GEOMETRY` (WxH) and a solid
   /// `VNC_TEST_ROOT_COLOR` (RRGGBB) arrive exactly as configured.
@@ -24,7 +26,9 @@ struct RFBInteropTests {
     let (pixels, continuation) = AsyncStream<[UInt8]>.makeStream()
     let run = Task {
       try await client.run(
-        onUpdate: { framebuffer, _ in
+        onUpdate: { framebuffer, update in
+          // An update may carry only pseudo-rectangles (the layout, the cursor); sample one with pixels.
+          guard !update.rectangles.isEmpty else { return }
           // A quarter in: the centre holds the pointer Xvnc draws for a client that hasn't moved it.
           let pixel = framebuffer.pixel(x: framebuffer.width / 4, y: framebuffer.height / 4)
           continuation.yield([pixel.red, pixel.green, pixel.blue])
@@ -101,6 +105,46 @@ struct RFBInteropTests {
     #expect(enabled)
     #expect(pushed >= 3)
     #expect(roundTrip != nil)
+  }
+
+  /// ExtendedDesktopSize against TigerVNC (851-2314): Xvnc announces its
+  /// layout and resizes through RandR on SetDesktopSize; the test restores
+  /// the configured size.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  func theDesktopResizesOnRequest() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, outcome) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
+    defer { client.close() }
+    let original = (outcome.parameters.width, outcome.parameters.height)
+    let (results, continuation) = AsyncStream<(RFBDesktopSizeResult, Int, Int)>.makeStream()
+    let run = Task {
+      try await client.run(
+        onUpdate: { framebuffer, update in
+          if let result = update.desktopSize { continuation.yield((result, framebuffer.width, framebuffer.height)) }
+        }, onEvent: { _ in })
+    }
+    defer { run.cancel() }
+    var iterator = results.makeAsyncIterator()
+    let layout = try #require(await iterator.next(), "Xvnc announces its layout to a client that advertises -308")
+    let screen = try #require(layout.0.screens.first)
+    func resize(_ width: Int, _ height: Int) async throws -> (RFBDesktopSizeResult, Int, Int) {
+      try await client.send(
+        .setDesktopSize(
+          width: width, height: height,
+          screens: [RFBScreen(id: screen.id, x: 0, y: 0, width: width, height: height, flags: screen.flags)]))
+      while let next = await iterator.next() {
+        if next.0.reason == .thisClient { return next }
+      }
+      throw RFBError.connectionClosed
+    }
+    let resized = try await resize(800, 600)
+    print("interop: resize → \(resized.0.status) \(resized.1)x\(resized.2)")
+    #expect(resized.0.status == .ok)
+    #expect((resized.1, resized.2) == (800, 600))
+    let restored = try await resize(original.0, original.1)
+    #expect(restored.0.status == .ok && (restored.1, restored.2) == original)
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))

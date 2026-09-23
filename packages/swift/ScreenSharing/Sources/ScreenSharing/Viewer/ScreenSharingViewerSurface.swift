@@ -24,9 +24,15 @@
     /// The remote pointer: its shape (the local cursor while controlling) and
     /// the host's moves (drawn over the video while viewing).
     func showRemoteCursor(_ update: ScreenSharingCursorUpdate)
+    /// The surface's size in points whenever it changes (for a remote desktop that follows it).
+    var onSizeChanged: ((CGSize) -> Void)? { get set }
   }
 
   extension ScreenSharingViewerSurface {
+    public var onSizeChanged: ((CGSize) -> Void)? {
+      get { nil }
+      set {}
+    }
     public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {}
   }
 

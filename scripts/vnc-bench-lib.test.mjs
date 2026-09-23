@@ -18,8 +18,10 @@ test("wrapper flags are separated from the benchmark's own", () => {
   assert.deepEqual(parseBenchArguments(["--scenes", "typing", "--save-baseline"]), {
     saveBaseline: true,
     compare: true,
+    againstMain: false,
     passThrough: ["--scenes", "typing"]
   })
+  assert.equal(parseBenchArguments(["--against-main"]).againstMain, true)
   assert.equal(parseBenchArguments(["--no-compare"]).compare, false)
   assert.throws(() => parseBenchArguments(["--out", "x"]), /set by vnc:bench/)
 })
