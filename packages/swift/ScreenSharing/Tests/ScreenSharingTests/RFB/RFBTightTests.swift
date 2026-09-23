@@ -34,7 +34,13 @@ struct RFBTightTests {
   }
 
   static func psnr(_ a: [UInt8], _ b: [UInt8]) -> Double {
-    let mse = zip(a, b).map { Double(Int($0) - Int($1)) }.map { $0 * $0 }.reduce(0, +) / Double(a.count)
+    // A plain loop: the chained closures were slow to type-check (CI).
+    var squaredError: Double = 0
+    for (x, y) in zip(a, b) {
+      let difference = Double(Int(x) - Int(y))
+      squaredError += difference * difference
+    }
+    let mse: Double = squaredError / Double(a.count)
     return mse == 0 ? .infinity : 10 * log10(255 * 255 / mse)
   }
 
@@ -96,7 +102,11 @@ struct RFBTightTests {
   @Test func copyFilterDataOverZlibAndStreamResets() async throws {
     let rect = RFBRectangle(x: 0, y: 0, width: 8, height: 8)
     let source = try RFBFramebuffer(width: 8, height: 8)
-    try source.fillRaw(rect, from: (0..<64).flatMap { [UInt8($0 * 3), UInt8($0), UInt8(255 - $0), 255] })
+    var pixels: [UInt8] = []
+    for index in 0..<64 {
+      pixels += [UInt8(index * 3), UInt8(index), UInt8(255 - index), 255]
+    }
+    try source.fillRaw(rect, from: pixels)
     let encoder = RFBTightEncoder()
     let first = try encoder.encode(rect, from: source, qualityLevel: nil)
     #expect(first.first == 0x00, "More than 16 colours and no quality level: copy filter, stream 0")

@@ -124,9 +124,9 @@ struct RFBServerInitTests {
     #expect(outcome.parameters.width == 320)
     #expect(client.framebuffer.width == 320 && client.framebuffer.height == 200)
     #expect(client.framebuffer.pixels.count == 320 * 200 * 4)
-    #expect(
-      Array(transport.written.dropFirst(14))
-        == RFBClientMessage.setPixelFormat(.bgra32).encoded
-        + RFBClientMessage.setEncodings([7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]).encoded)
+    let encodings: [Int32] = [7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]
+    let expected: [UInt8] =
+      RFBClientMessage.setPixelFormat(.bgra32).encoded + RFBClientMessage.setEncodings(encodings).encoded
+    #expect(Array(transport.written.dropFirst(14)) == expected)
   }
 }
