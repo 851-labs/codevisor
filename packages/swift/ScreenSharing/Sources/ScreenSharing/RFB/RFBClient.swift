@@ -2,7 +2,9 @@ import Foundation
 
 /// One RFB connection: `connect` negotiates and configures the framebuffer,
 /// `run` reads server messages until the peer closes or a message is
-/// invalid, keeping exactly one incremental update request in flight, and
+/// invalid, keeping exactly one incremental update request in flight — or,
+/// once the server confirms ContinuousUpdates, none: the server pushes
+/// changes as they happen (851-2312), paced by Fence replies — and
 /// `send` carries input and clipboard from any task. Reentrant at its
 /// awaits, so input flows while a large update is being read.
 public actor RFBClient {
@@ -13,6 +15,17 @@ public actor RFBClient {
   private var closed = false
   private let now: @Sendable () -> ContinuousClock.Instant
   private var requestSentAt: ContinuousClock.Instant?
+  /// Pushed updates are on; no requests are sent.
+  private var continuous = false
+  /// The server confirmed ContinuousUpdates (its first EndOfContinuousUpdates).
+  private var continuousConfirmed = false
+  /// The server speaks Fence (it sent one); the client then measures the round trip with its own.
+  private var serverFences = false
+  private var pingToken: UInt32 = 0
+  private var pingSentAt: ContinuousClock.Instant?
+  private var lastPingAt: ContinuousClock.Instant?
+  /// How often the client measures the round trip with a fence of its own.
+  static let pingInterval: Duration = .seconds(1)
 
   /// `now` times each update against its request; tests script it.
   public init(
@@ -61,9 +74,39 @@ public actor RFBClient {
       case 0:
         var update = try await readFramebufferUpdate()
         update.byteCount = stream.consumed - start
-        if let requestSentAt { update.latency = requestSentAt.duration(to: now()) }
+        if let requestSentAt {
+          update.latency = requestSentAt.duration(to: now())
+          self.requestSentAt = nil
+        }
         onUpdate(framebuffer, update)
-        try await request(incremental: true)
+        if !continuous {
+          try await request(incremental: true)
+        } else if update.resized {
+          try await send(.enableContinuousUpdates(enable: true, fullFrame))
+        }
+        try await pingIfDue()
+      case 150:
+        // EndOfContinuousUpdates: the first confirms support; a later one ends pushed updates.
+        if !continuousConfirmed {
+          continuousConfirmed = true
+          continuous = true
+          try await send(.enableContinuousUpdates(enable: true, fullFrame))
+          onEvent(.continuousUpdates(true))
+        } else if continuous {
+          continuous = false
+          onEvent(.continuousUpdates(false))
+          try await request(incremental: true)
+        }
+      case 248:
+        let (flags, payload) = try await RFBFence.read(from: stream)
+        serverFences = true
+        if flags & RFBFence.request != 0 {
+          // Messages are handled strictly in order, so every ordering flag is already honoured.
+          try await send(.fence(flags: flags & RFBFence.understood, payload: payload))
+        } else if let sent = pingSentAt, payload == pingPayload {
+          pingSentAt = nil
+          onEvent(.roundTrip(sent.duration(to: now())))
+        }
       case 1:
         try await stream.skip(3)
         try await stream.skip(Int(try await stream.u16()) * 6)
@@ -87,6 +130,24 @@ public actor RFBClient {
 
   /// What carries the connection ("TCP", "WebSocket"), for diagnostics.
   public nonisolated var transportName: String { transport.name }
+
+  private var pingPayload: [UInt8] {
+    [
+      UInt8(pingToken >> 24 & 0xFF), UInt8(pingToken >> 16 & 0xFF), UInt8(pingToken >> 8 & 0xFF),
+      UInt8(pingToken & 0xFF),
+    ]
+  }
+
+  /// One fence of the client's own in flight at a time, at most every `pingInterval`.
+  private func pingIfDue() async throws {
+    guard serverFences, pingSentAt == nil else { return }
+    let current = now()
+    if let lastPingAt, lastPingAt.duration(to: current) < Self.pingInterval { return }
+    pingToken &+= 1
+    pingSentAt = current
+    lastPingAt = current
+    try await send(.fence(flags: RFBFence.request, payload: pingPayload))
+  }
 
   private func request(incremental: Bool) async throws {
     requestSentAt = now()
@@ -138,7 +199,8 @@ public actor RFBClient {
         cursor = try RFBCursorShape.decode(width: width, height: height, hotspotX: x, hotspotY: y, payload: payload)
       case .pointerPosition:
         pointer = RFBPoint(x: x, y: y)
-      case nil:
+      case .fence, .continuousUpdates, nil:
+        // Negotiation-only pseudo-encodings never arrive as rectangles.
         throw RFBError.unsupportedEncoding(encoding)
       }
     }

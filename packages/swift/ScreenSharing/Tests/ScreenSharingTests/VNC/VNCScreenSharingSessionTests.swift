@@ -66,6 +66,18 @@ struct VNCScreenSharingSessionTests {
     #expect(await harness.session.statistics() == ["vnc.transport": "TCP"])
   }
 
+  @Test func pushedUpdatesAndFenceRoundTripsReachTheMetrics() async throws {
+    var configuration = RFBLoopbackServer.Configuration()
+    configuration.continuousUpdates = true
+    configuration.fences = true
+    let harness = try await Harness(configuration: configuration)
+    defer { harness.stop() }
+    #expect(await awaitPolled { harness.session.metrics.snapshot().labels["vncUpdateMode"] == "continuous" })
+    #expect(await awaitPolled { harness.server.isContinuous })
+    harness.server.enqueue([.raw(RFBRectangle(x: 0, y: 0, width: 4, height: 4))])
+    #expect(await awaitPolled { (harness.session.metrics.snapshot().timings["vncRoundTrip"]?.count ?? 0) >= 1 })
+  }
+
   @Test func theServersPointerReachesTheViewerInOrder() async throws {
     var configuration = RFBLoopbackServer.Configuration()
     configuration.cursor = RFBCursorTestShapes.corner

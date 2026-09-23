@@ -125,9 +125,15 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
   /// Pseudo-encoding: the server moved the pointer (another client, an
   /// agent, the desktop itself); the rectangle's x and y are its position.
   case pointerPosition = -232
+  /// Pseudo-encoding: the client answers Fence requests (and can send its own).
+  case fence = -312
+  /// Pseudo-encoding: the client can take pushed updates without requesting each one.
+  case continuousUpdates = -313
 
   /// What this client advertises, in preference order.
-  public static let supported: [RFBEncoding] = [.zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition]
+  public static let supported: [RFBEncoding] = [
+    .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+  ]
 }
 
 public struct RFBRectangle: Sendable, Equatable, Hashable {
@@ -158,6 +164,10 @@ public struct RFBServerParameters: Sendable, Equatable {
 public enum RFBServerEvent: Sendable, Equatable {
   case bell
   case serverCutText(String)
+  /// The server confirmed continuous updates and the client turned them on (true), or they ended (false).
+  case continuousUpdates(Bool)
+  /// The round trip of one of the client's own fences.
+  case roundTrip(Duration)
 }
 
 /// One applied FramebufferUpdate. Equality compares content (rectangles,
@@ -171,8 +181,9 @@ public struct RFBUpdate: Sendable, Equatable {
   public var pointer: RFBPoint?
   /// The message's size on the wire, header included.
   public var byteCount = 0
-  /// From sending the request this update answers to applying the update.
-  public var latency: Duration = .zero
+  /// From sending the request this update answers to applying the update;
+  /// nil for an update the server pushed (continuous updates).
+  public var latency: Duration?
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {

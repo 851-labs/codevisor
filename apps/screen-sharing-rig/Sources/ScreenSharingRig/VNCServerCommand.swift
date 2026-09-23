@@ -11,6 +11,7 @@
       Usage: screen-sharing-rig vnc-server [--port 5901] [--password secret | --no-password]
                                           [--size 1280x800] [--fps 10] [--encoding zrle|raw]
                                           [--scene KIND [--seed N] [--scene-fps N]] [--echo]
+                                          [--requested-only]
       Serves an animated desktop over RFB 3.8 on 127.0.0.1 and prints the keys, buttons and
       clipboard text the viewer sends. Stop with Control-C.
       --scene plays a deterministic reference scene (idle, typing, scroll, windowDrag, photo,
@@ -31,6 +32,7 @@
       var seed: UInt64 = 1
       var echo = false
       var sceneFramesPerSecond: Int?
+      var requestedOnly = false
 
       init(arguments: [String]) throws {
         var iterator = arguments.makeIterator()
@@ -52,6 +54,7 @@
             scene = try RFBLoopbackScene.Kind(rawValue: name) ?? { throw Failure("unknown scene \(name)") }()
           case "--seed": seed = try UInt64(value()) ?? { throw Failure("invalid seed") }()
           case "--echo": echo = true
+          case "--requested-only": requestedOnly = true
           case "--scene-fps":
             let fps = try Int(value()) ?? 0
             guard (1...240).contains(fps) else { throw Failure("--scene-fps must be 1…240") }
@@ -92,6 +95,9 @@
       var configuration = RFBLoopbackServer.Configuration()
       configuration.port = options.port == 0 ? nil : options.port
       configuration.echoPointer = options.echo
+      // A modern server: pushed updates paced by fences (851-2312), unless --requested-only.
+      configuration.continuousUpdates = !options.requestedOnly
+      configuration.fences = !options.requestedOnly
       configuration.password = options.password
       configuration.securityTypes = [
         options.password == nil ? RFBSecurityType.none.rawValue : RFBSecurityType.vncAuthentication.rawValue
@@ -132,7 +138,7 @@
       while true {
         try await Task.sleep(for: .milliseconds(1000 / options.fps))
         try server.paint(full, pixels: painter.nextFrame())
-        if server.isRequestPending {
+        if server.wantsUpdate {
           server.enqueue([options.encoding == .zrle ? .zrle(full) : .raw(full)])
         }
       }

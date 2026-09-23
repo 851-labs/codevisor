@@ -44,6 +44,7 @@ struct RFBUpdateMeasurementTests {
     measured.byteCount = 16
     measured.latency = .milliseconds(3)
     #expect(measured == RFBUpdate(rectangles: [], resized: true))
+    #expect(RFBUpdate(rectangles: [], resized: false).latency == nil, "Unmeasured until the client sets it.")
   }
 
   @Test func theStreamCountsWhatItConsumed() async throws {

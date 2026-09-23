@@ -144,8 +144,19 @@ process.exit(verdict.ok ? 0 : 1)
 
 function loopbackFlow() {
   axStep("open Loopback VNC server", "select", "Loopback VNC server")
-  axStep("choose the scroll scene", "press", "Animated desktop")
-  axStep("…Scene: scroll", "press", "Scene: scroll")
+  step("choose the scroll scene (and confirm the picker shows it)", () => {
+    // A menu item pressed before its menu is fully open doesn't select; open, choose, check, retry.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      pause(400)
+      ax("press", "Animated desktop")
+      pause(700)
+      ax("press", "Scene: scroll")
+      pause(400)
+      if (ax("has", "AXPopUpButton", "Scene: scroll").status === 0)
+        return { ok: true, detail: `attempt ${attempt}` }
+    }
+    return { ok: false, detail: "the picker never showed Scene: scroll" }
+  })
   axStep("turn on pointer echo", "press", "Echo pointer input")
   axStep("start the server", "press", "Start")
   axStep("server is serving", "wait", "Serving on 127.0.0.1", "10")

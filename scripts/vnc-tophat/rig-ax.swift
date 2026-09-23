@@ -11,6 +11,7 @@
 //   rig-ax PID window                "title<TAB>windowNumber<TAB>width<TAB>height"
 //   rig-ax PID resize W H            set the main window's size
 //   rig-ax PID wait TEXT SECONDS     until a static text contains TEXT
+//   rig-ax PID has ROLE LABEL        an element of ROLE labelled LABEL exists (e.g. a pop-up's value)
 // Exit status 0 on success, 1 when the element or text isn't there.
 import AppKit
 import ApplicationServices
@@ -163,6 +164,17 @@ case "resize" where arguments.count == 5:
   var size = CGSize(width: width, height: height)
   let value = AXValueCreate(.cgSize, &size)!
   done(AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success)
+
+case "has" where arguments.count == 5:
+  let (wanted, text) = (arguments[3], arguments[4])
+  var found = false
+  for window in windows() where !found {
+    walk(window) { element in
+      found = role(element) == wanted && label(element) == text
+      return found
+    }
+  }
+  done(found, found ? "" : "no \(wanted) labelled \(text)")
 
 case "wait" where arguments.count == 5:
   // A verification tool, not a unit test: polling the live app is the point.
