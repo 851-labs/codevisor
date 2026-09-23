@@ -9,7 +9,14 @@ public struct TerminalCreated: Decodable, Sendable {
 
 /// Server-to-client terminal activity, delivered in sequence order.
 public enum TerminalEvent: Sendable {
-  case output(String)
+  /// `replayed` marks history the server buffered before this attach,
+  /// delivered as one event once all of it has arrived: rendered frame by
+  /// frame it would visibly play back every full-screen app the terminal
+  /// ever ran. It also holds the queries apps sent back then (colors,
+  /// modes, device attributes), which a renderer must not answer again: the
+  /// replies would land as input in whatever runs now, typically the
+  /// shell's prompt.
+  case output(String, replayed: Bool)
   case exit(code: Int?)
   case error(String)
 }
@@ -35,9 +42,16 @@ public final class TerminalTransport {
   private let requestTransport: any ServerRequestTransport
   private let webSocketTransport: any ServerWebSocketTransport
   private let onEvent: EventHandler
+  private let sleep: @Sendable (Duration) async throws -> Void
   private let clientId = UUID().uuidString
   private var clientSeq = 0
   private var lastOutputSeq = 0
+  /// Frames numbered below this were buffered before the attach, or before
+  /// the latest reconnect.
+  private var liveOutputSeq = 0
+  private var attachment: (sessionId: String, cwd: String, attachOnly: Bool)?
+  /// Replayed output received so far, held until the history is complete.
+  private var replayedOutput = ""
   private var websocketPath: String?
   private var socket: (any ServerWebSocketConnecting)?
   private var receiveTask: Task<Void, Never>?
@@ -47,12 +61,20 @@ public final class TerminalTransport {
   private var sendChain: Task<Void, Never> = Task {}
   private var failures = 0
   private var closed = false
+  /// The latest size the renderer asked for. A resize can arrive before the
+  /// socket exists (the view lays out while the terminal is still being
+  /// created) and a reconnect opens a fresh socket, so it is sent again on
+  /// every connect; otherwise the shell keeps a stale width and redraws its
+  /// prompt over itself.
+  private var size: (cols: Int, rows: Int)?
 
   public init(
     config: CodevisorServerConfig,
     urlSession: URLSession = .shared,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     onEvent: @escaping EventHandler
   ) {
+    self.sleep = sleep
     self.config = config
     self.requestTransport =
       config.requestTransport
@@ -73,26 +95,8 @@ public final class TerminalTransport {
     rows: Int,
     attachOnly: Bool = false
   ) async throws {
-    struct Body: Encodable {
-      var sessionId: String
-      var cwd: String
-      var cols: Int
-      var rows: Int
-      var attachOnly: Bool?
-    }
-    var request = URLRequest(url: config.baseURL.appendingPathComponent("v1/terminals"))
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    applyAuthorization(&request)
-    request.httpBody = try JSONEncoder().encode(
-      Body(sessionId: sessionId, cwd: cwd, cols: cols, rows: rows, attachOnly: attachOnly ? true : nil)
-    )
-    let (data, http) = try await requestTransport.data(for: request)
-    guard (200...299).contains(http.statusCode) else {
-      let message = String(data: data, encoding: .utf8) ?? ""
-      throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: message])
-    }
-    let created = try JSONDecoder().decode(TerminalCreated.self, from: data)
+    attachment = (sessionId, cwd, attachOnly)
+    let created = try await requestTerminal(cols: cols, rows: rows, attachOnly: attachOnly)
     websocketPath = created.websocketPath
     // Attach from seq 0 so the server replays the terminal's buffered
     // scrollback into this fresh renderer (reusing a session's live PTY
@@ -100,7 +104,48 @@ public final class TerminalTransport {
     // head here would skip all history). In-process reconnects advance
     // lastOutputSeq from received frames, so nothing replays twice.
     lastOutputSeq = 0
+    liveOutputSeq = created.nextOutputSeq
     connect()
+  }
+
+  private func requestTerminal(cols: Int, rows: Int, attachOnly: Bool) async throws -> TerminalCreated {
+    struct Body: Encodable {
+      var sessionId: String
+      var cwd: String
+      var cols: Int
+      var rows: Int
+      var attachOnly: Bool?
+    }
+    guard let attachment else { throw URLError(.cancelled) }
+    var request = URLRequest(url: config.baseURL.appendingPathComponent("v1/terminals"))
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    applyAuthorization(&request)
+    request.httpBody = try JSONEncoder().encode(
+      Body(
+        sessionId: attachment.sessionId, cwd: attachment.cwd, cols: cols, rows: rows,
+        attachOnly: attachOnly ? true : nil)
+    )
+    let (data, http) = try await requestTransport.data(for: request)
+    guard (200...299).contains(http.statusCode) else {
+      let message = String(data: data, encoding: .utf8) ?? ""
+      throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    return try JSONDecoder().decode(TerminalCreated.self, from: data)
+  }
+
+  /// Before a reconnect, learns where the output this client missed ends:
+  /// it is history like an attach's, including queries another client may
+  /// already have answered, and is delivered the same way. Asking with
+  /// `attachOnly` never spawns a shell. When the terminal is gone the
+  /// reconnect still goes ahead and receives its exit.
+  private func refreshLiveOutputSeq() async {
+    guard
+      let head = try? await requestTerminal(
+        cols: size?.cols ?? 80, rows: size?.rows ?? 24, attachOnly: true),
+      head.websocketPath == websocketPath
+    else { return }
+    liveOutputSeq = max(liveOutputSeq, head.nextOutputSeq)
   }
 
   /// Ends the shell: sends the close frame (killing the PTY) and stops.
@@ -125,6 +170,7 @@ public final class TerminalTransport {
   }
 
   public func sendResize(cols: Int, rows: Int) {
+    size = (cols, rows)
     sendFrame(type: "resize", cols: cols, rows: rows)
   }
 
@@ -177,6 +223,7 @@ public final class TerminalTransport {
     applyAuthorization(&request)
     let socket = webSocketTransport.connect(request, maximumMessageSize: 8 * 1024 * 1024)
     self.socket = socket
+    if let size { sendFrame(type: "resize", cols: size.cols, rows: size.rows) }
     receiveTask = Task { [weak self] in
       await self?.receiveLoop(socket)
     }
@@ -209,20 +256,41 @@ public final class TerminalTransport {
     failures = 0
     guard let frame else { return false }
     lastOutputSeq = max(lastOutputSeq, frame.seq)
+    let replayed = frame.seq < liveOutputSeq
+    if !replayed { flushReplayedOutput() }
+    defer {
+      // The history's last frame completes it.
+      if replayed && frame.seq >= liveOutputSeq - 1 { flushReplayedOutput() }
+    }
     switch frame.type {
     case "output":
-      if let data = frame.data { onEvent(.output(data)) }
+      if let data = frame.data {
+        if replayed {
+          replayedOutput += data
+        } else {
+          onEvent(.output(data, replayed: false))
+        }
+      }
     case "exit":
+      flushReplayedOutput()
       closed = true
       teardownSocket()
       onEvent(.exit(code: frame.exitCode))
       return true
     case "error":
+      flushReplayedOutput()
       onEvent(.error(frame.message ?? "Terminal error"))
     default:
       break
     }
     return false
+  }
+
+  private func flushReplayedOutput() {
+    guard !replayedOutput.isEmpty else { return }
+    let output = replayedOutput
+    replayedOutput = ""
+    onEvent(.output(output, replayed: true))
   }
 
   private func handleReceiveFailure(on socket: any ServerWebSocketConnecting) {
@@ -237,9 +305,11 @@ public final class TerminalTransport {
     // Exponential reconnect: 250ms · 2^n capped at 5s, plus jitter.
     let base = min(5000, 250 * (1 << min(failures, 5)))
     let delay = base + Int.random(in: 0...250)
-    reconnectTask = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(delay))
+    reconnectTask = Task { [weak self, sleep] in
+      try? await sleep(.milliseconds(delay))
       guard let self, !Task.isCancelled else { return }
+      await self.refreshLiveOutputSeq()
+      guard !Task.isCancelled else { return }
       self.connect()
     }
   }

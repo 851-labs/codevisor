@@ -53,6 +53,14 @@ final class TerminalKeyController: ObservableObject {
     _ = terminalView?.becomeFirstResponder()
   }
 
+  func toggleKeyboard() {
+    if keyboardVisible {
+      _ = terminalView?.resignFirstResponder()
+    } else {
+      showKeyboard()
+    }
+  }
+
   func sendEsc() { clickAndSend(EscapeSequences.cmdEsc) }
   func sendTab() { clickAndSend(EscapeSequences.cmdTab) }
 

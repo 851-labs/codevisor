@@ -1,4 +1,6 @@
 import CodevisorCore
+import CodevisorTheming
+import CodevisorUI
 import SwiftTerm
 import SwiftUI
 
@@ -17,36 +19,55 @@ struct TerminalPaneView: View {
   /// PTY) instead of asking the server to start a shell.
   var attachOnly: Bool = false
 
-  @State private var status: String?
   @StateObject private var keyController = TerminalKeyController()
-  /// Beside another pane, only the active leaf offers the keyboard button.
-  @Environment(\.workspaceLeafIsActive) private var isActiveLeaf
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @Environment(\.theme) private var theme
+  @Environment(\.colorScheme) private var colorScheme
+
+  /// As on macOS: the system theme puts the terminal on the same surface as
+  /// the chat, with label-colored text; a theme brings its own palette.
+  private var colors: TerminalColors {
+    TerminalColors(palette: theme.palette?.terminal, colorScheme: colorScheme)
+  }
+
+  private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+
+  /// Kept alive across visits, so returning shows the terminal as it is now.
+  private var session: TerminalSession {
+    TerminalSessionCache.shared.session(
+      terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly)
+  }
 
   var body: some View {
     ZStack(alignment: .bottom) {
-      TerminalHostView(
-        terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly,
-        keyController: keyController
-      ) { status in
-        self.status = status
-      }
-      .ignoresSafeArea(.container, edges: .bottom)
+      let session = session
+      TerminalHostView(session: session, keyController: keyController, colors: colors)
+        // Text keeps clear of the pane's edges: beside the sidebar and under
+        // the window's resize corner it would otherwise touch them.
+        .padding(.horizontal, 8)
+        // Compact width runs under the home indicator while the keyboard is
+        // down. Beside a sidebar the pane's bottom inset also carries the
+        // keyboard, which the terminal must stay above; the background still
+        // fills the strip below.
+        .ignoresSafeArea(
+          .container, edges: isRegularWidth || keyController.keyboardVisible ? [] : .bottom
+        )
+        // The key bar takes its own rows rather than covering the prompt or
+        // a full-screen app's status line.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          if keyController.keyboardVisible {
+            TerminalKeyBar(controller: keyController)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 4)
+              .transition(.move(edge: .bottom).combined(with: .opacity))
+          }
+        }
 
-      if let status {
-        Text(status)
-          .font(.footnote)
-          .padding(.horizontal, 12)
-          .padding(.vertical, 6)
-          .background(.ultraThinMaterial, in: Capsule())
-          .padding(.bottom, 60)
-      }
+      TerminalStatusBadge(session: session)
 
-      if keyController.keyboardVisible {
-        TerminalKeyBar(controller: keyController)
-          .padding(.horizontal, 10)
-          .padding(.bottom, 4)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-      } else if isActiveLeaf {
+      // Beside a sidebar the keyboard toggle lives in the toolbar instead,
+      // clear of the terminal's content.
+      if !keyController.keyboardVisible && !isRegularWidth {
         HStack {
           Spacer()
           ShowKeyboardButton { keyController.showKeyboard() }
@@ -57,150 +78,77 @@ struct TerminalPaneView: View {
       }
     }
     .animation(.snappy(duration: 0.25), value: keyController.keyboardVisible)
-    // Extend the black surface under the keyboard too — otherwise the
-    // keyboard's rounded corners reveal the (light) window background.
-    // Bottom only: beside another pane, or across iPhone Duo's fold, the
-    // fill must stay inside this pane's own column.
-    .background(Color.black.ignoresSafeArea([.container, .keyboard], edges: .bottom))
-    // The terminal surface is always black; render the glass bar, keyboard
-    // button, and status capsule in dark appearance to match.
-    .environment(\.colorScheme, .dark)
+    // Extend the surface under the keyboard too, so its rounded corners
+    // don't reveal another color. Beside a sidebar (iPad) only up and
+    // down: sideways it would run under the floating sidebar.
+    .background(
+      Color(uiColor: colors.background).ignoresSafeArea(
+        .all, edges: isRegularWidth ? .vertical : .all)
+    )
+    .toolbar {
+      if isRegularWidth {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button {
+            keyController.toggleKeyboard()
+          } label: {
+            Label(
+              keyController.keyboardVisible ? "Hide Keyboard" : "Show Keyboard",
+              systemImage: keyController.keyboardVisible ? "keyboard.chevron.compact.down" : "keyboard")
+          }
+        }
+      }
+    }
   }
 }
 
+/// Hosts the session's terminal view, which outlives this pane: a later
+/// visit adopts it into a new container.
 private struct TerminalHostView: UIViewRepresentable {
-  let terminalKey: String
-  let cwd: String
-  let config: CodevisorServerConfig
-  var attachOnly: Bool = false
+  let session: TerminalSession
   let keyController: TerminalKeyController
-  let onStatus: (String?) -> Void
+  let colors: TerminalColors
 
-  func makeUIView(context: Context) -> SwiftTerm.TerminalView {
-    let view = SwiftTerm.TerminalView(frame: .zero)
-    view.terminalDelegate = context.coordinator
-    view.backgroundColor = .black
-    view.nativeForegroundColor = .white
-    view.nativeBackgroundColor = .black
-    // The terminal is always black; keep the system keyboard dark to match
-    // instead of following the device's light/dark appearance.
-    view.keyboardAppearance = .dark
-    // Drop SwiftTerm's built-in TerminalAccessory: the key bar is a SwiftUI
-    // Liquid Glass overlay (TerminalKeyBar) floating over the content, so the
-    // keyboard gets no accessory strip (and no system backdrop behind one).
-    view.inputAccessoryView = nil
-    // Swipe down over the terminal to dismiss the keyboard.
-    view.keyboardDismissMode = .interactive
-    keyController.attach(view)
-    context.coordinator.attach(view: view)
-    return view
+  func makeUIView(context: Context) -> UIView {
+    let container = UIView()
+    adopt(into: container)
+    return container
   }
 
-  func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {}
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(
-      terminalKey: terminalKey, cwd: cwd, config: config, attachOnly: attachOnly, onStatus: onStatus)
+  func updateUIView(_ container: UIView, context: Context) {
+    adopt(into: container)
   }
 
-  static func dismantleUIView(_ uiView: SwiftTerm.TerminalView, coordinator: Coordinator) {
-    // Leave the PTY running server-side; only drop this renderer's socket.
-    coordinator.detach()
+  private func adopt(into container: UIView) {
+    session.apply(colors)
+    keyController.attach(session.view)
+    guard session.view.superview !== container else { return }
+    for case let other as SessionTerminalView in container.subviews { other.removeFromSuperview() }
+    session.view.frame = container.bounds
+    session.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    container.addSubview(session.view)
   }
 
-  @MainActor
-  final class Coordinator: NSObject, TerminalViewDelegate {
-    private let terminalKey: String
-    private let cwd: String
-    private let config: CodevisorServerConfig
-    private let attachOnly: Bool
-    private let onStatus: (String?) -> Void
-    private var transport: TerminalTransport?
-    private weak var terminalView: SwiftTerm.TerminalView?
-    private var opened = false
+  func makeCoordinator() -> TerminalSession { session }
 
-    init(
-      terminalKey: String, cwd: String, config: CodevisorServerConfig, attachOnly: Bool,
-      onStatus: @escaping (String?) -> Void
-    ) {
-      self.terminalKey = terminalKey
-      self.cwd = cwd
-      self.config = config
-      self.attachOnly = attachOnly
-      self.onStatus = onStatus
-    }
+  static func dismantleUIView(_ container: UIView, coordinator session: TerminalSession) {
+    // The session stays connected (see TerminalSessionCache). A newer
+    // container may already have adopted its view.
+    if session.view.superview === container { session.view.removeFromSuperview() }
+    TerminalSessionCache.shared.didHide(session)
+  }
+}
 
-    func attach(view: SwiftTerm.TerminalView) {
-      terminalView = view
-      guard !opened else { return }
-      opened = true
-      let transport = TerminalTransport(config: config) { [weak self] event in
-        self?.handle(event)
-      }
-      self.transport = transport
-      let terminal = view.getTerminal()
-      let cols = max(2, terminal.cols)
-      let rows = max(2, terminal.rows)
-      Task {
-        do {
-          try await transport.open(
-            sessionId: terminalKey, cwd: cwd, cols: cols, rows: rows, attachOnly: attachOnly)
-          self.onStatus(nil)
-        } catch {
-          self.onStatus("Couldn't open \(config.baseURL.absoluteString): \(error.localizedDescription)")
-        }
-      }
-    }
+private struct TerminalStatusBadge: View {
+  @ObservedObject var session: TerminalSession
 
-    func detach() {
-      transport?.detach()
-      transport = nil
+  var body: some View {
+    if let status = session.status {
+      Text(status)
+        .font(.footnote)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.bottom, 60)
     }
-
-    private func handle(_ event: TerminalEvent) {
-      switch event {
-      case let .output(data):
-        terminalView?.feed(text: data)
-      case let .exit(code):
-        onStatus("Shell exited\(code.map { " (\($0))" } ?? "")")
-      case let .error(message):
-        onStatus(message)
-      }
-    }
-
-    // MARK: - TerminalViewDelegate
-
-    nonisolated func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
-      let text = String(decoding: data, as: UTF8.self)
-      Task { @MainActor in
-        self.transport?.sendInput(text)
-      }
-    }
-
-    nonisolated func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
-      Task { @MainActor in
-        self.transport?.sendResize(cols: newCols, rows: newRows)
-      }
-    }
-
-    nonisolated func setTerminalTitle(source: SwiftTerm.TerminalView, title: String) {}
-    nonisolated func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
-    nonisolated func scrolled(source: SwiftTerm.TerminalView, position: Double) {}
-    nonisolated func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
-      Task { @MainActor in
-        if let url = URL(string: link) {
-          UIApplication.shared.open(url)
-        }
-      }
-    }
-    nonisolated func bell(source: SwiftTerm.TerminalView) {}
-    nonisolated func clipboardCopy(source: SwiftTerm.TerminalView, content: Data) {
-      Task { @MainActor in
-        if let text = String(data: content, encoding: .utf8) {
-          UIPasteboard.general.string = text
-        }
-      }
-    }
-    nonisolated func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
   }
 }
