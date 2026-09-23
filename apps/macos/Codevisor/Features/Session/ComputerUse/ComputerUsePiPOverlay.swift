@@ -10,20 +10,44 @@ struct ComputerUsePiPOverlay: View {
 
   @State private var model: ComputerUsePiPModel
   @State private var isHovering = false
+  /// The pointer's offset from the card's resting corner while dragging.
+  @State private var dragOffset: CGSize = .zero
   private let isTurnRunning: Bool
+  /// Height of the floating composer, so bottom corners sit above it.
+  private let composerHeight: CGFloat
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  init(chatSessionID: UUID, source: ComputerUsePiPModel.Source, isTurnRunning: Bool) {
+  private static let coordinateSpace = "computer-use-pip-pane"
+
+  init(
+    chatSessionID: UUID,
+    source: ComputerUsePiPModel.Source,
+    isTurnRunning: Bool,
+    composerHeight: CGFloat
+  ) {
     _model = State(initialValue: ComputerUsePiPModel(chatSessionID: chatSessionID, source: source))
     self.isTurnRunning = isTurnRunning
+    self.composerHeight = composerHeight
   }
 
   var body: some View {
-    ZStack {
-      if model.isVisible, let viewer = model.viewer {
-        card(viewer: viewer)
-          .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
+    GeometryReader { geometry in
+      let insets = ComputerUseLivePreviewLayout.insets(composerHeight: composerHeight)
+      ZStack(alignment: .topLeading) {
+        // Fills the pane without taking clicks; only the card is interactive.
+        Color.clear.allowsHitTesting(false)
+        if model.isVisible, let viewer = model.viewer {
+          let size = cardSize(viewer: viewer)
+          let origin = ComputerUseLivePreviewLayout.origin(
+            corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
+          card(viewer: viewer, size: size)
+            .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
+            .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
+            .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
+        }
       }
+      .coordinateSpace(name: Self.coordinateSpace)
+      .animation(reduceMotion ? nil : .spring(duration: 0.3), value: composerHeight)
     }
     .animation(reduceMotion ? nil : .spring(duration: 0.3), value: model.isVisible)
     .onAppear {
@@ -35,12 +59,41 @@ struct ComputerUsePiPOverlay: View {
     .onDisappear { model.teardown() }
   }
 
-  private func card(viewer: ComputerUseLivePreviewViewer) -> some View {
-    let size = computerUseLivePreviewSize(
+  private func cardSize(viewer: ComputerUseLivePreviewViewer) -> CGSize {
+    computerUseLivePreviewSize(
       frameSize: viewer.frameSize ?? .zero,
       maxWidth: Self.maxWidth,
       maxHeight: Self.maxHeight
     )
+  }
+
+  /// Follows the pointer 1:1, then settles in the corner the release is
+  /// heading for, so a flick carries the card across the pane.
+  private func dragGesture(
+    cardSize: CGSize,
+    origin: CGPoint,
+    container: CGSize,
+    insets: ComputerUseLivePreviewInsets
+  ) -> some Gesture {
+    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.coordinateSpace))
+      .onChanged { value in
+        dragOffset = value.translation
+      }
+      .onEnded { value in
+        let projectedCenter = CGPoint(
+          x: origin.x + cardSize.width / 2 + value.predictedEndTranslation.width,
+          y: origin.y + cardSize.height / 2 + value.predictedEndTranslation.height
+        )
+        let corner = ComputerUseLivePreviewLayout.corner(
+          projectedCenter: projectedCenter, container: container, insets: insets)
+        withAnimation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)) {
+          model.corner = corner
+          dragOffset = .zero
+        }
+      }
+  }
+
+  private func card(viewer: ComputerUseLivePreviewViewer, size: CGSize) -> some View {
     let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
     return ZStack(alignment: .topLeading) {
       ComputerUsePiPSurface(viewer: viewer)
@@ -140,5 +193,17 @@ private struct ComputerUsePiPArrow: Shape {
     path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.6))
     path.closeSubpath()
     return path
+  }
+}
+
+extension ComputerUseLivePreviewCorner {
+  /// The card grows out of, and shrinks into, its own corner.
+  fileprivate var unitPoint: UnitPoint {
+    switch self {
+    case .topLeading: .topLeading
+    case .topTrailing: .topTrailing
+    case .bottomLeading: .bottomLeading
+    case .bottomTrailing: .bottomTrailing
+    }
   }
 }

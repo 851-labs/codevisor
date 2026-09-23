@@ -32,6 +32,8 @@ final class ComputerUsePiPModel {
   /// Dismissals survive tab switches (which rebuild the chat view) but not
   /// new work: the preview returns when the agent next controls an app.
   private static var dismissedSessions: Set<UUID> = []
+  /// Where the user last left each session's card; survives tab switches.
+  private static var cornerBySession: [UUID: ComputerUseLivePreviewCorner] = [:]
 
   static let hideDelay: Duration = .seconds(2)
 
@@ -40,6 +42,9 @@ final class ComputerUsePiPModel {
   private let preview: ComputerUseLivePreview
   private(set) var viewer: ComputerUseLivePreviewViewer?
   private(set) var isDismissed: Bool
+  var corner: ComputerUseLivePreviewCorner {
+    didSet { Self.cornerBySession[chatSessionID] = corner }
+  }
   /// Local only: true from a stop until the hide delay elapses, so the card
   /// shows the stopped state briefly instead of vanishing mid-glance.
   private(set) var isLingering = false
@@ -53,6 +58,7 @@ final class ComputerUsePiPModel {
     self.source = source
     self.preview = preview ?? .shared
     isDismissed = Self.dismissedSessions.contains(chatSessionID)
+    corner = Self.cornerBySession[chatSessionID] ?? .topTrailing
   }
 
   var isRemote: Bool {

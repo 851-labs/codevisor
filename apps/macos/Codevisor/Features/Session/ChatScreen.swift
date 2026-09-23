@@ -105,7 +105,7 @@ struct ChatScreen: View {
         serverId: controller.project.serverId
       )
       .overlay(alignment: .bottom) { bottomChromeOverlay }
-      .overlay(alignment: .topTrailing) { computerUsePiPOverlay }
+      .overlay { computerUsePiPOverlay }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: isAtBottom)
       .onAppear {
         autoFollow = controller.scrollState?.followMode.followsLatest ?? true

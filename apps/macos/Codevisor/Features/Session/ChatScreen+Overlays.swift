@@ -29,10 +29,10 @@ extension ChatScreen {
       ComputerUsePiPOverlay(
         chatSessionID: chatSessionID,
         source: source,
-        isTurnRunning: controller.isSending
+        isTurnRunning: controller.isSending,
+        composerHeight: composerHeight
       )
       .id(chatSessionID)
-      .padding(12)
     }
   }
 
