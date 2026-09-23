@@ -29,6 +29,13 @@ work. Follows `docs/plans/vnc-viewer.md` and `docs/plans/screen-sharing-vps.md`.
 | L3    | Real servers: pinned TigerVNC Xvnc container with a scripted desktop (optionally x11vnc); env-gated interop suites                                                                                                                    | `bun run vnc:interop`                                                                | Before closing a ticket; part of validate |
 | L4    | The product path in the rig: open a machine, View/Control, type, clipboard both ways, resize; window-only screenshots                                                                                                                 | Scripted rig tophat against Loopback server and Contabo VPS                          | Before closing a ticket                   |
 
+Commands: L3 is `bun run vnc:interop` (needs OrbStack or Colima running). L4
+is `bun run vnc:tophat [--machines loopback,contabo]`: it launches the rig in
+the background, drives it through Accessibility (the terminal needs that
+permission), captures only the rig's window and writes
+`tmp/vnc-tophat/<time>/summary.json`; it never types or moves the pointer, so
+flows that need keyboard focus stay manual.
+
 Rules:
 
 - Write the failing L1 or L2 test before the implementation.

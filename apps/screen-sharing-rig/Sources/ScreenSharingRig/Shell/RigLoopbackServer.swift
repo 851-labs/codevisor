@@ -136,8 +136,11 @@
               Text("Scene: \(kind.rawValue)").tag(Optional(kind))
             }
           }
+          // Labelled for Accessibility too: `bun run vnc:tophat` presses them by name.
           Toggle("Animate (off: one frame, like a static desktop)", isOn: Bindable(model).animated)
+            .accessibilityLabel("Animate")
           Toggle("Echo pointer input as a marker", isOn: Bindable(model).echoPointer)
+            .accessibilityLabel("Echo pointer input")
         }
         .formStyle(.grouped)
         .frame(maxHeight: 360)
