@@ -1,0 +1,4 @@
+{"workload":"idle","bytesPerUpdate":0,"echoes":0,"echoesMissed":0,"echoP50Ms":null,"echoP95Ms":null,"mbitPerSecond":0,"roundTripP50Ms":7621.7600000000002,"seconds":10.470000000000001,"server":"vmi3583206.contaboserver.net:1 (root)","size":"1227x754","updatesPerSecond":0}
+drag: 320 moves
+{"workload":"drag","bytesPerUpdate":16782,"echoes":0,"echoesMissed":0,"echoP50Ms":null,"echoP95Ms":null,"mbitPerSecond":0.48999999999999999,"roundTripP50Ms":320.47000000000003,"seconds":10.359999999999999,"server":"vmi3583206.contaboserver.net:1 (root)","size":"1227x754","updatesPerSecond":3.6699999999999999}
+{"workload":"typing","bytesPerUpdate":0,"echoes":40,"echoesMissed":0,"echoP50Ms":201.62,"echoP95Ms":293.24000000000001,"mbitPerSecond":0,"roundTripP50Ms":4111.25,"seconds":1.0600000000000001,"server":"vmi3583206.contaboserver.net:1 (root)","size":"1227x754","updatesPerSecond":0}

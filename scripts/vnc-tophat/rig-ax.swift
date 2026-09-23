@@ -12,6 +12,8 @@
 //   rig-ax PID resize W H            set the main window's size
 //   rig-ax PID wait TEXT SECONDS     until a static text contains TEXT
 //   rig-ax PID has ROLE LABEL        an element of ROLE labelled LABEL exists (e.g. a pop-up's value)
+//   rig-ax PID colours PNG           distinct colours on a grid over the image's right 3/4 and lower 3/4
+//                                    (the video, clear of sidebar and toolbar); a blank frame has 1
 // Exit status 0 on success, 1 when the element or text isn't there.
 import AppKit
 import ApplicationServices
@@ -185,6 +187,21 @@ case "wait" where arguments.count == 5:
     Thread.sleep(forTimeInterval: 0.25)
   }
   done(false, "no text containing \(wanted)")
+
+case "colours" where arguments.count == 4:
+  guard let image = NSImage(contentsOfFile: arguments[3]),
+    let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+    let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data)
+  else { done(false, "unreadable image") }
+  let step = cg.bitsPerPixel / 8
+  var colours = Set<UInt32>()
+  for y in stride(from: cg.height / 4, to: cg.height, by: max(1, cg.height / 60)) {
+    for x in stride(from: cg.width / 4, to: cg.width, by: max(1, cg.width / 60)) {
+      let offset = y * cg.bytesPerRow + x * step
+      colours.insert(UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2]))
+    }
+  }
+  done(true, "\(colours.count)")
 
 default:
   done(false, "unknown command \(arguments.dropFirst(2).joined(separator: " "))")
