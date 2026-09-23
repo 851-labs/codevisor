@@ -203,12 +203,42 @@ struct RFBInteropTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
   @MainActor
   func synthesizedTypingArrivesVerbatim() async throws {
+    let typed = "Hello, wörld! \(UUID().uuidString.prefix(4))"
+    let line = try await typeIntoSink { input in input.translate(.text(typed + "\n")) }
+    #expect(line == "typed:" + typed)
+  }
+
+  /// ⌘ acts as Control on Linux (851-2317): ⌘U is Control+U, which the sink
+  /// terminal's line discipline takes as "kill the line", so only what follows
+  /// it arrives. As Super it would have typed a "u".
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  @MainActor
+  func commandActsAsControl() async throws {
+    let kept = "kept \(UUID().uuidString.prefix(4))"
+    let line = try await typeIntoSink(layout: { code, _ in code == 32 ? "u" : nil }) { input in
+      input.translate(.text("discarded"))
+        + input.translate(.key(code: 55, down: true, repeatKey: false, modifiers: 8))
+        + input.translate(.key(code: 32, down: true, repeatKey: false, modifiers: 8))
+        + input.translate(.key(code: 32, down: false, repeatKey: false, modifiers: 8))
+        + input.translate(.key(code: 55, down: false, repeatKey: false, modifiers: 0))
+        + input.translate(.text(kept + "\n"))
+    }
+    #expect(line == "typed:" + kept)
+  }
+
+  /// Moves the pointer over the container's typing sink (xterm at 20,560; X
+  /// focus follows the pointer), sends `keys`, and returns the line the sink
+  /// put on the clipboard.
+  @MainActor
+  private func typeIntoSink(
+    layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout,
+    _ keys: (VNCInputTranslator) -> [RFBClientMessage]
+  ) async throws -> String? {
     let environment = ProcessInfo.processInfo.environment
     let (client, outcome) = try await VNCConnection.open(
       host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
       password: environment["VNC_TEST_PASSWORD"])
     defer { client.close() }
-    let typed = "Hello, wörld! \(UUID().uuidString.prefix(4))"
     let (messages, continuation) = AsyncStream<RFBExtendedClipboard.Message>.makeStream()
     let run = Task {
       try await client.run(
@@ -217,7 +247,7 @@ struct RFBInteropTests {
     }
     defer { run.cancel() }
     let input = VNCInputTranslator(
-      width: outcome.parameters.width, height: outcome.parameters.height, keys: VNCKeyTranslator())
+      width: outcome.parameters.width, height: outcome.parameters.height, keys: VNCKeyTranslator(layout: layout))
     let text = RFBExtendedClipboard.text
     // The test runner's timeout guards a sink that never answers.
     for await message in messages {
@@ -229,22 +259,19 @@ struct RFBInteropTests {
               formats: text,
               actions: RFBExtendedClipboard.request | RFBExtendedClipboard.notify | RFBExtendedClipboard.provide,
               maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)])))
-        // Over the sink (xterm at 20,560), then the line.
         let pointer = ScreenSharingPointer(
           x: 60 / Double(outcome.parameters.width), y: 575 / Double(outcome.parameters.height))
-        for message in input.translate(.move(pointer, modifiers: 0)) + input.translate(.text(typed + "\n")) {
-          try await client.send(message)
-        }
+        for message in input.translate(.move(pointer, modifiers: 0)) + keys(input) { try await client.send(message) }
       case .notify(let formats) where formats & text != 0:
         try await client.send(.extendedClipboard(.request(formats: text)))
       case .provide(let provided?) where provided.hasPrefix("typed:"):
-        print("interop: typed \(provided)")
-        #expect(provided == "typed:" + typed)
-        return
+        print("interop: \(provided)")
+        return provided
       default: break
       }
     }
     Issue.record("the typed line never came back")
+    return nil
   }
 
   /// Tight against TigerVNC (851-2313): the client prefers Tight; lossless,

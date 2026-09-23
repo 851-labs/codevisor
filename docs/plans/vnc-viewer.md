@@ -111,5 +111,11 @@ that key gives on the local layout (and without Control or Command) becomes
 `.text`, which reaches a VNC server as the characters' keysyms (Unicode keysyms
 `0x1000000 + code point` beyond Latin-1). Every other key is still forwarded as
 a physical key for the layout to interpret. QEMU Extended Key Events (−258,
-layout-independent scancodes) were considered and deferred: they change who
-interprets the layout, which is the same decision as what ⌘ sends (851-2317).
+layout-independent scancodes) were considered and deferred: they would hand
+layout interpretation to the server.
+
+⌘ is sent as Control (851-2317): ⌘C, ⌘V, ⌘T and ⌘Q do what Mac hands expect
+in Linux apps. Both ⌘ keys send Control_R, clear of the left Control key;
+Control stays Control and Super is not sent. In a terminal ⌘C is therefore
+Control+C (interrupt): Linux terminals copy with Control+Shift+C (⌘⇧C).
+Control–Option–Escape still leaves control.
