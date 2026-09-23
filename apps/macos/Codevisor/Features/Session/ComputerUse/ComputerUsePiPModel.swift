@@ -46,10 +46,12 @@ final class ComputerUsePiPModel {
   @ObservationIgnored private var hideTask: Task<Void, Never>?
   @ObservationIgnored private var prefersFastPolling = false
 
-  init(chatSessionID: UUID, source: Source, preview: ComputerUseLivePreview = .shared) {
+  /// `preview` defaults to the shared facade. It is resolved here rather
+  /// than as a default argument, which would be evaluated off the main actor.
+  init(chatSessionID: UUID, source: Source, preview: ComputerUseLivePreview? = nil) {
     self.chatSessionID = chatSessionID
     self.source = source
-    self.preview = preview
+    self.preview = preview ?? .shared
     isDismissed = Self.dismissedSessions.contains(chatSessionID)
   }
 
