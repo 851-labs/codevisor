@@ -65,6 +65,12 @@ struct VNCQualityPolicyTests {
     #expect((policy.bitsPerSecond ?? 0) < 1_000_000)
   }
 
+  /// 851-2331: one large update (a first full frame, 256 KB over 2.6 s: 0.8 Mbit/s) weighs four samples and settles it.
+  @Test func oneLargeFrameCanDecide() {
+    var policy = VNCQualityPolicy()
+    #expect(policy.observe(bytes: 256 * 1024, duration: .milliseconds(2600)) == .some(4))
+  }
+
   @Test func smallUpdatesAreNotSamples() {
     var policy = VNCQualityPolicy()
     for _ in 0..<10 { #expect(policy.observe(bytes: 1000, duration: .seconds(1)) == nil) }

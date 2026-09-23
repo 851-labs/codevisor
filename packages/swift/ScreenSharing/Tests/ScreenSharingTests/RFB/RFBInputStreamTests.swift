@@ -104,4 +104,74 @@ struct RFBInputStreamTests {
     #expect(read == payload)
     #expect(stream.bytesMoved <= payload.count)
   }
+
+  // MARK: Link timing (851-2331)
+
+  /// Reads that waited for the network count, with their wait; the rate is the link's.
+  @Test func linkTimingCountsBytesThatArrivedWhileTheReaderWaited() async throws {
+    // 10 KB chunks arriving 10 ms apart: an 8 Mbit/s link.
+    let link = TimedTransport(
+      (0..<5).map { _ in (bytes: [UInt8](repeating: 1, count: 10_000), wait: .milliseconds(10)) })
+    let stream = RFBInputStream(transport: link, chunk: 10_000, now: link.now)
+    stream.startTiming()
+    _ = try await stream.bytes(50_000)
+    let timed = stream.stopTiming()
+    #expect(timed.bytes == 50_000)
+    #expect(timed.duration == .milliseconds(50))
+  }
+
+  /// Data already buffered locally (a WebSocket message that arrived whole, the
+  /// kernel's buffer) returns at once: it adds neither bytes nor time, so it
+  /// can't make a slow link look fast.
+  @Test func bufferedDataIsNotLinkTime() async throws {
+    let link = TimedTransport([
+      (bytes: [UInt8](repeating: 1, count: 20_000), wait: .milliseconds(160)),  // waited: counted
+      (bytes: [UInt8](repeating: 2, count: 20_000), wait: .zero),  // already there: not counted
+      (bytes: [UInt8](repeating: 3, count: 20_000), wait: .microseconds(500)),  // under the threshold
+    ])
+    let stream = RFBInputStream(transport: link, chunk: 20_000, now: link.now)
+    stream.startTiming()
+    _ = try await stream.bytes(60_000)
+    let timed = stream.stopTiming()
+    #expect(timed.bytes == 20_000)
+    #expect(timed.duration == .milliseconds(160))
+  }
+
+  /// Outside a timed span (e.g. the wait for an update's header, which includes idle time) nothing counts.
+  @Test func nothingIsTimedOutsideASpan() async throws {
+    let link = TimedTransport([
+      (bytes: [0], wait: .seconds(5)),
+      (bytes: [UInt8](repeating: 1, count: 8_000), wait: .milliseconds(8)),
+    ])
+    let stream = RFBInputStream(transport: link, chunk: 8_000, now: link.now)
+    _ = try await stream.u8()
+    stream.startTiming()
+    _ = try await stream.bytes(8_000)
+    #expect(stream.stopTiming() == (bytes: 8_000, duration: .milliseconds(8)))
+  }
+}
+
+/// Hands out scripted chunks, each after a scripted wait on its own clock (no real time passes).
+private final class TimedTransport: RFBTransport, @unchecked Sendable {
+  private let lock = NSLock()
+  private var chunks: [(bytes: [UInt8], wait: Duration)]
+  private var elapsed: Duration = .zero
+  private let origin = ContinuousClock.now
+
+  init(_ chunks: [(bytes: [UInt8], wait: Duration)]) { self.chunks = chunks }
+
+  var name: String { "Timed" }
+  var now: @Sendable () -> ContinuousClock.Instant { { [self] in lock.withLock { origin.advanced(by: elapsed) } } }
+
+  func read(maximum: Int) async throws -> [UInt8] {
+    lock.withLock {
+      guard !chunks.isEmpty else { return [] }
+      let next = chunks.removeFirst()
+      elapsed += next.wait
+      return next.bytes
+    }
+  }
+
+  func write(_ bytes: [UInt8]) async throws {}
+  func close() {}
 }

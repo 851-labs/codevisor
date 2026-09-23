@@ -196,8 +196,13 @@ public struct RFBUpdate: Sendable, Equatable {
   /// From sending the request this update answers to applying the update;
   /// nil for an update the server pushed (continuous updates).
   public var latency: Duration?
-  /// From the update's header to its last rectangle applied: its bytes over this, a bandwidth sample.
+  /// From the update's header to its last rectangle applied (includes decoding and local buffering).
   public var transferDuration: Duration?
+  /// The link's share of this update (851-2331): bytes that arrived while the
+  /// reader waited for the network, and that wait. Their ratio is the link
+  /// rate; zero when the update was already buffered locally.
+  public var linkBytes = 0
+  public var linkDuration: Duration = .zero
   /// Tight rectangles that arrived as JPEG.
   public var jpegRectangles = 0
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }

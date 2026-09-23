@@ -90,8 +90,12 @@ public actor RFBClient {
       switch try await stream.u8() {
       case 0:
         let started = ContinuousClock.now
+        stream.startTiming()
         var update = try await readFramebufferUpdate()
         update.transferDuration = started.duration(to: .now)
+        let link = stream.stopTiming()
+        update.linkBytes = link.bytes
+        update.linkDuration = link.duration
         update.byteCount = stream.consumed - start
         if let requestSentAt {
           update.latency = requestSentAt.duration(to: now())
