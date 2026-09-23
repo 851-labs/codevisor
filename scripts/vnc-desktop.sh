@@ -4,6 +4,7 @@
 #
 #   scripts/vnc-desktop.sh root@HOST            # idempotent
 #   DISPLAY_NAME="Studio" scripts/vnc-desktop.sh root@HOST
+#   SCALE=2 scripts/vnc-desktop.sh root@HOST     # Xfce at 2× for a machine with Retina Remote Desktop on
 #
 # TigerVNC (Xfce) listens on localhost only, with no VNC password: nothing but
 # codevisor-server on the same box reaches it, and the server only splices
@@ -21,16 +22,25 @@
 # - Xvnc settings reviewed and left at their defaults: FrameRate 60 (the most
 #   updates per second a viewer can use), CompareFB 2 (drop unchanged pixels,
 #   adaptively), DeferUpdate 1 ms. The client picks encodings and JPEG quality.
+# - SCALE=2 (851-2330) makes Xfce draw at 2× for machines whose Retina Remote
+#   Desktop setting is on (851-2315); SCALE=1, the default, sets it back. Apps
+#   already open keep their scale until reopened.
+#
+# Desktop settings go through the session's own D-Bus (851-2330). An ssh shell
+# has a different bus with its own xfconfd: settings written there land in the
+# XML files but never reach the running desktop.
 set -euo pipefail
 
 target=${1:-}
 [[ -n "$target" ]] || { echo "Usage: $0 user@host" >&2; exit 2; }
 display=${DISPLAY_NUMBER:-1}
 name=${DISPLAY_NAME:-Desktop}
+scale=${SCALE:-1}
+[[ "$scale" == 1 || "$scale" == 2 ]] || { echo "SCALE must be 1 or 2" >&2; exit 2; }
 geometry=${GEOMETRY:-1440x900}
 
 ssh -o StrictHostKeyChecking=accept-new "$target" \
-  "DISPLAY_NUMBER=$display DISPLAY_NAME='$name' GEOMETRY=$geometry bash -s" <<'REMOTE'
+  "DISPLAY_NUMBER=$display DISPLAY_NAME='$name' GEOMETRY=$geometry SCALE=$scale bash -s" <<'REMOTE'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 port=$((5900 + DISPLAY_NUMBER))
@@ -72,9 +82,27 @@ if [[ "$(cat "$unit")" != "$old_unit" ]] || ! systemctl is-active --quiet "vncse
   sleep 2
 fi
 systemctl is-active --quiet "vncserver@$DISPLAY_NUMBER" || { echo "vncserver@$DISPLAY_NUMBER failed" >&2; exit 1; }
-# The compositor setting lives in the session's xfconf (persisted to xfwm4.xml); wait for the session.
-for _ in $(seq 1 50); do DISPLAY=":$DISPLAY_NUMBER" xfconf-query -c xfwm4 -p /general/use_compositing >/dev/null 2>&1 && break; sleep 0.2; done
-DISPLAY=":$DISPLAY_NUMBER" xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
+# Wait for the session, then talk to its xfconfd over its D-Bus (the panel's), not this shell's.
+panel=""
+for _ in $(seq 1 50); do panel=$(pgrep -o xfce4-panel || true); [[ -n "$panel" ]] && break; sleep 0.2; done
+[[ -n "$panel" ]] || { echo "the Xfce session didn't start (no xfce4-panel)" >&2; exit 1; }
+session_bus=$(tr '\0' '\n' < "/proc/$panel/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+xfconf() { DISPLAY=":$DISPLAY_NUMBER" DBUS_SESSION_BUS_ADDRESS="$session_bus" xfconf-query "$@"; }
+xfconf -c xfwm4 -p /general/use_compositing -n -t bool -s false
+old_scale=$(xfconf -c xsettings -p /Gdk/WindowScalingFactor 2>/dev/null || echo 1)
+xfconf -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s "$SCALE"
+# Window borders to match; SCALE=1 only undoes the 2× theme, never a theme the user picked.
+if [[ "$SCALE" == 2 ]]; then
+  xfconf -c xfwm4 -p /general/theme -n -t string -s Default-xhdpi
+elif [[ "$(xfconf -c xfwm4 -p /general/theme 2>/dev/null)" == Default-xhdpi ]]; then
+  xfconf -c xfwm4 -p /general/theme -n -t string -s Default
+fi
+# The panel follows the scale live; the desktop (icons) reads it at start, so restart it when it changed.
+if [[ "$old_scale" != "$SCALE" ]]; then
+  DISPLAY=":$DISPLAY_NUMBER" DBUS_SESSION_BUS_ADDRESS="$session_bus" timeout 10 xfdesktop --quit >/dev/null 2>&1 || true
+  sleep 1
+  DISPLAY=":$DISPLAY_NUMBER" DBUS_SESSION_BUS_ADDRESS="$session_bus" setsid xfdesktop >/dev/null 2>&1 < /dev/null &
+fi
 ss -ltn | grep -q "127.0.0.1:$port " || { echo "Xvnc is not listening on localhost:$port" >&2; exit 1; }
 data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
 mkdir -p "$data_dir"

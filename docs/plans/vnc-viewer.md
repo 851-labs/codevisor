@@ -127,6 +127,8 @@ asks for a desktop of a pixel per device pixel (points × the window's backing
 scale, re-requested when the window moves between displays) instead of a pixel
 per point. That is four times the pixels: scroll bandwidth doubles in
 `vnc-bench` at 2560 × 1600 while update rates hold. Panes opened after the
-change use it. The desktop still draws at 1× (sharp but small); making Xfce draw
-at 2× by provisioning is a follow-up (setting `Gdk/WindowScalingFactor` live
-didn't reach new apps on Contabo).
+change use it. Provision the desktop with `SCALE=2 scripts/vnc-desktop.sh` so
+Xfce draws at 2× (851-2330): the panel follows live, the desktop restarts, and
+apps already open keep their scale until reopened. The script talks to the
+session's own D-Bus; from a plain ssh shell `xfconf-query` reaches a second
+xfconfd whose writes never reach the running desktop.
