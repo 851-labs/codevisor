@@ -1,10 +1,9 @@
 import Foundation
 
-/// iOS's view of a workspace's panes. The compact display shows one pane at a
-/// time from a flat list; the unfolded iPhone Duo display renders the split
-/// tree. Both write back through `apply`, which updates panes inside the
-/// existing tree so a layout built on macOS (or on the unfolded display) is
-/// never flattened by a phone.
+/// iOS's view of a workspace's panes: one pane at a time from a flat list.
+/// Changes write back through `apply`, which updates panes inside the
+/// existing tree so a split layout built on macOS is never flattened by a
+/// phone or iPad.
 public enum PaneLayoutProjection {
   /// Every pane across the workspace's tabs and leaves, in tree order, with
   /// the active leaf's selection.
@@ -96,29 +95,6 @@ public enum PaneLayoutProjection {
     workspace.centerTabs = tabs
   }
 
-  /// Splits the selected tab's active leaf, placing `pane` in a new leaf on
-  /// `edge` that becomes active. Returns the new leaf id, or nil when the
-  /// workspace has no selected tab.
-  @discardableResult
-  public static func split(
-    _ workspace: inout Workspace,
-    edge: SplitEdge,
-    pane: PaneDescriptorState
-  ) -> UUID? {
-    guard let index = workspace.selectedCenterTabIndex else { return nil }
-    var tab = workspace.centerTabs[index]
-    let newLeafId = UUID()
-    tab.root = tab.root.splitting(
-      groupId: tab.activeLeafId,
-      edge: edge,
-      newGroupId: newLeafId,
-      newGroupState: PaneGroupState(panes: [pane], selectedPaneId: pane.id)
-    )
-    tab.activeLeafId = newLeafId
-    workspace.centerTabs[index] = tab
-    return newLeafId
-  }
-
   /// Two descriptors naming the same chat or terminal, as `WorkspaceSyncModel`
   /// reconciles them.
   public static func sameResource(_ lhs: PaneDescriptorState, _ rhs: PaneDescriptorState) -> Bool {
@@ -131,14 +107,5 @@ public enum PaneLayoutProjection {
     case .newTab, .plugin, .document, .browser, .screenSharing:
       return false
     }
-  }
-
-  /// The pane a leaf shows, resolved against the flat state so in-flight
-  /// local edits (a conversion, a rename) win over the persisted tree.
-  public static func pane(inLeaf leafId: UUID, of tab: WorkspaceTab, state: PaneGroupState) -> PaneDescriptorState? {
-    guard let group = tab.root.group(id: leafId) else { return nil }
-    let treePane = group.selectedPane ?? group.panes.first
-    guard let treePane else { return nil }
-    return state.panes.first { $0.id == treePane.id } ?? treePane
   }
 }

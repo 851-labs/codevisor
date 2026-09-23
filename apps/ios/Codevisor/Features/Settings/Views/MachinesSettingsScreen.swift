@@ -102,42 +102,6 @@ struct MachinesSettingsScreen: View {
       }
       Button("Cancel", role: .cancel) { renamingMachine = nil }
     }
-    .confirmationDialog(
-      "Disconnect “\(removingCloudMachine?.name ?? "")”?",
-      isPresented: Binding(
-        get: { removingCloudMachine != nil },
-        set: { if !$0 { removingCloudMachine = nil } }
-      ),
-      titleVisibility: .visible,
-      presenting: removingCloudMachine
-    ) { machine in
-      Button("Disconnect Machine", role: .destructive) {
-        Task { await cloud.remove(deviceId: machine.deviceId) }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: { machine in
-      Text(
-        "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
-      )
-    }
-    .confirmationDialog(
-      "Trust the new key for “\(trustingKey?.name ?? "")”?",
-      isPresented: Binding(
-        get: { trustingKey != nil },
-        set: { if !$0 { trustingKey = nil } }
-      ),
-      titleVisibility: .visible,
-      presenting: trustingKey
-    ) { machine in
-      Button("Trust New Key", role: .destructive) {
-        cloud.trustChangedMachineKey(deviceId: machine.deviceId)
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: { machine in
-      Text(
-        "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
-      )
-    }
     .sheet(item: $discoveredTarget) { machine in
       AddMachineSheet(initialHost: machine.host, initialName: machine.name)
     }
@@ -262,6 +226,44 @@ struct MachinesSettingsScreen: View {
         Image(systemName: "pencil")
       }
       .accessibilityLabel("Rename")
+    }
+    // Anchored to this row so an iPad popover points at the machine it
+    // asks about rather than the middle of the screen.
+    .confirmationDialog(
+      "Disconnect “\(removingCloudMachine?.name ?? "")”?",
+      isPresented: Binding(
+        get: { presence != nil && removingCloudMachine?.deviceId == presence?.deviceId },
+        set: { if !$0 { removingCloudMachine = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: removingCloudMachine
+    ) { machine in
+      Button("Disconnect Machine", role: .destructive) {
+        Task { await cloud.remove(deviceId: machine.deviceId) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { machine in
+      Text(
+        "“\(machine.name)” will be signed out of your account. Nothing on the machine itself is changed — run codevisor auth login there to reconnect it."
+      )
+    }
+    .confirmationDialog(
+      "Trust the new key for “\(trustingKey?.name ?? "")”?",
+      isPresented: Binding(
+        get: { presence != nil && trustingKey?.deviceId == presence?.deviceId },
+        set: { if !$0 { trustingKey = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: trustingKey
+    ) { machine in
+      Button("Trust New Key", role: .destructive) {
+        cloud.trustChangedMachineKey(deviceId: machine.deviceId)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { machine in
+      Text(
+        "“\(machine.name)” is presenting a different encryption key than the one this device remembers. That happens if the machine was re-provisioned — but it can also mean something between you and the machine is intercepting traffic. Only trust the new key if you expected this change."
+      )
     }
   }
 

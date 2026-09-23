@@ -87,6 +87,12 @@ struct PluginInstallSheet: View {
             .buttonStyle(.borderedProminent)
             .tint(.blue)
             .disabled(!canInstall)
+            .confirmationDialog("Unlisted plugin", isPresented: $confirmUnlisted, titleVisibility: .visible) {
+              Button("Install Anyway") { Task { await runInstall() } }
+              Button("Cancel", role: .cancel) {}
+            } message: {
+              Text("This plugin isn’t in the Codevisor registry. Only install it if you trust its source.")
+            }
           }
         }
       }
@@ -104,12 +110,6 @@ struct PluginInstallSheet: View {
       }
     }
     .interactiveDismissDisabled(isWorking)
-    .confirmationDialog("Unlisted plugin", isPresented: $confirmUnlisted, titleVisibility: .visible) {
-      Button("Install Anyway") { Task { await runInstall() } }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("This plugin isn’t in the Codevisor registry. Only install it if you trust its source.")
-    }
     .task {
       if let initialSource, discovery == nil {
         source = initialSource

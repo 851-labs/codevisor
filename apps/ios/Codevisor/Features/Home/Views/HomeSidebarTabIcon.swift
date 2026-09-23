@@ -7,6 +7,9 @@ import SwiftUI
 /// Shared by every sidebar layout so tabs look the same wherever they list.
 struct HomeSidebarTabIcon: View {
   @Environment(AppEnvironment.self) private var environment
+  /// On the sidebar's accent-filled selection glyphs turn white, as the
+  /// title does; secondary gray would be unreadable on the accent.
+  @Environment(\.backgroundProminence) private var backgroundProminence
 
   let row: HomeSidebarTabRow
   let serverId: String
@@ -20,7 +23,7 @@ struct HomeSidebarTabIcon: View {
       switch row.icon {
       case let .chat(harnessId, fallbackSymbolName):
         HarnessIconView(harnessId: harnessId, fallbackSymbolName: fallbackSymbolName, size: size)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(glyphStyle)
       case let .terminal(isAgentOwned):
         symbol(isAgentOwned ? "server.rack" : "terminal")
       case let .browser(favicon):
@@ -61,7 +64,11 @@ struct HomeSidebarTabIcon: View {
   private func symbol(_ name: String) -> some View {
     Image(systemName: name)
       .font(.system(size: size, weight: .medium))
-      .foregroundStyle(.secondary)
+      .foregroundStyle(glyphStyle)
+  }
+
+  private var glyphStyle: AnyShapeStyle {
+    backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary)
   }
 }
 

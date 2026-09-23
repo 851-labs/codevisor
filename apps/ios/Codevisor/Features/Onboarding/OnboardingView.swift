@@ -24,12 +24,20 @@ struct OnboardingView: View {
   /// connect when reopened from the empty home screen.
   var start: Step = .welcome
 
+  static let readableWidth: CGFloat = 560
+
   var body: some View {
     NavigationStack {
-      switch start {
-      case .welcome: WelcomeStep()
-      case .connect: ConsentAndConnectStep()
+      Group {
+        switch start {
+        case .welcome: WelcomeStep()
+        case .connect: ConsentAndConnectStep()
+        }
       }
+      // A readable column on iPad; phones are narrower than the cap.
+      .frame(maxWidth: Self.readableWidth)
+      .frame(maxWidth: .infinity)
+      .background(Color(.systemBackground))
     }
   }
 }

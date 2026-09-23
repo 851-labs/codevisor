@@ -11,6 +11,10 @@
     nonisolated var bottomInset: CGFloat
     let minimumBottomInset: CGFloat
     let maximumBottomInset: CGFloat
+    /// The SwiftUI safe area over the page. SwiftUI doesn't forward safe
+    /// area it adds itself (a split pane's share of the top bar and home
+    /// indicator) to UIKit views, whose own insets then read zero.
+    var safeArea = EdgeInsets()
 
     // SwiftUI interpolates this value on the same timeline as the glass. Passing
     // only the target to UIViewRepresentable makes fixed page controls jump.
@@ -24,7 +28,7 @@
         webView: webView, isCollapsed: $isCollapsed, keepExpanded: keepExpanded,
         isLoading: isLoading, onRefresh: onRefresh,
         bottomInset: bottomInset, minimumBottomInset: minimumBottomInset,
-        maximumBottomInset: maximumBottomInset
+        maximumBottomInset: maximumBottomInset, safeArea: safeArea
       )
     }
 
@@ -37,6 +41,7 @@
       let bottomInset: CGFloat
       let minimumBottomInset: CGFloat
       let maximumBottomInset: CGFloat
+      let safeArea: EdgeInsets
 
       func makeCoordinator() -> Coordinator { Coordinator(isCollapsed: $isCollapsed, onRefresh: onRefresh) }
 
@@ -55,6 +60,8 @@
         uiView.bottomInset = bottomInset
         uiView.minimumBottomInset = minimumBottomInset
         uiView.maximumBottomInset = maximumBottomInset
+        uiView.swiftUISafeArea = UIEdgeInsets(
+          top: safeArea.top, left: safeArea.leading, bottom: safeArea.bottom, right: safeArea.trailing)
         uiView.updateViewport()
       }
 
@@ -71,6 +78,9 @@
       var bottomInset: CGFloat = 0
       var minimumBottomInset: CGFloat = 0
       var maximumBottomInset: CGFloat = 0
+      /// SwiftUI's safe area over this view; for the top and bottom, the
+      /// larger of it and UIKit's own is what the page must clear.
+      var swiftUISafeArea: UIEdgeInsets = .zero
       private let originalObscuredInsets: UIEdgeInsets
       private let originalMinimumInset: UIEdgeInsets
       private let originalMaximumInset: UIEdgeInsets
@@ -109,13 +119,31 @@
 
       func updateViewport() {
         guard !bounds.isEmpty else { return }
-        var obscured = safeAreaInsets
+        // Only the vertical edges come from SwiftUI (the top bar and home
+        // indicator). Its leading inset counts the floating sidebar even
+        // though this view already sits beside it, which would shift the
+        // page right by the sidebar's width; UIKit's own is correct.
+        let safe = UIEdgeInsets(
+          top: max(safeAreaInsets.top, swiftUISafeArea.top),
+          left: safeAreaInsets.left,
+          bottom: max(safeAreaInsets.bottom, swiftUISafeArea.bottom),
+          right: safeAreaInsets.right
+        )
+        var obscured = safe
         obscured.bottom += bottomInset
-        var minimum = safeAreaInsets
+        var minimum = safe
         minimum.bottom += minimumBottomInset
-        var maximum = safeAreaInsets
+        var maximum = safe
         maximum.bottom += maximumBottomInset
-        if webView.minimumViewportInset != minimum || webView.maximumViewportInset != maximum {
+        // WebKit throws on insets it can't honor. SwiftUI's safe area (unlike
+        // UIKit's) isn't clamped to this view, and it can arrive while the
+        // view is being inserted at a transient size; skip until layout
+        // gives it room, which calls back here.
+        // WebKit checks against its own bounds, which trail this view's
+        // until the next layout pass sets them.
+        if Self.fits(minimum, maximum, in: webView.bounds.size),
+          webView.minimumViewportInset != minimum || webView.maximumViewportInset != maximum
+        {
           webView.setMinimumViewportInset(minimum, maximumViewportInset: maximum)
         }
         if webView.obscuredContentInsets != obscured { webView.obscuredContentInsets = obscured }
@@ -123,6 +151,20 @@
         if webView.scrollView.verticalScrollIndicatorInsets != obscured {
           webView.scrollView.verticalScrollIndicatorInsets = obscured
         }
+      }
+
+      /// Non-negative, minimum within maximum, and the maximum leaving part
+      /// of the view unobscured on each axis.
+      static func fits(_ minimum: UIEdgeInsets, _ maximum: UIEdgeInsets, in size: CGSize) -> Bool {
+        let edges = [
+          minimum.top, minimum.left, minimum.bottom, minimum.right,
+          maximum.top, maximum.left, maximum.bottom, maximum.right,
+        ]
+        guard edges.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return false }
+        guard minimum.top <= maximum.top, minimum.left <= maximum.left,
+          minimum.bottom <= maximum.bottom, minimum.right <= maximum.right
+        else { return false }
+        return maximum.top + maximum.bottom < size.height && maximum.left + maximum.right < size.width
       }
 
       private func updateScrollInsets(_ insets: UIEdgeInsets) {

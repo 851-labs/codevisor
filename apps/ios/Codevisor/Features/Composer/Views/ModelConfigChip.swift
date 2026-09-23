@@ -47,8 +47,11 @@ struct ModelConfigChip: View {
     // Keep the presenter mounted while the catalog changes. A conditional
     // presenter caused the sheet to dismiss as soon as an auth-only result
     // removed the last model menu.
-    .sheet(isPresented: $showsPicker) {
+    // A popover anchored to the chip on iPad; compact width adapts it to
+    // the same half-height sheet as before.
+    .popover(isPresented: $showsPicker) {
       ModelPickerSheet(controller: controller, pending: pendingSelection, onChoose: choose)
+        .frame(idealWidth: 400, idealHeight: 560)
     }
   }
 
@@ -111,6 +114,7 @@ struct ModelConfigChip: View {
       .expandedHitTarget(base: 30)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .accessibilityLabel("Model")
     .accessibilityValue(
       pendingSelection.map { "\($0.modelName), updating" }
@@ -158,6 +162,7 @@ struct ModelConfigChip: View {
     }
     .menuOrder(.fixed)
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .layoutPriority(1)
     // Only a harness that is still connecting cannot take a change (the
     // controller drops it); an in-flight model pick must not lock the menu.

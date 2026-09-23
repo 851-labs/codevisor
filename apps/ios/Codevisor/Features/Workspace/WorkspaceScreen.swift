@@ -293,20 +293,14 @@ struct WorkspaceScreen: View {
         // workspace's previously selected terminal/chat while the
         // destination task applies the requested pane.
         DelayedWorkspaceLoadingView()
-      } else if let tab = splitTab {
-        // The unfolded display shows the tab's leaves side by side; the
-        // compact display keeps one pane at a time below.
-        WorkspaceSplitContainerView(
-          tab: tab,
-          paneState: panes,
-          leaf: { leafId, pane in
-            paneContent(pane)
-              .id(paneViewIdentities[pane.id] ?? pane.id)
-              .environment(\.workspaceLeafIsActive, leafId == tab.activeLeafId)
-          },
-          onActivate: { pane in select(pane) },
-          onTreeChanged: { root in persistSplitTree(root) }
-        )
+      } else if homeLayoutMode == .split, let pane = activePane {
+        // Regular width: the pane fills the workspace (under the top bar,
+        // down to the bottom edge) and handles its own safe area.
+        EdgeToEdgePaneHost { _, insets in
+          paneContent(pane)
+            .id(paneViewIdentities[pane.id] ?? pane.id)
+            .safeAreaPadding(insets)
+        }
       } else if let pane = activePane {
         paneContent(pane)
           .id(paneViewIdentities[pane.id] ?? pane.id)
@@ -320,13 +314,14 @@ struct WorkspaceScreen: View {
     // Beside a tiled sidebar the title repeats the selected row and costs
     // the transcript its height; it returns once the sidebar is collapsed
     // or floating, when nothing else names the screen.
-    .navigationTitle(homeSidebarIsTiled ? "" : baseTitle)
-    .navigationSubtitle(homeSidebarIsTiled ? "" : chatSubtitle)
+    .navigationTitle(hidesTitleBesideSidebar ? "" : baseTitle)
+    .navigationSubtitle(hidesTitleBesideSidebar ? "" : chatSubtitle)
     .navigationBarBackButtonHidden(isNewChatPresentation)
     .navigationBarTitleDisplayMode(.inline)
-    // Sent chats align their title and subtitle to the leading edge; drafts keep a centered title.
+    // Sent chats and terminals align their title to the leading edge;
+    // drafts keep a centered title.
     .toolbarRole(
-      promotionNavigationTitle != nil || (!isDraft && activePane?.kind == .chat)
+      promotionNavigationTitle != nil || (!isDraft && [.chat, .terminal].contains(activePane?.kind))
         ? .editor : .automatic
     )
     .toolbar {
@@ -340,12 +335,12 @@ struct WorkspaceScreen: View {
           isDraft: isDraft,
           onDismissNewChat: { dismissNewChatPresentation() },
           onAddTab: { addTab() },
-          showsOpenBeside: homeLayoutMode == .split,
-          onOpenBeside: { openBeside() },
           showsBackMorph: !barsAreVertical
         )
       }
     }
+    // The menu bar's tab commands act on this workspace.
+    .focusedSceneValue(\.workspaceCommandActions, commandActions)
     .task(id: preparationIdentity) {
       IOSNavigationDiagnostics.record(
         "workspace.prepareTask",

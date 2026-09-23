@@ -73,6 +73,26 @@ final class HeightReportingTextView: UITextView {
   var onResizePanEnded: ((CGFloat, CGFloat) -> Void)?
   var onResizePanCancelled: (() -> Void)?
   var onFocusRequestFulfilled: ((UUID) -> Void)?
+  /// A hardware keyboard's Return sends, as on macOS; Shift-Return still
+  /// inserts a line break. Key commands never fire for the on-screen
+  /// keyboard, whose Return stays text input, and a pending composition
+  /// (an input method's marked text) keeps Return for committing it.
+  var onHardwareReturn: (() -> Void)?
+
+  override var keyCommands: [UIKeyCommand]? {
+    let inherited = super.keyCommands ?? []
+    guard onHardwareReturn != nil, markedTextRange == nil else { return inherited }
+    let send = UIKeyCommand(input: "\r", modifierFlags: [], action: #selector(sendFromHardwareKeyboard))
+    send.wantsPriorityOverSystemBehavior = true
+    let commandSend = UIKeyCommand(
+      title: "Send Message", action: #selector(sendFromHardwareKeyboard), input: "\r", modifierFlags: .command)
+    commandSend.wantsPriorityOverSystemBehavior = true
+    return inherited + [send, commandSend]
+  }
+
+  @objc private func sendFromHardwareKeyboard() {
+    onHardwareReturn?()
+  }
 
   private var lastReportedHeight: CGFloat = 0
   /// A request can arrive before SwiftUI has inserted this view into a

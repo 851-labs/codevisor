@@ -4,6 +4,8 @@ import SwiftUI
 /// summaries. The transparent idle state preserves alignment in every row.
 struct HomeStatusIndicator: View {
   let status: HomeSessionStatus
+  /// On an accent-filled sidebar selection the blue unread dot would vanish.
+  @Environment(\.backgroundProminence) private var backgroundProminence
 
   var body: some View {
     Group {
@@ -13,7 +15,7 @@ struct HomeStatusIndicator: View {
       case .actionRequired:
         Circle().fill(.orange).frame(width: 8, height: 8)
       case .unread:
-        Circle().fill(.blue).frame(width: 8, height: 8)
+        Circle().fill(backgroundProminence == .increased ? Color.white : .blue).frame(width: 8, height: 8)
       case .inProgress:
         AgentActivityIndicator()
       case .idle:

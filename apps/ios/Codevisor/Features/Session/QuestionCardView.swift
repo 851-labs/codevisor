@@ -189,6 +189,7 @@ struct QuestionCardView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .pointerHighlight(RoundedRectangle(cornerRadius: 10))
   }
 
   /// Toggle in multi-select, replace otherwise; the single-tap fast path

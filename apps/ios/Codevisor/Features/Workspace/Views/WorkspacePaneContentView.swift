@@ -7,6 +7,7 @@ import SwiftUI
 /// resolved values and closures for the pane it renders.
 struct WorkspacePaneContentView: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.windowID) private var windowID
   let pane: PaneDescriptorState
   /// The identity the chat pane's transcript surface is cached under.
   var surfacePaneID: UUID?
@@ -64,7 +65,8 @@ struct WorkspacePaneContentView: View {
         SessionTranscriptView(
           controller: controller,
           presentationSurface: TranscriptPresentationSurfaceCache.shared.surface(
-            for: .init(paneID: surfacePaneID ?? pane.id, isNewChat: isNewChatPresentation), controller: controller
+            for: .init(paneID: surfacePaneID ?? pane.id, isNewChat: isNewChatPresentation, windowID: windowID),
+            controller: controller
           ),
           // A draft picks where it will run; sending fixes that, so
           // the chips animate away in place.

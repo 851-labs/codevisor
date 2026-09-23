@@ -94,6 +94,7 @@ struct BrowserExtensionQuestionCard: View {
             .composerCircleActionLabel(.secondary)
         }
         .buttonStyle(.plain)
+        .pointerHighlight(Circle())
         .accessibilityLabel("Back to Browser Choices")
         .accessibilityHint("Returns to the browser choices")
       }

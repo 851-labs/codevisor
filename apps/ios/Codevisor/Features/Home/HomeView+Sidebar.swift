@@ -1,6 +1,7 @@
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
+import UIKit
 
 /// Builds the sidebar's workspace sections from the fleet and answers the
 /// rows' requests: opening, closing, renaming, and adding tabs.
@@ -171,7 +172,14 @@ extension HomeView {
         environment.archiveWorkspace(workspace)
         bumpWorkspaceRevision()
       },
-      reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) }
+      reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) },
+      openInNewWindow: UIApplication.shared.supportsMultipleScenes
+        ? { row, section in
+          openWindow(
+            value: WorkspaceWindowRoute(
+              serverId: section.serverId, workspaceId: section.id, anchorSessionId: section.anchorSessionId,
+              chatSessionId: row.chatSessionId, paneId: row.id))
+        } : nil
     )
   }
 
@@ -213,6 +221,9 @@ extension HomeView {
       environment.archiveSession(session)
     } else if let workspace = environment.workspaces.workspace(id: section.id) {
       var state = WorkspaceScreen.compactPaneState(from: workspace)
+      if let closed = state.panes.first(where: { $0.id == row.id }), closed.kind == .terminal {
+        TerminalSessionCache.shared.remove(terminalKey: closed.terminalKey)
+      }
       let replacement: PaneDescriptorState?
       if state.panes.count == 1 {
         replacement = state.replacePaneWithNewTab(id: row.id)

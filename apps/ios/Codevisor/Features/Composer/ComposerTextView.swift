@@ -16,6 +16,8 @@ struct ComposerTextView: UIViewRepresentable {
   var onResizePanChanged: (CGFloat) -> Void
   var onResizePanEnded: (CGFloat, CGFloat) -> Void
   var onResizePanCancelled: () -> Void
+  /// A hardware keyboard's Return. Nil leaves Return as a line break.
+  var onHardwareReturn: (() -> Void)?
 
   func makeUIView(context: Context) -> ComposerTextViewContainer {
     let container = ComposerTextViewContainer()
@@ -154,6 +156,7 @@ struct ComposerTextView: UIViewRepresentable {
     view.onResizePanChanged = onResizePanChanged
     view.onResizePanEnded = onResizePanEnded
     view.onResizePanCancelled = onResizePanCancelled
+    view.onHardwareReturn = onHardwareReturn
   }
 
   func makeCoordinator() -> Coordinator {

@@ -19,6 +19,8 @@ struct HomeSidebarTabRowView: View {
   let onClose: () -> Void
   /// Nil for pane rows, which have no title of their own to pin.
   let onRename: (() -> Void)?
+  /// iPad only: shows the tab in a window of its own.
+  var onOpenInNewWindow: (() -> Void)?
   /// The row lives in a `List(selection:)`, which opens it instead.
   var isSelectionRow = false
 
@@ -46,6 +48,12 @@ struct HomeSidebarTabRowView: View {
       }
     }
     .contextMenu {
+      if let onOpenInNewWindow {
+        Button(action: onOpenInNewWindow) {
+          Label("Open in New Window", systemImage: "macwindow.badge.plus")
+        }
+        Divider()
+      }
       if let onRename {
         Button(action: onRename) {
           Label("Rename Tab", systemImage: "pencil")
@@ -62,9 +70,7 @@ struct HomeSidebarTabRowView: View {
     HStack(spacing: 12) {
       HomeSidebarTabIcon(row: row, serverId: serverId, size: 17)
         .frame(width: 22, height: 22)
-      Text(row.title)
-        .font(.body)
-        .foregroundStyle(.primary)
+      HomeSidebarRowTitle(title: row.title)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
       Spacer(minLength: 0)
     }
@@ -81,5 +87,20 @@ struct HomeSidebarTabRowView: View {
     case .inProgress: "\(row.title), working"
     case .idle: row.title
     }
+  }
+}
+
+/// The row's title. The app's theme root pins a global foreground style,
+/// which stops the list from switching a selected row's text to white on
+/// its accent fill; this follows the list's selection prominence instead,
+/// as the row's icon does.
+private struct HomeSidebarRowTitle: View {
+  let title: String
+  @Environment(\.backgroundProminence) private var backgroundProminence
+
+  var body: some View {
+    Text(title)
+      .font(.body)
+      .foregroundStyle(backgroundProminence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
   }
 }

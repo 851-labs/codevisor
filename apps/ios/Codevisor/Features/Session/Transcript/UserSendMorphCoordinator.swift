@@ -233,10 +233,14 @@ extension UIColor {
 
 extension UIWindow {
   /// The foreground scene's key window: where send proxies float.
+  /// The window the user is working in. iPad can have several windows in
+  /// the foreground; only one of them is key (it just took the send tap),
+  /// so search every foreground scene rather than taking the first.
   static var codevisorKeyWindow: UIWindow? {
-    UIApplication.shared.connectedScenes
+    let scenes = UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }
-      .first { $0.activationState == .foregroundActive }?
-      .windows.first(where: \.isKeyWindow)
+      .filter { $0.activationState == .foregroundActive }
+    return scenes.lazy.flatMap(\.windows).first(where: \.isKeyWindow)
+      ?? scenes.first?.keyWindow
   }
 }

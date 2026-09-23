@@ -194,6 +194,7 @@ struct AttachmentThumbnailView: View {
       )
     }
     .buttonStyle(.plain)
+    .pointerHighlight(RoundedRectangle(cornerRadius: 8))
     .accessibilityLabel(file.name)
   }
 

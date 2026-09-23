@@ -136,6 +136,32 @@ private struct PluginMachineScreen: View {
         } else {
           ForEach(plugins ?? []) { plugin in
             pluginRow(plugin)
+              // Anchored to the row so an iPad popover points at it.
+              .confirmationDialog(
+                "Restore " + (pluginPendingRestore?.name ?? "plugin") + "?",
+                isPresented: Binding(
+                  get: { pluginPendingRestore?.id == plugin.id },
+                  set: { if !$0 { pluginPendingRestore = nil } }
+                ),
+                titleVisibility: .visible
+              ) {
+                Button("Restore Previous Version") {
+                  Task {
+                    _ = try? await mutate {
+                      try await environment.pluginAccess.requireEligible(
+                        pluginId: plugin.id, ageRating: plugin.ageRating)
+                      _ = try await client.restorePlugin(pluginId: plugin.id)
+                    }
+                    pluginPendingRestore = nil
+                    await reload()
+                  }
+                }
+                Button("Cancel", role: .cancel) { pluginPendingRestore = nil }
+              } message: {
+                Text(
+                  "This restores the verified pre-update code and data. The current version becomes the next restore point."
+                )
+              }
           }
         }
       }
@@ -201,31 +227,6 @@ private struct PluginMachineScreen: View {
           }
         )
       }
-    }
-    .confirmationDialog(
-      "Restore " + (pluginPendingRestore?.name ?? "plugin") + "?",
-      isPresented: Binding(
-        get: { pluginPendingRestore != nil },
-        set: { if !$0 { pluginPendingRestore = nil } }
-      ),
-      titleVisibility: .visible
-    ) {
-      Button("Restore Previous Version") {
-        guard let plugin = pluginPendingRestore else { return }
-        Task {
-          _ = try? await mutate {
-            try await environment.pluginAccess.requireEligible(pluginId: plugin.id, ageRating: plugin.ageRating)
-            _ = try await client.restorePlugin(pluginId: plugin.id)
-          }
-          pluginPendingRestore = nil
-          await reload()
-        }
-      }
-      Button("Cancel", role: .cancel) { pluginPendingRestore = nil }
-    } message: {
-      Text(
-        "This restores the verified pre-update code and data. The current version becomes the next restore point."
-      )
     }
   }
 

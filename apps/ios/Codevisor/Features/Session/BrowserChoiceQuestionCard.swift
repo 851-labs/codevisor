@@ -85,6 +85,7 @@ struct BrowserChoiceQuestionCard: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .pointerHighlight(RoundedRectangle(cornerRadius: 10))
     .accessibilityValue(isSelected ? "Selected" : "Not selected")
   }
 
@@ -97,6 +98,7 @@ struct BrowserChoiceQuestionCard: View {
         continueLabel
       }
       .buttonStyle(.plain)
+      .pointerHighlight(Circle())
       .disabled(selectedLabel == nil || controller.isResolvingQuestion)
       .accessibilityLabel(controller.isResolvingQuestion ? "Continuing" : "Continue")
       .accessibilityHint("Uses the selected browser for this chat")

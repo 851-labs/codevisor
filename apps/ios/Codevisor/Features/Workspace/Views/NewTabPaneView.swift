@@ -122,5 +122,6 @@ struct NewTabPaneView: View {
       .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
     .buttonStyle(.plain)
+    .pointerHighlight(RoundedRectangle(cornerRadius: 16))
   }
 }

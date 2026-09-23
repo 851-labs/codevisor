@@ -6,11 +6,21 @@ public struct BrowserPaneView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  #endif
   @ScaledMetric(relativeTo: .body) private var expandedHeight: CGFloat = 50
   @ScaledMetric(relativeTo: .subheadline) private var compactHeight: CGFloat = 34
   @State private var address = ""
   @State private var selection: TextSelection?
   @State private var isCollapsed = false
+  /// The safe area over the page, measured in SwiftUI (see BrowserWebView).
+  @State private var pageSafeArea = EdgeInsets()
+  /// The page's width; sizes the address field when it sits in the top bar.
+  @State private var pageWidth: CGFloat = 0
+  /// Editing in the top bar's field, which keeps its own focus state:
+  /// SwiftUI focus doesn't cross into content hosted in the toolbar.
+  @State private var navigationAddressEditing = false
   @FocusState private var addressFocused: Bool
   @Namespace private var glass
 
@@ -30,7 +40,7 @@ public struct BrowserPaneView: View {
         model.setVisible(false); model.suggestions.dismiss()
       }
       .onChange(of: model.url) { _, url in
-        if !addressFocused { address = url?.absoluteString ?? "" }
+        if !isEditingAddress { address = url?.absoluteString ?? "" }
         isCollapsed = false
       }
       .onChange(of: addressFocused) { _, focused in
@@ -43,7 +53,10 @@ public struct BrowserPaneView: View {
         }
       }
       .onChange(of: address) { _, value in
-        if addressFocused { model.suggestions.update(value) }
+        if isEditingAddress { model.suggestions.update(value) }
+      }
+      .onChange(of: navigationAddressEditing) { _, editing in
+        if !editing { model.suggestions.dismiss() }
       }
       .onChange(of: model.errorMessage) { _, error in
         if error != nil { isCollapsed = false }
@@ -59,21 +72,39 @@ public struct BrowserPaneView: View {
     #if os(iOS)
       page
         .ignoresSafeArea(.container, edges: .vertical)
+        .onGeometryChange(for: EdgeInsets.self) {
+          $0.safeAreaInsets
+        } action: {
+          pageSafeArea = $0
+        }
+        // The model picks mobile or desktop sites by this width.
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.width
+        } action: {
+          model.viewportWidth = $0
+          pageWidth = $0
+        }
         .overlay(alignment: .bottom) {
-          VStack(spacing: 8) {
-            if addressFocused, !model.suggestions.items.isEmpty {
-              BrowserSuggestionList(suggestions: model.suggestions) { item in
-                model.suggestions.dismiss()
-                address = item.value
-                submitAddress()
-              }
-              .frame(maxHeight: 320)
-              .background(.regularMaterial, in: .rect(cornerRadius: 20))
+          if !usesNavigationBar {
+            VStack(spacing: 8) {
+              if addressFocused { suggestionList }
+              toolbar
             }
-            toolbar
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
           }
-          .padding(.horizontal, 12)
-          .padding(.bottom, 8)
+        }
+        // In the top bar, suggestions drop down beneath the address field.
+        .overlay(alignment: .top) {
+          if usesNavigationBar, navigationAddressEditing {
+            suggestionList
+              .frame(maxWidth: Self.navigationAddressWidth)
+              .padding(.horizontal, 12)
+              .padding(.top, 8)
+          }
+        }
+        .toolbar {
+          if usesNavigationBar { navigationBarItems }
         }
         .background(model.pageAppearance.chromeColor)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -97,9 +128,12 @@ public struct BrowserPaneView: View {
             webView: webView, isCollapsed: $isCollapsed,
             keepExpanded: keepExpanded,
             isLoading: model.isLoading, onRefresh: model.reload,
-            bottomInset: (compact ? compactHeight + 10 : toolbarHeight) + 16,
-            minimumBottomInset: compactHeight + 26,
-            maximumBottomInset: max(compactHeight + 26, toolbarHeight + 16)
+            // In the top bar the page keeps its whole height; the bottom
+            // toolbar otherwise floats over it.
+            bottomInset: usesNavigationBar ? 0 : (compact ? compactHeight + 10 : toolbarHeight) + 16,
+            minimumBottomInset: usesNavigationBar ? 0 : compactHeight + 26,
+            maximumBottomInset: usesNavigationBar ? 0 : max(compactHeight + 26, toolbarHeight + 16),
+            safeArea: pageSafeArea
           )
         #else
           BrowserWebView(webView: webView)
@@ -125,7 +159,7 @@ public struct BrowserPaneView: View {
 
   private var compact: Bool {
     #if os(iOS)
-      isCollapsed && !keepExpanded
+      isCollapsed && !keepExpanded && !usesNavigationBar
     #else
       false
     #endif
@@ -137,11 +171,60 @@ public struct BrowserPaneView: View {
 
   private var controlHeight: CGFloat {
     #if os(iOS)
-      expandedHeight
+      usesNavigationBar ? 38 : expandedHeight
     #else
       34
     #endif
   }
+
+  /// Regular width (iPad) puts the controls in the top bar, as Safari and
+  /// the macOS pane do; compact width keeps the floating bottom toolbar.
+  /// Accessibility text sizes keep the bottom toolbar, which can wrap.
+  private var usesNavigationBar: Bool {
+    #if os(iOS)
+      horizontalSizeClass == .regular && !dynamicTypeSize.isAccessibilitySize
+    #else
+      false
+    #endif
+  }
+
+  static let navigationAddressWidth: CGFloat = 560
+
+  @ViewBuilder private var suggestionList: some View {
+    if !model.suggestions.items.isEmpty {
+      BrowserSuggestionList(suggestions: model.suggestions) { item in
+        model.suggestions.dismiss()
+        address = item.value
+        submitAddress()
+      }
+      .frame(maxHeight: 320)
+      .background(.regularMaterial, in: .rect(cornerRadius: 20))
+    }
+  }
+
+  #if os(iOS)
+    /// Back and forward beside the sidebar button; the address field in
+    /// the middle of the bar, where the title would be.
+    @ToolbarContentBuilder private var navigationBarItems: some ToolbarContent {
+      ToolbarItemGroup(placement: .topBarLeading) {
+        Button("Back", systemImage: "chevron.left") { model.webView?.goBack() }
+          .disabled(!model.canGoBack)
+        if model.canGoForward {
+          Button("Forward", systemImage: "chevron.right") { model.webView?.goForward() }
+        }
+      }
+      ToolbarItem(placement: .principal) {
+        // The bar sizes its middle item to fit, so give the field its width
+        // outright: as wide as Safari's, leaving room for the bar's buttons
+        // on either side in a narrower window.
+        NavigationAddressField(
+          model: model, address: $address, isEditing: $navigationAddressEditing, onSubmit: submitAddress
+        )
+        .frame(width: max(200, min(Self.navigationAddressWidth, pageWidth - 260)))
+      }
+      .sharedBackgroundVisibility(.hidden)
+    }
+  #endif
 
   private var toolbar: some View {
     GlassEffectContainer(spacing: 8) {
@@ -286,9 +369,11 @@ public struct BrowserPaneView: View {
     model.url.map(BrowserAddress.display) ?? "Search or enter website address"
   }
 
+  private var isEditingAddress: Bool { addressFocused || navigationAddressEditing }
+
   private func editAddress() {
     isCollapsed = false
-    addressFocused = true
+    if usesNavigationBar { navigationAddressEditing = true } else { addressFocused = true }
   }
 
   private func activateAddress() {
@@ -301,6 +386,7 @@ public struct BrowserPaneView: View {
 
   private func cancelEditing() {
     addressFocused = false
+    navigationAddressEditing = false
     address = model.url?.absoluteString ?? address
   }
 
@@ -308,9 +394,114 @@ public struct BrowserPaneView: View {
     model.submitAddress(model.suggestions.selected?.value ?? address)
     model.suggestions.dismiss()
     addressFocused = false
+    navigationAddressEditing = false
     isCollapsed = false
   }
 }
+
+#if os(iOS)
+  /// The address field in the iPad top bar, as Safari's: the short address
+  /// centered until tapped, then the full URL, selected, for editing.
+  /// SwiftUI focus state doesn't track a field hosted in the toolbar, so
+  /// editing follows the field's own begin/end callbacks instead.
+  private struct NavigationAddressField: View {
+    @Bindable var model: BrowserPaneModel
+    @Binding var address: String
+    @Binding var isEditing: Bool
+    let onSubmit: () -> Void
+    @FocusState private var focused: Bool
+    @State private var editing = false
+
+    var body: some View {
+      HStack(spacing: 0) {
+        ZStack {
+          Text(model.url.map(BrowserAddress.display) ?? "Search or enter website address")
+            .font(.body.weight(.medium))
+            .foregroundStyle(model.url == nil ? .secondary : .primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .opacity(editing ? 0 : 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+          // Always the tap target; its text shows only while editing so
+          // the short address reads through until then.
+          TextField("Search or enter website address", text: $address, onEditingChanged: editingChanged)
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .foregroundStyle(editing ? AnyShapeStyle(.primary) : AnyShapeStyle(.clear))
+            .tint(editing ? nil : .clear)
+            .onSubmit(onSubmit)
+            .onKeyPress(.downArrow) {
+              model.suggestions.moveSelection(1)
+              return .handled
+            }
+            .onKeyPress(.upArrow) {
+              model.suggestions.moveSelection(-1)
+              return .handled
+            }
+            .onKeyPress(.escape) {
+              endEditing()
+              return .handled
+            }
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.webSearch)
+            .submitLabel(.go)
+            .accessibilityLabel("Browser address")
+            .accessibilityValue(model.url?.absoluteString ?? address)
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, editing ? 16 : 4)
+        if !editing {
+          Button {
+            if model.isLoading { model.stop() } else { model.reload() }
+          } label: {
+            Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
+              .frame(width: 38, height: 38)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(model.isLoading ? "Stop loading" : "Reload")
+        }
+      }
+      .frame(height: 38)
+      .overlay(alignment: .bottom) {
+        if model.isLoading {
+          GeometryReader { geometry in
+            Capsule().fill(.tint)
+              .frame(width: geometry.size.width * max(0.02, min(1, model.progress)))
+          }
+          .frame(height: 2)
+          .padding(.horizontal, 16)
+          .allowsHitTesting(false)
+        }
+      }
+      .clipShape(Capsule())
+      .glassEffect(.regular.interactive(), in: .capsule)
+      .onChange(of: isEditing) { _, wanted in
+        if wanted, !editing { focused = true }
+        if !wanted, editing { endEditing() }
+      }
+    }
+
+    private func editingChanged(_ began: Bool) {
+      editing = began
+      if isEditing != began { isEditing = began }
+      guard began else { return }
+      address = model.url?.absoluteString ?? address
+      // Select the whole address once the new text is in the field, as
+      // Safari does, so typing replaces it.
+      DispatchQueue.main.async {
+        UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
+      }
+    }
+
+    private func endEditing() {
+      focused = false
+      UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+  }
+#endif
 
 #if os(macOS)
   private struct BrowserWebView: NSViewRepresentable {

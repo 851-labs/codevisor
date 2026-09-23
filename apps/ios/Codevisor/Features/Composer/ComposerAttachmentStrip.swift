@@ -274,6 +274,7 @@ private struct ComposerAttachmentChip: View {
       .contentShape(RoundedRectangle(cornerRadius: 16))
     }
     .buttonStyle(.plain)
+    .pointerHighlight(RoundedRectangle(cornerRadius: 16))
     .disabled(!canPreview)
     .opacity(isFailed ? 0.5 : 1)
     .accessibilityLabel("Preview \(attachment.name)")
@@ -341,6 +342,7 @@ private struct ComposerAttachmentChip: View {
         .background(.black.opacity(0.72), in: Capsule())
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .expandedHitTarget(base: 28)
     .accessibilityLabel("Retry uploading \(attachment.name)")
     .accessibilityHint(reason)
@@ -356,6 +358,7 @@ private struct ComposerAttachmentChip: View {
         .background(.red.opacity(0.1), in: Capsule())
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .expandedHitTarget(base: 28)
     .accessibilityLabel("Retry uploading \(attachment.name)")
     .accessibilityHint(reason)
@@ -371,6 +374,7 @@ private struct ComposerAttachmentChip: View {
         .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Circle())
     .padding(attachment.hasVisualPreview ? 6 : 0)
     .offset(attachment.hasVisualPreview ? .zero : CGSize(width: 5, height: -5))
     .accessibilityLabel("Remove \(attachment.name)")

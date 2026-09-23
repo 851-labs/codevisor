@@ -20,6 +20,14 @@ public final class BrowserPaneModel: NSObject {
   public private(set) var errorMessage: String?
   private(set) var pageAppearance = BrowserPageAppearance()
   @ObservationIgnored public var onNavigate: ((String, String) -> Void)?
+  /// The page area's width from SwiftUI layout. A navigation picks the
+  /// mobile or desktop site by width, and the web view is created (and its
+  /// first page requested) before it has a size of its own.
+  @ObservationIgnored public var viewportWidth: CGFloat = 0 {
+    didSet { reloadIfContentModeWasGuessed() }
+  }
+  /// The committed page was requested with no width to go by.
+  @ObservationIgnored private var contentModeWasGuessed = false
   @ObservationIgnored public var onFaviconChange: ((CGImage?) -> Void)?
   @ObservationIgnored public var onOpenLink: ((URL) -> Void)?
   @ObservationIgnored public var onCreatePopup: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
@@ -383,7 +391,42 @@ extension BrowserPaneModel: RetainedBrowserPage {
   }
 }
 
+extension BrowserPaneModel {
+  /// As Safari does in a narrow window: the mobile site where a desktop
+  /// page wouldn't fit (a split, a compact iPad window, a phone), WebKit's
+  /// own choice otherwise (the desktop site on iPad).
+  static func contentMode(forWidth width: CGFloat) -> WKWebpagePreferences.ContentMode {
+    width > 0 && width < 700 ? .mobile : .recommended
+  }
+
+  /// A first page requested before any width was known gets one reload
+  /// once the pane turns out to be narrow.
+  private func reloadIfContentModeWasGuessed() {
+    guard contentModeWasGuessed, viewportWidth > 0 else { return }
+    contentModeWasGuessed = false
+    guard Self.contentMode(forWidth: viewportWidth) == .mobile, webView?.url != nil, !isLoading else { return }
+    webView?.reload()
+  }
+}
+
 extension BrowserPaneModel: WKNavigationDelegate {
+  /// WebKit calls this variant when implemented; it adds the content mode
+  /// to the policy decided below.
+  public func webView(
+    _ webView: WKWebView, decidePolicyFor action: WKNavigationAction, preferences: WKWebpagePreferences
+  ) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
+    let policy = await self.webView(webView, decidePolicyFor: action)
+    #if os(iOS)
+      // macOS keeps WebKit's desktop default in every pane size.
+      if policy == .allow, action.targetFrame?.isMainFrame == true {
+        let width = webView.bounds.width > 0 ? webView.bounds.width : viewportWidth
+        contentModeWasGuessed = width <= 0
+        preferences.preferredContentMode = Self.contentMode(forWidth: width)
+      }
+    #endif
+    return (policy, preferences)
+  }
+
   public func webView(
     _ webView: WKWebView, decidePolicyFor action: WKNavigationAction
   ) async -> WKNavigationActionPolicy {

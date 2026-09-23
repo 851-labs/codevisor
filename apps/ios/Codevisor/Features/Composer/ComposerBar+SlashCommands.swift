@@ -126,6 +126,7 @@ extension ComposerBar {
             .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
+          .pointerHighlight(RoundedRectangle(cornerRadius: 12))
           .accessibilityLabel("/\(command.name), \(command.description)")
         }
       }

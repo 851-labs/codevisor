@@ -15,6 +15,7 @@ struct HomeView: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) var scenePhase
   @Environment(\.horizontalSizeClass) var horizontalSizeClass
+  @Environment(\.openWindow) var openWindow
 
   @ClientPreference("ios.onboarding.dismissed", default: false)
   var onboardingDismissed
@@ -87,10 +88,20 @@ struct HomeView: View {
   /// The repository is deliberately non-observable. Bump this after a
   /// workspace backfill or local layout mutation so the hierarchy re-reads.
   @State var workspaceRevision = 0
+  /// The window hosting this Home. With several iPad windows open, only the
+  /// one the user is working in answers app-wide presentation requests.
+  @State var hostWindow = WeakWindow()
   #if DEBUG || NAVIGATION_DIAGNOSTICS
     @State private var didHandleDiagnosticSessionLaunch = false
     @State private var didHandleDiagnosticNewChatLaunch = false
   #endif
+
+  /// A window opened on one tab (iPad's Open in New Window) starts there.
+  init(initialRoute: HomeRoute? = nil) {
+    if let initialRoute {
+      _navigation = State(initialValue: HomeNavigationState(path: [initialRoute]))
+    }
+  }
 
   /// The stack path, proxied so route helpers read and write one value.
   var path: [HomeRoute] {
@@ -189,6 +200,8 @@ struct HomeView: View {
     )
     .environment(\.homeLayoutMode, layoutMode)
     .environment(\.homeSidebarIsTiled, layoutMode == .split && detailLeadingInset > 1)
+    .focusedSceneValue(\.homeCommandActions, homeCommandActions)
+    .background(HostWindowReader { hostWindow.window = $0 })
     .modifier(
       ClientControlModifier(
         name: UIDevice.current.name, platform: "ios",

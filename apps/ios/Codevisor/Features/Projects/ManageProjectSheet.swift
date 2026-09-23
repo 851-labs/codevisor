@@ -68,6 +68,18 @@ struct ManageProjectSheet: View {
             isConfirmingArchive = true
           }
           .disabled(isSaving)
+          .confirmationDialog(
+            "Archive \(project.name)?",
+            isPresented: $isConfirmingArchive,
+            titleVisibility: .visible
+          ) {
+            Button("Archive Project", role: .destructive) {
+              onArchive()
+              dismiss()
+            }
+          } message: {
+            Text("This also archives the project's workspaces and chats.")
+          }
         }
       }
       .navigationTitle(project.name)
@@ -85,18 +97,6 @@ struct ManageProjectSheet: View {
     .presentationDetents([.medium, .large])
     .interactiveDismissDisabled(isSaving)
     .task { await loadBranches() }
-    .confirmationDialog(
-      "Archive \(project.name)?",
-      isPresented: $isConfirmingArchive,
-      titleVisibility: .visible
-    ) {
-      Button("Archive Project", role: .destructive) {
-        onArchive()
-        dismiss()
-      }
-    } message: {
-      Text("This also archives the project's workspaces and chats.")
-    }
   }
 
   private var baseBranchLabel: String {

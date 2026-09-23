@@ -22,20 +22,30 @@ struct CodevisorApp: App {
 
   var body: some Scene {
     WindowGroup {
-      #if DEBUG
-        if AppStoreScreenshotData.isEnabled {
-          AppStoreScreenshotRoot()
-        } else {
-          applicationContent
-        }
-      #else
-        applicationContent
-      #endif
+      WindowIdentityRoot {
+        #if DEBUG
+          if AppStoreScreenshotData.isEnabled {
+            AppStoreScreenshotRoot()
+          } else {
+            applicationContent(initialRoute: nil)
+          }
+        #else
+          applicationContent(initialRoute: nil)
+        #endif
+      }
+    }
+    // The iPad menu bar, and the hardware-keyboard shortcuts it lists.
+    .commands { CodevisorCommands() }
+    // iPad's Open in New Window: a window that starts on one workspace tab.
+    WindowGroup(for: WorkspaceWindowRoute.self) { $route in
+      WindowIdentityRoot {
+        applicationContent(initialRoute: route?.homeRoute)
+      }
     }
   }
 
   @ViewBuilder
-  private var applicationContent: some View {
+  private func applicationContent(initialRoute: HomeRoute?) -> some View {
     if let environment {
       if shouldWaitForCloudRestore(environment: environment) {
         // A cloud-only machine list is unknown until the persisted
@@ -46,7 +56,7 @@ struct CodevisorApp: App {
           .preferredColorScheme(colorScheme(for: environment))
           .task { await environment.cloud.bootstrap() }
       } else {
-        HomeView()
+        HomeView(initialRoute: initialRoute)
           // Order matters: ThemedRoot reads AppEnvironment, so the
           // environment injection must wrap it (i.e. come after).
           .modifier(ThemedRoot())

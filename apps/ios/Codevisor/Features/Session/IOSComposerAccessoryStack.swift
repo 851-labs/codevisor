@@ -129,8 +129,11 @@ struct IOSComposerAccessoryStack: View {
       Motion.quick(reduceMotion: reduceMotion),
       value: controller.configurationAdjustmentMessage
     )
-    .sheet(isPresented: $isPresentingQueue) {
+    // A popover over the queue on iPad; compact width adapts it to the
+    // same half-height sheet as before.
+    .popover(isPresented: $isPresentingQueue) {
       IOSPromptQueueSheet(controller: controller)
+        .frame(idealWidth: 400, idealHeight: 480)
     }
   }
 }

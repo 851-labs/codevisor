@@ -11,10 +11,6 @@ struct WorkspaceScreenToolbar: ToolbarContent {
   let isDraft: Bool
   let onDismissNewChat: () -> Void
   let onAddTab: () -> Void
-  /// The unfolded iPhone Duo display can hold two panes; a long press on
-  /// New tab offers to open beside the current one.
-  var showsOpenBeside = false
-  var onOpenBeside: () -> Void = {}
   /// The decorative back chevron materializes at the top-left as the
   /// sheet's chrome becomes the conversation's. With iPhone Duo's vertical
   /// strip the real back button lives on the side, so the morph would
@@ -79,19 +75,6 @@ struct WorkspaceScreenToolbar: ToolbarContent {
           }
         }
         // Tabs belong to a workspace; an unsent draft has none yet.
-      } else if !blocksServerContent, !isDraft, showsOpenBeside {
-        Menu {
-          Button(action: onAddTab) {
-            Label("New Tab", systemImage: "plus.square.on.square")
-          }
-          Button(action: onOpenBeside) {
-            Label("Open Beside", systemImage: "rectangle.split.2x1")
-          }
-        } label: {
-          Label("New tab", systemImage: "plus.square.on.square")
-        } primaryAction: {
-          onAddTab()
-        }
       } else if !blocksServerContent, !isDraft {
         Button {
           onAddTab()

@@ -72,6 +72,8 @@ final class TranscriptPresentationSurfaceCache {
   struct Key: Hashable {
     let paneID: UUID
     let isNewChat: Bool
+    /// Each iPad window mounts its own transcript for the same chat.
+    let windowID: UUID
   }
 
   static let shared = TranscriptPresentationSurfaceCache()

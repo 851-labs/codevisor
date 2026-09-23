@@ -234,6 +234,7 @@ struct ComposerBar: View {
     // back from zero) still morphs the glass out of/into the composer.
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
+    .onDrop(of: Self.droppableTypes, isTargeted: nil) { acceptDrop($0) }
     .sheet(isPresented: $showsMachineSettings) {
       SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }
@@ -505,6 +506,10 @@ extension ComposerBar {
           },
           onResizePanCancelled: {
             withAnimation(.snappy(duration: 0.28)) { panTranslation = 0 }
+          },
+          // The send button's own gate: Return with nothing sendable is inert.
+          onHardwareReturn: {
+            if canSend { submitOrAcceptSlashCommand() }
           }
         )
         .frame(height: editorHeight)

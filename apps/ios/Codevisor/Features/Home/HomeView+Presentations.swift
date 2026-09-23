@@ -8,6 +8,18 @@ import SwiftUI
 /// sheet is deliberately not here — it is compact-only and lives in
 /// `stackContainer` with its zoom transition source.
 extension HomeView {
+  /// Requests posted app-wide (a transcript row asking for sign-in) come
+  /// from the window the user just touched, which is the key window. Every
+  /// other iPad window ignores them. With no key window at all, answer.
+  var isWorkingWindow: Bool {
+    guard let window = hostWindow.window else { return true }
+    if window.isKeyWindow { return true }
+    let anyKeyWindow = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .contains { $0.windows.contains(where: \.isKeyWindow) }
+    return !anyKeyWindow
+  }
+
   func hoistedPresentations<Content: View>(_ content: Content) -> some View {
     content
       .modifier(
@@ -26,11 +38,13 @@ extension HomeView {
           .id(destination.id)
       }
       .onReceive(NotificationCenter.default.publisher(for: .codevisorOpenSettings)) { _ in
+        guard isWorkingWindow else { return }
         presentedSettingsDestination = .root
       }
       .harnessSignInSheet(request: $pendingHarnessSignIn)
       .onReceive(NotificationCenter.default.publisher(for: .codevisorHarnessSignIn)) {
         notification in
+        guard isWorkingWindow else { return }
         pendingHarnessSignIn = HarnessSignInRequest(notification: notification)
       }
       .fullScreenCover(isPresented: showsOnboarding) {

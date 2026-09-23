@@ -355,6 +355,10 @@ struct SessionTranscriptView: View {
 
       GlassEffectContainer(spacing: ComposerGlassStyle.clusterSpacing) {
         composerCluster
+          // On a wide pane (iPad, an unfolded iPhone Duo) the composer
+          // keeps the transcript's reading column instead of spanning
+          // the window. Phone widths never reach the cap.
+          .frame(maxWidth: VirtualizedTranscriptScrollView.maxRowWidth)
           // The jump control belongs to the same material group but
           // not its measured vertical stack: showing it must never
           // change transcript insets or the user's scroll position.

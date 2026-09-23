@@ -31,7 +31,10 @@ struct SettingsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var path: [SettingsDestination]
+  /// The regular-width sidebar's selection.
+  @State private var selection: SettingsDestination?
   @State private var showsEmailFallback = false
   var onSectionChange: ((String) -> Void)?
 
@@ -53,102 +56,22 @@ struct SettingsSheet: View {
     switch initialDestination {
     case .root:
       _path = State(initialValue: [])
+      // The regular-width sidebar opens on Account, highlighted.
+      _selection = State(initialValue: .section("account"))
     case .machines, .section:
       _path = State(initialValue: [initialDestination])
+      _selection = State(initialValue: initialDestination)
     }
   }
 
   var body: some View {
-    NavigationStack(path: $path) {
-      List {
-        Section {
-          NavigationLink(value: SettingsDestination.section("account")) {
-            settingsLabel("Account", systemImage: "person.crop.circle")
-          }
-          NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
-            settingsLabel("Machines", systemImage: "desktopcomputer")
-          }
-        }
-        Section {
-          NavigationLink(value: SettingsDestination.section("updates")) {
-            // badge(0) hides itself — the ambient signal simply
-            // is not there when everything is current.
-            settingsLabel("Updates", systemImage: "arrow.down.circle")
-              .badge(environment.updateCenter.availableCount)
-          }
-          NavigationLink(value: SettingsDestination.section("general")) {
-            settingsLabel("Privacy & Data", systemImage: "hand.raised")
-          }
-          NavigationLink(value: SettingsDestination.section("appearance")) {
-            settingsLabel("Appearance", systemImage: "paintpalette")
-          }
-        }
-        Section {
-          NavigationLink(value: SettingsDestination.section("agents")) {
-            settingsLabel("Harnesses", systemImage: "brain")
-          }
-          NavigationLink(value: SettingsDestination.section("mcps")) {
-            settingsLabel("MCPs", systemImage: "puzzlepiece.extension")
-          }
-          NavigationLink(value: SettingsDestination.section("skills")) {
-            settingsLabel("Skills", systemImage: "book.closed")
-          }
-          NavigationLink(value: SettingsDestination.section("plugins")) {
-            settingsLabel("Plugins", systemImage: "puzzlepiece")
-          }
-        }
-        Section {
-          Button {
-            openURL(URL(string: "mailto:\(Self.supportEmail)?subject=Codevisor%20iOS%20Support")!) {
-              accepted in
-              showsEmailFallback = !accepted
-            }
-          } label: {
-            externalLinkLabel("Contact Support", systemImage: "envelope")
-          }
-          .accessibilityIdentifier("settings.contactSupport")
-          .accessibilityHint("Opens your email app")
-          .contextMenu {
-            Button("Copy Email Address", systemImage: "doc.on.doc") {
-              UIPasteboard.general.string = Self.supportEmail
-            }
-          }
-          Link(destination: URL(string: "https://www.codevisor.dev/terms")!) {
-            externalLinkLabel("Terms of Use", systemImage: "doc.text")
-          }
-          .accessibilityIdentifier("settings.termsOfUse")
-          .accessibilityHint("Opens in your browser")
-          Link(destination: AIDataSharingConsent.privacyPolicyURL) {
-            externalLinkLabel("Privacy Policy", systemImage: "hand.raised")
-          }
-          .accessibilityIdentifier("settings.privacyPolicy")
-          .accessibilityHint("Opens in your browser")
-        } footer: {
-          Text(appVersion)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 12)
-            .accessibilityIdentifier("settings.appVersion")
-        }
-      }
-      .navigationTitle("Settings")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-        }
-      }
-      .navigationDestination(for: SettingsDestination.self) { destination in
-        switch destination {
-        case .root:
-          EmptyView()
-        case .section(let section):
-          clientSection(section)
-        case let .machines(focusedMachineID):
-          MachinesSettingsScreen(focusedMachineID: focusedMachineID)
-        }
+    Group {
+      // Regular width (iPad) shows the sections beside their content, as
+      // the macOS settings window does; compact keeps the pushed list.
+      if horizontalSizeClass == .regular {
+        splitSettings
+      } else {
+        stackSettings
       }
     }
     .alert("Can’t Open Email", isPresented: $showsEmailFallback) {
@@ -159,16 +82,146 @@ struct SettingsSheet: View {
     } message: {
       Text("Email us at \(Self.supportEmail). Copy the address to use it in your preferred email app.")
     }
-    .onChange(of: path, initial: true) { _, path in
+    .onChange(of: currentDestination, initial: true) { _, destination in
       let section: String
-      switch path.last {
+      switch destination {
       case .section(let value): section = value
       case .machines: section = "machines"
       default: section = "root"
       }
       onSectionChange?(section)
     }
+    .presentationSizing(.page)
     .presentationDragIndicator(.visible)
+  }
+
+  private var currentDestination: SettingsDestination? {
+    horizontalSizeClass == .regular ? selectedDetail : path.last
+  }
+
+  private var selectedDetail: SettingsDestination {
+    selection ?? .section("account")
+  }
+
+  private var stackSettings: some View {
+    NavigationStack(path: $path) {
+      List { settingsSections }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { doneButton }
+        .navigationDestination(for: SettingsDestination.self) { destination in
+          destinationScreen(destination)
+        }
+    }
+  }
+
+  private var splitSettings: some View {
+    NavigationSplitView {
+      List(selection: $selection) { settingsSections }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+    } detail: {
+      NavigationStack {
+        destinationScreen(selectedDetail)
+          .toolbar { doneButton }
+      }
+      // A new section starts at its own root.
+      .id(selectedDetail)
+    }
+    .navigationSplitViewStyle(.balanced)
+  }
+
+  private var doneButton: some ToolbarContent {
+    ToolbarItem(placement: .confirmationAction) {
+      Button("Done") { dismiss() }
+    }
+  }
+
+  @ViewBuilder
+  private func destinationScreen(_ destination: SettingsDestination) -> some View {
+    switch destination {
+    case .root:
+      EmptyView()
+    case .section(let section):
+      clientSection(section)
+    case let .machines(focusedMachineID):
+      MachinesSettingsScreen(focusedMachineID: focusedMachineID)
+    }
+  }
+
+  @ViewBuilder
+  private var settingsSections: some View {
+    Section {
+      NavigationLink(value: SettingsDestination.section("account")) {
+        settingsLabel("Account", systemImage: "person.crop.circle")
+      }
+      NavigationLink(value: SettingsDestination.machines(focusedMachineID: nil)) {
+        settingsLabel("Machines", systemImage: "desktopcomputer")
+      }
+    }
+    Section {
+      NavigationLink(value: SettingsDestination.section("updates")) {
+        // badge(0) hides itself — the ambient signal simply
+        // is not there when everything is current.
+        settingsLabel("Updates", systemImage: "arrow.down.circle")
+          .badge(environment.updateCenter.availableCount)
+      }
+      NavigationLink(value: SettingsDestination.section("general")) {
+        settingsLabel("Privacy & Data", systemImage: "hand.raised")
+      }
+      NavigationLink(value: SettingsDestination.section("appearance")) {
+        settingsLabel("Appearance", systemImage: "paintpalette")
+      }
+    }
+    Section {
+      NavigationLink(value: SettingsDestination.section("agents")) {
+        settingsLabel("Harnesses", systemImage: "brain")
+      }
+      NavigationLink(value: SettingsDestination.section("mcps")) {
+        settingsLabel("MCPs", systemImage: "puzzlepiece.extension")
+      }
+      NavigationLink(value: SettingsDestination.section("skills")) {
+        settingsLabel("Skills", systemImage: "book.closed")
+      }
+      NavigationLink(value: SettingsDestination.section("plugins")) {
+        settingsLabel("Plugins", systemImage: "puzzlepiece")
+      }
+    }
+    Section {
+      Button {
+        openURL(URL(string: "mailto:\(Self.supportEmail)?subject=Codevisor%20iOS%20Support")!) {
+          accepted in
+          showsEmailFallback = !accepted
+        }
+      } label: {
+        externalLinkLabel("Contact Support", systemImage: "envelope")
+      }
+      .accessibilityIdentifier("settings.contactSupport")
+      .accessibilityHint("Opens your email app")
+      .contextMenu {
+        Button("Copy Email Address", systemImage: "doc.on.doc") {
+          UIPasteboard.general.string = Self.supportEmail
+        }
+      }
+      Link(destination: URL(string: "https://www.codevisor.dev/terms")!) {
+        externalLinkLabel("Terms of Use", systemImage: "doc.text")
+      }
+      .accessibilityIdentifier("settings.termsOfUse")
+      .accessibilityHint("Opens in your browser")
+      Link(destination: AIDataSharingConsent.privacyPolicyURL) {
+        externalLinkLabel("Privacy Policy", systemImage: "hand.raised")
+      }
+      .accessibilityIdentifier("settings.privacyPolicy")
+      .accessibilityHint("Opens in your browser")
+    } footer: {
+      Text(appVersion)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 12)
+        .accessibilityIdentifier("settings.appVersion")
+    }
   }
 
   private func settingsLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {

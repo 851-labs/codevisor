@@ -132,20 +132,4 @@ struct PaneLayoutProjectionTests {
     #expect(workspace.centerTabs[0].isPlaceholder)
     #expect(workspace.selectedCenterTabId == workspace.centerTabs[0].id)
   }
-
-  @Test("Splitting the active leaf places the new pane beside it and activates it")
-  func splitActiveLeaf() {
-    var (workspace, _, _, browser) = fixture()
-    workspace.selectedCenterTabId = workspace.centerTabs[1].id
-    let newPane = pane("Terminal 2")
-    let leafId = PaneLayoutProjection.split(&workspace, edge: .trailing, pane: newPane)
-    let tab = workspace.centerTabs[1]
-    #expect(leafId != nil)
-    #expect(tab.activeLeafId == leafId)
-    #expect(tab.root.allGroups.map { $0.state.panes.first?.id } == [browser.id, newPane.id])
-    #expect(PaneLayoutProjection.flatten(workspace).selectedPaneId == newPane.id)
-    #expect(
-      PaneLayoutProjection.pane(inLeaf: leafId!, of: tab, state: PaneLayoutProjection.flatten(workspace))?.id
-        == newPane.id)
-  }
 }

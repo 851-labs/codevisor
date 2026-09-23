@@ -13,6 +13,8 @@ struct HomeSidebarActions {
   var archiveWorkspace: (HomeSidebarSection) -> Void = { _ in }
   /// The workspace ids in their new order after a drag-to-reorder drop.
   var reorder: (UUID, [UUID]) -> Void = { _, _ in }
+  /// Nil where the device shows one window at a time (iPhone).
+  var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarSection) -> Void)?
 }
 
 /// The sidebar: one always-expanded section per workspace listing its tabs.
@@ -84,6 +86,7 @@ struct HomeSidebarList: View {
               onOpen: { actions.open(row, section) },
               onClose: { actions.close(row, section) },
               onRename: row.renamableTabId == nil ? nil : { actions.rename(row, section) },
+              onOpenInNewWindow: actions.openInNewWindow.map { open in { open(row, section) } },
               isSelectionRow: isSelectionList
             )
             .tag(row.id)
@@ -109,6 +112,7 @@ struct HomeSidebarList: View {
         sectionContent(isSelectionList: true)
       }
       .listStyle(.sidebar)
+
     } else {
       List {
         sectionContent(isSelectionList: false)

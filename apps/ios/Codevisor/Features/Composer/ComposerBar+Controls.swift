@@ -127,6 +127,7 @@ extension ComposerBar {
         .expandedHitTarget(base: 28)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Circle())
     .disabled(remainingAttachmentSlots == 0 || controller.isSubmitting)
     .accessibilityLabel("Attach files")
   }
@@ -141,6 +142,7 @@ extension ComposerBar {
         .composerCircleActionLabel(.primary, isEnabled: canSend)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Circle())
     .disabled(!canSend)
     .accessibilityLabel(controller.isGoalEditing ? "Save goal" : "Send")
   }
@@ -168,6 +170,7 @@ extension ComposerBar {
       .expandedHitTarget(base: 30)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .accessibilityLabel("Goal mode on")
     .accessibilityHint("Returns this draft to a regular chat message")
   }
@@ -192,6 +195,7 @@ extension ComposerBar {
       .expandedHitTarget(base: 30)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Capsule())
     .disabled(controller.isPlanModeUpdatePending)
     .opacity(controller.isPlanModeUpdatePending ? 0.5 : 1)
     .accessibilityLabel("Plan mode on")
@@ -234,6 +238,7 @@ extension ComposerBar {
       .expandedHitTarget(base: 30)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Circle())
     .disabled(isClearingGoal)
     .accessibilityLabel(isClearingGoal ? "Clearing goal" : "Clear goal")
     .accessibilityHint("Stops automatic continuation and keeps the chat history")
@@ -264,6 +269,7 @@ extension ComposerBar {
         .composerCircleActionLabel(.secondary)
     }
     .buttonStyle(.plain)
+    .pointerHighlight(Circle())
     .accessibilityLabel("Stop")
   }
 
