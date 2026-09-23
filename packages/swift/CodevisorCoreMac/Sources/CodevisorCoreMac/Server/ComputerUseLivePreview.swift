@@ -1,10 +1,9 @@
 import AppKit
 import CodevisorCore
-import CodevisorScreenSharing
 import Foundation
 import Metal
 import Observation
-import ScreenSharingViewer
+import ScreenSharing
 
 // MARK: - Gating and geometry
 

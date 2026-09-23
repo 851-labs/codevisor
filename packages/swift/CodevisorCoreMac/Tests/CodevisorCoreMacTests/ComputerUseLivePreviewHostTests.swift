@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
+import ScreenSharing
 import Testing
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
-@testable import CodevisorScreenSharing
 
 @MainActor
 @Suite("Computer Use live preview host")

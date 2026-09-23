@@ -1,8 +1,8 @@
-import CodevisorScreenSharing
 import CoreMedia
 import Foundation
 import QuartzCore
 import ScreenCaptureKit
+import ScreenSharing
 
 /// A consumer of one controlled window's live frames: the in-app preview
 /// (a mailbox feeding Metal) or a remote viewer (a WebRTC frame sender).

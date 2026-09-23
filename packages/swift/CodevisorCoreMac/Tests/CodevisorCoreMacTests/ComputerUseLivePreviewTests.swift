@@ -3,9 +3,9 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
+import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
-@testable import CodevisorScreenSharing
 
 @Suite("Computer Use live preview")
 struct ComputerUseLivePreviewTests {

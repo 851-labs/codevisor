@@ -1,6 +1,7 @@
 import CodevisorCore
-import CodevisorScreenSharing
 import Foundation
+import ScreenSharing
+import ScreenSharingWebRTC
 
 extension ComputerUseLivePreview {
   /// A viewer of the window a chat's agent controls on another Mac. It
