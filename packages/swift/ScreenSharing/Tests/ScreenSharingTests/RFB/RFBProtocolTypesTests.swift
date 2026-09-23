@@ -9,6 +9,7 @@ struct RFBProtocolTypesTests {
   @Test func encodingsUseTheirRegisteredNumbers() {
     #expect(RFBEncoding.raw.rawValue == 0)
     #expect(RFBEncoding.copyRect.rawValue == 1)
+    #expect(RFBEncoding.tight.rawValue == 7)
     #expect(RFBEncoding.zrle.rawValue == 16)
     #expect(RFBEncoding.desktopSize.rawValue == -223)
     #expect(RFBEncoding.cursor.rawValue == -239)
@@ -19,7 +20,7 @@ struct RFBProtocolTypesTests {
     #expect(UInt32(bitPattern: RFBEncoding.extendedClipboard.rawValue) == 0xC0A1_E5CE)
     #expect(
       Set(RFBEncoding.allCases) == [
-        .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+        .raw, .copyRect, .tight, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
         .extendedDesktopSize, .extendedClipboard,
       ])
   }
@@ -29,10 +30,10 @@ struct RFBProtocolTypesTests {
   @Test func supportedEncodingsAreAdvertisedInPreferenceOrder() {
     #expect(
       RFBEncoding.supported == [
-        .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+        .tight, .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
         .extendedDesktopSize, .extendedClipboard,
       ])
-    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698])
+    #expect(RFBEncoding.supported.map(\.rawValue) == [7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698])
     #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 

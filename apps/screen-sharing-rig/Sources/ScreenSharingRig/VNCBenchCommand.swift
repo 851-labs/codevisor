@@ -15,6 +15,7 @@
     static let usage = """
       Usage: screen-sharing-rig vnc-bench [--scenes typing,scroll,photo,input] [--profiles lan,wan150]
                                           [--runs 3] [--frames 40] [--size 1280x800] [--seed 1] [--pace 60]
+                                          [--quality 0-9]
                                           [--out DIR] [--baseline FILE] [--build HASH]
       Scenes: \(VNCBenchOptions.sceneNames.joined(separator: ", ")) ("input" measures pointer echo latency).
       Profiles: \(VNCBenchOptions.profileNames.joined(separator: ", ")).
@@ -111,7 +112,7 @@
       let transport = RFBShapedTransport(
         try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port), profile: profile,
         clock: ContinuousClock())
-      let client = try RFBClient(transport: transport)
+      let client = try RFBClient(transport: transport, qualityLevel: options.quality)
       _ = try await client.connect(password: nil)
       let metrics = ScreenSharingMetrics()
       let mailbox = ScreenSharingFrameMailbox()

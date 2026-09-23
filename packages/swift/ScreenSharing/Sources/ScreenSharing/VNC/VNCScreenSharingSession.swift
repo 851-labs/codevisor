@@ -41,6 +41,8 @@
     public static let resizeDebounce: Duration = .milliseconds(400)
     /// The remote desktop sizes the session asks for.
     public static let desktopSizeRange = (width: 320...8192, height: 240...8192)
+    /// Lossless or JPEG, from the measured bandwidth (851-2313).
+    private var quality = VNCQualityPolicy()
     public private(set) var closed = false
 
     public init(
@@ -52,6 +54,7 @@
       self.metrics = metrics
       self.sleep = sleep
       desktopSize = (parameters.width, parameters.height)
+      metrics.label("vncQuality", VNCQualityPolicy().description)
       transportName = client.transportName
       translator = VNCInputTranslator(width: parameters.width, height: parameters.height, keys: keys)
       // Input arrives synchronously and often; one task writes it in order.
@@ -81,6 +84,11 @@
                 metrics.increment("vncCursorShapes")
               }
               if let pointer = update.pointer { cursor.append(.position(pointer)) }
+              if update.jpegRectangles > 0 { metrics.increment("vncJPEGRectangles", by: update.jpegRectangles) }
+              if let duration = update.transferDuration {
+                let bytes = update.byteCount
+                Task { @MainActor in self?.observeBandwidth(bytes: bytes, duration: duration) }
+              }
               if let result = update.desktopSize {
                 Task { @MainActor in self?.desktopSizeChanged(result) }
               }
@@ -168,6 +176,13 @@
       }
       // A size asked for before the server said it could resize.
       if firstLayout, resizeTask == nil { sendDesktopSizeIfNeeded() }
+    }
+
+    private func observeBandwidth(bytes: Int, duration: Duration) {
+      guard !closed, let level = quality.observe(bytes: bytes, duration: duration) else { return }
+      metrics.label("vncQuality", quality.description)
+      let client = client
+      Task { try? await client.setQualityLevel(level) }
     }
 
     private func resized(width: Int, height: Int) {

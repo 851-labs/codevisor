@@ -99,6 +99,7 @@
       configuration.continuousUpdates = !options.requestedOnly
       configuration.fences = !options.requestedOnly
       configuration.desktopResize = .accept
+      configuration.negotiateEncoding = true  // the client's preference (Tight first), as a real server (851-2313)
       configuration.password = options.password
       configuration.securityTypes = [
         options.password == nil ? RFBSecurityType.none.rawValue : RFBSecurityType.vncAuthentication.rawValue

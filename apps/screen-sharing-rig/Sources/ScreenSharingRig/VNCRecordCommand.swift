@@ -10,7 +10,7 @@
   enum VNCRecordCommand {
     static let usage = """
       Usage: screen-sharing-rig vnc-record --host H --port P [--password P] [--seconds 3]
-                                           [--pointer X,Y] --source TEXT --out FILE.json
+                                           [--pointer X,Y] [--quality 0-9] --source TEXT --out FILE.json
       Records what the client reads after authentication (no credentials are kept),
       for --seconds, optionally moving the pointer to X,Y first (TigerVNC then sends
       its cursor shape), and writes a fixture whose expected outcome is its replay.
@@ -34,11 +34,12 @@
       else { fail(usage) }
       let seconds = values["seconds"].flatMap(Double.init) ?? 3
       let pointer = values["pointer"]?.split(separator: ",").compactMap { UInt16($0) }
+      let quality = values["quality"].flatMap(Int.init)
       Task {
         do {
           let recording = try await record(
             host: host, port: port, password: values["password"], seconds: seconds,
-            pointer: pointer?.count == 2 ? (pointer![0], pointer![1]) : nil, source: source)
+            pointer: pointer?.count == 2 ? (pointer![0], pointer![1]) : nil, quality: quality, source: source)
           try recording.write(to: URL(fileURLWithPath: out))
           print(
             "Recorded \(recording.byteCount) bytes in \(recording.server.count) chunks: "
@@ -52,10 +53,11 @@
     }
 
     static func record(
-      host: String, port: UInt16, password: String?, seconds: Double, pointer: (UInt16, UInt16)?, source: String
+      host: String, port: UInt16, password: String?, seconds: Double, pointer: (UInt16, UInt16)?, quality: Int?,
+      source: String
     ) async throws -> RFBRecording {
       let transport = RFBRecordingTransport(try await RFBNetworkTransport.connect(host: host, port: port))
-      let client = try RFBClient(transport: transport)
+      let client = try RFBClient(transport: transport, qualityLevel: quality)
       let outcome = try await client.connect(password: password)
       transport.start()  // after authentication: nothing credential-derived is recorded
       let run = Task { try await client.run(onUpdate: { _, _ in }, onEvent: { _ in }) }
@@ -70,7 +72,8 @@
       var recording = RFBRecording(
         source: source, width: outcome.parameters.width, height: outcome.parameters.height,
         server: transport.recorded)
-      recording.expected = try await recording.replay()
+      // With JPEG allowed the pixel hash isn't portable across OS versions: keep the rest.
+      recording.expected = RFBRecording.comparable(try await recording.replay(), lossy: quality != nil)
       return recording
     }
 

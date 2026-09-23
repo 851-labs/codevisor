@@ -2,6 +2,18 @@ import Foundation
 import Network
 import ScreenSharing
 
+/// The client's SetEncodings: in its order (preference) and as a set.
+struct OrderedEncodings {
+  let orderedOriginal: [Int32]
+  private let members: Set<Int32>
+  init(_ encodings: [Int32] = []) {
+    orderedOriginal = encodings
+    members = Set(encodings)
+  }
+  func contains(_ value: Int32) -> Bool { members.contains(value) }
+  func compactMap<T>(_ transform: (Int32) -> T?) -> [T] { orderedOriginal.compactMap(transform) }
+}
+
 /// An in-process VNC server for tests, `vnc-bench` and the rig: a scripted
 /// handshake, a BGRA framebuffer whose rectangles go out as Raw, CopyRect,
 /// ZRLE or DesktopSize, deterministic scenes (`play`), an optional pointer
@@ -15,7 +27,7 @@ import ScreenSharing
 public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.
   public static let implementedEncodings: Set<RFBEncoding> = [
-    .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+    .raw, .copyRect, .tight, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
     .extendedDesktopSize, .extendedClipboard,
   ]
 
@@ -26,8 +38,12 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     public var width = 64
     public var height = 48
     public var name = "Loopback"
-    /// The encoding of a whole-frame reply to a non-incremental request.
+    /// The encoding of a whole-frame reply and of `.encoded` rectangles.
     public var encoding: RFBEncoding = .raw
+    /// Use the client's first preference among Tight, ZRLE and Raw instead of
+    /// `encoding` (and JPEG only when it asked for a Tight quality level), as a
+    /// real server does. Off by default: tests pin `encoding`.
+    public var negotiateEncoding = false
     /// nil: an ephemeral port, read from `port` once started.
     public var port: UInt16?
     /// Answer every pointer event with an `echoMarker` at the pointer, so
@@ -53,6 +69,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   public enum Rectangle: Sendable {
     case raw(RFBRectangle)
     case zrle(RFBRectangle)
+    /// Pixels in the server's encoding: the negotiated one, else `Configuration.encoding`.
+    case encoded(RFBRectangle)
     case copy(RFBRectangle, fromX: Int, fromY: Int)
     /// CopyRect whose move the framebuffer already holds (scenes apply their changes in order).
     case moved(RFBRectangle, fromX: Int, fromY: Int)
@@ -79,10 +97,25 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var pending: [Rectangle] = []
   private var messages: [RFBClientMessage] = []
   var deflater: RFBZlibDeflater?
+  /// Per connection: its zlib streams must start over with each client's (a reconnect otherwise desyncs them).
+  var tightEncoder = RFBTightEncoder()
+  /// The Tight quality level the client asked for (-32…-23), if any.
+  var clientQualityLevel: Int? {
+    clientEncodings.compactMap { (-32 ... -23).contains($0) ? Int($0 + 32) : nil }.max()
+  }
+  /// The encoding pixels go out in.
+  var pixelEncoding: RFBEncoding {
+    guard configuration.negotiateEncoding else { return configuration.encoding }
+    let offered: [RFBEncoding] = [.tight, .zrle, .raw]
+    for value in clientEncodings.orderedOriginal {
+      if let encoding = RFBEncoding(rawValue: value), offered.contains(encoding) { return encoding }
+    }
+    return configuration.encoding
+  }
   private var connections = 0
   private var echoes = 0
   private var sceneFrameUnsent = false
-  private var clientEncodings: Set<Int32> = []
+  private var clientEncodings = OrderedEncodings()
   private var continuous = false
   private var clientClipboardCaps = false
   private var serverClipboard: String?
@@ -196,7 +229,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   }
 
   /// The encodings the client advertised in its last SetEncodings.
-  public var advertisedEncodings: Set<Int32> { lock.withLock { clientEncodings } }
+  public var advertisedEncodings: Set<Int32> { lock.withLock { Set(clientEncodings.orderedOriginal) } }
 
   /// Ends continuous updates from the server side (EndOfContinuousUpdates); the client falls back to requests.
   public func endContinuousUpdates() {
@@ -286,6 +319,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       pendingRequest = false
       continuous = false
       deflater = nil
+      tightEncoder = RFBTightEncoder()
       serving?.cancel()
       serving = Task { [weak self] in
         do {
@@ -339,7 +373,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       lock.withLock {
         messages.append(message)
         if case .setEncodings(let encodings) = message {
-          clientEncodings = Set(encodings)
+          clientEncodings = OrderedEncodings(encodings)
           if configuration.continuousUpdates, clientEncodings.contains(RFBEncoding.continuousUpdates.rawValue) {
             client?.send(content: Data([150]), completion: .idempotent)  // EndOfContinuousUpdates: supported
           }
@@ -396,7 +430,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
           if !incremental {
             // A full request always gets the whole frame, after anything already queued.
             let full = RFBRectangle(x: 0, y: 0, width: framebuffer.width, height: framebuffer.height)
-            pending.append(configuration.encoding == .zrle ? .zrle(full) : .raw(full))
+            pending.append(.encoded(full))
             flushPendingLocked()
           } else if !pending.isEmpty {
             flushPendingLocked()
@@ -447,7 +481,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     pending.append(.extendedDesktopSize(layoutLocked(reason: .thisClient, status: accepted ? .ok : .prohibited)))
     if accepted {
       let full = RFBRectangle(x: 0, y: 0, width: width, height: height)
-      pending.append(configuration.encoding == .zrle ? .zrle(full) : .raw(full))
+      pending.append(.encoded(full))
     }
     if pendingRequest || continuous { flushPendingLocked() }
   }

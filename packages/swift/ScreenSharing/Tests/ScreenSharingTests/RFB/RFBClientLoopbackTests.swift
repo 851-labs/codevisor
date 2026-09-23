@@ -72,7 +72,7 @@ struct RFBClientLoopbackTests {
     #expect(await awaitPolled { harness.server.isRequestPending })
     #expect(
       harness.server.received.prefix(3) == [
-        .setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]),
+        .setPixelFormat(.bgra32), .setEncodings([7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]),
         .framebufferUpdateRequest(incremental: false, RFBRectangle(x: 0, y: 0, width: 64, height: 48)),
       ])
     #expect(
@@ -158,11 +158,12 @@ struct RFBClientLoopbackTests {
     harness.server.write([200])
     #expect(await harness.run.value as? RFBError == .malformed("unknown server message 200"))
 
-    let tight = try await Harness()
-    defer { tight.stop() }
-    _ = await tight.nextUpdate()
-    tight.server.write([0, 0] + u16(1) + u16(0) + u16(0) + u16(1) + u16(1) + u32(7))
-    #expect(await tight.run.value as? RFBError == .unsupportedEncoding(7))
+    // Hextile (5) is never advertised (Tight, 7, now is: 851-2313).
+    let hextile = try await Harness()
+    defer { hextile.stop() }
+    _ = await hextile.nextUpdate()
+    hextile.server.write([0, 0] + u16(1) + u16(0) + u16(0) + u16(1) + u16(1) + u32(5))
+    #expect(await hextile.run.value as? RFBError == .unsupportedEncoding(5))
   }
 
   @Test func wrongPasswordAndNoneSecurityAndVersion33() async throws {

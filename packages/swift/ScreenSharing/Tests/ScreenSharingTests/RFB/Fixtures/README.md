@@ -20,3 +20,8 @@ docker rm -f <container>
 | Fixture | What it pins |
 | --- | --- |
 | `tigervnc-1.15-opening.json` | TigerVNC 1.15's opening for a client with every extension: continuous updates confirmed, clipboard caps, the hidden cursor then `left_ptr` after a pointer move, the 1024 × 768 layout, clock ticks as pushed updates |
+| `tigervnc-1.15-tight-lossless.json` | Tight without a quality level on a desktop with a plasma window: fill, palette and zlib rectangles, pinned to the exact framebuffer |
+| `tigervnc-1.15-tight-jpeg.json` | Tight at quality 8: JPEG rectangles for the plasma window. `framebuffer` is `lossy` (JPEG decoding may differ across OS versions); updates and events are pinned |
+
+`--quality N` records with a Tight quality level; such fixtures store `lossy`
+instead of the pixel hash.

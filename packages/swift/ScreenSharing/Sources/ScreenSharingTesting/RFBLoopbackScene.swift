@@ -72,7 +72,7 @@ public struct RFBLoopbackScene: Sendable {
     }
     try framebuffer.fillRaw(rect, from: pixels)
     caret.x += width
-    return [.zrle(rect)]
+    return [.encoded(rect)]
   }
 
   private static let scrollStep = 12
@@ -88,7 +88,7 @@ public struct RFBLoopbackScene: Sendable {
     }
     let strip = RFBRectangle(x: 0, y: framebuffer.height - step, width: width, height: step)
     try framebuffer.fillRaw(strip, from: noise(count: width * step, spread: 64))
-    rectangles.append(.zrle(strip))
+    rectangles.append(.encoded(strip))
     return rectangles
   }
 
@@ -115,7 +115,7 @@ public struct RFBLoopbackScene: Sendable {
       RFBRectangle(x: new.x, y: new.y, width: new.width, height: min(new.height, 6)), blue: 200, green: 120,
       red: 60)
     window = new
-    return [.zrle(dirty)]
+    return [.encoded(dirty)]
   }
 
   private mutating func photo(_ framebuffer: RFBFramebuffer) throws -> [RFBLoopbackServer.Rectangle] {
@@ -133,7 +133,7 @@ public struct RFBLoopbackScene: Sendable {
       }
     }
     try framebuffer.fillRaw(full, from: pixels)
-    return [.zrle(full)]
+    return [.encoded(full)]
   }
 
   private mutating func resize(_ framebuffer: RFBFramebuffer) throws -> [RFBLoopbackServer.Rectangle] {
@@ -145,7 +145,7 @@ public struct RFBLoopbackScene: Sendable {
     try framebuffer.resize(width: width, height: height)
     let full = RFBRectangle(x: 0, y: 0, width: width, height: height)
     try framebuffer.fillRaw(full, from: noise(count: width * height, spread: 32))
-    return [.desktopSize(width: width, height: height), .zrle(full)]
+    return [.desktopSize(width: width, height: height), .encoded(full)]
   }
 
   /// `count` BGRA pixels around a random base colour.

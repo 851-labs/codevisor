@@ -249,6 +249,8 @@ public struct VNCBenchOptions: Sendable, Equatable {
   public var seed: UInt64 = 1
   /// Scene frames per second (a real app's pace); 0 plays one frame per request, as fast as the client asks.
   public var pace = 60
+  /// A fixed Tight JPEG quality 0…9 for the client; nil asks for lossless (851-2313).
+  public var quality: Int?
   public var output: String?
   public var baseline: String?
   public var build = "unknown"
@@ -280,6 +282,11 @@ public struct VNCBenchOptions: Sendable, Equatable {
       case "--runs": runs = try positive()
       case "--frames": frames = try positive()
       case "--seed": seed = UInt64(try positive())
+      case "--quality":
+        guard let number = Int(try value()), (0...9).contains(number) else {
+          throw VNCBenchError("--quality needs 0…9")
+        }
+        quality = number
       case "--pace":
         guard let number = Int(try value()), (0...240).contains(number) else {
           throw VNCBenchError("--pace needs 0…240 (0: one frame per request)")
