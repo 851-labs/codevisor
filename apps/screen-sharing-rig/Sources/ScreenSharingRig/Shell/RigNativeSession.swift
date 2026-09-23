@@ -29,13 +29,18 @@
         HStack {
           Text(status.line).font(.caption).lineLimit(1).truncationMode(.middle)
           Spacer()
-          Button(status.hudEnabled ? "Hide HUD" : "Show HUD") { runner.setHUD(!status.hudEnabled) }
-            .controlSize(.small)
-          Text("H").font(.caption.monospaced()).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
       }
       .navigationTitle("Native session")
+      .toolbar {
+        ToolbarItem(id: "rig.native.hud", placement: .primaryAction) {
+          Toggle(isOn: Binding(get: { status.hudEnabled }, set: { runner.setHUD($0) })) {
+            Label("HUD", systemImage: "gauge.with.dots.needle.33percent")
+          }
+          .help("Show or hide the HUD (H)")
+        }
+      }
     }
   }
 

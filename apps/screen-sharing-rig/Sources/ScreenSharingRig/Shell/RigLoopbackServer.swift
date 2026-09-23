@@ -113,17 +113,7 @@
         }
         .formStyle(.grouped)
         .frame(maxHeight: 260)
-        HStack {
-          if model.port == nil {
-            Button("Start") { model.start() }.keyboardShortcut(.defaultAction)
-          } else {
-            Button("View") { view() }.keyboardShortcut(.defaultAction)
-            Button("Stop") { model.stop() }
-          }
-          Text(model.status).foregroundStyle(.secondary)
-          Spacer()
-        }
-        .padding(.horizontal, 20)
+        Text(model.status).foregroundStyle(.secondary).padding(.horizontal, 20)
         Text("Input received").font(.headline).padding(.horizontal, 20)
         ScrollView {
           Text(model.log.suffix(60).joined(separator: "\n")).font(.caption.monospaced()).textSelection(.enabled)
@@ -132,6 +122,33 @@
       }
       .padding(.vertical, 12)
       .navigationTitle("Loopback VNC server")
+      .toolbar {
+        ToolbarItemGroup(placement: .primaryAction) {
+          if model.port == nil {
+            Button {
+              model.start()
+            } label: {
+              Label("Start", systemImage: "play.fill")
+            }
+            .keyboardShortcut(.defaultAction)
+            .help("Start the loopback VNC server")
+          } else {
+            Button {
+              view()
+            } label: {
+              Label("View", systemImage: "display")
+            }
+            .keyboardShortcut(.defaultAction)
+            .help("View it under Machines")
+            Button {
+              model.stop()
+            } label: {
+              Label("Stop", systemImage: "stop.fill")
+            }
+            .help("Stop the loopback VNC server")
+          }
+        }
+      }
     }
   }
 #endif

@@ -199,6 +199,14 @@
       .navigationSubtitle(model.machine.detail)
       .toolbar {
         if let store = model.store { RigScreenSharingToolbar(store: store) }
+        ToolbarItem(id: "rig.machine.reconnect", placement: .primaryAction) {
+          Button {
+            model.retry()
+          } label: {
+            Label("Reconnect", systemImage: "arrow.clockwise")
+          }
+          .help("Reconnect to \(model.machine.name)")
+        }
       }
       .onAppear { model.appeared() }
       .onDisappear { model.disappeared() }

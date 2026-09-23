@@ -39,6 +39,7 @@
     static func run(runner: RigRunner? = nil) -> Never {
       let app = NSApplication.shared
       app.setActivationPolicy(.regular)
+      RigMainMenu.install()
       let controller = NSHostingController(rootView: RigShellView(runner: runner))
       // The SwiftUI `.toolbar` and navigation titles drive a native unified window toolbar.
       controller.sceneBridgingOptions = [.toolbars, .title]
@@ -121,6 +122,20 @@
           if let runner { RigNativeSessionView(runner: runner) } else { RigInstructionsView.nativeSession }
         case .scenario(.probe): RigInstructionsView.probe
         }
+      }
+      // Every screen shows the tall unified toolbar: this item keeps one present even when a screen adds none.
+      .toolbar {
+        ToolbarItem(id: "rig.sidebar", placement: .navigation) {
+          Button {
+            withAnimation { columns = columns == .detailOnly ? .all : .detailOnly }
+          } label: {
+            Label("Toggle Sidebar", systemImage: "sidebar.left")
+          }
+          .help("Show or hide the sidebar")
+        }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.toggleSidebar)) { _ in
+        withAnimation { columns = columns == .detailOnly ? .all : .detailOnly }
       }
       .onChange(of: loopback.port) { _, port in
         loopbackMachine = port.map {
