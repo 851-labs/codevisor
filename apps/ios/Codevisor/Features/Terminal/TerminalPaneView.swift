@@ -23,6 +23,10 @@ struct TerminalPaneView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @Environment(\.theme) private var theme
   @Environment(\.colorScheme) private var colorScheme
+  /// The pane's own bottom edge, in the space the key controller reports the
+  /// keyboard's top edge in. Measured on the pane rather than on the
+  /// terminal, which the inset below moves — that would feed back.
+  @State private var paneBottom: CGFloat = 0
 
   /// As on macOS: the system theme puts the terminal on the same surface as
   /// the chat, with label-colored text; a theme brings its own palette.
@@ -31,6 +35,14 @@ struct TerminalPaneView: View {
   }
 
   private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+
+  /// How much of the pane the keyboard covers. The terminal is shrunk by
+  /// exactly this much (plus the key bar), so its last rows stay readable
+  /// instead of sitting under the keyboard.
+  private var keyboardOverlap: CGFloat {
+    guard let top = keyController.keyboardTop else { return 0 }
+    return max(0, paneBottom - top)
+  }
 
   /// Kept alive across visits, so returning shows the terminal as it is now.
   private var session: TerminalSession {
@@ -45,20 +57,23 @@ struct TerminalPaneView: View {
         // Text keeps clear of the pane's edges: beside the sidebar and under
         // the window's resize corner it would otherwise touch them.
         .padding(.horizontal, 8)
-        // Compact width runs under the home indicator while the keyboard is
-        // down. Beside a sidebar the pane's bottom inset also carries the
-        // keyboard, which the terminal must stay above; the background still
-        // fills the strip below.
-        .ignoresSafeArea(
-          .container, edges: isRegularWidth || keyController.keyboardVisible ? [] : .bottom
-        )
-        // The key bar takes its own rows rather than covering the prompt or
-        // a full-screen app's status line.
+        // The pane is already outside SwiftUI's keyboard avoidance beside a
+        // sidebar (EdgeToEdgePaneHost); opt out in compact too, so the
+        // keyboard reaches the terminal by exactly one route — the measured
+        // inset below — and can't be counted twice.
+        .ignoresSafeArea(.keyboard)
+        // Compact width runs under the home indicator; beside a sidebar the
+        // pane's own bottom inset keeps the text clear of it.
+        .ignoresSafeArea(.container, edges: isRegularWidth ? [] : .bottom)
+        // One inset carries both: the keyboard, and the key bar riding just
+        // above it. The bar takes its own rows rather than covering the
+        // prompt or a full-screen app's status line.
         .safeAreaInset(edge: .bottom, spacing: 0) {
           if keyController.keyboardVisible {
             TerminalKeyBar(controller: keyController)
               .padding(.horizontal, 10)
               .padding(.vertical, 4)
+              .padding(.bottom, keyboardOverlap)
               .transition(.move(edge: .bottom).combined(with: .opacity))
           }
         }
@@ -77,7 +92,16 @@ struct TerminalPaneView: View {
         .transition(.opacity)
       }
     }
-    .animation(.snappy(duration: 0.25), value: keyController.keyboardVisible)
+    // Where the pane's bottom edge sits, to compare against the keyboard's
+    // top edge. Nothing declares an animation for keyboardVisible here: the
+    // key controller changes it inside the keyboard's own animation, so the
+    // bar, the toggle and the inset all travel on the keyboard's curve
+    // instead of racing a second one.
+    .onGeometryChange(for: CGFloat.self) {
+      $0.frame(in: .global).maxY
+    } action: {
+      paneBottom = $0
+    }
     // Extend the surface under the keyboard too, so its rounded corners
     // don't reveal another color. Beside a sidebar (iPad) only up and
     // down: sideways it would run under the floating sidebar.
@@ -109,7 +133,10 @@ private struct TerminalHostView: UIViewRepresentable {
   let colors: TerminalColors
 
   func makeUIView(context: Context) -> UIView {
-    let container = UIView()
+    let container = TerminalContainerView()
+    // The terminal takes its final size at once while the container is still
+    // animating to it, so it must not draw outside it meanwhile.
+    container.clipsToBounds = true
     adopt(into: container)
     return container
   }
@@ -123,9 +150,10 @@ private struct TerminalHostView: UIViewRepresentable {
     keyController.attach(session.view)
     guard session.view.superview !== container else { return }
     for case let other as SessionTerminalView in container.subviews { other.removeFromSuperview() }
-    session.view.frame = container.bounds
-    session.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // Sized by the container's layoutSubviews rather than an autoresizing
+    // mask, which would resize it inside whatever animation is running.
     container.addSubview(session.view)
+    container.setNeedsLayout()
   }
 
   func makeCoordinator() -> TerminalSession { session }
@@ -135,6 +163,25 @@ private struct TerminalHostView: UIViewRepresentable {
     // container may already have adopted its view.
     if session.view.superview === container { session.view.removeFromSuperview() }
     TerminalSessionCache.shared.didHide(session)
+  }
+}
+
+/// Hands the terminal its new size in one step instead of interpolating to
+/// it. A terminal has no meaningful in-between size: with the size animated,
+/// UIKit scales the last frame the terminal drew across the changing bounds
+/// until it redraws — that was the text squashing and stretching while the
+/// keyboard opened — and SwiftTerm recomputes its rows and signals the PTY on
+/// every frame of the way. Taking the size at once costs one reflow and one
+/// SIGWINCH; the chrome around the terminal still animates.
+private final class TerminalContainerView: UIView {
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    for case let terminal as SessionTerminalView in subviews where terminal.frame != bounds {
+      UIView.performWithoutAnimation {
+        terminal.frame = bounds
+        terminal.layoutIfNeeded()
+      }
+    }
   }
 }
 

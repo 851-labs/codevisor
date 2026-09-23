@@ -26,6 +26,8 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
   /// old queries in it must not reach the shell.
   private var isFeedingReplay = false
   private var observers: [NSObjectProtocol] = []
+  /// In flight while a burst of size changes settles; see `sizeChanged`.
+  private var pendingResize: Task<Void, Never>?
 
   var isVisible: Bool { view.window != nil }
 
@@ -48,6 +50,10 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
     view.inputAccessoryView = nil
     // Swipe down over the terminal to dismiss the keyboard.
     view.keyboardDismissMode = .interactive
+    // The terminal renders in draw(_:), and UIView's default .scaleToFill
+    // leaves the last frame it drew scaled across the new bounds until the
+    // next display pass. Redraw at the new size instead.
+    view.contentMode = .redraw
     view.terminalDelegate = self
     view.onShown = { [weak self] in self?.assertSize() }
     observers.append(
@@ -79,6 +85,8 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
   func detach() {
     for observer in observers { NotificationCenter.default.removeObserver(observer) }
     observers = []
+    pendingResize?.cancel()
+    pendingResize = nil
     transport.detach()
     view.removeFromSuperview()
   }
@@ -102,7 +110,13 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
   /// shell, so this is safe to repeat.
   private func assertSize() {
     let terminal = view.getTerminal()
-    transport.sendResize(cols: terminal.cols, rows: terminal.rows)
+    sendResize(cols: terminal.cols, rows: terminal.rows)
+  }
+
+  private func sendResize(cols: Int, rows: Int) {
+    pendingResize?.cancel()
+    pendingResize = nil
+    transport.sendResize(cols: cols, rows: rows)
   }
 
   private func handle(_ event: TerminalEvent) {
@@ -134,9 +148,18 @@ final class TerminalSession: NSObject, ObservableObject, TerminalViewDelegate {
     }
   }
 
+  /// Every resize is a SIGWINCH that makes a full-screen app redraw, so a
+  /// resize that is still moving — a rotation, a Stage Manager drag — sends
+  /// only the size it settles at.
   nonisolated func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
-    Task { @MainActor in
-      self.transport.sendResize(cols: newCols, rows: newRows)
+    MainActor.assumeIsolated {
+      pendingResize?.cancel()
+      pendingResize = Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .milliseconds(50))
+        guard !Task.isCancelled, let self else { return }
+        self.pendingResize = nil
+        self.transport.sendResize(cols: newCols, rows: newRows)
+      }
     }
   }
 

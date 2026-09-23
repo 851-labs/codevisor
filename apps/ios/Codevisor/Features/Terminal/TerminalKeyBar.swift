@@ -4,12 +4,25 @@ import SwiftUI
 import UIKit
 
 /// Bridges the SwiftUI key bar to the SwiftTerm terminal view: key sends,
-/// ctrl/touch modifier state, and keyboard visibility tracking.
+/// ctrl/touch modifier state, and the keyboard's geometry.
+///
+/// The pane is laid out edge to edge and opts out of SwiftUI's own keyboard
+/// avoidance (see `EdgeToEdgePaneHost`), so the keyboard is measured here
+/// instead: where its top edge lands, and the curve it travels on, so the
+/// terminal and the key bar move with it rather than racing it.
 @MainActor
 final class TerminalKeyController: ObservableObject {
   private(set) weak var terminalView: SwiftTerm.TerminalView?
 
-  @Published var keyboardVisible = false
+  @Published private(set) var keyboardVisible = false
+  /// The docked keyboard's top edge in the host window's coordinate space —
+  /// the space SwiftUI reports as `.global`, so a pane can subtract its own
+  /// bottom edge from this to learn how much of it the keyboard covers.
+  ///
+  /// `nil` while the keyboard is down, and while it is floating or split:
+  /// those don't reach the window's bottom edge, so they cover nothing the
+  /// terminal has to stay clear of.
+  @Published private(set) var keyboardTop: CGFloat?
   @Published var ctrlActive = false
   @Published var touchModeActive = false
 
@@ -17,17 +30,19 @@ final class TerminalKeyController: ObservableObject {
 
   init() {
     let center = NotificationCenter.default
+    // willChangeFrame rather than willShow: it also reports the keyboard
+    // growing, shrinking and undocking while it is already up.
     observers.append(
       center.addObserver(
-        forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main
-      ) { [weak self] _ in
-        Task { @MainActor in self?.keyboardVisible = true }
+        forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
+      ) { [weak self] note in
+        MainActor.assumeIsolated { self?.keyboardWillChangeFrame(note) }
       })
     observers.append(
       center.addObserver(
         forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
-      ) { [weak self] _ in
-        Task { @MainActor in self?.keyboardVisible = false }
+      ) { [weak self] note in
+        MainActor.assumeIsolated { self?.apply(top: nil, visible: false, note: note) }
       })
     // SwiftTerm auto-clears the control modifier after applying it to the
     // next keystroke; mirror that in the button state.
@@ -37,6 +52,47 @@ final class TerminalKeyController: ObservableObject {
       ) { [weak self] _ in
         Task { @MainActor in self?.ctrlActive = false }
       })
+  }
+
+  // MARK: - Keyboard geometry
+
+  private func keyboardWillChangeFrame(_ note: Notification) {
+    guard
+      let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+      let window = terminalView?.window
+    else { return }
+    // The notification carries screen coordinates. Converting through the
+    // window is what keeps this right in Split View, Slide Over and Stage
+    // Manager, where the window is only part of the screen.
+    let frame = window.convert(end, from: window.screen.coordinateSpace)
+    let bounds = window.bounds
+    let isDocked = frame.maxY >= bounds.maxY - 1 && frame.width >= bounds.width - 1
+    apply(top: isDocked ? frame.minY : nil, visible: frame.minY < bounds.maxY, note: note)
+  }
+
+  private func apply(top: CGFloat?, visible: Bool, note: Notification) {
+    guard top != keyboardTop || visible != keyboardVisible else { return }
+    withAnimation(Self.animation(for: note)) {
+      keyboardTop = top
+      keyboardVisible = visible
+    }
+  }
+
+  /// The keyboard's own duration and curve. UIKit reports a private curve
+  /// (raw value 7) for the keyboard itself, which has no SwiftUI equivalent;
+  /// its control points are approximated here. Anything else is a curve
+  /// SwiftUI names.
+  private static func animation(for note: Notification) -> Animation {
+    let info = note.userInfo
+    let duration = info?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+    guard duration > 0 else { return .linear(duration: 0) }
+    switch info?[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int {
+    case UIView.AnimationCurve.easeInOut.rawValue: return .easeInOut(duration: duration)
+    case UIView.AnimationCurve.easeIn.rawValue: return .easeIn(duration: duration)
+    case UIView.AnimationCurve.easeOut.rawValue: return .easeOut(duration: duration)
+    case UIView.AnimationCurve.linear.rawValue: return .linear(duration: duration)
+    default: return .timingCurve(0.17, 0.17, 0, 1, duration: duration)
+    }
   }
 
   deinit {
