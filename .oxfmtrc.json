@@ -14,6 +14,7 @@
     "**/routeTree.gen.ts",
     "**/worker-configuration.d.ts",
     ".swiftlint-baseline.json",
+    "docs/measurements/**/*.json",
     ".repos/",
     "apps/www/.source/",
     ".codevisor/"

@@ -10,7 +10,8 @@
   /// process; the viewer opens the same window on its Native session scenario.
   /// `screen-sharing-rig probe …`: the single-process diagnostic (see
   /// `ProbeCommand`). `screen-sharing-rig vnc-server …`: a loopback VNC server
-  /// for the VNC viewer (see `VNCServerCommand`). A consumer of the media
+  /// for the VNC viewer (see `VNCServerCommand`). `screen-sharing-rig
+  /// vnc-bench …`: the VNC benchmark (see `VNCBenchCommand`). A consumer of the media
   /// package, not part of it; see docs/plans/screen-sharing-rig.md.
   @main
   @MainActor
@@ -20,6 +21,10 @@
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.first == "probe" {
           ProbeCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
+        if arguments.first == "vnc-bench" {
+          VNCBenchCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
         if arguments.first == "vnc-server" {

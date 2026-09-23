@@ -35,6 +35,8 @@
         }
       }
       CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+      // What 851-2319 (copy only changed rectangles) brings down; vnc-bench reports it per update.
+      metrics.increment("vncBytesCopied", by: framebuffer.bytesPerRow * framebuffer.height)
       mailbox.put(
         ScreenSharingVideoFrame(
           pixelBuffer: pixelBuffer, timestampNs: ScreenSharingMetrics.nowNs, receivedAtSeconds: CACurrentMediaTime()))

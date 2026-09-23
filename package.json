@@ -38,6 +38,7 @@
     "setup:github-oauth": "node scripts/setup-github-oauth.mjs",
     "screen-sharing:probe": "bun scripts/screen-sharing-probe.mjs",
     "screen-sharing:rig": "bun scripts/screen-sharing-rig.mjs",
+    "vnc:bench": "bun scripts/vnc-bench.mjs",
     "vnc:interop": "bun scripts/vnc-interop.mjs",
     "swift:test": "node scripts/test-swift.mjs",
     "swift:test:macos-transcript": "bun scripts/test-macos-transcript.mjs",

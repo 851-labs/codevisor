@@ -10,8 +10,13 @@
     static let usage = """
       Usage: screen-sharing-rig vnc-server [--port 5901] [--password secret | --no-password]
                                           [--size 1280x800] [--fps 10] [--encoding zrle|raw]
+                                          [--scene KIND [--seed N]] [--echo]
       Serves an animated desktop over RFB 3.8 on 127.0.0.1 and prints the keys, buttons and
       clipboard text the viewer sends. Stop with Control-C.
+      --scene plays a deterministic reference scene (idle, typing, scroll, windowDrag, photo,
+      resize) instead, one frame per incremental update request, as fast as the viewer asks:
+      the workload vnc-bench measures. --echo answers pointer events with a marker. --port 0
+      picks a free port; the "Serving VNC on 127.0.0.1:PORT" line names it.
       """
 
     struct Options {
@@ -21,6 +26,9 @@
       var height = 800
       var fps = 10
       var encoding: RFBEncoding = .zrle
+      var scene: RFBLoopbackScene.Kind?
+      var seed: UInt64 = 1
+      var echo = false
 
       init(arguments: [String]) throws {
         var iterator = arguments.makeIterator()
@@ -37,6 +45,11 @@
             let parts = try value().split(separator: "x").compactMap { Int($0) }
             guard parts.count == 2 else { throw Failure("--size expects WIDTHxHEIGHT") }
             (width, height) = (parts[0], parts[1])
+          case "--scene":
+            let name = try value()
+            scene = try RFBLoopbackScene.Kind(rawValue: name) ?? { throw Failure("unknown scene \(name)") }()
+          case "--seed": seed = try UInt64(value()) ?? { throw Failure("invalid seed") }()
+          case "--echo": echo = true
           case "--fps": fps = try max(1, min(60, Int(value()) ?? 10))
           case "--encoding":
             switch try value() {
@@ -71,7 +84,8 @@
     @MainActor
     static func serve(_ options: Options) async throws {
       var configuration = RFBLoopbackServer.Configuration()
-      configuration.port = options.port
+      configuration.port = options.port == 0 ? nil : options.port
+      configuration.echoPointer = options.echo
       configuration.password = options.password
       configuration.securityTypes = [
         options.password == nil ? RFBSecurityType.none.rawValue : RFBSecurityType.vncAuthentication.rawValue
@@ -81,6 +95,16 @@
       configuration.name = "Codevisor rig \(options.width)×\(options.height)"
       configuration.encoding = options.encoding
       let server = try await RFBLoopbackServer(configuration: configuration)
+      if let kind = options.scene {
+        print("Serving VNC on 127.0.0.1:\(server.port) (scene \(kind.rawValue), seed \(options.seed))")
+        let scene = SceneState(RFBLoopbackScene(kind: kind, seed: options.seed))
+        // Each incremental request gets the next frame; the request itself then flushes it.
+        server.onClientMessage = { [weak server] message in
+          guard let server, case .framebufferUpdateRequest(true, _) = message else { return }
+          scene.play(on: server)
+        }
+        while true { try await Task.sleep(for: .seconds(3600)) }  // `server` lives as long as this frame
+      }
       let log = InputLog()
       server.onClientMessage = { log.record($0) }
       print(
@@ -94,6 +118,16 @@
         if server.isRequestPending {
           server.enqueue([options.encoding == .zrle ? .zrle(full) : .raw(full)])
         }
+      }
+    }
+
+    /// The scene a message handler advances, shared across the server's connection task.
+    final class SceneState: @unchecked Sendable {
+      private let lock = NSLock()
+      private var scene: RFBLoopbackScene
+      init(_ scene: RFBLoopbackScene) { self.scene = scene }
+      func play(on server: RFBLoopbackServer) {
+        lock.withLock { _ = try? server.play(&scene) }
       }
     }
 
