@@ -132,6 +132,28 @@ struct MachineControllerTests {
     #expect(second.controller.machine(for: remote.id)?.name == "Build box")
   }
 
+  @Test("The Retina remote desktop setting is per machine, off by default, and persisted")
+  func retinaDesktopIsPerMachine() throws {
+    let store = InMemoryStore()
+    let first = makeController(store: store)
+    let studio = try first.controller.addRemote(host: "studio.tailnet.ts.net")
+    let vps = try first.controller.addRemote(host: "vps.tailnet.ts.net")
+    #expect(first.controller.machine(for: studio.id)?.usesRetinaDesktop == false)
+
+    first.controller.setRetinaDesktop(vps.id, true)
+    #expect(first.controller.machine(for: vps.id)?.usesRetinaDesktop == true)
+    #expect(first.controller.machine(for: studio.id)?.usesRetinaDesktop == false)
+    // Re-adding the host keeps the record, and with it the setting.
+    _ = try first.controller.addRemote(host: "vps.tailnet.ts.net")
+    #expect(first.controller.machine(for: vps.id)?.usesRetinaDesktop == true)
+
+    let second = makeController(store: store)
+    #expect(second.controller.machine(for: vps.id)?.usesRetinaDesktop == true)
+    #expect(second.controller.machine(for: studio.id)?.usesRetinaDesktop == false)
+    second.controller.setRetinaDesktop(vps.id, false)
+    #expect(makeController(store: store).controller.machine(for: vps.id)?.usesRetinaDesktop == false)
+  }
+
   @Test("Legacy machine icon metadata is ignored and stripped on the next save")
   func legacyAppearanceMetadataIsRemoved() throws {
     let legacyRegistry = """

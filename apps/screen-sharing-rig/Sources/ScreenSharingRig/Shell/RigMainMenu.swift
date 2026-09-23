@@ -49,6 +49,10 @@
       let view = submenu("View", in: main)
       view.addItem(withTitle: "Reconnect", action: #selector(RigMenuTarget.reconnect(_:)), keyEquivalent: "r").target =
         RigMenuTarget.shared
+      // 851-2315: the selected machine's remote desktop at a pixel per device pixel; reconnects.
+      view.addItem(
+        withTitle: "Retina Remote Desktop", action: #selector(RigMenuTarget.toggleRetinaDesktop(_:)), keyEquivalent: ""
+      ).target = RigMenuTarget.shared
       view.addItem(.separator())
       let sidebar = view.addItem(
         withTitle: "Toggle Sidebar", action: #selector(RigMenuTarget.toggleSidebar(_:)), keyEquivalent: "s")
@@ -78,13 +82,33 @@
 
   /// Actions the rig handles itself rather than through the responder chain.
   @MainActor
-  final class RigMenuTarget: NSObject {
+  final class RigMenuTarget: NSObject, NSMenuItemValidation {
     static let shared = RigMenuTarget()
+    /// The machine whose view is mounted (only the selected one is).
+    var selectedMachineId: String?
+    @objc func toggleRetinaDesktop(_ sender: Any?) {
+      guard let id = selectedMachineId else { return }
+      RigMachineSettings.setRetinaDesktop(!RigMachineSettings.retinaDesktop(id), for: id)
+      NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
+    }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+      guard item.action == #selector(toggleRetinaDesktop(_:)) else { return true }
+      item.state = selectedMachineId.map(RigMachineSettings.retinaDesktop) == true ? .on : .off
+      return selectedMachineId != nil
+    }
     @objc func reconnect(_ sender: Any?) {
       NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
     }
     @objc func toggleSidebar(_ sender: Any?) {
       NotificationCenter.default.post(name: RigMainMenu.toggleSidebar, object: nil)
+    }
+  }
+
+  /// Per-machine rig settings, in the rig's defaults (the product keeps them on its machine records).
+  enum RigMachineSettings {
+    static func retinaDesktop(_ id: String) -> Bool { UserDefaults.standard.bool(forKey: "retinaDesktop.\(id)") }
+    static func setRetinaDesktop(_ enabled: Bool, for id: String) {
+      UserDefaults.standard.set(enabled, forKey: "retinaDesktop.\(id)")
     }
   }
 #endif

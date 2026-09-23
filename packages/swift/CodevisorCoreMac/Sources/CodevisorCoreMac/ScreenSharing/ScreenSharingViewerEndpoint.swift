@@ -43,7 +43,19 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   private var reportedFailure = false
   private var closed = false
 
-  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface) {
+  /// The remote desktop size for a pane of `points`: one pixel per point, or
+  /// with `retinaDesktop` one per device pixel (851-2315), for text as sharp as
+  /// native at four times the pixels.
+  nonisolated static func desktopSize(
+    points: CGSize, backingScale: CGFloat, retinaDesktop: Bool
+  ) -> (
+    width: Int, height: Int
+  ) {
+    let scale = retinaDesktop ? max(1, backingScale) : 1
+    return (Int((points.width * scale).rounded()), Int((points.height * scale).rounded()))
+  }
+
+  init(session: any ScreenSharingViewingSession, surface: any ScreenSharingViewerSurface, retinaDesktop: Bool = false) {
     self.session = session
     self.surface = surface
     capabilities = session.capabilities
@@ -66,8 +78,9 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     // Backends that report the pointer separately (VNC) draw it locally (851-2311).
     session.onCursorChanged = { [weak surface] in surface?.showRemoteCursor($0) }
     // A remote desktop that can resize follows the pane (VNC ExtendedDesktopSize, 851-2314).
-    surface.onSizeChanged = { [weak session] size in
-      session?.requestDesktopSize(width: Int(size.width.rounded()), height: Int(size.height.rounded()))
+    surface.onSizeChanged = { [weak session] size, scale in
+      let desktop = Self.desktopSize(points: size, backingScale: scale, retinaDesktop: retinaDesktop)
+      session?.requestDesktopSize(width: desktop.width, height: desktop.height)
     }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }

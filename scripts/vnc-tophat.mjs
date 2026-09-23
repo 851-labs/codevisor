@@ -231,6 +231,41 @@ function clipboardStep() {
   }
 }
 
+/// The video size Connection Details reports, e.g. { width: 1227, height: 754 }.
+function videoSize() {
+  // Mid-reconnect there is no Connection Details button: don't toggle the popover out of step.
+  if (ax("press", "Connection Details").status !== 0) return undefined
+  const line = ax("texts")
+    .stdout.split("\n")
+    .find((text) => /^\d+ × \d+$/.test(text.trim()))
+  ax("press", "Connection Details")
+  if (!line) return undefined
+  const [width, height] = line.trim().split(" × ").map(Number)
+  return { width, height }
+}
+
+/// The window capture shows a picture, not a blank frame; the first picture follows connecting within seconds.
+function desktopOnScreen(name, file) {
+  step(name, () => {
+    // A picture: many colours and little black (a desktop that hasn't repainted after a resize is mostly black).
+    let colours = 0
+    let black = 1
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      ;[colours, black] = ax("colours", capture(file)).stdout.trim().split(" ").map(Number)
+      if (colours > 8 && black < 0.3)
+        return {
+          ok: true,
+          detail: `${colours} colours, ${Math.round(black * 100)}% black, after ${attempt + 1} capture(s) 1 s apart`
+        }
+      pause(1000)
+    }
+    return {
+      ok: false,
+      detail: `no picture: ${colours} colours, ${Math.round(black * 100)}% black`
+    }
+  })
+}
+
 function contaboFlow() {
   axStep("open Contabo VPS", "select", "Contabo VPS")
   axStep("Contabo VPS is selected", "wait", "Contabo VPS", "20")
@@ -243,21 +278,38 @@ function contaboFlow() {
     ax("press", "Connection Details")
     return { ok: shown.status === 0, detail: shown.stdout.trim() }
   })
-  step("the Contabo desktop is on screen", () => {
-    // Connecting resizes the desktop to the pane; the picture follows within a few seconds.
-    let colours = 0
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      colours = Number(ax("colours", capture("contabo")).stdout.trim()) || 0
-      if (colours > 8)
-        return {
-          ok: true,
-          detail: `${colours} colours in the video after ${attempt + 1} capture(s), 1 s apart`
-        }
-      pause(1000)
-    }
-    return {
-      ok: false,
-      detail: `the video is blank (${colours} colour${colours === 1 ? "" : "s"})`
-    }
-  })
+  desktopOnScreen("the Contabo desktop is on screen", "contabo")
+  // 851-2315: the machine's Retina Remote Desktop setting doubles the remote desktop; always switched back.
+  const standard = videoSize()
+  try {
+    axStep("turn on Retina Remote Desktop", "menu", "Retina Remote Desktop")
+    step("the remote desktop doubles for Retina", () => {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        pause(500)
+        const retina = videoSize()
+        if (standard && retina && Math.abs(retina.width - 2 * standard.width) <= 2)
+          return {
+            ok: true,
+            detail: `${standard.width} × ${standard.height} → ${retina.width} × ${retina.height}`
+          }
+      }
+      return {
+        ok: false,
+        detail: `still ${JSON.stringify(videoSize())} (was ${JSON.stringify(standard)})`
+      }
+    })
+    desktopOnScreen("the Retina desktop is on screen", "contabo-retina")
+  } finally {
+    axStep("turn Retina Remote Desktop off again", "menu", "Retina Remote Desktop")
+    // Wait for the desktop to shrink back, so quitting doesn't leave the machine at 2×.
+    step("the remote desktop is back to its standard size", () => {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        pause(500)
+        const size = videoSize()
+        if (standard && size && Math.abs(size.width - standard.width) <= 2)
+          return { ok: true, detail: `${size.width} × ${size.height}` }
+      }
+      return { ok: false, detail: `still ${JSON.stringify(videoSize())}` }
+    })
+  }
 }

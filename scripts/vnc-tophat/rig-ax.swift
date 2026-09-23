@@ -12,8 +12,9 @@
 //   rig-ax PID resize W H            set the main window's size
 //   rig-ax PID wait TEXT SECONDS     until a static text contains TEXT
 //   rig-ax PID has ROLE LABEL        an element of ROLE labelled LABEL exists (e.g. a pop-up's value)
-//   rig-ax PID colours PNG           distinct colours on a grid over the image's right 3/4 and lower 3/4
-//                                    (the video, clear of sidebar and toolbar); a blank frame has 1
+//   rig-ax PID colours PNG           "N B": distinct colours and the share of near-black samples on a grid
+//                                    over the image's right 3/4 and lower 3/4 (the video, clear of sidebar
+//                                    and toolbar); a blank frame has 1 colour, a half-painted one lots of black
 // Exit status 0 on success, 1 when the element or text isn't there.
 import AppKit
 import ApplicationServices
@@ -152,11 +153,16 @@ case "window":
   if let value = attribute(window, kAXSizeAttribute) { AXValueGetValue(value as! AXValue, .cgSize, &size) }
   // The CGWindow number for window-only screenshots.
   let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+  // The largest normal-layer window: a popover (Connection Details) is a window of its own.
+  func area(_ info: [String: Any]) -> Double {
+    let bounds = info[kCGWindowBounds as String] as? [String: Double] ?? [:]
+    return (bounds["Width"] ?? 0) * (bounds["Height"] ?? 0)
+  }
   let number =
-    list.first {
+    list.filter {
       ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
         && (($0[kCGWindowBounds as String] as? [String: Double])?["Height"] ?? 0) > 200
-    }?[kCGWindowNumber as String] as? Int ?? 0
+    }.max { area($0) < area($1) }?[kCGWindowNumber as String] as? Int ?? 0
   done(number != 0, "\(title)\t\(number)\t\(Int(size.width))\t\(Int(size.height))")
 
 case "resize" where arguments.count == 5:
@@ -195,13 +201,17 @@ case "colours" where arguments.count == 4:
   else { done(false, "unreadable image") }
   let step = cg.bitsPerPixel / 8
   var colours = Set<UInt32>()
+  var samples = 0
+  var black = 0
   for y in stride(from: cg.height / 4, to: cg.height, by: max(1, cg.height / 60)) {
     for x in stride(from: cg.width / 4, to: cg.width, by: max(1, cg.width / 60)) {
       let offset = y * cg.bytesPerRow + x * step
       colours.insert(UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2]))
+      samples += 1
+      if bytes[offset] < 12, bytes[offset + 1] < 12, bytes[offset + 2] < 12 { black += 1 }
     }
   }
-  done(true, "\(colours.count)")
+  done(true, "\(colours.count) \(Double(black) / Double(max(samples, 1)))")
 
 default:
   done(false, "unknown command \(arguments.dropFirst(2).joined(separator: " "))")

@@ -12,14 +12,16 @@ extension ScreenSharingViewerBackend {
   /// was seen and the socket dropped, and ends with the server's own message
   /// otherwise. The surface defaults to the one the native backend makes.
   @MainActor
+  /// `retinaDesktop`: the remote desktop gets a pixel per device pixel (851-2315).
   public static func vnc(
-    displayId: String, open: @escaping VNCOpen,
+    displayId: String, open: @escaping VNCOpen, retinaDesktop: Bool = false,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface = {
       try ScreenSharingVideoSurface(
         mailbox: $0.frames, metrics: $0.metrics, profile: ScreenSharingDiagnosticProfile.process())
     }
   ) -> Self {
-    let runner = VNCScreenSharingViewerRunner(displayId: displayId, open: open, makeSurface: makeSurface)
+    let runner = VNCScreenSharingViewerRunner(
+      displayId: displayId, open: open, retinaDesktop: retinaDesktop, makeSurface: makeSurface)
     return Self(connect: { _ in await runner.connect() }, discover: { try await runner.discover() })
   }
 }
@@ -29,15 +31,17 @@ extension ScreenSharingViewerBackend {
 final class VNCScreenSharingViewerRunner {
   private let displayId: String
   private let open: ScreenSharingViewerBackend.VNCOpen
+  private let retinaDesktop: Bool
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private var previous: Task<Void, Never>?
 
   init(
-    displayId: String, open: @escaping ScreenSharingViewerBackend.VNCOpen,
+    displayId: String, open: @escaping ScreenSharingViewerBackend.VNCOpen, retinaDesktop: Bool = false,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   ) {
     self.displayId = displayId
     self.open = open
+    self.retinaDesktop = retinaDesktop
     self.makeSurface = makeSurface
   }
 
@@ -98,7 +102,8 @@ final class VNCScreenSharingViewerRunner {
     let session = VNCScreenSharingSession(client: client, parameters: outcome.parameters)
     let endpoint: ScreenSharingViewerEndpoint
     do {
-      endpoint = ScreenSharingViewerEndpoint(session: session, surface: try makeSurface(session))
+      endpoint = ScreenSharingViewerEndpoint(
+        session: session, surface: try makeSurface(session), retinaDesktop: retinaDesktop)
     } catch {
       session.close()
       return .ended(error.localizedDescription)

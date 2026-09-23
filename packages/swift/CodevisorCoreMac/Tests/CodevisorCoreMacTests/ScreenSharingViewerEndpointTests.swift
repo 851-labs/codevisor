@@ -34,6 +34,20 @@ struct ScreenSharingViewerEndpointTests {
     #expect(ScreenSharingEndpointRegistry.shared.endpoint(endpoint.id) == nil)
   }
 
+  /// 851-2315: the remote desktop follows the pane a pixel per point, or with
+  /// the machine's Retina setting a pixel per device pixel.
+  @Test(arguments: [false, true])
+  func theRemoteDesktopSizeFollowsThePaneAtTheMachinesScale(retinaDesktop: Bool) {
+    let fixture = EndpointFixture()
+    let endpoint = fixture.make(retinaDesktop: retinaDesktop)
+    defer { endpoint.close() }
+    fixture.surface.onSizeChanged?(CGSize(width: 640.4, height: 400), 2)
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 1)  // moved to a 1× display
+    #expect(
+      fixture.session.desktopSizeRequests
+        == (retinaDesktop ? [[1281, 800], [640, 400]] : [[640, 400], [640, 400]]))
+  }
+
   @Test func inputIsNumberedUnderTheLeaseAndCongestionEndsForwardingOnce() async throws {
     let fixture = EndpointFixture()
     fixture.session.controlChannel.isAvailable = true
@@ -104,9 +118,9 @@ struct ScreenSharingViewerEndpointTests {
     let surface = FakeSurface()
     private var consumer: Task<Void, Never>?
 
-    func make() -> ScreenSharingViewerEndpoint {
+    func make(retinaDesktop: Bool = false) -> ScreenSharingViewerEndpoint {
       session.surface = surface
-      return ScreenSharingViewerEndpoint(session: session, surface: surface)
+      return ScreenSharingViewerEndpoint(session: session, surface: surface, retinaDesktop: retinaDesktop)
     }
 
     func observe(_ endpoint: ScreenSharingViewerEndpoint) -> ControlEventLog {

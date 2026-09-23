@@ -94,15 +94,18 @@
     }
     public required init?(coder: NSCoder) { nil }
     /// The video always fills the pane, scaled to fit and letterboxed by the renderer.
-    /// The size in points, reported when it changes (851-2314).
-    public var onSizeChanged: ((CGSize) -> Void)? {
-      didSet { reportedSize = nil; reportSize() }
+    /// The size in points and the backing scale, reported when either changes
+    /// (851-2314; the scale for a Retina remote desktop, 851-2315).
+    public var onSizeChanged: ((CGSize, CGFloat) -> Void)? {
+      didSet { reported = nil; reportSize() }
     }
-    private var reportedSize: CGSize?
+    private var reported: (size: CGSize, scale: CGFloat)?
     private func reportSize() {
-      guard bounds.width > 0, bounds.height > 0, bounds.size != reportedSize else { return }
-      reportedSize = bounds.size
-      onSizeChanged?(bounds.size)
+      let scale = window?.backingScaleFactor ?? 1
+      guard bounds.width > 0, bounds.height > 0, reported?.size != bounds.size || reported?.scale != scale
+      else { return }
+      reported = (bounds.size, scale)
+      onSizeChanged?(bounds.size, scale)
     }
 
     public override func layout() {
@@ -164,7 +167,11 @@
           .union(.byteOrder32Little),
         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
-    public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
+    public override func viewDidChangeBackingProperties() {
+      super.viewDidChangeBackingProperties()
+      needsLayout = true
+      reportSize()
+    }
     /// Input first, then the renderer's terminal stop (arrival subscription,
     /// mailbox, cached frame and callbacks released; an in-flight submission
     /// keeps its buffers until the GPU completes it).
