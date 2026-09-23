@@ -15,7 +15,6 @@ final class TranscriptPresentationSurface {
   private var retainedScrollView: VirtualizedTranscriptScrollView?
   private var visibilityOwners: Set<UUID> = []
   private(set) var composerHeight: CGFloat = 96
-  private(set) var composerMaskSize: CGSize = .zero
   var isQueueExpanded = true
 
   init(controller: SessionController) {
@@ -61,10 +60,6 @@ final class TranscriptPresentationSurface {
 
   func updateComposerHeight(_ height: CGFloat) {
     composerHeight = height
-  }
-
-  func updateComposerMaskSize(_ size: CGSize) {
-    composerMaskSize = size
   }
 
   func prepareForEviction() {

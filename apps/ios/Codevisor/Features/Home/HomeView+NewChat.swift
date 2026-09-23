@@ -379,10 +379,13 @@ extension HomeView {
         }
       )
     }
+    .onPreferenceChange(ComposerBlocksSheetDismissPreferenceKey.self) { blocks in
+      newChatComposerBlocksDismiss = blocks
+    }
     .presentationDetents([.large])
     .presentationDragIndicator(.hidden)
     .navigationTransition(.zoom(sourceID: Self.newChatTransitionID, in: newChatTransition))
-    .interactiveDismissDisabled(flow.isPromoting)
+    .interactiveDismissDisabled(flow.isPromoting || newChatComposerBlocksDismiss)
   }
 
   private func cancelNewChat(_ flow: NewChatFlow) {
@@ -403,6 +406,7 @@ extension HomeView {
 
   func handleNewChatSheetDismissed() {
     defer { clientPresentationCompletion.complete("new_chat") }
+    newChatComposerBlocksDismiss = false
     guard let flow = newChatFlow else {
       resetNewChatPresentation()
       return

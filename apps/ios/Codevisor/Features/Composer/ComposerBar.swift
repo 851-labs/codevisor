@@ -8,6 +8,12 @@ import SwiftUI
 /// own line with the toolbar row beneath it (attach, model, parameters,
 /// then stop/send), all inside one Liquid Glass card.
 ///
+/// While the editor isn't focused the card folds into a one-line preview —
+/// the start of the draft, an attachment count, and send — so the transcript
+/// gets the room back while the user reads. Tapping it focuses the editor
+/// and unfolds the full composer. Dragged fully open, the card turns opaque
+/// so long drafts stay legible over the transcript.
+///
 /// The editor keeps its text in local state and only writes it to the
 /// controller on send (and when leaving, so drafts persist). Binding straight
 /// to `controller.composerText` published an observable mutation per keystroke,
@@ -58,6 +64,7 @@ struct ComposerBar: View {
 
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.theme) var theme
 
   var cardStyle = ComposerCardStyle()
 
@@ -74,6 +81,8 @@ struct ComposerBar: View {
   /// Measured height of the run-picker chip row (new-chat page only), so
   /// an expanded card stops below it instead of shoving it under the bar.
   @State private var runPickersHeight: CGFloat = 0
+  /// The toolbar row's rendered height (its controls' hit targets set it).
+  @State private var toolbarHeight: CGFloat = 44
   /// Attachments share the card's height budget with the editor.
   @State private var attachmentStripHeight: CGFloat = 0
   /// Live drag offset. GestureState resets itself when the gesture ends or is
@@ -99,11 +108,20 @@ struct ComposerBar: View {
   /// status to. Keep their recovery beside this composer instead of using
   /// the session's connection/error channel.
   @State var pasteFailureNotice: ComposerPasteFailureNotice?
-  @State private var pasteFailureNoticeHeight: CGFloat = 0
+  @State var pasteFailureNoticeHeight: CGFloat = 0
+  /// Nil until the UIKit editor first reports, so a composer mounting
+  /// around an already-focused editor (first-send promotion) never flashes
+  /// its compact preview.
+  @State var isEditorFocused: Bool?
+  /// Tapping the compact preview focuses the editor through the same
+  /// one-shot request as New Chat's initial focus.
+  @State var previewFocusRequest: UUID?
+  /// A touch that began on the card is down (reported only inside a sheet).
+  @State private var isTouchingCardInSheet = false
   /// Editing from the goal accessory requests focus through the same
   /// one-shot UIKit bridge as initial New Chat focus, without making
   /// ordinary view updates reclaim the keyboard.
-  @State private var goalEditFocusRequest: UUID?
+  @State var goalEditFocusRequest: UUID?
   /// Clearing remains a deliberate destructive action even though goal
   /// editing now opens directly in the composer instead of through a sheet.
   @State var isConfirmingGoalClear = false
@@ -128,14 +146,29 @@ struct ComposerBar: View {
       && controller.configurationValidationState == .ready
   }
 
-  private static let minEditorHeight: CGFloat = 30
-  private static let collapsedMaxEditorHeight: CGFloat = 148
+  /// The editor's frame reaches up through the card's top padding to its
+  /// edge, and the text view insets its text by the same amount. Text sits
+  /// where it always did, but a selection handle above the first line
+  /// stays inside the text view, where UIKit can hit-test it.
+  static let editorTopBleed = ComposerCardStyle.contentPadding
+  private static let minEditorHeight: CGFloat = 30 + editorTopBleed
+  private static let collapsedMaxEditorHeight: CGFloat = 148 + editorTopBleed
   private static let contentSpacing: CGFloat = 10
   // The picker's invisible tap area already adds 6 points below its glass.
   private static let runPickerSpacing: CGFloat = 2
-  /// Chrome around the editor inside the card: paddings, toolbar row, and
-  /// the spacing between them.
-  private static let cardChromeHeight: CGFloat = 98
+  /// Chrome around the editor inside the card: paddings, the toolbar row,
+  /// and the spacing between them. The row is measured, so a fully
+  /// expanded card fills exactly the height it is offered.
+  private var cardChromeHeight: CGFloat {
+    ComposerCardStyle.contentPadding * 2 - Self.editorTopBleed + Self.contentSpacing
+      + toolbarHeight
+  }
+
+  /// New Chat's project/run-location chips step aside while the card is
+  /// fully expanded, giving the draft the whole sheet.
+  private var showsRunPickerRow: Bool {
+    showsRunPickers && !isExpanded
+  }
 
   /// `measuredTextHeight` is the text view's own content height (insets
   /// included), reported by the UIKit editor — no mirror, no guessing.
@@ -147,7 +180,7 @@ struct ComposerBar: View {
     // On the new-chat page the run-picker chips live above the card in
     // this same stack: a fully expanded card leaves them their room at
     // the top rather than growing the stack past `maxHeight`.
-    let pickersOverhead = showsRunPickers ? runPickersHeight + Self.runPickerSpacing : 0
+    let pickersOverhead = showsRunPickerRow ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
     // Without this reservation, expanding a draft with attachments makes
     // the card outgrow its host, which reports ever-larger available heights.
@@ -155,7 +188,7 @@ struct ComposerBar: View {
       controller.composerAttachments.isEmpty ? 0 : attachmentStripHeight + Self.contentSpacing
     return max(
       Self.collapsedMaxEditorHeight,
-      maxHeight - Self.cardChromeHeight - pickersOverhead - noticeOverhead - attachmentOverhead
+      maxHeight - cardChromeHeight - pickersOverhead - noticeOverhead - attachmentOverhead
     )
   }
 
@@ -182,7 +215,7 @@ struct ComposerBar: View {
   /// overlay at the root gives it a higher z-order than the run pickers;
   /// using the card edge makes the palette cover those chips while open.
   private var slashPaletteOffset: CGFloat {
-    let pickersHeight = showsRunPickers ? runPickersHeight + Self.runPickerSpacing : 0
+    let pickersHeight = showsRunPickerRow ? runPickersHeight + Self.runPickerSpacing : 0
     let noticeHeight = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
     let cardTop = pickersHeight + noticeHeight
     return cardTop - slashPaletteHeight - ComposerGlassStyle.clusterSpacing
@@ -195,7 +228,7 @@ struct ComposerBar: View {
       // vs a new worktree. The chips float above the card in one glass
       // group, like the macOS new-chat row; the choice is fixed the
       // moment the first message creates the workspace.
-      if showsRunPickers {
+      if showsRunPickerRow {
         if showsSlashCommandPopup {
           // Liquid Glass may remain visible in its own compositing
           // pass even at zero opacity. Remove the controls entirely
@@ -211,6 +244,7 @@ struct ComposerBar: View {
             } action: { height in
               runPickersHeight = height
             }
+            .transition(.opacity)
         }
       }
       VStack(alignment: .leading, spacing: 8) {
@@ -235,6 +269,10 @@ struct ComposerBar: View {
     .animation(Motion.quick(reduceMotion: reduceMotion), value: showsSlashCommandPopup)
     .animation(Motion.quick(reduceMotion: reduceMotion), value: pasteFailureNotice)
     .onDrop(of: Self.droppableTypes, isTargeted: nil) { acceptDrop($0) }
+    .preference(
+      key: ComposerBlocksSheetDismissPreferenceKey.self,
+      value: isTouchingCardInSheet || isExpanded
+    )
     .sheet(isPresented: $showsMachineSettings) {
       SettingsSheet(initialDestination: .machines(focusedMachineID: nil))
     }
@@ -360,37 +398,6 @@ struct ComposerBar: View {
 
 extension ComposerBar {
 
-  @ViewBuilder
-  private var pasteFailureRail: some View {
-    if let notice = pasteFailureNotice {
-      if let recovery = notice.recovery, let actionTitle = notice.actionTitle {
-        ComposerNoticeRail(
-          notice.message,
-          kind: .error,
-          actionTitle: actionTitle,
-          action: { recoverFromPasteFailure(recovery) },
-          onDismiss: { pasteFailureNotice = nil }
-        )
-        .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
-      } else {
-        ComposerNoticeRail(
-          notice.message,
-          kind: .error,
-          onDismiss: { pasteFailureNotice = nil }
-        )
-        .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
-      }
-    }
-  }
-
-  private func recoverFromPasteFailure(_ recovery: ComposerPasteFailureNotice.Recovery) {
-    pasteFailureNotice = nil
-    switch recovery {
-    case .files:
-      isPickingFiles = true
-    }
-  }
-
   /// The one Liquid Glass card. Its content morphs, macOS-style: a blocking
   /// agent question replaces the composer inside the same surface (no
   /// second card stacked above it), then unfolds back when resolved.
@@ -406,6 +413,18 @@ extension ComposerBar {
       }
     }
     .padding(ComposerCardStyle.contentPadding)
+    // Text scrolling up through the editor's top bleed must stop at the
+    // card's rounded edge.
+    .clipShape(cardStyle.shape)
+    // Fully expanded, the draft covers most of the transcript. An opaque
+    // fill inside the glass keeps it legible while the glass keeps its
+    // identity, so collapsing fades straight back to clear material.
+    .background {
+      cardStyle.shape
+        .fill(expandedSurfaceColor)
+        .opacity(isExpanded ? 1 : 0)
+        .allowsHitTesting(false)
+    }
     .composerGlassSurface(
       shape: cardStyle.shape,
       id: .composer,
@@ -418,31 +437,12 @@ extension ComposerBar {
       QuestionResolutionOverlay(controller: controller, shape: cardStyle.shape)
     }
     .disabled(controller.isResolvingQuestion)
-    // The transcript fades where it slides underneath the card: this
-    // backdrop sits behind the glass, its gradient starting exactly at
-    // the card's top edge and fully opaque well before the card's
-    // bottom. It tracks a resize drag frame-for-frame and only extends
-    // downward, covering the gap to the screen edge.
-    .background {
-      ChatSurfaceBackground(fadeHeight: 28)
-        .padding(.bottom, -60)
-        .allowsHitTesting(false)
-    }
     .contentShape(Rectangle())
-    // The last uncovered stretch of the card: its top padding, above the
-    // editor. An invisible grab strip completes grab-anywhere — the
-    // editor's UIKit pan covers the text area, the toolbar row covers
-    // the bottom, and this covers the strip in between the card's top
-    // edge and the first line of text (it ends where the glyphs start,
-    // so no text interaction loses its touches). Stands down while an
-    // agent question holds the card, like the other resize gestures.
-    .overlay(alignment: .top) {
-      if controller.activeQuestion == nil {
-        Color.clear
-          .frame(height: 16)
-          .frame(maxWidth: .infinity)
-          .contentShape(Rectangle())
-          .simultaneousGesture(expansionDrag)
+    // In the New Chat sheet, drags that start on the card belong to the
+    // composer, never to the sheet's swipe-to-dismiss.
+    .background {
+      SheetGestureShield { touching in
+        isTouchingCardInSheet = touching
       }
     }
     .accessibilityAction(named: isExpanded ? "Collapse composer" : "Expand composer") {
@@ -458,8 +458,8 @@ extension ComposerBar {
   }
 
   private var composerContent: some View {
-    VStack(alignment: .leading, spacing: Self.contentSpacing) {
-      if !controller.composerAttachments.isEmpty {
+    VStack(alignment: .leading, spacing: isCompact ? 0 : Self.contentSpacing) {
+      if !isCompact, !controller.composerAttachments.isEmpty {
         ComposerAttachmentStrip(controller: controller)
           .onGeometryChange(for: CGFloat.self) {
             $0.size.height
@@ -485,17 +485,15 @@ extension ComposerBar {
           // and `send()`'s own guard prevent a second submission.
           isEditable: textEditorHandoffRole != .none
             || !(controller.isResolvingQuestion || isClearingGoal),
-          focusRequest: goalEditFocusRequest ?? initialFocusRequest,
+          focusRequest: goalEditFocusRequest ?? initialFocusRequest ?? previewFocusRequest,
           onFocusRequestFulfilled: fulfillFocusRequest,
           onPasteAttachmentEvent: handlePasteAttachmentEvent,
-          // Scrolling stays off unless the text really overflows,
-          // so a drag on the card is never swallowed by the editor.
-          isScrollEnabled: editorHeight < measuredTextHeight,
+          isComposerExpanded: isExpanded,
           contentHeight: $measuredTextHeight,
-          // Grab-anywhere, Slack-style: a UIKit pan on the editor
-          // resizes the card, but only when UIKit's own gesture
-          // arbitration says the touch isn't a text interaction
-          // (selection, loupe, scroll). See `expansionPan`.
+          onFocusChange: updateEditorFocus,
+          // Grab-anywhere, Slack-style: the editor's own scroll pan
+          // scrolls overflowing text, then resizes the card once the
+          // text reaches its edge. See `HeightReportingTextView`.
           onResizePanChanged: { translation in
             var live = Transaction()
             live.disablesAnimations = true
@@ -512,34 +510,67 @@ extension ComposerBar {
             if canSend { submitOrAcceptSlashCommand() }
           }
         )
-        .frame(height: editorHeight)
+        // The compact preview keeps the one UIKit editor mounted —
+        // its focus, selection, and promotion handoff depend on that
+        // identity — but folds it away behind the preview row.
+        .frame(height: isCompact ? 0 : editorHeight)
+        .opacity(isCompact ? 0 : 1)
+        // Only the incoming content fades: folding drops the editor at
+        // once (the preview fades in), so the two texts never crossfade
+        // at different positions while the glass resizes.
+        .animation(isCompact ? nil : compactMorphAnimation, value: isCompact)
+        .allowsHitTesting(!isCompact)
+        .accessibilityHidden(isCompact)
         .onGeometryChange(for: CGRect.self) { proxy in
-          proxy.frame(in: .global)
+          // The send animation starts from the text, not the bleed.
+          let frame = proxy.frame(in: .global)
+          return CGRect(
+            x: frame.minX,
+            y: frame.minY + Self.editorTopBleed,
+            width: frame.width,
+            height: max(0, frame.height - Self.editorTopBleed)
+          )
         } action: { frame in
+          // The compact preview reports its own text as the source.
+          guard !isCompact else { return }
           onSendSourceFrameChange?(frame)
         }
 
-        if text.isEmpty {
+        if text.isEmpty, !isCompact {
           Text("Do something")
             .foregroundStyle(.tertiary)
-            .padding(.top, 4)
+            .padding(.top, 4 + Self.editorTopBleed)
             .allowsHitTesting(false)
+            .transition(composerModeTransition)
         }
       }
+      .padding(.top, isCompact ? 0 : -Self.editorTopBleed)
 
-      composerToolbar
-        .font(.callout)
-        .contentShape(Rectangle())
-        .animation(
-          Motion.quick(reduceMotion: reduceMotion),
-          value: controller.isGoalEditing
-        )
-        // The chrome half of grab-anywhere: this SwiftUI drag covers the
-        // toolbar row, and the editor's UIKit pan covers the text area
-        // (see `HeightReportingTextView.expansionPan`). Simultaneous here
-        // only shares touches with the row's own buttons, and a tap
-        // never travels the 8pt minimum.
-        .simultaneousGesture(expansionDrag)
+      if isCompact {
+        compactPreviewRow
+          .font(.callout)
+          .transition(composerModeTransition)
+      } else {
+        composerToolbar
+          .font(.callout)
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: { height in
+            toolbarHeight = height
+          }
+          .contentShape(Rectangle())
+          .animation(
+            Motion.quick(reduceMotion: reduceMotion),
+            value: controller.isGoalEditing
+          )
+          // The chrome half of grab-anywhere: this SwiftUI drag covers the
+          // toolbar row, and the editor's scroll pan covers the text area
+          // (see `HeightReportingTextView`). Simultaneous here only shares
+          // touches with the row's own buttons, and a tap never travels
+          // the 8pt minimum.
+          .simultaneousGesture(expansionDrag)
+          .transition(composerModeTransition)
+      }
     }
   }
 
@@ -581,18 +612,6 @@ extension ComposerBar {
         }
       }
       .transition(composerModeTransition)
-    }
-  }
-
-  private var composerModeTransition: AnyTransition {
-    .asymmetric(insertion: .opacity, removal: .identity)
-  }
-
-  private func fulfillFocusRequest(_ request: UUID) {
-    if goalEditFocusRequest == request {
-      goalEditFocusRequest = nil
-    } else {
-      onInitialFocusRequestFulfilled?(request)
     }
   }
 
@@ -659,16 +678,6 @@ extension ComposerBar {
   func setExpanded(_ expand: Bool) {
     withAnimation(.snappy(duration: 0.28)) {
       isExpanded = expand
-    }
-  }
-}
-
-private extension View {
-  func pasteFailureNoticeMeasurement(_ height: Binding<CGFloat>) -> some View {
-    onGeometryChange(for: CGFloat.self) {
-      $0.size.height
-    } action: { measuredHeight in
-      height.wrappedValue = measuredHeight
     }
   }
 }

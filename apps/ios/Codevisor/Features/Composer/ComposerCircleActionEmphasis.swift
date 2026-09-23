@@ -7,6 +7,7 @@ enum ComposerCircleActionEmphasis {
 }
 
 private struct ComposerCircleActionLabelModifier: ViewModifier {
+  @Environment(\.theme) private var theme
   let emphasis: ComposerCircleActionEmphasis
   let isEnabled: Bool
 
@@ -18,11 +19,13 @@ private struct ComposerCircleActionLabelModifier: ViewModifier {
         .font(.subheadline.weight(.bold))
         .scaledFrame(width: 30, height: 30, relativeTo: .subheadline)
         .foregroundStyle(
-          isEnabled ? Color(.systemBackground) : Color.secondary.opacity(0.75)
+          isEnabled ? Color.white : Color.secondary.opacity(0.75)
         )
         .background(
           Circle().fill(
-            isEnabled ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.16)
+            // The primary action carries the app's accent, matching
+            // the macOS composer's send button.
+            isEnabled ? AnyShapeStyle(theme.accent) : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )
         .expandedHitTarget(base: 30)

@@ -11,8 +11,11 @@ struct ComposerTextView: UIViewRepresentable {
   var focusRequest: UUID?
   var onFocusRequestFulfilled: ((UUID) -> Void)?
   var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
-  var isScrollEnabled: Bool
+  /// Decides which scroll edge hands a drag over to resizing the card.
+  var isComposerExpanded: Bool
   @Binding var contentHeight: CGFloat
+  /// First-responder changes, deferred past the SwiftUI update.
+  var onFocusChange: (Bool) -> Void
   var onResizePanChanged: (CGFloat) -> Void
   var onResizePanEnded: (CGFloat, CGFloat) -> Void
   var onResizePanCancelled: () -> Void
@@ -94,7 +97,10 @@ struct ComposerTextView: UIViewRepresentable {
     view.backgroundColor = .clear
     view.font = .preferredFont(forTextStyle: .body)
     view.adjustsFontForContentSizeCategory = true
-    view.textContainerInset = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+    // The top inset includes the card padding the editor's frame bleeds
+    // into; see `ComposerBar.editorTopBleed`.
+    view.textContainerInset = UIEdgeInsets(
+      top: 4 + ComposerBar.editorTopBleed, left: 0, bottom: 4, right: 0)
     view.textContainer.lineFragmentPadding = 0
     // Prompts are code-adjacent — no auto-capitalized first letters.
     view.autocapitalizationType = .none
@@ -148,10 +154,15 @@ struct ComposerTextView: UIViewRepresentable {
     }
     view.onFocusRequestFulfilled = onFocusRequestFulfilled
     coordinator.onPasteAttachmentEvent = onPasteAttachmentEvent
-    view.requestInitialFocus(focusRequest)
-    if view.isScrollEnabled != isScrollEnabled {
-      view.isScrollEnabled = isScrollEnabled
+    view.onFocusChange = onFocusChange
+    // A promoted editor arrives already focused; its new owner learns that
+    // here rather than from a responder transition it never saw.
+    if coordinator.reportedFocus != view.isFirstResponder {
+      coordinator.reportedFocus = view.isFirstResponder
+      view.reportFocus()
     }
+    view.requestInitialFocus(focusRequest)
+    view.isComposerExpanded = isComposerExpanded
     // Closure reassignment never touches keyboard or layout state.
     view.onResizePanChanged = onResizePanChanged
     view.onResizePanEnded = onResizePanEnded
@@ -172,6 +183,7 @@ struct ComposerTextView: UIViewRepresentable {
     private let selection: Binding<NSRange>
     var onPasteAttachmentEvent: (ComposerPasteEvent) -> Void
     var isApplyingSwiftUIUpdate = false
+    var reportedFocus: Bool?
 
     init(
       text: Binding<String>,
@@ -187,6 +199,18 @@ struct ComposerTextView: UIViewRepresentable {
       text.wrappedValue = textView.text
       selection.wrappedValue = textView.selectedRange
       (textView as? HeightReportingTextView)?.reportContentHeight()
+    }
+
+    /// A drag that ended while resizing the card must not fling the text
+    /// on release; its momentum belongs to the card's settle animation.
+    func scrollViewWillEndDragging(
+      _ scrollView: UIScrollView,
+      withVelocity _: CGPoint,
+      targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+      guard let holdingOffset = (scrollView as? HeightReportingTextView)?.resizeHoldingOffset
+      else { return }
+      targetContentOffset.pointee = holdingOffset
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {

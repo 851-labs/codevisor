@@ -298,3 +298,48 @@ extension ComposerBar {
     }
   }
 }
+
+// MARK: - Paste failure rail
+
+extension ComposerBar {
+  @ViewBuilder
+  var pasteFailureRail: some View {
+    if let notice = pasteFailureNotice {
+      if let recovery = notice.recovery, let actionTitle = notice.actionTitle {
+        ComposerNoticeRail(
+          notice.message,
+          kind: .error,
+          actionTitle: actionTitle,
+          action: { recoverFromPasteFailure(recovery) },
+          onDismiss: { pasteFailureNotice = nil }
+        )
+        .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
+      } else {
+        ComposerNoticeRail(
+          notice.message,
+          kind: .error,
+          onDismiss: { pasteFailureNotice = nil }
+        )
+        .pasteFailureNoticeMeasurement($pasteFailureNoticeHeight)
+      }
+    }
+  }
+
+  func recoverFromPasteFailure(_ recovery: ComposerPasteFailureNotice.Recovery) {
+    pasteFailureNotice = nil
+    switch recovery {
+    case .files:
+      isPickingFiles = true
+    }
+  }
+}
+
+private extension View {
+  func pasteFailureNoticeMeasurement(_ height: Binding<CGFloat>) -> some View {
+    onGeometryChange(for: CGFloat.self) {
+      $0.size.height
+    } action: { measuredHeight in
+      height.wrappedValue = measuredHeight
+    }
+  }
+}

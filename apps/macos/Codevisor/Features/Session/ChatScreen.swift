@@ -40,7 +40,6 @@ struct ChatScreen: View {
   @State var isQueueExpanded: Bool
   @State var scrollCommand = TranscriptScrollCommand()
   @State var historyLoadTask: Task<Void, Never>?
-  @State var composerMaskSize: CGSize
   @State var isTranscriptMounted: Bool
   @State var isInitialTranscriptReady: Bool
   @State var showsInitialLoadingSpinner = false
@@ -85,7 +84,6 @@ struct ChatScreen: View {
     )
     _composerHeight = State(initialValue: presentationSurface.composerHeight)
     _isQueueExpanded = State(initialValue: presentationSurface.isQueueExpanded)
-    _composerMaskSize = State(initialValue: presentationSurface.composerMaskSize)
     _isTranscriptMounted = State(initialValue: isWarm)
     _isInitialTranscriptReady = State(initialValue: isWarm)
   }

@@ -95,7 +95,7 @@ extension SessionTranscriptView {
           textAnimationRegistry: textAnimationRegistry,
           allowsLiveTextAnimation: textAnimationVisibility.isVisible,
           reduceMotion: reduceMotion,
-          scrollIndicatorBottomInset: composerHeight + 6
+          scrollIndicatorBottomInset: transcriptBottomObstruction + 6
         ),
         callbacks: TranscriptSurfaceCallbacks(
           claimSendAnimation: { request in
@@ -163,8 +163,12 @@ extension SessionTranscriptView {
     }
     // Match SwiftUI.ScrollView's navigation behavior: the scroll surface
     // reaches beneath the translucent top bar, while its UIKit content
-    // inset keeps the first resting row below that chrome.
-    .ignoresSafeArea(.container, edges: .top)
+    // inset keeps the first resting row below that chrome. It also runs
+    // to the bottom of the screen, under the floating glass composer and
+    // the home indicator; the bottom spacer (see
+    // `transcriptBottomObstruction`) keeps the newest row above both.
+    // The keyboard still bounds it, since the keyboard is opaque.
+    .ignoresSafeArea(.container, edges: [.top, .bottom])
     .onChange(of: controller.userSendSignal) { _, _ in
       followsLatest = true
       scrollCommand.token &+= 1
@@ -176,7 +180,7 @@ extension SessionTranscriptView {
       key: controller.transcriptProjectionKey,
       options: .init(
         includesConnectingRow: true,
-        bottomSpacerHeight: composerHeight + 24
+        bottomSpacerHeight: transcriptBottomObstruction + Self.transcriptBottomBreathingRoom
       )
     )
   }

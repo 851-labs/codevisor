@@ -40,6 +40,9 @@ struct HomeView: View {
   /// is constructed with a non-nil flow on the very first presentation.
   @State var presentedNewChatFlow: NewChatFlow?
   @State var newChatSheetPath = NavigationPath()
+  /// The New Chat sheet's composer is being touched or is fully expanded;
+  /// its drags belong to the composer, so the sheet can't be swiped away.
+  @State var newChatComposerBlocksDismiss = false
   /// One navigation truth for both containers: the compact stack's path,
   /// and the split detail selection (its last entry). A typed path lets
   /// Home identify the workspace currently presented and pop it when a

@@ -234,7 +234,7 @@ final class NewChatPromotionSurface {
         with: destinationTraits)
       view.frame = sourceWindow.bounds
       navigationBar?.transform = .identity
-      backgrounds.forEach { $0.animatePromotion(to: destinationTraits, duration: self.duration) }
+      backgrounds.forEach { $0.animatePromotion(to: destinationTraits) }
       self.container.layoutIfNeeded()
     }
     let finish = { [weak self] in

@@ -19,6 +19,11 @@ struct SessionTranscriptView: View {
   /// state can outlive a mounted transcript, so heights produced under an
   /// older hosting contract must not be restored as exact geometry.
   static let transcriptMeasurementSchemaVersion = 3
+  /// Space between the newest row and the composer's top edge when the
+  /// transcript rests at the bottom.
+  static let transcriptBottomBreathingRoom: CGFloat = 8
+  /// The composer cluster's margin above the chat area's bottom edge.
+  static let composerBottomMargin: CGFloat = 6
 
   @Bindable var controller: SessionController
   let presentationSurface: TranscriptPresentationSurface
@@ -76,6 +81,11 @@ struct SessionTranscriptView: View {
   @State var isAtBottom = true
   /// Height available to the chat area, used to cap composer expansion.
   @State var availableHeight: CGFloat = 600
+  /// Window-space bottoms, as UIKit lays them out, of the transcript (which
+  /// runs beneath the composer and the home indicator) and of the chat area
+  /// the composer rests on (above the home indicator or the keyboard).
+  @State var transcriptWindowBottom: CGFloat = 0
+  @State var chatAreaWindowBottom: CGFloat = 0
   /// True while the composer is dragged to full height; informational
   /// accessories hide until it collapses, while actionable failures remain.
   @State var composerExpanded = false
@@ -328,6 +338,7 @@ struct SessionTranscriptView: View {
     // out of SwiftUI's keyboard avoidance, which left the composer sitting
     // underneath the keyboard.
     ZStack(alignment: .bottom) {
+      transcriptExtentProbe
       Image("hunk")
         .resizable()
         .renderingMode(.template)
@@ -381,14 +392,18 @@ struct SessionTranscriptView: View {
       }
       .animation(Motion.quick(reduceMotion: reduceMotion), value: showsScrollToBottom)
       .padding(.horizontal, 10)
-      .padding(.bottom, 6)
+      .padding(.bottom, Self.composerBottomMargin)
     }
     .onGeometryChange(for: CGFloat.self) {
       $0.size.height
     } action: { height in
       availableHeight = height
     }
-    .background { ChatSurfaceBackground() }
+    .background {
+      ChatSurfaceBackground()
+        .ignoresSafeArea()
+    }
+    .background { chatAreaExtentProbe }
   }
 
   var composerCluster: some View {
@@ -412,7 +427,7 @@ struct SessionTranscriptView: View {
         controller: controller,
         // Actionable notices remain visible while fully expanded, so
         // reserve their measured height from the editor's upper bound.
-        maxHeight: max(160, availableHeight - composerAccessoryHeight - 12),
+        maxHeight: composerMaxHeight,
         collapsedHeight: $composerCardHeight,
         isExpanded: $composerExpanded,
         showsRunPickers: showsRunPickers,
@@ -480,6 +495,63 @@ struct SessionTranscriptView: View {
     .onDisappear { queueSendAnimation.cancel() }
   }
 
+  // MARK: - Native transcript
+
+}
+
+private extension SessionTranscriptView {
+  func isUser(_ item: ConversationItem) -> Bool {
+    if case .user = item { return true }
+    return false
+  }
+
+  func isAssistant(_ item: ConversationItem) -> Bool {
+    if case .assistant = item { return true }
+    return false
+  }
+}
+
+// MARK: - Bottom chrome geometry
+
+extension SessionTranscriptView {
+  /// The tallest the composer card may grow: the chat area (below the top
+  /// bar) less the card's 6pt margins top and bottom and any actionable
+  /// accessories above it.
+  var composerMaxHeight: CGFloat {
+    max(160, availableHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
+  }
+
+  /// How far the transcript's bottom edge sits below the resting composer's
+  /// top edge: the composer, its margin, and however far the transcript
+  /// runs past the chat area — the home indicator at rest, nothing above
+  /// the keyboard. Both edges come from UIKit probes: the transcript's
+  /// platform view extends past the frame SwiftUI's geometry reports, and
+  /// safe-area insets also count the keyboard.
+  /// The transcript's real extent, measured with the same safe-area
+  /// treatment the transcript gets.
+  var transcriptExtentProbe: some View {
+    WindowFrameProbe { frame in
+      transcriptWindowBottom = frame.maxY
+    }
+    .ignoresSafeArea(.container, edges: [.top, .bottom])
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  /// The chat area the composer cluster rests on.
+  var chatAreaExtentProbe: some View {
+    WindowFrameProbe { frame in
+      chatAreaWindowBottom = frame.maxY
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  var transcriptBottomObstruction: CGFloat {
+    let belowComposer = max(0, transcriptWindowBottom - chatAreaWindowBottom)
+    return composerHeight + Self.composerBottomMargin + belowComposer
+  }
+
   var scrollToBottomButton: some View {
     Button {
       followsLatest = true
@@ -494,20 +566,5 @@ struct SessionTranscriptView: View {
     .buttonBorderShape(.circle)
     .controlSize(.large)
     .accessibilityLabel("Scroll to bottom")
-  }
-
-  // MARK: - Native transcript
-
-}
-
-private extension SessionTranscriptView {
-  func isUser(_ item: ConversationItem) -> Bool {
-    if case .user = item { return true }
-    return false
-  }
-
-  func isAssistant(_ item: ConversationItem) -> Bool {
-    if case .assistant = item { return true }
-    return false
   }
 }

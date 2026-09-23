@@ -141,12 +141,6 @@ extension ChatScreen {
               }
             }
           )
-          .mask {
-            ComposerTranscriptMask(
-              composerSize: composerMaskSize,
-              bottomInset: Self.composerBottomMargin
-            )
-          }
         }
       }
     }

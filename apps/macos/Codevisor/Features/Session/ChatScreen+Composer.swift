@@ -67,14 +67,6 @@ extension ChatScreen {
         focusChatId: controller.serverSession?.id,
         glassNamespace: composerGlassNamespace
       )
-      // Keep the transcript mask in sync as the shared composer changes
-      // size between its ordinary and question content.
-      .onGeometryChange(for: CGSize.self) { geometry in
-        geometry.size
-      } action: { size in
-        composerMaskSize = size
-        presentationSurface.updateComposerMaskSize(size)
-      }
     }
     .padding(.horizontal, 24)
     .frame(maxWidth: 880)

@@ -36,12 +36,14 @@ struct ComposerSubmitButton: View {
           height: ComposerCardStyle.actionDiameter,
           relativeTo: .subheadline
         )
-        .foregroundStyle(isEnabled ? theme.windowBackground : Color.secondary.opacity(0.75))
+        .foregroundStyle(isEnabled ? Color.white : Color.secondary.opacity(0.75))
         .background(
           Circle().fill(
+            // The primary action carries the app's accent on both
+            // platforms; hover deepens it slightly.
             isEnabled
-              ? Color.primary.opacity(isHovered ? 0.92 : 0.82)
-              : Color.secondary.opacity(0.16)
+              ? AnyShapeStyle(theme.accent.opacity(isHovered ? 1 : 0.9))
+              : AnyShapeStyle(Color.secondary.opacity(0.16))
           )
         )
         .contentShape(Circle())
