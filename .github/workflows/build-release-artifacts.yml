@@ -423,7 +423,14 @@ jobs:
           (download_intel_runtime || { touch "$failure_marker"; exit 1; }) &
           download_pid=$!
           trap 'kill "$download_pid" 2>/dev/null || true' EXIT
-          bun install --frozen-lockfile
+          # Postinstall scripts download binaries (ffmpeg-static); a network timeout
+          # there failed a whole Alpha build. Bounded retries, then fail.
+          for attempt in 1 2 3; do
+            bun install --frozen-lockfile && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "bun install failed (attempt $attempt); retrying in 20s" >&2
+            sleep 20
+          done
           CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE="$runtime_archive" \
           CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER="$failure_marker" \
             scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release

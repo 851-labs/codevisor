@@ -391,6 +391,23 @@ submit_for_notarization_to_file() {
   echo "Notarization submitted for $label in $((SECONDS - started_at))s ($id)"
 }
 
+# Stapling fetches the ticket from Apple's CDN (CloudKit). Right after a
+# submission is accepted the ticket can briefly be unavailable (stapler error
+# 68, a "retry-after" response), which failed Alpha builds whose notarization
+# had succeeded. Retry a bounded number of times; a ticket that never appears
+# still fails the build, so nothing unstapled is published.
+staple_with_retry() {
+  local target="$1" attempt
+  for attempt in 1 2 3 4 5; do
+    xcrun stapler staple "$target" && return 0
+    [[ "$attempt" == 5 ]] && break
+    echo "warning: stapling $(basename "$target") failed (attempt $attempt); retrying in $((attempt * 30))s" >&2
+    sleep $((attempt * 30))
+  done
+  echo "error: stapling $(basename "$target") failed after $attempt attempts" >&2
+  return 1
+}
+
 wait_for_notarization() {
   local id="$1" label="$2" response status attempt
   # Bounded wait: healthy notarizations return in minutes; a stuck Apple-side
@@ -536,19 +553,19 @@ if [[ ${#notary_args[@]} -gt 0 ]]; then
   finish_phase "Notarization submissions"
 
   wait_for_notarization "$arm_zip_submission" "Codevisor-macOS-arm64.zip"
-  xcrun stapler staple "$split_work/arm64/Codevisor.app"
+  staple_with_retry "$split_work/arm64/Codevisor.app"
   rm -f "$output_dir/Codevisor-macOS-arm64.zip"
   ditto --norsrc -c -k --keepParent "$split_work/arm64/Codevisor.app" "$output_dir/Codevisor-macOS-arm64.zip"
 
   wait_for_notarization "$x64_zip_submission" "Codevisor-macOS-x64.zip"
-  xcrun stapler staple "$split_work/x64/Codevisor.app"
+  staple_with_retry "$split_work/x64/Codevisor.app"
   rm -f "$output_dir/Codevisor-macOS-x64.zip"
   ditto --norsrc -c -k --keepParent "$split_work/x64/Codevisor.app" "$output_dir/Codevisor-macOS-x64.zip"
 
   wait_for_notarization "$arm_dmg_submission" "Codevisor-arm64.dmg"
-  xcrun stapler staple "$output_dir/Codevisor-arm64.dmg"
+  staple_with_retry "$output_dir/Codevisor-arm64.dmg"
   wait_for_notarization "$x64_dmg_submission" "Codevisor-x64.dmg"
-  xcrun stapler staple "$output_dir/Codevisor-x64.dmg"
+  staple_with_retry "$output_dir/Codevisor-x64.dmg"
   finish_phase "Notarization waits, stapling, and final ZIPs"
 fi
 
