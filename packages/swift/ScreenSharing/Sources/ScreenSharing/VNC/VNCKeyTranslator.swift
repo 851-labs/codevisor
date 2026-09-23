@@ -6,14 +6,19 @@
   /// Mac virtual key codes (what `ScreenSharingInputEvent.key` carries) to X11
   /// keysyms. Modifier and navigation keys map by table; everything else goes
   /// through the current keyboard layout with Shift, Option and Caps Lock
-  /// applied — never Control or Command, so ⌘C reaches the server as Super+c,
-  /// which is what it expects.
+  /// applied — never Control or Command, so a shortcut's letter arrives
+  /// unmodified next to its modifier keys.
+  ///
+  /// ⌘ is sent as Control (851-2317, product decision): ⌘C, ⌘V, ⌘T and ⌘Q do
+  /// what Mac hands expect in Linux apps. Both ⌘ keys send Control_R so they
+  /// never collide with the left Control key (Mac laptops have no right one);
+  /// Control stays Control and Super is no longer sent.
   public struct VNCKeyTranslator: Sendable {
     public typealias Layout = @Sendable (_ code: UInt16, _ carbonModifiers: UInt32) -> Unicode.Scalar?
 
     static let modifierKeysyms: [UInt16: UInt32] = [
       56: RFBKeysym.shiftLeft, 60: RFBKeysym.shiftRight, 59: RFBKeysym.controlLeft, 62: RFBKeysym.controlRight,
-      58: RFBKeysym.altLeft, 61: RFBKeysym.altRight, 55: RFBKeysym.superLeft, 54: RFBKeysym.superRight,
+      58: RFBKeysym.altLeft, 61: RFBKeysym.altRight, 55: RFBKeysym.controlRight, 54: RFBKeysym.controlRight,
       57: RFBKeysym.capsLock,
     ]
     static let specialKeysyms: [UInt16: UInt32] = [

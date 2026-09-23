@@ -36,7 +36,7 @@ struct VNCKeyTranslatorTests {
 
   /// Shift, Option and Caps Lock are passed through as the Carbon bits
   /// `UCKeyTranslate` expects; Control and Command deliberately are not, so
-  /// ⌘C reaches the server as Super plus an unmodified "c".
+  /// ⌘C reaches the server as Control plus an unmodified "c" (851-2317).
   @Test(
     arguments: [
       (UInt8(0), UInt32(0)),
@@ -76,8 +76,9 @@ struct VNCKeyTranslatorTests {
   @Test(
     arguments: [
       (UInt16(56), RFBKeysym.shiftLeft), (60, RFBKeysym.shiftRight), (59, RFBKeysym.controlLeft),
-      (62, RFBKeysym.controlRight), (58, RFBKeysym.altLeft), (61, RFBKeysym.altRight), (55, RFBKeysym.superLeft),
-      (54, RFBKeysym.superRight), (57, RFBKeysym.capsLock),
+      (62, RFBKeysym.controlRight), (58, RFBKeysym.altLeft), (61, RFBKeysym.altRight), (57, RFBKeysym.capsLock),
+      // ⌘ is Control (851-2317); both ⌘ keys are Control_R, clear of the left Control key.
+      (55, RFBKeysym.controlRight), (54, RFBKeysym.controlRight),
     ] as [(UInt16, UInt32)])
   func modifierKeysHaveTheirOwnKeysyms(_ code: UInt16, _ keysym: UInt32) {
     let (calls, translator) = probe()

@@ -54,7 +54,7 @@ struct VNCInputTranslatorTests {
       ])
     #expect(
       translator.translate(.key(code: 55, down: true, repeatKey: false, modifiers: 8)) == [
-        .keyEvent(keysym: RFBKeysym.superLeft, down: true)
+        .keyEvent(keysym: RFBKeysym.controlRight, down: true)
       ])
     #expect(translator.translate(.key(code: 63, down: true, repeatKey: false, modifiers: 32)) == [])
     // Unknown to the layout.
