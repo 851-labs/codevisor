@@ -173,7 +173,7 @@ struct RFBLoopbackServerTests {
         .keyEvent(keysym: 0x41, down: true), .keyEvent(keysym: 0x41, down: false),
         .pointerEvent(buttons: 4, x: 11, y: 22), .clientCutText("hello"),
       ])
-    #expect(server.received.prefix(2) == [.setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223])])
+    #expect(server.received.prefix(2) == [.setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223, -239, -232])])
   }
 
   /// The callback sees the same messages as the log, which is what the rig's

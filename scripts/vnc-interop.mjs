@@ -92,6 +92,8 @@ let status = 1
 try {
   const port = parseDockerPort(docker(["port", container, `${defaults.containerPort}/tcp`]).stdout)
   await waitForGreeting(port)
+  // Xvnc answers before the entrypoint has painted the known desktop; wait for it too.
+  await waitForReady(container)
   const environment = interopEnvironment({
     port,
     password: defaults.password,
@@ -117,6 +119,18 @@ try {
   cleanup()
 }
 process.exit(status)
+
+/// The entrypoint prints "vnc-interop: ready" once the root colour and pointer are set.
+async function waitForReady(container, deadlineMs = 30_000) {
+  const started = Date.now()
+  while (Date.now() - started < deadlineMs) {
+    if (docker(["logs", container], { allowFailure: true }).stdout.includes("vnc-interop: ready"))
+      return
+    // oxlint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error(`The interop desktop wasn't ready within ${deadlineMs / 1000} s`)
+}
 
 /// Real I/O: connect until the server's 12-byte "RFB 003.00x\n" greeting arrives.
 async function waitForGreeting(port, deadlineMs = 30_000) {

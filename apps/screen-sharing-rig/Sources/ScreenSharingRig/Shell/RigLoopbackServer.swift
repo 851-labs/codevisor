@@ -38,6 +38,7 @@
       configuration.name = "Codevisor rig \(width)×\(height)"
       configuration.encoding = encoding
       configuration.echoPointer = echoPointer
+      configuration.cursor = .referenceArrow  // drawn locally by the viewer while controlling (851-2311)
       status = "Starting…"
       Task { [weak self] in
         do {

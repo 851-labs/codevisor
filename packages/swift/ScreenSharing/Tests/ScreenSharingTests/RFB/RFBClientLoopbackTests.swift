@@ -72,7 +72,7 @@ struct RFBClientLoopbackTests {
     #expect(await awaitPolled { harness.server.isRequestPending })
     #expect(
       harness.server.received.prefix(3) == [
-        .setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223]),
+        .setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223, -239, -232]),
         .framebufferUpdateRequest(incremental: false, RFBRectangle(x: 0, y: 0, width: 64, height: 48)),
       ])
     #expect(

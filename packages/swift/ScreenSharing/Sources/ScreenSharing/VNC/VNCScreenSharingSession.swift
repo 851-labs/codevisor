@@ -18,6 +18,8 @@
     }
     public private(set) var failure: String?
     public var onConnectionChanged: ((String) -> Void)?
+    /// The server's cursor shape (Cursor pseudo-encoding) and host-side pointer moves (PointerPos).
+    public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)?
     let client: RFBClient
     private let translator: VNCInputTranslator
     private let emulator: VNCHostEmulator
@@ -58,6 +60,16 @@
               publisher.publish(framebuffer, to: frames, metrics: metrics)
               metrics.increment("vncRectangles", by: update.rectangles.count)
               metrics.increment("vncBytesReceived", by: update.byteCount)
+              var cursor: [ScreenSharingCursorUpdate] = []
+              if let shape = update.cursor {
+                cursor.append(.shape(shape))
+                metrics.increment("vncCursorShapes")
+              }
+              if let pointer = update.pointer { cursor.append(.position(pointer)) }
+              if !cursor.isEmpty {
+                // One hop per update keeps shape-then-position order.
+                Task { @MainActor in cursor.forEach { self?.onCursorChanged?($0) } }
+              }
               metrics.observe("vncUpdateLatency", milliseconds: update.latency.milliseconds)
               if update.resized {
                 let width = framebuffer.width, height = framebuffer.height
@@ -89,6 +101,7 @@
       client.close()
       frames.clear()
       onConnectionChanged = nil
+      onCursorChanged = nil
     }
 
     private func resized(width: Int, height: Int) {

@@ -75,4 +75,19 @@ public enum ScreenSharingVideoGeometry {
     let point = ScreenSharingPointer(x: clamp ? min(1, max(0, px)) : px, y: clamp ? min(1, max(0, py)) : py)
     return point.isValid ? point : nil
   }
+
+  /// Where a remote cursor image goes on an aspect-fit surface: origin
+  /// top-left, in surface units, the hotspot on the video position (x, y).
+  /// Also the scale a cursor image is drawn at, as `frame.width / cursorWidth`.
+  public static func cursorFrame(
+    x: Double, y: Double, hotspotX: Double, hotspotY: Double, cursorWidth: Double, cursorHeight: Double,
+    surfaceWidth: Double, surfaceHeight: Double, videoWidth: Double, videoHeight: Double
+  ) -> (x: Double, y: Double, width: Double, height: Double)? {
+    guard surfaceWidth > 0, surfaceHeight > 0, videoWidth > 0, videoHeight > 0, cursorWidth > 0, cursorHeight > 0
+    else { return nil }
+    let scale = min(surfaceWidth / videoWidth, surfaceHeight / videoHeight)
+    let left = (surfaceWidth - videoWidth * scale) / 2
+    let top = (surfaceHeight - videoHeight * scale) / 2
+    return (left + (x - hotspotX) * scale, top + (y - hotspotY) * scale, cursorWidth * scale, cursorHeight * scale)
+  }
 }

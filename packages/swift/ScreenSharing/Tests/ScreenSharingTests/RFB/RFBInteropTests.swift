@@ -25,7 +25,8 @@ struct RFBInteropTests {
     let run = Task {
       try await client.run(
         onUpdate: { framebuffer, _ in
-          let pixel = framebuffer.pixel(x: framebuffer.width / 2, y: framebuffer.height / 2)
+          // A quarter in: the centre holds the pointer Xvnc draws for a client that hasn't moved it.
+          let pixel = framebuffer.pixel(x: framebuffer.width / 4, y: framebuffer.height / 4)
           continuation.yield([pixel.red, pixel.green, pixel.blue])
         }, onEvent: { _ in })
     }
@@ -33,6 +34,36 @@ struct RFBInteropTests {
     var iterator = pixels.makeAsyncIterator()
     let centre = try #require(await iterator.next())
     #expect(centre == [UInt8(color >> 16 & 0xFF), UInt8(color >> 8 & 0xFF), UInt8(color & 0xFF)])
+  }
+
+  /// The Cursor pseudo-encoding against TigerVNC (851-2311): while this client
+  /// hasn't moved the pointer, Xvnc draws it into the framebuffer and reports
+  /// the cursor hidden (a viewer sees it where it is); once the client moves
+  /// it, as a controlling client does, the real shape arrives for the client
+  /// to draw locally.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  func theShapeArrivesOnceThisClientMovesThePointer() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, _) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
+    defer { client.close() }
+    let (cursors, continuation) = AsyncStream<RFBCursorShape>.makeStream()
+    let run = Task {
+      try await client.run(
+        onUpdate: { _, update in if let cursor = update.cursor { continuation.yield(cursor) } }, onEvent: { _ in })
+    }
+    defer { run.cancel() }
+    // The test runner's timeout guards a server that never sends a shape.
+    var iterator = cursors.makeAsyncIterator()
+    let beforeMoving = try #require(await iterator.next())
+    #expect(beforeMoving.isHidden, "Xvnc draws the pointer itself for a client that hasn't moved it.")
+    try await client.send(.pointerEvent(buttons: 0, x: 100, y: 100))
+    let shape = try #require(await iterator.next())
+    print("interop: cursor \(shape.width)x\(shape.height) hotspot \(shape.hotspotX),\(shape.hotspotY)")
+    #expect(!shape.isHidden)
+    #expect(
+      stride(from: 3, to: shape.pixels.count, by: 4).contains { shape.pixels[$0] == 255 }, "Some pixels are opaque.")
   }
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))

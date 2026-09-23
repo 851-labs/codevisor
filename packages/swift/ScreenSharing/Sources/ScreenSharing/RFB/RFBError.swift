@@ -119,9 +119,15 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
   case zrle = 16
   /// Pseudo-encoding: the framebuffer changed size.
   case desktopSize = -223
+  /// Pseudo-encoding: the pointer's shape, drawn by the client (the server
+  /// stops painting it into the framebuffer).
+  case cursor = -239
+  /// Pseudo-encoding: the server moved the pointer (another client, an
+  /// agent, the desktop itself); the rectangle's x and y are its position.
+  case pointerPosition = -232
 
   /// What this client advertises, in preference order.
-  public static let supported: [RFBEncoding] = [.zrle, .copyRect, .raw, .desktopSize]
+  public static let supported: [RFBEncoding] = [.zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition]
 }
 
 public struct RFBRectangle: Sendable, Equatable, Hashable {
@@ -154,12 +160,15 @@ public enum RFBServerEvent: Sendable, Equatable {
   case serverCutText(String)
 }
 
-/// What one FramebufferUpdate changed, reported after it is fully applied.
-/// One applied FramebufferUpdate. Equality compares content (rectangles and
-/// resize), not the measurements.
+/// One applied FramebufferUpdate. Equality compares content (rectangles,
+/// resize, cursor and pointer), not the measurements.
 public struct RFBUpdate: Sendable, Equatable {
   public var rectangles: [RFBRectangle]
   public var resized: Bool
+  /// The last cursor shape the update carried, if any.
+  public var cursor: RFBCursorShape?
+  /// The last server-side pointer position the update carried, if any.
+  public var pointer: RFBPoint?
   /// The message's size on the wire, header included.
   public var byteCount = 0
   /// From sending the request this update answers to applying the update.
@@ -167,6 +176,14 @@ public struct RFBUpdate: Sendable, Equatable {
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {
-    lhs.rectangles == rhs.rectangles && lhs.resized == rhs.resized
+    lhs.rectangles == rhs.rectangles && lhs.resized == rhs.resized && lhs.cursor == rhs.cursor
+      && lhs.pointer == rhs.pointer
   }
+}
+
+/// A position in framebuffer pixels.
+public struct RFBPoint: Sendable, Equatable, Hashable {
+  public var x: Int
+  public var y: Int
+  public init(x: Int, y: Int) { self.x = x; self.y = y }
 }

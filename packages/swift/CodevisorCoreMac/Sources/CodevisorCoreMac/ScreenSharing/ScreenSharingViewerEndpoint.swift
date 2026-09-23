@@ -63,6 +63,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       self.forwarder.end()
       self.emit(.inputLost(self.surface.inputFailureMessage))
     }
+    // Backends that report the pointer separately (VNC) draw it locally (851-2311).
+    session.onCursorChanged = { [weak surface] in surface?.showRemoteCursor($0) }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }
       self.presented = true

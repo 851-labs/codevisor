@@ -66,6 +66,20 @@ struct VNCScreenSharingSessionTests {
     #expect(await harness.session.statistics() == ["vnc.transport": "TCP"])
   }
 
+  @Test func theServersPointerReachesTheViewerInOrder() async throws {
+    var configuration = RFBLoopbackServer.Configuration()
+    configuration.cursor = RFBCursorTestShapes.corner
+    let harness = try await Harness(configuration: configuration)
+    defer { harness.stop() }
+    var received: [ScreenSharingCursorUpdate] = []
+    harness.session.onCursorChanged = { received.append($0) }
+    #expect(await awaitPolled { received == [.shape(RFBCursorTestShapes.corner)] })
+    #expect(await awaitPolled { harness.server.isRequestPending })
+    harness.server.movePointer(to: RFBPoint(x: 5, y: 6))
+    #expect(await awaitPolled { received.last == .position(RFBPoint(x: 5, y: 6)) })
+    #expect(harness.session.metrics.snapshot().counters["vncCursorShapes"] == 1)
+  }
+
   @Test func controlIsGrantedLocallyAndInputReachesTheServer() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
