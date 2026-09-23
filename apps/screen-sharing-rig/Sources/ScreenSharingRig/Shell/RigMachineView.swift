@@ -199,15 +199,9 @@
       .navigationSubtitle(model.machine.detail)
       .toolbar {
         if let store = model.store { RigScreenSharingToolbar(store: store) }
-        ToolbarItem(id: "rig.machine.reconnect", placement: .primaryAction) {
-          Button {
-            model.retry()
-          } label: {
-            Label("Reconnect", systemImage: "arrow.clockwise")
-          }
-          .help("Reconnect to \(model.machine.name)")
-        }
       }
+      // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
+      .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }
       .onAppear { model.appeared() }
       .onDisappear { model.disappeared() }
     }

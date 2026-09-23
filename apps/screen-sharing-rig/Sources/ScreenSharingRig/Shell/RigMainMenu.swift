@@ -11,6 +11,8 @@
   enum RigMainMenu {
     /// Posted by View → Toggle Sidebar; the shell flips its split view's column visibility, as its toolbar button does.
     static let toggleSidebar = Notification.Name("RigMainMenu.toggleSidebar")
+    /// Posted by View → Reconnect; the selected machine starts its connection over.
+    static let reconnect = Notification.Name("RigMainMenu.reconnect")
 
     static func install(appName: String = "Codevisor Screen Sharing Rig") {
       let main = NSMenu()
@@ -45,6 +47,9 @@
       edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
       let view = submenu("View", in: main)
+      view.addItem(withTitle: "Reconnect", action: #selector(RigMenuTarget.reconnect(_:)), keyEquivalent: "r").target =
+        RigMenuTarget.shared
+      view.addItem(.separator())
       let sidebar = view.addItem(
         withTitle: "Toggle Sidebar", action: #selector(RigMenuTarget.toggleSidebar(_:)), keyEquivalent: "s")
       sidebar.keyEquivalentModifierMask = [.command, .control]
@@ -75,6 +80,9 @@
   @MainActor
   final class RigMenuTarget: NSObject {
     static let shared = RigMenuTarget()
+    @objc func reconnect(_ sender: Any?) {
+      NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
+    }
     @objc func toggleSidebar(_ sender: Any?) {
       NotificationCenter.default.post(name: RigMainMenu.toggleSidebar, object: nil)
     }
