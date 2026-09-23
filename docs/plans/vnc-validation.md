@@ -42,7 +42,11 @@ Rules:
 
 ## Performance: `vnc-bench`
 
-The benchmark is a rig subcommand, separate from the tests.
+The benchmark is a rig subcommand (`screen-sharing-rig vnc-bench`), separate
+from the tests. `bun run vnc:bench` builds it in release mode, writes
+`tmp/vnc-bench/<time>/bench.{json,md}` and compares with this machine's
+baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
+`--runs`, `--frames` and `--size` narrow or change the matrix.
 
 - **Scenes** (reference server, defined by seed and frame count): idle,
   typing, scroll, window drag, photo/video, resize.
@@ -54,8 +58,10 @@ The benchmark is a rig subcommand, separate from the tests.
   timestamps are taken in one process), bytes on the wire, client CPU per
   update, bytes copied per update, presented fps.
 - **Statistics:** N runs per scene and profile; median and p95. An A/A run
-  (same build twice) sets the noise band per metric. A change is a regression
-  when a metric is worse by more than the noise band.
+  (same build twice) sets the noise band per metric: the larger of both
+  sides' run spread and 10 %, and at least a per-metric absolute floor
+  (1 ms for latencies). A change is a regression when a metric is worse by
+  more than the noise band.
 - **Baselines:** `docs/measurements/vnc/baseline-<machine>.json`, updated only
   by a ticket that improves a metric, in the same commit. Reports record the
   hardware, macOS version, build hash and power state; run on AC power with no
