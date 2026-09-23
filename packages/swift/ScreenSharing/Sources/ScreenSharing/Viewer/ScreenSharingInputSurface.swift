@@ -10,7 +10,11 @@
 
   /// Responder and event routing for the native surface. The session event tap
   /// captures system shortcuts; the local monitor also handles app-delivered events.
-  /// Both send physical keys for the host's keyboard layout to interpret.
+  /// Both send physical keys for the host's keyboard layout to interpret, except
+  /// synthesized typing (851-2318): Computer Use `typeText` posts key code 0
+  /// carrying the text, which as a physical key would be A. A key-code-0 press
+  /// whose characters aren't what that key gives on the local layout is sent as
+  /// the text instead (the server receives the character's keysym).
   @MainActor
   final class ScreenSharingInputSurface {
     private weak var view: (any ScreenSharingInputTarget)?
@@ -29,6 +33,9 @@
     private var buttons = Set<UInt8>()
     private var modifiers: UInt8 = 0
     private var keys = Set<UInt16>()
+    /// Key codes whose press went out as text: their release sends nothing.
+    private var textKeys = Set<UInt16>()
+    private let layout: VNCKeyTranslator.Layout
     private var scroll = ScreenSharingScrollAccumulator()
     private var lastPointer: ScreenSharingPointer?
     private var inputFocused = false
@@ -39,8 +46,10 @@
       view: any ScreenSharingInputTarget, notificationCenter: NotificationCenter = .default,
       keyboardCapture: any ScreenSharingKeyboardCapture = ScreenSharingSystemKeyboardCapture(),
       applicationIsActive: @escaping () -> Bool = { NSApp.isActive },
-      clock: any Clock<Duration> = ContinuousClock()
+      clock: any Clock<Duration> = ContinuousClock(),
+      layout: @escaping VNCKeyTranslator.Layout = VNCKeyTranslator.currentLayout
     ) {
+      self.layout = layout
       self.view = view
       self.notificationCenter = notificationCenter
       self.keyboardCapture = keyboardCapture
@@ -110,7 +119,7 @@
       monitor = nil
       for observer in observers { notificationCenter.removeObserver(observer) }
       observers = []; motionTask?.cancel(); motionTask = nil
-      pendingMotion = nil; buttons = []; keys = []; modifiers = 0; scroll = .init(); lastPointer = nil
+      pendingMotion = nil; buttons = []; keys = []; textKeys = []; modifiers = 0; scroll = .init(); lastPointer = nil
     }
 
     /// Local controls may own focus while the remote-control lease stays active.
@@ -121,7 +130,7 @@
       pendingMotion = nil
       let heldKeys = keys.sorted()
       let heldButtons = buttons.sorted()
-      keys = []; buttons = []; scroll = .init()
+      keys = []; textKeys = []; buttons = []; scroll = .init()
       for code in heldKeys {
         onInput?(.key(code: code, down: false, repeatKey: false, modifiers: modifiers))
       }
@@ -179,9 +188,25 @@
       guard active else { return true }
       if event.type == .flagsChanged { return true }
       let down = event.type == .keyDown
+      if !down, textKeys.remove(event.keyCode) != nil { return true }
+      if down, let text = synthesizedText(event) {
+        textKeys.insert(event.keyCode)
+        onInput?(.text(text))
+        return true
+      }
       if down { keys.insert(event.keyCode) } else if keys.remove(event.keyCode) == nil { return true }
       onInput?(.key(code: event.keyCode, down: down, repeatKey: event.isARepeat, modifiers: modifiers))
       return true
+    }
+
+    /// The text a synthesized key press carries, or nil for a physical key.
+    /// Only key code 0 (what `typeText` uses) and never with Control or
+    /// Command, whose characters differ from the layout's by design.
+    private func synthesizedText(_ event: NSEvent) -> String? {
+      guard event.keyCode == 0, modifiers & (2 | 8) == 0, let characters = event.characters, !characters.isEmpty
+      else { return nil }
+      let physical = layout(0, VNCKeyTranslator.carbonModifiers(modifiers)).map { String(Character($0)) }
+      return characters == physical ? nil : characters
     }
 
     func mouse(_ event: NSEvent) {

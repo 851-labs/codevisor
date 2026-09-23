@@ -36,13 +36,18 @@
     public func keysym(code: UInt16, modifiers: UInt8) -> UInt32? {
       if Self.ignoredCodes.contains(code) { return nil }
       if let keysym = Self.modifierKeysyms[code] ?? Self.specialKeysyms[code] { return keysym }
-      // Carbon modifier state as UCKeyTranslate wants it: (flags >> 8) & 0xff.
+      guard let scalar = layout(code, Self.carbonModifiers(modifiers)) else { return nil }
+      return RFBKeysym.keysym(for: scalar)
+    }
+
+    /// Shift, Option and Caps Lock of `ScreenSharingInputEvent` modifiers as
+    /// UCKeyTranslate wants them: (Carbon flags >> 8) & 0xff.
+    public static func carbonModifiers(_ modifiers: UInt8) -> UInt32 {
       var carbon: UInt32 = 0
       if modifiers & 1 != 0 { carbon |= UInt32(shiftKey >> 8) }
       if modifiers & 4 != 0 { carbon |= UInt32(optionKey >> 8) }
       if modifiers & 16 != 0 { carbon |= UInt32(alphaLock >> 8) }
-      guard let scalar = layout(code, carbon) else { return nil }
-      return RFBKeysym.keysym(for: scalar)
+      return carbon
     }
 
     /// The user's current keyboard layout through `UCKeyTranslate`.

@@ -105,6 +105,11 @@ never left "Connecting…". The env-gated tests `RFBInteropTests`,
 `ScreenSharingSurfacePresentationTests` (`SCREEN_SHARING_WINDOW_TESTS=1`)
 reproduce the setup.
 
-Caveat: synthesized typing (Computer Use `typeText`, key code 0 with a Unicode
-payload) reaches a VNC server as the `A` key — the surface forwards physical
-key codes by design; real keyboards and `pressKey` sequences are unaffected.
+Synthesized typing (Computer Use `typeText`, key code 0 with a Unicode payload)
+is sent as text (851-2318): a key-code-0 press whose characters aren't what
+that key gives on the local layout (and without Control or Command) becomes
+`.text`, which reaches a VNC server as the characters' keysyms (Unicode keysyms
+`0x1000000 + code point` beyond Latin-1). Every other key is still forwarded as
+a physical key for the layout to interpret. QEMU Extended Key Events (−258,
+layout-independent scancodes) were considered and deferred: they change who
+interprets the layout, which is the same decision as what ⌘ sends (851-2317).
