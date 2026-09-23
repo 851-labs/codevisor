@@ -243,5 +243,21 @@ function contaboFlow() {
     ax("press", "Connection Details")
     return { ok: shown.status === 0, detail: shown.stdout.trim() }
   })
-  step("Contabo window capture", () => ({ ok: existsSync(capture("contabo")) }))
+  step("the Contabo desktop is on screen", () => {
+    // Connecting resizes the desktop to the pane; the picture follows within a few seconds.
+    let colours = 0
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      colours = Number(ax("colours", capture("contabo")).stdout.trim()) || 0
+      if (colours > 8)
+        return {
+          ok: true,
+          detail: `${colours} colours in the video after ${attempt + 1} capture(s), 1 s apart`
+        }
+      pause(1000)
+    }
+    return {
+      ok: false,
+      detail: `the video is blank (${colours} colour${colours === 1 ? "" : "s"})`
+    }
+  })
 }

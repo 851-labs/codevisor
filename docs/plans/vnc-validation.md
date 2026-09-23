@@ -73,13 +73,19 @@ baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
   least a per-metric absolute floor (1 ms for latencies). Reports record the
   load average and flag a busy machine. Client CPU per update and Mbit/s are
   reported but never a verdict: whole-process CPU time read 0.54–1.7 ms for
-  one unchanged build across runs, more than any change moves it. A change is a regression when a metric is worse by
-  more than the noise band.
+  one unchanged build across runs, more than any change moves it. A change is
+  a regression when a metric is worse by more than the noise band.
 - **A/B in one session:** `vnc:validate` runs `vnc:bench --against-main`: it
   builds `origin/main` in `tmp/vnc-bench/main-worktree`, benchmarks it first,
   then benchmarks the change and compares the two. Stored baselines drift with
   the machine's state (an unchanged build's CPU per update read 0.57 ms one
   session and 1.45 ms another), so the gate never compares across sessions.
+- **Real desktops:** `scripts/vnc-desktop-sample.sh root@HOST` measures a
+  desktop provisioned by `scripts/vnc-desktop.sh` through an SSH tunnel with
+  `screen-sharing-rig vnc-sample`: updates/s, Mbit/s and round trip while a
+  terminal window is dragged, and keystroke-to-echo latency p50/p95. The public
+  route's jitter is large (drag updates/s read 6.5–23 across three runs of one
+  configuration), so compare medians of at least three runs.
 - **Baselines:** `docs/measurements/vnc/baseline-<machine>.json`, the historical
   record (not the gate's reference), updated only
   by a ticket that improves a metric, in the same commit. Reports record the
