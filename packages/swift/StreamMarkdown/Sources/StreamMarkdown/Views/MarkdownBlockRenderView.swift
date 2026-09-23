@@ -193,6 +193,7 @@ public struct MarkdownFragmentRenderView: View {
   private let isStreaming: Bool
   private let layout: MarkdownFragmentLayout
   @Environment(\.markdownTheme) private var theme
+  @Environment(\.streamMarkdownTextLayoutWidth) private var rowLayoutWidth
 
   public init(
     blocks: [MarkdownBlock],
@@ -219,6 +220,9 @@ public struct MarkdownFragmentRenderView: View {
       animationGroupID: animationGroupID,
       isStreaming: isStreaming
     )
+    // Renderers that lay out at the row width (prepared text, tables) must
+    // see the indented column, or they overflow the row by the indent.
+    .environment(\.streamMarkdownTextLayoutWidth, rowLayoutWidth.map { max(1, $0 - contentIndent) })
     .padding(.leading, contentIndent)
     .padding(.bottom, trailingSpacing)
     .frame(maxWidth: .infinity, alignment: .leading)

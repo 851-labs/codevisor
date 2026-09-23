@@ -1,6 +1,20 @@
 import SwiftUI
 import StreamMarkdown
 
+/// Geometry shared by every renderer that draws part of a proposed-plan
+/// card (the SwiftUI views below and the macOS native Markdown row host).
+public enum PlanDocumentMetrics {
+  /// Inset from the card's border to its markdown column, per side.
+  public static let horizontalPadding: CGFloat = 12
+  /// Inset below the last markdown block.
+  public static let bottomPadding: CGFloat = 12
+  public static let cornerRadius: CGFloat = 8
+  public static let borderWidth: CGFloat = 1
+  /// How far a wide table's scroll viewport reaches past the markdown
+  /// column: up to the inner edge of the card's border, never across it.
+  public static let tableBleedLimit: CGFloat = horizontalPadding - borderWidth
+}
+
 /// The "Proposed Plan" card: a free-form markdown plan the agent produced in
 /// plan mode (Claude ExitPlanMode, codex plan items), rendered with the same
 /// markdown pipeline as the final answer — the codex CLI's "Proposed Plan"
@@ -23,8 +37,12 @@ public struct PlanDocumentView: View {
       }
       .foregroundStyle(.secondary)
       StreamingMarkdownView(markdown)
+        .markdownContainer(
+          padding: PlanDocumentMetrics.horizontalPadding,
+          borderWidth: PlanDocumentMetrics.borderWidth
+        )
     }
-    .padding(12)
+    .padding(PlanDocumentMetrics.horizontalPadding)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackground))
     .themedCardShadow(theme)
@@ -120,9 +138,13 @@ public struct PlanDocumentBlockView: View {
 
   public var body: some View {
     markdownContent
-      .padding(.horizontal, 12)
+      .markdownContainer(
+        padding: PlanDocumentMetrics.horizontalPadding,
+        borderWidth: PlanDocumentMetrics.borderWidth
+      )
+      .padding(.horizontal, PlanDocumentMetrics.horizontalPadding)
       .padding(.top, fragmentLayout != nil || isFirst ? 0 : markdownTheme.blockSpacing)
-      .padding(.bottom, isLast ? 12 : 0)
+      .padding(.bottom, isLast ? PlanDocumentMetrics.bottomPadding : 0)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         PlanDocumentFragmentBackground(

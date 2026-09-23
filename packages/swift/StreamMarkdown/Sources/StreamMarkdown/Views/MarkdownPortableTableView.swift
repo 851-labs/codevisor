@@ -8,7 +8,7 @@
     let headers: [MarkdownText]
     let alignments: [ColumnAlignment]
     let rows: [[MarkdownText]]
-    @Environment(\.markdownTableBleed) private var bleed
+    @Environment(\.resolvedMarkdownTableBleed) private var bleed
 
     var body: some View {
       if !headers.isEmpty || rows.contains(where: { !$0.isEmpty }) {

@@ -12,7 +12,7 @@
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownImageLoader) private var imageLoader
     @State private var images = MarkdownTableImages()
-    @Environment(\.markdownTableBleed) private var bleed
+    @Environment(\.resolvedMarkdownTableBleed) private var bleed
     @Environment(\.streamMarkdownTextLayoutWidth) private var rowWidth
     @Environment(\.markdownLinkAction) private var linkAction
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

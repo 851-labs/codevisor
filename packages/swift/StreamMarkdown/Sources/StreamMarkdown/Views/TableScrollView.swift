@@ -9,9 +9,19 @@
   /// position inside the transcript) and the content is inset by the same
   /// amount, so a fitting table rests exactly on the text column and an
   /// overflowing one scrolls all the way to the transcript's edges.
+  ///
+  /// `bleedLimit` caps that reach for tables hosted inside a bordered
+  /// container (the proposed-plan card): the table then scrolls within the
+  /// container's own padding rather than past its border.
   final class TableBleedContainer: NSView {
     let scrollView: TableScrollView
     private(set) var bleed: CGFloat = 0
+    var bleedLimit: CGFloat = .greatestFiniteMagnitude {
+      didSet {
+        guard bleedLimit != oldValue else { return }
+        needsLayout = true
+      }
+    }
 
     init(tableTextView: TableTextView) {
       scrollView = TableScrollView(tableTextView: tableTextView)
@@ -28,7 +38,7 @@
 
     override func layout() {
       super.layout()
-      bleed = measuredBleed()
+      bleed = max(0, min(measuredBleed(), bleedLimit.rounded(.down)))
       scrollView.contentInsets = NSEdgeInsets(top: 0, left: bleed, bottom: 0, right: bleed)
       scrollView.frame = bounds.insetBy(dx: -bleed, dy: 0)
       scrollView.needsLayout = true

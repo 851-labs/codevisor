@@ -7,8 +7,8 @@ import SwiftUI
 import TranscriptKit
 
 enum TranscriptMarkdownRowLayout {
-  static let planHorizontalInset: CGFloat = 12
-  static let planBottomInset: CGFloat = 12
+  static let planHorizontalInset = PlanDocumentMetrics.horizontalPadding
+  static let planBottomInset = PlanDocumentMetrics.bottomPadding
 }
 
 struct TranscriptMarkdownRowStyle {

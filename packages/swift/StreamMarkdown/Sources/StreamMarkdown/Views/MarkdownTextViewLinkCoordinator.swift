@@ -30,6 +30,7 @@
 
   extension SelectableTextTableView {
     func updateNSView(_ container: TableBleedContainer, context: Context) {
+      container.bleedLimit = bleedLimit
       container.scrollView.tableTextView.linkAction = linkAction
       container.scrollView.tableTextView.update(model: model, renderMemo: renderMemo)
       container.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))

@@ -8,6 +8,7 @@
     let layout: PreparedNativeTextLayout
     let borderColor: Color
     @Environment(\.markdownLinkAction) private var linkAction
+    @Environment(\.markdownTableBleedLimit) private var bleedLimit
 
     func makeNSView(context: Context) -> TableBleedContainer {
       let textView = TableTextView(frame: CGRect(origin: .zero, size: layout.size), textContainer: layout.container)
@@ -36,6 +37,7 @@
         view.needsLayout = true
       }
       textView.linkAction = linkAction
+      view.bleedLimit = bleedLimit
       view.scrollView.setBorderColor(NSColor(borderColor))
     }
 

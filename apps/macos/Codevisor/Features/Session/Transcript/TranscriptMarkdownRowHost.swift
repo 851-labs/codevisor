@@ -1,4 +1,5 @@
 import AppKit
+import CodevisorUI
 import MarkdownCore
 import StreamMarkdown
 import TranscriptKit
@@ -51,6 +52,13 @@ final class TranscriptMarkdownRowHost: TranscriptMountedRowHost {
     self.style = style
     decoration.frame = bounds
     decoration.setContent(chunk, style: style)
+    // Hosts are recycled across rows, so reset the limit for non-plan rows:
+    // transcript tables scroll to the window edges, plan tables inside the
+    // card's border.
+    markdownView.tableBleedLimit =
+      chunk.container == .planDocument
+      ? PlanDocumentMetrics.tableBleedLimit
+      : .greatestFiniteMagnitude
     markdownView.setContent(
       blocks: chunk.blocks,
       theme: style.markdown,

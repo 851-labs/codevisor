@@ -18,6 +18,15 @@
     }
 
     public var onContentHeightChange: (() -> Void)?
+    /// See `EnvironmentValues.markdownTableBleedLimit`: native hosts that
+    /// draw a bordered container around this view (the proposed-plan card)
+    /// cap how far a wide table's scroll viewport reaches past the column.
+    public var tableBleedLimit: CGFloat = .greatestFiniteMagnitude {
+      didSet {
+        guard tableBleedLimit != oldValue else { return }
+        contentViews.forEach { $0.tableBleedLimit = tableBleedLimit }
+      }
+    }
     private var contentKey: ContentKey?
     private var contentViews: [NativeMarkdownContentView] = []
     private var blockSpacing: CGFloat = 0
@@ -63,6 +72,7 @@
         imageLoader: imageLoader
       )
       contentViews.forEach { view in
+        view.tableBleedLimit = tableBleedLimit
         view.onContentChange = { [weak self] in
           guard let self else { return }
           measuredWidth = -1
@@ -199,6 +209,10 @@
       didSet { linkActionDidChange() }
     }
     func linkActionDidChange() {}
+    var tableBleedLimit: CGFloat = .greatestFiniteMagnitude {
+      didSet { tableBleedLimitDidChange() }
+    }
+    func tableBleedLimitDidChange() {}
     func contentHeight(forWidth _: CGFloat) -> CGFloat { 1 }
   }
 

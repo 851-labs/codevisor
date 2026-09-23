@@ -136,6 +136,7 @@
     let model: TableModel
     let renderMemo: MarkdownTableRenderMemo
     @Environment(\.markdownLinkAction) var linkAction
+    @Environment(\.markdownTableBleedLimit) var bleedLimit
 
     /// The floor a minimum-size probe reports, so a wide table never pins the
     /// window's minimum width to its own content width.
@@ -176,6 +177,7 @@
       context.coordinator.install(on: textView, action: linkAction)
       textView.update(model: model, renderMemo: renderMemo)
       let bleedContainer = TableBleedContainer(tableTextView: textView)
+      bleedContainer.bleedLimit = bleedLimit
       bleedContainer.scrollView.setBorderColor(NSColor(model.theme.tableBorderColor))
       return bleedContainer
     }

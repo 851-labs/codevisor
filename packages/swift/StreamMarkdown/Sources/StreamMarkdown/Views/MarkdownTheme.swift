@@ -179,6 +179,10 @@ private struct MarkdownTableBleedKey: EnvironmentKey {
   static let defaultValue: CGFloat = 0
 }
 
+private struct MarkdownTableBleedLimitKey: EnvironmentKey {
+  static let defaultValue: CGFloat = .greatestFiniteMagnitude
+}
+
 private struct MarkdownLinkActionKey: EnvironmentKey {
   static let defaultValue: MarkdownLinkAction? = nil
 }
@@ -196,9 +200,28 @@ public extension EnvironmentValues {
     set { self[MarkdownTableBleedKey.self] = newValue }
   }
 
+  /// The farthest a wide table's scroll viewport may extend past the text
+  /// column on either side, on every platform. The transcript leaves this
+  /// unbounded so tables scroll to the window edges (macOS measures the
+  /// gutter, iOS uses `markdownTableBleed`). A bordered container that
+  /// hosts markdown — the proposed-plan card — caps it at its own inner
+  /// padding so a wide table scrolls inside the card instead of across its
+  /// border and out over the transcript gutter.
+  var markdownTableBleedLimit: CGFloat {
+    get { self[MarkdownTableBleedLimitKey.self] }
+    set { self[MarkdownTableBleedLimitKey.self] = newValue }
+  }
+
   var markdownLinkAction: MarkdownLinkAction? {
     get { self[MarkdownLinkActionKey.self] }
     set { self[MarkdownLinkActionKey.self] = newValue }
+  }
+}
+
+extension EnvironmentValues {
+  /// The iOS table bleed after applying the enclosing container's limit.
+  var resolvedMarkdownTableBleed: CGFloat {
+    max(0, min(markdownTableBleed, markdownTableBleedLimit))
   }
 }
 
