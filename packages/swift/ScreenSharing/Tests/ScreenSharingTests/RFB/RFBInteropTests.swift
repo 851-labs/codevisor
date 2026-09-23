@@ -196,6 +196,57 @@ struct RFBInteropTests {
     Issue.record("the clipboard never came back")
   }
 
+  /// Synthesized typing against TigerVNC (851-2318): text goes out as the
+  /// characters' keysyms (what `VNCInputTranslator` sends for `.text`), with
+  /// the pointer over the container's typing sink, an xterm that puts each
+  /// line on the clipboard as "typed:<line>"; it must come back verbatim.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  @MainActor
+  func synthesizedTypingArrivesVerbatim() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, outcome) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
+    defer { client.close() }
+    let typed = "Hello, wörld! \(UUID().uuidString.prefix(4))"
+    let (messages, continuation) = AsyncStream<RFBExtendedClipboard.Message>.makeStream()
+    let run = Task {
+      try await client.run(
+        onUpdate: { _, _ in },
+        onEvent: { if case .extendedClipboard(let message) = $0 { continuation.yield(message) } })
+    }
+    defer { run.cancel() }
+    let input = VNCInputTranslator(
+      width: outcome.parameters.width, height: outcome.parameters.height, keys: VNCKeyTranslator())
+    let text = RFBExtendedClipboard.text
+    // The test runner's timeout guards a sink that never answers.
+    for await message in messages {
+      switch message {
+      case .caps:
+        try await client.send(
+          .extendedClipboard(
+            .caps(
+              formats: text,
+              actions: RFBExtendedClipboard.request | RFBExtendedClipboard.notify | RFBExtendedClipboard.provide,
+              maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)])))
+        // Over the sink (xterm at 20,560), then the line.
+        let pointer = ScreenSharingPointer(
+          x: 60 / Double(outcome.parameters.width), y: 575 / Double(outcome.parameters.height))
+        for message in input.translate(.move(pointer, modifiers: 0)) + input.translate(.text(typed + "\n")) {
+          try await client.send(message)
+        }
+      case .notify(let formats) where formats & text != 0:
+        try await client.send(.extendedClipboard(.request(formats: text)))
+      case .provide(let provided?) where provided.hasPrefix("typed:"):
+        print("interop: typed \(provided)")
+        #expect(provided == "typed:" + typed)
+        return
+      default: break
+      }
+    }
+    Issue.record("the typed line never came back")
+  }
+
   /// Tight against TigerVNC (851-2313): the client prefers Tight; lossless,
   /// the plasma window's pixels match what a JPEG (quality 8) connection sees
   /// within a PSNR bound, and only the JPEG connection receives JPEG.

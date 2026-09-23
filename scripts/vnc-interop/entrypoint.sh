@@ -31,6 +31,14 @@ DISPLAY=:1 timeout 20 xdotool search --sync --onlyvisible --class display >/dev/
 # Without a window manager `display` ignores -geometry; put it where the tests sample.
 DISPLAY=:1 xdotool search --onlyvisible --class display windowmove 600 300
 DISPLAY=:1 xdotool search --onlyvisible --class display getwindowgeometry | sed 's/^/vnc-interop: plasma /'
+# Typing sink (851-2318), bottom-left: an xterm that puts each typed line on the clipboard as
+# "typed:<line>", which Xvnc then announces to clients. No window manager: X focus follows the pointer.
+LANG=C.UTF-8 DISPLAY=:1 xterm -u8 -geometry 60x3+20+560 -name typing-sink -e sh -c \
+  'while IFS= read -r line; do printf "typed:%s" "$line" | xclip -i -selection clipboard; done' &
+DISPLAY=:1 timeout 20 xdotool search --sync --onlyvisible --classname typing-sink >/dev/null || {
+  echo "vnc-interop: the typing sink never appeared" >&2
+  exit 1
+}
 sleep 0.5
 # Clipboard echo (851-2316): reading the clipboard is the "paste" that makes Xvnc ask a
 # client for the text it announced; writing it back as "echo:<text>" makes Xvnc announce it.
@@ -38,7 +46,7 @@ sleep 0.5
   while :; do
     text=$(DISPLAY=:1 xclip -o -selection clipboard 2>/dev/null) || text=""
     case "$text" in
-      "" | echo:*) ;;
+      "" | echo:* | typed:*) ;;
       *) printf 'echo:%s' "$text" | DISPLAY=:1 xclip -i -selection clipboard ;;
     esac
     sleep 0.3

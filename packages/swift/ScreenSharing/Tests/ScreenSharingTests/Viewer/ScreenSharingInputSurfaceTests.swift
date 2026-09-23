@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ScreenSharing
 import Testing
 @testable import ScreenSharing
@@ -20,6 +21,38 @@ struct ScreenSharingInputSurfaceTests {
         .key(code: 55, down: false, repeatKey: false, modifiers: 0),
       ])
     #expect(fixture.controlling)
+  }
+
+  /// 851-2318: synthesized typing (key code 0 carrying the text) goes out as
+  /// the text, once per press, its release swallowed; a real A key stays a key.
+  @Test func synthesizedTypingIsSentAsTextAndPhysicalKeysStayKeys() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    for character in ["H", "ö", "!", "日"] {
+      #expect(fixture.keyboard.send(.keyDown, try fixture.typed(character)))
+      #expect(fixture.keyboard.send(.keyUp, try fixture.typed(character, down: false)))
+    }
+    #expect(fixture.keyboard.send(.keyDown, try fixture.typed("a")))
+    #expect(fixture.keyboard.send(.keyUp, try fixture.typed("a", down: false)))
+    #expect(fixture.keyboard.send(.keyDown, try fixture.typed("A", flags: .maskShift)))
+    #expect(fixture.keyboard.send(.keyUp, try fixture.typed("A", down: false, flags: .maskShift)))
+    #expect(
+      fixture.events == [
+        .text("H"), .text("ö"), .text("!"), .text("日"),
+        .key(code: 0, down: true, repeatKey: false, modifiers: 0),
+        .key(code: 0, down: false, repeatKey: false, modifiers: 0),
+        .key(code: 56, down: true, repeatKey: false, modifiers: 1),
+        .key(code: 0, down: true, repeatKey: false, modifiers: 1),
+        .key(code: 0, down: false, repeatKey: false, modifiers: 1),
+      ])
+  }
+
+  /// Control and Command change a key's characters by design (⌃A is U+0001): still a physical key.
+  @Test func controlAndCommandKeepKeyCodeZeroPhysical() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    #expect(fixture.keyboard.send(.keyDown, try fixture.typed("\u{01}", flags: .maskControl)))
+    #expect(fixture.events.last == .key(code: 0, down: true, repeatKey: false, modifiers: 2))
   }
 
   @Test func systemShortcutsStayLocalOutsideTheFocusedVideo() throws {
@@ -229,7 +262,9 @@ private final class InputSurfaceFixture {
     keyboard.starts = keyboardStarts
     input = ScreenSharingInputSurface(
       view: view, notificationCenter: notifications, keyboardCapture: keyboard,
-      applicationIsActive: { [application] in application.active })
+      applicationIsActive: { [application] in application.active },
+      // A fixed layout (key 0 is A), not the developer's: the synthesized-text check compares against it.
+      layout: { code, carbon in code == 0 ? (carbon & UInt32(Carbon.shiftKey >> 8) != 0 ? "A" : "a") : "x" })
     input.onInput = { [unowned self] in
       events.append($0); forwarder.forward($0)
     }
@@ -244,6 +279,14 @@ private final class InputSurfaceFixture {
   func systemKey(code: UInt16, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
     let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
     event.flags = flags
+    return event
+  }
+
+  /// A key event carrying `text`, the way Computer Use `typeText` posts it (key code 0 by default).
+  func typed(_ text: String, code: UInt16 = 0, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
+    let event = try systemKey(code: code, down: down, flags: flags)
+    let units = Array(text.utf16)
+    event.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
     return event
   }
 
