@@ -5,15 +5,22 @@ import Network
 /// bytes, or nothing once the peer has closed. `close()` is idempotent and
 /// fails every pending or later read and write.
 public protocol RFBTransport: Sendable {
+  /// What carries the bytes, for diagnostics ("TCP", "WebSocket").
+  var name: String { get }
   func read(maximum: Int) async throws -> [UInt8]
   func write(_ bytes: [UInt8]) async throws
   func close()
+}
+
+extension RFBTransport {
+  public var name: String { "Stream" }
 }
 
 /// TCP through Network.framework. `connect` resolves and waits for the
 /// connection to be ready or to fail; a `waiting` state (no route, refused
 /// and retrying) fails fast, since the viewer owns retrying.
 public final class RFBNetworkTransport: RFBTransport, @unchecked Sendable {
+  public var name: String { "TCP" }
   private let connection: NWConnection
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.rfb")
 

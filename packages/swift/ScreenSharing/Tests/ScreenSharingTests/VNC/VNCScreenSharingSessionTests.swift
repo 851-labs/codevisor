@@ -54,6 +54,17 @@ struct VNCScreenSharingSessionTests {
     #expect(await awaitPolled { harness.session.frames.take().map { CVPixelBufferGetWidth($0.pixelBuffer) } == 32 })
   }
 
+  @Test func updatesFeedTheSessionsVNCMetrics() async throws {
+    let harness = try await Harness()
+    defer { harness.stop() }
+    // The first (non-incremental) update is the whole 64 × 48 frame, raw.
+    #expect(await awaitPolled { harness.session.metrics.snapshot().counters["vncUpdatesPublished"] == 1 })
+    let snapshot = harness.session.metrics.snapshot()
+    #expect(snapshot.counters["vncBytesReceived"] == 4 + 12 + 64 * 48 * 4)
+    #expect(snapshot.timings["vncUpdateLatency"]?.count == 1)
+    #expect(await harness.session.statistics() == ["vnc.transport": "TCP"])
+  }
+
   @Test func controlIsGrantedLocallyAndInputReachesTheServer() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
