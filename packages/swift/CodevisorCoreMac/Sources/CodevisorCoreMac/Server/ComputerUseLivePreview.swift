@@ -5,42 +5,7 @@ import Metal
 import Observation
 import ScreenSharing
 
-// MARK: - Gating and geometry
-
-public enum ComputerUseLivePreviewConfiguration {
-  public static let environmentKey = "CODEVISOR_COMPUTER_USE_PIP"
-
-  /// Absent or empty is off, "1" is on; anything else is a configuration
-  /// error rather than a silent fallback.
-  public static func resolve(environment: [String: String]) throws -> Bool {
-    guard let raw = environment[environmentKey], !raw.isEmpty else { return false }
-    guard raw == "1" else {
-      throw ComputerUseLivePreviewConfigurationError(
-        message: "Unknown \(environmentKey) value \"\(raw)\". Use 1 or leave it unset."
-      )
-    }
-    return true
-  }
-
-  private static let processResult = Result {
-    try resolve(environment: ProcessInfo.processInfo.environment)
-  }
-
-  /// Parsed once per process. A misconfiguration logs and stays off.
-  public static var isEnabled: Bool {
-    switch processResult {
-    case .success(let enabled): return enabled
-    case .failure(let error):
-      Log.computerUse.error("\(String(describing: error), privacy: .public)")
-      return false
-    }
-  }
-}
-
-public struct ComputerUseLivePreviewConfigurationError: Error, CustomStringConvertible {
-  public let message: String
-  public var description: String { message }
-}
+// MARK: - Geometry
 
 /// Aspect-fits a frame into the preview card's bounds.
 public func computerUseLivePreviewSize(

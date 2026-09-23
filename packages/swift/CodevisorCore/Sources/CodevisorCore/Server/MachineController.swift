@@ -98,6 +98,20 @@ public struct MachineStatus: Sendable, Equatable {
   public var supportsComputerUseStreaming: Bool { features.contains("computer-use-stream-v1") }
 }
 
+/// Whether `machineId` reaches this Mac's own server: the local entry, or a
+/// configured or cloud entry that probed as the same server. A Mac can show
+/// up under more than one entry, and work on any of them runs here.
+public func codevisorMachineIsThisMac(
+  _ machineId: String,
+  statusByMachineId: [String: MachineStatus]
+) -> Bool {
+  if machineId == CodevisorMachine.local.id { return true }
+  guard let local = statusByMachineId[CodevisorMachine.local.id]?.serverId,
+    let other = statusByMachineId[machineId]?.serverId
+  else { return false }
+  return local == other
+}
+
 /// The transport a machine's traffic currently rides.
 public enum MachineRoute: Sendable, Equatable {
   case direct

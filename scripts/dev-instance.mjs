@@ -41,8 +41,6 @@ const ambientAllowlist = new Set([
   "CODEVISOR_GHOSTTY_ARTIFACT_ORIGIN",
   // Explicit, default-off native diagnostic; the app validates the value.
   "CODEVISOR_SCREEN_SHARING_DIAGNOSTIC_PROFILE",
-  // Experimental Computer Use picture-in-picture; the app validates the value.
-  "CODEVISOR_COMPUTER_USE_PIP",
   "CODEVISOR_VERSION",
   "HERDMAN_VERSION"
 ])
