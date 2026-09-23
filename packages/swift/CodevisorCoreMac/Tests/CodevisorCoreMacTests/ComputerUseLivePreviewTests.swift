@@ -186,18 +186,7 @@ struct ComputerUseLivePreviewTests {
     #expect(idle == ["abandoned"])
   }
 
-  // MARK: Configuration and geometry
-
-  @Test("Enables only for an exact opt-in and rejects unknown values")
-  func configuration() throws {
-    let key = ComputerUseLivePreviewConfiguration.environmentKey
-    #expect(try ComputerUseLivePreviewConfiguration.resolve(environment: [:]) == false)
-    #expect(try ComputerUseLivePreviewConfiguration.resolve(environment: [key: ""]) == false)
-    #expect(try ComputerUseLivePreviewConfiguration.resolve(environment: [key: "1"]) == true)
-    #expect(throws: ComputerUseLivePreviewConfigurationError.self) {
-      try ComputerUseLivePreviewConfiguration.resolve(environment: [key: "yes"])
-    }
-  }
+  // MARK: Geometry
 
   @Test("Aspect-fits the frame into the card")
   func previewSize() {

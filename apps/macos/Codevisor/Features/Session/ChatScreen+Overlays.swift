@@ -20,12 +20,10 @@ extension ChatScreen {
   }
 
   /// A live view of the window this chat's agent is controlling through
-  /// Computer Use, on this Mac or the chat's host Mac. Experimental:
-  /// `CODEVISOR_COMPUTER_USE_PIP=1`.
+  /// Computer Use, on this Mac or the chat's host Mac.
   @ViewBuilder
   var computerUsePiPOverlay: some View {
-    if ComputerUseLivePreviewConfiguration.isEnabled,
-      let chatSessionID = controller.serverSession?.id,
+    if let chatSessionID = controller.serverSession?.id,
       let source = computerUsePiPSource
     {
       ComputerUsePiPOverlay(
@@ -40,7 +38,9 @@ extension ChatScreen {
 
   private var computerUsePiPSource: ComputerUsePiPModel.Source? {
     let serverId = controller.project.serverId
-    if serverId == CodevisorMachine.local.id { return .local }
+    if codevisorMachineIsThisMac(serverId, statusByMachineId: environment.machines.statusByMachineId) {
+      return .local
+    }
     guard let computerUsePiPPane,
       environment.machines.statusByMachineId[serverId]?.supportsComputerUseStreaming == true
     else { return nil }

@@ -62,8 +62,12 @@ struct ComputerUsePiPOverlay: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .allowsHitTesting(false)
       }
-      header
+      // Native PiP's control: hidden until hover, then a glass close button.
+      closeButton
+        .padding(8)
         .opacity(isHovering ? 1 : 0)
+        .scaleEffect(isHovering ? 1 : 0.9)
+        .allowsHitTesting(isHovering)
     }
     .frame(width: size.width, height: size.height)
     .background(.black)
@@ -81,32 +85,19 @@ struct ComputerUsePiPOverlay: View {
     .accessibilityLabel("Live view of \(model.title) controlled by the agent")
   }
 
-  private var header: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(model.tint)
-        .frame(width: 7, height: 7)
-      Text(model.title)
-        .font(.caption.weight(.semibold))
-        .lineLimit(1)
-      Spacer(minLength: 4)
-      Button {
-        model.dismiss()
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 10, weight: .bold))
-          .frame(width: 18, height: 18)
-      }
-      .buttonStyle(.plain)
-      .help("Hide live view")
-      .accessibilityLabel("Hide live view")
+  private var closeButton: some View {
+    Button {
+      model.dismiss()
+    } label: {
+      Image(systemName: "xmark")
+        .font(.system(size: 12, weight: .semibold))
+        .frame(width: 28, height: 28)
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 5)
+    .buttonStyle(.plain)
     .foregroundStyle(.white)
-    .background(
-      LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
-    )
+    .glassEffect(.regular.interactive(), in: .circle)
+    .help("Close live view")
+    .accessibilityLabel("Close live view of \(model.title)")
   }
 }
 
