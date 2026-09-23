@@ -140,7 +140,7 @@
       } else {
         shapedCursor = nil
       }
-      guard !input.active, let shape = remoteShape, let image = remoteImage, let position = remotePosition,
+      guard !input.isLive, let shape = remoteShape, let image = remoteImage, let position = remotePosition,
         let frame = ScreenSharingVideoGeometry.cursorFrame(
           x: Double(position.x), y: Double(position.y), hotspotX: Double(shape.hotspotX),
           hotspotY: Double(shape.hotspotY), cursorWidth: Double(shape.width), cursorHeight: Double(shape.height),
@@ -201,7 +201,7 @@
     }
     public override func resetCursorRects() {
       super.resetCursorRects()
-      guard input.active else { return }
+      guard input.isLive else { return }
       let drawable = metal.convertToBacking(metal.bounds).size
       let scale = min(drawable.width / videoSize.width, drawable.height / videoSize.height)
       let video = CGRect(
@@ -214,10 +214,10 @@
     func controlCursorChanged() {
       refreshRemoteCursor()
       window?.invalidateCursorRects(for: self)
-      if !input.active, isControlCursor(NSCursor.current) { NSCursor.arrow.set() }
+      if !input.isLive, isControlCursor(NSCursor.current) { NSCursor.arrow.set() }
     }
     public override func cursorUpdate(with event: NSEvent) {
-      if input.active, pointer(event, clamp: false) != nil { controlCursor.set() } else { NSCursor.arrow.set() }
+      if input.isLive, pointer(event, clamp: false) != nil { controlCursor.set() } else { NSCursor.arrow.set() }
     }
     public override func mouseExited(with event: NSEvent) {
       if isControlCursor(NSCursor.current) { NSCursor.arrow.set() }

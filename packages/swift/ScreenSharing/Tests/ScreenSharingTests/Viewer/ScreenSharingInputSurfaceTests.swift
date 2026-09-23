@@ -197,6 +197,47 @@ struct ScreenSharingInputSurfaceTests {
     #expect(fixture.events.last == .key(code: 1, down: true, repeatKey: false, modifiers: 0))
   }
 
+  /// ⌘Tab away and back with the video still first responder: input was
+  /// suspended (not live, so the pointer must be the arrow, not the host's
+  /// cursor) and resumes when the app is active and the window key again.
+  /// Before, nothing resumed it: the pointer stayed invisible over the video
+  /// and moves went nowhere until a click.
+  @Test func returningToTheAppResumesInputWhenTheVideoStillHasFocus() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    #expect(fixture.input.isLive)
+    let changes = fixture.view.cursorChanges
+    fixture.application.active = false
+    fixture.window.key = false
+    fixture.notifications.post(name: NSApplication.didResignActiveNotification, object: nil)
+    #expect(!fixture.input.isLive && fixture.input.active, "suspended, lease kept")
+    #expect(fixture.view.cursorChanges == changes + 1, "the pointer goes back to the arrow")
+    fixture.application.active = true
+    fixture.window.key = true
+    fixture.notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    #expect(fixture.input.isLive)
+    #expect(fixture.view.cursorChanges == changes + 2, "the host's cursor again")
+    // Keys reach the host again without a click.
+    #expect(fixture.keyboard.send(.keyDown, try fixture.systemKey(code: 12)))
+    #expect(fixture.events.last == .key(code: 12, down: true, repeatKey: false, modifiers: 0))
+  }
+
+  /// Returning while something else has focus (a local editor, a sheet) stays suspended.
+  @Test func returningWithAnotherResponderStaysSuspended() throws {
+    let fixture = try InputSurfaceFixture()
+    defer { fixture.close() }
+    fixture.notifications.post(name: NSApplication.didResignActiveNotification, object: nil)
+    let editor = NSTextView(frame: .init(x: 0, y: 490, width: 100, height: 30))
+    fixture.window.contentView?.addSubview(editor)
+    #expect(fixture.window.makeFirstResponder(editor))
+    fixture.notifications.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    fixture.notifications.post(name: NSWindow.didBecomeKeyNotification, object: fixture.window)
+    #expect(!fixture.input.isLive)
+    // A menu closing doesn't resume it either while the editor has focus.
+    fixture.notifications.post(name: NSMenu.didEndTrackingNotification, object: NSMenu())
+    #expect(!fixture.input.isLive)
+  }
+
   @Test func escapeFromLocalControlsStillReleasesTheLease() throws {
     let fixture = try InputSurfaceFixture()
     defer { fixture.close() }
@@ -339,6 +380,8 @@ private final class InputTestWindow: NSWindow {
 @MainActor
 private final class InputTestView: NSView, ScreenSharingInputTarget {
   override var acceptsFirstResponder: Bool { true }
+  /// How often the surface asked for the pointer to be re-evaluated (host cursor vs. arrow).
+  private(set) var cursorChanges = 0
   func pointer(_ event: NSEvent, clamp: Bool) -> ScreenSharingPointer? { .init(x: 0.5, y: 0.5) }
-  func controlCursorChanged() {}
+  func controlCursorChanged() { cursorChanges += 1 }
 }

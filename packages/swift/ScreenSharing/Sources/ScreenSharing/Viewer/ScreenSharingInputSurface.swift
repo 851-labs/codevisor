@@ -40,6 +40,10 @@
     private var lastPointer: ScreenSharingPointer?
     private var inputFocused = false
     private(set) var active = false
+    /// Input is actually going to the host: the lease is active and the video
+    /// has focus. While suspended (another app, a menu, a local control) the
+    /// pointer must look and behave as in View mode, not as the host's cursor.
+    var isLive: Bool { active && inputFocused }
     private(set) var failureMessage: String?
 
     init(
@@ -93,6 +97,12 @@
       let suspend: @Sendable (Notification) -> Void = { [weak self] _ in
         MainActor.assumeIsolated { self?.suspend() }
       }
+      // Coming back (⌘Tab, a closed menu, the window key again) with the video
+      // still first responder resumes input: nothing else would, since the view
+      // never lost first responder, and the pointer would stay invisible.
+      let resume: @Sendable (Notification) -> Void = { [weak self] _ in
+        MainActor.assumeIsolated { self?.resumeIfFocused() }
+      }
       observers = [
         notificationCenter.addObserver(
           forName: NSWindow.didResignKeyNotification, object: window, queue: .main, using: suspend),
@@ -100,6 +110,12 @@
           forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: suspend),
         notificationCenter.addObserver(
           forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main, using: suspend),
+        notificationCenter.addObserver(
+          forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main, using: resume),
+        notificationCenter.addObserver(
+          forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main, using: resume),
+        notificationCenter.addObserver(
+          forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main, using: resume),
       ]
       motionTask = Task { [weak self, clock] in
         while !Task.isCancelled {
@@ -126,7 +142,9 @@
     /// Release held input immediately so a menu cannot strand a remote key or drag.
     func suspend() {
       guard active else { return }
+      let wasLive = inputFocused
       inputFocused = false
+      if wasLive { view?.controlCursorChanged() }
       pendingMotion = nil
       let heldKeys = keys.sorted()
       let heldButtons = buttons.sorted()
@@ -143,7 +161,19 @@
     }
 
     func resume() {
-      if active { inputFocused = true }
+      guard active, !inputFocused else { return }
+      inputFocused = true
+      view?.controlCursorChanged()
+    }
+
+    /// Resumes only when the video really has focus again: app active, window
+    /// key, video first responder, nothing modal in front.
+    func resumeIfFocused() {
+      guard active, applicationIsActive(), let view, let window = view.window, window.isKeyWindow,
+        window.firstResponder === view, !view.isHiddenOrHasHiddenAncestor, window.attachedSheet == nil,
+        NSApp.modalWindow == nil
+      else { return }
+      resume()
     }
 
     func route(_ event: NSEvent) -> NSEvent? {
