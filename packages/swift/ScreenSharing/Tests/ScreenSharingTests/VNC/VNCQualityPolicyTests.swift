@@ -32,6 +32,39 @@ struct VNCQualityPolicyTests {
     #expect(policy.qualityLevel == nil)
   }
 
+  /// 851-2329: a very slow link (100 KB in a second, 0.8 Mbit/s) gets quality 4.
+  @Test func aVerySlowLinkGetsTheLowerQuality() {
+    var policy = VNCQualityPolicy()
+    #expect(Self.sample(&policy, milliseconds: 1000) == nil)
+    #expect(Self.sample(&policy, milliseconds: 1000) == nil)
+    #expect(Self.sample(&policy, milliseconds: 1000) == .some(4))
+    #expect(policy.description == "JPEG 4")
+  }
+
+  /// From quality 8 a link that drops below 2 Mbit/s goes to 4; back to 8 only above 3 Mbit/s.
+  @Test func theSlowLinkTierHasItsOwnHysteresis() {
+    #expect(VNCQualityPolicy.level(for: 1_500_000, current: 8) == 4)
+    #expect(VNCQualityPolicy.level(for: 2_500_000, current: 4) == 4)
+    #expect(VNCQualityPolicy.level(for: 2_500_000, current: 8) == 8)
+    #expect(VNCQualityPolicy.level(for: 3_500_000, current: 4) == 8)
+    #expect(VNCQualityPolicy.level(for: 20_000_000, current: 4) == 8)
+    #expect(VNCQualityPolicy.level(for: 30_000_000, current: 4) == nil)
+    #expect(VNCQualityPolicy.level(for: 20_000_000, current: nil) == nil)
+    #expect(VNCQualityPolicy.level(for: 10_000_000, current: nil) == 8)
+  }
+
+  /// 851-2329: mid-sized updates (a window drag's 16 KB each, 200 ms apiece on a
+  /// 0.66 Mbit/s link) pool into 64 KB samples, so a slow link is still noticed.
+  @Test func midSizedUpdatesPoolIntoSamples() {
+    var policy = VNCQualityPolicy()
+    var decided: [Int??] = []
+    for _ in 0..<12 {
+      if let change = policy.observe(bytes: 16 * 1024, duration: .milliseconds(200)) { decided.append(change) }
+    }
+    #expect(decided == [.some(4)])
+    #expect((policy.bitsPerSecond ?? 0) < 1_000_000)
+  }
+
   @Test func smallUpdatesAreNotSamples() {
     var policy = VNCQualityPolicy()
     for _ in 0..<10 { #expect(policy.observe(bytes: 1000, duration: .seconds(1)) == nil) }
