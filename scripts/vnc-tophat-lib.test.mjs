@@ -35,6 +35,6 @@ test("the window line names the CGWindow for screenshots", () => {
 })
 
 test("clipboard tokens are distinct per run", () => {
-  assert.equal(clipboardToken(35), "codevisor-tophat-z")
+  assert.equal(clipboardToken(35), "codevisor-tophat-z 日本語 😀")
   assert.notEqual(clipboardToken(1), clipboardToken(2))
 })

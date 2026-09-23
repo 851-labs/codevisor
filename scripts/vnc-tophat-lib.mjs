@@ -40,7 +40,8 @@ export function parseWindow(line) {
   return window
 }
 
-/// A marker the loopback server's input log shows when the clipboard arrives.
+/// A marker the loopback server's input log shows when the clipboard arrives;
+/// non-Latin-1 on purpose, so it only survives the UTF-8 clipboard (851-2316).
 export function clipboardToken(seed) {
-  return `codevisor-tophat-${seed.toString(36)}`
+  return `codevisor-tophat-${seed.toString(36)} 日本語 😀`
 }

@@ -16,10 +16,11 @@ struct RFBProtocolTypesTests {
     #expect(RFBEncoding.fence.rawValue == -312)
     #expect(RFBEncoding.continuousUpdates.rawValue == -313)
     #expect(RFBEncoding.extendedDesktopSize.rawValue == -308)
+    #expect(UInt32(bitPattern: RFBEncoding.extendedClipboard.rawValue) == 0xC0A1_E5CE)
     #expect(
       Set(RFBEncoding.allCases) == [
         .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
-        .extendedDesktopSize,
+        .extendedDesktopSize, .extendedClipboard,
       ])
   }
 
@@ -29,9 +30,9 @@ struct RFBProtocolTypesTests {
     #expect(
       RFBEncoding.supported == [
         .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
-        .extendedDesktopSize,
+        .extendedDesktopSize, .extendedClipboard,
       ])
-    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232, -312, -313, -308])
+    #expect(RFBEncoding.supported.map(\.rawValue) == [16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698])
     #expect(Set(RFBEncoding.supported) == Set(RFBEncoding.allCases))
   }
 

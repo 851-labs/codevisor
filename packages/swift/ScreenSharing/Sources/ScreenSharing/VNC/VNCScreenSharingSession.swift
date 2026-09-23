@@ -183,6 +183,9 @@
       case .serverCutText(let text):
         emulator.serverCutText(text)
         metrics.increment("vncServerCutTexts")
+      case .extendedClipboard(let message):
+        emulator.extendedClipboard(message)
+        metrics.increment("vncExtendedClipboardMessages")
       case .continuousUpdates, .roundTrip: break
       }
     }

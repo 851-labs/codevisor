@@ -130,13 +130,15 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
   /// Pseudo-encoding: the framebuffer's size and screen layout, and the
   /// result of the client's SetDesktopSize (851-2314).
   case extendedDesktopSize = -308
+  /// Pseudo-encoding 0xC0A1E5CE: UTF-8 clipboard (851-2316).
+  case extendedClipboard = -1_063_131_698
   /// Pseudo-encoding: the client can take pushed updates without requesting each one.
   case continuousUpdates = -313
 
   /// What this client advertises, in preference order.
   public static let supported: [RFBEncoding] = [
     .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
-    .extendedDesktopSize,
+    .extendedDesktopSize, .extendedClipboard,
   ]
 }
 
@@ -172,6 +174,8 @@ public enum RFBServerEvent: Sendable, Equatable {
   case continuousUpdates(Bool)
   /// The round trip of one of the client's own fences.
   case roundTrip(Duration)
+  /// An Extended Clipboard message (caps, request, notify, provide, peek).
+  case extendedClipboard(RFBExtendedClipboard.Message)
 }
 
 /// One applied FramebufferUpdate. Equality compares content (rectangles,

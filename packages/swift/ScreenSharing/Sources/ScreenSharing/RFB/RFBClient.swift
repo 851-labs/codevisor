@@ -118,7 +118,14 @@ public actor RFBClient {
         if length >= 0 {
           onEvent(.serverCutText(RFBLatin1.decode(try await stream.bytes(Int(length)))))
         } else {
-          try await stream.skip(Int(-Int64(length)))  // extended clipboard we never asked for
+          let size = Int(-Int64(length))
+          guard size <= RFBExtendedClipboard.maximumBytes else {
+            throw RFBError.malformed("extended clipboard message of \(size) bytes")
+          }
+          // A clipboard message we can't read is dropped, not fatal to the session.
+          if let message = try? RFBExtendedClipboard.decode(try await stream.bytes(size)) {
+            onEvent(.extendedClipboard(message))
+          }
         }
       case let type:
         throw RFBError.malformed("unknown server message \(type)")
@@ -215,7 +222,7 @@ public actor RFBClient {
         }
         desktopSize = RFBDesktopSizeResult(
           reason: reason, status: status, width: width, height: height, screens: screens)
-      case .fence, .continuousUpdates, nil:
+      case .fence, .continuousUpdates, .extendedClipboard, nil:
         // Negotiation-only pseudo-encodings never arrive as rectangles.
         throw RFBError.unsupportedEncoding(encoding)
       }
