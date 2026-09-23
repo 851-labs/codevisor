@@ -62,7 +62,7 @@ struct VNCScreenSharingSessionTests {
     let snapshot = harness.session.metrics.snapshot()
     #expect(snapshot.counters["vncBytesReceived"] == 4 + 12 + 64 * 48 * 4)
     #expect(snapshot.timings["vncUpdateLatency"]?.count == 1)
-    #expect(snapshot.counters["vncBytesCopied"] == 64 * 48 * 4, "Today every update copies the whole frame.")
+    #expect(snapshot.counters["vncBytesCopied"] == 64 * 48 * 4, "The first update fills a new buffer whole.")
     #expect(await harness.session.statistics() == ["vnc.transport": "TCP"])
   }
 

@@ -75,7 +75,8 @@
         do {
           try await client.run(
             onUpdate: { framebuffer, update in
-              publisher.publish(framebuffer, to: frames, metrics: metrics)
+              publisher.publish(
+                framebuffer, changed: update.resized ? nil : update.rectangles, to: frames, metrics: metrics)
               metrics.increment("vncRectangles", by: update.rectangles.count)
               metrics.increment("vncBytesReceived", by: update.byteCount)
               var cursor: [ScreenSharingCursorUpdate] = []

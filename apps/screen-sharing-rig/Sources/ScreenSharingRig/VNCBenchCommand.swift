@@ -123,7 +123,8 @@
         do {
           try await client.run(
             onUpdate: { framebuffer, update in
-              publisher.publish(framebuffer, to: mailbox, metrics: metrics)
+              publisher.publish(
+                framebuffer, changed: update.resized ? nil : update.rectangles, to: mailbox, metrics: metrics)
               continuation.yield(
                 Observed(
                   latencyMs: update.latency?.milliseconds, bytes: update.byteCount,
