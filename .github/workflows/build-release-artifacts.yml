@@ -324,7 +324,11 @@ jobs:
       - name: Resolve Xcode cache version
         id: xcode-cache-version
         shell: bash
-        run: echo "value=$(xcodebuild -version | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+        # DerivedData embeds absolute paths, and each self-hosted runner has its
+        # own workspace ($HOME differs per runner account). Keying on the
+        # workspace keeps one runner from restoring another's DerivedData,
+        # which fails with "There is no XCFramework found at /Users/<other>/…".
+        run: echo "value=$({ xcodebuild -version; echo "$GITHUB_WORKSPACE"; } | shasum -a 256 | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - name: Restore Xcode DerivedData cache
         id: xcode-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6

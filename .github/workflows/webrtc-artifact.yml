@@ -22,9 +22,15 @@ jobs:
         id: tools
         run: |
           node -e 'const p=JSON.parse(require("fs").readFileSync("scripts/webrtc-build.lock.json")); console.log("python="+p.pythonVersion); console.log("xcode="+p.xcodeVersion)' >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      # actions/setup-python has no macOS builds for CPython 3.12 security
+      # releases (python.org stopped publishing installers), so the exact pin
+      # the recipe enforces could never be installed there. uv installs it from
+      # python-build-standalone; the activated venv puts it first on PATH.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: ${{ steps.tools.outputs.python }}
+          activate-environment: true
+          enable-cache: false
       - name: Build frameworks and dependency notices
         shell: bash
         run: |

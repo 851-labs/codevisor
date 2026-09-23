@@ -60,6 +60,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.4.2"
+      # SwiftTerm compiles Metal shaders, and Xcode 16+ ships the Metal
+      # Toolchain as a separately downloadable component. Idempotent: a no-op
+      # once installed, so it only costs time on a fresh runner (or after an
+      # Xcode update drops the component).
+      - name: Ensure Metal Toolchain
+        if: inputs.operation == 'build'
+        run: xcodebuild -downloadComponent MetalToolchain
       - name: Archive and cloud-sign the iOS build for release promotion
         if: inputs.operation == 'build'
         env:
