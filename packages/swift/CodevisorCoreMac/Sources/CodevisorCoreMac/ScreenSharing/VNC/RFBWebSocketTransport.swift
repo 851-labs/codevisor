@@ -11,6 +11,10 @@ public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
   private let socket: any ServerWebSocketConnecting
   private let lock = NSLock()
   private var buffered: [UInt8] = []
+  /// Bytes of `buffered` already handed out; compacted once it passes half (851-2320).
+  private var consumed = 0
+  /// Bytes moved by compaction, for the operation-count test.
+  private(set) var bytesMoved = 0
   private var closed = false
 
   public init(socket: any ServerWebSocketConnecting) {
@@ -65,13 +69,26 @@ public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
     lock.unlock()
   }
 
+  /// Hands out the next bytes by moving an offset, not by shifting the rest:
+  /// `removeFirst` made reading a 1 MiB message in 64 KiB pieces move ~8 MiB.
+  /// The consumed prefix is dropped once it is at least half the buffer, so
+  /// every byte is moved at most once on average.
   private func takeBuffered(maximum: Int) -> [UInt8]? {
     lock.lock()
     defer { lock.unlock() }
-    guard !buffered.isEmpty else { return nil }
-    let count = min(maximum, buffered.count)
-    let bytes = Array(buffered.prefix(count))
-    buffered.removeFirst(count)
+    let available = buffered.count - consumed
+    guard available > 0 else { return nil }
+    let count = min(maximum, available)
+    let bytes = Array(buffered[consumed..<consumed + count])
+    consumed += count
+    if consumed == buffered.count {
+      buffered.removeAll(keepingCapacity: true)
+      consumed = 0
+    } else if consumed * 2 >= buffered.count {
+      bytesMoved += buffered.count - consumed
+      buffered.removeFirst(consumed)
+      consumed = 0
+    }
     return bytes
   }
 }

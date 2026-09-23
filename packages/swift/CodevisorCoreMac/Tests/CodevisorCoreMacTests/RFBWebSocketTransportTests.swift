@@ -66,4 +66,18 @@ struct RFBWebSocketTransportTests {
     await #expect(throws: RFBError.connectionClosed) { try await transport.read(maximum: 1) }
     await #expect(throws: RFBError.connectionClosed) { try await transport.write([1]) }
   }
+
+  /// 851-2320: reading a 1 MiB message in 64 KiB pieces moves each byte at
+  /// most once (it moved ~8 MiB with `removeFirst`), and the bytes are intact.
+  @Test func readingALargeMessageInPiecesMovesEachByteAtMostOnce() async throws {
+    let message = (0..<(1 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 31) }
+    let socket = ScriptedSocket(inbound: [.data(Data(message))])
+    let transport = RFBWebSocketTransport(socket: socket)
+    var received: [UInt8] = []
+    while received.count < message.count {
+      received += try await transport.read(maximum: 1 << 16)
+    }
+    #expect(received == message)
+    #expect(transport.bytesMoved <= message.count, "moved \(transport.bytesMoved) bytes")
+  }
 }

@@ -15,10 +15,14 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
 
   public enum Direction: Sendable { case higherIsBetter, lowerIsBetter, informational }
 
+  /// CPU per update is reported, not judged: whole-process CPU time (timers,
+  /// shaping, pacing included) read 0.54, 1.22, 1.45 and 1.7 ms for the same
+  /// build across runs (851-2320), more than any change moves it. Gate on the
+  /// exact counts (bytes, bytes copied) and on rates and latencies instead.
   public var direction: Direction {
     switch self {
     case .updatesPerSecond: .higherIsBetter
-    case .megabitsPerSecond: .informational
+    case .megabitsPerSecond, .cpuMsPerUpdate: .informational
     default: .lowerIsBetter
     }
   }

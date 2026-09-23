@@ -93,4 +93,15 @@ struct RFBInputStreamTests {
     writer.append([7, 7])
     #expect(writer.bytes == [UInt8](hex: "ab 1234 deadbeef fffffffe 000000 0707"))
   }
+
+  /// 851-2320: a 1 MiB rectangle read from 64 KiB transport chunks moves each
+  /// byte at most once on compaction.
+  @Test func compactionMovesEachByteAtMostOnce() async throws {
+    let payload = (0..<(1 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 13) }
+    let stream = RFBInputStream(transport: ScriptedTransport(payload, chunk: 1 << 16), chunk: 1 << 16)
+    var read: [UInt8] = []
+    while read.count < payload.count { read += try await stream.bytes(min(40_000, payload.count - read.count)) }
+    #expect(read == payload)
+    #expect(stream.bytesMoved <= payload.count)
+  }
 }
