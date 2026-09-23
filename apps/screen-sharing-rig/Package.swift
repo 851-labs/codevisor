@@ -28,6 +28,8 @@ let package = Package(
       dependencies: [
         "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
         .product(name: "CodevisorClient", package: "CodevisorKit"),
+        // RFBWebSocketTransport: a machine's VNC display over its server's socket route, as the product opens it.
+        .product(name: "CodevisorCoreMac", package: "CodevisorKit"),
         .product(name: "ScreenSharing", package: "CodevisorKit"),
         .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
         .product(name: "ScreenSharingTesting", package: "CodevisorKit"),

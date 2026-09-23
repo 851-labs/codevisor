@@ -1,19 +1,20 @@
 #if os(macOS)
   import AppKit
+  import ScreenSharingRigKit
   import SwiftUI
 
-  /// The rig's window: a sidebar of scenarios, each a way to exercise the
-  /// screen-sharing stack outside the product. Launched without arguments it
-  /// opens on Raw VNC; the resident viewer (`--config`) opens the same window
+  /// The rig's window: a sidebar of machines to view (`RigMachine.catalog`,
+  /// plus the loopback VNC server while it runs) over a Debug section of
+  /// scenarios, each a way to exercise the screen-sharing stack outside the
+  /// product. Launched without arguments it opens on the first machine; the resident viewer (`--config`) opens the same window
   /// on Native session with its video inside. `probe`, `vnc-server` and the
   /// `--config` host remain headless entry points the scripts drive.
   enum RigScenario: String, CaseIterable, Identifiable {
-    case rawVNC, loopbackServer, nativeSession, probe
+    case loopbackServer, nativeSession, probe
     var id: String { rawValue }
 
     var title: String {
       switch self {
-      case .rawVNC: "Raw VNC"
       case .loopbackServer: "Loopback VNC server"
       case .nativeSession: "Native session"
       case .probe: "Probe"
@@ -22,7 +23,6 @@
 
     var systemImage: String {
       switch self {
-      case .rawVNC: "network"
       case .loopbackServer: "server.rack"
       case .nativeSession: "display.2"
       case .probe: "waveform.path.ecg"
@@ -40,11 +40,13 @@
       let app = NSApplication.shared
       app.setActivationPolicy(.regular)
       let controller = NSHostingController(rootView: RigShellView(runner: runner))
+      // The SwiftUI `.toolbar` and navigation titles drive a native unified window toolbar.
+      controller.sceneBridgingOptions = [.toolbars, .title]
       let window = NSWindow(contentViewController: controller)
       window.title = runner == nil ? "Codevisor Screen Sharing Rig" : "Codevisor Screen Sharing Rig · viewer"
       window.setContentSize(NSSize(width: 1180, height: 760))
       window.styleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
-      window.titlebarAppearsTransparent = true
+      window.toolbarStyle = .unified
       window.isReleasedWhenClosed = false
       window.center()
       if let runner {
@@ -64,36 +66,73 @@
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
   }
 
+  /// A sidebar row: a machine, or one of the debug scenarios.
+  enum RigSidebarItem: Hashable {
+    case machine(String)
+    case scenario(RigScenario)
+  }
+
   struct RigShellView: View {
     let runner: RigRunner?
-    @State private var scenario: RigScenario?
+    @State private var selection: RigSidebarItem?
     @State private var columns: NavigationSplitViewVisibility = .all
-    @State private var vnc = RigVNCScenarioModel()
     @State private var loopback = RigLoopbackServerModel()
+    @State private var catalog: [RigMachineModel]
+    /// The loopback server as a machine, listed while it serves.
+    @State private var loopbackMachine: RigMachineModel?
 
     init(runner: RigRunner?) {
       self.runner = runner
-      _scenario = State(initialValue: runner == nil ? .rawVNC : .nativeSession)
+      _catalog = State(initialValue: RigMachine.catalog.map { RigMachineModel(machine: $0) })
+      let first: RigSidebarItem = RigMachine.catalog.first.map { .machine($0.id) } ?? .scenario(.loopbackServer)
+      _selection = State(initialValue: runner == nil ? first : .scenario(.nativeSession))
     }
+
+    private var machines: [RigMachineModel] { catalog + (loopbackMachine.map { [$0] } ?? []) }
 
     var body: some View {
       NavigationSplitView(columnVisibility: $columns) {
-        List(RigScenario.allCases, selection: $scenario) { scenario in
-          Label(scenario.title, systemImage: scenario.systemImage).tag(scenario)
+        List(selection: $selection) {
+          Section("Machines") {
+            ForEach(machines, id: \.machine.id) { model in
+              Label(model.machine.name, systemImage: model.machine.systemImage)
+                .tag(RigSidebarItem.machine(model.machine.id))
+            }
+          }
+          Section("Debug") {
+            ForEach(RigScenario.allCases) { scenario in
+              Label(scenario.title, systemImage: scenario.systemImage).tag(RigSidebarItem.scenario(scenario))
+            }
+          }
         }
         .navigationSplitViewColumnWidth(min: 200, ideal: 220)
       } detail: {
-        switch scenario ?? .rawVNC {
-        case .rawVNC: RigVNCScenarioView(model: vnc, loopback: loopback)
-        case .loopbackServer: RigLoopbackServerView(model: loopback)
-        case .nativeSession:
+        switch selection {
+        case .machine(let id):
+          if let model = machines.first(where: { $0.machine.id == id }) {
+            RigMachineView(model: model).id(id)
+          }
+        case nil: ContentUnavailableView("Select a machine", systemImage: "display")
+        case .scenario(.loopbackServer):
+          RigLoopbackServerView(model: loopback) {
+            if let id = loopbackMachine?.machine.id { selection = .machine(id) }
+          }
+        case .scenario(.nativeSession):
           if let runner { RigNativeSessionView(runner: runner) } else { RigInstructionsView.nativeSession }
-        case .probe: RigInstructionsView.probe
+        case .scenario(.probe): RigInstructionsView.probe
         }
+      }
+      .onChange(of: loopback.port) { _, port in
+        loopbackMachine = port.map {
+          RigMachineModel(machine: .loopback(port: $0, password: loopback.password.isEmpty ? nil : loopback.password))
+        }
+        // Viewing the loopback server when it stops: back to its controls.
+        let loopbackId = RigMachine.loopback(port: 0, password: nil).id
+        if loopbackMachine == nil, case .machine(loopbackId) = selection { selection = .scenario(.loopbackServer) }
       }
       // A sample measures presented frames with nothing else on screen: only the video, no sidebar.
       .onChange(of: runner?.nativeSession.sampling ?? false) { _, sampling in
-        if sampling { scenario = .nativeSession }
+        if sampling { selection = .scenario(.nativeSession) }
         columns = sampling ? .detailOnly : .all
       }
     }
@@ -135,6 +174,7 @@
       }
       .padding(24)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .navigationTitle(title)
     }
   }
 #endif

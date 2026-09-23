@@ -93,6 +93,8 @@
 
   struct RigLoopbackServerView: View {
     let model: RigLoopbackServerModel
+    /// Selects the "Loopback server" machine the sidebar lists while it serves.
+    let view: () -> Void
 
     var body: some View {
       VStack(alignment: .leading, spacing: 12) {
@@ -115,6 +117,7 @@
           if model.port == nil {
             Button("Start") { model.start() }.keyboardShortcut(.defaultAction)
           } else {
+            Button("View") { view() }.keyboardShortcut(.defaultAction)
             Button("Stop") { model.stop() }
           }
           Text(model.status).foregroundStyle(.secondary)

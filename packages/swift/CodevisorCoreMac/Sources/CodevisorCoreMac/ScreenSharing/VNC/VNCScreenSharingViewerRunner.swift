@@ -3,17 +3,21 @@ import ScreenSharing
 import Foundation
 
 extension ScreenSharingViewerBackend {
-  typealias VNCOpen = @Sendable () async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
+  public typealias VNCOpen = @Sendable () async throws -> (client: RFBClient, outcome: RFBHandshake.Outcome)
 
-  /// A VNC server reached through `open` (the rig's loopback server in
-  /// tests; the product goes through the native backend's provider switch).
-  /// Discovery performs a handshake to learn the desktop's name and size; a
-  /// connection is replaced up to three times after video was seen and the
-  /// socket dropped, and ends with the server's own message otherwise.
+  /// A VNC server reached through `open` (the loopback server in tests and
+  /// the Screen Sharing rig; the product goes through the native backend's
+  /// provider switch). Discovery performs a handshake to learn the desktop's
+  /// name and size; a connection is replaced up to three times after video
+  /// was seen and the socket dropped, and ends with the server's own message
+  /// otherwise. The surface defaults to the one the native backend makes.
   @MainActor
-  static func vnc(
+  public static func vnc(
     displayId: String, open: @escaping VNCOpen,
-    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
+    makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface = {
+      try ScreenSharingVideoSurface(
+        mailbox: $0.frames, metrics: $0.metrics, profile: ScreenSharingDiagnosticProfile.process())
+    }
   ) -> Self {
     let runner = VNCScreenSharingViewerRunner(displayId: displayId, open: open, makeSurface: makeSurface)
     return Self(connect: { _ in await runner.connect() }, discover: { try await runner.discover() })

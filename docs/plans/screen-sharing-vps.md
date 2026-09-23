@@ -49,6 +49,10 @@ toolbar. VNC is how a Linux VPS gets there and is never shown to the user.
 - Stage 4 landed: `RFBWebSocketTransport`, `screenSharingVNCSocket` on the
   client, and the native backend's provider switch, tested against the
   loopback server.
+- Later (2026-09-22): the rig's Raw VNC scenario was removed. The window lists
+  machines viewed through the product's `ScreenSharingViewer` store; the
+  loopback server appears there while it runs, over the product's `.vnc`
+  backend (now public).
 - Stage 5 done on the Contabo box (164.68.121.169): `codevisor-server` from
   the public installer, then `scripts/deploy-dev-server.sh` swapped in a
   runtime built from the working tree (the release lacks the provider);

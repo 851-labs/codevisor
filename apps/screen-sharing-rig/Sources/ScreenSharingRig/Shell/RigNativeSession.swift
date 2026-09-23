@@ -38,4 +38,10 @@
       .navigationTitle("Native session")
     }
   }
+
+  struct RigSurfaceView: NSViewRepresentable {
+    let view: NSView
+    func makeNSView(context: Context) -> NSView { view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+  }
 #endif
