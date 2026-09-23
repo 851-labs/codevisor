@@ -79,15 +79,36 @@ public enum ScreenSharingVideoGeometry {
   /// Where a remote cursor image goes on an aspect-fit surface: origin
   /// top-left, in surface units, the hotspot on the video position (x, y).
   /// Also the scale a cursor image is drawn at, as `frame.width / cursorWidth`.
+  /// A remote cursor this short, in points, reads like the Mac's own arrow.
+  public static let minimumCursorHeight = 20.0
+
+  /// Points per cursor pixel. The video's scale keeps the cursor in proportion,
+  /// but a big remote framebuffer squeezed into a small pane (a Retina Mac's
+  /// Screen Sharing at ~0.4, which also may send a 1× cursor on a 2× desktop)
+  /// made it microscopic. So it's never shorter than `minimumHeight`, and never
+  /// enlarged past one point per cursor pixel just to get there.
+  public static func cursorScale(
+    videoScale: Double, cursorHeight: Double, minimumHeight: Double = minimumCursorHeight
+  ) -> Double {
+    guard cursorHeight > 0 else { return videoScale }
+    return max(videoScale, min(1, minimumHeight / cursorHeight))
+  }
+
   public static func cursorFrame(
     x: Double, y: Double, hotspotX: Double, hotspotY: Double, cursorWidth: Double, cursorHeight: Double,
-    surfaceWidth: Double, surfaceHeight: Double, videoWidth: Double, videoHeight: Double
+    surfaceWidth: Double, surfaceHeight: Double, videoWidth: Double, videoHeight: Double,
+    minimumHeight: Double = minimumCursorHeight
   ) -> (x: Double, y: Double, width: Double, height: Double)? {
     guard surfaceWidth > 0, surfaceHeight > 0, videoWidth > 0, videoHeight > 0, cursorWidth > 0, cursorHeight > 0
     else { return nil }
     let scale = min(surfaceWidth / videoWidth, surfaceHeight / videoHeight)
+    let cursor = cursorScale(videoScale: scale, cursorHeight: cursorHeight, minimumHeight: minimumHeight)
     let left = (surfaceWidth - videoWidth * scale) / 2
     let top = (surfaceHeight - videoHeight * scale) / 2
-    return (left + (x - hotspotX) * scale, top + (y - hotspotY) * scale, cursorWidth * scale, cursorHeight * scale)
+    // The hotspot lands on the host's position at the video's scale; the image around it is sized by the cursor's.
+    return (
+      left + x * scale - hotspotX * cursor, top + y * scale - hotspotY * cursor, cursorWidth * cursor,
+      cursorHeight * cursor
+    )
   }
 }
