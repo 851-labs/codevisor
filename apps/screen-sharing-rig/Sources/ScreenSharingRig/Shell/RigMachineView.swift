@@ -73,11 +73,13 @@
     private static func backend(
       _ machine: RigMachine, progress: @MainActor (String) -> Void
     ) async throws -> ScreenSharingViewerBackend {
+      let retinaDesktop = RigMachineSettings.retinaDesktop(machine.id)
       switch machine.connection {
       case .vnc(let host, let port, let password):
-        return .vnc(displayId: RigMachine.vncDisplayId(port: port)) {
-          try await VNCConnection.open(host: host, port: port, password: password)
-        }
+        return .vnc(
+          displayId: RigMachine.vncDisplayId(port: port),
+          open: { try await VNCConnection.open(host: host, port: port, password: password) },
+          retinaDesktop: retinaDesktop)
       case .server(let url, let sshTarget):
         let client: CodevisorServerClient
         do {
@@ -86,7 +88,7 @@
           // The machine rotated its token: ask it again, once.
           client = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: true, progress: progress)
         }
-        return .native(client: client, workspaceId: UUID(), paneId: UUID())
+        return .native(client: client, workspaceId: UUID(), paneId: UUID(), retinaDesktop: retinaDesktop)
       }
     }
 
@@ -202,8 +204,14 @@
       }
       // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }
-      .onAppear { model.appeared() }
-      .onDisappear { model.disappeared() }
+      .onAppear {
+        RigMenuTarget.shared.selectedMachineId = model.machine.id
+        model.appeared()
+      }
+      .onDisappear {
+        if RigMenuTarget.shared.selectedMachineId == model.machine.id { RigMenuTarget.shared.selectedMachineId = nil }
+        model.disappeared()
+      }
     }
 
     private func failure(_ message: String?, retry: @escaping () -> Void) -> some View {

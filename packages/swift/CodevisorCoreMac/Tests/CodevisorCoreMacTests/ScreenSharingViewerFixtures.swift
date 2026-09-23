@@ -52,6 +52,9 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { nil }
   var failure: String?
   var onConnectionChanged: ((String) -> Void)?
+  /// Every remote desktop size the endpoint asked for.
+  private(set) var desktopSizeRequests: [[Int]] = []
+  func requestDesktopSize(width: Int, height: Int) { desktopSizeRequests.append([width, height]) }
   var deliversVideo = true
   var channelAvailableOnAccept = true
   weak var surface: FakeSurface?
@@ -87,6 +90,7 @@ final class FakeSurface: ScreenSharingViewerSurface {
   var onFocusChanged: ((Bool) -> Void)?
   var onInput: ((ScreenSharingInputEvent) -> Void)?
   var onInputReleased: (() -> Void)?
+  var onSizeChanged: ((CGSize, CGFloat) -> Void)?
   var inputFailureMessage: String?
   /// Whether `beginInput` succeeds; false models a refused focus or keyboard capture.
   var beginInputSucceeds = true

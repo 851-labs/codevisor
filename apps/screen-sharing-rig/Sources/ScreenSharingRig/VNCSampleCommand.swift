@@ -14,9 +14,12 @@
     static let usage = """
       Usage: screen-sharing-rig vnc-sample --host H --port P [--password P] [--seconds 10]
                                            [--keys 0] [--key-gap-ms 250] [--quality 0-9]
+                                           [--desktop-size WxH]
       Prints one JSON line: updates/s, Mbit/s, bytes/update and round-trip p50 over --seconds,
       then echo latency p50/p95 (ms) over --keys keystrokes. Run the desktop's workload
       alongside (e.g. over ssh); keep the desktop otherwise still while typing.
+      --desktop-size asks the server to resize the desktop first (as a viewer pane does) and
+      holds it for the sample.
       """
 
     static func main(arguments: [String]) {
@@ -36,7 +39,8 @@
       let options = Options(
         seconds: values["seconds"].flatMap(Double.init) ?? 10, keys: values["keys"].flatMap(Int.init) ?? 0,
         keyGap: .milliseconds(values["key-gap-ms"].flatMap(Int.init) ?? 250),
-        quality: values["quality"].flatMap(Int.init))
+        quality: values["quality"].flatMap(Int.init),
+        desktopSize: values["desktop-size"].map { $0.split(separator: "x").compactMap { Int($0) } })
       Task {
         do {
           let result = try await sample(host: host, port: port, password: values["password"], options: options)
@@ -55,6 +59,7 @@
       var keys: Int
       var keyGap: Duration
       var quality: Int?
+      var desktopSize: [Int]?
     }
 
     static func sample(host: String, port: UInt16, password: String?, options: Options) async throws -> [String: Any] {
@@ -73,6 +78,11 @@
       }
       // The first full frame isn't part of the steady state.
       await log.firstUpdate()
+      if let size = options.desktopSize, size.count == 2 {
+        try await client.send(
+          .setDesktopSize(
+            width: size[0], height: size[1], screens: [RFBScreen(id: 0, x: 0, y: 0, width: size[0], height: size[1])]))
+      }
       log.reset()
       let started = ContinuousClock.now
       try await Task.sleep(for: .seconds(options.seconds))

@@ -119,3 +119,14 @@ in Linux apps. Both ⌘ keys send Control_R, clear of the left Control key;
 Control stays Control and Super is not sent. In a terminal ⌘C is therefore
 Control+C (interrupt): Linux terminals copy with Control+Shift+C (⌘⇧C).
 Control–Option–Escape still leaves control.
+
+Retina remote desktop (851-2315): a per-machine setting, off by default
+(Settings → Machines → a machine's menu → Retina Remote Desktop, saved on the
+machine record; the rig has View → Retina Remote Desktop). With it on, the pane
+asks for a desktop of a pixel per device pixel (points × the window's backing
+scale, re-requested when the window moves between displays) instead of a pixel
+per point. That is four times the pixels: scroll bandwidth doubles in
+`vnc-bench` at 2560 × 1600 while update rates hold. Panes opened after the
+change use it. The desktop still draws at 1× (sharp but small); making Xfce draw
+at 2× by provisioning is a follow-up (setting `Gdk/WindowScalingFactor` live
+didn't reach new apps on Contabo).
