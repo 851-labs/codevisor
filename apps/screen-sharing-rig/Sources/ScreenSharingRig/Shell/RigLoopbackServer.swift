@@ -100,11 +100,9 @@
       VStack(alignment: .leading, spacing: 12) {
         Form {
           TextField("Password (empty for none)", text: Bindable(model).password)
-          HStack {
-            TextField("Width", value: Bindable(model).width, format: .number)
-            TextField("Height", value: Bindable(model).height, format: .number)
-            TextField("FPS", value: Bindable(model).framesPerSecond, format: .number)
-          }
+          TextField("Width", value: Bindable(model).width, format: .number)
+          TextField("Height", value: Bindable(model).height, format: .number)
+          TextField("FPS", value: Bindable(model).framesPerSecond, format: .number)
           Picker("Encoding", selection: Bindable(model).encoding) {
             Text("ZRLE").tag(RFBEncoding.zrle)
             Text("Raw").tag(RFBEncoding.raw)
@@ -112,7 +110,7 @@
           Toggle("Animate (off: one frame, like a static desktop)", isOn: Bindable(model).animated)
         }
         .formStyle(.grouped)
-        .frame(maxHeight: 260)
+        .frame(maxHeight: 360)
         Text(model.status).foregroundStyle(.secondary).padding(.horizontal, 20)
         Text("Input received").font(.headline).padding(.horizontal, 20)
         ScrollView {
