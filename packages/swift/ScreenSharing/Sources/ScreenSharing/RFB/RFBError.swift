@@ -116,6 +116,8 @@ public struct RFBPixelFormat: Sendable, Equatable {
 public enum RFBEncoding: Int32, Sendable, CaseIterable {
   case raw = 0
   case copyRect = 1
+  /// Tight: fill, JPEG and zlib rectangles with palette/gradient filters (851-2313).
+  case tight = 7
   case zrle = 16
   /// Pseudo-encoding: the framebuffer changed size.
   case desktopSize = -223
@@ -137,7 +139,7 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
 
   /// What this client advertises, in preference order.
   public static let supported: [RFBEncoding] = [
-    .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+    .tight, .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
     .extendedDesktopSize, .extendedClipboard,
   ]
 }
@@ -194,6 +196,10 @@ public struct RFBUpdate: Sendable, Equatable {
   /// From sending the request this update answers to applying the update;
   /// nil for an update the server pushed (continuous updates).
   public var latency: Duration?
+  /// From the update's header to its last rectangle applied: its bytes over this, a bandwidth sample.
+  public var transferDuration: Duration?
+  /// Tight rectangles that arrived as JPEG.
+  public var jpegRectangles = 0
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {

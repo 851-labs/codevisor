@@ -196,6 +196,58 @@ struct RFBInteropTests {
     Issue.record("the clipboard never came back")
   }
 
+  /// Tight against TigerVNC (851-2313): the client prefers Tight; lossless,
+  /// the plasma window's pixels match what a JPEG (quality 8) connection sees
+  /// within a PSNR bound, and only the JPEG connection receives JPEG.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  func tightJPEGStaysCloseToLossless() async throws {
+    let region = RFBRectangle(x: 620, y: 320, width: 280, height: 160)
+    func capture(quality: Int?) async throws -> (rgb: [UInt8], jpeg: Int) {
+      let environment = ProcessInfo.processInfo.environment
+      let (client, _) = try await VNCConnection.open(
+        host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+        password: environment["VNC_TEST_PASSWORD"])
+      defer { client.close() }
+      try await client.setQualityLevel(quality)
+      let (updates, continuation) = AsyncStream<([UInt8], Int)>.makeStream()
+      let run = Task {
+        try await client.run(
+          onUpdate: { framebuffer, update in
+            guard update.rectangles.contains(where: { $0.maxX > region.x && $0.maxY > region.y }) else { return }
+            var rgb: [UInt8] = []
+            for y in region.y..<region.maxY {
+              for x in region.x..<region.maxX {
+                let pixel = framebuffer.pixel(x: x, y: y)
+                rgb += [pixel.red, pixel.green, pixel.blue]
+              }
+            }
+            continuation.yield((rgb, update.jpegRectangles))
+          }, onEvent: { _ in })
+      }
+      defer { run.cancel() }
+      var iterator = updates.makeAsyncIterator()
+      let (rgb, jpeg) = try #require(await iterator.next(), "an update covering the plasma window")
+      return (rgb, jpeg)
+    }
+    let lossless = try await capture(quality: nil)
+    let lossy = try await capture(quality: 8)
+    let mse =
+      zip(lossless.rgb, lossy.rgb).map { Double(Int($0) - Int($1)) }.map { $0 * $0 }.reduce(0, +)
+      / Double(lossless.rgb.count)
+    let psnr = mse == 0 ? Double.infinity : 10 * log10(255 * 255 / mse)
+    let colours = Set(
+      stride(from: 0, to: lossless.rgb.count, by: 3).map {
+        Int(lossless.rgb[$0]) << 16 | Int(lossless.rgb[$0 + 1]) << 8 | Int(lossless.rgb[$0 + 2])
+      }
+    ).count
+    print(
+      "interop: tight lossless jpeg=\(lossless.jpeg), quality 8 jpeg=\(lossy.jpeg), PSNR \(psnr) dB, \(colours) colours in the region"
+    )
+    #expect(lossless.jpeg == 0)
+    #expect(lossy.jpeg > 0, "TigerVNC sent JPEG for photo-like content")
+    #expect(psnr >= 30)
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))
   func connectsAndReceivesTheFirstUpdate() async throws {
     let environment = ProcessInfo.processInfo.environment

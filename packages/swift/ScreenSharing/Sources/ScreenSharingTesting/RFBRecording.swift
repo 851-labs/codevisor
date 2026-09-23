@@ -16,7 +16,8 @@ public struct RFBRecording: Codable, Equatable, Sendable {
   public struct Outcome: Codable, Equatable, Sendable {
     /// Framebuffer updates applied.
     public var updates: Int
-    /// SHA-256 of the final framebuffer's colour bytes (B, G, R; padding excluded), hex.
+    /// SHA-256 of the final framebuffer's colour bytes (B, G, R; padding excluded), hex;
+    /// `lossy` for a recording with JPEG, whose decoded pixels may differ across OS versions.
     public var framebuffer: String
     /// Every update's pseudo-rectangles and every server event, in order, as text.
     public var events: [String]
@@ -44,6 +45,14 @@ public struct RFBRecording: Codable, Equatable, Sendable {
   }
 
   public var byteCount: Int { server.reduce(0) { $0 + $1.count } }
+
+  /// A replay outcome as recorded: lossy recordings keep everything but the pixel hash.
+  public static func comparable(_ outcome: Outcome, lossy: Bool) -> Outcome {
+    guard lossy else { return outcome }
+    var copy = outcome
+    copy.framebuffer = "lossy"
+    return copy
+  }
 
   public static func load(_ url: URL) throws -> RFBRecording {
     try JSONDecoder().decode(RFBRecording.self, from: Data(contentsOf: url))
@@ -96,6 +105,7 @@ public struct RFBRecording: Codable, Equatable, Sendable {
           events.append("cursor \(cursor.width)x\(cursor.height) hotspot \(cursor.hotspotX),\(cursor.hotspotY)")
         }
         if let pointer = update.pointer { events.append("pointer \(pointer.x),\(pointer.y)") }
+        if update.jpegRectangles > 0 { events.append("jpeg \(update.jpegRectangles)") }
         if let size = update.desktopSize {
           events.append(
             "desktop \(size.width)x\(size.height) \(size.reason) \(size.status) screens \(size.screens.count)")

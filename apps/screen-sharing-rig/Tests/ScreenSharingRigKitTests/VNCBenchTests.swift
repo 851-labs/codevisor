@@ -123,6 +123,9 @@ struct VNCBenchTests {
     #expect(defaults.scenes == ["typing", "scroll", "photo", "input"])
     #expect(defaults.profiles == ["lan", "wan150"])
     #expect(defaults.pace == 60)
+    #expect(defaults.quality == nil)
+    #expect(try VNCBenchOptions(arguments: ["--quality", "8"]).quality == 8)
+    #expect(throws: (any Error).self) { try VNCBenchOptions(arguments: ["--quality", "10"]) }
     #expect(try VNCBenchOptions(arguments: ["--pace", "0"]).pace == 0)
     #expect(throws: (any Error).self) { try VNCBenchOptions(arguments: ["--pace", "999"]) }
   }

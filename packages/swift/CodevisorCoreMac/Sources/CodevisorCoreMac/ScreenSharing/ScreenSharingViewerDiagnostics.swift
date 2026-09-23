@@ -46,7 +46,9 @@ public final class ScreenSharingViewerDiagnostics {
     droppedFrames = metrics.counters["renderDrops", default: 0]
     if let vncTransport {
       let pushed = metrics.labels["vncUpdateMode"] == "continuous"
-      route = "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
+      route =
+        "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
+        + (metrics.labels["vncQuality"].map { " · \($0)" } ?? "")
       updateLatencyMilliseconds = metrics.timings["vncUpdateLatency"]?.p95Ms
       // Fence round trips (851-2312); nil until the server speaks Fence.
       roundTripMilliseconds = metrics.timings["vncRoundTrip"]?.p50Ms

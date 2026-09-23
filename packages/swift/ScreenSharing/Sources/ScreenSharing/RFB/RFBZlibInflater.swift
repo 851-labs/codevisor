@@ -50,8 +50,9 @@ package final class RFBZlibDeflater {
   private var stream = z_stream()
   private var open = false
 
-  package init() throws {
-    guard deflateInit_(&stream, Z_DEFAULT_COMPRESSION, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
+  /// `level`: zlib 0…9; the default suits ZRLE, Tight uses 1 as TigerVNC does for its default compression level.
+  package init(level: Int32 = Z_DEFAULT_COMPRESSION) throws {
+    guard deflateInit_(&stream, level, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
     else { throw RFBError.malformed("zlib initialisation failed") }
     open = true
   }

@@ -160,7 +160,7 @@ struct RFBServerMessageTests {
         ).encoded)
   }
 
-  @Test(arguments: [Int32(2), 5, 7, -240, -313, Int32.max, Int32.min])
+  @Test(arguments: [Int32(2), 5, 8, -240, -314, Int32.max, Int32.min])
   func anEncodingTheClientNeverAskedForIsTerminal(_ encoding: Int32) async throws {
     let session = try await ScriptedSession.play(
       RFBScript.update([RFBScript.rectangle(Self.square, encoding)]),

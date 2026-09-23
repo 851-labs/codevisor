@@ -19,6 +19,20 @@ extension RFBLoopbackServer {
       case .moved(let rect, let fromX, let fromY):
         header(&writer, rect, .copyRect)
         writer.u16(UInt16(fromX)); writer.u16(UInt16(fromY))
+      case .encoded(let rect):
+        switch pixelEncoding {
+        case .tight:
+          header(&writer, rect, .tight)
+          writer.append(try tightEncoder.encode(rect, from: framebuffer, qualityLevel: clientQualityLevel))
+        case .zrle:
+          header(&writer, rect, .zrle)
+          if deflater == nil { deflater = try RFBZlibDeflater() }
+          let compressed = try deflater!.deflate(zrleTiles(rect))
+          writer.u32(UInt32(compressed.count)); writer.append(compressed)
+        default:
+          header(&writer, rect, .raw)
+          writer.append(rows(rect))
+        }
       case .zrle(let rect):
         header(&writer, rect, .zrle)
         if deflater == nil { deflater = try RFBZlibDeflater() }

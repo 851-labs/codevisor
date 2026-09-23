@@ -12,6 +12,9 @@ public actor RFBClient {
   private let transport: any RFBTransport
   private let stream: RFBInputStream
   private var inflater: RFBZlibInflater?
+  private let tight = RFBTightDecoder()
+  /// Tight JPEG quality 0…9 (the -32…-23 pseudo-encodings); nil asks for lossless.
+  public private(set) var qualityLevel: Int?
   private var closed = false
   private let now: @Sendable () -> ContinuousClock.Instant
   private var requestSentAt: ContinuousClock.Instant?
@@ -30,9 +33,11 @@ public actor RFBClient {
   /// `now` times each update against its request; tests script it.
   public init(
     transport: any RFBTransport, framebuffer: RFBFramebuffer? = nil,
-    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+    qualityLevel: Int? = nil
   ) throws {
     self.transport = transport
+    self.qualityLevel = qualityLevel.map { min(max($0, 0), 9) }
     self.now = now
     stream = RFBInputStream(transport: transport)
     self.framebuffer = try framebuffer ?? RFBFramebuffer(width: 1, height: 1)
@@ -45,9 +50,21 @@ public actor RFBClient {
       stream: stream, transport: transport, password: password, shared: shared)
     try framebuffer.resize(width: outcome.parameters.width, height: outcome.parameters.height)
     try await transport.write(
-      RFBClientMessage.setPixelFormat(.bgra32).encoded
-        + RFBClientMessage.setEncodings(RFBEncoding.supported.map(\.rawValue)).encoded)
+      RFBClientMessage.setPixelFormat(.bgra32).encoded + RFBClientMessage.setEncodings(encodings).encoded)
     return outcome
+  }
+
+  /// What the client advertises: its encodings, then a Tight quality level when it accepts JPEG.
+  private var encodings: [Int32] {
+    RFBEncoding.supported.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
+  }
+
+  /// Switches Tight JPEG on (quality 0…9) or off (nil) mid-session.
+  public func setQualityLevel(_ level: Int?) async throws {
+    let clamped = level.map { min(max($0, 0), 9) }
+    guard clamped != qualityLevel else { return }
+    qualityLevel = clamped
+    try await send(.setEncodings(encodings))
   }
 
   public func send(_ message: RFBClientMessage) async throws {
@@ -72,7 +89,9 @@ public actor RFBClient {
       let start = stream.consumed
       switch try await stream.u8() {
       case 0:
+        let started = ContinuousClock.now
         var update = try await readFramebufferUpdate()
+        update.transferDuration = started.duration(to: .now)
         update.byteCount = stream.consumed - start
         if let requestSentAt {
           update.latency = requestSentAt.duration(to: now())
@@ -173,6 +192,7 @@ public actor RFBClient {
     var cursor: RFBCursorShape?
     var pointer: RFBPoint?
     var desktopSize: RFBDesktopSizeResult?
+    var jpegRectangles = 0
     for _ in 0..<count {
       let x = Int(try await stream.u16()), y = Int(try await stream.u16())
       let width = Int(try await stream.u16()), height = Int(try await stream.u16())
@@ -182,6 +202,10 @@ public actor RFBClient {
       case .raw:
         try framebuffer.validate(rect)
         try framebuffer.fillRaw(rect, from: try await stream.bytes(width * height * 4))
+        rectangles.append(rect)
+      case .tight:
+        try await tight.decode(rect, from: stream, into: framebuffer)
+        if tight.lastKind == "jpeg" { jpegRectangles += 1 }
         rectangles.append(rect)
       case .copyRect:
         let fromX = Int(try await stream.u16()), fromY = Int(try await stream.u16())
@@ -231,6 +255,7 @@ public actor RFBClient {
     update.cursor = cursor
     update.pointer = pointer
     update.desktopSize = desktopSize
+    update.jpegRectangles = jpegRectangles
     return update
   }
 }

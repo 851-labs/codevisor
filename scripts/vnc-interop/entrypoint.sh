@@ -21,6 +21,17 @@ done
 # Something that changes every second, bottom-right, clear of the pixels the tests assert on:
 # a continuous-updates client must keep receiving updates without asking.
 DISPLAY=:1 xclock -digital -update 1 -geometry 200x40-0-0 &
+# Photo-like content at 600,300 (clear of the pixels the tests sample): what makes Tight use JPEG (851-2313).
+DISPLAY=:1 display -size 320x200 -seed 7 plasma:fractal -geometry +600+300 &
+# Ready only once that window is mapped (ImageMagick takes a moment to render the fractal).
+DISPLAY=:1 timeout 20 xdotool search --sync --onlyvisible --class display >/dev/null || {
+  echo "vnc-interop: the plasma window never appeared" >&2
+  exit 1
+}
+# Without a window manager `display` ignores -geometry; put it where the tests sample.
+DISPLAY=:1 xdotool search --onlyvisible --class display windowmove 600 300
+DISPLAY=:1 xdotool search --onlyvisible --class display getwindowgeometry | sed 's/^/vnc-interop: plasma /'
+sleep 0.5
 # Clipboard echo (851-2316): reading the clipboard is the "paste" that makes Xvnc ask a
 # client for the text it announced; writing it back as "echo:<text>" makes Xvnc announce it.
 (

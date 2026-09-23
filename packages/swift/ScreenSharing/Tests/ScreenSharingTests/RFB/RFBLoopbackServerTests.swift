@@ -175,7 +175,7 @@ struct RFBLoopbackServerTests {
       ])
     #expect(
       server.received.prefix(2) == [
-        .setPixelFormat(.bgra32), .setEncodings([16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]),
+        .setPixelFormat(.bgra32), .setEncodings([7, 16, 1, 0, -223, -239, -232, -312, -313, -308, -1_063_131_698]),
       ])
   }
 

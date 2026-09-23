@@ -43,6 +43,7 @@
       configuration.fences = true
       configuration.desktopResize = .accept  // the desktop follows the viewer's window (851-2314)
       configuration.extendedClipboard = true  // UTF-8 clipboard (851-2316)
+      configuration.negotiateEncoding = true  // Tight when the viewer prefers it (851-2313)
       status = "Starting…"
       Task { [weak self] in
         do {

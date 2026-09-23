@@ -23,7 +23,8 @@ struct RFBRecordingTests {
   func aRecordingReplaysToItsRecordedOutcome(_ url: URL) async throws {
     let recording = try RFBRecording.load(url)
     let expected = try #require(recording.expected, "\(url.lastPathComponent) has no expected outcome")
-    #expect(try await recording.replay() == expected, "\(url.lastPathComponent)")
+    let replayed = RFBRecording.comparable(try await recording.replay(), lossy: expected.framebuffer == "lossy")
+    #expect(replayed == expected, "\(url.lastPathComponent)")
   }
 
   /// The TigerVNC fixture pins what that server actually sends when a client
