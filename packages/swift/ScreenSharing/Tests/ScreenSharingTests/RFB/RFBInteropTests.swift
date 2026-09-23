@@ -147,6 +147,55 @@ struct RFBInteropTests {
     #expect(restored.0.status == .ok && (restored.1, restored.2) == original)
   }
 
+  /// Extended Clipboard against TigerVNC (851-2316): UTF-8 text goes to the
+  /// server through notify → request → provide, the container's watcher
+  /// pastes it and writes "echo:<text>" back, and the text returns through
+  /// notify → request → provide, byte for byte.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  func utf8ClipboardTextRoundTrips() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, _) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
+    defer { client.close() }
+    let sent = "héllo — 日本語 😀 \(UUID().uuidString.prefix(8))"
+    let (messages, continuation) = AsyncStream<RFBExtendedClipboard.Message>.makeStream()
+    let run = Task {
+      try await client.run(
+        onUpdate: { _, _ in },
+        onEvent: { if case .extendedClipboard(let message) = $0 { continuation.yield(message) } })
+    }
+    defer { run.cancel() }
+    let text = RFBExtendedClipboard.text
+    var announced = false
+    // The test runner's timeout guards a server that never echoes.
+    for await message in messages {
+      switch message {
+      case .caps(let formats, _, _):
+        #expect(formats & text != 0, "TigerVNC offers UTF-8 text")
+        try await client.send(
+          .extendedClipboard(
+            .caps(
+              formats: text,
+              actions: RFBExtendedClipboard.request | RFBExtendedClipboard.notify | RFBExtendedClipboard.provide,
+              maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)])))
+        try await client.send(.extendedClipboard(.notify(formats: text)))
+        announced = true
+      case .request:
+        try await client.send(.extendedClipboard(.provide(text: sent)))
+      case .notify(let formats) where formats & text != 0:
+        try await client.send(.extendedClipboard(.request(formats: text)))
+      case .provide(let provided?) where provided.hasPrefix("echo:"):
+        print("interop: clipboard round trip \(provided)")
+        #expect(announced)
+        #expect(provided == "echo:" + sent)
+        return
+      default: break
+      }
+    }
+    Issue.record("the clipboard never came back")
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))
   func connectsAndReceivesTheFirstUpdate() async throws {
     let environment = ProcessInfo.processInfo.environment

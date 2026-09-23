@@ -34,13 +34,20 @@ struct RFBServerMessageTests {
     #expect(session.events == [.serverCutText(""), .bell])
   }
 
-  /// A negative length is the extended clipboard pseudo-message this client
-  /// never enables; its body is skipped so the stream stays in sync.
-  @Test func anExtendedClipboardMessageIsSkippedWhole() async throws {
-    let body = [UInt8](repeating: 0x55, count: 40)
+  /// A negative length is an Extended Clipboard message (851-2316); one the
+  /// client can't decode (here: flags with no action) is dropped whole, so the
+  /// stream stays in sync and the session carries on.
+  @Test func anUndecodableExtendedClipboardMessageIsSkippedWhole() async throws {
+    let body: [UInt8] = [0, 0, 0, 1] + [UInt8](repeating: 0x55, count: 36)
     let session = try await ScriptedSession.play(
       [3, 0, 0, 0] + s32(-40) + body + [2] + [3, 0, 0, 0] + u32(2) + RFBScript.bytes("ok"))
     #expect(session.events == [.bell, .serverCutText("ok")])
+  }
+
+  @Test func aDecodableExtendedClipboardMessageIsDelivered() async throws {
+    let body = try RFBExtendedClipboard.encode(.notify(formats: RFBExtendedClipboard.text))
+    let session = try await ScriptedSession.play([3, 0, 0, 0] + s32(-Int32(body.count)) + body + [2])
+    #expect(session.events == [.extendedClipboard(.notify(formats: RFBExtendedClipboard.text)), .bell])
   }
 
   /// SetColourMapEntries is six bytes per colour after a six-byte header; the

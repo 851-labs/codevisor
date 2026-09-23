@@ -16,6 +16,8 @@ public enum RFBClientMessage: Sendable, Equatable {
   case fence(flags: UInt32, payload: [UInt8])
   /// ExtendedDesktopSize: ask the server to resize the framebuffer to this layout.
   case setDesktopSize(width: Int, height: Int, screens: [RFBScreen])
+  /// Extended Clipboard: a ClientCutText with a negative length.
+  case extendedClipboard(RFBExtendedClipboard.Message)
 
   public var encoded: [UInt8] {
     var writer = RFBByteWriter()
@@ -49,6 +51,10 @@ public enum RFBClientMessage: Sendable, Equatable {
       writer.u16(UInt16(clamping: width)); writer.u16(UInt16(clamping: height))
       writer.u8(UInt8(clamping: screens.count)); writer.pad(1)
       for screen in screens.prefix(255) { RFBScreenLayout.write(screen, into: &writer) }
+    case .extendedClipboard(let message):
+      // zlib can't fail on an in-memory buffer of a valid size; an empty payload would be refused.
+      let payload = (try? RFBExtendedClipboard.encode(message)) ?? []
+      writer.u8(6); writer.pad(3); writer.s32(-Int32(clamping: payload.count)); writer.append(payload)
     }
     return writer.bytes
   }
@@ -79,7 +85,10 @@ public enum RFBClientMessage: Sendable, Equatable {
       return .pointerEvent(buttons: buttons, x: try await stream.u16(), y: try await stream.u16())
     case 6:
       try await stream.skip(3)
-      let length = Int(try await stream.u32())
+      let length = Int(try await stream.s32())
+      if length < 0 {
+        return .extendedClipboard(try RFBExtendedClipboard.decode(try await stream.bytes(-length)))
+      }
       return .clientCutText(RFBLatin1.decode(try await stream.bytes(length)))
     case 150:
       let enable = try await stream.u8() != 0

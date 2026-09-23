@@ -16,7 +16,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.
   public static let implementedEncodings: Set<RFBEncoding> = [
     .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
-    .extendedDesktopSize,
+    .extendedDesktopSize, .extendedClipboard,
   ]
 
   public struct Configuration: Sendable {
@@ -43,6 +43,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     /// ExtendedDesktopSize: announce the layout to clients that advertise it and
     /// accept (or refuse) their SetDesktopSize. Unsupported by default.
     public var desktopResize: DesktopResize = .unsupported
+    /// Extended Clipboard (UTF-8): offer caps to clients that advertise it,
+    /// request text they announce, provide ours on request. Off by default.
+    public var extendedClipboard = false
     public enum DesktopResize: Sendable { case unsupported, accept, refuse }
     public init() {}
   }
@@ -81,6 +84,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var sceneFrameUnsent = false
   private var clientEncodings: Set<Int32> = []
   private var continuous = false
+  private var clientClipboardCaps = false
+  private var serverClipboard: String?
+  private var providedTexts: [String] = []
   private var fenceLog: [(flags: UInt32, payload: [UInt8])] = []
   /// The payload of the fence request this server sends a Fence-capable client.
   public static let fenceProbe: [UInt8] = [0xC0, 0xDE]
@@ -120,6 +126,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   public var wantsUpdate: Bool { lock.withLock { pendingRequest || continuous } }
   /// The client turned continuous updates on and hasn't turned them off.
   public var isContinuous: Bool { lock.withLock { continuous } }
+  /// Text the client provided over the Extended Clipboard, in order.
+  public var clipboardTextsReceived: [String] { lock.withLock { providedTexts } }
   /// Every fence the client sent: replies to this server's requests, and its own requests.
   public var fencesReceived: [(flags: UInt32, payload: [UInt8])] { lock.withLock { fenceLog } }
 
@@ -218,6 +226,27 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   }
 
   public func sendBell() { write([2]) }
+
+  /// Sets the server's clipboard: announced over the Extended Clipboard to a
+  /// client that negotiated it (and provided when it asks), else sent as Latin-1.
+  public func setClipboard(_ text: String) {
+    let extended = lock.withLock { () -> Bool in
+      serverClipboard = text
+      return clientClipboardCaps
+    }
+    if extended {
+      writeExtendedClipboard(.notify(formats: RFBExtendedClipboard.text))
+    } else {
+      sendCutText(text)
+    }
+  }
+
+  func writeExtendedClipboard(_ message: RFBExtendedClipboard.Message) {
+    guard let payload = try? RFBExtendedClipboard.encode(message) else { return }
+    var writer = RFBByteWriter()
+    writer.u8(3); writer.pad(3); writer.s32(-Int32(payload.count)); writer.append(payload)
+    write(writer.bytes)
+  }
 
   public func sendCutText(_ text: String) {
     var writer = RFBByteWriter()
@@ -322,6 +351,18 @@ public final class RFBLoopbackServer: @unchecked Sendable {
           if let cursor = configuration.cursor, clientEncodings.contains(RFBEncoding.cursor.rawValue) {
             pending.append(.cursor(cursor))
           }
+          if configuration.extendedClipboard, clientEncodings.contains(RFBExtendedClipboard.pseudoEncoding),
+            let caps = try? RFBExtendedClipboard.encode(
+              .caps(
+                formats: RFBExtendedClipboard.text,
+                actions: RFBExtendedClipboard.request | RFBExtendedClipboard.peek | RFBExtendedClipboard.notify
+                  | RFBExtendedClipboard.provide,
+                maximumSizes: [UInt32(RFBExtendedClipboard.maximumBytes)]))
+          {
+            var writer = RFBByteWriter()
+            writer.u8(3); writer.pad(3); writer.s32(-Int32(caps.count)); writer.append(caps)
+            client?.send(content: Data(writer.bytes), completion: .idempotent)
+          }
           if configuration.desktopResize != .unsupported,
             clientEncodings.contains(RFBEncoding.extendedDesktopSize.rawValue)
           {
@@ -336,6 +377,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
             client?.send(content: Data([150]), completion: .idempotent)  // EndOfContinuousUpdates: stopped
           }
         }
+        if case .extendedClipboard(let clipboard) = message { extendedClipboardLocked(clipboard) }
         if case .setDesktopSize(let width, let height, _) = message {
           resizeRequestedLocked(width: width, height: height)
         }
@@ -363,6 +405,25 @@ public final class RFBLoopbackServer: @unchecked Sendable {
           }
         }
       }
+    }
+  }
+
+  private func extendedClipboardLocked(_ message: RFBExtendedClipboard.Message) {
+    guard configuration.extendedClipboard else { return }
+    func send(_ reply: RFBExtendedClipboard.Message) {
+      guard let payload = try? RFBExtendedClipboard.encode(reply) else { return }
+      var writer = RFBByteWriter()
+      writer.u8(3); writer.pad(3); writer.s32(-Int32(payload.count)); writer.append(payload)
+      client?.send(content: Data(writer.bytes), completion: .idempotent)
+    }
+    switch message {
+    case .caps(let formats, _, _): clientClipboardCaps = formats & RFBExtendedClipboard.text != 0
+    case .notify(let formats):
+      // Eager, unlike TigerVNC (which asks only when something pastes): tests see the text at once.
+      if formats & RFBExtendedClipboard.text != 0 { send(.request(formats: RFBExtendedClipboard.text)) }
+    case .request: send(.provide(text: serverClipboard))
+    case .peek: send(.notify(formats: serverClipboard == nil ? 0 : RFBExtendedClipboard.text))
+    case .provide(let text): if let text { providedTexts.append(text) }
     }
   }
 

@@ -21,5 +21,17 @@ done
 # Something that changes every second, bottom-right, clear of the pixels the tests assert on:
 # a continuous-updates client must keep receiving updates without asking.
 DISPLAY=:1 xclock -digital -update 1 -geometry 200x40-0-0 &
+# Clipboard echo (851-2316): reading the clipboard is the "paste" that makes Xvnc ask a
+# client for the text it announced; writing it back as "echo:<text>" makes Xvnc announce it.
+(
+  while :; do
+    text=$(DISPLAY=:1 xclip -o -selection clipboard 2>/dev/null) || text=""
+    case "$text" in
+      "" | echo:*) ;;
+      *) printf 'echo:%s' "$text" | DISPLAY=:1 xclip -i -selection clipboard ;;
+    esac
+    sleep 0.3
+  done
+) &
 echo "vnc-interop: ready"
 wait "$xvnc"

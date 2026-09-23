@@ -213,10 +213,12 @@ function loopbackFlow() {
 /// Sends a unique text through the product's clipboard menu and finds it in
 /// the reference server's input log; the user's clipboard is restored.
 function clipboardStep() {
-  const saved = run("pbpaste", []).stdout
+  // pbcopy/pbpaste read and write text in the locale's encoding.
+  const utf8 = { env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" } }
+  const saved = run("pbpaste", [], utf8).stdout
   const token = clipboardToken(Date.now())
   try {
-    run("pbcopy", [], { input: token })
+    run("pbcopy", [], { input: token, ...utf8 })
     axStep("open the Clipboard menu", "press", "Clipboard")
     axStep("Send Clipboard to Machine", "press", "Send Clipboard to Machine")
     // Leaving the machine closes its connection, so wait for the product to confirm the transfer.
@@ -225,7 +227,7 @@ function clipboardStep() {
     axStep("the server received the clipboard text", "wait", `clipboard: ${token}`, "5")
     axStep("back to the machine", "select", "Loopback server")
   } finally {
-    run("pbcopy", [], { input: saved })
+    run("pbcopy", [], { input: saved, ...utf8 })
   }
 }
 

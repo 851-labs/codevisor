@@ -42,6 +42,7 @@
       configuration.continuousUpdates = true  // pushed updates, paced by fences (851-2312)
       configuration.fences = true
       configuration.desktopResize = .accept  // the desktop follows the viewer's window (851-2314)
+      configuration.extendedClipboard = true  // UTF-8 clipboard (851-2316)
       status = "Starting…"
       Task { [weak self] in
         do {
@@ -108,6 +109,7 @@
         case .pointerEvent(let buttons, let x, let y) where buttons != 0:
           "buttons \(String(buttons, radix: 2)) at \(x),\(y)"
         case .clientCutText(let text): "clipboard: \(text)"
+        case .extendedClipboard(.provide(let text?)): "clipboard: \(text)"
         default: nil
         }
       guard let line else { return }
