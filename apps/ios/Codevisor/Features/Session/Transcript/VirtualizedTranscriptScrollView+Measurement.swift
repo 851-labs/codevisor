@@ -116,6 +116,7 @@ extension VirtualizedTranscriptScrollView {
 
     let previousLayout = virtualLayout
     let previousDistance = initialPositionApplied ? currentDistanceFromBottom() : nil
+    let previousOffsetY = viewportGeometry.boundedOffsetY(contentOffset.y)
     // ChatGPT follows the bottom only while the latest turn is live. An
     // idle transcript is static even when its distance is zero, so opening
     // a disclosure preserves the reader's viewport instead of pushing the
@@ -167,10 +168,6 @@ extension VirtualizedTranscriptScrollView {
 
       if !initialPositionApplied {
         applyPendingInitialPositionIfPossible()
-      } else if changedHeights != nil, !measurementCommitGate.allowsGeometryCommit {
-        // These corrections only affect the visible row and rows below it.
-        // Their frames and masks can grow without changing contentOffset,
-        // which would cancel UIKit's current deceleration animation.
       } else if let anchor = disclosureViewportAnchor {
         setViewportTop(anchor.viewportTop)
       } else if let resolvedDistance = plan.resolvedDistanceFromBottom(
@@ -180,7 +177,10 @@ extension VirtualizedTranscriptScrollView {
         if lockedRestoreDistance != nil {
           lockedRestoreDistance = resolvedDistance
         }
-        setDistanceFromBottom(resolvedDistance)
+        compensateViewport(
+          toDistanceFromBottom: resolvedDistance,
+          previousOffsetY: previousOffsetY
+        )
       }
       lastDistanceFromBottom = currentDistanceFromBottom()
     }
@@ -286,7 +286,6 @@ extension VirtualizedTranscriptScrollView {
     measurementCommitTask?.cancel()
     measurementCommitTask = nil
     guard !isDetaching else { return }
-    let firstVisible = firstVisibleRowForMeasurementCommit
     let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     let pending = pendingMeasurements
     pendingMeasurements.removeAll(keepingCapacity: true)
@@ -296,10 +295,6 @@ extension VirtualizedTranscriptScrollView {
         measurements.needsCommit(measurement.height, for: key)
       else { continue }
       guard let index = virtualLayout.indexByKey[key] else { continue }
-      guard measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible) else {
-        pendingMeasurements[key] = measurement
-        continue
-      }
       if let flightDeferralIndex, index >= flightDeferralIndex {
         // A height change below the flying bubble would re-pin the bottom
         // and move its destination mid-flight. Completion commits these.
@@ -324,13 +319,6 @@ extension VirtualizedTranscriptScrollView {
   var sendFlightMeasurementDeferralIndex: Int? {
     guard let request = activeSendAnimationRequest, !isApplyingSendCompletion else { return nil }
     return virtualLayout.indexByKey[TranscriptVirtualRow.ID.message(request.messageID).layoutKey]
-  }
-
-  var firstVisibleRowForMeasurementCommit: Int? {
-    guard !measurementCommitGate.allowsGeometryCommit else { return nil }
-    return virtualLayout.visibleRange(
-      distanceFromBottom: currentDistanceFromBottom(), viewportHeight: viewportHeight, overscanCount: 0
-    ).first
   }
 
   func accepts(_ measurement: TranscriptRowMeasurement) -> Bool {

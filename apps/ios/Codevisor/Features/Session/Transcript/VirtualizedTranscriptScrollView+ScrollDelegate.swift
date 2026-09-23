@@ -10,14 +10,10 @@ import UIKit
 
 extension VirtualizedTranscriptScrollView {
   func scrollViewWillBeginDragging(_: UIScrollView) {
-    measurementCommitGate.draggingDidBegin()
     cancelDisclosureViewportAnchor()
     bottomJumpGate.cancel()
     lockedRestoreDistance = nil
     isExplicitUserScroll = false
-    // Touching down interrupts UIKit's deceleration. Flush measurements
-    // retained from that momentum phase before the new drag advances.
-    commitPendingMeasurements()
   }
 
   func scrollViewShouldScrollToTop(_: UIScrollView) -> Bool {
@@ -78,17 +74,14 @@ extension VirtualizedTranscriptScrollView {
     _: UIScrollView,
     willDecelerate decelerate: Bool,
   ) {
-    measurementCommitGate.draggingDidEnd(willDecelerate: decelerate)
     if !decelerate { finishNativeScrollInteraction() }
   }
 
   func scrollViewDidEndDecelerating(_: UIScrollView) {
-    measurementCommitGate.interactionDidEnd()
     finishNativeScrollInteraction()
   }
 
   func scrollViewDidEndScrollingAnimation(_: UIScrollView) {
-    measurementCommitGate.interactionDidEnd()
     finishNativeScrollInteraction()
   }
 }

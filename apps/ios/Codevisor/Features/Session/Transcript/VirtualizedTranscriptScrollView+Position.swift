@@ -51,6 +51,30 @@ extension VirtualizedTranscriptScrollView {
     lastDistanceFromBottom = currentDistanceFromBottom()
   }
 
+  /// Re-anchors the viewport after a geometry commit. While UIKit owns the
+  /// scroll (a drag or its momentum), the correction shifts the live offset
+  /// by the anchor's displacement instead of calling
+  /// `setContentOffset(_:animated:)`, which stops deceleration. Assigning
+  /// `contentOffset` moves the bounds under UIKit's scroll physics, so the
+  /// fling continues from the corrected position, and shifting by a delta
+  /// keeps any rubber-band overscroll intact. Deliberate jumps keep using
+  /// `setViewportTop`, where stopping momentum is intended.
+  func compensateViewport(
+    toDistanceFromBottom distance: CGFloat,
+    previousOffsetY: CGFloat
+  ) {
+    guard isDragging || isDecelerating else {
+      setDistanceFromBottom(distance)
+      return
+    }
+    let delta = viewportGeometry.offsetY(distanceFromBottom: distance) - previousOffsetY
+    guard abs(delta) > 0.25 else { return }
+    applyPositionTransaction {
+      contentOffset.y += delta
+    }
+    lastDistanceFromBottom = currentDistanceFromBottom()
+  }
+
   func applyPositionMutation(_ body: () -> Void) {
     positionApplicationDepth += 1
     defer { positionApplicationDepth -= 1 }
@@ -137,7 +161,6 @@ extension VirtualizedTranscriptScrollView {
   func scrollToBottom() {
     cancelDisclosureViewportAnchor()
     lockedRestoreDistance = nil
-    measurementCommitGate.interactionDidEnd()
     commitPendingMeasurements()
     bottomJumpGate.begin()
     setDistanceFromBottom(0)

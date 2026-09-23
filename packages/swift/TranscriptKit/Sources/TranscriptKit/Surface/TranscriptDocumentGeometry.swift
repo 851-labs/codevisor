@@ -65,8 +65,9 @@ public enum TranscriptDocumentGeometry {
 /// started or finished while the chat was not on screen, and their heights
 /// settling from estimates to measurements — not only while a row is
 /// streaming. Once the reader has scrolled away from the bottom, the first
-/// visible row is preserved instead of a raw bottom distance, so growth below
-/// that row cannot pull the viewport down with it.
+/// row that starts inside the viewport is preserved instead of a raw bottom
+/// distance, so height changes above it, including the partly visible row
+/// straddling the viewport top, cannot move what the reader sees.
 public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
   /// The viewport stays at distance zero regardless of row changes.
   public let pinsBottom: Bool
@@ -108,19 +109,27 @@ public struct TranscriptGeometryRebuildPlan: Equatable, Sendable {
         distanceFromBottom: previousDistanceFromBottom,
         viewportHeight: viewportHeight,
         overscanCount: 0
+      ).filter { previousLayout.keys.indices.contains($0) }
+      let viewportTop = previousLayout.viewportTop(
+        distanceFromBottom: previousDistanceFromBottom,
+        viewportHeight: viewportHeight
       )
-      // Prefer a visible row whose height is already measured, then
-      // fall back to the first visible key. Estimates must not become
-      // an anchor when an exact row is available in the same viewport.
-      visibleAnchorKey =
-        visibleRange.compactMap { index -> String? in
-          guard previousLayout.keys.indices.contains(index) else { return nil }
-          let key = previousLayout.keys[index]
-          return measurements[key] == nil ? nil : key
-        }.first
-        ?? visibleRange.first.flatMap { index in
-          previousLayout.keys.indices.contains(index) ? previousLayout.keys[index] : nil
-        }
+      // The first intersecting row usually starts above the viewport. Its
+      // top is offscreen, so keeping that top stationary lets its own height
+      // change push every visible row below it. Anchor on a row that starts
+      // inside the viewport instead, which moves the offscreen part of the
+      // straddling row rather than the content being read. Among those,
+      // prefer a measured row: estimates must not become an anchor when an
+      // exact row is available. Only a row taller than the viewport, with
+      // no row starting inside it, anchors on its own top.
+      let startingRows = visibleRange.filter {
+        previousLayout.frame(at: $0).minY >= viewportTop - 0.5
+      }
+      let anchorIndex =
+        startingRows.first { measurements[previousLayout.keys[$0]] != nil }
+        ?? startingRows.first
+        ?? visibleRange.first
+      visibleAnchorKey = anchorIndex.map { previousLayout.keys[$0] }
     } else {
       visibleAnchorKey = nil
     }

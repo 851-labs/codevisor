@@ -69,7 +69,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   weak var sessionController: SessionController?
   var presentationFrameDriverToken: TranscriptFrameDriverToken?
   var presentationDisplayLink: CADisplayLink?
-  var measurementCommitGate = TranscriptMeasurementCommitGate()
   var deferredRowsDuringScroll: [TranscriptVirtualRow]?
   var deferredActiveRowsRange: Range<Int>?
   var deferredProjectionRevision: UInt64?

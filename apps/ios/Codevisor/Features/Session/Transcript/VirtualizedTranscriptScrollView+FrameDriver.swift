@@ -40,8 +40,6 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     // Retained hosts may have reported their size just before this frame
     // was cancelled. Keep those measurements for reattachment: an unchanged
     // host will not report again, leaving the initial canvas hidden forever.
-    // UIKit may also omit the end-of-deceleration callback after detachment.
-    measurementCommitGate.interactionDidEnd()
     bottomJumpGate.cancel()
     deferredRowsDuringScroll = nil
     deferredActiveRowsRange = nil
@@ -178,12 +176,10 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   var allowsMeasurementCommit: Bool {
-    let firstVisible = firstVisibleRowForMeasurementCommit
     let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     return pendingMeasurements.keys.contains { key in
       guard let index = virtualLayout.indexByKey[key] else { return false }
-      if let flightDeferralIndex, index >= flightDeferralIndex { return false }
-      return measurementCommitGate.allowsHeightCommit(rowIndex: index, firstVisibleRowIndex: firstVisible)
+      return flightDeferralIndex.map { index < $0 } ?? true
     }
   }
 
