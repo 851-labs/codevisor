@@ -309,15 +309,20 @@ struct RFBInteropTests {
     }
     let lossless = try await capture(quality: nil)
     let lossy = try await capture(quality: 8)
-    let mse =
-      zip(lossless.rgb, lossy.rgb).map { Double(Int($0) - Int($1)) }.map { $0 * $0 }.reduce(0, +)
-      / Double(lossless.rgb.count)
-    let psnr = mse == 0 ? Double.infinity : 10 * log10(255 * 255 / mse)
-    let colours = Set(
-      stride(from: 0, to: lossless.rgb.count, by: 3).map {
-        Int(lossless.rgb[$0]) << 16 | Int(lossless.rgb[$0 + 1]) << 8 | Int(lossless.rgb[$0 + 2])
-      }
-    ).count
+    // Plain loops with explicit types: the chained closures took the x86_64 CI compiler too long to type-check.
+    var squaredError: Double = 0
+    for (a, b) in zip(lossless.rgb, lossy.rgb) {
+      let difference = Double(Int(a) - Int(b))
+      squaredError += difference * difference
+    }
+    let mse: Double = squaredError / Double(lossless.rgb.count)
+    let psnr: Double = mse == 0 ? Double.infinity : 10 * log10(255 * 255 / mse)
+    var palette = Set<Int>()
+    for index in stride(from: 0, to: lossless.rgb.count, by: 3) {
+      let red = Int(lossless.rgb[index]), green = Int(lossless.rgb[index + 1]), blue = Int(lossless.rgb[index + 2])
+      palette.insert(red << 16 | green << 8 | blue)
+    }
+    let colours = palette.count
     print(
       "interop: tight lossless jpeg=\(lossless.jpeg), quality 8 jpeg=\(lossy.jpeg), PSNR \(psnr) dB, \(colours) colours in the region"
     )
