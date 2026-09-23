@@ -94,9 +94,21 @@
     }
     public required init?(coder: NSCoder) { nil }
     /// The video always fills the pane, scaled to fit and letterboxed by the renderer.
+    /// The size in points, reported when it changes (851-2314).
+    public var onSizeChanged: ((CGSize) -> Void)? {
+      didSet { reportedSize = nil; reportSize() }
+    }
+    private var reportedSize: CGSize?
+    private func reportSize() {
+      guard bounds.width > 0, bounds.height > 0, bounds.size != reportedSize else { return }
+      reportedSize = bounds.size
+      onSizeChanged?(bounds.size)
+    }
+
     public override func layout() {
       super.layout()
       metal.frame = bounds
+      reportSize()
       refreshRemoteCursor()
       window?.invalidateCursorRects(for: self)
     }

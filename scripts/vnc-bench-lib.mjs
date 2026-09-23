@@ -9,11 +9,12 @@ export function baselineName(model) {
 
 /// Splits wrapper flags from the ones passed through to `screen-sharing-rig vnc-bench`.
 export function parseBenchArguments(argv) {
-  const options = { saveBaseline: false, compare: true, passThrough: [] }
+  const options = { saveBaseline: false, compare: true, againstMain: false, passThrough: [] }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === "--save-baseline") options.saveBaseline = true
     else if (argument === "--no-compare") options.compare = false
+    else if (argument === "--against-main") options.againstMain = true
     else if (argument === "--help" || argument === "-h") options.help = true
     else if (argument === "--out" || argument === "--baseline" || argument === "--build") {
       throw new Error(

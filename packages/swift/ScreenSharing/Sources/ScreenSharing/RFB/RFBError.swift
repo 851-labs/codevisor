@@ -127,12 +127,16 @@ public enum RFBEncoding: Int32, Sendable, CaseIterable {
   case pointerPosition = -232
   /// Pseudo-encoding: the client answers Fence requests (and can send its own).
   case fence = -312
+  /// Pseudo-encoding: the framebuffer's size and screen layout, and the
+  /// result of the client's SetDesktopSize (851-2314).
+  case extendedDesktopSize = -308
   /// Pseudo-encoding: the client can take pushed updates without requesting each one.
   case continuousUpdates = -313
 
   /// What this client advertises, in preference order.
   public static let supported: [RFBEncoding] = [
     .zrle, .copyRect, .raw, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
+    .extendedDesktopSize,
   ]
 }
 
@@ -179,6 +183,8 @@ public struct RFBUpdate: Sendable, Equatable {
   public var cursor: RFBCursorShape?
   /// The last server-side pointer position the update carried, if any.
   public var pointer: RFBPoint?
+  /// The last ExtendedDesktopSize the update carried: the server's layout, or its answer to SetDesktopSize.
+  public var desktopSize: RFBDesktopSizeResult?
   /// The message's size on the wire, header included.
   public var byteCount = 0
   /// From sending the request this update answers to applying the update;
@@ -188,7 +194,34 @@ public struct RFBUpdate: Sendable, Equatable {
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {
     lhs.rectangles == rhs.rectangles && lhs.resized == rhs.resized && lhs.cursor == rhs.cursor
-      && lhs.pointer == rhs.pointer
+      && lhs.pointer == rhs.pointer && lhs.desktopSize == rhs.desktopSize
+  }
+}
+
+/// One screen of an ExtendedDesktopSize layout, in framebuffer pixels.
+public struct RFBScreen: Sendable, Equatable, Hashable {
+  public var id: UInt32
+  public var x: Int
+  public var y: Int
+  public var width: Int
+  public var height: Int
+  public var flags: UInt32
+  public init(id: UInt32, x: Int, y: Int, width: Int, height: Int, flags: UInt32 = 0) {
+    self.id = id; self.x = x; self.y = y; self.width = width; self.height = height; self.flags = flags
+  }
+}
+
+/// An ExtendedDesktopSize rectangle: why the size changed (or didn't), and the layout.
+public struct RFBDesktopSizeResult: Sendable, Equatable {
+  public enum Reason: Int, Sendable { case server = 0, thisClient = 1, otherClient = 2 }
+  public enum Status: Int, Sendable { case ok = 0, prohibited = 1, outOfResources = 2, invalidLayout = 3 }
+  public var reason: Reason
+  public var status: Status
+  public var width: Int
+  public var height: Int
+  public var screens: [RFBScreen]
+  public init(reason: Reason, status: Status, width: Int, height: Int, screens: [RFBScreen]) {
+    self.reason = reason; self.status = status; self.width = width; self.height = height; self.screens = screens
   }
 }
 

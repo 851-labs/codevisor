@@ -108,6 +108,7 @@ await layer("bench", async () => {
   const run = await stream("bun", [
     "run",
     "vnc:bench",
+    "--against-main",
     ...options.benchArgs,
     ...(options.saveBaseline ? ["--save-baseline"] : [])
   ])

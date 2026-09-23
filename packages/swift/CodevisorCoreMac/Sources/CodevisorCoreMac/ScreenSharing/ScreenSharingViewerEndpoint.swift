@@ -65,6 +65,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     }
     // Backends that report the pointer separately (VNC) draw it locally (851-2311).
     session.onCursorChanged = { [weak surface] in surface?.showRemoteCursor($0) }
+    // A remote desktop that can resize follows the pane (VNC ExtendedDesktopSize, 851-2314).
+    surface.onSizeChanged = { [weak session] size in
+      session?.requestDesktopSize(width: Int(size.width.rounded()), height: Int(size.height.rounded()))
+    }
     surface.onPresented = { [weak self] in
       guard let self, !self.presented else { return }
       self.presented = true

@@ -165,6 +165,7 @@ public actor RFBClient {
     var resized = false
     var cursor: RFBCursorShape?
     var pointer: RFBPoint?
+    var desktopSize: RFBDesktopSizeResult?
     for _ in 0..<count {
       let x = Int(try await stream.u16()), y = Int(try await stream.u16())
       let width = Int(try await stream.u16()), height = Int(try await stream.u16())
@@ -199,6 +200,21 @@ public actor RFBClient {
         cursor = try RFBCursorShape.decode(width: width, height: height, hotspotX: x, hotspotY: y, payload: payload)
       case .pointerPosition:
         pointer = RFBPoint(x: x, y: y)
+      case .extendedDesktopSize:
+        // x: why, y: status; the size applies only when the status is ok.
+        let count = Int(try await stream.u8())
+        try await stream.skip(3)
+        let screens = try await RFBScreenLayout.read(count, from: stream)
+        guard let reason = RFBDesktopSizeResult.Reason(rawValue: x) else {
+          throw RFBError.malformed("ExtendedDesktopSize reason \(x)")
+        }
+        let status = RFBDesktopSizeResult.Status(rawValue: y) ?? .invalidLayout
+        if status == .ok, width != framebuffer.width || height != framebuffer.height {
+          try framebuffer.resize(width: width, height: height)
+          resized = true
+        }
+        desktopSize = RFBDesktopSizeResult(
+          reason: reason, status: status, width: width, height: height, screens: screens)
       case .fence, .continuousUpdates, nil:
         // Negotiation-only pseudo-encodings never arrive as rectangles.
         throw RFBError.unsupportedEncoding(encoding)
@@ -207,6 +223,7 @@ public actor RFBClient {
     var update = RFBUpdate(rectangles: rectangles, resized: resized)
     update.cursor = cursor
     update.pointer = pointer
+    update.desktopSize = desktopSize
     return update
   }
 }

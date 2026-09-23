@@ -98,6 +98,7 @@
       // A modern server: pushed updates paced by fences (851-2312), unless --requested-only.
       configuration.continuousUpdates = !options.requestedOnly
       configuration.fences = !options.requestedOnly
+      configuration.desktopResize = .accept
       configuration.password = options.password
       configuration.securityTypes = [
         options.password == nil ? RFBSecurityType.none.rawValue : RFBSecurityType.vncAuthentication.rawValue

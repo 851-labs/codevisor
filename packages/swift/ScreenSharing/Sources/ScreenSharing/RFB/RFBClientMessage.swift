@@ -14,6 +14,8 @@ public enum RFBClientMessage: Sendable, Equatable {
   case enableContinuousUpdates(enable: Bool, RFBRectangle)
   /// Fence: a request (`RFBFence.request` set) or the reply to one, with an opaque payload of up to 64 bytes.
   case fence(flags: UInt32, payload: [UInt8])
+  /// ExtendedDesktopSize: ask the server to resize the framebuffer to this layout.
+  case setDesktopSize(width: Int, height: Int, screens: [RFBScreen])
 
   public var encoded: [UInt8] {
     var writer = RFBByteWriter()
@@ -42,6 +44,11 @@ public enum RFBClientMessage: Sendable, Equatable {
       writer.u8(248); writer.pad(3); writer.u32(flags)
       writer.u8(UInt8(min(payload.count, RFBFence.maximumPayload)));
       writer.append(Array(payload.prefix(RFBFence.maximumPayload)))
+    case .setDesktopSize(let width, let height, let screens):
+      writer.u8(251); writer.pad(1)
+      writer.u16(UInt16(clamping: width)); writer.u16(UInt16(clamping: height))
+      writer.u8(UInt8(clamping: screens.count)); writer.pad(1)
+      for screen in screens.prefix(255) { RFBScreenLayout.write(screen, into: &writer) }
     }
     return writer.bytes
   }
@@ -82,9 +89,36 @@ public enum RFBClientMessage: Sendable, Equatable {
     case 248:
       let (flags, payload) = try await RFBFence.read(from: stream)
       return .fence(flags: flags, payload: payload)
+    case 251:
+      try await stream.skip(1)
+      let width = Int(try await stream.u16()), height = Int(try await stream.u16())
+      let count = Int(try await stream.u8())
+      try await stream.skip(1)
+      return .setDesktopSize(width: width, height: height, screens: try await RFBScreenLayout.read(count, from: stream))
     case let type:
       throw RFBError.malformed("unknown client message \(type)")
     }
+  }
+}
+
+/// ExtendedDesktopSize screens on the wire: id, x, y, width, height, flags (16 bytes).
+public enum RFBScreenLayout {
+  public static func write(_ screen: RFBScreen, into writer: inout RFBByteWriter) {
+    writer.u32(screen.id)
+    writer.u16(UInt16(clamping: screen.x)); writer.u16(UInt16(clamping: screen.y))
+    writer.u16(UInt16(clamping: screen.width)); writer.u16(UInt16(clamping: screen.height))
+    writer.u32(screen.flags)
+  }
+
+  package static func read(_ count: Int, from stream: RFBInputStream) async throws -> [RFBScreen] {
+    var screens: [RFBScreen] = []
+    for _ in 0..<count {
+      let id = try await stream.u32()
+      let x = Int(try await stream.u16()), y = Int(try await stream.u16())
+      let width = Int(try await stream.u16()), height = Int(try await stream.u16())
+      screens.append(RFBScreen(id: id, x: x, y: y, width: width, height: height, flags: try await stream.u32()))
+    }
+    return screens
   }
 }
 

@@ -127,6 +127,6 @@ struct RFBServerInitTests {
     #expect(
       Array(transport.written.dropFirst(14))
         == RFBClientMessage.setPixelFormat(.bgra32).encoded
-        + RFBClientMessage.setEncodings([16, 1, 0, -223, -239, -232, -312, -313]).encoded)
+        + RFBClientMessage.setEncodings([16, 1, 0, -223, -239, -232, -312, -313, -308]).encoded)
   }
 }

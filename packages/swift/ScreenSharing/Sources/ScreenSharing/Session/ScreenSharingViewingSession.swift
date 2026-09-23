@@ -50,9 +50,14 @@ public protocol ScreenSharingViewingSession: AnyObject {
   /// The remote pointer's shape and host-side moves; only backends that
   /// report the pointer separately set it (the default ignores it).
   var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? { get set }
+  /// The viewer's size in points: backends that can resize the remote
+  /// desktop to fit (VNC ExtendedDesktopSize) do; the default ignores it.
+  func requestDesktopSize(width: Int, height: Int)
 }
 
 extension ScreenSharingViewingSession {
+  public func requestDesktopSize(width: Int, height: Int) {}
+
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }
     set {}
