@@ -42,8 +42,10 @@ Rules:
 - A feature adds its server side to `RFBLoopbackServer` in the same change.
   The parity test fails when the client advertises an encoding or extension
   the reference server lacks.
-- A behaviour seen only on a real server is recorded (wire recorder) and
-  becomes an L1 fixture, so the regression test runs without that server.
+- A behaviour seen only on a real server is recorded (wire recorder:
+  `screen-sharing-rig vnc-record`, see
+  `packages/swift/ScreenSharing/Tests/ScreenSharingTests/RFB/Fixtures/README.md`)
+  and becomes an L1 fixture, so the regression test runs without that server.
 - L3 and L4 never replace L1/L2: if a bug is only caught by L3, add the
   missing lower-layer test.
 

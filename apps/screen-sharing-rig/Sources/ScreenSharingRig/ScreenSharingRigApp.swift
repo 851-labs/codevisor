@@ -23,6 +23,10 @@
           ProbeCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
+        if arguments.first == "vnc-record" {
+          VNCRecordCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
         if arguments.first == "vnc-bench" {
           VNCBenchCommand.main(arguments: Array(arguments.dropFirst()))
           return
