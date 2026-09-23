@@ -10,6 +10,10 @@ public enum RFBClientMessage: Sendable, Equatable {
   case pointerEvent(buttons: UInt8, x: UInt16, y: UInt16)
   /// Latin-1 text; other characters are replaced.
   case clientCutText(String)
+  /// ContinuousUpdates: the server pushes changes in `area` without requests (or stops).
+  case enableContinuousUpdates(enable: Bool, RFBRectangle)
+  /// Fence: a request (`RFBFence.request` set) or the reply to one, with an opaque payload of up to 64 bytes.
+  case fence(flags: UInt32, payload: [UInt8])
 
   public var encoded: [UInt8] {
     var writer = RFBByteWriter()
@@ -30,6 +34,14 @@ public enum RFBClientMessage: Sendable, Equatable {
     case .clientCutText(let text):
       let latin1 = RFBLatin1.encode(text)
       writer.u8(6); writer.pad(3); writer.u32(UInt32(clamping: latin1.count)); writer.append(latin1)
+    case .enableContinuousUpdates(let enable, let rect):
+      writer.u8(150); writer.u8(enable ? 1 : 0)
+      writer.u16(UInt16(clamping: rect.x)); writer.u16(UInt16(clamping: rect.y))
+      writer.u16(UInt16(clamping: rect.width)); writer.u16(UInt16(clamping: rect.height))
+    case .fence(let flags, let payload):
+      writer.u8(248); writer.pad(3); writer.u32(flags)
+      writer.u8(UInt8(min(payload.count, RFBFence.maximumPayload)));
+      writer.append(Array(payload.prefix(RFBFence.maximumPayload)))
     }
     return writer.bytes
   }
@@ -62,9 +74,41 @@ public enum RFBClientMessage: Sendable, Equatable {
       try await stream.skip(3)
       let length = Int(try await stream.u32())
       return .clientCutText(RFBLatin1.decode(try await stream.bytes(length)))
+    case 150:
+      let enable = try await stream.u8() != 0
+      let x = Int(try await stream.u16()), y = Int(try await stream.u16())
+      let width = Int(try await stream.u16()), height = Int(try await stream.u16())
+      return .enableContinuousUpdates(enable: enable, RFBRectangle(x: x, y: y, width: width, height: height))
+    case 248:
+      let (flags, payload) = try await RFBFence.read(from: stream)
+      return .fence(flags: flags, payload: payload)
     case let type:
       throw RFBError.malformed("unknown client message \(type)")
     }
+  }
+}
+
+/// The Fence extension's flags and wire format (same in both directions).
+public enum RFBFence {
+  /// Process every earlier message before this fence.
+  public static let blockBefore: UInt32 = 1 << 0
+  /// Process no later message until this fence is handled.
+  public static let blockAfter: UInt32 = 1 << 1
+  /// The message after this fence belongs with it.
+  public static let syncNext: UInt32 = 1 << 2
+  /// A request the peer must answer with the same payload.
+  public static let request: UInt32 = 1 << 31
+  /// The flags a reply may carry: the ones this client honours (it handles messages strictly in order).
+  public static let understood: UInt32 = blockBefore | blockAfter | syncNext
+  public static let maximumPayload = 64
+
+  /// Reads the body after the type byte: 3 bytes padding, flags, length, payload.
+  package static func read(from stream: RFBInputStream) async throws -> (flags: UInt32, payload: [UInt8]) {
+    try await stream.skip(3)
+    let flags = try await stream.u32()
+    let length = Int(try await stream.u8())
+    guard length <= maximumPayload else { throw RFBError.malformed("fence payload of \(length) bytes") }
+    return (flags, try await stream.bytes(length))
   }
 }
 

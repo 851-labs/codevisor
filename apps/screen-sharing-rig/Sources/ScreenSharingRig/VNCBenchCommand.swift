@@ -125,7 +125,7 @@
               publisher.publish(framebuffer, to: mailbox, metrics: metrics)
               continuation.yield(
                 Observed(
-                  latencyMs: update.latency.milliseconds, bytes: update.byteCount,
+                  latencyMs: update.latency?.milliseconds, bytes: update.byteCount,
                   echoed: probe.check(framebuffer)))
             }, onEvent: { _ in })
         } catch {
@@ -157,17 +157,21 @@
       let seconds = started.duration(to: .now).seconds
       let cpuMs = (cpuSeconds() - cpu) * 1000
       let bytes = observed.map(\.bytes).reduce(0, +)
-      let latencies = observed.map(\.latencyMs)
-      return [
+      let latencies = observed.compactMap(\.latencyMs)
+      var measured: [VNCBenchMetric: Double] = [
         .updatesPerSecond: Double(frames) / seconds,
-        .updateLatencyP50Ms: VNCBenchStatistics.median(latencies) ?? 0,
-        .updateLatencyP95Ms: VNCBenchStatistics.percentile(latencies, 0.95) ?? 0,
         .bytesPerUpdate: Double(bytes) / Double(frames),
         .megabitsPerSecond: Double(bytes) * 8 / seconds / 1_000_000,
         .cpuMsPerUpdate: cpuMs / Double(frames),
         .bytesCopiedPerUpdate: Double(metrics.snapshot().counters["vncBytesCopied", default: 0] - copied)
           / Double(frames),
       ]
+      // Request → applied only exists for requested updates; pushed ones (851-2312) have none.
+      if latencies.count * 2 >= frames {
+        measured[.updateLatencyP50Ms] = VNCBenchStatistics.median(latencies)
+        measured[.updateLatencyP95Ms] = VNCBenchStatistics.percentile(latencies, 0.95)
+      }
+      return measured
     }
 
     /// Pointer events one at a time; each is timed until its echo marker is on the client's framebuffer.
@@ -195,7 +199,8 @@
     }
 
     private struct Observed: Sendable {
-      let latencyMs: Double
+      /// Request → applied; nil for a pushed update (continuous updates).
+      let latencyMs: Double?
       let bytes: Int
       /// The echo sequence found at the expected marker position, if any.
       let echoed: Int?

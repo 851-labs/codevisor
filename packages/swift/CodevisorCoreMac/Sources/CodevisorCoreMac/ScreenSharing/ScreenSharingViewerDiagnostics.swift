@@ -41,18 +41,19 @@ public final class ScreenSharingViewerDiagnostics {
       }
     }
     previous = (now, frames, bytes, updates)
+    resolution = metrics.labels["videoSize"] ?? resolution
+    decoder = metrics.labels["decoder"] ?? decoder
+    droppedFrames = metrics.counters["renderDrops", default: 0]
     if let vncTransport {
-      route = "VNC · \(vncTransport)"
+      let pushed = metrics.labels["vncUpdateMode"] == "continuous"
+      route = "VNC · \(vncTransport)" + (pushed ? " · continuous" : "")
       updateLatencyMilliseconds = metrics.timings["vncUpdateLatency"]?.p95Ms
+      // Fence round trips (851-2312); nil until the server speaks Fence.
+      roundTripMilliseconds = metrics.timings["vncRoundTrip"]?.p50Ms
+      return
     }
     roundTripMilliseconds = statistics.first { $0.key.hasSuffix(".currentRoundTripTime") }
       .flatMap { Double($0.value) }.map { $0 * 1000 }
-    guard vncTransport == nil else {
-      resolution = metrics.labels["videoSize"] ?? resolution
-      decoder = metrics.labels["decoder"] ?? decoder
-      droppedFrames = metrics.counters["renderDrops", default: 0]
-      return
-    }
     let types = statistics.filter { $0.key.hasSuffix(".candidateType") }.values
     // A TURN allocation may carry UDP media over a TCP/TLS connection to the
     // relay. Report that client transport when the selected candidate exposes it.
@@ -62,9 +63,6 @@ public final class ScreenSharingViewerDiagnostics {
     route =
       types.isEmpty
       ? "Connecting" : (types.contains("relay") ? "Relay" : "Direct") + (transport.isEmpty ? "" : " · " + transport)
-    resolution = metrics.labels["videoSize"] ?? resolution
-    decoder = metrics.labels["decoder"] ?? decoder
     decodeMilliseconds = metrics.timings["decode"]?.p95Ms
-    droppedFrames = metrics.counters["renderDrops", default: 0]
   }
 }

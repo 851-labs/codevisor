@@ -15,7 +15,7 @@ import ScreenSharing
 public final class RFBLoopbackServer: @unchecked Sendable {
   /// Every encoding and pseudo-encoding this server can send.
   public static let implementedEncodings: Set<RFBEncoding> = [
-    .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition,
+    .raw, .copyRect, .zrle, .desktopSize, .cursor, .pointerPosition, .fence, .continuousUpdates,
   ]
 
   public struct Configuration: Sendable {
@@ -34,6 +34,11 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     public var echoPointer = false
     /// Sent with the first update to a client that advertises the Cursor pseudo-encoding.
     public var cursor: RFBCursorShape?
+    /// Confirm ContinuousUpdates to clients that advertise it. Off by default, like a
+    /// basic server: request/response tests synchronise on `isRequestPending`.
+    public var continuousUpdates = false
+    /// Speak Fence: request one from clients that advertise it, and answer theirs. Off by default.
+    public var fences = false
     public init() {}
   }
 
@@ -67,6 +72,10 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var echoes = 0
   private var sceneFrameUnsent = false
   private var clientEncodings: Set<Int32> = []
+  private var continuous = false
+  private var fenceLog: [(flags: UInt32, payload: [UInt8])] = []
+  /// The payload of the fence request this server sends a Fence-capable client.
+  public static let fenceProbe: [UInt8] = [0xC0, 0xDE]
   /// Every client message as it arrives, for a live server's log.
   public var onClientMessage: (@Sendable (RFBClientMessage) -> Void)?
 
@@ -99,6 +108,12 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   public var received: [RFBClientMessage] { lock.withLock { messages } }
   public var connectionCount: Int { lock.withLock { connections } }
   public var isRequestPending: Bool { lock.withLock { pendingRequest } }
+  /// A change sent now reaches the client: it has a request pending, or continuous updates are on.
+  public var wantsUpdate: Bool { lock.withLock { pendingRequest || continuous } }
+  /// The client turned continuous updates on and hasn't turned them off.
+  public var isContinuous: Bool { lock.withLock { continuous } }
+  /// Every fence the client sent: replies to this server's requests, and its own requests.
+  public var fencesReceived: [(flags: UInt32, payload: [UInt8])] { lock.withLock { fenceLog } }
 
   // MARK: Driving the client
 
@@ -106,7 +121,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   public func enqueue(_ rectangles: [Rectangle]) {
     lock.withLock {
       pending.append(contentsOf: rectangles)
-      if pendingRequest { flushPendingLocked() }
+      if pendingRequest || continuous { flushPendingLocked() }
     }
   }
 
@@ -132,7 +147,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       guard !rectangles.isEmpty else { return true }
       pending.append(contentsOf: rectangles)
       sceneFrameUnsent = true
-      if pendingRequest { flushPendingLocked() }
+      if pendingRequest || continuous { flushPendingLocked() }
       return true
     }
   }
@@ -161,18 +176,27 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     let marker = Self.echoMarker(sequence: echoes)
     guard (try? framebuffer.fill(rect, blue: marker.blue, green: marker.green, red: marker.red)) != nil else { return }
     pending.append(.raw(rect))
-    if pendingRequest { flushPendingLocked() }
+    if pendingRequest || continuous { flushPendingLocked() }
   }
 
   /// The encodings the client advertised in its last SetEncodings.
   public var advertisedEncodings: Set<Int32> { lock.withLock { clientEncodings } }
+
+  /// Ends continuous updates from the server side (EndOfContinuousUpdates); the client falls back to requests.
+  public func endContinuousUpdates() {
+    lock.withLock {
+      guard continuous else { return }
+      continuous = false
+      client?.send(content: Data([150]), completion: .idempotent)
+    }
+  }
 
   /// Sends a cursor shape, if the client advertised the Cursor pseudo-encoding.
   public func setCursor(_ shape: RFBCursorShape) {
     lock.withLock {
       guard clientEncodings.contains(RFBEncoding.cursor.rawValue) else { return }
       pending.append(.cursor(shape))
-      if pendingRequest { flushPendingLocked() }
+      if pendingRequest || continuous { flushPendingLocked() }
     }
   }
 
@@ -181,7 +205,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     lock.withLock {
       guard clientEncodings.contains(RFBEncoding.pointerPosition.rawValue) else { return }
       pending.append(.pointer(point))
-      if pendingRequest { flushPendingLocked() }
+      if pendingRequest || continuous { flushPendingLocked() }
     }
   }
 
@@ -223,6 +247,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       self.transport = transport
       connections += 1
       pendingRequest = false
+      continuous = false
       deflater = nil
       serving?.cancel()
       serving = Task { [weak self] in
@@ -278,8 +303,32 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         messages.append(message)
         if case .setEncodings(let encodings) = message {
           clientEncodings = Set(encodings)
+          if configuration.continuousUpdates, clientEncodings.contains(RFBEncoding.continuousUpdates.rawValue) {
+            client?.send(content: Data([150]), completion: .idempotent)  // EndOfContinuousUpdates: supported
+          }
+          if configuration.fences, clientEncodings.contains(RFBEncoding.fence.rawValue) {
+            client?.send(
+              content: Data(Self.fenceBytes(flags: RFBFence.request | RFBFence.blockBefore, payload: Self.fenceProbe)),
+              completion: .idempotent)
+          }
           if let cursor = configuration.cursor, clientEncodings.contains(RFBEncoding.cursor.rawValue) {
             pending.append(.cursor(cursor))
+          }
+        }
+        if case .enableContinuousUpdates(let enable, _) = message, configuration.continuousUpdates {
+          continuous = enable
+          if enable {
+            if !pending.isEmpty { flushPendingLocked() }
+          } else {
+            client?.send(content: Data([150]), completion: .idempotent)  // EndOfContinuousUpdates: stopped
+          }
+        }
+        if case .fence(let flags, let payload) = message {
+          fenceLog.append((flags, payload))
+          if flags & RFBFence.request != 0, configuration.fences {
+            client?.send(
+              content: Data(Self.fenceBytes(flags: flags & RFBFence.understood, payload: payload)),
+              completion: .idempotent)
           }
         }
         if configuration.echoPointer, case .pointerEvent(_, let x, let y) = message {
@@ -299,6 +348,12 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         }
       }
     }
+  }
+
+  static func fenceBytes(flags: UInt32, payload: [UInt8]) -> [UInt8] {
+    var writer = RFBByteWriter()
+    writer.u8(248); writer.pad(3); writer.u32(flags); writer.u8(UInt8(payload.count)); writer.append(payload)
+    return writer.bytes
   }
 
   private func flushPendingLocked() {

@@ -39,6 +39,8 @@
       configuration.encoding = encoding
       configuration.echoPointer = echoPointer
       configuration.cursor = .referenceArrow  // drawn locally by the viewer while controlling (851-2311)
+      configuration.continuousUpdates = true  // pushed updates, paced by fences (851-2312)
+      configuration.fences = true
       status = "Starting…"
       Task { [weak self] in
         do {
@@ -72,7 +74,8 @@
           if first || self.animated {
             try? server.paint(full, pixels: painter.nextFrame())
             first = false
-            if server.isRequestPending { server.enqueue([encoding == .zrle ? .zrle(full) : .raw(full)]) }
+            // Continuous updates (851-2312) never leave a request pending: ask the server instead.
+            if server.wantsUpdate { server.enqueue([encoding == .zrle ? .zrle(full) : .raw(full)]) }
           }
         }
       }

@@ -32,7 +32,12 @@ struct ScreenSharingDiagnosticsTests {
     #expect(diagnostics.megabitsPerSecond == 10)
     #expect(diagnostics.bytesPerUpdate == 125_000)
     #expect(diagnostics.updateLatencyMilliseconds == metrics.snapshot().timings["vncUpdateLatency"]?.p95Ms)
-    #expect(diagnostics.roundTripMilliseconds == nil, "VNC has no round-trip measurement yet (Fence, 851-2312).")
+    #expect(diagnostics.roundTripMilliseconds == nil, "No fence round trip measured yet.")
+    metrics.label("vncUpdateMode", "continuous")
+    metrics.observe("vncRoundTrip", milliseconds: 42)
+    diagnostics.update(metrics: metrics.snapshot(), statistics: statistics, now: 13)
+    #expect(diagnostics.roundTripMilliseconds == 42)
+    #expect(diagnostics.route == "VNC · WebSocket · continuous")
   }
 
   @Test func webRTCSessionsHaveNoVNCUpdateFigures() {

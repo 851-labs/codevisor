@@ -8,7 +8,8 @@ mkdir -p /root/.vnc
 printf '%s\n' "$PASSWORD" | vncpasswd -f > /root/.vnc/passwd
 chmod 600 /root/.vnc/passwd
 Xvnc :1 -geometry "$GEOMETRY" -depth 24 -rfbport 5901 -SecurityTypes VncAuth \
-  -PasswordFile /root/.vnc/passwd -AlwaysShared -desktop "codevisor-interop" &
+  -PasswordFile /root/.vnc/passwd -AlwaysShared -desktop "codevisor-interop" \
+  -BlacklistThreshold 1000 &  # parallel test connections must not trip the brute-force blacklist
 xvnc=$!
 ready=0
 for _ in $(seq 1 50); do
@@ -17,5 +18,8 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 [ "$ready" = 1 ] || { echo "vnc-interop: xsetroot never succeeded" >&2; exit 1; }
+# Something that changes every second, bottom-right, clear of the pixels the tests assert on:
+# a continuous-updates client must keep receiving updates without asking.
+DISPLAY=:1 xclock -digital -update 1 -geometry 200x40-0-0 &
 echo "vnc-interop: ready"
 wait "$xvnc"

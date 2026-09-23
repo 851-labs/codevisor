@@ -66,6 +66,43 @@ struct RFBInteropTests {
       stride(from: 3, to: shape.pixels.count, by: 4).contains { shape.pixels[$0] == 255 }, "Some pixels are opaque.")
   }
 
+  /// ContinuousUpdates and Fence against TigerVNC (851-2312): the server
+  /// confirms them, the client stops requesting, the ticking clock keeps
+  /// arriving as pushed updates (which also proves the server's fences were
+  /// answered: TigerVNC's congestion control stalls otherwise), and the
+  /// client's own fence measures the round trip.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_ROOT_COLOR"] != nil))
+  func updatesArePushedAndFencesAnswered() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let (client, _) = try await VNCConnection.open(
+      host: environment["VNC_TEST_HOST"]!, port: UInt16(environment["VNC_TEST_PORT"] ?? "5900")!,
+      password: environment["VNC_TEST_PASSWORD"])
+    defer { client.close() }
+    enum Seen { case update(pushed: Bool), event(RFBServerEvent) }
+    let (seen, continuation) = AsyncStream<Seen>.makeStream()
+    let run = Task {
+      try await client.run(
+        onUpdate: { _, update in continuation.yield(.update(pushed: update.latency == nil)) },
+        onEvent: { continuation.yield(.event($0)) })
+    }
+    defer { run.cancel() }
+    var enabled = false, pushed = 0, roundTrip: Duration?
+    // The clock ticks once a second; the test runner's timeout guards a stall.
+    for await item in seen {
+      switch item {
+      case .event(.continuousUpdates(true)): enabled = true
+      case .event(.roundTrip(let rtt)): roundTrip = rtt
+      case .update(let wasPushed): if wasPushed { pushed += 1 }
+      default: break
+      }
+      if enabled, pushed >= 3, roundTrip != nil { break }
+    }
+    print("interop: continuous=\(enabled) pushed=\(pushed) roundTrip=\(String(describing: roundTrip))")
+    #expect(enabled)
+    #expect(pushed >= 3)
+    #expect(roundTrip != nil)
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["VNC_TEST_HOST"] != nil))
   func connectsAndReceivesTheFirstUpdate() async throws {
     let environment = ProcessInfo.processInfo.environment

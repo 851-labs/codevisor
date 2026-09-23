@@ -70,14 +70,20 @@
                 // One hop per update keeps shape-then-position order.
                 Task { @MainActor in cursor.forEach { self?.onCursorChanged?($0) } }
               }
-              metrics.observe("vncUpdateLatency", milliseconds: update.latency.milliseconds)
+              if let latency = update.latency {
+                metrics.observe("vncUpdateLatency", milliseconds: latency.milliseconds)
+              }
               if update.resized {
                 let width = framebuffer.width, height = framebuffer.height
                 Task { @MainActor in self?.resized(width: width, height: height) }
               }
             },
             onEvent: { event in
-              Task { @MainActor in self?.handle(event) }
+              switch event {
+              case .roundTrip(let duration): metrics.observe("vncRoundTrip", milliseconds: duration.milliseconds)
+              case .continuousUpdates(let on): metrics.label("vncUpdateMode", on ? "continuous" : "requested")
+              default: Task { @MainActor in self?.handle(event) }
+              }
             })
         } catch {
           Task { @MainActor in self?.ended(with: error) }
@@ -116,6 +122,7 @@
       case .serverCutText(let text):
         emulator.serverCutText(text)
         metrics.increment("vncServerCutTexts")
+      case .continuousUpdates, .roundTrip: break
       }
     }
 
