@@ -23,6 +23,9 @@ extension HomeView {
           homeSidebarToolbar
           sidebarNewChatToolbarItems
         }
+        .overlay(alignment: .bottomTrailing) {
+          sidebarNewChatOverlay
+        }
         .navigationSplitViewColumnWidth(
           min: Self.sidebarColumnMinWidth,
           ideal: Self.sidebarColumnIdealWidth,
