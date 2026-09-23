@@ -86,8 +86,10 @@
               }
               if let pointer = update.pointer { cursor.append(.position(pointer)) }
               if update.jpegRectangles > 0 { metrics.increment("vncJPEGRectangles", by: update.jpegRectangles) }
-              if let duration = update.transferDuration {
-                let bytes = update.byteCount
+              // What the link delivered while the reader waited (851-2331), not the update's
+              // read time, which local buffering makes look arbitrarily fast.
+              if update.linkBytes > 0 {
+                let bytes = update.linkBytes, duration = update.linkDuration
                 Task { @MainActor in self?.observeBandwidth(bytes: bytes, duration: duration) }
               }
               if let result = update.desktopSize {

@@ -12,6 +12,10 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
   case megabitsPerSecond
   case cpuMsPerUpdate
   case bytesCopiedPerUpdate
+  /// The client's estimate of the link (851-2331): bytes that arrived while it
+  /// waited for the network over that wait. Reported, not judged; on a shaped
+  /// link it should read close to the profile's rate.
+  case linkEstimateMbps
 
   public enum Direction: Sendable { case higherIsBetter, lowerIsBetter, informational }
 
@@ -22,7 +26,7 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
   public var direction: Direction {
     switch self {
     case .updatesPerSecond: .higherIsBetter
-    case .megabitsPerSecond, .cpuMsPerUpdate: .informational
+    case .megabitsPerSecond, .cpuMsPerUpdate, .linkEstimateMbps: .informational
     default: .lowerIsBetter
     }
   }
@@ -36,7 +40,7 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
     case .cpuMsPerUpdate: 0.5
     case .updatesPerSecond: 0.5
     case .bytesPerUpdate, .bytesCopiedPerUpdate: 64
-    case .megabitsPerSecond: 0.1
+    case .megabitsPerSecond, .linkEstimateMbps: 0.1
     }
   }
 
@@ -59,6 +63,7 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
     case .megabitsPerSecond: "Mbit/s"
     case .cpuMsPerUpdate: "CPU ms/update"
     case .bytesCopiedPerUpdate: "copied/update"
+    case .linkEstimateMbps: "link est. Mbit/s"
     }
   }
 

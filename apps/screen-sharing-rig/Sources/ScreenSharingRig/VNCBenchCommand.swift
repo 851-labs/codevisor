@@ -128,6 +128,7 @@
               continuation.yield(
                 Observed(
                   latencyMs: update.latency?.milliseconds, bytes: update.byteCount,
+                  linkBytes: update.linkBytes, linkSeconds: update.linkDuration.seconds,
                   echoed: probe.check(framebuffer)))
             }, onEvent: { _ in })
         } catch {
@@ -168,6 +169,10 @@
         .bytesCopiedPerUpdate: Double(metrics.snapshot().counters["vncBytesCopied", default: 0] - copied)
           / Double(frames),
       ]
+      let linkSeconds = observed.map(\.linkSeconds).reduce(0, +)
+      if linkSeconds > 0 {
+        measured[.linkEstimateMbps] = Double(observed.map(\.linkBytes).reduce(0, +)) * 8 / linkSeconds / 1_000_000
+      }
       // Request → applied only exists for requested updates; pushed ones (851-2312) have none.
       if latencies.count * 2 >= frames {
         measured[.updateLatencyP50Ms] = VNCBenchStatistics.median(latencies)
@@ -204,6 +209,9 @@
       /// Request → applied; nil for a pushed update (continuous updates).
       let latencyMs: Double?
       let bytes: Int
+      /// What arrived while the client waited for the network, and that wait (851-2331).
+      let linkBytes: Int
+      let linkSeconds: Double
       /// The echo sequence found at the expected marker position, if any.
       let echoed: Int?
     }

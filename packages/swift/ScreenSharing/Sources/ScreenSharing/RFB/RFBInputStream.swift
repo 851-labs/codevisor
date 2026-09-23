@@ -27,10 +27,38 @@ public final class RFBInputStream: @unchecked Sendable {
   public private(set) var consumed = 0
   /// Bytes moved by compaction: at most one move per byte on average (851-2320).
   private(set) var bytesMoved = 0
+  /// Link timing (851-2331): while on, bytes from reads that had to wait for
+  /// the network and the time spent waiting. Data already buffered locally
+  /// (kernel, a WebSocket message that arrived whole) adds neither, so it
+  /// can't make the link look faster than it is.
+  private var timing = false
+  private var timedBytes = 0
+  private var timedWait: Duration = .zero
+  private let now: @Sendable () -> ContinuousClock.Instant
+  /// A read that returned faster than this found its data already there.
+  static let blockedThreshold: Duration = .milliseconds(1)
 
-  public init(transport: any RFBTransport, chunk: Int = 1 << 16) {
+  public init(
+    transport: any RFBTransport, chunk: Int = 1 << 16,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+  ) {
     self.transport = transport
     self.chunk = chunk
+    self.now = now
+  }
+
+  /// Starts counting the link's arrivals (after an update's header: the wait
+  /// for the header includes the idle time before the update).
+  public func startTiming() {
+    timing = true
+    timedBytes = 0
+    timedWait = .zero
+  }
+
+  /// Stops counting: the bytes that arrived while the reader waited, and how long it waited.
+  public func stopTiming() -> (bytes: Int, duration: Duration) {
+    timing = false
+    return (timedBytes, timedWait)
   }
 
   public func u8() async throws -> UInt8 {
@@ -76,8 +104,16 @@ public final class RFBInputStream: @unchecked Sendable {
         offset = 0
       }
       let missing = count - (buffer.count - offset)
+      let before = timing ? now() : nil
       let more = try await transport.read(maximum: max(chunk, missing))
       if more.isEmpty { throw RFBError.connectionClosed }
+      if let before {
+        let waited = before.duration(to: now())
+        if waited >= Self.blockedThreshold {
+          timedBytes += more.count
+          timedWait += waited
+        }
+      }
       buffer.append(contentsOf: more)
     }
   }
