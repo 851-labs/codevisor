@@ -1,8 +1,8 @@
 import CodevisorCore
-import CodevisorScreenSharing
 import CoreGraphics
 import Foundation
-import ScreenSharingHostInput
+import ScreenSharing
+import ScreenSharingWebRTC
 
 // MARK: - Target addressing
 
