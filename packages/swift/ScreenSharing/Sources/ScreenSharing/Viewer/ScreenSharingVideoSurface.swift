@@ -133,10 +133,12 @@
     private func refreshRemoteCursor() {
       let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
       if let shape = remoteShape, let image = remoteImage, scale.isFinite, scale > 0 {
-        let size = NSSize(width: CGFloat(shape.width) * scale, height: CGFloat(shape.height) * scale)
+        let cursor = CGFloat(
+          ScreenSharingVideoGeometry.cursorScale(videoScale: Double(scale), cursorHeight: Double(shape.height)))
+        let size = NSSize(width: CGFloat(shape.width) * cursor, height: CGFloat(shape.height) * cursor)
         shapedCursor = NSCursor(
           image: NSImage(cgImage: image, size: size),
-          hotSpot: NSPoint(x: CGFloat(shape.hotspotX) * scale, y: CGFloat(shape.hotspotY) * scale))
+          hotSpot: NSPoint(x: CGFloat(shape.hotspotX) * cursor, y: CGFloat(shape.hotspotY) * cursor))
       } else {
         shapedCursor = nil
       }

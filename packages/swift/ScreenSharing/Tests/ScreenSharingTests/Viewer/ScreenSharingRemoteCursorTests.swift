@@ -22,6 +22,33 @@ struct ScreenSharingRemoteCursorTests {
         videoWidth: 1, videoHeight: 1) == nil)
   }
 
+  /// A Retina Mac's Screen Sharing: a 3456-px-wide desktop in a 1300-pt pane
+  /// (scale ≈ 0.38) drew a 23-px arrow ~9 pt tall (851-2347). It's now at least 20 pt, like the Mac's arrow.
+  @Test func aBigDesktopInASmallPaneKeepsTheCursorReadable() throws {
+    let videoScale = 1300.0 / 3456
+    // 1× shape (23 px): brought up to the 20-pt minimum (was ~8.7 pt).
+    #expect(ScreenSharingVideoGeometry.cursorScale(videoScale: videoScale, cursorHeight: 23) == 20.0 / 23)
+    // 2× shape (46 px): the same 20 pt.
+    #expect(ScreenSharingVideoGeometry.cursorScale(videoScale: videoScale, cursorHeight: 46) == 20.0 / 46)
+    // A tiny shape is never enlarged past one point per pixel.
+    #expect(ScreenSharingVideoGeometry.cursorScale(videoScale: videoScale, cursorHeight: 8) == 1)
+    // A desktop at the pane's size (TigerVNC following the pane) is unchanged.
+    #expect(ScreenSharingVideoGeometry.cursorScale(videoScale: 1, cursorHeight: 16) == 1)
+    // A small desktop zoomed up in a big pane grows its cursor with the video.
+    #expect(ScreenSharingVideoGeometry.cursorScale(videoScale: 2, cursorHeight: 16) == 2)
+    // The hotspot still lands on the host's position.
+    let surfaceHeight: Double = 1300.0 * 2234 / 3456
+    let frame = ScreenSharingVideoGeometry.cursorFrame(
+      x: 1000, y: 500, hotspotX: 4, hotspotY: 2, cursorWidth: 16, cursorHeight: 23, surfaceWidth: 1300,
+      surfaceHeight: surfaceHeight, videoWidth: 3456, videoHeight: 2234)
+    let placed = try #require(frame)
+    let cursorScale: Double = 20.0 / 23
+    let hotspotX: Double = placed.x + 4 * cursorScale
+    let expectedX: Double = 1000 * videoScale
+    #expect(abs(hotspotX - expectedX) < 1e-9)
+    #expect(abs(placed.height - 20) < 1e-9)
+  }
+
   @Test func shapesBecomeImagesWithTheirTransparency() throws {
     let image = try #require(ScreenSharingVideoSurface.image(RFBCursorTestShapes.corner))
     #expect(image.width == 2 && image.height == 2)
@@ -39,10 +66,11 @@ struct ScreenSharingRemoteCursorTests {
     // The default video is 1920 × 1080 in a 960 × 540 surface: scale 0.5.
     surface.showRemoteCursor(.position(RFBPoint(x: 100, y: 200)))
     let frame = try #require(surface.remoteCursorOverlayFrame)
-    #expect(frame.width == 1 && frame.height == 1)
-    #expect(frame.minX == 49.5, "x = (100 − hotspot 1) × 0.5")
-    // 200 × 0.5 = 100 from the top; an unflipped view counts from the bottom: 540 − 100 − 1.
-    #expect(frame.minY == 439)
+    // A 2-px shape isn't shrunk below one point per pixel (851-2347), though the video is at 0.5.
+    #expect(frame.width == 2 && frame.height == 2)
+    #expect(frame.minX == 49, "x = 100 × 0.5 − hotspot 1 × 1")
+    // 200 × 0.5 = 100 from the top; an unflipped view counts from the bottom: 540 − 100 − 2.
+    #expect(frame.minY == 438)
   }
 
   @Test func aShapeBecomesTheControlCursorAndHidingRestoresTheBlankOne() throws {
@@ -54,8 +82,8 @@ struct ScreenSharingRemoteCursorTests {
     #expect(blank.image.size == NSSize(width: 1, height: 1))
     surface.showRemoteCursor(.shape(RFBCursorTestShapes.corner))
     #expect(surface.controlCursor !== blank)
-    #expect(surface.controlCursor.image.size == NSSize(width: 1, height: 1), "2 px at scale 0.5")
-    #expect(surface.controlCursor.hotSpot == NSPoint(x: 0.5, y: 0))
+    #expect(surface.controlCursor.image.size == NSSize(width: 2, height: 2), "2 px, not shrunk below 1 pt/px")
+    #expect(surface.controlCursor.hotSpot == NSPoint(x: 1, y: 0))
     surface.showRemoteCursor(.shape(.hidden))
     #expect(surface.controlCursor === blank)
     surface.showRemoteCursor(.position(RFBPoint(x: 1, y: 1)))
