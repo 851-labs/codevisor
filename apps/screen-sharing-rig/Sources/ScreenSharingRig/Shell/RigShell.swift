@@ -10,14 +10,13 @@
   /// on Native session with its video inside. `probe`, `vnc-server` and the
   /// `--config` host remain headless entry points the scripts drive.
   enum RigScenario: String, CaseIterable, Identifiable {
-    case loopbackServer, nativeSession, probe
+    case loopbackServer, nativeSession
     var id: String { rawValue }
 
     var title: String {
       switch self {
       case .loopbackServer: "Loopback VNC server"
       case .nativeSession: "Native session"
-      case .probe: "Probe"
       }
     }
 
@@ -25,7 +24,6 @@
       switch self {
       case .loopbackServer: "server.rack"
       case .nativeSession: "display.2"
-      case .probe: "waveform.path.ecg"
       }
     }
   }
@@ -120,7 +118,6 @@
           }
         case .scenario(.nativeSession):
           if let runner { RigNativeSessionView(runner: runner) } else { RigInstructionsView.nativeSession }
-        case .scenario(.probe): RigInstructionsView.probe
         }
       }
       // Every screen shows the tall unified toolbar: this item keeps one present even when a screen adds none.
@@ -165,14 +162,6 @@
         "bun run screen-sharing:rig install --host user@mac --host-address 192.168.x.y --capture workload:1920x1080@60",
         "bun run screen-sharing:rig status · sample --seconds 30 · tune paced15-worker · logs · stop --all",
         "See docs/plans/screen-sharing-rig.md and apps/screen-sharing-rig/README.md.",
-      ])
-
-    static let probe = RigInstructionsView(
-      title: "Probe",
-      lines: [
-        "The single-process capture → encode → decode → render diagnostic.",
-        "bun scripts/screen-sharing-probe.mjs --help",
-        "swift run --package-path apps/screen-sharing-rig screen-sharing-rig probe --mode loopback --duration 10",
       ])
 
     var body: some View {

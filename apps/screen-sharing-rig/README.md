@@ -4,11 +4,11 @@ A two-Mac development loop for the native screen-sharing engine: one resident ho
 
 ## Layout
 
-| Target                     | Path                                                       | Purpose                                                                                                                                                                                                                                                                                  |
-| -------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ScreenSharingRigKit`      | `Sources/ScreenSharingRigKit`                              | Pure, tested pieces: `rig.json` parsing, signaling messages, a bounded HTTP/1.1 codec and listener, reconnect backoff, per-second telemetry samples, HUD formatting, JSONL writer.                                                                                                       |
-| `ScreenSharingRig`         | `Sources/ScreenSharingRig`                                 | The executable: `RigRunner` (state, telemetry tick), `RigRunner+Host`, `RigRunner+Viewer`, `RigHUDView`; `Shell/` is the window: a sidebar of Machines (`RigMachine.catalog`, plus the loopback server while it runs) over a Debug section (Loopback VNC server, Native session, Probe). |
-| `ScreenSharingDiagnostics` | `apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics` | Workload window, painter and synthetic source shared with the probe.                                                                                                                                                                                                                     |
+| Target                     | Path                                                       | Purpose                                                                                                                                                                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ScreenSharingRigKit`      | `Sources/ScreenSharingRigKit`                              | Pure, tested pieces: `rig.json` parsing, signaling messages, a bounded HTTP/1.1 codec and listener, reconnect backoff, per-second telemetry samples, HUD formatting, JSONL writer.                                                                                                |
+| `ScreenSharingRig`         | `Sources/ScreenSharingRig`                                 | The executable: `RigRunner` (state, telemetry tick), `RigRunner+Host`, `RigRunner+Viewer`, `RigHUDView`; `Shell/` is the window: a sidebar of Machines (`RigMachine.catalog`, plus the loopback server while it runs) over a Debug section (Loopback VNC server, Native session). |
+| `ScreenSharingDiagnostics` | `apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics` | Workload window, painter and synthetic source shared with the probe.                                                                                                                                                                                                              |
 
 The bundle is `~/Applications/CodevisorRig/ScreenSharingRig.app` (`com.codevisor.ScreenSharingRig`), built and signed by `scripts/screen-sharing-rig.mjs` with the login keychain's Apple Development identity so Screen Recording, Accessibility and Local Network grants survive rebuilds.
 
@@ -29,6 +29,13 @@ bun run screen-sharing:rig stop --all
 
 ```sh
 swift run --package-path apps/screen-sharing-rig screen-sharing-rig vnc-server --port 5901 --password secret --size 1280x800
+```
+
+The probe, the single-process capture → encode → WebRTC → decode → render diagnostic, is command-line only: `--loopback` (default) or `--send`/`--receive` across two Macs with offer/answer files, ending in a JSON report.
+
+```sh
+bun scripts/screen-sharing-probe.mjs --help
+swift run --package-path apps/screen-sharing-rig screen-sharing-rig probe --loopback --duration 10 --report /tmp/probe.json
 ```
 
 The app has one window, whatever started it. Launched without arguments (`open -n ~/Applications/CodevisorRig/ScreenSharingRig.app`) it opens on the first machine; the resident viewer opens the same window on Native session, with the two-Mac session's video and HUD inside it, so the other scenarios are one click away from the running rig. Closing that window stops the viewer and exits cleanly, which the launch agent does not restart. A `sample` hides the sidebar for its duration.
