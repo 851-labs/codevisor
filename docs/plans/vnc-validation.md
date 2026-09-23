@@ -71,7 +71,9 @@ baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
   sides' run spread and 10 % (25 % for client CPU per update, which is mostly
   idle overhead on high-latency profiles and moves with machine load), and at
   least a per-metric absolute floor (1 ms for latencies). Reports record the
-  load average and flag a busy machine. A change is a regression when a metric is worse by
+  load average and flag a busy machine. Client CPU per update and Mbit/s are
+  reported but never a verdict: whole-process CPU time read 0.54–1.7 ms for
+  one unchanged build across runs, more than any change moves it. A change is a regression when a metric is worse by
   more than the noise band.
 - **A/B in one session:** `vnc:validate` runs `vnc:bench --against-main`: it
   builds `origin/main` in `tmp/vnc-bench/main-worktree`, benchmarks it first,

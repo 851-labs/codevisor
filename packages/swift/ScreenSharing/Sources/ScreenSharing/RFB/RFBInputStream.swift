@@ -25,6 +25,8 @@ public final class RFBInputStream: @unchecked Sendable {
   private let chunk: Int
   /// Bytes handed out so far, for per-message wire sizes.
   public private(set) var consumed = 0
+  /// Bytes moved by compaction: at most one move per byte on average (851-2320).
+  private(set) var bytesMoved = 0
 
   public init(transport: any RFBTransport, chunk: Int = 1 << 16) {
     self.transport = transport
@@ -69,6 +71,7 @@ public final class RFBInputStream: @unchecked Sendable {
   private func fill(_ count: Int) async throws {
     while buffer.count - offset < count {
       if offset > 0, offset >= buffer.count / 2 {
+        bytesMoved += buffer.count - offset
         buffer.removeFirst(offset)
         offset = 0
       }

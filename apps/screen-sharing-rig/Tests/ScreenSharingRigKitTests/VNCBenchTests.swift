@@ -31,7 +31,7 @@ struct VNCBenchTests {
   @Test func directionsSayWhatBetterMeans() {
     #expect(VNCBenchMetric.updatesPerSecond.direction == .higherIsBetter)
     #expect(VNCBenchMetric.updateLatencyP95Ms.direction == .lowerIsBetter)
-    #expect(VNCBenchMetric.cpuMsPerUpdate.direction == .lowerIsBetter)
+    #expect(VNCBenchMetric.cpuMsPerUpdate.direction == .informational, "too noisy to judge (851-2320)")
     #expect(VNCBenchMetric.megabitsPerSecond.direction == .informational)
   }
 
@@ -59,16 +59,15 @@ struct VNCBenchTests {
       VNCBenchComparison(baseline: noisy, current: report(80, latency: 25, mbps: 5, spread: 0.02)).regressions.isEmpty)
   }
 
-  @Test func cpuPerUpdateHasAWiderBandThanOtherMetrics() {
+  @Test func cpuPerUpdateIsReportedButNeverAVerdict() {
     func report(_ cpu: Double) -> VNCBenchReport {
       VNCBenchReport(
         machine: .init(model: "m", system: "s", power: "AC"), build: "b",
         cases: [VNCBenchCase(scene: "typing", profile: "wan150", runs: [[.cpuMsPerUpdate: cpu]])])
     }
-    #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.4)).regressions.isEmpty, "+20 %")
-    #expect(VNCBenchComparison(baseline: report(2.0), current: report(2.6)).regressions.count == 1, "+30 %")
-    #expect(VNCBenchComparison(baseline: report(2.0), current: report(0.4)).improvements.count == 1, "−80 %")
-    #expect(VNCBenchComparison(baseline: report(0.47), current: report(0.91)).regressions.isEmpty, "< 0.5 ms")
+    let comparison = VNCBenchComparison(baseline: report(0.54), current: report(1.31))
+    #expect(comparison.regressions.isEmpty && comparison.improvements.isEmpty)
+    #expect(comparison.rows.first?.verdict == .informational)
   }
 
   @Test func sub_millisecondLatencyChangesAreNoise() {
