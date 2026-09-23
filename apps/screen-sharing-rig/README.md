@@ -31,6 +31,8 @@ bun run screen-sharing:rig stop --all
 swift run --package-path apps/screen-sharing-rig screen-sharing-rig vnc-server --port 5901 --password secret --size 1280x800
 ```
 
+The Loopback VNC server tab runs `RFBLoopbackServer`, the reference server VNC changes are validated against (`docs/plans/vnc-validation.md`): its Content menu plays the animated desktop or any deterministic `RFBLoopbackScene` (idle, typing, scroll, windowDrag, photo, resize), and "Echo pointer input" answers each pointer event with a marker whose colour encodes its sequence.
+
 The probe, the single-process capture → encode → WebRTC → decode → render diagnostic, is command-line only: `--loopback` (default) or `--send`/`--receive` across two Macs with offer/answer files, ending in a JSON report.
 
 ```sh

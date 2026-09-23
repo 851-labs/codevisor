@@ -2,11 +2,20 @@ import Foundation
 import Network
 import ScreenSharing
 
-/// An in-process VNC server for tests and the rig: a scripted handshake, a
-/// BGRA framebuffer whose rectangles go out as Raw, CopyRect, ZRLE or
-/// DesktopSize, and a log of every client message. One client at a time.
-/// Its own target so product modules never link it.
+/// An in-process VNC server for tests, `vnc-bench` and the rig: a scripted
+/// handshake, a BGRA framebuffer whose rectangles go out as Raw, CopyRect,
+/// ZRLE or DesktopSize, deterministic scenes (`play`), an optional pointer
+/// echo, and a log of every client message. One client at a time. Its own
+/// target so product modules never link it.
+///
+/// It is the reference implementation VNC features are validated against
+/// (docs/plans/vnc-validation.md): a feature adds its server side here in the
+/// same change, and `implementedEncodings` must cover everything the client
+/// advertises.
 public final class RFBLoopbackServer: @unchecked Sendable {
+  /// Every encoding and pseudo-encoding this server can send.
+  public static let implementedEncodings: Set<RFBEncoding> = [.raw, .copyRect, .zrle, .desktopSize]
+
   public struct Configuration: Sendable {
     public var version = RFBProtocolVersion.v3_8
     public var securityTypes: [UInt8] = [RFBSecurityType.vncAuthentication.rawValue]
@@ -18,6 +27,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     public var encoding: RFBEncoding = .raw
     /// nil: an ephemeral port, read from `port` once started.
     public var port: UInt16?
+    /// Answer every pointer event with an `echoMarker` at the pointer, so
+    /// input-to-update latency is measurable in one process.
+    public var echoPointer = false
     public init() {}
   }
 
@@ -25,6 +37,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     case raw(RFBRectangle)
     case zrle(RFBRectangle)
     case copy(RFBRectangle, fromX: Int, fromY: Int)
+    /// CopyRect whose move the framebuffer already holds (scenes apply their changes in order).
+    case moved(RFBRectangle, fromX: Int, fromY: Int)
     case desktopSize(width: Int, height: Int)
   }
 
@@ -42,6 +56,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   private var messages: [RFBClientMessage] = []
   private var deflater: RFBZlibDeflater?
   private var connections = 0
+  private var echoes = 0
+  private var sceneFrameUnsent = false
   /// Every client message as it arrives, for a live server's log.
   public var onClientMessage: (@Sendable (RFBClientMessage) -> Void)?
 
@@ -92,6 +108,51 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   /// `pixels`: `rect.width * rect.height` BGRA pixels, row-major.
   public func paint(_ rect: RFBRectangle, pixels: [UInt8]) throws {
     try lock.withLock { try framebuffer.fillRaw(rect, from: pixels) }
+  }
+
+  /// Applies the scene's next frame and sends it like `enqueue`; an idle
+  /// frame sends nothing. Returns false, leaving the scene where it was, while
+  /// the previous frame is still waiting for the client's request: pixels are
+  /// encoded when sent, so a second frame on top of an unsent one (a scroll
+  /// after a scroll) would reach the client out of step with the server.
+  @discardableResult
+  public func play(_ scene: inout RFBLoopbackScene) throws -> Bool {
+    try lock.withLock {
+      guard !sceneFrameUnsent else { return false }
+      let rectangles = try scene.next(on: framebuffer)
+      guard !rectangles.isEmpty else { return true }
+      pending.append(contentsOf: rectangles)
+      sceneFrameUnsent = true
+      if pendingRequest { flushPendingLocked() }
+      return true
+    }
+  }
+
+  // MARK: Pointer echo
+
+  public static let echoMarkerSize = 4
+  private static let echoTag: UInt8 = 0xE3
+
+  /// The marker colour for the `sequence`th echoed pointer event (1-based, modulo 65536).
+  public static func echoMarker(sequence: Int) -> (blue: UInt8, green: UInt8, red: UInt8) {
+    (UInt8(truncatingIfNeeded: sequence), UInt8(truncatingIfNeeded: sequence >> 8), echoTag)
+  }
+
+  /// The sequence a pixel's colour marks, or nil when it is not a marker.
+  public static func echoSequence(blue: UInt8, green: UInt8, red: UInt8) -> Int? {
+    red == echoTag ? Int(blue) | Int(green) << 8 : nil
+  }
+
+  private func echoLocked(x: Int, y: Int) {
+    echoes += 1
+    let size = Self.echoMarkerSize
+    let rect = RFBRectangle(
+      x: min(max(0, x), max(0, framebuffer.width - size)), y: min(max(0, y), max(0, framebuffer.height - size)),
+      width: min(size, framebuffer.width), height: min(size, framebuffer.height))
+    let marker = Self.echoMarker(sequence: echoes)
+    guard (try? framebuffer.fill(rect, blue: marker.blue, green: marker.green, red: marker.red)) != nil else { return }
+    pending.append(.raw(rect))
+    if pendingRequest { flushPendingLocked() }
   }
 
   public func sendBell() { write([2]) }
@@ -185,6 +246,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       onClientMessage?(message)
       lock.withLock {
         messages.append(message)
+        if configuration.echoPointer, case .pointerEvent(_, let x, let y) = message {
+          echoLocked(x: Int(x), y: Int(y))
+        }
         if case .framebufferUpdateRequest(let incremental, _) = message {
           if !pending.isEmpty {
             flushPendingLocked()
@@ -204,6 +268,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
     let rectangles = pending
     pending = []
     pendingRequest = false
+    sceneFrameUnsent = false
     guard let client, let bytes = try? encode(rectangles) else { return }
     client.send(content: Data(bytes), completion: .idempotent)
   }
@@ -220,6 +285,9 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         header(&writer, rect, .copyRect)
         writer.u16(UInt16(fromX)); writer.u16(UInt16(fromY))
         try framebuffer.copy(rect, fromX: fromX, fromY: fromY)
+      case .moved(let rect, let fromX, let fromY):
+        header(&writer, rect, .copyRect)
+        writer.u16(UInt16(fromX)); writer.u16(UInt16(fromY))
       case .zrle(let rect):
         header(&writer, rect, .zrle)
         if deflater == nil { deflater = try RFBZlibDeflater() }
@@ -227,7 +295,10 @@ public final class RFBLoopbackServer: @unchecked Sendable {
         writer.u32(UInt32(compressed.count)); writer.append(compressed)
       case .desktopSize(let width, let height):
         header(&writer, RFBRectangle(x: 0, y: 0, width: width, height: height), .desktopSize)
-        try framebuffer.resize(width: width, height: height)
+        // A scene resizes and repaints before sending; resizing again would clear its content.
+        if framebuffer.width != width || framebuffer.height != height {
+          try framebuffer.resize(width: width, height: height)
+        }
       }
     }
     return writer.bytes

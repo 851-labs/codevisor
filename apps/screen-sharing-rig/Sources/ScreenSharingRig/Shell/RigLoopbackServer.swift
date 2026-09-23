@@ -4,8 +4,9 @@
   import ScreenSharingTesting
   import SwiftUI
 
-  /// The in-process VNC server from the tests, with the animated desktop the
-  /// `vnc-server` subcommand paints, started and stopped from the window.
+  /// The in-process reference VNC server from the tests, started and stopped
+  /// from the window: the animated desktop the `vnc-server` subcommand paints,
+  /// or one of the deterministic scenes the tests and `vnc-bench` play.
   @MainActor
   @Observable
   final class RigLoopbackServerModel {
@@ -15,6 +16,10 @@
     var framesPerSecond = 10
     var encoding: RFBEncoding = .zrle
     var animated = true
+    /// nil: the animated desktop; otherwise a reference scene (seed 1).
+    var scene: RFBLoopbackScene.Kind?
+    /// Answer pointer events with the reference server's echo marker.
+    var echoPointer = false
     private(set) var port: UInt16?
     private(set) var status = "Stopped"
     private(set) var log: [String] = []
@@ -32,6 +37,7 @@
       configuration.height = height
       configuration.name = "Codevisor rig \(width)×\(height)"
       configuration.encoding = encoding
+      configuration.echoPointer = echoPointer
       status = "Starting…"
       Task { [weak self] in
         do {
@@ -43,7 +49,11 @@
           self.server = server
           self.port = server.port
           self.status = "Serving on 127.0.0.1:\(server.port)"
-          self.paint(server: server, width: width, height: height, fps: framesPerSecond, encoding: encoding)
+          if let scene = self.scene {
+            self.play(server: server, scene: scene, fps: framesPerSecond)
+          } else {
+            self.paint(server: server, width: width, height: height, fps: framesPerSecond, encoding: encoding)
+          }
         } catch {
           self?.status = error.localizedDescription
         }
@@ -63,6 +73,19 @@
             first = false
             if server.isRequestPending { server.enqueue([encoding == .zrle ? .zrle(full) : .raw(full)]) }
           }
+        }
+      }
+    }
+
+    /// One scene frame per tick; a frame the client hasn't taken yet holds the scene back.
+    private func play(server: RFBLoopbackServer, scene kind: RFBLoopbackScene.Kind, fps: Int) {
+      painting = Task { [weak self] in
+        var scene = RFBLoopbackScene(kind: kind, seed: 1)
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .milliseconds(1000 / max(1, fps)))
+          guard let self else { return }
+          guard self.animated || scene.frame == 0 else { continue }
+          _ = try? server.play(&scene)
         }
       }
     }
@@ -107,7 +130,14 @@
             Text("ZRLE").tag(RFBEncoding.zrle)
             Text("Raw").tag(RFBEncoding.raw)
           }
+          Picker("Content", selection: Bindable(model).scene) {
+            Text("Animated desktop").tag(RFBLoopbackScene.Kind?.none)
+            ForEach(RFBLoopbackScene.Kind.allCases, id: \.self) { kind in
+              Text("Scene: \(kind.rawValue)").tag(Optional(kind))
+            }
+          }
           Toggle("Animate (off: one frame, like a static desktop)", isOn: Bindable(model).animated)
+          Toggle("Echo pointer input as a marker", isOn: Bindable(model).echoPointer)
         }
         .formStyle(.grouped)
         .frame(maxHeight: 360)
