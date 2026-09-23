@@ -111,6 +111,46 @@ struct ComputerUseLivePreviewTests {
     #expect(ledger.activities.isEmpty)
   }
 
+  @Test("Follows the controlled window when it moves or resizes between tool calls")
+  func ledgerFollowsWindowFrame() {
+    var ledger = ComputerUseLivePreviewLedger()
+    let frame = CGRect(x: 100, y: 100, width: 400, height: 200)
+    ledger.apply(activated("abc", window: 7, frame: frame))
+    ledger.apply(.cursorMoved(sessionID: "abc", point: CGPoint(x: 300, y: 150)))
+
+    // Another window's bounds never apply.
+    ledger.apply(.windowFrameChanged(sessionID: "abc", windowID: 8, frame: .zero))
+    #expect(ledger.activities["abc"]?.windowFrame == frame)
+    #expect(ledger.activities["abc"]?.cursor != nil)
+
+    // An unchanged frame is a no-op, so observers are not woken 4 times a second.
+    let unchanged = ledger
+    ledger.apply(.windowFrameChanged(sessionID: "ABC", windowID: 7, frame: frame))
+    #expect(ledger == unchanged)
+
+    let resized = CGRect(x: 50, y: 80, width: 600, height: 500)
+    ledger.apply(.windowFrameChanged(sessionID: "ABC", windowID: 7, frame: resized))
+    #expect(ledger.activities["abc"]?.windowFrame == resized)
+    // The old normalized cursor no longer lines up with the new frame.
+    #expect(ledger.activities["abc"]?.cursor == nil)
+  }
+
+  @Test("Reads a window's bounds from the window server list")
+  func windowBounds() {
+    let info: [[String: Any]] = [
+      [
+        kCGWindowNumber as String: NSNumber(value: 3),
+        kCGWindowBounds as String: CGRect(x: 1, y: 2, width: 3, height: 4).dictionaryRepresentation,
+      ],
+      [
+        kCGWindowNumber as String: NSNumber(value: 7),
+        kCGWindowBounds as String: CGRect(x: 10, y: 20, width: 640, height: 480).dictionaryRepresentation,
+      ],
+    ]
+    #expect(computerUseWindowBounds(windowID: 7, windowInfo: info) == CGRect(x: 10, y: 20, width: 640, height: 480))
+    #expect(computerUseWindowBounds(windowID: 9, windowInfo: info) == nil)
+  }
+
   @Test("App termination stops every session controlling it")
   func ledgerTermination() {
     var ledger = ComputerUseLivePreviewLedger()

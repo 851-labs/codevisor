@@ -74,6 +74,8 @@ struct ComputerUseLivePreviewLedger: Equatable {
     )
     /// `point` is in the same screen coordinates as `windowFrame`.
     case cursorMoved(sessionID: String, point: CGPoint)
+    /// The controlled window moved or resized between tool calls.
+    case windowFrameChanged(sessionID: String, windowID: CGWindowID, frame: CGRect)
     case idled(sessionID: String)
     /// A nil pid stops the session whatever it controls.
     case stopped(sessionID: String, pid: pid_t?)
@@ -106,6 +108,15 @@ struct ComputerUseLivePreviewLedger: Equatable {
       let key = Self.key(sessionID)
       guard var activity = activities[key], activity.state == .active else { return }
       activity.cursor = computerUseNormalizedCursor(point: point, in: activity.windowFrame)
+      activities[key] = activity
+    case .windowFrameChanged(let sessionID, let windowID, let frame):
+      let key = Self.key(sessionID)
+      guard var activity = activities[key], activity.windowID == windowID,
+        activity.windowFrame != frame
+      else { return }
+      activity.windowFrame = frame
+      // A position normalized against the old frame no longer lines up.
+      activity.cursor = nil
       activities[key] = activity
     case .idled(let sessionID):
       let key = Self.key(sessionID)
@@ -159,7 +170,7 @@ public final class ComputerUseLivePreview {
     public let pid: pid_t
     public let windowID: CGWindowID?
     /// Screen points, top-left origin.
-    public let windowFrame: CGRect
+    public internal(set) var windowFrame: CGRect
     let colorIndex: Int
     /// The agent cursor as a 0…1 fraction of the window, when known.
     public internal(set) var cursor: CGPoint?

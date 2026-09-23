@@ -27,6 +27,25 @@ extension ComputerUsePresentationState {
   @objc private func visibilityTimerFired(_ timer: Timer) {
     releaseIdleSessions()
     refreshCursorVisibility()
+    refreshWatchedWindowFrames()
+  }
+
+  /// Tool calls resize the stream to the window, but an app can move or
+  /// resize its window between them — the agent's own action often does.
+  /// While someone watches the live preview, follow the window here so the
+  /// preview never shows a stale layout until the next tool call.
+  func refreshWatchedWindowFrames() {
+    let watched = sessions.filter { ComputerUseNativeSharing.shared.hasSinks(sessionID: $0.key) }
+    guard !watched.isEmpty else { return }
+    let windowInfo = onScreenWindowInfo()
+    for (sessionID, presentation) in watched {
+      guard let windowID = presentation.targetWindowID,
+        let frame = computerUseWindowBounds(windowID: windowID, windowInfo: windowInfo)
+      else { continue }
+      ComputerUseNativeSharing.shared.windowFrameChanged(windowID: windowID, windowFrame: frame)
+      ComputerUseLivePreview.shared.apply(
+        .windowFrameChanged(sessionID: sessionID, windowID: windowID, frame: frame))
+    }
   }
 
   @objc func activeSpaceDidChange(_ notification: Notification) {
@@ -176,4 +195,17 @@ extension ComputerUsePresentationState {
       return (CGDisplayBounds(CGDirectDisplayID(number.uint32Value)), screen.frame)
     }
   }
+}
+
+/// A window's bounds from `CGWindowListCopyWindowInfo`, in the same global
+/// top-left point space as its accessibility frame.
+func computerUseWindowBounds(windowID: CGWindowID, windowInfo: [[String: Any]]) -> CGRect? {
+  for info in windowInfo {
+    guard (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID,
+      let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+      let frame = CGRect(dictionaryRepresentation: bounds)
+    else { continue }
+    return frame
+  }
+  return nil
 }

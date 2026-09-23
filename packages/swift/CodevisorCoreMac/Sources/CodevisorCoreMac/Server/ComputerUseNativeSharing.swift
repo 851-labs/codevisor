@@ -374,6 +374,12 @@ final class ComputerUseNativeSharing: NSObject,
     resubscribe(sessionID: sessionID)
   }
 
+  /// The window was moved or resized outside a tool call. Resizes the
+  /// stream when its output size changes; a no-op otherwise.
+  func windowFrameChanged(windowID: CGWindowID, windowFrame: CGRect) {
+    refreshPreviewConfiguration(windowID: windowID, windowFrame: windowFrame)
+  }
+
   /// The size frames are currently delivered at for the session's window.
   func previewSize(sessionID: String) -> CGSize? {
     windowIDByKey.first { $0.key.sessionID == sessionID }
