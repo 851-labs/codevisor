@@ -21,6 +21,7 @@ extension View {
 
 private struct HarnessBlockedDetailsModifier: ViewModifier {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @Binding var item: HarnessBlockedMachine?
   @State private var isRetrying = false
   @State private var retryError: String?
@@ -38,7 +39,7 @@ private struct HarnessBlockedDetailsModifier: ViewModifier {
           }
           .frame(maxHeight: 160)
           if let retryError {
-            Text(retryError).font(.callout).foregroundStyle(.secondary)
+            Text(retryError).font(.callout).foregroundStyle(theme.textSecondary)
           }
           HStack {
             Button("Copy") { PlatformPasteboard.copy(blocked.reason) }

@@ -6,6 +6,13 @@ import CodevisorUI
 // MARK: - Provider sign-in sheet
 
 extension OpenCodeProviderAuthenticationView {
+  /// The browser wait is chrome status, not body content — same rule the
+  /// rest of the family follows.
+  var providerSignInStatus: String? {
+    if flow?.state == "running" { return "Waiting for sign-in…" }
+    return workingLabel
+  }
+
   var providerSignInSheet: some View {
     NavigationStack {
       Group {
@@ -34,23 +41,28 @@ extension OpenCodeProviderAuthenticationView {
       .navigationTitle(flow == nil ? "Add Provider" : (selectedProvider?.name ?? "Sign In"))
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      SheetFooter {
+      SheetFooter(status: providerSignInStatus) {
         Button("Cancel", role: .cancel) { showingProviderSignIn = false }
+          .settingsActionTint(theme)
           .keyboardShortcut(.cancelAction)
+          .disabled(isWorking)
         if let flow {
           if flow.state == "waiting" {
             Button("Continue") { submitCode(flow) }
+              .settingsActionTint(theme)
               .keyboardShortcut(.defaultAction)
               .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
           }
         } else if let method = selectedMethod {
           Button(method.type == "api" ? "Save" : "Sign In") { Task { await beginLogin() } }
+            .settingsActionTint(theme)
             .keyboardShortcut(.defaultAction)
             .disabled(!canSubmit(method) || isWorking)
         }
       }
     }
-    .frame(width: 500, height: 480)
+    .sheetSize(.list)
+    .themedSurface(.sheet)
   }
 
   @ViewBuilder
@@ -102,7 +114,7 @@ extension OpenCodeProviderAuthenticationView {
     if let authorization = flow.authorization {
       if !authorization.instructions.isEmpty {
         Text(authorization.instructions)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.textSecondary)
       }
       Button("Open Sign-In Page") { open(authorization.url) }
         .settingsActionTint(theme)
@@ -112,12 +124,6 @@ extension OpenCodeProviderAuthenticationView {
       TextField("Authorization Code", text: $authorizationCode)
         .onSubmit { submitCode(flow) }
 
-    } else if flow.state == "running" {
-      HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
-        Text("Waiting for sign-in…")
-          .foregroundStyle(.secondary)
-      }
     }
   }
 }

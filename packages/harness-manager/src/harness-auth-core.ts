@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process"
 import { chmod, mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 
@@ -56,6 +57,10 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
   const refreshes = new Map<string, Promise<void>>()
   const codexLogins = new Map<string, CodexLoginEntry>()
   const claudeLogins = new Map<string, { accountId: string; client: ClaudeAuthClient }>()
+  /// `cursor-agent login` stays resident while the user finishes in the
+  /// browser and exits 0 once credentials are written, so the flow is the
+  /// child process itself rather than a protocol client.
+  const cursorLogins = new Map<string, { accountId: string; child: ChildProcess }>()
   const spawnClaudeAuth = config.claudeAuth ?? spawnClaudeAuthClient
   const acpLoginMethods = new Map<string, ReadonlyArray<HarnessAuthMethod>>()
   let environmentPromise: Promise<NodeJS.ProcessEnv> | undefined
@@ -236,6 +241,7 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     catalogNow,
     claudeLogins,
     codexLogins,
+    cursorLogins,
     config,
     contextFor,
     definition,

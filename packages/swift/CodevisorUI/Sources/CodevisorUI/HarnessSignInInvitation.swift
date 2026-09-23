@@ -9,7 +9,10 @@ import SwiftUI
 
 /// A consistent entry point for an account or provider list with no credentials.
 public struct HarnessSignInInvitation<Action: View>: View {
+  @Environment(\.theme) private var theme
   #if os(iOS)
+    /// iOS resolves the accent against the background to keep the tinted
+    /// call-to-action legible; macOS uses the native prominent style.
     @Environment(\.self) private var environment
   #endif
 
@@ -67,7 +70,7 @@ public struct HarnessSignInInvitation<Action: View>: View {
       if let errorMessage {
         Text(errorMessage)
           .font(.callout)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.textSecondary)
           .multilineTextAlignment(.center)
       }
     }

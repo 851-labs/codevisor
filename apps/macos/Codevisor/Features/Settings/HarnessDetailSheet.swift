@@ -28,19 +28,38 @@ struct HarnessDetailSheet: View {
   @State private var bundledAppError: String?
 
   var body: some View {
+    NavigationStack {
+      ScrollView {
+        details
+      }
+      .navigationTitle(harness.name)
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      SheetFooter {
+        Button("Done") { dismiss() }
+          .settingsActionTint(theme)
+          .keyboardShortcut(.defaultAction)
+      }
+    }
+    .sheetSize(.step)
+    .themedSurface(.sheet)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("\(harness.name) details")
+    .task { await loadBundledApp() }
+  }
+
+  private var details: some View {
     VStack(alignment: .leading, spacing: 14) {
       HStack(spacing: 10) {
         HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 18)
           .frame(width: 30, height: 30)
           .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardHoverBackground))
           .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(harness.name)
-            .font(.headline)
-          Text(sourceLabel)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-        }
+        // The name is the sheet's navigation title; repeating it here
+        // would be the only duplicated string on the surface.
+        Text(sourceLabel)
+          .font(.callout)
+          .foregroundStyle(theme.textSecondary)
         Spacer(minLength: 0)
       }
 
@@ -56,7 +75,7 @@ struct HarnessDetailSheet: View {
             Text(
               update.installedVersion.map { "\($0) → \(latest)" } ?? latest
             )
-            .foregroundStyle(.secondary)
+            .foregroundStyle(theme.textSecondary)
           }
         } else if update.latestVersion != nil {
           HStack {
@@ -64,7 +83,7 @@ struct HarnessDetailSheet: View {
             Spacer()
             if let checkedAt = update.checkedAt {
               Text("Checked \(relativeTime(checkedAt))")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.textSecondary)
             }
           }
         }
@@ -76,7 +95,7 @@ struct HarnessDetailSheet: View {
       if let path = harness.readiness.path {
         VStack(alignment: .leading, spacing: 4) {
           Text("Binary")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(theme.textSecondary)
           Text(path)
             .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
@@ -93,19 +112,9 @@ struct HarnessDetailSheet: View {
         Divider()
         bundledAppBlock(bundledApp)
       }
-
-      HStack {
-        Spacer()
-        Button("Done") { dismiss() }
-          .keyboardShortcut(.defaultAction)
-      }
-      .padding(.top, 6)
     }
     .padding(20)
-    .frame(width: 400)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(harness.name) details")
-    .task { await loadBundledApp() }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// The dual-install block: the desktop app's own copy of this CLI, with
@@ -120,7 +129,7 @@ struct HarnessDetailSheet: View {
           Text("Also bundled with \(app.appName)")
           Text(bundledAppSubtitle(app))
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(theme.textSecondary)
         }
         Spacer()
         if isUpdatingBundledApp || harness.lifecycle?.phase == "updating" {
@@ -134,7 +143,7 @@ struct HarnessDetailSheet: View {
           "Replaces \(app.appName) with the verified build from its own update feed. Safe while the app is running — it uses the new version after its next launch."
         )
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
         .fixedSize(horizontal: false, vertical: true)
       }
       if let bundledAppError {
@@ -211,7 +220,7 @@ struct HarnessDetailSheet: View {
   private func detailRow(_ title: String, value: String) -> some View {
     HStack {
       Text(title)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
       Spacer()
       Text(value)
         .textSelection(.enabled)

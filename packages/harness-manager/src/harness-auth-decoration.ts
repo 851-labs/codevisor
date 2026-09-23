@@ -39,9 +39,13 @@ export const makeHarnessAuthDecoration = (
               ? "Existing OpenCode profile"
               : `Existing ${harness.name} account`,
         authState: "checking",
+        // Harnesses Codevisor drives sign-in for directly. Everything else
+        // starts false and only gains it if the generic ACP probe finds the
+        // agent advertising methods.
         canLogin:
           harness.id === "codex" ||
           harness.id === "claude-code" ||
+          harness.id === "cursor" ||
           harness.id === "pi" ||
           harness.id === "opencode",
         canLogout: false
@@ -92,6 +96,16 @@ export const makeHarnessAuthDecoration = (
           name: "Sign in with Anthropic API Key",
           kind: "apiKey",
           description: "Use Anthropic API billing instead of a Claude subscription."
+        }
+      ]
+    }
+    if (harnessId === "cursor") {
+      return [
+        {
+          id: "cursor-login",
+          name: "Sign in to Cursor",
+          kind: "browser",
+          description: "Continue in your web browser."
         }
       ]
     }

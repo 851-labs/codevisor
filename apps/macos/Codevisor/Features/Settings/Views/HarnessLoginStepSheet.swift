@@ -3,10 +3,15 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// One sign-in attempt as its own focused modal step (HIG: a sheet does a
-/// single task). The accounts list never grows inline flow UI; every kind
-/// of exchange — paste-code, device-code, plain browser wait, API key —
-/// renders here with one instruction, one input, and clear actions.
+/// One sign-in attempt as a focused step. The accounts list never grows
+/// inline flow UI; every kind of exchange — paste-code, device-code, plain
+/// browser wait, API key — renders here with one instruction, one input,
+/// and clear actions.
+///
+/// Presented as its own sheet. A pushed version was tried and reverted:
+/// running the navigation transition inside AppKit's layout pass let an
+/// `@Observable` model mutation land mid-layout, and AppKit raised from
+/// `_postWindowNeedsUpdateConstraints`. Revisit only with that settled.
 enum HarnessLoginStep: Identifiable {
   case flow(ServerHarnessAuthFlow)
   case apiKey(account: ServerHarnessAccount, method: ServerHarnessAuthMethod)
@@ -38,15 +43,24 @@ struct HarnessLoginStepSheet: View {
       VStack(spacing: 16) {
         content
         if let errorText {
-          Text(errorText).font(.callout).foregroundStyle(theme.statusError)
+          Text(errorText)
+            .font(.callout)
+            .foregroundStyle(theme.statusError)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
       .padding(20)
+      // Hug the top so the footer sits on the sheet's bottom edge rather
+      // than floating directly under the content.
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .navigationTitle("Sign in to \(harness.name)")
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) { SheetFooter { actions } }
-    .frame(width: 440)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      SheetFooter(status: footerStatus) { actions }
+    }
+    .sheetSize(.step)
+    .themedSurface(.sheet)
   }
 
   @ViewBuilder
@@ -57,10 +71,6 @@ struct HarnessLoginStepSheet: View {
       TextField("Code", text: $input)
         .textFieldStyle(.roundedBorder)
         .onSubmit { submit() }
-      if let url = flowURL(flow) {
-        Button("Open Browser") { NSWorkspace.shared.open(url) }
-          .buttonStyle(.link)
-      }
 
     case .flow(let flow) where flow.kind == "deviceCode":
       instruction("Copy this code, then open the sign-in page in your browser.")
@@ -68,6 +78,8 @@ struct HarnessLoginStepSheet: View {
         Text(flow.userCode ?? "")
           .font(.system(.title2, design: .monospaced, weight: .semibold))
           .textSelection(.enabled)
+        // Stays in the body because it acts on the body's content rather
+        // than advancing the task. The step's primary lives in the footer.
         Button {
           copyCode(flow.userCode ?? "")
         } label: {
@@ -77,24 +89,11 @@ struct HarnessLoginStepSheet: View {
           )
         }
         .buttonStyle(.bordered)
+        .settingsActionTint(theme)
       }
-      if let value = flow.verificationUrl, let url = URL(string: value) {
-        Button {
-          NSWorkspace.shared.open(url)
-        } label: {
-          Label("Open Browser", systemImage: "safari")
-        }
-        .buttonStyle(.borderedProminent)
-      }
-      waiting
 
-    case .flow(let flow):
+    case .flow:
       instruction("Finish signing in in your browser.")
-      if let url = flowURL(flow) {
-        Button("Open Browser") { NSWorkspace.shared.open(url) }
-          .buttonStyle(.link)
-      }
-      waiting
 
     case .apiKey(_, let method):
       instruction(method.description ?? "The key is stored only on this machine.")
@@ -104,19 +103,47 @@ struct HarnessLoginStepSheet: View {
     }
   }
 
+  /// Every action lives here, so exactly one button in the sheet carries
+  /// `.defaultAction` and nothing in the body competes to look primary.
+  @ViewBuilder
   private var actions: some View {
-    Group {
-      Button("Cancel", role: .cancel) { cancel() }
-        .keyboardShortcut(.cancelAction)
-        .disabled(isSubmitting)
-      if needsSubmit {
-        Button(isSubmitting ? "Verifying…" : "Continue") { submit() }
-          .keyboardShortcut(.defaultAction)
-          .disabled(
-            input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              || isSubmitting)
-      }
+    Button("Cancel", role: .cancel) { cancel() }
+      .settingsActionTint(theme)
+      .keyboardShortcut(.cancelAction)
+      .disabled(isSubmitting)
+      .accessibilityLabel("Cancel sign-in")
+    if let browserURL {
+      Button("Open Browser") { NSWorkspace.shared.open(browserURL) }
+        .settingsActionTint(theme)
+        // Primary only when there is nothing to type: a paste-code step's
+        // primary is Continue.
+        .keyboardShortcut(needsSubmit ? nil : .defaultAction)
     }
+    if needsSubmit {
+      // No "Verifying…" title swap — a button that changes width mid-flight
+      // shifts everything beside it. The footer's status slot says so.
+      Button("Continue") { submit() }
+        .settingsActionTint(theme)
+        .keyboardShortcut(.defaultAction)
+        .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+    }
+  }
+
+  /// Every in-progress indicator in this family renders in the sheet's
+  /// chrome, never in the body — including the browser wait. The body of a
+  /// device-code step already carries the code and its copy action; a
+  /// spinner among them is status about a background poll, not content.
+  private var footerStatus: String? {
+    if isSubmitting { return "Verifying…" }
+    return isAwaitingBrowser ? "Waiting for sign-in…" : nil
+  }
+
+  /// Device-code and plain browser steps poll while the user finishes in
+  /// their browser. A paste-code step is waiting on input here instead, so
+  /// it has nothing in flight to report.
+  private var isAwaitingBrowser: Bool {
+    guard case .flow(let flow) = step else { return false }
+    return flow.kind != "pasteCode"
   }
 
   private var needsSubmit: Bool {
@@ -126,25 +153,18 @@ struct HarnessLoginStepSheet: View {
     }
   }
 
-  private var waiting: some View {
-    HStack(spacing: 8) {
-      ProgressView().controlSize(.small)
-      Text("Waiting for sign-in…")
-        .foregroundStyle(.secondary)
-    }
-    .font(.callout)
+  /// The step's browser destination, if it has one.
+  private var browserURL: URL? {
+    guard case .flow(let flow) = step else { return nil }
+    return (flow.url ?? flow.verificationUrl).flatMap(URL.init(string:))
   }
 
   private func instruction(_ text: String) -> some View {
     Text(text)
       .font(.callout)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(theme.textSecondary)
       .multilineTextAlignment(.center)
       .fixedSize(horizontal: false, vertical: true)
-  }
-
-  private func flowURL(_ flow: ServerHarnessAuthFlow) -> URL? {
-    (flow.url ?? flow.verificationUrl).flatMap(URL.init(string:))
   }
 
   private func copyCode(_ code: String) {

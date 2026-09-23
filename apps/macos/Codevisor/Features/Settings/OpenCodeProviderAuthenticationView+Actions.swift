@@ -7,7 +7,7 @@ import CodevisorUI
 
 extension OpenCodeProviderAuthenticationView {
   func loadAccounts() async {
-    await perform {
+    await perform("Loading profiles…") {
       let loaded = try await client.listHarnessAccounts(harnessId: "opencode")
       accounts = loaded
       if !loaded.contains(where: { $0.id == selectedAccountId }) {
@@ -56,7 +56,7 @@ extension OpenCodeProviderAuthenticationView {
   func addProfile() async {
     let label = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !label.isEmpty else { return }
-    await perform {
+    await perform("Adding profile…") {
       let account = try await client.createHarnessAccount(harnessId: "opencode", label: label)
       accounts.append(account)
       selectedAccountId = account.id
@@ -64,7 +64,7 @@ extension OpenCodeProviderAuthenticationView {
   }
 
   func activate(_ account: ServerHarnessAccount) async {
-    await perform {
+    await perform("Switching profile…") {
       accounts = try await client.activateHarnessAccount(harnessId: "opencode", accountId: account.id)
     }
     await refreshHarness()
@@ -86,7 +86,7 @@ extension OpenCodeProviderAuthenticationView {
   func renameProfile(_ account: ServerHarnessAccount) async {
     let label = profileNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !label.isEmpty else { return }
-    await perform {
+    await perform("Renaming profile…") {
       let renamed = try await client.renameHarnessAccount(
         harnessId: "opencode",
         accountId: account.id,
@@ -100,7 +100,7 @@ extension OpenCodeProviderAuthenticationView {
   }
 
   func removeProfile(_ account: ServerHarnessAccount) async {
-    await perform {
+    await perform("Removing profile…") {
       try await client.removeHarnessAccount(harnessId: "opencode", accountId: account.id)
       accounts = try await client.listHarnessAccounts(harnessId: "opencode")
       selectedAccountId = accounts.first(where: \.isActive)?.id ?? accounts.first?.id
@@ -126,7 +126,7 @@ extension OpenCodeProviderAuthenticationView {
     guard let account = selectedAccount, let provider = selectedProvider, let method = selectedMethod else {
       return
     }
-    await perform {
+    await perform("Starting sign-in…") {
       let next = try await client.startOpenCodeAuth(
         accountId: account.id,
         providerId: provider.id,
@@ -142,7 +142,7 @@ extension OpenCodeProviderAuthenticationView {
     let code = authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !code.isEmpty else { return }
     Task {
-      await perform {
+      await perform("Verifying…") {
         let next = try await client.answerOpenCodeAuthFlow(id: flow.id, code: code)
         authorizationCode = ""
         await apply(next)
@@ -206,7 +206,7 @@ extension OpenCodeProviderAuthenticationView {
 
   func remove(_ provider: ServerOpenCodeAuthProvider) async {
     guard let account = selectedAccount else { return }
-    await perform {
+    await perform("Removing credential…") {
       try await client.removeOpenCodeAuthProvider(accountId: account.id, providerId: provider.id)
       await loadProviders(accountId: account.id)
       await refreshHarness()
@@ -223,10 +223,12 @@ extension OpenCodeProviderAuthenticationView {
     }
   }
 
-  private func perform(_ operation: () async throws -> Void) async {
-    isWorking = true
+  /// `label` is what the sheet's footer says while this runs. Every
+  /// blocking operation names itself; none of them renders in the body.
+  private func perform(_ label: String, _ operation: () async throws -> Void) async {
+    workingLabel = label
     errorMessage = nil
-    defer { isWorking = false }
+    defer { workingLabel = nil }
     do {
       try await operation()
     } catch {

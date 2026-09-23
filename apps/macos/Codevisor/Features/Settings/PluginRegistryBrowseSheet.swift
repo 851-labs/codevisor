@@ -66,7 +66,7 @@ struct PluginRegistryBrowseSheet: View {
             prompt: Text(verbatim: "Search plugins")
           )
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         Section {
           if entries.isEmpty {
             emptyRegistryText
@@ -81,7 +81,7 @@ struct PluginRegistryBrowseSheet: View {
         } header: {
           Text("Plugin Registry")
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
       }
       .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
@@ -163,10 +163,6 @@ struct PluginRegistryBrowseSheet: View {
       .foregroundStyle(theme.isSystem ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.statusOK))
   }
 
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
-  }
-
   private func load() async {
     do {
       entries = try await fetchRegistry().entries
@@ -215,7 +211,7 @@ private struct PluginRegistryDetailView: View {
             .foregroundStyle(.secondary)
         }
       }
-      .listRowBackground(themedFormRowBackground)
+      .listRowBackground(theme.formRowBackground)
       if let tools = entry.tools, !tools.isEmpty {
         Section("Agent Tools") {
           ForEach(tools) { tool in
@@ -228,7 +224,7 @@ private struct PluginRegistryDetailView: View {
             }
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
       }
       Section("Information") {
         // Pane titles as plain text: pane artwork is served by the
@@ -258,14 +254,11 @@ private struct PluginRegistryDetailView: View {
           .foregroundStyle(.primary)
         }
       }
-      .listRowBackground(themedFormRowBackground)
+      .listRowBackground(theme.formRowBackground)
     }
     .formStyle(.grouped)
     .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
     .navigationTitle(entry.name)
   }
 
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
-  }
 }

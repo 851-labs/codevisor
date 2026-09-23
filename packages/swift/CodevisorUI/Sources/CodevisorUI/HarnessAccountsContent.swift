@@ -26,7 +26,7 @@ public struct HarnessAccountsContent<Accounts: View, SignIn: View>: View {
     VStack(spacing: 0) {
       if !model.hasLoaded {
         if model.isLoading {
-          HarnessAccountsLoadingView()
+          SheetLoadingView("Loading accounts…")
         } else {
           ContentUnavailableView {
             Label("Couldn't Load Accounts", systemImage: "exclamationmark.triangle")
@@ -43,25 +43,37 @@ public struct HarnessAccountsContent<Accounts: View, SignIn: View>: View {
       } else {
         accounts
       }
-      if let operation = model.operation {
-        HStack(spacing: 8) {
-          ProgressView().controlSize(.small)
-          Text(operation).font(.callout).foregroundStyle(.secondary)
-        }
-        .padding(.bottom, 16)
-        .accessibilityElement(children: .combine)
-      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .preference(key: HarnessAccountsWorkingPreference.self, value: model.isWorking)
+    .harnessWorking(model.operation)
   }
-
 }
 
+/// Carries the running operation's label from the content up to whichever
+/// chrome renders it — `SheetFooter(status:)` on macOS, the confirmation
+/// toolbar slot on iOS — and, by being non-nil at all, drives
+/// `.interactiveDismissDisabled` so a sign-in cannot be dismissed mid-flight.
 public struct HarnessAccountsWorkingPreference: PreferenceKey {
-  public static let defaultValue = false
+  public static let defaultValue: String? = nil
 
-  public static func reduce(value: inout Bool, nextValue: () -> Bool) {
-    value = value || nextValue()
+  public static func reduce(value: inout String?, nextValue: () -> String?) {
+    value = value ?? nextValue()
+  }
+}
+
+extension View {
+  /// The **only** place the working preference is emitted.
+  ///
+  /// Must be applied to a non-lazy container that is unconditionally in the
+  /// hierarchy. A `Form`/`List` row would drop it the moment that row
+  /// scrolls out of view — macOS lazy rows only report preferences while
+  /// realized — which silently flips the sheet back to dismissable in the
+  /// middle of an OAuth flow. Likewise never place it inside an `if`.
+  ///
+  /// Preferences also do not cross a `.navigationDestination` push, so a
+  /// pushed editor needs its own chrome rather than relying on this
+  /// reaching the presenting sheet.
+  public func harnessWorking(_ operation: String?) -> some View {
+    preference(key: HarnessAccountsWorkingPreference.self, value: operation)
   }
 }

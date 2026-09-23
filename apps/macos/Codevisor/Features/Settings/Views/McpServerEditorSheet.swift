@@ -117,7 +117,7 @@ struct McpServerEditorSheet: View {
               ), prompt: Text("Playwright"))
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
 
         if effectiveAuthType == "oauth" {
           Section {
@@ -137,7 +137,7 @@ struct McpServerEditorSheet: View {
               .padding(.top, 8)
             }
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
 
         Section {
@@ -169,7 +169,7 @@ struct McpServerEditorSheet: View {
             .padding(.top, 8)
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
 
         if let errorMessage {
           Section {
@@ -177,7 +177,7 @@ struct McpServerEditorSheet: View {
               .foregroundStyle(theme.statusError)
               .font(.callout)
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
       }
       .formStyle(.grouped)
@@ -208,10 +208,6 @@ struct McpServerEditorSheet: View {
   private var effectiveAuthType: String {
     guard transport == "http" else { return "none" }
     return authSelection == "auto" ? (detectedAuthType ?? "none") : authSelection
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   @ViewBuilder

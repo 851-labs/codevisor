@@ -10,6 +10,7 @@ import SwiftUI
 struct HarnessSignInSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.theme) private var theme
 
   let serverId: String
   let harnessId: String
@@ -24,10 +25,13 @@ struct HarnessSignInSheet: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SheetFooter {
-        Button("Done") { finish() }.keyboardShortcut(.defaultAction)
+        Button("Done") { finish() }
+          .settingsActionTint(theme)
+          .keyboardShortcut(.defaultAction)
       }
     }
-    .frame(minWidth: 520, idealWidth: 560, minHeight: 420, idealHeight: 500)
+    .sheetSize(.list)
+    .themedSurface(.sheet)
     .environment(\.settingsMachineId, serverId)
     .task {
       guard harness == nil else { return }
@@ -69,8 +73,7 @@ struct HarnessSignInSheet: View {
         Text("Couldn't load the harness from the machine. Check its connection and try again.")
       }
     } else {
-      ProgressView()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      SheetLoadingView("Loading harness…")
     }
   }
 

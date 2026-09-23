@@ -36,7 +36,7 @@ struct HarnessInstallHintRow: View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 10) {
         HarnessIcon(harnessId: harness.id, fallbackSymbolName: harness.symbolName, size: 15)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.textSecondary)
           .frame(width: 20)
         Text(harness.name)
         Spacer()
@@ -66,7 +66,7 @@ struct HarnessInstallHintRow: View {
         ProgressView().controlSize(.small)
         Text(installingLabel)
           .font(.callout)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.textSecondary)
       }
     } else if !availableMethods.isEmpty {
       Button(lifecyclePhase == "failed" ? "Try Again" : "Install") {
@@ -82,7 +82,7 @@ struct HarnessInstallHintRow: View {
     } else {
       Text(harness.readiness.detail ?? "Not installed")
         .font(.callout)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
     }
   }
 
@@ -207,7 +207,7 @@ struct InstallCommandChip: View {
         .textSelection(.enabled)
         .lineLimit(1)
         .truncationMode(.middle)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
       Button {
         copy()
       } label: {

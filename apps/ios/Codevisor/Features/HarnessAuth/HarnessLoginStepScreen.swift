@@ -1,4 +1,5 @@
 import CodevisorCore
+import CodevisorUI
 import SwiftUI
 import UIKit
 
@@ -24,6 +25,7 @@ struct HarnessLoginStepScreen: View {
   let cancel: () -> Void
 
   @Environment(\.openURL) private var openURL
+  @Environment(\.theme) private var theme
   @State private var input = ""
   @State private var isSubmitting = false
   @State private var errorText: String?
@@ -37,7 +39,7 @@ struct HarnessLoginStepScreen: View {
         if let errorText {
           Section {
             Label(errorText, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(.red)
+              .foregroundStyle(theme.statusError)
           }
         }
       }
@@ -50,27 +52,25 @@ struct HarnessLoginStepScreen: View {
             .disabled(isSubmitting)
         }
 
+        // Mutually exclusive with the confirm item below: `browserURL` is
+        // nil for exactly the steps that submit input, so the sheet never
+        // shows two confirmation actions. Text, and prominent, because on a
+        // device-code step this *is* the action that advances the task —
+        // the same role its macOS counterpart has in the footer.
         if let browserURL {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("Open Sign-In Page", systemImage: "safari") { openURL(browserURL) }.labelStyle(.iconOnly)
-          }
+          SheetConfirmToolbarItem("Open Browser", isEnabled: !isSubmitting) { openURL(browserURL) }
         }
         if needsSubmit {
-          ToolbarItem(placement: .confirmationAction) {
-            if isSubmitting {
-              ProgressView()
-            } else {
-              Button(role: .confirm) {
-                submit()
-              } label: {
-                Label("Continue", systemImage: "checkmark")
-              }
-              .labelStyle(.iconOnly).disabled(trimmedInput.isEmpty)
-            }
+          // Text, never a bare checkmark. Progress is the status bar's job.
+          SheetConfirmToolbarItem(
+            "Continue", isEnabled: !trimmedInput.isEmpty && !isSubmitting
+          ) {
+            submit()
           }
         }
       }
     }
+    .sheetStatus(statusLabel)
     .presentationDetents([.medium, .large])
     .interactiveDismissDisabled(isSubmitting)
   }
@@ -139,6 +139,16 @@ struct HarnessLoginStepScreen: View {
     }
   }
 
+  /// The port of macOS `HarnessLoginStepSheet.footerStatus`, same wording:
+  /// every in-progress indicator in this family renders in chrome, the
+  /// browser wait included. The body of a device-code step already carries
+  /// the code and its copy action; a spinner among them is status about a
+  /// background poll, not content.
+  private var statusLabel: String? {
+    if isSubmitting { return "Verifying…" }
+    return waitsForBrowser ? "Waiting for sign-in…" : nil
+  }
+
   private var trimmedInput: String {
     input.trimmingCharacters(in: .whitespacesAndNewlines)
   }
@@ -150,6 +160,8 @@ struct HarnessLoginStepScreen: View {
     }
   }
 
+  /// Device-code and plain browser steps poll in the background; a
+  /// paste-code step waits on input here instead.
   private var waitsForBrowser: Bool {
     guard case .flow(let flow) = step else { return false }
     return flow.kind != "pasteCode"

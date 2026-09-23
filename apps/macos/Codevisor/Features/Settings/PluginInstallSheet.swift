@@ -56,7 +56,7 @@ struct PluginInstallSheet: View {
           } footer: {
             Text("A public GitHub repo, a git URL, or a path on this machine.")
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
         if let discovery {
           discoverySections(discovery)
@@ -93,7 +93,6 @@ struct PluginInstallSheet: View {
             .keyboardShortcut(.defaultAction)
         }
       }
-      .themedSurface(.sheet)
     }
     .navigationTitle("Install Plugin")
   }
@@ -117,14 +116,14 @@ struct PluginInstallSheet: View {
           .foregroundStyle(.secondary)
       }
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
     Section("Details") {
       LabeledContent("Source", value: source.trimmingCharacters(in: .whitespaces))
       if !discovery.panes.isEmpty {
         LabeledContent("Panes", value: discovery.panes.map(\.title).joined(separator: ", "))
       }
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
     if let tools = discovery.tools, !tools.isEmpty {
       Section("Agent Tools") {
         ForEach(tools) { tool in
@@ -138,7 +137,7 @@ struct PluginInstallSheet: View {
           .padding(.vertical, 1)
         }
       }
-      .listRowBackground(themedFormRowBackground)
+      .listRowBackground(theme.formRowBackground)
     }
     Section {
       if let install = discovery.installCommand {
@@ -150,7 +149,7 @@ struct PluginInstallSheet: View {
     } footer: {
       Text("Installing runs these commands on this machine.")
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
   }
 
   private func commandRow(title: String, command: String) -> some View {
@@ -159,10 +158,6 @@ struct PluginInstallSheet: View {
       Text(verbatim: command).font(.footnote.monospaced()).textSelection(.enabled)
     }
     .padding(.vertical, 1)
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   private func find() async {

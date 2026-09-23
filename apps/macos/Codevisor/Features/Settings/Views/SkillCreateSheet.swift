@@ -27,7 +27,7 @@ struct SkillCreateSheet: View {
           )
           .lineLimit(1...3)
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         Section("Content") {
           TextEditor(text: $pastedContent)
             .font(.body.monospaced())
@@ -35,7 +35,7 @@ struct SkillCreateSheet: View {
             .scrollContentBackground(.hidden)
             .accessibilityLabel("Skill content")
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         if let errorMessage {
           Text(errorMessage).foregroundStyle(theme.statusError)
         }
@@ -61,10 +61,6 @@ struct SkillCreateSheet: View {
     }
     .frame(width: 460, height: 420)
     .themedSurface(.sheet)
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   private func save() async {
@@ -125,7 +121,7 @@ struct SkillRemoteImportSheet: View {
           .onSubmit { Task { await find() } }
           .disabled(candidates != nil)
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         if let candidates {
           Section {
             ForEach(candidates) { candidate in
@@ -151,7 +147,7 @@ struct SkillRemoteImportSheet: View {
               }
             }
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
         if let errorMessage {
           Text(errorMessage).foregroundStyle(theme.statusError)
@@ -179,7 +175,6 @@ struct SkillRemoteImportSheet: View {
           .disabled(selection.isEmpty || isWorking)
         }
       }
-      .themedSurface(.sheet)
     }
     .navigationTitle("Import Skills")
   }
@@ -228,10 +223,6 @@ struct SkillRemoteImportSheet: View {
           .foregroundStyle(.secondary)
       }
     }
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   private func find() async {

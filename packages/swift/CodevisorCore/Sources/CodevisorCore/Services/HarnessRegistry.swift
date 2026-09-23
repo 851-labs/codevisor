@@ -25,16 +25,24 @@ public struct HarnessDescriptor: Equatable, Sendable {
   public let symbolName: String
   public let accountScope: AccountScope
   public let supportsMultipleAccounts: Bool
+  /// Credentials are nested (profiles that each contain providers), so the
+  /// accounts editor is a source-list-plus-detail browser rather than a
+  /// single list. Sheets read this to pick their proportions — the same
+  /// reason the rest of this type exists, so that no screen has to ask
+  /// "is this OpenCode?" to decide how to lay itself out.
+  public let usesProviderBrowser: Bool
 
   public init(
     id: String, displayName: String, symbolName: String = "terminal",
-    accountScope: AccountScope = .machine, supportsMultipleAccounts: Bool = false
+    accountScope: AccountScope = .machine, supportsMultipleAccounts: Bool = false,
+    usesProviderBrowser: Bool = false
   ) {
     self.id = id
     self.displayName = displayName
     self.symbolName = symbolName
     self.accountScope = accountScope
     self.supportsMultipleAccounts = supportsMultipleAccounts
+    self.usesProviderBrowser = usesProviderBrowser
   }
 
   /// Accounts live in the fleet (either shape) rather than on each machine.
@@ -68,7 +76,8 @@ public enum HarnessRegistry {
     .init(id: "grok-build", displayName: "Grok Build", symbolName: "x.square", accountScope: .fleetAccounts),
     .init(
       id: "opencode", displayName: "OpenCode", symbolName: "curlybraces",
-      accountScope: .fleetCredentials(signInNeedsMachine: true), supportsMultipleAccounts: true),
+      accountScope: .fleetCredentials(signInNeedsMachine: true), supportsMultipleAccounts: true,
+      usesProviderBrowser: true),
     .init(id: "pi", displayName: "Pi", accountScope: .fleetCredentials(signInNeedsMachine: true)),
     .init(id: "devin", displayName: "Devin", accountScope: .fleetCredentials(signInNeedsMachine: false)),
     .init(id: "cursor", displayName: "Cursor"),

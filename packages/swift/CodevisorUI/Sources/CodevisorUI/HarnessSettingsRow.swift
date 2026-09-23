@@ -47,7 +47,7 @@ public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: Vi
         Text(name)
           .lineLimit(1)
         if let status = state.status {
-          Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+          Text(status).font(.caption).foregroundStyle(theme.textSecondary).lineLimit(2)
         }
       }
       // The name is the row's identity: it keeps its width and the

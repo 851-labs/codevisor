@@ -4,6 +4,7 @@ import SwiftUI
 /// The same provider list is used for shared settings and a machine's accounts.
 public struct PiProviderAccounts: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
   @Environment(\.harnessMachineSignIn) private var machineSignIn
   private let machineId: String
@@ -44,7 +45,7 @@ public struct PiProviderAccounts: View {
   public var body: some View {
     Group {
       if isLoading && providers.isEmpty {
-        HarnessAccountsLoadingView()
+        SheetLoadingView("Loading providers…")
       } else if providers.isEmpty, let errorMessage {
         ContentUnavailableView {
           Label("Couldn't Load Accounts", systemImage: "exclamationmark.triangle")
@@ -61,21 +62,23 @@ public struct PiProviderAccounts: View {
       } else {
         Form {
           if let errorMessage {
-            Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
+            Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError) }
           }
           Section {
             if !isShared { HarnessSharedAccountRows(source: .pi, excludingProviderIds: Set(configured.map(\.id))) }
             ForEach(configured) { provider in
               providerRow(provider)
             }
-          }
-          #if os(macOS)
-            Section {
-            } footer: {
+            // A trailing row, matching the accounts sheet and the OpenCode
+            // provider list. This replaces an empty Section whose only job
+            // was to host a footer button — which rendered small and
+            // secondary, hence the `.font(.body)` override it needed.
+            #if os(macOS)
               Button("Add Provider…", systemImage: "plus") { setup = HarnessMachineSignIn() }
-                .font(.body).disabled(isLoading)
-            }
-          #endif
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+            #endif
+          }
         }
         .formStyle(.grouped)
       }
@@ -147,7 +150,7 @@ public struct PiProviderAccounts: View {
         } label: {
           Label("Provider Actions", systemImage: "ellipsis.circle")
         }
-        .labelStyle(.iconOnly).menuStyle(.borderlessButton).fixedSize()
+        .labelStyle(.iconOnly).menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
       #endif
     }
     .contentShape(Rectangle())

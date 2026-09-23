@@ -50,7 +50,7 @@
     @ViewBuilder
     private var content: some View {
       if isLoading && harnesses.isEmpty {
-        ProgressView().accessibilityLabel("Loading harnesses")
+        SheetLoadingView("Loading harnesses…")
       } else if loadFailed && harnesses.isEmpty {
         ContentUnavailableView {
           Label("Machines Unavailable", systemImage: "desktopcomputer.trianglebadge.exclamationmark")

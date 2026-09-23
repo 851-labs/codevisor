@@ -454,18 +454,9 @@ extension View {
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
   }
 
-  /// Native macOS button and menu styles resolve their label color from the
-  /// control tint, bypassing the themed root foreground. Keep their native
-  /// interaction and disabled-state behavior while using the palette's
-  /// accessible primary text color for custom themes.
-  @ViewBuilder
-  func settingsActionTint(_ theme: Theme) -> some View {
-    if theme.isSystem {
-      self
-    } else {
-      tint(theme.textPrimary)
-    }
-  }
+  // `settingsActionTint(_:)` moved to CodevisorUI's ThemedSurfaceModifier so
+  // shared sheet chrome can tint its own actions. Same name, so call sites
+  // are unchanged.
 }
 
 /// Privacy and local data settings. Everything scoped to a machine (server

@@ -36,90 +36,15 @@ struct CustomHarnessEditorSheet: View {
   private var isEditing: Bool { editingId != nil }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text(isEditing ? "Edit Custom Harness" : "Add Custom Harness")
-        .font(.headline)
-      Text("Any agent that speaks ACP over stdio. Codevisor runs the command below and talks ACP to it.")
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-
-      if isLoading {
-        HStack(spacing: 8) {
-          ProgressView().controlSize(.small)
-          Text("Loading…").foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 20)
-      } else {
-        Form {
-          TextField("Name", text: $name, prompt: Text("My Agent"))
-          TextField("Identifier", text: $identifier, prompt: Text("my-agent"))
-            .disabled(isEditing)
-          TextField("Command", text: $command, prompt: Text("/path/to/agent"))
-            .font(.system(.body, design: .monospaced))
-          TextField("Arguments", text: $argsText, prompt: Text("acp"))
-            .font(.system(.body, design: .monospaced))
-          TextField(
-            "Environment",
-            text: $envText,
-            prompt: Text("KEY=value, one per line"),
-            axis: .vertical
-          )
-          .lineLimit(1...4)
-          .font(.system(.body, design: .monospaced))
-        }
-        .formStyle(.columns)
-
-        if let testResult {
-          testResultRow(testResult)
-        }
-        if let errorMessage {
-          Text(errorMessage)
-            .font(.callout)
-            .foregroundStyle(theme.statusWarn)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-      }
-
-      HStack(spacing: 8) {
-        if isEditing {
-          Button("Delete…", role: .destructive) { confirmsDelete = true }
-            .disabled(isSaving || isTesting)
-        }
-        Button {
-          Task { await test() }
-        } label: {
-          if isTesting {
-            HStack(spacing: 6) {
-              ProgressView().controlSize(.small); Text("Testing…")
-            }
-          } else {
-            Text("Test Connection")
-          }
-        }
-        .disabled(command.trimmed.isEmpty || isSaving || isTesting)
-        Spacer()
-        Button("Cancel") { dismiss() }
-          .keyboardShortcut(.cancelAction)
-        Button {
-          Task { await save() }
-        } label: {
-          if isSaving {
-            HStack(spacing: 6) {
-              ProgressView().controlSize(.small); Text("Saving…")
-            }
-          } else {
-            Text(isEditing ? "Save" : "Add")
-          }
-        }
-        .keyboardShortcut(.defaultAction)
-        .disabled(!canSave || isSaving || isTesting)
-      }
-      .padding(.top, 4)
+    NavigationStack {
+      editor
+        .navigationTitle(isEditing ? "Edit Custom Harness" : "Add Custom Harness")
     }
-    .padding(20)
-    .frame(width: 460)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      SheetFooter(status: footerStatus) { actions }
+    }
+    .sheetSize(.step)
+    .themedSurface(.sheet)
     .task { await loadIfEditing() }
     .confirmationDialog(
       "Remove \(name.trimmed.isEmpty ? "this harness" : name)?",
@@ -129,6 +54,81 @@ struct CustomHarnessEditorSheet: View {
     } message: {
       Text("Existing chats keep their history; the harness disappears from the picker.")
     }
+  }
+
+  @ViewBuilder private var editor: some View {
+    if isLoading {
+      SheetLoadingView("Loading harness…")
+    } else {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+          Text("Any agent that speaks ACP over stdio. Codevisor runs the command below and talks ACP to it.")
+            .font(.callout)
+            .foregroundStyle(theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+          Form {
+            TextField("Name", text: $name, prompt: Text("My Agent"))
+            TextField("Identifier", text: $identifier, prompt: Text("my-agent"))
+              .disabled(isEditing)
+            TextField("Command", text: $command, prompt: Text("/path/to/agent"))
+              .font(.system(.body, design: .monospaced))
+            TextField("Arguments", text: $argsText, prompt: Text("acp"))
+              .font(.system(.body, design: .monospaced))
+            TextField(
+              "Environment",
+              text: $envText,
+              prompt: Text("KEY=value, one per line"),
+              axis: .vertical
+            )
+            .lineLimit(1...4)
+            .font(.system(.body, design: .monospaced))
+          }
+          .formStyle(.columns)
+
+          if let testResult {
+            testResultRow(testResult)
+          }
+          if let errorMessage {
+            Text(errorMessage)
+              .font(.callout)
+              .foregroundStyle(theme.statusWarn)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .disabled(isSaving || isTesting)
+    }
+  }
+
+  /// Both long-running actions report here rather than inside their own
+  /// button labels: a spinner in a label changes the button's width
+  /// mid-flight and shifts every control beside it.
+  private var footerStatus: String? {
+    if isSaving { return isEditing ? "Saving…" : "Adding…" }
+    if isTesting { return "Testing connection…" }
+    return nil
+  }
+
+  @ViewBuilder private var actions: some View {
+    if isEditing {
+      Button("Delete…", role: .destructive) { confirmsDelete = true }
+        .disabled(isSaving || isTesting)
+    }
+    Button("Test Connection") { Task { await test() } }
+      .settingsActionTint(theme)
+      .disabled(command.trimmed.isEmpty || isSaving || isTesting)
+    Spacer()
+    Button("Cancel", role: .cancel) { dismiss() }
+      .settingsActionTint(theme)
+      .keyboardShortcut(.cancelAction)
+      .disabled(isSaving)
+    Button(isEditing ? "Save" : "Add") { Task { await save() } }
+      .settingsActionTint(theme)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!canSave || isSaving || isTesting)
   }
 
   // MARK: - Form state

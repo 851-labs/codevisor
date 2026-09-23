@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HarnessSharedCredentialEditor: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @Environment(\.dismiss) private var dismiss
   let source: HarnessSharedCredentials
   let credential: HarnessSharedCredentials.Credential?
@@ -56,7 +57,7 @@ struct HarnessSharedCredentialEditor: View {
       }
       if let errorMessage {
         Section {
-          Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+          Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError)
         }
       }
       #if os(macOS)

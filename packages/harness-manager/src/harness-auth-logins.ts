@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -9,7 +10,13 @@ import type { HarnessAccountRecord } from "@codevisor/db"
 import type { GrokAuth } from "./grok-auth.js"
 import type { HarnessAuthCore } from "./harness-auth-core.js"
 import type { HarnessAuthProbes } from "./harness-auth-probes.js"
-import { run, runWithInput } from "./harness-auth-support.js"
+import {
+  CURSOR_LOGIN_URL_TIMEOUT_MS,
+  parseCursorLoginUrl,
+  run,
+  runWithInput,
+  withTimeout
+} from "./harness-auth-support.js"
 import type { HarnessAuthManager } from "./harness-auth-types.js"
 
 export type HarnessLoginOperations = Pick<
@@ -32,6 +39,7 @@ export const makeHarnessLoginOperations = (
     apiKeyPath,
     claudeLogins,
     codexLogins,
+    cursorLogins,
     config,
     contextFor,
     emit,
@@ -157,6 +165,58 @@ export const makeHarnessLoginOperations = (
     }
   }
 
+  /// Cursor's CLI owns the whole OAuth: with `NO_OPEN_BROWSER` it prints the
+  /// URL and stays resident until the browser round-trip completes, then
+  /// writes credentials and exits. Codevisor surfaces that URL so the client
+  /// opens it locally — a remote machine's sign-in still lands in the user's
+  /// own browser — and the client's existing poll notices the result.
+  const beginCursorLogin = async (account: HarnessAccountRecord): Promise<HarnessAuthFlow> => {
+    const command = await executable("cursor")
+    const execution = await accountCommand(account)
+    const child = spawn(command, ["login"], {
+      cwd: execution.cwd,
+      env: { ...execution.env, NO_OPEN_BROWSER: "1" },
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+    const flowId = randomUUID()
+    cursorLogins.set(flowId, { accountId: account.id, child })
+    try {
+      const url = await withTimeout(
+        new Promise<string>((resolve, reject) => {
+          let output = ""
+          const read = (chunk: string) => {
+            output += chunk
+            const found = parseCursorLoginUrl(output)
+            if (found !== undefined) resolve(found)
+          }
+          child.stdout?.setEncoding("utf8")
+          child.stderr?.setEncoding("utf8")
+          child.stdout?.on("data", read)
+          child.stderr?.on("data", read)
+          child.once("error", reject)
+          child.once("exit", (code) => {
+            reject(
+              new Error(
+                parseCursorLoginUrl(output) === undefined && code !== 0
+                  ? output.trim() || `cursor-agent login exited with status ${code}`
+                  : "cursor-agent login ended before it produced a sign-in link"
+              )
+            )
+          })
+        }),
+        CURSOR_LOGIN_URL_TIMEOUT_MS,
+        "Cursor sign-in did not start"
+      )
+      const flow: HarnessAuthFlow = { id: flowId, accountId: account.id, kind: "browser", url }
+      emit({ kind: "harness.authFlow.updated", subjectId: account.harnessId, payload: flow })
+      return flow
+    } catch (cause) {
+      cursorLogins.delete(flowId)
+      child.kill()
+      throw cause
+    }
+  }
+
   /// Completes a pasteCode flow with the code the user pasted back.
   const answerLogin = async (flowId: string, code: string): Promise<HarnessAuthFlow> => {
     const entry = claudeLogins.get(flowId)
@@ -247,11 +307,17 @@ export const makeHarnessLoginOperations = (
     if (account === undefined) throw new Error(`Harness account not found: ${accountId}`)
     if (account.harnessId === "grok-build") return grok.begin(account, methodId, apiKey, shared)
     if (methodId === "apiKey") return beginApiKeyLogin(account, apiKey)
-    if (account.harnessId === "codex" || account.harnessId === "claude-code") {
+    if (
+      account.harnessId === "codex" ||
+      account.harnessId === "claude-code" ||
+      account.harnessId === "cursor"
+    ) {
       try {
         return await (account.harnessId === "codex"
           ? beginCodexLogin(account, methodId)
-          : beginClaudeLogin(account))
+          : account.harnessId === "claude-code"
+            ? beginClaudeLogin(account)
+            : beginCursorLogin(account))
       } catch (cause) {
         await config.sharedAccounts?.()?.loginFailed(account.id)
         throw cause
@@ -297,6 +363,13 @@ export const makeHarnessLoginOperations = (
       await config.sharedAccounts?.()?.loginFailed(codex.accountId)
       return
     }
+    const cursor = cursorLogins.get(flowId)
+    if (cursor !== undefined) {
+      cursorLogins.delete(flowId)
+      cursor.child.kill()
+      await config.sharedAccounts?.()?.loginFailed(cursor.accountId)
+      return
+    }
     const claude = claudeLogins.get(flowId)
     if (claude !== undefined) {
       claude.client.close()
@@ -326,6 +399,14 @@ export const makeHarnessLoginOperations = (
       const command = await executable("claude-code")
       const execution = await accountCommand(account)
       await runExecFile(command, ["auth", "logout"], {
+        cwd: execution.cwd,
+        env: execution.env,
+        timeout: 30_000
+      })
+    } else if (account.harnessId === "cursor") {
+      const command = await executable("cursor")
+      const execution = await accountCommand(account)
+      await runExecFile(command, ["logout"], {
         cwd: execution.cwd,
         env: execution.env,
         timeout: 30_000

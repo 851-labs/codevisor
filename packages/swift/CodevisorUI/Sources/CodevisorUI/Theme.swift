@@ -93,6 +93,17 @@ public struct Theme: Equatable, Sendable {
     palette.map { Color(rgba: $0.cardHoverBackground) } ?? Color.secondary.opacity(0.12)
   }
 
+  /// Row fill for a grouped `Form` under a custom theme, for
+  /// `.listRowBackground(...)`. `nil` in system mode is load-bearing:
+  /// `listRowBackground(nil)` leaves the native grouped-row styling
+  /// untouched, so System themes stay pixel-identical. Pairs with
+  /// `.scrollContentBackground(theme.isSystem ? .automatic : .hidden)`,
+  /// which strips the native form backdrop so themed rows read against the
+  /// themed sheet surface.
+  public var formRowBackground: Color? {
+    isSystem ? nil : cardQuietBackground
+  }
+
   /// The composer/input surface (controlBackgroundColor role).
   public var composerBackground: Color {
     palette.map { Color(rgba: $0.composerBackground) }

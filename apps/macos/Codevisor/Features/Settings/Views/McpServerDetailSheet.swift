@@ -71,7 +71,7 @@ struct McpServerDetailSheet: View {
               .foregroundStyle(.secondary)
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         Section("Tools") {
           if isLoadingTools {
             ProgressView().controlSize(.small)
@@ -88,7 +88,7 @@ struct McpServerDetailSheet: View {
             }
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         if let errorMessage { Text(errorMessage).foregroundStyle(theme.statusError) }
       }
       .formStyle(.grouped)
@@ -145,10 +145,6 @@ struct McpServerDetailSheet: View {
     case "error": return server.detail ?? "Connection failed"
     default: return server.enabled ? "Not connected" : "Disabled"
     }
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   private var authorizationLabel: String {

@@ -12,6 +12,7 @@ struct PiProviderSetupSheet: View {
   @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
+  @Environment(\.theme) private var theme
   let machineId: String
   let providers: [ServerPiAuthProvider]
   let initialProviderId: String?
@@ -32,6 +33,13 @@ struct PiProviderSetupSheet: View {
   }
   private var provider: ServerPiAuthProvider? { providers.first { $0.id == selectedProviderId } }
   private var actionTitle: String { flow != nil ? "Continue" : (selectedMethod == "api_key" ? "Save" : "Sign In") }
+  /// What the sheet's chrome says while a submit is in flight. Never a
+  /// button title swap — that would resize the button mid-operation.
+  private var workingLabel: String? {
+    if flow?.state == "running" { return "Waiting for sign-in…" }
+    guard isWorking else { return nil }
+    return selectedMethod == "api_key" && flow == nil ? "Saving…" : "Signing in…"
+  }
   private var canSubmit: Bool {
     guard !isWorking else { return false }
     if let flow { return flow.state == "waiting" && flow.prompt.map { !promptResponse($0).isEmpty } == true }
@@ -43,7 +51,7 @@ struct PiProviderSetupSheet: View {
     NavigationStack {
       Form {
         if let errorMessage {
-          Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
+          Section { Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(theme.statusError) }
         }
         if let flow {
           Section { flowContent(flow) }
@@ -79,13 +87,10 @@ struct PiProviderSetupSheet: View {
             .labelStyle(.iconOnly).disabled(isWorking)
           }
           if flow?.state != "running" {
-            ToolbarItem(placement: .confirmationAction) {
-              Button(role: .confirm) {
-                submit()
-              } label: {
-                Label(
-                  actionTitle, systemImage: flow != nil || selectedMethod == "api_key" ? "checkmark" : "arrow.right")
-              }.labelStyle(.iconOnly).disabled(!canSubmit)
+            // Text: the verb is the whole point. `role: .confirm` already
+            // renders it prominent on iOS 26.
+            SheetConfirmToolbarItem(actionTitle, isEnabled: canSubmit && !isWorking) {
+              submit()
             }
           }
         }
@@ -93,14 +98,25 @@ struct PiProviderSetupSheet: View {
     }
     #if os(macOS)
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        SheetFooter {
-          Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).disabled(isWorking)
+        SheetFooter(status: workingLabel) {
+          Button("Cancel", role: .cancel) { dismiss() }
+          .settingsActionTint(theme)
+          .keyboardShortcut(.cancelAction)
+          .disabled(isWorking)
           if flow?.state != "running" {
-            Button(actionTitle) { submit() }.keyboardShortcut(.defaultAction).disabled(!canSubmit)
+            Button(actionTitle) { submit() }
+            .settingsActionTint(theme)
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canSubmit)
           }
         }
       }
-      .frame(width: 500, height: 380)
+      .sheetSize(.step)
+      .themedSurface(.sheet)
+    #endif
+    #if os(iOS)
+      .sheetStatus(workingLabel)
+      .presentationDetents([.medium, .large])
     #endif
     .interactiveDismissDisabled(isWorking)
     .onAppear {
@@ -138,7 +154,7 @@ struct PiProviderSetupSheet: View {
           }
         }
       }
-      if let message = event.message { Text(message).foregroundStyle(.secondary) }
+      if let message = event.message { Text(message).foregroundStyle(theme.textSecondary) }
       if let value = event.url ?? event.verificationUrl, let url = URL(string: value) {
         Link("Open Sign-In Page", destination: url)
       }
@@ -155,10 +171,6 @@ struct PiProviderSetupSheet: View {
           #if os(iOS)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
           #endif
-      }
-    } else if flow.state == "running" {
-      HStack {
-        ProgressView().controlSize(.small); Text("Waiting for sign-in…").foregroundStyle(.secondary)
       }
     }
   }

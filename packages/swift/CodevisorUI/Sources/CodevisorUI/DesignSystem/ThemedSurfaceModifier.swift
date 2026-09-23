@@ -103,4 +103,24 @@ extension View {
     shadow(color: .black.opacity(theme.isSystem ? 0 : 0.07), radius: 8, y: 8)
       .shadow(color: .black.opacity(theme.isSystem ? 0 : 0.05), radius: 2, y: 2)
   }
+
+  #if os(macOS)
+    /// Native macOS button and menu styles resolve their label color from the
+    /// control tint, bypassing the themed root foreground. Keep their native
+    /// interaction and disabled-state behavior while using the palette's
+    /// accessible primary text color for custom themes.
+    ///
+    /// Lives here rather than in the macOS app so that shared sheet chrome in
+    /// this package can tint its own actions. iOS deliberately has no
+    /// counterpart: its `ThemedRoot` already applies `.tint(theme.accent)`,
+    /// and `textPrimary` there would grey out buttons that should be accented.
+    @ViewBuilder
+    public func settingsActionTint(_ theme: Theme) -> some View {
+      if theme.isSystem {
+        self
+      } else {
+        tint(theme.textPrimary)
+      }
+    }
+  #endif
 }

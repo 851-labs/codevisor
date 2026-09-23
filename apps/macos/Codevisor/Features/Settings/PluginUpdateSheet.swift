@@ -24,7 +24,7 @@ struct PluginUpdateSheet: View {
             Label(errorMessage, systemImage: "exclamationmark.triangle")
               .foregroundStyle(theme.statusError)
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
       }
       .formStyle(.grouped)
@@ -80,7 +80,7 @@ struct PluginUpdateSheet: View {
         "Codevisor will apply these exact staged bytes. If the plan expires or the installed plugin changes, you’ll review a new plan."
       )
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
   }
 
   private func commands(title: String, review: ServerPluginUpdateReview) -> some View {
@@ -94,7 +94,7 @@ struct PluginUpdateSheet: View {
       }
       commandRow(title: "Run", command: review.runCommand)
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
   }
 
   @ViewBuilder
@@ -118,7 +118,7 @@ struct PluginUpdateSheet: View {
         }
       }
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
   }
 
   private var changes: some View {
@@ -126,7 +126,7 @@ struct PluginUpdateSheet: View {
       changeRows(label: "Pane", changes: plan.paneChanges)
       changeRows(label: "Tool", changes: plan.toolChanges)
     }
-    .listRowBackground(themedFormRowBackground)
+    .listRowBackground(theme.formRowBackground)
   }
 
   @ViewBuilder
@@ -157,10 +157,6 @@ struct PluginUpdateSheet: View {
         .textSelection(.enabled)
     }
     .padding(.vertical, 1)
-  }
-
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
   }
 
   private func apply() async {

@@ -6,6 +6,7 @@ struct PiProviderAuthenticationView: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.settingsMachineId) private var settingsMachineId
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.theme) private var theme
   let harness: ServerHarness
   var onChange: (ServerHarness) -> Void
   var showsHeader = true
@@ -15,9 +16,14 @@ struct PiProviderAuthenticationView: View {
     if showsHeader {
       NavigationStack { accounts.navigationTitle("Pi Accounts") }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-          SheetFooter { Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+          SheetFooter {
+            Button("Done") { dismiss() }
+              .settingsActionTint(theme)
+              .keyboardShortcut(.defaultAction)
+          }
         }
-        .frame(width: 560, height: 480)
+        .sheetSize(.list)
+        .themedSurface(.sheet)
     } else {
       accounts
     }

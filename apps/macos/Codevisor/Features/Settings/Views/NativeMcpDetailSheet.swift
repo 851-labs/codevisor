@@ -46,7 +46,7 @@ struct NativeMcpDetailSheet: View {
             LabeledContent("Enabled in \(server.harnessName)", value: enabled ? "Yes" : "No")
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
         if !server.headerNames.isEmpty || !server.envNames.isEmpty {
           Section("Secrets") {
             if !server.headerNames.isEmpty {
@@ -59,7 +59,7 @@ struct NativeMcpDetailSheet: View {
               .font(.callout)
               .foregroundStyle(.secondary)
           }
-          .listRowBackground(themedFormRowBackground)
+          .listRowBackground(theme.formRowBackground)
         }
         Section("Source") {
           LabeledContent("Config File") {
@@ -70,7 +70,7 @@ struct NativeMcpDetailSheet: View {
               .truncationMode(.middle)
           }
         }
-        .listRowBackground(themedFormRowBackground)
+        .listRowBackground(theme.formRowBackground)
       }
       .formStyle(.grouped)
       .scrollContentBackground(theme.isSystem ? .automatic : .hidden)
@@ -98,7 +98,4 @@ struct NativeMcpDetailSheet: View {
     .themedSurface(.sheet)
   }
 
-  private var themedFormRowBackground: Color? {
-    theme.isSystem ? nil : theme.cardQuietBackground
-  }
 }

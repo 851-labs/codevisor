@@ -9,6 +9,7 @@ struct OpenCodeProviderSetupRequest: Identifiable {
 
 struct OpenCodeProviderSetupSheet: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @Environment(\.sharedHarnessAccounts) private var isShared
   @Environment(\.harnessMachineSignIn) private var machineSignIn
   @Environment(\.dismiss) private var dismiss
@@ -28,7 +29,9 @@ struct OpenCodeProviderSetupSheet: View {
   @State private var flow: ServerOpenCodeAuthFlow?
   @State private var pollingFlowId: String?
   @State private var openedURL: String?
-  @State private var isWorking = false
+  /// Labeled rather than a bare flag so the status bar can name the work,
+  /// matching `OpenCodeProviderAuthenticationView+Actions` on macOS.
+  @State private var workingLabel: String?
   @State private var errorMessage: String?
 
   init(
@@ -69,7 +72,7 @@ struct OpenCodeProviderSetupSheet: View {
         if let errorMessage {
           Section {
             Label(errorMessage, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(.secondary)
+              .foregroundStyle(theme.statusError)
           }
         }
 
@@ -121,30 +124,43 @@ struct OpenCodeProviderSetupSheet: View {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() }.labelStyle(.iconOnly)
         }
+        // Text labels: a bare `checkmark` for "Save" and a bare
+        // `arrow.right` for "Sign In" are not tellable apart, let alone
+        // guessable. `role: .confirm` already makes them prominent.
         if let flow {
           if flow.state == "waiting" {
-            ToolbarItem(placement: .confirmationAction) {
-              Button(role: .confirm) {
-                submitCode(flow)
-              } label: {
-                Label("Continue", systemImage: "checkmark")
-              }.labelStyle(.iconOnly)
-                .disabled(authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isWorking)
+            SheetConfirmToolbarItem(
+              "Continue",
+              isEnabled: !authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !isWorking
+            ) {
+              submitCode(flow)
             }
           }
         } else if let method = selectedMethod {
-          ToolbarItem(placement: .confirmationAction) {
-            Button(role: .confirm) {
-              Task { await beginLogin() }
-            } label: {
-              Label(
-                method.type == "api" ? "Save" : "Sign In",
-                systemImage: method.type == "api" ? "checkmark" : "arrow.right")
-            }.labelStyle(.iconOnly).disabled(!canSubmit(method) || isWorking)
+          SheetConfirmToolbarItem(
+            method.type == "api" ? "Save" : "Sign In",
+            isEnabled: canSubmit(method) && !isWorking
+          ) {
+            Task { await beginLogin() }
           }
         }
       }
     }
+    .sheetStatus(statusLabel)
+    // Deliberately no `.presentationDetents`. Measured on the simulator, a
+    // detent-sized sheet presented over `HarnessSignInInvitation` samples
+    // the invitation's prominent Sign In button into its own backdrop: a
+    // blue wash and a blurred ghost of the button's label land across this
+    // sheet's first rows. Presenting full height covers the invitation, so
+    // there is nothing behind to sample.
+    //
+    // This is a presentation-backdrop quirk, not something this sheet
+    // causes — `HarnessLoginStepScreen` keeps its detents and shows the
+    // same artifact when it too is opened from the invitation, but is
+    // clean when opened from the sign-in method list. Removing detents
+    // here is a mitigation for the sheet that always has the invitation
+    // behind it, not a fix for the underlying compositing.
     .interactiveDismissDisabled(isWorking)
     .task { selectDefaultMethod() }
     .onDisappear { cancelPendingFlow() }
@@ -174,11 +190,20 @@ struct OpenCodeProviderSetupSheet: View {
     }
   }
 
+  private var isWorking: Bool { workingLabel != nil }
+
+  /// Blocking work and the browser wait both report here, never in the
+  /// body — the same rule macOS states on `HarnessLoginStepSheet`.
+  private var statusLabel: String? {
+    if let workingLabel { return workingLabel }
+    return flow?.state == "running" ? "Waiting for sign-in…" : nil
+  }
+
   @ViewBuilder
   private func flowContent(_ flow: ServerOpenCodeAuthFlow) -> some View {
     if let authorization = flow.authorization {
       if !authorization.instructions.isEmpty {
-        Text(authorization.instructions).foregroundStyle(.secondary)
+        Text(authorization.instructions).foregroundStyle(theme.textSecondary)
       }
       Button("Open Sign-In Page") { open(authorization.url) }
     }
@@ -186,11 +211,6 @@ struct OpenCodeProviderSetupSheet: View {
       TextField("Authorization Code", text: $authorizationCode)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
-    } else if flow.state == "running" {
-      HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
-        Text("Waiting for sign-in…").foregroundStyle(.secondary)
-      }
     }
   }
 
@@ -227,7 +247,7 @@ struct OpenCodeProviderSetupSheet: View {
 
   private func beginLogin() async {
     guard let provider = selectedProvider, let method = selectedMethod, canSubmit(method) else { return }
-    await perform {
+    await perform("Starting sign-in…") {
       let next = try await client.startOpenCodeAuth(
         accountId: accountId,
         providerId: provider.id,
@@ -243,7 +263,7 @@ struct OpenCodeProviderSetupSheet: View {
     let code = authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !code.isEmpty else { return }
     Task {
-      await perform {
+      await perform("Verifying…") {
         let next = try await client.answerOpenCodeAuthFlow(id: flow.id, code: code)
         authorizationCode = ""
         await apply(next)
@@ -293,10 +313,10 @@ struct OpenCodeProviderSetupSheet: View {
     Task { try? await client.cancelOpenCodeAuthFlow(id: flow.id) }
   }
 
-  private func perform(_ operation: () async throws -> Void) async {
-    isWorking = true
+  private func perform(_ label: String, _ operation: () async throws -> Void) async {
+    workingLabel = label
     errorMessage = nil
-    defer { isWorking = false }
+    defer { workingLabel = nil }
     do {
       try await operation()
     } catch {

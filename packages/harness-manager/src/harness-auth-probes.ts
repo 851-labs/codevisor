@@ -7,15 +7,19 @@ import type { HarnessAuthCore } from "./harness-auth-core.js"
 import {
   AUTH_CACHE_MS,
   CODEX_PROBE_TIMEOUT_MS,
+  CURSOR_PROBE_TIMEOUT_MS,
   parseClaudeAuthStatus,
+  parseCursorAuthStatus,
   run,
   withTimeout,
   type ClaudeAuthStatus
 } from "./harness-auth-support.js"
 
 /// Sign-in status probes per harness family: Codex over its app-server
-/// protocol, Claude via `auth status --json`, everything else through the
-/// runtime's ACP authentication inspection.
+/// protocol, Claude via `auth status --json`, Cursor via
+/// `status --format json`, everything else through the runtime's ACP
+/// authentication inspection. A harness only needs a branch here when its
+/// CLI can report an identity; the generic path reports state alone.
 export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => {
   const {
     accountCommand,
@@ -143,6 +147,64 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     }
   }
 
+  /// Cursor ships `status --format json`, so its account can carry the same
+  /// real identity and sign-out affordance as Codex and Claude rather than
+  /// falling back to the generic ACP inspection, which reports no identity
+  /// at all and leaves the placeholder label in place.
+  const probeCursor = async (account: HarnessAccountRecord): Promise<HarnessAccount> => {
+    const command = await executable("cursor")
+    const execution = await accountCommand(account)
+    try {
+      const result = await runExecFile(command, ["status", "--format", "json"], {
+        cwd: execution.cwd,
+        env: execution.env,
+        timeout: CURSOR_PROBE_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024
+      })
+      const status = parseCursorAuthStatus(result.stdout)
+      if (status?.isAuthenticated !== true) {
+        return persistProbe(account, {
+          authState: "unauthenticated",
+          authMethod: null,
+          email: null,
+          canLogin: true,
+          canLogout: false,
+          detail: null
+        })
+      }
+      const email = status.userInfo?.email ?? null
+      return persistProbe(account, {
+        authState: "authenticated",
+        authMethod: "cursor.com",
+        email,
+        canLogin: true,
+        canLogout: true,
+        ...(email === null ? {} : { label: email }),
+        detail: null
+      })
+    } catch (cause) {
+      // A non-zero exit is how the CLI reports "signed out" as well as real
+      // failures, so read the payload before assuming the worse of the two.
+      const error = cause as { stdout?: string; stderr?: string; code?: number | string }
+      const status = parseCursorAuthStatus(error.stdout)
+      const signedOut =
+        status?.isAuthenticated === false ||
+        `${error.stdout ?? ""}${error.stderr ?? ""}`.toLowerCase().includes("not authenticated")
+      return persistProbe(account, {
+        authState: signedOut ? "unauthenticated" : "error",
+        authMethod: null,
+        email: null,
+        canLogin: true,
+        canLogout: false,
+        detail: signedOut
+          ? null
+          : `Unable to check Cursor sign-in${
+              error.code === undefined ? "" : ` (cursor-agent exited with status ${error.code})`
+            }`
+      })
+    }
+  }
+
   const probeRecord = async (
     account: HarnessAccountRecord,
     force = false
@@ -153,6 +215,7 @@ export const makeHarnessAuthProbes = (core: HarnessAuthCore, grok: GrokAuth) => 
     }
     if (account.harnessId === "codex") return probeCodex(account)
     if (account.harnessId === "claude-code") return probeClaude(account)
+    if (account.harnessId === "cursor") return probeCursor(account)
     const inspection = await run(
       config.agents.probeHarnessAuth(account.harnessId, await contextFor(account))
     )

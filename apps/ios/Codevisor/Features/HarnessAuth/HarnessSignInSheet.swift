@@ -128,8 +128,7 @@ struct HarnessSignInSheet: View {
         Text("Couldn't load the harness from the machine. Check its connection and try again.")
       }
     } else {
-      ProgressView()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      SheetLoadingView("Loading harness…")
     }
   }
 

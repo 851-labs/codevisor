@@ -33,6 +33,7 @@ extension EnvironmentValues {
 /// The editor is shared by both scopes. Only machine-bound auth needs a chooser.
 public struct HarnessAccountsSheet<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   @Environment(\.dismiss) private var dismiss
   let harnessId: String
   let harnessName: String
@@ -44,10 +45,15 @@ public struct HarnessAccountsSheet<Editor: View>: View {
   @State private var machineSignIn: HarnessMachineSignIn?
   @State private var sharedHost: HarnessFleet.SharedHost?
   @State private var sharedHostError = false
-  @State private var isWorking = false
+  @State private var operation: String?
+  @State private var pickerOperation: String?
 
   private var descriptor: HarnessDescriptor { HarnessRegistry.descriptor(for: harnessId) }
   private var sharesOAuth: Bool { descriptor.fleetSignInNeedsMachine }
+  private var isWorking: Bool { operation != nil }
+  #if os(macOS)
+    private var metrics: SheetMetrics { descriptor.usesProviderBrowser ? .browser : .list }
+  #endif
 
   public init(
     harnessId: String, harnessName: String, startsSignIn: Bool = false, preferredMachineId: String? = nil,
@@ -76,18 +82,19 @@ public struct HarnessAccountsSheet<Editor: View>: View {
         #endif
     }
     .environment(\.harnessAccountsDismiss, { dismiss() })
-    .onPreferenceChange(HarnessAccountsWorkingPreference.self) { isWorking = $0 }
+    .onPreferenceChange(HarnessAccountsWorkingPreference.self) { operation = $0 }
     .interactiveDismissDisabled(isWorking)
     #if os(macOS)
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        SheetFooter {
-          Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+        SheetFooter(status: operation) {
+          Button("Done") { dismiss() }
+          .settingsActionTint(theme)
+          .keyboardShortcut(.defaultAction)
           .disabled(isWorking)
         }
       }
-      .frame(
-        width: harnessId == "opencode" ? 760 : 560,
-        height: harnessId == "opencode" ? 540 : (descriptor.usesFleetAccountRows ? 380 : 480))
+      .sheetSize(metrics)
+      .themedSurface(.sheet)
     #endif
     .task { if sharesOAuth { await loadSharedHost() } }
     .sheet(item: $machineSignIn) { request in
@@ -102,13 +109,20 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           #endif
       }
       .environment(\.harnessAccountsDismiss, { machineSignIn = nil })
+      // A nested sheet is its own presentation, so the outer sheet's
+      // preference reader never sees this editor's work. It reads its own.
+      .onPreferenceChange(HarnessAccountsWorkingPreference.self) { pickerOperation = $0 }
+      .interactiveDismissDisabled(pickerOperation != nil)
       #if os(macOS)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-          SheetFooter {
-            Button("Done") { machineSignIn = nil }.keyboardShortcut(.defaultAction)
+          SheetFooter(status: pickerOperation) {
+            Button("Done") { machineSignIn = nil }
+            .keyboardShortcut(.defaultAction)
+            .disabled(pickerOperation != nil)
           }
         }
-        .frame(width: harnessId == "opencode" ? 760 : 560, height: 480)
+        .sheetSize(metrics)
+        .themedSurface(.sheet)
       #endif
     }
   }
@@ -128,7 +142,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           Button("Retry") { Task { await loadSharedHost() } }
         }
       } else {
-        HarnessAccountsLoadingView()
+        SheetLoadingView("Connecting to a machine…")
       }
     } else if let source = HarnessSharedCredentials(rawValue: harnessId) {
       if source == .devin {
@@ -176,6 +190,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
 
 struct HarnessAccountMachinePicker<Editor: View>: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.theme) private var theme
   let harnessId: String
   let editor: (CodevisorMachine, ServerHarness) -> Editor
   @State private var harnesses: [String: ServerHarness] = [:]
@@ -219,7 +234,7 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
     HStack {
       Label(machine.name, systemImage: machine.id == CodevisorMachine.local.id ? "desktopcomputer" : "server.rack")
       Spacer()
-      Text(status(machine)).foregroundStyle(.secondary)
+      Text(status(machine)).foregroundStyle(theme.textSecondary)
     }
   }
 
@@ -255,7 +270,10 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
     public var body: some ToolbarContent {
       if let close {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Close", systemImage: "xmark", action: close)
+          // `role: .close` is the iOS 26 dismissal idiom. Dismissal is the
+          // one action universally understood as a glyph, so it stays
+          // icon-only; confirm actions keep their verb as text.
+          Button("Close", systemImage: "xmark", role: .close, action: close)
             .labelStyle(.iconOnly)
         }
       }

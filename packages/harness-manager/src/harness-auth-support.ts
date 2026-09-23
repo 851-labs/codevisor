@@ -16,6 +16,8 @@ const execFileAsync = promisify(execFile)
 /// here only ever delays a *passive* re-check.
 export const AUTH_CACHE_MS = 300_000
 export const CODEX_PROBE_TIMEOUT_MS = 10_000
+export const CURSOR_PROBE_TIMEOUT_MS = 10_000
+export const CURSOR_LOGIN_URL_TIMEOUT_MS = 30_000
 export const CLAUDE_AUTH_OVERRIDE_ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
@@ -40,6 +42,36 @@ export const parseClaudeAuthStatus = (output: string | undefined): ClaudeAuthSta
     return undefined
   }
 }
+
+/// `cursor-agent status --format json`. The CLI reports the signed-in
+/// identity, which is what lets a Cursor account row show a real email
+/// instead of the placeholder label its record is created with.
+export interface CursorAuthStatus {
+  readonly isAuthenticated?: boolean
+  readonly status?: string
+  readonly userInfo?: {
+    readonly email?: string
+    readonly userId?: number
+    readonly firstName?: string
+    readonly lastName?: string
+    readonly teamId?: number
+  }
+}
+
+export const parseCursorAuthStatus = (output: string | undefined): CursorAuthStatus | undefined => {
+  if (output === undefined || output.trim().length === 0) return undefined
+  try {
+    return JSON.parse(output) as CursorAuthStatus
+  } catch {
+    return undefined
+  }
+}
+
+/// The URL `cursor-agent login` prints when `NO_OPEN_BROWSER` suppresses its
+/// own browser handoff. Codevisor opens it from the client instead, so a
+/// remote machine's sign-in still lands in the user's own browser.
+export const parseCursorLoginUrl = (output: string): string | undefined =>
+  /https:\/\/\S*cursor\.com\/\S+/.exec(output)?.[0]
 
 export const withTimeout = async <A>(
   operation: Promise<A>,

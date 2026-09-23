@@ -44,7 +44,9 @@ struct OpenCodeProviderAuthenticationView: View {
   @State var flow: ServerOpenCodeAuthFlow?
   @State var pollingFlowId: String?
   @State var openedURL: String?
-  @State var isWorking = false
+  /// The running blocking operation's label, or nil. Doubles as the
+  /// is-working flag so the two can never disagree.
+  @State var workingLabel: String?
   @State var isLoadingProviders = false
   @State var errorMessage: String?
   @State var showingProviderSignIn = false
@@ -57,6 +59,9 @@ struct OpenCodeProviderAuthenticationView: View {
   @State var profilePendingRemoval: ServerHarnessAccount?
   @State var showingRemoveProfileAlert = false
 
+  var isWorking: Bool { workingLabel != nil }
+  var footerStatus: String? { workingLabel }
+
   var body: some View {
     Group {
       if showsHeader {
@@ -64,11 +69,15 @@ struct OpenCodeProviderAuthenticationView: View {
           profiles.navigationTitle("OpenCode Accounts")
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-          SheetFooter {
-            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+          SheetFooter(status: footerStatus) {
+            Button("Done") { dismiss() }
+              .settingsActionTint(theme)
+              .keyboardShortcut(.defaultAction)
+              .disabled(isWorking)
           }
         }
-        .frame(width: 760, height: 540)
+        .sheetSize(.browser)
+        .themedSurface(.sheet)
       } else {
         profiles
       }
@@ -190,7 +199,7 @@ struct OpenCodeProviderAuthenticationView: View {
       VStack(spacing: 0) {
         Group {
           if isProviderContentLoading {
-            HarnessAccountsLoadingView()
+            SheetLoadingView("Loading providers…")
           } else if configuredProviders.isEmpty && !hasInheritedProviders {
             HarnessSignInInvitation(harnessId: harness.id, harnessName: harness.name) {
               Button("Sign In", systemImage: "plus") { prepareProviderSignIn() }
@@ -212,39 +221,19 @@ struct OpenCodeProviderAuthenticationView: View {
                       }
                     }
                 }
+                // A trailing row rather than a second +/− bar. The sidebar
+                // already owns one at the same vertical position; a second
+                // pair 400pt to its right, meaning something else, was the
+                // sheet's worst ambiguity. Removal lives on the row's
+                // context menu, which is now its only affordance.
+                Button("Add Provider…", systemImage: "plus") { prepareProviderSignIn() }
+                  .buttonStyle(.plain)
+                  .settingsActionTint(theme)
+                  .disabled(isProviderContentLoading || providers.isEmpty || isWorking)
               }
             }
             .listStyle(.inset)
           }
-        }
-
-        if !configuredProviders.isEmpty || hasInheritedProviders {
-          Divider()
-
-          HStack(spacing: 10) {
-            Button {
-              prepareProviderSignIn()
-            } label: {
-              Image(systemName: "plus")
-            }
-            .disabled(isProviderContentLoading || providers.isEmpty || isWorking)
-            .help("Add Provider")
-            .accessibilityLabel("Add Provider")
-
-            Button {
-              if let provider = selectedConfiguredProvider { Task { await remove(provider) } }
-            } label: {
-              Image(systemName: "minus")
-            }
-            .disabled(selectedConfiguredProvider == nil || isWorking)
-            .help("Remove Credential")
-            .accessibilityLabel("Remove Credential")
-
-            Spacer()
-          }
-          .buttonStyle(.borderless)
-          .settingsActionTint(theme)
-          .padding(10)
         }
       }
     } else {
@@ -255,7 +244,7 @@ struct OpenCodeProviderAuthenticationView: View {
   private func profileRow(_ account: ServerHarnessAccount) -> some View {
     HStack(spacing: 8) {
       Image(systemName: account.profileKind == "default" ? "desktopcomputer" : "person.crop.circle")
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
         .frame(width: 18)
       Text(profileName(account))
         .lineLimit(1)
@@ -270,13 +259,13 @@ struct OpenCodeProviderAuthenticationView: View {
   private func providerRow(_ provider: ServerOpenCodeAuthProvider) -> some View {
     HStack(spacing: 10) {
       Image(systemName: "key.fill")
-        .foregroundStyle(.secondary)
+        .foregroundStyle(theme.textSecondary)
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 2) {
         Text(provider.name)
         Text(credentialDescription(provider.credentialType))
           .font(.callout)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(theme.textSecondary)
       }
       Spacer()
     }
