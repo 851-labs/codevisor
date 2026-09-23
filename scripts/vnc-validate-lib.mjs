@@ -82,8 +82,7 @@ export function lastLine(output, pattern) {
   return (
     output
       .split("\n")
-      .filter((line) => pattern.test(line))
-      .at(-1)
+      .findLast((line) => pattern.test(line))
       ?.trim() ?? ""
   )
 }

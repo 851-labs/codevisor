@@ -27,7 +27,9 @@ public enum VNCBenchMetric: String, Codable, CodingKeyRepresentable, CaseIterabl
   public var absoluteFloor: Double {
     switch self {
     case .updateLatencyP50Ms, .updateLatencyP95Ms, .inputLatencyP50Ms, .inputLatencyP95Ms: 1
-    case .cpuMsPerUpdate: 0.05
+    // Paced scenes leave ~16 ms idle per update; sub-ms CPU/update moves with
+    // scheduling (A/A typing/lan: 0.47 → 0.91 ms, spread ±56 %).
+    case .cpuMsPerUpdate: 0.5
     case .updatesPerSecond: 0.5
     case .bytesPerUpdate, .bytesCopiedPerUpdate: 64
     case .megabitsPerSecond: 0.1
@@ -245,6 +247,8 @@ public struct VNCBenchOptions: Sendable, Equatable {
   public var width = 1280
   public var height = 800
   public var seed: UInt64 = 1
+  /// Scene frames per second (a real app's pace); 0 plays one frame per request, as fast as the client asks.
+  public var pace = 60
   public var output: String?
   public var baseline: String?
   public var build = "unknown"
@@ -276,6 +280,11 @@ public struct VNCBenchOptions: Sendable, Equatable {
       case "--runs": runs = try positive()
       case "--frames": frames = try positive()
       case "--seed": seed = UInt64(try positive())
+      case "--pace":
+        guard let number = Int(try value()), (0...240).contains(number) else {
+          throw VNCBenchError("--pace needs 0…240 (0: one frame per request)")
+        }
+        pace = number
       case "--size":
         let parts = try value().split(separator: "x").compactMap { Int($0) }
         guard parts.count == 2, parts.allSatisfy({ $0 > 0 }) else { throw VNCBenchError("--size expects WIDTHxHEIGHT") }

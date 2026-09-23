@@ -10,12 +10,13 @@
     static let usage = """
       Usage: screen-sharing-rig vnc-server [--port 5901] [--password secret | --no-password]
                                           [--size 1280x800] [--fps 10] [--encoding zrle|raw]
-                                          [--scene KIND [--seed N]] [--echo]
+                                          [--scene KIND [--seed N] [--scene-fps N]] [--echo]
       Serves an animated desktop over RFB 3.8 on 127.0.0.1 and prints the keys, buttons and
       clipboard text the viewer sends. Stop with Control-C.
       --scene plays a deterministic reference scene (idle, typing, scroll, windowDrag, photo,
-      resize) instead, one frame per incremental update request, as fast as the viewer asks:
-      the workload vnc-bench measures. --echo answers pointer events with a marker. --port 0
+      resize) instead: with --scene-fps, frames change at that rate like a real app (a frame
+      the viewer hasn't taken yet holds the scene back, as a server coalesces); without it,
+      one frame per incremental request, as fast as the viewer asks. vnc-bench uses 60. --echo answers pointer events with a marker. --port 0
       picks a free port; the "Serving VNC on 127.0.0.1:PORT" line names it.
       """
 
@@ -29,6 +30,7 @@
       var scene: RFBLoopbackScene.Kind?
       var seed: UInt64 = 1
       var echo = false
+      var sceneFramesPerSecond: Int?
 
       init(arguments: [String]) throws {
         var iterator = arguments.makeIterator()
@@ -50,6 +52,10 @@
             scene = try RFBLoopbackScene.Kind(rawValue: name) ?? { throw Failure("unknown scene \(name)") }()
           case "--seed": seed = try UInt64(value()) ?? { throw Failure("invalid seed") }()
           case "--echo": echo = true
+          case "--scene-fps":
+            let fps = try Int(value()) ?? 0
+            guard (1...240).contains(fps) else { throw Failure("--scene-fps must be 1…240") }
+            sceneFramesPerSecond = fps
           case "--fps": fps = try max(1, min(60, Int(value()) ?? 10))
           case "--encoding":
             switch try value() {
@@ -96,8 +102,19 @@
       configuration.encoding = options.encoding
       let server = try await RFBLoopbackServer(configuration: configuration)
       if let kind = options.scene {
-        print("Serving VNC on 127.0.0.1:\(server.port) (scene \(kind.rawValue), seed \(options.seed))")
+        let pace = options.sceneFramesPerSecond.map { "\($0) fps" } ?? "on request"
+        print("Serving VNC on 127.0.0.1:\(server.port) (scene \(kind.rawValue), seed \(options.seed), \(pace))")
         let scene = SceneState(RFBLoopbackScene(kind: kind, seed: options.seed))
+        if let fps = options.sceneFramesPerSecond {
+          // Time-paced: the desktop changes at `fps` whatever the viewer does.
+          let interval = Duration.seconds(1) / fps
+          var next = ContinuousClock.now
+          while true {
+            next += interval
+            try await Task.sleep(until: next, clock: .continuous)
+            scene.play(on: server)
+          }
+        }
         // Each incremental request gets the next frame; the request itself then flushes it.
         server.onClientMessage = { [weak server] message in
           guard let server, case .framebufferUpdateRequest(true, _) = message else { return }
