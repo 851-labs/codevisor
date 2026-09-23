@@ -98,11 +98,15 @@ public final class RFBShapedTransport<C: Clock>: RFBTransport, @unchecked Sendab
   private var outboundWaiter: CheckedContinuation<Void, Never>?
   private var tasks: [Task<Void, Never>] = []
 
+  public var name: String { "\(inner.name) · shaped \(profile.name)" }
+  private let profile: RFBNetworkProfile
+
   /// Reads waiting for bytes, for tests that must order a read before `close`.
   public var waitingReads: Int { lock.withLock { readers.count } }
 
   public init(_ inner: any RFBTransport, profile: RFBNetworkProfile, clock: C, seed: UInt64 = 1) {
     self.inner = inner
+    self.profile = profile
     self.clock = clock
     origin = clock.now
     downlink = RFBLinkSchedule(profile: profile, seed: seed)

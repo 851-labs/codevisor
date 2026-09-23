@@ -22,6 +22,7 @@
     private let translator: VNCInputTranslator
     private let emulator: VNCHostEmulator
     private let publisher = VNCFramePublisher()
+    private let transportName: String
     private let outbox: AsyncStream<RFBClientMessage>.Continuation
     private let sender: Task<Void, Never>
     /// The read loop; its value is the error that ended it.
@@ -34,6 +35,7 @@
     ) {
       self.client = client
       self.metrics = metrics
+      transportName = client.transportName
       translator = VNCInputTranslator(width: parameters.width, height: parameters.height, keys: keys)
       // Input arrives synchronously and often; one task writes it in order.
       let (messages, continuation) = AsyncStream<RFBClientMessage>.makeStream()
@@ -55,6 +57,8 @@
             onUpdate: { framebuffer, update in
               publisher.publish(framebuffer, to: frames, metrics: metrics)
               metrics.increment("vncRectangles", by: update.rectangles.count)
+              metrics.increment("vncBytesReceived", by: update.byteCount)
+              metrics.observe("vncUpdateLatency", milliseconds: update.latency.milliseconds)
               if update.resized {
                 let width = framebuffer.width, height = framebuffer.height
                 Task { @MainActor in self?.resized(width: width, height: height) }
@@ -73,7 +77,8 @@
     /// The error that ended the read loop, once it has.
     public func outcome() async -> any Error { await run.value }
 
-    public func statistics() async -> [String: String] { [:] }
+    /// What carries the RFB bytes; rates and latency come from `metrics`.
+    public func statistics() async -> [String: String] { ["vnc.transport": transportName] }
 
     public func close() {
       guard !closed else { return }
@@ -111,6 +116,13 @@
         metrics.label("vncFailure", error.localizedDescription)
         onConnectionChanged?("failed")
       }
+    }
+  }
+
+  extension Duration {
+    fileprivate var milliseconds: Double {
+      let (seconds, attoseconds) = components
+      return Double(seconds) * 1000 + Double(attoseconds) / 1e15
     }
   }
 

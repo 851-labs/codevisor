@@ -155,8 +155,18 @@ public enum RFBServerEvent: Sendable, Equatable {
 }
 
 /// What one FramebufferUpdate changed, reported after it is fully applied.
+/// One applied FramebufferUpdate. Equality compares content (rectangles and
+/// resize), not the measurements.
 public struct RFBUpdate: Sendable, Equatable {
   public var rectangles: [RFBRectangle]
   public var resized: Bool
+  /// The message's size on the wire, header included.
+  public var byteCount = 0
+  /// From sending the request this update answers to applying the update.
+  public var latency: Duration = .zero
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
+
+  public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {
+    lhs.rectangles == rhs.rectangles && lhs.resized == rhs.resized
+  }
 }

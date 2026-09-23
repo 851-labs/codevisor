@@ -11,9 +11,16 @@ public actor RFBClient {
   private let stream: RFBInputStream
   private var inflater: RFBZlibInflater?
   private var closed = false
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private var requestSentAt: ContinuousClock.Instant?
 
-  public init(transport: any RFBTransport, framebuffer: RFBFramebuffer? = nil) throws {
+  /// `now` times each update against its request; tests script it.
+  public init(
+    transport: any RFBTransport, framebuffer: RFBFramebuffer? = nil,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+  ) throws {
     self.transport = transport
+    self.now = now
     stream = RFBInputStream(transport: transport)
     self.framebuffer = try framebuffer ?? RFBFramebuffer(width: 1, height: 1)
   }
@@ -46,14 +53,17 @@ public actor RFBClient {
       closed = true
       transport.close()
     }
-    try await send(.framebufferUpdateRequest(incremental: false, fullFrame))
+    try await request(incremental: false)
     while true {
       try Task.checkCancellation()
+      let start = stream.consumed
       switch try await stream.u8() {
       case 0:
-        let update = try await readFramebufferUpdate()
+        var update = try await readFramebufferUpdate()
+        update.byteCount = stream.consumed - start
+        if let requestSentAt { update.latency = requestSentAt.duration(to: now()) }
         onUpdate(framebuffer, update)
-        try await send(.framebufferUpdateRequest(incremental: true, fullFrame))
+        try await request(incremental: true)
       case 1:
         try await stream.skip(3)
         try await stream.skip(Int(try await stream.u16()) * 6)
@@ -74,6 +84,14 @@ public actor RFBClient {
   }
 
   public nonisolated func close() { transport.close() }
+
+  /// What carries the connection ("TCP", "WebSocket"), for diagnostics.
+  public nonisolated var transportName: String { transport.name }
+
+  private func request(incremental: Bool) async throws {
+    requestSentAt = now()
+    try await send(.framebufferUpdateRequest(incremental: incremental, fullFrame))
+  }
 
   private var fullFrame: RFBRectangle {
     RFBRectangle(x: 0, y: 0, width: framebuffer.width, height: framebuffer.height)

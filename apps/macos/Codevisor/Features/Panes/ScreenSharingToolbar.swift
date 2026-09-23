@@ -92,6 +92,16 @@ private struct ScreenSharingDetailsButton: View {
         if let rate = diagnostics.megabitsPerSecond {
           LabeledContent("Receiving", value: String(format: "%.2f Mbps", rate))
         }
+        if let updates = diagnostics.updatesPerSecond {
+          LabeledContent("Updates", value: String(format: "%.1f /s", updates))
+        }
+        if let size = diagnostics.bytesPerUpdate {
+          LabeledContent(
+            "Per update", value: ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .binary))
+        }
+        if let latency = diagnostics.updateLatencyMilliseconds {
+          LabeledContent("Update latency p95", value: String(format: "%.0f ms", latency))
+        }
         if let rtt = diagnostics.roundTripMilliseconds {
           LabeledContent("Round trip", value: String(format: "%.1f ms", rtt))
         }

@@ -7,6 +7,7 @@ import ScreenSharing
 /// out at most `maximum` bytes and keeps the rest of the message for the next
 /// one; the peer's close surfaces as an empty read.
 public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
+  public var name: String { "WebSocket" }
   private let socket: any ServerWebSocketConnecting
   private let lock = NSLock()
   private var buffered: [UInt8] = []

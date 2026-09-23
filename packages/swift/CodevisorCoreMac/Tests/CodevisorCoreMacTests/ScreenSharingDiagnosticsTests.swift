@@ -15,6 +15,37 @@ struct ScreenSharingDiagnosticsTests {
       ], now: 10)
     #expect(diagnostics.route == "Relay · TLS")
   }
+  @Test func vncSessionsReportUpdateRateBandwidthSizeAndLatency() {
+    let metrics = ScreenSharingMetrics()
+    let diagnostics = ScreenSharingViewerDiagnostics()
+    let statistics = ["vnc.transport": "WebSocket"]
+    diagnostics.update(metrics: metrics.snapshot(), statistics: statistics, now: 10)
+    #expect(diagnostics.route == "VNC · WebSocket")
+    #expect(diagnostics.updatesPerSecond == nil)
+    metrics.increment("vncUpdatesPublished", by: 20)
+    metrics.increment("vncBytesReceived", by: 2_500_000)
+    metrics.increment("presentedFrames", by: 20)
+    for latency in [10.0, 20, 30, 40, 200] { metrics.observe("vncUpdateLatency", milliseconds: latency) }
+    diagnostics.update(metrics: metrics.snapshot(), statistics: statistics, now: 12)
+    #expect(diagnostics.updatesPerSecond == 10)
+    #expect(diagnostics.framesPerSecond == 10)
+    #expect(diagnostics.megabitsPerSecond == 10)
+    #expect(diagnostics.bytesPerUpdate == 125_000)
+    #expect(diagnostics.updateLatencyMilliseconds == metrics.snapshot().timings["vncUpdateLatency"]?.p95Ms)
+    #expect(diagnostics.roundTripMilliseconds == nil, "VNC has no round-trip measurement yet (Fence, 851-2312).")
+  }
+
+  @Test func webRTCSessionsHaveNoVNCUpdateFigures() {
+    let metrics = ScreenSharingMetrics()
+    let diagnostics = ScreenSharingViewerDiagnostics()
+    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 10)
+    metrics.increment("presentedFrames", by: 60)
+    diagnostics.update(metrics: metrics.snapshot(), statistics: [:], now: 11)
+    #expect(diagnostics.updatesPerSecond == nil)
+    #expect(diagnostics.bytesPerUpdate == nil)
+    #expect(diagnostics.updateLatencyMilliseconds == nil)
+  }
+
   @Test func intervalRatesAndSelectedRouteUseOnlyMeasuredValues() {
     let metrics = ScreenSharingMetrics()
     let diagnostics = ScreenSharingViewerDiagnostics()

@@ -23,6 +23,8 @@ public final class RFBInputStream: @unchecked Sendable {
   private var buffer: [UInt8] = []
   private var offset = 0
   private let chunk: Int
+  /// Bytes handed out so far, for per-message wire sizes.
+  public private(set) var consumed = 0
 
   public init(transport: any RFBTransport, chunk: Int = 1 << 16) {
     self.transport = transport
@@ -31,19 +33,19 @@ public final class RFBInputStream: @unchecked Sendable {
 
   public func u8() async throws -> UInt8 {
     try await fill(1)
-    defer { offset += 1 }
+    defer { advance(1) }
     return buffer[offset]
   }
 
   public func u16() async throws -> UInt16 {
     try await fill(2)
-    defer { offset += 2 }
+    defer { advance(2) }
     return UInt16(buffer[offset]) << 8 | UInt16(buffer[offset + 1])
   }
 
   public func u32() async throws -> UInt32 {
     try await fill(4)
-    defer { offset += 4 }
+    defer { advance(4) }
     return UInt32(buffer[offset]) << 24 | UInt32(buffer[offset + 1]) << 16 | UInt32(buffer[offset + 2]) << 8
       | UInt32(buffer[offset + 3])
   }
@@ -53,11 +55,16 @@ public final class RFBInputStream: @unchecked Sendable {
   public func bytes(_ count: Int) async throws -> [UInt8] {
     guard count >= 0 else { throw RFBError.malformed("negative length") }
     try await fill(count)
-    defer { offset += count }
+    defer { advance(count) }
     return Array(buffer[offset..<offset + count])
   }
 
   public func skip(_ count: Int) async throws { _ = try await bytes(count) }
+
+  private func advance(_ count: Int) {
+    offset += count
+    consumed += count
+  }
 
   private func fill(_ count: Int) async throws {
     while buffer.count - offset < count {
