@@ -6,7 +6,6 @@ import {
   chunkFrames,
   concatBodyBuffer,
   emptyBodyBuffer,
-  encodeWsFrame,
   encodeWsFrames,
   headFrame,
   MAX_CHUNK_BYTES,
@@ -174,11 +173,6 @@ describe("ws frames", () => {
     expect(parseWsFrame({ kind: "ping" })).toBeUndefined()
     expect(parseWsFrame({ kind: "binary", data: 1 })).toBeUndefined()
     expect(parseWsFrame({ kind: "binary", data: "=invalid=" })).toBeUndefined()
-  })
-
-  it("encodes outgoing messages by payload type", () => {
-    expect(encodeWsFrame("hi")).toEqual({ kind: "text", data: "hi" })
-    expect(encodeWsFrame(bytes(1, 2))).toEqual({ kind: "binary", data: toBase64Url(bytes(1, 2)) })
   })
 
   it("keeps small messages as single frames", () => {

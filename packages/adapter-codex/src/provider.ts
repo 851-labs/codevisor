@@ -33,9 +33,6 @@ import { makeStartSession } from "./start-session.js"
 import { codexUsageLimitsFrom } from "./usage.js"
 import { isCodexVersionNewer, readCodexVersion } from "./version.js"
 
-export { GOAL_ACCOUNTING_INTERVAL_MS } from "./goals.js"
-export { codexUsageLimitsFrom }
-
 export interface CodexProviderConfig {
   /// Injectable for tests: scripted app-server sessions instead of a spawned
   /// codex binary.

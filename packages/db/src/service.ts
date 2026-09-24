@@ -37,7 +37,7 @@ import type {
 } from "@codevisor/api"
 import type { SyncEntryRecord } from "@codevisor/sync"
 import Database from "better-sqlite3"
-import { Context, Effect, Layer } from "effect"
+import { Effect } from "effect"
 
 import { createService } from "./create-service.js"
 import { DatabaseError, attempt } from "./errors.js"
@@ -470,19 +470,6 @@ export interface CodevisorDatabaseService {
     },
     DatabaseError
   >
-}
-
-export class CodevisorDatabase extends Context.Service<
-  CodevisorDatabase,
-  CodevisorDatabaseService
->()("@codevisor/db/CodevisorDatabase") {
-  static readonly layer = (
-    config: CodevisorDatabaseConfig
-  ): Layer.Layer<CodevisorDatabase, DatabaseError> =>
-    Layer.effect(
-      CodevisorDatabase,
-      Effect.map(makeDatabase(config), (service) => CodevisorDatabase.of(service))
-    )
 }
 
 export const makeDatabase = (

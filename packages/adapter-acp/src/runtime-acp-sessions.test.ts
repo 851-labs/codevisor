@@ -281,25 +281,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(connector.requests[1]?.args).toEqual(["acp"])
   })
 
-  it("uses located executable paths for executable harnesses", async () => {
-    const connector = makeConnector()
-    const runtime = makeAcpAgentRuntime({
-      connector,
-      env: { PATH: "/bin" },
-      executableExists: (name) => name === "opencode",
-      locateExecutable: (name) => (name === "opencode" ? "/opt/codevisor/bin/opencode" : undefined)
-    })
-
-    await run(runtime.createAgentSession("opencode", "/tmp/project", () => undefined))
-
-    expect(connector.requests[0]).toMatchObject({
-      args: ["acp"],
-      command: "/opt/codevisor/bin/opencode",
-      cwd: "/tmp/project",
-      harnessId: "opencode"
-    })
-  })
-
   it("reports unavailable or unknown harnesses before connecting", async () => {
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({

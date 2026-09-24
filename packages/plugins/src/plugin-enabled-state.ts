@@ -10,10 +10,10 @@ const markerPath = (pluginDataRoot: string, pluginId: string): string =>
   join(pluginDataRoot, DISABLED_DIRECTORY, pluginId)
 
 /// Enabled is the default, so older installs migrate without a write.
-export const isPluginEnabled = (pluginDataRoot: string, pluginId: string): boolean =>
+const isPluginEnabled = (pluginDataRoot: string, pluginId: string): boolean =>
   !existsSync(markerPath(pluginDataRoot, pluginId))
 
-export const setPluginEnabledState = async (
+const setPluginEnabledState = async (
   pluginDataRoot: string,
   pluginId: string,
   enabled: boolean

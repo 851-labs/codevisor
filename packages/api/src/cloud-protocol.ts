@@ -266,9 +266,6 @@ export const parseHubToMachineRelayHeader = (
   return header
 }
 
-export const parseHubToAppRelayHeader = (value: unknown): HubToAppRelayHeader | undefined =>
-  parseAddressedHeader<HubToAppRelayHeader>(value, "machineId")
-
 // ---------------------------------------------------------------------------
 // App plane (JSON text control frames)
 // ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@ import {
 import type { SessionConfigOption } from "@codevisor/api"
 
 import {
-  acpConfigSelection,
   normalizeAcpConfigOptions,
   sessionMetadata,
   type AcpSessionMetadataResponse
@@ -277,11 +276,10 @@ export const sdkConnection = (
           value
         })
         if (customized !== undefined) return customized
-        const selection = acpConfigSelection(configId, value)
         const response = await connection.agent.request(acp.methods.agent.session.setConfigOption, {
-          configId: selection.configId,
+          configId,
           sessionId,
-          value: selection.value
+          value
         })
         return normalizeAcpConfigOptions(response.configOptions ?? [])
       }),

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   acpClientCapabilities,
-  acpConfigSelection,
   acpPermissionOutcome,
   acpPermissionQuestion,
   extractPiStartupInfo,
@@ -22,13 +21,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(acpClientCapabilities(false)).toEqual({
       plan: {},
       terminal: false
-    })
-  })
-
-  it("passes generic ACP configuration selections through", () => {
-    expect(acpConfigSelection("speed", "fast")).toEqual({
-      configId: "speed",
-      value: "fast"
     })
   })
 

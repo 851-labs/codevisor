@@ -11,7 +11,6 @@ import {
   encodeCloudFrame,
   encodeRelayEnvelopes,
   parseAppRelayHeader,
-  parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
   parseMachineRelayHeader,
   parseRelayFrameHeader,
@@ -193,10 +192,6 @@ describe("relay envelopes (binary)", () => {
 
     expect(parseMachineRelayHeader({ peerId: "conn-1", frame })).toEqual({
       peerId: "conn-1",
-      frame
-    })
-    expect(parseHubToAppRelayHeader({ machineId: "m-1", frame })).toEqual({
-      machineId: "m-1",
       frame
     })
 

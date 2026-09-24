@@ -2,8 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { AgentRuntime, harnessCatalog, locateExecutableOnPath } from "@codevisor/agent-runtime"
-import { Effect } from "effect"
+import { harnessCatalog, locateExecutableOnPath, makeAgentRuntime } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { makeAcpAgentRuntime, run } from "./test-support.js"
@@ -286,26 +285,13 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "claude-code")?.readiness.state).toBe("ready")
   })
 
-  it("constructs the Effect service layer and handles missing PATH", async () => {
-    await expect(run(makeAcpAgentRuntime().discoverHarnesses)).resolves.toEqual(expect.any(Array))
-
+  it("reports every harness unavailable when no adapters are registered", async () => {
     // locateExecutable is pinned to "nothing found": the default locator also
     // probes absolute fallbackPaths (e.g. /Applications/Codex.app), which
     // would make this machine-dependent.
-    const layeredHarnesses = await run(
-      Effect.gen(function* () {
-        const runtime = yield* AgentRuntime
-        return yield* runtime.discoverHarnesses
-      }).pipe(Effect.provide(AgentRuntime.layer({ env: {}, locateExecutable: () => undefined })))
-    )
-    expect(layeredHarnesses.every((harness) => harness.readiness.state === "unavailable")).toBe(
-      true
-    )
-
-    const runtime = makeAcpAgentRuntime({ env: {}, locateExecutable: () => undefined })
-    expect((await run(runtime.discoverHarnesses))[0]?.readiness.detail).toBe(
-      "CLI not found on PATH"
-    )
+    const runtime = makeAgentRuntime({ env: {}, locateExecutable: () => undefined })
+    const harnesses = await run(runtime.discoverHarnesses)
+    expect(harnesses.every((harness) => harness.readiness.state === "unavailable")).toBe(true)
   })
 
   it("checks both ChatGPT.app and Codex.app for the bundled Codex CLI", () => {

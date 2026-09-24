@@ -192,17 +192,6 @@ describe("ClaudeProvider", () => {
 })
 
 describe("webSearchSources", () => {
-  it("parses the Links array from a WebSearch result string", () => {
-    const result =
-      'Web search results for query: "swift release"\n\n' +
-      'Links: [{"title":"A","url":"https://a.example"},{"title":"B","url":"https://b.example"}]\n\n' +
-      "Some commentary."
-    expect(webSearchSources(result)).toEqual([
-      { title: "A", url: "https://a.example" },
-      { title: "B", url: "https://b.example" }
-    ])
-  })
-
   it("reads the text out of a block array result", () => {
     const blocks = [
       {

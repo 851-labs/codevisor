@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { describe, expect, it, vi } from "vitest"
 
 import {
   checkBrewLatest,
@@ -221,16 +225,27 @@ describe("detectInstallOrigin", () => {
   })
 
   it("uses the real filesystem resolver and process HOME by default", () => {
-    const savedHome = process.env.HOME
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "codevisor-updater-home-")))
     try {
-      // A real path (the temp root) resolves through the default realpathSync
-      // and classifies against the process's own HOME…
-      expect(detectInstallOrigin("/tmp")).toBeDefined()
-      // …and an unset HOME skips home-directory classification entirely.
-      delete process.env.HOME
-      expect(detectInstallOrigin("/srv/agents/thing", { realpath: (path) => path })).toBe("unknown")
+      vi.stubEnv("HOME", home)
+      // The binary lives in a home-dot directory but is reached through a
+      // plain-directory symlink: only the default realpath resolver sees the
+      // dot directory, and only the process HOME makes it a home install.
+      mkdirSync(join(home, ".tool", "bin"), { recursive: true })
+      writeFileSync(join(home, ".tool", "bin", "tool"), "")
+      mkdirSync(join(home, "bin"))
+      symlinkSync(join(home, ".tool", "bin", "tool"), join(home, "bin", "tool"))
+
+      expect(detectInstallOrigin(join(home, "bin", "tool"))).toBe("curl")
+
+      // Without HOME, a dot directory anywhere must not read as a home install.
+      vi.stubEnv("HOME", undefined)
+      expect(detectInstallOrigin("/srv/.tool/bin/tool", { realpath: (path) => path })).toBe(
+        "unknown"
+      )
     } finally {
-      if (savedHome !== undefined) process.env.HOME = savedHome
+      vi.unstubAllEnvs()
+      rmSync(home, { force: true, recursive: true })
     }
   })
 

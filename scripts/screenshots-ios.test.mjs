@@ -1,14 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import {
-  devices,
-  parseOptions,
-  pngDimensions,
-  scenes,
-  screenshotAttachments,
-  selectRuntime
-} from "./screenshots-ios-lib.mjs"
+import { devices, parseOptions, selectRuntime } from "./screenshots-ios-lib.mjs"
+import { pngDimensions, scenes, screenshotAttachments } from "./screenshots-lib.mjs"
 
 test("options stay rooted in this checkout and reject missing or unknown arguments", () => {
   assert.equal(parseOptions([], "/checkout").output, "/checkout/tmp/screenshots/ios")
