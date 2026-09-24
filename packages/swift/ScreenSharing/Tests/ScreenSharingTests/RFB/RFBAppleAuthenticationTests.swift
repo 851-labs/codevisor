@@ -54,6 +54,40 @@ struct RFBAppleAuthenticationTests {
     #expect(RFBBigUInt(bytes: shared.bytes(count: 128)) == shared)
   }
 
+  /// Fermat: g^(p-1) = 1 and g^p = g for the real 1024-bit prime, through every limb of the multiply.
+  @Test func fermatHoldsForTheRealPrime() {
+    let prime = RFBLoopbackServer.appleAuthenticationPrime
+    let modulus = RFBBigUInt(bytes: prime)
+    var lessOne = prime
+    lessOne[lessOne.count - 1] -= 1  // odd, so no borrow
+    for g in [2, 3, 65537] as [UInt64] {
+      #expect(RFBBigUInt(g).power(RFBBigUInt(bytes: lessOne), modulo: modulus) == RFBBigUInt(1))
+      #expect(RFBBigUInt(g).power(modulus, modulo: modulus) == RFBBigUInt(g))
+    }
+  }
+
+  /// Macs offer a 4096-bit group (tuftlord, 851-2341). The secret exponent is
+  /// 512 bits, not the group's size: a full-size one made sign-in take 86 s in
+  /// the (debug) rig.
+  @Test func aMacsFourThousandBitGroupUsesAFiveHundredBitExponent() throws {
+    #expect(RFBAppleAuthentication.privateKeyLength(forKeyLength: 512) == 64)
+    #expect(RFBAppleAuthentication.privateKeyLength(forKeyLength: 128) == 64)
+    #expect(RFBAppleAuthentication.privateKeyLength(forKeyLength: 16) == 16)
+    // A 4096-bit group's reply: 128 bytes of credentials, then a 512-byte key.
+    // (A short test exponent keeps this fast; agreement is checked on the real prime above.)
+    var prime = [UInt8](repeating: 0x5B, count: 512)
+    prime[0] = 0xC3
+    prime[511] = 0x7F
+    let modulus = RFBBigUInt(bytes: prime)
+    let secret: [UInt8] = [0x01, 0x23, 0x45, 0x67]
+    let response = try RFBAppleAuthentication.response(
+      generator: 2, prime: prime, serverKey: [UInt8](repeating: 0x11, count: 512), username: "alex", password: "pw",
+      privateKey: secret)
+    #expect(response.count == 128 + 512)
+    let clientKey = RFBBigUInt(bytes: Array(response.suffix(512)))
+    #expect(clientKey == RFBBigUInt(2).power(RFBBigUInt(bytes: secret), modulo: modulus))
+  }
+
   @Test func aesIsTheStandardCipher() throws {
     // FIPS-197 appendix C.1.
     let key = (0..<16).map { UInt8($0) }
