@@ -62,6 +62,7 @@ export const makeCodevisorServerApp = (
   // reads the live-turn sets and prompt dispatch reads the drain's gate.
   const turns = {
     activePromptSessions: new Set<string>(),
+    promptTurnReleases: new Map<string, () => void>(),
     activeTurnSessions: new Set<string>(),
     restartHeldSessions: new Set<string>()
   }

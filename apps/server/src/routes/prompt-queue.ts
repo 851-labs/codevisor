@@ -13,6 +13,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { beginPromptTurn } from "./prompt-turn.js"
 import { materializeRuntimeEvent } from "./session-events.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 
@@ -349,16 +350,12 @@ export const drainPromptQueue = async (
     }
     return
   }
-  routeState.activePromptSessions.add(sessionId)
-  // Turn accounting for update-when-idle: the lifecycle manager runs armed
-  // updates when a harness's last in-flight turn ends.
-  const busyHarnessId = await run(services.db.getSessionSummary(sessionId))
-    .then((session) => session.harnessId)
-    .catch(swallowError)
-  /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
-  if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnStarted(busyHarnessId)
+  const turn = await beginPromptTurn(services, routeState, sessionId)
   try {
     while (true) {
+      // Released by a retire: a newer drain may already own this session
+      // (the chat was unarchived and prompted again), so this one stops.
+      if (turn.isReleased()) return
       if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId))))
         return
       // A gate that closed mid-drain (Update Now) holds the *next* item —
@@ -368,17 +365,17 @@ export const drainPromptQueue = async (
          pre-drain gate path and the lifecycle manager's gating tests. */
       if (
         services.lifecycle !== undefined &&
-        busyHarnessId !== undefined &&
-        services.lifecycle.isGated(busyHarnessId)
+        turn.harnessId !== undefined &&
+        services.lifecycle.isGated(turn.harnessId)
       ) {
         const firstHold = !routeState.gatedSessions.has(sessionId)
-        routeState.gatedSessions.set(sessionId, busyHarnessId)
+        routeState.gatedSessions.set(sessionId, turn.harnessId)
         if (firstHold) {
           const harnessName =
-            services.agents.catalog.find((definition) => definition.id === busyHarnessId)?.name ??
-            busyHarnessId
+            services.agents.catalog.find((definition) => definition.id === turn.harnessId)?.name ??
+            turn.harnessId
           await appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {
-            harnessId: busyHarnessId,
+            harnessId: turn.harnessId,
             harnessName,
             state: "waiting"
           }).catch(() => undefined)
@@ -420,9 +417,7 @@ export const drainPromptQueue = async (
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
   } finally {
-    routeState.activePromptSessions.delete(sessionId)
-    /* v8 ignore next -- defensive: unknown sessions simply skip turn accounting. */
-    if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnEnded(busyHarnessId)
+    turn.release()
   }
 }
 

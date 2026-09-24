@@ -101,9 +101,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp?
   /// Runs the verified bundle swap for the bundled desktop app.
   func updateBundledApp(harnessId: String) async throws
-  /// Forces a latest-version check for all harnesses, returning the
-  /// refreshed decorated list.
-  func checkHarnessUpdates() async throws -> [ServerHarness]
+  /// Forces a latest-version check, returning the refreshed decorated list.
+  /// `harnessIds` limits the check to those harnesses; nil checks them all.
+  func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness]
   func refreshHarnessAuth() async throws -> [ServerHarness]
   func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness
   func listHarnessAccounts(harnessId: String) async throws -> [ServerHarnessAccount]

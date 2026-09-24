@@ -63,6 +63,7 @@ describe("browser proxy session", () => {
     const fanout = await run(makeEventFanout)
     const state: RouteState = {
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),

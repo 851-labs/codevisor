@@ -21,6 +21,7 @@ const makeHarness = async () => {
   const fanout = await run(makeEventFanout)
   const turns = {
     activePromptSessions: new Set<string>(),
+    promptTurnReleases: new Map<string, () => void>(),
     activeTurnSessions: new Set<string>(),
     restartHeldSessions: new Set<string>()
   }

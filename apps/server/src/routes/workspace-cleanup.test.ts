@@ -94,6 +94,7 @@ describe("workspace process cleanup", () => {
     await run(services.db.createPromptQueueItem("chat", "Do not start"))
     const state: RouteState = {
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),

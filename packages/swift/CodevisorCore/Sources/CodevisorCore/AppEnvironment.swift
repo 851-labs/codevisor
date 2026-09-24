@@ -148,6 +148,11 @@ public final class AppEnvironment {
     updateCenter = UpdateCenter(machines: machines, appUpdate: self.appUpdate)
     configSync = ConfigSync(machines: machines)
     fleetRoster = FleetRoster(machines: machines, configSync: configSync)
+    // Updates cover the harnesses in the shared list, once it has synced.
+    updateCenter.listedHarnessIds = { [configSync] in
+      guard configSync.hasSnapshot(namespace: "harnesses") else { return nil }
+      return Set(HarnessFleet.settings(configSync).map(\.id))
+    }
     // Previews/tests without a device credential store stay hermetic: an
     // in-memory store, and no networking until someone calls bootstrap().
     self.cloud = CloudAccountController(

@@ -214,6 +214,7 @@ export const routeWorkspaces = async (
       services,
       fanout,
       config,
+      routeState,
       workspace,
       wasArchived
     )
@@ -235,6 +236,7 @@ export const routeWorkspaces = async (
       services,
       fanout,
       config,
+      routeState,
       workspace,
       wasArchived
     )
@@ -250,7 +252,7 @@ export const routeWorkspaces = async (
     }
     const wasArchived = existing.isArchived
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
-    await applyWorkspaceArchiveEffects(services, fanout, config, workspace, wasArchived)
+    await applyWorkspaceArchiveEffects(services, fanout, config, routeState, workspace, wasArchived)
     // `sessions.workspace_id` has no ON DELETE clause and foreign keys are
     // enforced, so the chats must let go of the workspace before it can be
     // dropped -- otherwise this raises after the worktree is already gone.

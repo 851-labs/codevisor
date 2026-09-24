@@ -19,15 +19,15 @@ import {
 describe("harness update checks", () => {
   it("forces a check and returns the decorated harness list", async () => {
     const { services } = await makeServices("server-a")
-    const checks: Array<boolean> = []
+    const checks: Array<readonly [boolean, ReadonlyArray<string> | undefined]> = []
     const lifecycle = {
       beginBundledAppUpdate: async () => {},
       beginInstall: async () => ({ terminalId: "unused" }),
       beginUpdate: async () => ({ queued: false }),
       bundledAppInfo: async () => undefined,
       cancelPendingUpdate: async () => {},
-      checkForUpdates: async (force?: boolean) => {
-        checks.push(force === true)
+      checkForUpdates: async (force?: boolean, harnessIds?: ReadonlyArray<string>) => {
+        checks.push([force === true, harnessIds])
         return []
       },
       decorateHarnesses: async (list: ReadonlyArray<Harness>) =>
@@ -55,7 +55,13 @@ describe("harness update checks", () => {
 
     const response = await jsonRequest(server, "/v1/harnesses/check-updates", { method: "POST" })
     expect(response.status).toBe(200)
-    expect(checks).toEqual([true])
+    expect(checks).toEqual([[true, undefined]])
+    // A client scopes the check to the harnesses it lists.
+    await jsonRequest(server, "/v1/harnesses/check-updates", {
+      body: JSON.stringify({ harnessIds: ["codex", 7] }),
+      method: "POST"
+    })
+    expect(checks.at(-1)).toEqual([true, ["codex"]])
     expect(response.body).toMatchObject([
       { id: "codex", updateInfo: { latestVersion: "9.9.9", updateAvailable: true } }
     ])

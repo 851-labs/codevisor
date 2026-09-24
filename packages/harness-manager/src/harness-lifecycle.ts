@@ -83,15 +83,18 @@ export const makeHarnessLifecycleManager = (
     ...bundledApp,
     ...makeHarnessUninstall(core, runner),
     beginInstall: runner.beginInstall,
-    checkForUpdates: async (force = false) => {
-      // Explicit checks reset failed operations. Periodic checks call
-      // detection directly and leave failures available for inspection.
+    checkForUpdates: async (force = false, harnessIds) => {
+      // Explicit checks reset failed operations (of the harnesses they
+      // check). Periodic checks call detection directly and leave failures
+      // available for inspection.
       if (force) {
         for (const [id, operation] of operations) {
-          if (operation.phase === "failed") core.setOperation(id, undefined)
+          if (operation.phase !== "failed") continue
+          if (harnessIds !== undefined && !harnessIds.includes(id)) continue
+          core.setOperation(id, undefined)
         }
       }
-      return detection.checkForUpdates(force)
+      return detection.checkForUpdates(force, harnessIds)
     },
     decorateHarnesses,
     installMethods: async (harnessId) => runner.resolveInstallMethods(definitionOrThrow(harnessId)),

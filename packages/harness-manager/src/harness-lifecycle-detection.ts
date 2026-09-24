@@ -140,50 +140,69 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     return { harnessId: definition.id, info }
   }
 
-  const checkForUpdates = async (
-    force = false
+  /// Checks every cataloged harness with an update source, or only
+  /// `harnessIds` when given (the harnesses a client actually lists).
+  const runChecks = async (
+    harnessIds: ReadonlySet<string> | undefined
   ): Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> => {
+    const current = await loadStates()
+    const harnesses = await run(config.agents.discoverHarnesses)
+    const outcomes: Array<HarnessUpdateCheckOutcome> = []
+    await Promise.all(
+      config.agents.catalog
+        .filter(
+          (definition) =>
+            definition.update !== undefined &&
+            (harnessIds === undefined || harnessIds.has(definition.id))
+        )
+        .map(async (definition) => {
+          const harness = harnesses.find((candidate) => candidate.id === definition.id)
+          if (harness === undefined) return
+          try {
+            const outcome = await checkHarness(definition, harness)
+            if (outcome === undefined) return
+            outcomes.push(outcome)
+            const previous = current.get(outcome.harnessId)
+            current.set(outcome.harnessId, outcome.info)
+            await run(
+              config.db.setHarnessUpdateState({
+                harnessId: outcome.harnessId,
+                info: outcome.info
+              })
+            ).catch(() => undefined)
+            if (meaningfullyChanged(previous, outcome.info)) {
+              emit({
+                kind: "harness.lifecycle.updated",
+                payload: { harnessId: outcome.harnessId, updateInfo: outcome.info },
+                subjectId: outcome.harnessId
+              })
+            }
+          } catch {
+            // One harness's failed check must not block the others.
+          }
+        })
+    )
+    return outcomes
+  }
+
+  const checkForUpdates = async (
+    force = false,
+    harnessIds?: ReadonlyArray<string>
+  ): Promise<ReadonlyArray<HarnessUpdateCheckOutcome>> => {
+    // A full check already running covers any scope.
     if (checkState.inFlight !== undefined) return checkState.inFlight
     if (!force && now() - checkState.lastCheckAt < checkCacheMs) return []
-    checkState.inFlight = (async () => {
-      const current = await loadStates()
-      const harnesses = await run(config.agents.discoverHarnesses)
-      const outcomes: Array<HarnessUpdateCheckOutcome> = []
-      await Promise.all(
-        config.agents.catalog
-          .filter((definition) => definition.update !== undefined)
-          .map(async (definition) => {
-            const harness = harnesses.find((candidate) => candidate.id === definition.id)
-            if (harness === undefined) return
-            try {
-              const outcome = await checkHarness(definition, harness)
-              if (outcome === undefined) return
-              outcomes.push(outcome)
-              const previous = current.get(outcome.harnessId)
-              current.set(outcome.harnessId, outcome.info)
-              await run(
-                config.db.setHarnessUpdateState({
-                  harnessId: outcome.harnessId,
-                  info: outcome.info
-                })
-              ).catch(() => undefined)
-              if (meaningfullyChanged(previous, outcome.info)) {
-                emit({
-                  kind: "harness.lifecycle.updated",
-                  payload: { harnessId: outcome.harnessId, updateInfo: outcome.info },
-                  subjectId: outcome.harnessId
-                })
-              }
-            } catch {
-              // One harness's failed check must not block the others.
-            }
-          })
-      )
-      checkState.lastCheckAt = now()
-      return outcomes
-    })().finally(() => {
-      checkState.inFlight = undefined
-    })
+    // A scoped check leaves the full check's cache and coalescing alone:
+    // it says nothing about the harnesses it skipped.
+    if (harnessIds !== undefined) return runChecks(new Set(harnessIds))
+    checkState.inFlight = runChecks(undefined)
+      .then((outcomes) => {
+        checkState.lastCheckAt = now()
+        return outcomes
+      })
+      .finally(() => {
+        checkState.inFlight = undefined
+      })
     return checkState.inFlight
   }
 

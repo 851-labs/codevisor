@@ -17,6 +17,7 @@ it("joins a pending session creation without starting another agent", async () =
   const fanout = await run(makeEventFanout)
   const state: RouteState = {
     activePromptSessions: new Set(),
+    promptTurnReleases: new Map(),
     activeTurnSessions: new Set(),
     gatedSessions: new Map(),
     pendingPromptActions: new Set(),

@@ -316,7 +316,7 @@ public extension CodevisorServerClienting {
   func updateBundledApp(harnessId: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
-  func checkHarnessUpdates() async throws -> [ServerHarness] { try await listHarnesses() }
+  func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] { try await listHarnesses() }
 
   func refreshHarnessAuth() async throws -> [ServerHarness] { try await listHarnesses() }
   func refreshHarnessAuth(harnessId: String) async throws -> ServerHarness {

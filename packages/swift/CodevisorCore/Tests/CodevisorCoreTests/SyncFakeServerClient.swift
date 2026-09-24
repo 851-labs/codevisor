@@ -36,6 +36,10 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   var sessionRenameNames: [String] { lock.withLock { _sessionRenameNames } }
 
   var harnessUpdateHandler: (@Sendable (String) async throws -> ServerHarnessOperationStarted)?
+  /// Awaited before every harness inventory read answers, so tests can hold
+  /// a read in flight.
+  var harnessReadGate: (@Sendable () async -> Void)?
+  var _harnessCheckScopes: [[String]?] = []
   var pluginPrepareError: String?
   var applyProgressReports: [ServerUpdateApplyState] = []
   var applyingProgressReports = false

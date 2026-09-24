@@ -10,7 +10,11 @@ import {
 } from "@codevisor/worktrees"
 
 import { EventFanout } from "./server-context-types.js"
-import type { CodevisorServerConfig, CodevisorServerServices } from "./server-context-types.js"
+import type {
+  CodevisorServerConfig,
+  CodevisorServerServices,
+  RouteState
+} from "./server-context-types.js"
 import { appendAndPublish, getProjectOrFail, localLocationOrFail, run } from "./server-http.js"
 import { closeWorkspaceTerminals, settleCleanup } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
@@ -67,15 +71,34 @@ export const retireSessionRuntime = async (
   if (failure !== undefined) throw failure
 }
 
+/// The turn-liveness state a retire clears.
+export type RetiredTurnState = Pick<
+  RouteState,
+  "activeTurnSessions" | "promptTurnReleases" | "turnHeldSessions"
+>
+
+/// Forgets a retired chat's live turn. Its runtime is being closed, so the
+/// turn is over as far as updates are concerned — whether or not the harness
+/// ever reports it ended. Without this, archiving a working chat (or one
+/// waiting on a question) left its turn counted as live: a harness update
+/// armed behind it never ran, and a server update waited out its full drain.
+export const forgetRetiredSessionTurn = (turns: RetiredTurnState, sessionId: string): void => {
+  turns.promptTurnReleases.get(sessionId)?.()
+  turns.activeTurnSessions.delete(sessionId)
+  turns.turnHeldSessions.delete(sessionId)
+}
+
 /// Stops every process a workspace owns: its chats' agents and terminals, plus
 /// terminals opened in the workspace without a chat.
 export const retireWorkspaceRuntime = async (
   services: CodevisorServerServices,
+  turns: RetiredTurnState,
   workspace: Workspace
 ): Promise<void> => {
   const sessions = (await run(services.db.listSessions)).filter(
     (session) => session.workspaceId?.toLowerCase() === workspace.id.toLowerCase()
   )
+  for (const session of sessions) forgetRetiredSessionTurn(turns, session.id)
   await settleCleanup([
     closeWorkspaceTerminals(services, [workspace.id]),
     ...sessions.map((session) => retireSessionRuntime(services, session))
@@ -267,6 +290,7 @@ export const applyWorkspaceArchiveEffects = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
   config: CodevisorServerConfig,
+  turns: RetiredTurnState,
   workspace: Workspace,
   wasArchived: boolean
 ): Promise<Workspace> => {
@@ -274,7 +298,7 @@ export const applyWorkspaceArchiveEffects = async (
   if (workspace.isArchived === wasArchived) return workspace
 
   if (workspace.isArchived) {
-    await retireWorkspaceRuntime(services, workspace)
+    await retireWorkspaceRuntime(services, turns, workspace)
     const ignored = await archiveWorkspaceWorktree(services, config.id, workspace)
     if (ignored.length > 0) {
       // Gitignored files are deliberately not snapshotted (they can hold

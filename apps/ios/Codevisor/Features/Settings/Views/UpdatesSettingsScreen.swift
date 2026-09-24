@@ -5,55 +5,75 @@ import SwiftUI
 /// section per machine listing what it can update (its server, then its
 /// agents and plugins). The iOS twin of macOS's UpdateCenterView — the app
 /// itself is App Store-managed here, so its row simply never exists.
+/// Opening the screen checks every feed afresh, and the list stays hidden
+/// until that check finishes, so nothing installs from a stale list.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  /// Whether this visit's opening check has finished.
+  @State private var hasCheckedOnOpen = false
 
   private var center: UpdateCenter { environment.updateCenter }
+
+  private var isChecking: Bool {
+    !hasCheckedOnOpen || center.isCheckingForUpdates
+  }
 
   var body: some View {
     List {
       summarySection
-      ForEach(center.machineGroups) { group in
-        Section {
-          if let codevisor = group.codevisor,
-            codevisor.updateAvailable || codevisor.phase != .idle
-          {
-            row(for: codevisor)
-          } else if group.components.isEmpty {
-            Text("Everything is up to date.")
-              .foregroundStyle(.secondary)
-          }
-          ForEach(group.components) { component in
-            row(for: component)
-          }
-        } header: {
-          Text(group.machineName)
-            .textCase(nil)
-        }
+      if !isChecking {
+        machineSections
       }
     }
     .navigationTitle("Updates")
     .refreshable { await center.refresh(force: true) }
-    .task { await center.refresh(force: true) }
+    .task {
+      // An update-all in flight is working from its own list: leave it be.
+      if !center.isUpdatingAll {
+        await center.refresh(force: true)
+      }
+      hasCheckedOnOpen = true
+    }
+  }
+
+  private var machineSections: some View {
+    ForEach(center.machineGroups) { group in
+      Section {
+        if let codevisor = group.codevisor,
+          codevisor.updateAvailable || codevisor.phase != .idle
+        {
+          row(for: codevisor)
+        } else if group.components.isEmpty {
+          Text("Everything is up to date.")
+            .foregroundStyle(.secondary)
+        }
+        ForEach(group.components) { component in
+          row(for: component)
+        }
+      } header: {
+        Text(group.machineName)
+          .textCase(nil)
+      }
+    }
   }
 
   private var summarySection: some View {
     Section {
       HStack(spacing: 10) {
-        if center.isRefreshing || center.isUpdatingAll {
+        if isChecking || center.isUpdatingAll {
           ProgressView()
         }
         VStack(alignment: .leading, spacing: 2) {
           Text(summaryTitle)
             .font(.headline)
-          if let refreshed = center.lastRefreshedAt {
+          if !isChecking, let refreshed = center.lastRefreshedAt {
             Text("Last checked \(refreshed.formatted(date: .omitted, time: .shortened))")
               .font(.footnote)
               .foregroundStyle(.secondary)
           }
         }
       }
-      if center.availableCount > 0 {
+      if !isChecking, center.availableCount > 0 {
         Button(center.isUpdatingAll ? "Updating…" : "Update All") {
           Task { await center.updateAll() }
         }
@@ -68,8 +88,9 @@ struct UpdatesSettingsScreen: View {
 
   private var summaryTitle: String {
     if center.isUpdatingAll { return "Updating…" }
+    if isChecking { return "Checking for updates…" }
     switch center.availableCount {
-    case 0: return center.isRefreshing ? "Checking for updates…" : "Everything is up to date"
+    case 0: return "Everything is up to date"
     case 1: return "1 update available"
     case let count: return "\(count) updates available"
     }

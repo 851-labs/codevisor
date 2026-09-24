@@ -472,10 +472,22 @@ extension SyncFakeServerClient {
   }
   func listHarnesses() async throws -> [ServerHarness] { lock.withLock { _harnesses } }
 
+  /// The `harnessIds` scope of every forced harness check, in call order.
+  var harnessCheckScopes: [[String]?] { lock.withLock { _harnessCheckScopes } }
+
+  func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] {
+    await harnessReadGate?()
+    return lock.withLock {
+      _harnessCheckScopes.append(harnessIds)
+      return _harnesses
+    }
+  }
+
   /// Inventory with lifecycle: while a simulated harness update is in
   /// progress, every harness reports phase "updating".
   func listHarnessesWithLifecycle() async throws -> [ServerHarness] {
-    lock.withLock {
+    await harnessReadGate?()
+    return lock.withLock {
       _harnessLifecycleReads += 1
       guard _harnessLifecycleActivePolls > 0 else { return _harnesses }
       _harnessLifecycleActivePolls -= 1

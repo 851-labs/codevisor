@@ -30,6 +30,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     tempDirs.push(folder)
     const emptyRouteState = (): RouteState => ({
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
@@ -224,6 +225,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     const fanout = await run(makeEventFanout)
     const routeState: RouteState = {
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
@@ -254,6 +256,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     const fanout = await run(makeEventFanout)
     const routeState: RouteState = {
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),
@@ -347,6 +350,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     const fanout = await run(makeEventFanout)
     const routeState: RouteState = {
       activePromptSessions: new Set(),
+      promptTurnReleases: new Map(),
       activeTurnSessions: new Set(),
       gatedSessions: new Map(),
       pendingPromptActions: new Set(),

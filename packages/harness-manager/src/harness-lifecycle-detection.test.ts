@@ -91,6 +91,50 @@ describe("harness lifecycle update detection", () => {
     expect(calls).toBe(1)
   })
 
+  it("checks only the requested harnesses and leaves the full-check cache alone", async () => {
+    const db = await makeDb()
+    const fetched: Array<string> = []
+    const fetchImpl: FetchLike = async (url) => {
+      fetched.push(url)
+      return jsonResponse({ "dist-tags": { latest: "2.0.0" } })
+    }
+    const other: HarnessDefinition = {
+      ...npmDefinition,
+      id: "other-cli",
+      update: {
+        sources: [
+          {
+            apply: { args: ["update"], kind: "selfUpdate" },
+            check: { kind: "npm", packageName: "other-cli" },
+            when: "any"
+          }
+        ]
+      }
+    }
+    const lifecycle = makeHarnessLifecycleManager({
+      agents: agentsStub(
+        [npmDefinition, other],
+        [
+          harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0"),
+          harness("other-cli", "/Users/dev/.local/bin/other-cli", "1.0.0")
+        ]
+      ),
+      db,
+      fetchImpl,
+      home: "/Users/dev",
+      realpath: (path) => path
+    })
+
+    const scoped = await lifecycle.checkForUpdates(true, ["other-cli"])
+    expect(scoped.map((outcome) => outcome.harnessId)).toEqual(["other-cli"])
+    expect(fetched).toHaveLength(1)
+    expect(fetched[0]).toContain("other-cli")
+
+    // The scoped check did not satisfy the periodic full check's cache.
+    const full = await lifecycle.checkForUpdates()
+    expect(full.map((outcome) => outcome.harnessId).toSorted()).toEqual(["fake-cli", "other-cli"])
+  })
+
   it("compares app-bundle installs against the app version via the sparkle feed", async () => {
     const db = await makeDb()
     const appcast = `<rss><channel><item>

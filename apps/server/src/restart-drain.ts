@@ -129,8 +129,6 @@ export interface RestartCoordinatorDeps {
   readonly redrain: (sessionId: string) => Promise<void>
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
 export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoordinator => {
   const { services, fanout, turns, snapshot, redrain } = deps
   const log = deps.log ?? ((line: string) => console.log(line))
@@ -175,9 +173,23 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     }
   }
 
+  /// Wakes a drain waiting between polls, so `cancel` never leaves an
+  /// abandoned drain asleep for a poll interval.
+  let wakeDrain: (() => void) | undefined
+  const pollPause = (): Promise<void> =>
+    new Promise((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer)
+        wakeDrain = undefined
+        resolve()
+      }
+      const timer = setTimeout(done, POLL_MS)
+      wakeDrain = done
+    })
+
   const waitUntilIdle = async (until: number, myGeneration: number): Promise<boolean> => {
     while (liveSessions().size > 0 && Date.now() < until) {
-      await sleep(POLL_MS)
+      await pollPause()
       if (generation !== myGeneration) return false
       if (interruptRequested) return true
     }
@@ -255,6 +267,11 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     cancel: async () => {
       if (phase === "idle") return state()
       generation += 1
+      // A drain waiting between polls stops now, not a poll later, so its
+      // caller learns the update is off before the cancel is acknowledged.
+      // (One blocked in finalization is not awaited: a stuck close must not
+      // hold the gate shut.)
+      wakeDrain?.()
       phase = "idle"
       startedAt = new Date().toISOString()
       deadlineAt = undefined

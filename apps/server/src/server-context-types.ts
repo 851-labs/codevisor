@@ -189,6 +189,11 @@ export interface RouteState {
   readonly pendingSessionCreates: Map<string, Promise<SessionSummary>>
   readonly pendingPromptActions: Set<string>
   readonly activePromptSessions: Set<string>
+  /// Ends the turn accounting of each session's in-flight prompt drain
+  /// (`activePromptSessions` plus the harness busy count). Called when the
+  /// chat's runtime is retired, so a prompt that never settles cannot hold
+  /// harness or server updates forever.
+  readonly promptTurnReleases: Map<string, () => void>
   /// Sessions whose prompt dispatch is held by a harness update gate, keyed
   /// to the harness they wait on. Cleared (and re-drained) on gate release.
   readonly gatedSessions: Map<string, string>

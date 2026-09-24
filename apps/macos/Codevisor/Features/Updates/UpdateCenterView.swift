@@ -4,9 +4,13 @@ import CodevisorUI
 import SwiftUI
 
 /// Settings › Updates — the one place updates live. Software Update's
-/// shape: a summary with the fleet-wide actions on top, then one section per
-/// machine listing what that machine can update (its Codevisor, then its
-/// harnesses and plugins), then the channel preference.
+/// shape: a summary with the fleet-wide actions and the channel preference
+/// on top, then one section per machine listing what that machine can
+/// update (its Codevisor, then its harnesses and plugins).
+///
+/// Opening the pane always checks every feed afresh, and the list stays
+/// hidden until that check finishes: installing from a stale list is how an
+/// update ends with another one already waiting.
 ///
 /// Every row keeps the same two-line geometry in every state — available,
 /// updating, failed — so a live update never reflows the pane, and failure
@@ -17,22 +21,40 @@ struct UpdateCenterView: View {
   @Environment(\.theme) private var theme
   /// The component whose failure details popover is open.
   @State private var failureDetailsId: String?
+  /// Whether this visit's opening check has finished. Starts false so the
+  /// first frame already shows the check rather than the stale list.
+  @State private var hasCheckedOnOpen = false
 
   private var center: UpdateCenter { environment.updateCenter }
+
+  /// The known updates may be stale: the opening check (or a later forced
+  /// one) is still running.
+  private var isChecking: Bool {
+    !hasCheckedOnOpen || center.isCheckingForUpdates
+  }
 
   var body: some View {
     Form {
       summarySection
-      ForEach(center.machineGroups) { group in
-        machineSection(group)
+      // The summary above reports the check; the stale list stays hidden.
+      if !isChecking {
+        ForEach(center.machineGroups) { group in
+          machineSection(group)
+        }
       }
-      channelSection
     }
     .settingsPaneFormStyle(theme)
     .background {
       if !theme.isSystem { theme.windowBackground }
     }
-    .task { await center.refresh(force: true) }
+    .task {
+      // An update-all in flight is working from its own list, and its rows
+      // are the progress the user came to see: leave it be.
+      if !center.isUpdatingAll {
+        await center.refresh(force: true)
+      }
+      hasCheckedOnOpen = true
+    }
   }
 
   // MARK: - Summary
@@ -53,11 +75,11 @@ struct UpdateCenterView: View {
         Button {
           Task { await center.refresh(force: true) }
         } label: {
-          BusyButtonLabel(title: "Check Again", isBusy: center.isRefreshing)
+          BusyButtonLabel(title: "Check Again", isBusy: isChecking)
         }
         .settingsActionTint(theme)
-        .disabled(center.isRefreshing || center.isUpdatingAll)
-        if center.availableCount > 0 {
+        .disabled(isChecking || center.isUpdatingAll)
+        if !isChecking, center.availableCount > 0 {
           Button {
             Task { await center.updateAll() }
           } label: {
@@ -68,6 +90,9 @@ struct UpdateCenterView: View {
         }
       }
       .padding(.vertical, 4)
+      Toggle("Receive alpha updates", isOn: alphaUpdatesEnabled)
+        .toggleStyle(.switch)
+        .disabled(isChecking || center.isUpdatingAll)
     } footer: {
       if let notice = center.updateAllNotice {
         Label(notice, systemImage: "exclamationmark.triangle")
@@ -79,15 +104,16 @@ struct UpdateCenterView: View {
 
   private var summaryTitle: String {
     if center.isUpdatingAll { return "Updating…" }
+    if isChecking { return "Checking for updates…" }
     switch center.availableCount {
-    case 0: return center.isRefreshing ? "Checking for updates…" : "Everything is up to date"
+    case 0: return "Everything is up to date"
     case 1: return "1 update available"
     case let count: return "\(count) updates available"
     }
   }
 
   private var summaryDetail: String {
-    guard let refreshed = center.lastRefreshedAt else {
+    guard !isChecking, let refreshed = center.lastRefreshedAt else {
       return "Checking every machine's Codevisor, harnesses, and plugins."
     }
     return "Last checked \(refreshed.formatted(date: .omitted, time: .shortened))"
@@ -201,23 +227,13 @@ struct UpdateCenterView: View {
 
   // MARK: - Channel
 
-  private var channelSection: some View {
-    Section {
-      Toggle("Alpha updates", isOn: alphaUpdatesEnabled)
-        .toggleStyle(.switch)
-    } header: {
-      Text("Update Channel")
-    } footer: {
-      Text("Receive Alpha builds of Codevisor and its servers before they reach the stable channel.")
-    }
-  }
-
   private var alphaUpdatesEnabled: Binding<Bool> {
     Binding(
       get: { environment.settings.alphaUpdatesEnabled },
       set: { enabled in
         environment.setAlphaUpdatesEnabled(enabled)
-        Task { await environment.appUpdate.checkForUpdates() }
+        // A different channel means a different list: check it afresh.
+        Task { await center.refresh(force: true) }
       }
     )
   }

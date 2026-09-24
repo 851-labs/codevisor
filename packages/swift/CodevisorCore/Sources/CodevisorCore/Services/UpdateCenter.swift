@@ -94,6 +94,11 @@ public struct UpdateMachineGroup: Identifiable, Equatable, Sendable {
 @Observable
 public final class UpdateCenter {
   @ObservationIgnored public var reviewPluginUpdate: (@MainActor (String, ServerPluginUpdatePlan) async throws -> Void)?
+  /// The ids in the shared harness list (Settings › Harnesses). Only those
+  /// harnesses are checked and shown; a harness the user never added is not
+  /// theirs to update. Nil — no provider, or the list has not synced yet —
+  /// means unknown, and every harness is considered.
+  @ObservationIgnored public var listedHarnessIds: (@MainActor () -> Set<String>?)?
   private let machines: MachineController
   private let appUpdate: AppUpdateModel
   /// Durable home of the update-all session, so a run interrupted by the
@@ -107,6 +112,14 @@ public final class UpdateCenter {
   private let harnessSettleAttempts: Int
 
   public private(set) var isRefreshing = false
+  /// A forced check — every release feed asked afresh — was requested and
+  /// has not finished (it may still be waiting for a plain sweep to end).
+  /// Until it finishes the known updates may be stale, so the Updates pane
+  /// shows the check instead of the list, and update-all waits for it.
+  public private(set) var isCheckingForUpdates = false
+  /// The one refresh in flight; later callers join it instead of racing it.
+  private var refreshTask: Task<Void, Never>?
+  private var refreshTaskIsForced = false
   public private(set) var isUpdatingAll = false
   public private(set) var lastRefreshedAt: Date?
   /// Why the last update-all stopped short (a step failed, so the app
@@ -253,8 +266,10 @@ public final class UpdateCenter {
   }
 
   private var harnessComponents: [UpdateComponent] {
-    orderedMachineIds.flatMap { machineId in
+    let listed = listedHarnessIds?()
+    return orderedMachineIds.flatMap { machineId in
       (harnessesByMachine[machineId] ?? []).compactMap { harness -> UpdateComponent? in
+        if let listed, !listed.contains(harness.id) { return nil }
         let lifecycleActive = Self.harnessLifecycleIsActive(harness)
         let available = harness.updateInfo?.updateAvailable == true
         guard available || lifecycleActive else { return nil }
@@ -354,11 +369,35 @@ public final class UpdateCenter {
   /// `force` additionally re-checks the app and every server's release
   /// feeds (the explicit "Check for Updates" action); the plain sweep
   /// reads what the servers already know.
+  ///
+  /// One refresh runs at a time. A caller arriving mid-refresh waits for
+  /// it; a forced caller that finds only a plain sweep running then runs
+  /// its own check, so opening the Updates pane during the periodic sweep
+  /// still asks every feed afresh.
   public func refresh(force: Bool = false) async {
-    guard !isRefreshing else { return }
+    if force { isCheckingForUpdates = true }
+    while let running = refreshTask {
+      let coversRequest = refreshTaskIsForced || !force
+      await running.value
+      if coversRequest { return }
+    }
+    // The task clears this state itself when it ends, so every waiter sees
+    // it gone the moment the refresh's value arrives.
+    let task = Task { await self.performRefresh(force: force) }
+    refreshTask = task
+    refreshTaskIsForced = force
     isRefreshing = true
+    await task.value
+  }
+
+  private func performRefresh(force: Bool) async {
+    defer {
+      refreshTask = nil
+      refreshTaskIsForced = false
+      isRefreshing = false
+      if force { isCheckingForUpdates = false }
+    }
     let retryMachines = force ? resetFailures() : []
-    defer { isRefreshing = false }
     // A machine that has never been probed is unknown, not unreachable.
     // Probe those first, so the pane's first open — often seconds after
     // launch, ahead of the periodic status sweep — sees the whole fleet
@@ -376,14 +415,16 @@ public final class UpdateCenter {
       await appUpdate.checkForUpdates()
       await machines.refreshServerUpdates(force: true)
     }
+    let listed = listedHarnessIds?()
     for machine in machines.allMachines {
       guard machines.connectionsById[machine.id]?.status?.isReachable == true else {
         continue
       }
       let client = machines.client(for: machine.id)
       let harnesses: [ServerHarness]?
-      if force {
-        harnesses = try? await client.checkHarnessUpdates()
+      if force, listed?.isEmpty != true {
+        // Only the listed harnesses are worth a feed lookup.
+        harnesses = try? await client.checkHarnessUpdates(harnessIds: listed.map { $0.sorted() })
       } else {
         harnesses = try? await client.listHarnessesWithLifecycle()
       }
@@ -403,20 +444,6 @@ public final class UpdateCenter {
     Task { await self.refreshHarnesses(onMachine: serverId) }
   }
 
-  private func refreshHarnesses(onMachine machineId: String) async {
-    guard
-      let harnesses = try? await machines.client(for: machineId)
-        .listHarnessesWithLifecycle()
-    else { return }
-    harnessesByMachine[machineId] = harnesses
-  }
-
-  private func refreshPlugins(onMachine machineId: String) async {
-    guard let plugins = try? await machines.client(for: machineId).listPluginUpdates()
-    else { return }
-    pluginUpdatesByMachine[machineId] = plugins
-  }
-
   // MARK: - Actions
 
   /// Installs one component's update and waits for the outcome the row can
@@ -432,10 +459,18 @@ public final class UpdateCenter {
       dismissedHarnessFailures[component.id] = nil
       transientPhases[component.id] = .updating
       do {
-        _ = try await machines.client(for: component.machineId)
+        let started = try await machines.client(for: component.machineId)
           .updateHarness(id: component.subjectId)
-        transientPhases[component.id] = nil
+        // The row stays in progress from the click on. The acknowledgement
+        // carries the state the server just installed; adopt it, then read
+        // the inventory, and only then drop the local phase — clearing it
+        // first let the row fall back to the stale "Update" button between
+        // the two spinners.
+        if let lifecycle = started.lifecycle {
+          adoptHarnessLifecycle(lifecycle, harnessId: component.subjectId, onMachine: component.machineId)
+        }
         await refreshHarnesses(onMachine: component.machineId)
+        transientPhases[component.id] = nil
       } catch {
         transientPhases[component.id] = .failed(serverErrorMessage(error))
       }
@@ -462,6 +497,8 @@ public final class UpdateCenter {
   /// — its update restarts this client, so everything it orchestrates must
   /// already be done.
   public func updateAll() async {
+    // Never install from a list a running check is about to replace.
+    while let running = refreshTask { await running.value }
     await run(components: components.filter(\.updateAvailable))
   }
 
@@ -547,6 +584,36 @@ public final class UpdateCenter {
     } else {
       await run(components: pending)
     }
+  }
+}
+
+// MARK: - Inventory reads and session persistence
+
+extension UpdateCenter {
+  private func refreshHarnesses(onMachine machineId: String) async {
+    guard
+      let harnesses = try? await machines.client(for: machineId)
+        .listHarnessesWithLifecycle()
+    else { return }
+    harnessesByMachine[machineId] = harnesses
+  }
+
+  private func adoptHarnessLifecycle(
+    _ lifecycle: ServerHarnessLifecycleState,
+    harnessId: String,
+    onMachine machineId: String
+  ) {
+    guard var harnesses = harnessesByMachine[machineId],
+      let index = harnesses.firstIndex(where: { $0.id == harnessId })
+    else { return }
+    harnesses[index].lifecycle = lifecycle
+    harnessesByMachine[machineId] = harnesses
+  }
+
+  private func refreshPlugins(onMachine machineId: String) async {
+    guard let plugins = try? await machines.client(for: machineId).listPluginUpdates()
+    else { return }
+    pluginUpdatesByMachine[machineId] = plugins
   }
 
   private func persistSession(_ remaining: Set<String>) {

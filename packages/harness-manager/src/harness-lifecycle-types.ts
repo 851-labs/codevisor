@@ -91,9 +91,13 @@ export interface HarnessLifecycleManager {
   /// Merges persisted update knowledge, live operation state, and resolved
   /// install methods onto discovered harnesses.
   readonly decorateHarnesses: (harnesses: ReadonlyArray<Harness>) => Promise<ReadonlyArray<Harness>>
-  /// Checks latest versions for every ready harness with update sources.
-  /// Never throws; offline checks leave the last known state in place.
-  readonly checkForUpdates: (force?: boolean) => Promise<ReadonlyArray<HarnessUpdateCheckOutcome>>
+  /// Checks latest versions for every ready harness with update sources, or
+  /// only `harnessIds` when given. Never throws; offline checks leave the
+  /// last known state in place.
+  readonly checkForUpdates: (
+    force?: boolean,
+    harnessIds?: ReadonlyArray<string>
+  ) => Promise<ReadonlyArray<HarnessUpdateCheckOutcome>>
   readonly startPeriodicChecks: () => () => void
   /// Install methods for one harness, resolved against the machine (which
   /// package managers exist) with the preference order brew > curl > npm.

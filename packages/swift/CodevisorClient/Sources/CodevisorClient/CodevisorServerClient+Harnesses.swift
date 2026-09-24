@@ -6,6 +6,10 @@ private struct UpdateHarnessBody: Encodable {
   var enabled: Bool
 }
 
+private struct CheckHarnessUpdatesBody: Encodable {
+  var harnessIds: [String]?
+}
+
 private struct HarnessAccountBody: Encodable { var label: String? }
 
 private struct HarnessLoginBody: Encodable {
@@ -107,12 +111,13 @@ extension CodevisorServerClient {
     )
   }
 
-  public func checkHarnessUpdates() async throws -> [ServerHarness] {
+  public func checkHarnessUpdates(harnessIds: [String]?) async throws -> [ServerHarness] {
     do {
+      // Servers that predate scoping ignore the body and check everything.
       return try await send(
         "/v1/harnesses/check-updates",
         method: "POST",
-        body: Optional<EmptyBody>.none
+        body: CheckHarnessUpdatesBody(harnessIds: harnessIds)
       )
     } catch CodevisorServerClientError.httpStatus(404, _), CodevisorServerClientError.httpStatus(501, _) {
       // Older servers predate update checks; the plain list is the best

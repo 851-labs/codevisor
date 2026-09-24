@@ -97,12 +97,18 @@ export const routeHarnesses = async (
     return true
   }
 
-  // Forced latest-version check for every installed harness, then the
-  // refreshed list (blocking rescan pattern — checks are cheap fetches).
+  // Forced latest-version check, then the refreshed list (blocking rescan
+  // pattern — checks are cheap fetches). An optional `harnessIds` body limits
+  // the check to the harnesses the client lists; without it, every
+  // installed harness is checked.
   if (request.method === "POST" && url.pathname === "/v1/harnesses/check-updates") {
     if (services.lifecycle === undefined)
       throw new HttpFailure(501, "Harness update checks unavailable")
-    await services.lifecycle.checkForUpdates(true)
+    const body = (await readJson(request)) as { readonly harnessIds?: unknown }
+    const harnessIds = Array.isArray(body.harnessIds)
+      ? body.harnessIds.filter((id): id is string => typeof id === "string")
+      : undefined
+    await services.lifecycle.checkForUpdates(true, harnessIds)
     writeJson(response, 200, await discoverHarnesses(services, false, undefined, true))
     return true
   }
