@@ -1,4 +1,4 @@
-// Pure helpers for `bun run vnc:interop` (scripts/vnc-interop.mjs): the L3
+// Pure helpers for `bun run vnc:interop` (apps/screen-sharing-rig/scripts/vnc-interop.mjs): the L3
 // real-server gate of docs/plans/vnc-validation.md.
 import { createHash } from "node:crypto"
 

@@ -1,7 +1,7 @@
 // Drives the Screen Sharing rig through the Accessibility API for
 // `bun run vnc:tophat` (docs/plans/vnc-validation.md, layer L4). It never
 // moves the pointer or types; presses and selections are AX actions, so the
-// rig can stay in the background. Compiled and cached by scripts/vnc-tophat.mjs.
+// rig can stay in the background. Compiled and cached by apps/screen-sharing-rig/scripts/vnc-tophat.mjs.
 //
 //   rig-ax PID texts                 every static text, one per line
 //   rig-ax PID press LABEL           AXPress the first element labelled LABEL

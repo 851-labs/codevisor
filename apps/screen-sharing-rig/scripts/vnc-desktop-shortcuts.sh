@@ -5,7 +5,7 @@
 # mapping (`screen-sharing-rig vnc-keys`, VNCKeyTranslator: ⌘ is Control);
 # the results are read back over ssh (clipboard with xclip, files on disk).
 #
-#   scripts/vnc-desktop-shortcuts.sh root@HOST [RIG_BINARY]
+#   apps/screen-sharing-rig/scripts/vnc-desktop-shortcuts.sh root@HOST [RIG_BINARY]
 #
 # Opens one Mousepad and one terminal window and closes them afterwards;
 # nothing else on the desktop is touched. Keep the desktop otherwise still.
@@ -13,7 +13,7 @@ set -euo pipefail
 
 target=${1:-}
 [[ -n "$target" ]] || { echo "Usage: $0 user@host [rig-binary]" >&2; exit 2; }
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/../../.." && pwd)
 rig=${2:-$root/apps/screen-sharing-rig/.build/release/screen-sharing-rig}
 [[ -x "$rig" ]] || { echo "Build the rig first: (cd apps/screen-sharing-rig && swift build -c release)" >&2; exit 2; }
 display=${DISPLAY_NUMBER:-1}

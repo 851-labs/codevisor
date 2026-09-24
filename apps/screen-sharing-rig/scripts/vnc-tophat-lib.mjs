@@ -1,4 +1,4 @@
-// Pure helpers for `bun run vnc:tophat` (scripts/vnc-tophat.mjs).
+// Pure helpers for `bun run vnc:tophat` (apps/screen-sharing-rig/scripts/vnc-tophat.mjs).
 
 export const machineFlows = ["loopback", "contabo"]
 

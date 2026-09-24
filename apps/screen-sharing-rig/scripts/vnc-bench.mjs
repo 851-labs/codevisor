@@ -17,7 +17,7 @@ import {
   runDirectoryName
 } from "./vnc-bench-lib.mjs"
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
+const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const packagePath = join(root, "apps/screen-sharing-rig")
 const usage = `Usage: bun run vnc:bench [vnc-bench options] [--save-baseline] [--no-compare] [--against-main]
 

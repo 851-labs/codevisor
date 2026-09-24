@@ -19,8 +19,8 @@ import {
   parseInteropArguments
 } from "./vnc-interop-lib.mjs"
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const context = join(root, "scripts/vnc-interop")
+const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
+const context = join(root, "apps/screen-sharing-rig/scripts/vnc-interop")
 const usage = `Usage: bun run vnc:interop [--filter SWIFT_TEST_FILTER] [--geometry WxH] [--keep]
 
 Runs the Swift interop suites (default filter "${defaults.filter}") against a pinned TigerVNC

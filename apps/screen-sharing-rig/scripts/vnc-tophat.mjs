@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // `bun run vnc:tophat`: layer L4 of docs/plans/vnc-validation.md. Builds the
 // rig, launches it in the background (no focus stolen), drives it through the
-// Accessibility API (scripts/vnc-tophat/rig-ax.swift), captures only the rig's
+// Accessibility API (apps/screen-sharing-rig/scripts/vnc-tophat/rig-ax.swift), captures only the rig's
 // window, and writes tmp/vnc-tophat/<time>/summary.json with the screenshots.
 // Exit 0 only if every step passed. The terminal running it needs
 // Accessibility permission (System Settings → Privacy & Security).
@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 
 import { clipboardToken, parseTophatArguments, parseWindow, summarize } from "./vnc-tophat-lib.mjs"
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
+const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const bundle = join(root, "tmp/screen-sharing/ScreenSharingRig.app")
 const executable = join(bundle, "Contents/MacOS/screen-sharing-rig")
 const usage = `Usage: bun run vnc:tophat [--machines loopback,contabo] [--no-build]
@@ -47,7 +47,7 @@ const output = join(
 mkdirSync(output, { recursive: true })
 
 // The AX helper, compiled once per source revision.
-const helperSource = join(root, "scripts/vnc-tophat/rig-ax.swift")
+const helperSource = join(root, "apps/screen-sharing-rig/scripts/vnc-tophat/rig-ax.swift")
 const helperHash = createHash("sha256")
   .update(readFileSync(helperSource))
   .digest("hex")

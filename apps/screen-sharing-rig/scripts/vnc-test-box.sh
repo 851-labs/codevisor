@@ -2,8 +2,8 @@
 # Provisions a Linux VPS as a standard VNC server for interop testing of the
 # VNC viewer (docs/plans/vnc-viewer.md), and opens the SSH tunnel to it.
 #
-#   scripts/vnc-test-box.sh provision root@HOST   # idempotent: TigerVNC + Xfce, bound to localhost
-#   scripts/vnc-test-box.sh tunnel  root@HOST     # forwards 127.0.0.1:5901 -> the box's :1
+#   apps/screen-sharing-rig/scripts/vnc-test-box.sh provision root@HOST   # idempotent: TigerVNC + Xfce, bound to localhost
+#   apps/screen-sharing-rig/scripts/vnc-test-box.sh tunnel  root@HOST     # forwards 127.0.0.1:5901 -> the box's :1
 #
 # The box's Xvnc listens on localhost only (VNC Authentication is DES; it must
 # never cross the internet in the clear). The pane connects to 127.0.0.1:5901

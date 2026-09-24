@@ -78,14 +78,14 @@ connection.
 ## Interop test box
 
 Locally, `bun run vnc:interop` runs the interop suites against a pinned TigerVNC
-container (`scripts/vnc-interop/`, needs OrbStack or Colima running) with a
+container (`apps/screen-sharing-rig/scripts/vnc-interop/`, needs OrbStack or Colima running) with a
 known desktop; it is layer L3 of `vnc-validation.md`. The box below remains
 the WAN and real-desktop check.
 
 A Contabo Cloud VPS 4 (`164.68.121.169`, Ubuntu, monthly; credentials in
 1Password as "Contabo VNC test box") runs TigerVNC as a real, standard VNC
-server for interop testing. `scripts/vnc-test-box.sh provision root@164.68.121.169`
-installs it (idempotent, bound to localhost); `scripts/vnc-test-box.sh tunnel
+server for interop testing. `apps/screen-sharing-rig/scripts/vnc-test-box.sh provision root@164.68.121.169`
+installs it (idempotent, bound to localhost); `apps/screen-sharing-rig/scripts/vnc-test-box.sh tunnel
 root@164.68.121.169` forwards `127.0.0.1:5901`, which the pane connects to.
 Contabo's own KVM console (VNC Information in the panel) is a second, QEMU-based
 server worth testing against.

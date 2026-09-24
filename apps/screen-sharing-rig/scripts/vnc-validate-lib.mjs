@@ -1,4 +1,4 @@
-// Pure helpers for `bun run vnc:validate` (scripts/vnc-validate.mjs): the one
+// Pure helpers for `bun run vnc:validate` (apps/screen-sharing-rig/scripts/vnc-validate.mjs): the one
 // gate every VNC change passes (docs/plans/vnc-validation.md).
 
 export const defaults = {

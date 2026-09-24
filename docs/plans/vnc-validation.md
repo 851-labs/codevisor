@@ -80,7 +80,7 @@ baseline; `--save-baseline` replaces the baseline, `--scenes`, `--profiles`,
   then benchmarks the change and compares the two. Stored baselines drift with
   the machine's state (an unchanged build's CPU per update read 0.57 ms one
   session and 1.45 ms another), so the gate never compares across sessions.
-- **Real desktops:** `scripts/vnc-desktop-sample.sh root@HOST` measures a
+- **Real desktops:** `apps/screen-sharing-rig/scripts/vnc-desktop-sample.sh root@HOST` measures a
   desktop provisioned by `scripts/vnc-desktop.sh` through an SSH tunnel with
   `screen-sharing-rig vnc-sample`: updates/s, Mbit/s and round trip while a
   terminal window is dragged, and keystroke-to-echo latency p50/p95. The public

@@ -1,15 +1,18 @@
 import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 // TestStore installs a process-wide executor hook, even without an explicit
 // withMainSerialExecutor call. Keep these suites out of unrelated tests' process.
 // The two complementary selections run every test with normal parallelism.
-export const mainSerialExecutorSuites = [
-  "ControlLeaseTests",
-  "ScreenSharingViewerDiscoveryTests",
-  "ScreenSharingViewerTests"
-]
+// The list is data in packages/swift so `vnc:validate` (in the rig app) can read it too.
+export const mainSerialExecutorSuites = JSON.parse(
+  readFileSync(
+    new URL("../packages/swift/main-serial-executor-suites.json", import.meta.url),
+    "utf8"
+  )
+)
 
 export const mainSerialExecutorFilter = `(${mainSerialExecutorSuites.join("|")})/`
 

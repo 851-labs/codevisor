@@ -13,7 +13,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { mainSerialExecutorFilter } from "./test-swift.mjs"
 import {
   benchFailure,
   lastLine,
@@ -24,7 +23,12 @@ import {
   testCount
 } from "./vnc-validate-lib.mjs"
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
+const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
+// Same isolation as `bun run swift:test` (scripts/test-swift.mjs): suites that install a global
+// executor hook run in their own process.
+const mainSerialExecutorFilter = `(${JSON.parse(
+  readFileSync(join(root, "packages/swift/main-serial-executor-suites.json"), "utf8")
+).join("|")})/`
 const usage = `Usage: bun run vnc:validate --issue 851-XXXX [--skip tests,interop,bench,tophat]
                            [--swift-filter REGEX] [--bench "--scenes typing --profiles wan150"]
                            [--machines loopback,contabo] [--save-baseline]

@@ -15,7 +15,7 @@
 # restart only when their configuration changed (restarting Xvnc ends the
 # desktop session).
 #
-# Tuned for streaming (851-2322; measured with scripts/vnc-desktop-sample.sh):
+# Tuned for streaming (851-2322; measured with apps/screen-sharing-rig/scripts/vnc-desktop-sample.sh):
 # - xfwm4's compositor is off: shadows and fades only add repaints to send.
 # - GEOMETRY is only the size the desktop starts at; the viewer resizes it to
 #   its window (ExtendedDesktopSize/RandR, 851-2314).
@@ -51,8 +51,8 @@ if ! command -v vncserver >/dev/null; then
   apt-get update -q
   apt-get install -y -q tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip >/dev/null
 fi
-# xdotool: scripts/vnc-desktop-sample.sh drives the desktop with it. Mousepad: Xfce's text
-# editor, which scripts/vnc-desktop-shortcuts.sh checks ⌘C/⌘V in (851-2335).
+# xdotool: apps/screen-sharing-rig/scripts/vnc-desktop-sample.sh drives the desktop with it. Mousepad: Xfce's text
+# editor, which apps/screen-sharing-rig/scripts/vnc-desktop-shortcuts.sh checks ⌘C/⌘V in (851-2335).
 command -v xdotool >/dev/null || apt-get install -y -q xdotool >/dev/null
 command -v mousepad >/dev/null || apt-get install -y -q mousepad >/dev/null
 mkdir -p ~/.vnc

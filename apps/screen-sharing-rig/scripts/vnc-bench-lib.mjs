@@ -1,4 +1,4 @@
-// Pure helpers for `bun run vnc:bench` (scripts/vnc-bench.mjs).
+// Pure helpers for `bun run vnc:bench` (apps/screen-sharing-rig/scripts/vnc-bench.mjs).
 
 /// "Mac16,6" → "Mac16_6": the baseline file for this machine.
 export function baselineName(model) {
