@@ -7,7 +7,6 @@ export {
   type ResolvedPluginCommand
 } from "./plugin-command.js"
 export {
-  defaultPluginsRoot,
   MANAGED_PLUGIN_MARKER,
   MANAGED_PLUGIN_MARKER_CONTENT,
   scanPlugins,

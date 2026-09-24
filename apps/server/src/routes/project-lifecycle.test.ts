@@ -240,6 +240,7 @@ describe("project lifecycle routes", () => {
         startCodevisorServer(
           services,
           defaultServerConfig({
+            bootId: "test-boot",
             id: "server-dev",
             port: 0,
             worktreeNameStyle: "development"

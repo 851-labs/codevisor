@@ -358,10 +358,10 @@ describe("session action routes", () => {
     ).toMatchObject({ isArchived: true })
     expect(agents.closes).toEqual([session.agentSessionId])
     expect(backgroundProcess.killCount).toBe(1)
-    await expect(
-      run(services.terminal.terminalFrames(backgroundTerminal.terminalId))
-    ).rejects.toBeInstanceOf(TerminalError)
-    expect(await run(services.terminal.terminalFrames(unrelatedTerminal.terminalId))).toEqual([])
+    const attach = (terminalId: string) =>
+      run(services.terminal.connectTerminal(terminalId, 0, () => undefined))
+    await expect(attach(backgroundTerminal.terminalId)).rejects.toBeInstanceOf(TerminalError)
+    await expect(attach(unrelatedTerminal.terminalId)).resolves.toBeTypeOf("function")
 
     // A workspace whose chat has no runtime identity archives without touching
     // the runtime.

@@ -128,7 +128,10 @@ describe("durable session turns", () => {
     )
 
     const server = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
     )
     runningServers.push(server)
 
@@ -340,7 +343,10 @@ describe("durable session turns", () => {
     )
 
     const server = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
     )
     runningServers.push(server)
 
@@ -395,7 +401,10 @@ describe("durable session turns", () => {
     )
 
     const server = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
     )
     runningServers.push(server)
 

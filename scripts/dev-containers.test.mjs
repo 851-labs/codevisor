@@ -4,11 +4,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
+import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
 import {
   alignDevCloudCredentialUrl,
   sweepStaleContainers,
-  devRemoteHomeMounts,
-  syncLinuxWorkspace
+  devRemoteHomeMounts
 } from "./dev-containers.mjs"
 
 for (const engine of ["apple", "docker"]) {

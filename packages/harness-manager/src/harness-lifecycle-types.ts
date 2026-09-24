@@ -2,7 +2,6 @@ import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type {
   Harness,
   HarnessBundledApp,
-  HarnessInstallMethod,
   HarnessLifecycleState,
   HarnessUpdateInfo
 } from "@codevisor/api"
@@ -82,9 +81,7 @@ export interface HarnessUpdateCheckOutcome {
 }
 
 export interface HarnessLifecycleManager {
-  readonly beginUninstall: (
-    harnessId: string
-  ) => Promise<{ readonly terminalId: string; readonly lifecycle: HarnessLifecycleState }>
+  readonly beginUninstall: (harnessId: string) => Promise<void>
   /// Merges persisted update knowledge, live operation state, and resolved
   /// install methods onto discovered harnesses.
   readonly decorateHarnesses: (harnesses: ReadonlyArray<Harness>) => Promise<ReadonlyArray<Harness>>
@@ -96,9 +93,6 @@ export interface HarnessLifecycleManager {
     harnessIds?: ReadonlyArray<string>
   ) => Promise<ReadonlyArray<HarnessUpdateCheckOutcome>>
   readonly startPeriodicChecks: () => () => void
-  /// Install methods for one harness, resolved against the machine (which
-  /// package managers exist) with the preference order brew > curl > npm.
-  readonly installMethods: (harnessId: string) => Promise<ReadonlyArray<HarnessInstallMethod>>
   /// Runs the vendor install command in an attachable terminal. Refuses when
   /// an operation is already running for the harness.
   readonly beginInstall: (

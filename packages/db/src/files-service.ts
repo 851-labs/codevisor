@@ -16,7 +16,6 @@ export const makeFilesService = (
   | "createFile"
   | "createDiskFile"
   | "getFileMetadata"
-  | "getFile"
   | "getFileStorage"
   | "listFileStorage"
   | "fileStorageCounts"
@@ -83,15 +82,6 @@ export const makeFilesService = (
           )
           .get(id) as FileRow | undefined
         return row === undefined ? undefined : fileMetadataFromRow(row)
-      }),
-    getFile: (id) =>
-      attempt("getFile", () => {
-        const row = sqlite.prepare("select * from files where id = ?").get(id) as
-          | (FileRow & { readonly data: Buffer })
-          | undefined
-        return row === undefined
-          ? undefined
-          : { metadata: fileMetadataFromRow(row), data: row.data }
       }),
     getFileStorage: (id) =>
       attempt("getFileStorage", () => {

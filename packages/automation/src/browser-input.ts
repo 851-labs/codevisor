@@ -4,7 +4,6 @@ import type { BrowserCursor } from "./browser-cursor.js"
 import { releaseElement, resolveElement } from "./browser-locators.js"
 
 export {
-  browserKeyDescription,
   dispatchKeyEvent,
   heldKeyDescription,
   modifierKeyMask,

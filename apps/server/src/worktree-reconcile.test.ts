@@ -55,7 +55,7 @@ const setUpProject = async () => {
         method: "POST"
       })
     ).body as { readonly id: string; readonly name: string; readonly path: string }
-  const config = defaultServerConfig({ id: "server-a", port: 0 })
+  const config = defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
   const fanout = await run(makeEventFanout)
   return { server, services, repoFolder, makeWorktree, config, fanout, serverDatabasePath }
 }

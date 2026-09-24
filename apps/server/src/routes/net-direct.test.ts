@@ -111,7 +111,10 @@ describe("direct pipe on a running server", () => {
       }
     }
     const server = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-direct", port: 0, cloud }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-direct", port: 0, cloud })
+      )
     )
     runningServers.push(server)
 
@@ -142,7 +145,7 @@ describe("direct pipe on a running server", () => {
     const server = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "server-direct-decline", port: 0, cloud })
+        defaultServerConfig({ bootId: "test-boot", id: "server-direct-decline", port: 0, cloud })
       )
     )
     runningServers.push(server)
@@ -173,6 +176,7 @@ describe("direct pipe on a running server", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           cloud,
           directPathEnabled: false,
           id: "server-relay-only",

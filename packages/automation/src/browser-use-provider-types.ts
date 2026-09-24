@@ -21,7 +21,6 @@ export interface BrowserUseProvider extends AutomationToolProvider {
   /** Called only between responses, never for steering input during an active turn. */
   readonly beginTurn: (sessionId: string, backend: BrowserBackend) => Promise<void>
   readonly acceptExtensionConnection: (socket: WebSocket) => void
-  readonly waitForExtensionConnection: () => Promise<void>
   readonly onExtensionConnectionChange: (listener: (connected: boolean) => void) => () => void
   readonly openDevelopmentExtensionFolder: () => void
   readonly openDevelopmentExtensionPage: () => void

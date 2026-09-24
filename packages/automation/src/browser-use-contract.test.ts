@@ -10,11 +10,8 @@ import {
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_ID
 } from "./browser-extension-relay.js"
-import {
-  browserKeyDescription,
-  browserUseTools,
-  managedBrowserSandboxArguments
-} from "./browser-use-provider.js"
+import { browserKeyDescription } from "./browser-keyboard.js"
+import { browserUseTools, managedBrowserSandboxArguments } from "./browser-use-provider.js"
 
 const directories: string[] = []
 

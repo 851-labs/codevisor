@@ -166,11 +166,7 @@ export const start = async (
   const server = await run(
     startCodevisorServer(
       services,
-      defaultServerConfig({
-        auth,
-        id: "server-a",
-        port: 0
-      })
+      defaultServerConfig({ bootId: "test-boot", auth, id: "server-a", port: 0 })
     )
   )
   runningServers.push(server)
@@ -186,7 +182,7 @@ export const startWithApp = async (
   return await new Promise((resolve, reject) => {
     const app = makeCodevisorServerApp(
       services,
-      defaultServerConfig({ id: "server-a", port: 0, ...configOverrides }),
+      defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0, ...configOverrides }),
       appFanout
     )
     const httpServer = createServer(app.handleRequest)

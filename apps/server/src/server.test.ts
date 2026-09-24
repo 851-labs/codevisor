@@ -102,7 +102,10 @@ describe("@codevisor/server", () => {
       }
     }
     const starting = run(
-      startCodevisorServer(gatedServices, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(
+        gatedServices,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
     )
 
     const port = await listening.promise
@@ -195,7 +198,12 @@ describe("@codevisor/server", () => {
     }
 
     await expect(
-      run(startCodevisorServer(failingServices, defaultServerConfig({ id: "server-a", port: 0 })))
+      run(
+        startCodevisorServer(
+          failingServices,
+          defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+        )
+      )
     ).rejects.toMatchObject({
       operation: "start",
       message: "recovery database unavailable"
@@ -205,7 +213,10 @@ describe("@codevisor/server", () => {
   it("refuses to start when the port already has a listener", async () => {
     const { services } = await makeServices("server-a")
     const first = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-a", port: 0 }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-a", port: 0 })
+      )
     )
     runningServers.push(first)
 
@@ -215,7 +226,12 @@ describe("@codevisor/server", () => {
       run(
         startCodevisorServer(
           services,
-          defaultServerConfig({ host: "0.0.0.0", id: "server-b", port: first.port })
+          defaultServerConfig({
+            bootId: "test-boot",
+            host: "0.0.0.0",
+            id: "server-b",
+            port: first.port
+          })
         )
       )
     ).rejects.toMatchObject({
@@ -285,7 +301,7 @@ describe("@codevisor/server", () => {
     expect((await jsonRequest(server, "/v1/update")).body).toMatchObject({
       migrationState: "idle"
     })
-    expect(defaultServerConfig()).toMatchObject({
+    expect(defaultServerConfig({ bootId: "test-boot" })).toMatchObject({
       directPathEnabled: true,
       host: "127.0.0.1",
       id: "local",
@@ -293,7 +309,6 @@ describe("@codevisor/server", () => {
       name: "Local Codevisor",
       port: 49361,
       version: "0.1.0",
-      bootId: "test-boot",
       appOwned: false,
       serviceManaged: false
     })
@@ -327,6 +342,7 @@ describe("@codevisor/server", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           id: "server-stoppable",
           onShutdownRequested: () => {
             shutdownRequests += 1
@@ -346,6 +362,7 @@ describe("@codevisor/server", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           auth: {
             allowLocalhostWithoutAuth: false,
             requireBearerToken: true
@@ -392,6 +409,7 @@ describe("@codevisor/server", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           auth: {
             allowLocalhostWithoutAuth: true,
             requireBearerToken: true

@@ -8,6 +8,7 @@ import {
   fakeSpawner,
   fakeTerminal,
   harness,
+  installMethodsFor,
   jsonResponse,
   makeBinDir,
   makeDb,
@@ -30,7 +31,7 @@ describe("catalog installation routes", () => {
       db: await makeDb(),
       resolveEnv: async () => ({ PATH: makeBinDir(["curl"]) })
     })
-    expect(await lifecycle.installMethods("codex")).toContainEqual({
+    expect(await installMethodsFor(lifecycle, "codex")).toContainEqual({
       id: "curl",
       kind: "curl",
       label: "Installer script",
@@ -47,7 +48,9 @@ describe("catalog installation routes", () => {
       db: await makeDb(),
       resolveEnv: async () => env
     })
-    expect((await lifecycle.installMethods("openhands")).find((m) => m.id === "uv")).toMatchObject({
+    expect(
+      (await installMethodsFor(lifecycle, "openhands")).find((m) => m.id === "uv")
+    ).toMatchObject({
       available,
       recommended: available,
       label: "uv",
@@ -62,14 +65,14 @@ describe("catalog installation routes", () => {
       platform: "linux",
       resolveEnv: async () => ({ PATH: makeBinDir(["brew", "curl"]) })
     })
-    const codex = await lifecycle.installMethods("codex")
+    const codex = await installMethodsFor(lifecycle, "codex")
     expect(codex.find((m) => m.id === "brew")).toMatchObject({
       available: false,
       recommended: false
     })
     expect(codex.find((m) => m.id === "curl")).toMatchObject({ available: true, recommended: true })
     expect(
-      (await lifecycle.installMethods("github-copilot-cli")).find((m) => m.id === "brew")
+      (await installMethodsFor(lifecycle, "github-copilot-cli")).find((m) => m.id === "brew")
     ).toMatchObject({ available: true, recommended: true })
     await expect(lifecycle.beginInstall("codex", "brew")).rejects.toThrow(
       "No runnable install method"

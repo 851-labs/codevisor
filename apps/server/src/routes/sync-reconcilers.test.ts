@@ -287,15 +287,9 @@ describe("auth-derived sync refresh", () => {
 })
 
 describe("refreshPluginReadiness", () => {
-  it("derives every row state and skips machines without a plugins manager", async () => {
+  it("derives every row state", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-pr")
-
-    // No plugins manager: nothing derived, nothing published. The shared
-    // fixture ships without one, so the services object IS that machine.
-    const base = services as unknown as Parameters<typeof refreshPluginReadiness>[0]
-    await refreshPluginReadiness(base, config, fanout, [])
-    expect(await run(services.db.getSyncEntries("plugin-readiness"))).toEqual([])
 
     // A managed install with provenance, one disabled sibling, and a
     // linked dev plugin that never syncs.
@@ -317,7 +311,7 @@ describe("refreshPluginReadiness", () => {
           { enabled: true, id: "dev-linked", path: "/tmp/nowhere", source: "linked" }
         ]
       })
-    } as unknown as NonNullable<Parameters<typeof refreshPluginReadiness>[0]["plugins"]>
+    } as unknown as Parameters<typeof refreshPluginReadiness>[3]
 
     // Fleet-desired plugins this machine lacks: one plain, one blocked by
     // the pass, one tombstoned (skipped).
@@ -341,7 +335,7 @@ describe("refreshPluginReadiness", () => {
         }
       ])
     )
-    await refreshPluginReadiness({ ...base, plugins: manager }, config, fanout, [
+    await refreshPluginReadiness(services, config, fanout, manager, [
       { id: "fleet.ffmpeg", reason: "needs ffmpeg" }
     ])
     const entries = await run(services.db.getSyncEntries("plugin-readiness"))
@@ -362,10 +356,11 @@ describe("refreshPluginReadiness", () => {
 
     // A failing manager never breaks the pass that triggered the refresh.
     const poisoned = {
-      ...base,
-      plugins: { list: () => Promise.reject(new Error("boom")) }
-    } as unknown as typeof base
-    await expect(refreshPluginReadiness(poisoned, config, fanout, [])).resolves.toBeUndefined()
+      list: () => Promise.reject(new Error("boom"))
+    } as unknown as typeof manager
+    await expect(
+      refreshPluginReadiness(services, config, fanout, poisoned, [])
+    ).resolves.toBeUndefined()
   })
 })
 
