@@ -35,6 +35,12 @@ public struct ScreenSharingEndpointClient: Sendable {
     @Sendable (_ endpoint: ScreenSharingViewerEndpoint.ID, _ message: ScreenSharingControlMessage) async -> Bool = {
       _, _ in false
     }
+  /// Dynamic Resolution on or off (851-2340); with the display's details when known: the size
+  /// turning it off restores ([width, height]) and whether its desktop can draw at 2×.
+  public var setDynamicResolution:
+    @Sendable (
+      _ endpoint: ScreenSharingViewerEndpoint.ID, _ enabled: Bool, _ defaultSize: [Int]?, _ canScale: Bool?
+    ) async -> Void = { _, _, _, _ in }
 }
 
 extension ScreenSharingEndpointClient: DependencyKey {
@@ -45,6 +51,14 @@ extension ScreenSharingEndpointClient: DependencyKey {
       endInput: { id in await ScreenSharingEndpointRegistry.shared.endpoint(id)?.endInput() },
       sendControl: { id, message in
         await ScreenSharingEndpointRegistry.shared.endpoint(id)?.sendControl(message) ?? false
+      },
+      setDynamicResolution: { id, enabled, defaultSize, canScale in
+        guard let endpoint = await ScreenSharingEndpointRegistry.shared.endpoint(id) else { return }
+        await MainActor.run {
+          if let defaultSize, defaultSize.count == 2 { endpoint.defaultDesktopSize = (defaultSize[0], defaultSize[1]) }
+          if let canScale { endpoint.desktopCanScale = canScale }
+          endpoint.setDynamicResolution(enabled)
+        }
       })
   }
 

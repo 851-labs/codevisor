@@ -10,10 +10,19 @@
   /// says "machine" where the product says "Mac".
   struct RigScreenSharingToolbar: ToolbarContent {
     @Bindable var store: StoreOf<ScreenSharingViewer>
+    /// Where the rig remembers this machine's Dynamic Resolution choice.
+    let machineId: String
 
     var body: some ToolbarContent {
       ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-        if store.endpoint?.supportsControl != false { controlActions }
+        HStack {
+          if store.endpoint?.supportsControl != false { controlActions }
+          if store.endpoint?.supportsDynamicResolution == true {
+            ScreenSharingDynamicResolutionToggle(store: store) {
+              RigMachineSettings.setDynamicResolution($0, for: machineId)
+            }
+          }
+        }
       }
       ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
         if store.displays.count > 1 { displayMenu }

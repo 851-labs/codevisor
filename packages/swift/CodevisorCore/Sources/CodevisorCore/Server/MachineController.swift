@@ -551,14 +551,6 @@ public final class MachineController {
     persist()
   }
 
-  /// Turns the Retina (2×) remote desktop on or off for a remote machine
-  /// (851-2315); panes opened afterwards use it.
-  public func setRetinaDesktop(_ id: String, _ enabled: Bool) {
-    guard let index = registry.remoteMachines.firstIndex(where: { $0.id == id }) else { return }
-    registry.remoteMachines[index].retinaDesktop = enabled
-    persist()
-  }
-
   private static func normalizedName(_ name: String?) -> String? {
     let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return trimmed.isEmpty ? nil : trimmed

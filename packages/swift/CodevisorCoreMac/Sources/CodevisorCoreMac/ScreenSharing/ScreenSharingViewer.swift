@@ -36,15 +36,24 @@ public struct ScreenSharingViewer {
     /// a synced registry update), so the pane persists exactly those.
     public var preferencesRevision = 0
     public var selectedDisplayId: String?
+    /// Dynamic Resolution (851-2340): the remote desktop follows the pane at the
+    /// Mac's resolution. A per-machine preference; the pane or rig persists it
+    /// whenever `dynamicResolutionRevision` moves.
+    public var dynamicResolution: Bool
+    public var dynamicResolutionRevision = 0
     var visible = false
 
-    public init(preferences: ScreenSharingPanePreferences = .init()) { self.preferences = preferences }
+    public init(preferences: ScreenSharingPanePreferences = .init(), dynamicResolution: Bool = true) {
+      self.preferences = preferences
+      self.dynamicResolution = dynamicResolution
+    }
   }
 
   public enum Action {
     case connectionEvent(ScreenSharingViewerEvent)
     case discoveryResponse(Result<[ServerScreenSharingDisplay], any Error>)
     case displaySelected(String)
+    case dynamicResolutionToggled
     case interactionModeChanged(InteractionMode)
     case lease(ControlLease.Action)
     case paneAppeared
@@ -69,10 +78,19 @@ public struct ScreenSharingViewer {
         state.endpoint = endpoint
         state.lease = ControlLease.State(endpoint: endpoint.id)
         let id = endpoint.id
-        return .run { [endpointClient] send in
-          for await event in await endpointClient.controlEvents(id) { await send(.lease(.event(event))) }
-        }
-        .cancellable(id: CancelID.controlEvents, cancelInFlight: true)
+        // The display's provisioned size is what turning Dynamic Resolution off restores (851-2339).
+        let display = state.displays.first(where: { $0.id == state.selectedDisplayId })
+        let defaultSize = display?.defaultWidth.flatMap { width in display?.defaultHeight.map { [width, $0] } }
+        let dynamicResolution = state.dynamicResolution
+        let canScale = display?.scales?.contains(2) == true
+        return .merge(
+          .run { [endpointClient] _ in
+            await endpointClient.setDynamicResolution(id, dynamicResolution, defaultSize, canScale)
+          },
+          .run { [endpointClient] send in
+            for await event in await endpointClient.controlEvents(id) { await send(.lease(.event(event))) }
+          }
+          .cancellable(id: CancelID.controlEvents, cancelInFlight: true))
 
       case .connectionEvent(.ready):
         guard [.connecting, .reconnecting].contains(state.phase), state.lease != nil else { return .none }
@@ -110,6 +128,13 @@ public struct ScreenSharingViewer {
       case .displaySelected(let id):
         guard state.displays.contains(where: { $0.id == id }) else { return .none }
         return select(id, &state)
+
+      case .dynamicResolutionToggled:
+        state.dynamicResolution.toggle()
+        state.dynamicResolutionRevision += 1
+        guard let id = state.endpoint?.id else { return .none }
+        let enabled = state.dynamicResolution
+        return .run { [endpointClient] _ in await endpointClient.setDynamicResolution(id, enabled, nil, nil) }
 
       // Keep the user's choice while connecting; ask the lease only once
       // video is up. The lease itself waits for its channel.

@@ -44,6 +44,10 @@
     /// Lossless or JPEG, from the measured bandwidth (851-2313).
     private var quality = VNCQualityPolicy()
     public private(set) var closed = false
+    /// The desktop's size at connect (Dynamic Resolution restores it when turned off, 851-2340).
+    public let initialDesktopSize: (width: Int, height: Int)?
+    public var resizesDesktop: Bool { true }
+    public var linkBitsPerSecond: Double? { quality.bitsPerSecond }
 
     public init(
       client: RFBClient, parameters: RFBServerParameters, metrics: ScreenSharingMetrics = ScreenSharingMetrics(),
@@ -54,6 +58,7 @@
       self.metrics = metrics
       self.sleep = sleep
       desktopSize = (parameters.width, parameters.height)
+      initialDesktopSize = (parameters.width, parameters.height)
       metrics.label("vncQuality", VNCQualityPolicy().description)
       transportName = client.transportName
       translator = VNCInputTranslator(width: parameters.width, height: parameters.height, keys: keys)

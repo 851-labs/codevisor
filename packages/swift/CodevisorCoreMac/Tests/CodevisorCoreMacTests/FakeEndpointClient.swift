@@ -11,6 +11,10 @@ final class FakeEndpointClient {
   private(set) var beginInputs: [(endpoint: ScreenSharingViewerEndpoint.ID, lease: UUID)] = []
   private(set) var endInputs: [ScreenSharingViewerEndpoint.ID] = []
   private(set) var sent: [(endpoint: ScreenSharingViewerEndpoint.ID, message: ScreenSharingControlMessage)] = []
+  /// Dynamic Resolution calls (851-2340): on/off and the default size passed.
+  private(set) var dynamicResolutions:
+    [(endpoint: ScreenSharingViewerEndpoint.ID, enabled: Bool, defaultSize: [Int]?)] =
+      []
   /// The failure `beginInput` reports; nil grants capture.
   var beginInputFailure: String?
   /// What `sendControl` answers.
@@ -45,6 +49,9 @@ final class FakeEndpointClient {
           sent.append((endpoint, message))
           return sendSucceeds
         }
+      },
+      setDynamicResolution: { [self] endpoint, enabled, defaultSize, _ in
+        await MainActor.run { dynamicResolutions.append((endpoint, enabled, defaultSize)) }
       })
   }
 
