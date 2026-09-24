@@ -149,6 +149,12 @@ struct ComputerUsePiPOverlay: View {
       }
   }
 
+  /// The on-screen pointer scaled by the card's zoom of the window.
+  private func cursorScale(cardWidth: CGFloat) -> CGFloat {
+    ComputerUseLivePreviewLayout.cursorScale(
+      cardWidth: cardWidth, windowWidth: model.activity?.windowFrame.width ?? 0)
+  }
+
   private func card(
     viewer: ComputerUseLivePreviewViewer,
     size: CGSize,
@@ -159,7 +165,7 @@ struct ComputerUsePiPOverlay: View {
       ComputerUsePiPSurface(viewer: viewer)
         .opacity(model.isLive ? 1 : 0.55)
       if let cursor = model.cursor {
-        ComputerUsePiPCursor(tint: model.tint)
+        ComputerUseCursorGlyph(tint: model.tint, scale: cursorScale(cardWidth: size.width))
           .position(x: cursor.x * size.width, y: cursor.y * size.height)
           .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: cursor)
           .allowsHitTesting(false)
@@ -229,36 +235,6 @@ private struct ComputerUsePiPSurface: NSViewRepresentable {
   }
 
   func updateNSView(_ view: NSView, context: Context) {}
-}
-
-/// The agent's pointer, drawn in its session colour.
-private struct ComputerUsePiPCursor: View {
-  let tint: Color
-
-  var body: some View {
-    ComputerUsePiPArrow()
-      .fill(tint)
-      .overlay(ComputerUsePiPArrow().stroke(.white, lineWidth: 1.2))
-      .frame(width: 12, height: 16)
-      .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
-      // Anchor the arrow's tip, not its centre, at the position.
-      .offset(x: 6, y: 8)
-  }
-}
-
-private struct ComputerUsePiPArrow: Shape {
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-    path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY * 0.85))
-    path.addLine(to: CGPoint(x: rect.width * 0.32, y: rect.height * 0.65))
-    path.addLine(to: CGPoint(x: rect.width * 0.55, y: rect.maxY))
-    path.addLine(to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.92))
-    path.addLine(to: CGPoint(x: rect.width * 0.5, y: rect.height * 0.6))
-    path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.6))
-    path.closeSubpath()
-    return path
-  }
 }
 
 extension ComputerUseLivePreviewCorner {
