@@ -96,8 +96,10 @@
       configuration.port = options.port == 0 ? nil : options.port
       configuration.echoPointer = options.echo
       // A modern server: pushed updates paced by fences (851-2312), unless --requested-only.
-      configuration.continuousUpdates = !options.requestedOnly
-      configuration.fences = !options.requestedOnly
+      // A scene played on request needs requests, so it implies --requested-only (851-2336).
+      let requestedOnly = options.requestedOnly || (options.scene != nil && options.sceneFramesPerSecond == nil)
+      configuration.continuousUpdates = !requestedOnly
+      configuration.fences = !requestedOnly
       configuration.desktopResize = .accept
       configuration.negotiateEncoding = true  // the client's preference (Tight first), as a real server (851-2313)
       configuration.password = options.password

@@ -128,4 +128,14 @@ struct VNCBenchTests {
     #expect(try VNCBenchOptions(arguments: ["--pace", "0"]).pace == 0)
     #expect(throws: (any Error).self) { try VNCBenchOptions(arguments: ["--pace", "999"]) }
   }
+
+  /// 851-2336: `--pace 0` plays a frame per request, so its server must not offer
+  /// continuous updates (the client would stop requesting and the run would hang).
+  @Test func requestDrivenScenesGetARequestOnlyServer() {
+    let paced = VNCBenchServer.arguments(scene: "typing", echo: false, seed: 1, pace: 60, width: 640, height: 480)
+    #expect(paced.contains("--scene-fps") && !paced.contains("--requested-only"))
+    let onRequest = VNCBenchServer.arguments(scene: "photo", echo: false, seed: 1, pace: 0, width: 640, height: 480)
+    #expect(onRequest.contains("--requested-only") && !onRequest.contains("--scene-fps"))
+    #expect(Array(onRequest.prefix(3)) == ["vnc-server", "--port", "0"])
+  }
 }
