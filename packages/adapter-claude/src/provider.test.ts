@@ -13,6 +13,9 @@ import {
   streamEvent
 } from "./test-support.js"
 
+/// Delay before the first stream resumption; doubles per attempt.
+const STREAM_RECOVERY_BACKOFF_MS = 1_000
+
 describe("ClaudeProvider", () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -92,10 +95,11 @@ describe("ClaudeProvider", () => {
   })
 
   it("resumes an in-flight turn on a fresh query when the SDK stream dies", async () => {
+    vi.useFakeTimers()
     const fake = new FakeQuery()
     const resumed = new FakeQuery()
     fake.successors.push(resumed)
-    const provider = makeProvider(fake, undefined, undefined, { streamRecoveryBackoffMs: 0 })
+    const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
@@ -119,6 +123,10 @@ describe("ClaudeProvider", () => {
     // closed). The turn is NOT ended: the same CLI session is resumed on a
     // fresh query and nudged to continue — invisible to the user.
     fake.finish()
+    await vi.advanceTimersByTimeAsync(STREAM_RECOVERY_BACKOFF_MS - 1)
+    // Still backing off: no fresh query yet.
+    expect(resumed.promptInput).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
     await resumed.nextPrompt()
     // Resumed by the id the first query was started with, and without the
     // fresh-session `--session-id` flag that would conflict with it.
@@ -145,8 +153,9 @@ describe("ClaudeProvider", () => {
   })
 
   it("ends the turn with a retryable reason once stream resumptions are exhausted", async () => {
+    vi.useFakeTimers()
     const fake = new FakeQuery()
-    const provider = makeProvider(fake, undefined, undefined, { streamRecoveryBackoffMs: 0 })
+    const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
     const emit = async (event: RuntimeEvent): Promise<void> => {
       events.push(event)
@@ -170,6 +179,14 @@ describe("ClaudeProvider", () => {
     // No successor queries: every resumption gets the same dead stream back,
     // so the bounded recovery gives up and the turn ends visibly.
     fake.finish()
+    let settled = false
+    void promptPromise.then(() => {
+      settled = true
+    })
+    // Two resumptions back off 1 s then 2 s before the turn gives up.
+    await vi.advanceTimersByTimeAsync(3 * STREAM_RECOVERY_BACKOFF_MS - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
     const result = await promptPromise
     expect(result.stopReason).toBe("end_turn")
 

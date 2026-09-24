@@ -12,6 +12,9 @@ import {
   systemMessage
 } from "./test-support.js"
 
+/// How long cancel waits for Claude's own terminal result after an interrupt.
+const CANCEL_GRACE_MS = 1_500
+
 describe("ClaudeProvider", () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
@@ -61,7 +64,7 @@ describe("ClaudeProvider", () => {
 
   it("force-ends and retires when interrupt is acknowledged without a terminal result", async () => {
     const fake = new FakeQuery()
-    const provider = makeProvider(fake, undefined, undefined, { cancelGraceMs: 5 })
+    const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
     const terminalEntered = Promise.withResolvers<void>()
     let releaseTerminal: (() => void) | undefined
@@ -102,7 +105,10 @@ describe("ClaudeProvider", () => {
       cancelSettled = true
       return result
     })
-    await vi.advanceTimersByTimeAsync(5)
+    await vi.advanceTimersByTimeAsync(CANCEL_GRACE_MS - 1)
+    // Still inside the grace: nothing has been force-ended yet.
+    expect(releaseTerminal).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
     await terminalEntered.promise
     expect(cancelSettled).toBe(false)
     releaseTerminal?.()
@@ -139,7 +145,7 @@ describe("ClaudeProvider", () => {
     ]) {
       const fake = new FakeQuery()
       fake.interruptImplementation = interruptImplementation
-      const provider = makeProvider(fake, undefined, undefined, { cancelGraceMs: 5 })
+      const provider = makeProvider(fake)
       const events: Array<RuntimeEvent> = []
       const createPromise = run(
         provider.createSession(definition, "/tmp", async (event) => {
@@ -154,7 +160,7 @@ describe("ClaudeProvider", () => {
 
       const first = run(created.handle.cancel)
       const duplicate = run(created.handle.cancel)
-      await vi.advanceTimersByTimeAsync(5)
+      await vi.advanceTimersByTimeAsync(CANCEL_GRACE_MS)
       await expect(Promise.all([first, duplicate])).resolves.toEqual([
         { runtimeState: "retire" },
         { runtimeState: "retire" }
@@ -172,7 +178,7 @@ describe("ClaudeProvider", () => {
 
   it("retires when the SDK iterator closes during cancellation", async () => {
     const fake = new FakeQuery()
-    const provider = makeProvider(fake, undefined, undefined, { cancelGraceMs: 50 })
+    const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
     const createPromise = run(
       provider.createSession(definition, "/tmp", async (event) => {
@@ -199,7 +205,7 @@ describe("ClaudeProvider", () => {
 
   it("ignores late SDK results after forced retirement", async () => {
     const fake = new FakeQuery()
-    const provider = makeProvider(fake, undefined, undefined, { cancelGraceMs: 1 })
+    const provider = makeProvider(fake)
     const events: Array<RuntimeEvent> = []
     const createPromise = run(
       provider.createSession(definition, "/tmp", async (event) => {
@@ -211,7 +217,7 @@ describe("ClaudeProvider", () => {
     const promptPromise = run(created.handle.prompt("get stuck"))
     await fake.nextPrompt()
     const cancellation = run(created.handle.cancel)
-    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(CANCEL_GRACE_MS)
     await expect(cancellation).resolves.toEqual({ runtimeState: "retire" })
     await promptPromise
     const countBeforeLateResult = events.length
