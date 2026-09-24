@@ -53,10 +53,20 @@ public protocol ScreenSharingViewingSession: AnyObject {
   /// The viewer's size in points: backends that can resize the remote
   /// desktop to fit (VNC ExtendedDesktopSize) do; the default ignores it.
   func requestDesktopSize(width: Int, height: Int)
+  /// Whether `requestDesktopSize` does anything: what Dynamic Resolution needs (851-2340).
+  var resizesDesktop: Bool { get }
+  /// The desktop's size when the session opened: what turning Dynamic Resolution off restores
+  /// when the server names no provisioned size.
+  var initialDesktopSize: (width: Int, height: Int)? { get }
+  /// The measured link rate (851-2331), for choosing 1× or 2× pixels; nil until measured.
+  var linkBitsPerSecond: Double? { get }
 }
 
 extension ScreenSharingViewingSession {
   public func requestDesktopSize(width: Int, height: Int) {}
+  public var resizesDesktop: Bool { false }
+  public var initialDesktopSize: (width: Int, height: Int)? { nil }
+  public var linkBitsPerSecond: Double? { nil }
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

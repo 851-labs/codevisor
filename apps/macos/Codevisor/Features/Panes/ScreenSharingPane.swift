@@ -19,6 +19,8 @@ final class ScreenSharingPane: Pane {
   var onPreferencesChanged: ((ScreenSharingPanePreferences) -> Void)?
   private var mounts = Set<UUID>()
   private var persistedRevision = 0
+  private var persistedResolutionRevision = 0
+  private let machineId: String
   private var observation: ObserveToken?
 
   /// The machine the pane streams from.
@@ -27,15 +29,17 @@ final class ScreenSharingPane: Pane {
   init(context: PaneContext, descriptor: PaneDescriptorState) {
     id = descriptor.id
     machineName = context.machine.name
+    machineId = context.machine.id
     isLocal = context.machine.isLocal
     store = context.workspaceId.map { workspaceId in
       let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
-      return Store(initialState: ScreenSharingViewer.State(preferences: descriptor.screenSharing ?? .init())) {
+      let state = ScreenSharingViewer.State(
+        preferences: descriptor.screenSharing ?? .init(),
+        dynamicResolution: ScreenSharingMachinePreferences().dynamicResolution(machineId: context.machine.id))
+      return Store(initialState: state) {
         ScreenSharingViewer()
       } withDependencies: {
-        $0[ScreenSharingViewerBackend.self] = .native(
-          client: client, workspaceId: workspaceId, paneId: descriptor.id,
-          retinaDesktop: context.machine.usesRetinaDesktop)
+        $0[ScreenSharingViewerBackend.self] = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
       }
     }
     guard let store else { return }
@@ -44,6 +48,11 @@ final class ScreenSharingPane: Pane {
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
+      // Dynamic Resolution is the machine's, not the pane's (851-2340).
+      if store.dynamicResolutionRevision != self.persistedResolutionRevision {
+        self.persistedResolutionRevision = store.dynamicResolutionRevision
+        ScreenSharingMachinePreferences().setDynamicResolution(store.dynamicResolution, machineId: self.machineId)
+      }
       let revision = store.preferencesRevision
       guard revision != self.persistedRevision else { return }
       self.persistedRevision = revision

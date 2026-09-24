@@ -120,15 +120,17 @@ Control stays Control and Super is not sent. In a terminal ⌘C is therefore
 Control+C (interrupt): Linux terminals copy with Control+Shift+C (⌘⇧C).
 Control–Option–Escape still leaves control.
 
-Retina remote desktop (851-2315): a per-machine setting, off by default
-(Settings → Machines → a machine's menu → Retina Remote Desktop, saved on the
-machine record; the rig has View → Retina Remote Desktop). With it on, the pane
-asks for a desktop of a pixel per device pixel (points × the window's backing
-scale, re-requested when the window moves between displays) instead of a pixel
-per point. That is four times the pixels: scroll bandwidth doubles in
-`vnc-bench` at 2560 × 1600 while update rates hold. Panes opened after the
-change use it. Provision the desktop with `SCALE=2 scripts/vnc-desktop.sh` so
-Xfce draws at 2× (851-2330): the panel follows live, the desktop restarts, and
-apps already open keep their scale until reopened. The script talks to the
-session's own D-Bus; from a plain ssh shell `xfconf-query` reaches a second
-xfconfd whose writes never reach the running desktop.
+Dynamic Resolution (851-2340, replacing 851-2315's Retina setting): a toolbar
+toggle next to View/Control, remembered per machine (by machine id, so Codevisor
+Cloud machines too), on by default, shown only for desktops that can resize.
+
+- **On:** the remote desktop follows the pane. On a Retina display, with a
+  desktop that can draw at 2× (its server lists scale 2, 851-2339), it gets a
+  pixel per device pixel and the server sets the desktop's UI scale to match.
+  On a slow link (under ~15 Mbit/s, back above ~25) it drops to 1× pixels.
+  Without a scalable desktop it follows at 1× pixels.
+- **Off:** the viewer doesn't touch the desktop. If this viewer had changed it,
+  the provisioned size (or the size at connect) and 1× come back.
+- **Connection Details** says which ("dynamic · 2×", "dynamic · 1× (slow
+  link)", "fixed size").
+- **Tooling:** `SCALE=2 scripts/vnc-desktop.sh` still sets 2× by hand.

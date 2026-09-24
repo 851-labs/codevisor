@@ -81,6 +81,34 @@ struct ScreenSharingViewerTests {
     }
   }
 
+  /// 851-2340: each new endpoint gets the machine's Dynamic Resolution setting;
+  /// the toolbar toggle flips it, bumps the revision the pane persists, and
+  /// tells the live endpoint.
+  @Test func dynamicResolutionReachesTheEndpointAndTheToggleFlipsIt() async {
+    await withMainSerialExecutor {
+      let backend = FakeBackend(displays: [display])
+      let client = FakeEndpointClient()
+      let store = await makeViewingStore(backend, client, channelAvailable: false)
+      let endpoint = backend.endpoints[0]
+      await awaitObserved { client.dynamicResolutions.count == 1 }
+      #expect(client.dynamicResolutions.map(\.enabled) == [true])
+      #expect(client.dynamicResolutions.first?.endpoint == endpoint.id)
+      await store.send(.dynamicResolutionToggled) {
+        $0.dynamicResolution = false
+        $0.dynamicResolutionRevision = 1
+      }
+      await awaitObserved { client.dynamicResolutions.count == 2 }
+      #expect(client.dynamicResolutions.map(\.enabled) == [true, false])
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
+    }
+  }
+
   @Test func controlIsRequestedWhenTheChannelOpensAfterVideoUnlessViewWasChosen() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])

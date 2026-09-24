@@ -448,12 +448,6 @@ private extension MachinesSettingsView {
       } else {
         Menu {
           Button("Rename…") { renaming = machine }
-          // 851-2315: sharper remote desktop at four times the pixels; used by panes opened afterwards.
-          Toggle(
-            "Retina Remote Desktop",
-            isOn: Binding(
-              get: { machine.usesRetinaDesktop },
-              set: { machines.setRetinaDesktop(machine.id, $0) }))
           Divider()
           Button("Remove…", role: .destructive) { removing = machine }
         } label: {

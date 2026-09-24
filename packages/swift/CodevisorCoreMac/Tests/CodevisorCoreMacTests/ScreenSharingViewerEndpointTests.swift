@@ -34,18 +34,86 @@ struct ScreenSharingViewerEndpointTests {
     #expect(ScreenSharingEndpointRegistry.shared.endpoint(endpoint.id) == nil)
   }
 
-  /// 851-2315: the remote desktop follows the pane a pixel per point, or with
-  /// the machine's Retina setting a pixel per device pixel.
-  @Test(arguments: [false, true])
-  func theRemoteDesktopSizeFollowsThePaneAtTheMachinesScale(retinaDesktop: Bool) {
+  /// 851-2340: with Dynamic Resolution on, the desktop follows the pane at the
+  /// backing scale and the server is asked for the matching UI scale once;
+  /// moving to a 1× display follows at 1×.
+  @Test func dynamicResolutionFollowsThePaneAtTheBackingScale() async {
     let fixture = EndpointFixture()
-    let endpoint = fixture.make(retinaDesktop: retinaDesktop)
+    let endpoint = fixture.make()
     defer { endpoint.close() }
+    let scales = ScaleLog()
+    endpoint.setDesktopScale = { scales.append($0) }
+    endpoint.desktopCanScale = true
+    endpoint.setDynamicResolution(true)
     fixture.surface.onSizeChanged?(CGSize(width: 640.4, height: 400), 2)
+    fixture.surface.onSizeChanged?(CGSize(width: 700, height: 400), 2)
     fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 1)  // moved to a 1× display
-    #expect(
-      fixture.session.desktopSizeRequests
-        == (retinaDesktop ? [[1281, 800], [640, 400]] : [[640, 400], [640, 400]]))
+    #expect(fixture.session.desktopSizeRequests == [[1281, 800], [1400, 800], [640, 400]])
+    await awaitObserved { scales.values.count == 2 }
+    #expect(scales.values == [2, 1], "the scale is sent when it changes, not with every size")
+  }
+
+  /// A slow link keeps a Retina pane at 1× pixels (hysteresis in ScreenSharingDynamicResolution).
+  @Test func aSlowLinkKeepsARetinaPaneAtOneX() {
+    let fixture = EndpointFixture()
+    fixture.session.linkBitsPerSecond = 3_000_000
+    let endpoint = fixture.make()
+    defer { endpoint.close() }
+    endpoint.desktopCanScale = true
+    endpoint.setDynamicResolution(true)
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 2)
+    #expect(fixture.session.desktopSizeRequests == [[640, 400]])
+  }
+
+  /// A desktop that can't draw at 2× (an older server, no scaler) stays at 1× pixels on a
+  /// Retina pane: a 2× framebuffer would only make its UI half size.
+  @Test func aDesktopThatCannotScaleStaysAtOneXPixels() {
+    let fixture = EndpointFixture()
+    let endpoint = fixture.make()
+    defer { endpoint.close() }
+    endpoint.setDynamicResolution(true)
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 2)
+    #expect(fixture.session.desktopSizeRequests == [[640, 400]])
+  }
+
+  /// Off: the pane never resizes the desktop; turning it off after it did
+  /// restores the provisioned size (or the size at connect) and 1×.
+  @Test func turningDynamicResolutionOffRestoresTheDesktop() async {
+    let fixture = EndpointFixture()
+    let endpoint = fixture.make()
+    defer { endpoint.close() }
+    let scales = ScaleLog()
+    endpoint.setDesktopScale = { scales.append($0) }
+    endpoint.desktopCanScale = true
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 2)
+    #expect(fixture.session.desktopSizeRequests.isEmpty, "off by default here: nothing sent")
+    endpoint.setDynamicResolution(true)
+    #expect(fixture.session.desktopSizeRequests == [[1280, 800]])
+    endpoint.defaultDesktopSize = (1440, 900)
+    endpoint.setDynamicResolution(false)
+    #expect(fixture.session.desktopSizeRequests == [[1280, 800], [1440, 900]])
+    await awaitObserved { scales.values == [2, 1] }
+    fixture.surface.onSizeChanged?(CGSize(width: 800, height: 500), 2)
+    #expect(fixture.session.desktopSizeRequests.count == 2, "off: pane changes send nothing")
+    // Without a provisioned size, the size seen at connect is restored.
+    let other = EndpointFixture()
+    let second = other.make()
+    defer { second.close() }
+    second.setDynamicResolution(true)
+    other.surface.onSizeChanged?(CGSize(width: 640, height: 400), 1)
+    second.setDynamicResolution(false)
+    #expect(other.session.desktopSizeRequests == [[640, 400], [1024, 768]])
+  }
+
+  /// A backend that can't resize (a Mac) offers no toggle and sends nothing.
+  @Test func aDesktopThatCannotResizeIsLeftAlone() {
+    let fixture = EndpointFixture(resizes: false)
+    let endpoint = fixture.make()
+    defer { endpoint.close() }
+    #expect(!endpoint.supportsDynamicResolution)
+    endpoint.setDynamicResolution(true)
+    fixture.surface.onSizeChanged?(CGSize(width: 640, height: 400), 2)
+    #expect(fixture.session.desktopSizeRequests.isEmpty)
   }
 
   @Test func inputIsNumberedUnderTheLeaseAndCongestionEndsForwardingOnce() async throws {
@@ -118,9 +186,11 @@ struct ScreenSharingViewerEndpointTests {
     let surface = FakeSurface()
     private var consumer: Task<Void, Never>?
 
-    func make(retinaDesktop: Bool = false) -> ScreenSharingViewerEndpoint {
+    init(resizes: Bool = true) { session.resizesDesktop = resizes }
+
+    func make() -> ScreenSharingViewerEndpoint {
       session.surface = surface
-      return ScreenSharingViewerEndpoint(session: session, surface: surface, retinaDesktop: retinaDesktop)
+      return ScreenSharingViewerEndpoint(session: session, surface: surface)
     }
 
     func observe(_ endpoint: ScreenSharingViewerEndpoint) -> ControlEventLog {
@@ -143,4 +213,12 @@ struct ScreenSharingViewerEndpointTests {
     var finished = false
     var grantRequest = UUID()
   }
+}
+
+/// The scales the endpoint asked the server for, in order (observable: tests await it).
+@MainActor
+@Observable
+private final class ScaleLog {
+  private(set) var values: [Int] = []
+  func append(_ value: Int) { values.append(value) }
 }

@@ -14,11 +14,6 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
   /// across relaunches — exactly when the direct route is down and no
   /// probe can rediscover the identity.
   public var cloudDeviceId: String?
-  /// A VNC desktop on this machine gets a pixel per device pixel (851-2315):
-  /// text as sharp as native, at four times the pixels and bandwidth. Nil
-  /// (records saved before the setting existed) is off.
-  public var retinaDesktop: Bool?
-  public var usesRetinaDesktop: Bool { retinaDesktop ?? false }
   public init(
     id: String,
     name: String,

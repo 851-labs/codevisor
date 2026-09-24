@@ -55,6 +55,10 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   /// Every remote desktop size the endpoint asked for.
   private(set) var desktopSizeRequests: [[Int]] = []
   func requestDesktopSize(width: Int, height: Int) { desktopSizeRequests.append([width, height]) }
+  /// A desktop that resizes (VNC-like), for Dynamic Resolution (851-2340).
+  var resizesDesktop = false
+  var initialDesktopSize: (width: Int, height: Int)? = (1024, 768)
+  var linkBitsPerSecond: Double?
   var deliversVideo = true
   var channelAvailableOnAccept = true
   weak var surface: FakeSurface?

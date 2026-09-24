@@ -70,7 +70,9 @@
           guard let self, !Task.isCancelled else { return }
           self.preparing = nil
           self.prepareTask = nil
-          let store = Store(initialState: ScreenSharingViewer.State()) {
+          let store = Store(
+            initialState: ScreenSharingViewer.State(dynamicResolution: RigMachineSettings.dynamicResolution(machine.id))
+          ) {
             ScreenSharingViewer()
           } withDependencies: {
             $0[ScreenSharingViewerBackend.self] = backend
@@ -98,7 +100,6 @@
     private static func backend(
       _ machine: RigMachine, typed: RigVNCSignIn.Typed?, progress: @MainActor (String) -> Void
     ) async throws -> ScreenSharingViewerBackend {
-      let retinaDesktop = RigMachineSettings.retinaDesktop(machine.id)
       switch machine.connection {
       case .vnc(let host, let port, let source):
         if source == .keychain { progress("Signing in to \(host)…") }
@@ -114,8 +115,7 @@
         }
         return .vnc(
           displayId: RigMachine.vncDisplayId(port: port),
-          open: { try await VNCConnection.open(host: host, port: port, password: password) },
-          retinaDesktop: retinaDesktop)
+          open: { try await VNCConnection.open(host: host, port: port, password: password) })
       case .server(let url, let sshTarget):
         let client: CodevisorServerClient
         do {
@@ -124,7 +124,7 @@
           // The machine rotated its token: ask it again, once.
           client = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: true, progress: progress)
         }
-        return .native(client: client, workspaceId: UUID(), paneId: UUID(), retinaDesktop: retinaDesktop)
+        return .native(client: client, workspaceId: UUID(), paneId: UUID())
       }
     }
 
@@ -218,7 +218,7 @@
       .navigationTitle(model.machine.name)
       .navigationSubtitle(model.machine.detail)
       .toolbar {
-        if let store = model.store { RigScreenSharingToolbar(store: store) }
+        if let store = model.store { RigScreenSharingToolbar(store: store, machineId: model.machine.id) }
       }
       // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }

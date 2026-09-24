@@ -52,10 +52,6 @@
       let view = submenu("View", in: main)
       view.addItem(withTitle: "Reconnect", action: #selector(RigMenuTarget.reconnect(_:)), keyEquivalent: "r").target =
         RigMenuTarget.shared
-      // 851-2315: the selected machine's remote desktop at a pixel per device pixel; reconnects.
-      view.addItem(
-        withTitle: "Retina Remote Desktop", action: #selector(RigMenuTarget.toggleRetinaDesktop(_:)), keyEquivalent: ""
-      ).target = RigMenuTarget.shared
       view.addItem(
         withTitle: "Forget Password", action: #selector(RigMenuTarget.forgetPassword(_:)), keyEquivalent: ""
       ).target = RigMenuTarget.shared
@@ -92,11 +88,6 @@
     static let shared = RigMenuTarget()
     /// The machine whose view is mounted (only the selected one is).
     var selectedMachineId: String?
-    @objc func toggleRetinaDesktop(_ sender: Any?) {
-      guard let id = selectedMachineId else { return }
-      RigMachineSettings.setRetinaDesktop(!RigMachineSettings.retinaDesktop(id), for: id)
-      NotificationCenter.default.post(name: RigMainMenu.reconnect, object: nil)
-    }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
       if item.action == #selector(forgetPassword(_:)) {
         // Only a machine whose password lives in the Keychain has one to forget.
@@ -104,9 +95,7 @@
         guard case .vnc(_, _, .keychain) = machine?.connection else { return false }
         return true
       }
-      guard item.action == #selector(toggleRetinaDesktop(_:)) else { return true }
-      item.state = selectedMachineId.map(RigMachineSettings.retinaDesktop) == true ? .on : .off
-      return selectedMachineId != nil
+      return true
     }
     @objc func forgetPassword(_ sender: Any?) {
       NotificationCenter.default.post(name: RigMainMenu.forgetPassword, object: nil)
@@ -119,11 +108,14 @@
     }
   }
 
-  /// Per-machine rig settings, in the rig's defaults (the product keeps them on its machine records).
+  /// Per-machine rig settings, in the rig's defaults (the product keeps them per machine id too).
   enum RigMachineSettings {
-    static func retinaDesktop(_ id: String) -> Bool { UserDefaults.standard.bool(forKey: "retinaDesktop.\(id)") }
-    static func setRetinaDesktop(_ enabled: Bool, for id: String) {
-      UserDefaults.standard.set(enabled, forKey: "retinaDesktop.\(id)")
+    /// Dynamic Resolution (851-2340): on unless turned off for this machine.
+    static func dynamicResolution(_ id: String) -> Bool {
+      UserDefaults.standard.object(forKey: "dynamicResolution.\(id)") as? Bool ?? true
+    }
+    static func setDynamicResolution(_ enabled: Bool, for id: String) {
+      UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
     }
   }
 #endif

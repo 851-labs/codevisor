@@ -285,38 +285,43 @@ function contaboFlow() {
     return { ok: shown.status === 0, detail: route.trim() }
   })
   desktopOnScreen("the Contabo desktop is on screen", "contabo")
-  // 851-2315: the machine's Retina Remote Desktop setting doubles the remote desktop; always switched back.
-  const standard = videoSize()
+  // 851-2340: Dynamic Resolution (on by default) makes the desktop follow the window; off, it
+  // keeps its size. Checked by resizing the rig window both ways; always switched back on.
+  const start = window()
+  const settle = (predicate, what) => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      pause(500)
+      const size = videoSize()
+      if (size && predicate(size)) return { ok: true, detail: `${size.width} × ${size.height}` }
+    }
+    return { ok: false, detail: `${what}: ${JSON.stringify(videoSize())}` }
+  }
+  let fixed
   try {
-    axStep("turn on Retina Remote Desktop", "menu", "Retina Remote Desktop")
-    step("the remote desktop doubles for Retina", () => {
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        pause(500)
-        const retina = videoSize()
-        if (standard && retina && Math.abs(retina.width - 2 * standard.width) <= 2)
-          return {
-            ok: true,
-            detail: `${standard.width} × ${standard.height} → ${retina.width} × ${retina.height}`
-          }
-      }
+    axStep("turn Dynamic Resolution off", "press", "Dynamic Resolution")
+    fixed = videoSize()
+    step("off: the desktop keeps its size when the window changes", () => {
+      if (ax("resize", String(start.width - 200), String(start.height - 120)).status !== 0)
+        return { ok: false, detail: "resize refused" }
+      pause(3000) // longer than the viewer's 400 ms debounce and a round trip
+      const size = videoSize()
       return {
-        ok: false,
-        detail: `still ${JSON.stringify(videoSize())} (was ${JSON.stringify(standard)})`
+        ok: Boolean(fixed && size && size.width === fixed.width && size.height === fixed.height),
+        detail: `${JSON.stringify(fixed)} → ${JSON.stringify(size)}`
       }
     })
-    desktopOnScreen("the Retina desktop is on screen", "contabo-retina")
   } finally {
-    axStep("turn Retina Remote Desktop off again", "menu", "Retina Remote Desktop")
-    // Wait for the desktop to shrink back, so quitting doesn't leave the machine at 2×.
-    step("the remote desktop is back to its standard size", () => {
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        pause(500)
-        const size = videoSize()
-        if (standard && size && Math.abs(size.width - standard.width) <= 2)
-          return { ok: true, detail: `${size.width} × ${size.height}` }
-      }
-      return { ok: false, detail: `still ${JSON.stringify(videoSize())}` }
-    })
+    axStep("turn Dynamic Resolution back on", "press", "Dynamic Resolution")
+  }
+  const fixedWidth = fixed?.width ?? 0
+  step("on: the desktop follows the smaller window", () =>
+    settle((size) => size.width !== fixedWidth, "never followed")
+  )
+  step("on: and back when the window grows again", () => {
+    ax("resize", String(start.width), String(start.height))
+    return settle((size) => Math.abs(size.width - fixedWidth) <= 2, "never grew back")
+  })
+  {
     // After a while of streaming the quality policy has seen the link (851-2329): report what it chose.
     step("the route after streaming", () => {
       pause(20000)

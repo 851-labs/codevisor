@@ -45,10 +45,7 @@ extension ScreenSharingViewerBackend {
   /// that survives cancellation. A machine whose capabilities name the "vnc"
   /// provider is viewed over the server's VNC socket route instead.
   @MainActor
-  /// `retinaDesktop`: a VNC desktop gets a pixel per device pixel (851-2315).
-  public static func native(
-    client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID, retinaDesktop: Bool = false
-  ) -> Self {
+  public static func native(client: any CodevisorServerClienting, workspaceId: UUID, paneId: UUID) -> Self {
     native(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: { try await Task.sleep(for: $0) },
       makeSession: { try ScreenSharingReceiver.process(connectivity: $0) },
@@ -59,7 +56,7 @@ extension ScreenSharingViewerBackend {
       vncOpen: { displayId in
         let socket = try client.screenSharingVNCSocket(displayId: displayId)
         return try await VNCConnection.open(transport: RFBWebSocketTransport(socket: socket), password: nil)
-      }, retinaDesktop: retinaDesktop)
+      })
   }
 
   /// Opens the RFB connection behind a "vnc:" display id.
@@ -72,11 +69,11 @@ extension ScreenSharingViewerBackend {
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
     vncOpen: @escaping NativeVNCOpen = { _ in throw RFBError.transport("This machine has no VNC display.") },
-    retinaDesktop: Bool = false, target: String? = nil
+    target: String? = nil
   ) -> Self {
     let runner = NativeScreenSharingViewerRunner(
       client: client, workspaceId: workspaceId, paneId: paneId, sleep: sleep, makeSession: makeSession,
-      makeSurface: makeSurface, vncOpen: vncOpen, retinaDesktop: retinaDesktop, target: target)
+      makeSurface: makeSurface, vncOpen: vncOpen, target: target)
     return Self(connect: { display in await runner.connect(display) }, discover: { try await runner.discover() })
   }
 }
@@ -93,7 +90,6 @@ private final class NativeScreenSharingViewerRunner {
   private let makeSession: @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private let vncOpen: ScreenSharingViewerBackend.NativeVNCOpen
-  private let retinaDesktop: Bool
   private var previous: Task<Void, Never>?
   /// The provider the last capabilities reply named; "vnc:" display ids
   /// are routed to the VNC runner even before discovery has run.
@@ -108,11 +104,10 @@ private final class NativeScreenSharingViewerRunner {
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     makeSession: @escaping @MainActor (ServerScreenSharingConnectivity?) throws -> any NativeScreenSharingMediaSession,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface,
-    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen, retinaDesktop: Bool = false,
+    vncOpen: @escaping ScreenSharingViewerBackend.NativeVNCOpen,
     target: String? = nil
   ) {
     self.target = target
-    self.retinaDesktop = retinaDesktop
     self.client = client
     self.workspaceId = workspaceId
     self.paneId = paneId
@@ -154,7 +149,15 @@ private final class NativeScreenSharingViewerRunner {
     if let runner = vncRunners[display] { return runner }
     let open = vncOpen
     let runner = VNCScreenSharingViewerRunner(
-      displayId: display, open: { try await open(display) }, retinaDesktop: retinaDesktop, makeSurface: makeSurface)
+      displayId: display, open: { try await open(display) },
+      setDesktopScale: { [client, weak self] scale in
+        // The machine's server sets its VNC desktop's scale (851-2339); an old server says unsupported.
+        guard let request = self?.request(.setScale, viewerId: UUID(), displayId: display) else { return }
+        var scaled = request
+        scaled.scale = scale
+        _ = try? await client.screenSharing(scaled)
+      },
+      makeSurface: makeSurface)
     vncRunners[display] = runner
     return runner
   }
