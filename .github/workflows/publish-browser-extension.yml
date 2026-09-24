@@ -25,9 +25,6 @@ concurrency:
   group: chrome-web-store-publication
   cancel-in-progress: false
 
-env:
-  NODE_VERSION: "24.x"
-
 jobs:
   publish:
     if: ${{ inputs.confirm_publish }}
@@ -40,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
       - name: Download the extension attached to the Stable release
         env:
           GH_TOKEN: ${{ github.token }}

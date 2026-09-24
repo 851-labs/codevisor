@@ -1,0 +1,198 @@
+name: Publish Stable
+
+# Promotes a published Alpha prerelease to Stable without rebuilding: the same
+# notarized bytes get the vVERSION tag, the Stable Sparkle and server feeds,
+# and Homebrew. GitHub Latest moves only after everything verifies.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to promote, without the leading v.
+        required: true
+        type: string
+      alpha_tag:
+        description: >-
+          Published Alpha tag to promote (for example v0.1.101-alpha.644). Its
+          commit must be on main. Defaults to the Alpha published for current
+          main HEAD.
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+# Shared with Publish Alpha's publish job: both rewrite the Sparkle appcast.
+concurrency:
+  group: release-feeds
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  REPOSITORY: ${{ github.repository }}
+  R2_BUCKET: herdman
+
+jobs:
+  metadata:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.alpha.outputs.version }}
+      tag: ${{ steps.stable.outputs.tag }}
+      alpha_tag: ${{ steps.alpha.outputs.tag }}
+      source_sha: ${{ steps.alpha.outputs.source_sha }}
+      build: ${{ steps.alpha.outputs.build }}
+      ghostty_stamp: ${{ steps.alpha.outputs.ghostty_stamp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      # Without alpha_tag, promote the Alpha published for current main HEAD.
+      - name: Verify the published Alpha
+        id: alpha
+        env:
+          ALPHA_TAG: ${{ inputs.alpha_tag }}
+        run: |
+          if [[ -n "$ALPHA_TAG" ]]; then
+            node scripts/release/alpha-release.mjs verify "$ALPHA_TAG"
+          else
+            node scripts/release/alpha-release.mjs verify --commit "$(git rev-parse HEAD)"
+          fi
+      - name: Check the Stable version
+        id: stable
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          ALPHA_TAG: ${{ steps.alpha.outputs.tag }}
+          ALPHA_VERSION: ${{ steps.alpha.outputs.version }}
+          SOURCE_SHA: ${{ steps.alpha.outputs.source_sha }}
+        run: |
+          version="${INPUT_VERSION#v}"
+          [[ "$version" == "$ALPHA_VERSION" ]] || {
+            echo "$ALPHA_TAG carries version $ALPHA_VERSION, not $version." >&2; exit 1;
+          }
+          tag="v$version"
+          existing_sha="$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)"
+          [[ -z "$existing_sha" || "$existing_sha" == "$SOURCE_SHA" ]] || {
+            echo "$tag already points to $existing_sha, not $SOURCE_SHA." >&2; exit 1;
+          }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build-browser-extension:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.metadata.outputs.source_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - run: node scripts/release/build-browser-extension.mjs "${{ needs.metadata.outputs.version }}" dist/release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-browser-extension
+          path: dist/release/Codevisor-Chrome-*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [metadata, build-browser-extension]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+      TAG: ${{ needs.metadata.outputs.tag }}
+      SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+      BUILD_NUMBER: ${{ needs.metadata.outputs.build }}
+      GHOSTTY_STAMP: ${{ needs.metadata.outputs.ghostty_stamp }}
+    steps:
+      # Release tooling runs from main; the shipped bytes come from the Alpha.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Download the published Alpha's artifacts
+        env:
+          ALPHA_TAG: ${{ needs.metadata.outputs.alpha_tag }}
+        run: |
+          mkdir -p dist/release
+          gh release download "$ALPHA_TAG" --dir dist/release \
+            --pattern '*.zip' --pattern '*.tar.gz' --pattern '*.dmg' --pattern '*.sha256'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-browser-extension
+          path: dist/release
+      - name: Generate complete Stable changelog
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --channel stable --version "$VERSION" --commit "$SOURCE_SHA" \
+            --output dist/release/RELEASE_NOTES.md
+      - name: Publish exact Alpha bytes as Stable
+        run: |
+          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git push origin "$SOURCE_SHA:refs/tags/$TAG"
+          fi
+          shopt -s nullglob
+          artifacts=(dist/release/*.zip dist/release/*.tar.gz dist/release/*.dmg dist/release/*.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${artifacts[@]}" --clobber
+            gh release edit "$TAG" --title "$TAG" \
+              --notes-file dist/release/RELEASE_NOTES.md
+          else
+            # Advance Latest only after feed publication and verification succeed.
+            gh release create "$TAG" "${artifacts[@]}" \
+              --verify-tag --title "$TAG" --notes-file dist/release/RELEASE_NOTES.md --latest=false
+          fi
+      - name: Publish Stable Sparkle and Linux feeds
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          scripts/release/publish-update-artifacts.sh \
+            stable "$VERSION" "$TAG" "$BUILD_NUMBER" dist/release dist/release/RELEASE_NOTES.md
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          [[ -n "$TAP_TOKEN" ]] || { echo "HOMEBREW_TAP_TOKEN is required." >&2; exit 1; }
+          tap_dir="$RUNNER_TEMP/homebrew-tap"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/851-labs/homebrew-tap.git" "$tap_dir"
+          VERSION="$VERSION" REPOSITORY="$REPOSITORY" ARTIFACT_DIR=dist/release \
+            node scripts/release/update-homebrew-tap.mjs "$tap_dir"
+          cd "$tap_dir"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || { git commit -m "Update Codevisor to $VERSION"; git push; }
+      - name: Verify Stable publication
+        run: |
+          gh release view "$TAG" --json body,isPrerelease \
+            --jq 'select(.isPrerelease == false and (.body | length > 0))' >/dev/null
+          curl --fail --silent --show-error https://updates.codevisor.dev/server/stable.json \
+            | jq -e --arg version "$VERSION" --argjson build "$BUILD_NUMBER" \
+              '.version == $version and .buildNumber == $build' >/dev/null
+          curl --fail --silent --show-error \
+            "https://updates.codevisor.dev/dev-artifacts/ghostty/$GHOSTTY_STAMP/GhosttyKit.xcframework.tar.gz.sha256" \
+            >/dev/null
+          curl --fail --silent --show-error https://updates.codevisor.dev/appcast-arm64.xml \
+            --output "$RUNNER_TEMP/appcast-arm64.xml"
+          node scripts/release/verify-appcast.mjs "$RUNNER_TEMP/appcast-arm64.xml" "$BUILD_NUMBER" stable
+      - name: Mark verified Stable release as Latest
+        run: |
+          gh release edit "$TAG" --latest=true
+          latest_tag="$(gh api "repos/$REPOSITORY/releases/latest" --jq .tag_name)"
+          [[ "$latest_tag" == "$TAG" ]] || {
+            echo "GitHub Latest reports $latest_tag, expected $TAG." >&2
+            exit 1
+          }

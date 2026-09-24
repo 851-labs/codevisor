@@ -5,10 +5,10 @@ import test from "node:test"
 import {
   assertAlphaUpload,
   assertManualPromotion,
+  isUploadLimitError,
   exportOptions,
   testFlightConfiguration,
   verifyBuildRecord,
-  verifyAlphaProvenance,
   withSigningKey
 } from "./ios-testflight-config.mjs"
 
@@ -72,22 +72,27 @@ test("publishing rejects a substituted artifact or a different Alpha source", ()
     )
 })
 
-test("upload guard permits exact main CI runs and rejects local, PR, and mismatched source runs", () => {
+test("uploads come only from Publish Alpha on main, scheduled or manual, for an earlier build", () => {
   const trusted = {
     GITHUB_ACTIONS: "true",
+    GITHUB_WORKFLOW: "Publish Alpha",
     GITHUB_REF: "refs/heads/main",
-    GITHUB_EVENT_NAME: "push",
-    GITHUB_SHA: environment.CODEVISOR_SOURCE_REVISION,
+    GITHUB_EVENT_NAME: "schedule",
+    GITHUB_SHA: "b".repeat(40),
     CODEVISOR_SOURCE_REVISION: environment.CODEVISOR_SOURCE_REVISION
   }
   assert.doesNotThrow(() => assertAlphaUpload(trusted))
+  assert.doesNotThrow(() =>
+    assertAlphaUpload({ ...trusted, GITHUB_EVENT_NAME: "workflow_dispatch" })
+  )
   for (const override of [
     { GITHUB_ACTIONS: "false" },
+    { GITHUB_WORKFLOW: "Build" },
     { GITHUB_REF: "refs/heads/feature" },
-    { GITHUB_EVENT_NAME: "pull_request" },
-    { CODEVISOR_SOURCE_REVISION: "b".repeat(40) }
+    { GITHUB_EVENT_NAME: "push" },
+    { GITHUB_EVENT_NAME: "pull_request" }
   ])
-    assert.throws(() => assertAlphaUpload({ ...trusted, ...override }), /trusted Alpha/)
+    assert.throws(() => assertAlphaUpload({ ...trusted, ...override }), /Publish Alpha workflow/)
 })
 
 test("temporary API key is private and removed even when signing fails", async () => {
@@ -116,7 +121,7 @@ test("public TestFlight requires its own manual workflow and permits an older se
   assert.doesNotThrow(() => assertManualPromotion(trusted))
   for (const override of [
     { GITHUB_ACTIONS: "false" },
-    { GITHUB_WORKFLOW: "Build Alpha" },
+    { GITHUB_WORKFLOW: "Build" },
     { GITHUB_WORKFLOW: "Publish Stable" },
     { GITHUB_WORKFLOW: "Publish iOS TestFlight" },
     { GITHUB_EVENT_NAME: "push" },
@@ -126,64 +131,13 @@ test("public TestFlight requires its own manual workflow and permits an older se
     assert.throws(() => assertManualPromotion({ ...trusted, ...override }), /manual Publish Beta/)
 })
 
-test("manual selection verifies the Alpha run and its exact provenance independently of current main", () => {
-  const repository = "example/codevisor"
-  const runId = "1000"
-  const run = {
-    id: 1000,
-    repository: { full_name: repository },
-    head_repository: { full_name: repository },
-    path: ".github/workflows/release-candidate.yml",
-    head_branch: "main",
-    event: "push",
-    status: "completed",
-    conclusion: "success",
-    run_number: 42,
-    head_sha: "a".repeat(40)
-  }
-  const provenance = {
-    channel: "alpha",
-    version: "1.2.3",
-    build_number: 42,
-    source_sha: run.head_sha
-  }
-  assert.deepEqual(verifyAlphaProvenance(run, provenance, repository, runId), {
-    version: "1.2.3",
-    build: "42",
-    source_sha: run.head_sha
-  })
-  assert.doesNotThrow(() =>
-    verifyAlphaProvenance(
-      { ...run, event: "workflow_dispatch" },
-      { ...provenance, build_number: "42" },
-      repository,
-      runId
-    )
+test("Apple's daily upload limit is recognized, other upload failures are not", () => {
+  assert.equal(
+    isUploadLimitError(
+      "ERROR: [altool.7A9A] Upload limit reached. The upload limit for your application has been reached. Please wait 1 day and try again. (90382)"
+    ),
+    true
   )
-  for (const override of [
-    { id: 1001 },
-    { repository: { full_name: "another/codevisor" } },
-    { head_repository: { full_name: "fork/codevisor" } },
-    { path: ".github/workflows/release.yml" },
-    { head_branch: "feature" },
-    { event: "pull_request" },
-    { status: "in_progress" },
-    { conclusion: "failure" }
-  ])
-    assert.throws(
-      () => verifyAlphaProvenance({ ...run, ...override }, provenance, repository, runId),
-      /successful Alpha/
-    )
-  for (const override of [
-    { channel: "stable" },
-    { version: "1.2.3-alpha" },
-    { build_number: 43 },
-    { build_number: 0 },
-    { source_sha: "b".repeat(40) },
-    { source_sha: "invalid" }
-  ])
-    assert.throws(
-      () => verifyAlphaProvenance(run, { ...provenance, ...override }, repository, runId),
-      /provenance/
-    )
+  assert.equal(isUploadLimitError("ERROR: Invalid Signature. (90035)"), false)
+  assert.equal(isUploadLimitError("Network connection was lost"), false)
 })

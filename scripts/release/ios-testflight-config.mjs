@@ -94,15 +94,25 @@ export function verifyBuildRecord(record, configuration, ipaSHA256) {
   }
 }
 
+// Uploads happen only from the Publish Alpha workflow (scheduled every 30
+// minutes, or dispatched manually) so Apple's daily upload limit is bounded by
+// the publish cadence. The uploaded build usually predates the workflow's own
+// main commit; Publish Alpha verifies that build's provenance before calling
+// this, and verifyBuildRecord binds the IPA to that provenance.
 export function assertAlphaUpload(environment) {
   if (
     environment.GITHUB_ACTIONS !== "true" ||
+    environment.GITHUB_WORKFLOW !== "Publish Alpha" ||
     environment.GITHUB_REF !== "refs/heads/main" ||
-    !["push", "workflow_dispatch"].includes(environment.GITHUB_EVENT_NAME) ||
-    environment.CODEVISOR_SOURCE_REVISION !== environment.GITHUB_SHA
+    !["schedule", "workflow_dispatch"].includes(environment.GITHUB_EVENT_NAME)
   ) {
-    throw new Error("TestFlight uploads require a trusted Alpha CI run for the exact main commit.")
+    throw new Error("TestFlight uploads require the Publish Alpha workflow on main.")
   }
+}
+
+// altool reports Apple's per-app daily upload limit as error 90382.
+export function isUploadLimitError(output) {
+  return /\b90382\b|upload limit (?:has been )?reached/i.test(output)
 }
 
 export function assertManualPromotion(environment) {
@@ -115,33 +125,5 @@ export function assertManualPromotion(environment) {
     throw new Error(
       "Public TestFlight promotion requires the manual Publish Beta workflow on main."
     )
-  }
-}
-
-export function verifyAlphaProvenance(run, provenance, repository, runId) {
-  if (
-    String(run.id) !== runId ||
-    run.repository?.full_name !== repository ||
-    run.head_repository?.full_name !== repository ||
-    run.path !== ".github/workflows/release-candidate.yml" ||
-    run.head_branch !== "main" ||
-    !["push", "workflow_dispatch"].includes(run.event) ||
-    run.status !== "completed" ||
-    run.conclusion !== "success"
-  )
-    throw new Error("Select a successful Alpha workflow run from this repository's main branch.")
-  if (
-    provenance.channel !== "alpha" ||
-    !/^\d+\.\d+\.\d+$/.test(provenance.version ?? "") ||
-    !/^[1-9]\d*$/.test(String(provenance.build_number)) ||
-    String(provenance.build_number) !== String(run.run_number) ||
-    !/^[0-9a-f]{40}$/.test(provenance.source_sha ?? "") ||
-    provenance.source_sha !== run.head_sha
-  )
-    throw new Error("The Alpha provenance does not match the selected workflow run.")
-  return {
-    version: provenance.version,
-    build: String(provenance.build_number),
-    source_sha: provenance.source_sha
   }
 }

@@ -1,0 +1,215 @@
+name: Publish Alpha
+
+# Every 30 minutes (or on demand), ships the newest successful Build run:
+#   1. notarize   the signed macOS app and DMG (one Apple submission)
+#   2. publish    the Sparkle and server feeds, then the vVERSION-alpha.BUILD
+#                 prerelease with every artifact and the build's provenance
+#   3. testflight upload the iOS build to the internal Alpha group, then attach
+#                 ios-testflight-build.json to the prerelease
+#
+# The prerelease is the record: created last, it means the macOS and server
+# Alpha shipped; the marker means TestFlight has it. `alpha-release.mjs next`
+# reads both, so each run redoes only what is missing, and builds superseded
+# between runs are never shipped. Apple's daily limits therefore do not depend
+# on how often main moves. Publish Stable and Publish Beta start from the
+# prerelease.
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+# One Publish Alpha at a time. Only the publish job joins release-feeds, the
+# lock it shares with Publish Stable (both rewrite the Sparkle appcast), so a
+# queued Stable release waits for a few minutes of feed updates at most and is
+# never displaced by a scheduled Alpha run.
+concurrency:
+  group: publish-alpha
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  resolve:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      publish_macos: ${{ steps.alpha.outputs.publish_macos }}
+      publish_ios: ${{ steps.alpha.outputs.publish_ios }}
+      tag: ${{ steps.alpha.outputs.tag }}
+      version: ${{ steps.alpha.outputs.version }}
+      build: ${{ steps.alpha.outputs.build }}
+      source_sha: ${{ steps.alpha.outputs.source_sha }}
+      run_id: ${{ steps.alpha.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - id: alpha
+        run: node scripts/release/alpha-release.mjs next
+
+  notarize:
+    needs: resolve
+    if: needs.resolve.outputs.publish_macos == 'true'
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
+      - name: Select full Xcode
+        run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+      - name: Download the signed macOS app
+        run: |
+          rm -rf dist/notarize
+          gh run download "${{ needs.resolve.outputs.run_id }}" --name codevisor-macos --dir dist/notarize
+      - name: Notarize and staple
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: scripts/release/notarize-macos-app.sh dist/notarize
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codevisor-macos-notarized
+          path: |
+            dist/notarize/Codevisor-macOS-arm64.zip
+            dist/notarize/Codevisor-macOS-arm64.zip.sha256
+            dist/notarize/Codevisor-arm64.dmg
+            dist/notarize/Codevisor-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Clean persistent runner workspace
+        if: always()
+        run: rm -rf dist/notarize
+
+  publish:
+    needs: [resolve, notarize]
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: release-feeds
+      cancel-in-progress: false
+    env:
+      TAG: ${{ needs.resolve.outputs.tag }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      BUILD: ${{ needs.resolve.outputs.build }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      RUN_ID: ${{ needs.resolve.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Collect the release artifacts
+        run: |
+          for name in codevisor-macos codevisor-server-linux-x64 codevisor-server-linux-arm64 \
+            codevisor-server-macos-x64 codevisor-release-provenance; do
+            gh run download "$RUN_ID" --name "$name" --dir dist/release
+          done
+          # The Build workflow's app is only signed; ship the notarized copies.
+          rm dist/release/Codevisor-macOS-arm64.zip* dist/release/Codevisor-arm64.dmg*
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: codevisor-macos-notarized
+          path: dist/release
+      - name: Generate the changelog
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --channel alpha --version "$VERSION-alpha.$BUILD" --commit "$SOURCE_SHA" \
+            --output dist/RELEASE_NOTES.md
+      - name: Publish the Sparkle and server feeds
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          R2_S3_API_ENDPOINT: ${{ secrets.CLOUDFLARE_R2_S3_API_ENDPOINT }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          scripts/release/publish-update-artifacts.sh \
+            alpha "$VERSION" "$TAG" "$BUILD" dist/release dist/RELEASE_NOTES.md
+      # Last, so the prerelease exists only once everything above shipped. A
+      # leftover draft or partial release from an interrupted run is replaced.
+      - name: Publish the Alpha prerelease
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
+          if ! git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null; then
+            git push origin "$SOURCE_SHA:refs/tags/$TAG"
+          fi
+          gh release create "$TAG" dist/release/* --draft --verify-tag --prerelease \
+            --latest=false --title "$TAG" --notes-file dist/RELEASE_NOTES.md
+          gh release edit "$TAG" --draft=false
+      - name: Verify the publication
+        run: |
+          git fetch --tags --force origin
+          node scripts/release/alpha-release.mjs verify "$TAG"
+          curl --fail --silent --show-error https://updates.codevisor.dev/server/alpha.json \
+            | jq -e --argjson build "$BUILD" '.buildNumber == $build' >/dev/null
+          curl --fail --silent --show-error https://updates.codevisor.dev/appcast-arm64.xml \
+            --output "$RUNNER_TEMP/appcast-arm64.xml"
+          node scripts/release/verify-appcast.mjs "$RUNNER_TEMP/appcast-arm64.xml" "$BUILD" alpha
+
+  # Runs once the prerelease exists (or already existed). A TestFlight failure
+  # never holds back the macOS Alpha; without the marker, the next run retries
+  # the upload, and an already-uploaded build is resumed rather than re-sent.
+  testflight:
+    needs: [resolve, publish]
+    if: >-
+      !cancelled() && needs.resolve.outputs.publish_ios == 'true'
+      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: [self-hosted, macOS, ARM64, codevisor-macos-arm64]
+    timeout-minutes: 60
+    env:
+      TAG: ${{ needs.resolve.outputs.tag }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      CODEVISOR_BUILD_NUMBER: ${{ needs.resolve.outputs.build }}
+      CODEVISOR_SOURCE_REVISION: ${{ needs.resolve.outputs.source_sha }}
+      CODEVISOR_APPLE_KEY_DIRECTORY: ${{ github.workspace }}/tmp/codevisor-ios-signing-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          clean: true
+          # Native self-hosted runners own their checkouts; no global trust entry is needed.
+          set-safe-directory: false
+      - name: Select full Xcode
+        run: echo "DEVELOPER_DIR=$(scripts/release/resolve-xcode.sh)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - name: Download the signed iOS build
+        run: gh run download "${{ needs.resolve.outputs.run_id }}" --name codevisor-ios --dir tmp/build/ios/testflight/export
+      - name: Upload to internal TestFlight
+        id: upload
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: bun scripts/release/publish-ios-testflight.mjs "$VERSION"
+      - name: Mark the Alpha as on TestFlight
+        if: steps.upload.outputs.uploaded == 'true'
+        run: |
+          cp tmp/build/ios/testflight/export/testflight-build.json "$RUNNER_TEMP/ios-testflight-build.json"
+          gh release upload "$TAG" "$RUNNER_TEMP/ios-testflight-build.json" --clobber
+      - name: Clean persistent runner workspace
+        if: always()
+        run: rm -rf tmp/build/ios/testflight "$CODEVISOR_APPLE_KEY_DIRECTORY"

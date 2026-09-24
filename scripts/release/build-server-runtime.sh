@@ -13,6 +13,18 @@ node_modules, a pinned Node executable, and launcher scripts under bin/.
 The optional target must match the current machine. Native Node addons are
 compiled during packaging, so cross-building the runtime would produce an app
 that fails on the target CPU.
+
+The bundled Node must share .node-version's major version; CI installs that
+exact release on every runner, so all targets ship the same Node.
+
+Optional environment:
+  CODEVISOR_RELEASE_NODE        Node executable to bundle (default: node on PATH).
+  CODEVISOR_PREBUILT_SERVER_JS  Archive from package-server-js.sh for this same
+                                source revision. Skips the TypeScript build: the
+                                compiled JavaScript is platform independent, so
+                                slow runners reuse it and only build native parts.
+  CODEVISOR_NODE_GYP            node-gyp executable for native addons (default:
+                                the repository's node_modules/.bin/node-gyp).
 EOF
 }
 
@@ -45,7 +57,11 @@ fi
 # A release runtime must never inherit those stale modules from a developer or
 # CI workspace, so rebuild the server from an empty output directory every time.
 rm -rf "$repo_root/apps/server/dist" "$repo_root/apps/server/tsconfig.tsbuildinfo"
-(cd "$repo_root" && bun run --cwd apps/server build)
+if [[ -n "${CODEVISOR_PREBUILT_SERVER_JS:-}" ]]; then
+  "$script_dir/package-server-js.sh" --extract "$CODEVISOR_PREBUILT_SERVER_JS"
+else
+  (cd "$repo_root" && bun run --cwd apps/server build)
+fi
 
 node_runtime="${CODEVISOR_RELEASE_NODE:-$(command -v node || true)}"
 if [[ -z "$node_runtime" || ! -x "$node_runtime" ]]; then
@@ -58,13 +74,12 @@ if ! node_version="$("$node_runtime" --version 2>/dev/null)"; then
   echo "error: failed to read Node version from $node_runtime" >&2
   exit 1
 fi
-case "$node_version" in
-  v24.*) ;;
-  *)
-    echo "error: Codevisor release artifacts must bundle Node 24.x; found $node_version at $node_runtime" >&2
-    exit 1
-    ;;
-esac
+# CI installs exactly .node-version; any build must at least share its major.
+node_major="v$(cut -d. -f1 < "$repo_root/.node-version")."
+if [[ "$node_version" != "$node_major"* ]]; then
+  echo "error: Codevisor release artifacts must bundle Node ${node_major}x (.node-version); found $node_version at $node_runtime" >&2
+  exit 1
+fi
 
 rm -rf "$runtime_dir"
 mkdir -p \
@@ -133,9 +148,9 @@ for manifest in "$repo_root"/apps/*/package.json "$repo_root"/packages/*/package
   fi
 done
 
-node_gyp="$repo_root/node_modules/.bin/node-gyp"
+node_gyp="${CODEVISOR_NODE_GYP:-$repo_root/node_modules/.bin/node-gyp}"
 if [[ ! -x "$node_gyp" ]]; then
-  echo "error: node-gyp is required to build the packaged server runtime. Run bun install first." >&2
+  echo "error: node-gyp is required to build the packaged server runtime. Run bun install first or set CODEVISOR_NODE_GYP." >&2
   exit 1
 fi
 

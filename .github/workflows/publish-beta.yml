@@ -1,10 +1,14 @@
 name: Publish Beta
 
+# Submits a published Alpha's iOS build, already on internal TestFlight, for
+# external beta review. Nothing is rebuilt or uploaded again. The Alpha must be
+# recent enough that its Build run still has the iOS artifact (14 days).
+
 on:
   workflow_dispatch:
     inputs:
-      alpha_run_id:
-        description: Successful Build Alpha run ID whose iOS build will be submitted for TestFlight review.
+      alpha_tag:
+        description: Published Alpha tag whose iOS build is submitted (for example v0.1.101-alpha.644).
         required: true
         type: string
       check_only:
@@ -21,6 +25,13 @@ concurrency:
   group: ios-public-testflight-publication
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
   publish:
     if: github.ref == 'refs/heads/main'
@@ -32,18 +43,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "24.x"
-      - name: Verify the selected Alpha run
+          node-version-file: .node-version
+      - name: Verify the published Alpha
         id: alpha
         env:
-          GH_TOKEN: ${{ github.token }}
-          ALPHA_RUN_ID: ${{ inputs.alpha_run_id }}
-        run: node scripts/release/prepare-ios-testflight.mjs "$ALPHA_RUN_ID" dist/ios-testflight
-      - name: Download the selected Alpha iOS artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ALPHA_RUN_ID: ${{ inputs.alpha_run_id }}
-        run: gh run download "$ALPHA_RUN_ID" --name codevisor-ios --dir dist/ios-testflight
+          ALPHA_TAG: ${{ inputs.alpha_tag }}
+        run: node scripts/release/alpha-release.mjs verify "$ALPHA_TAG"
+      - name: Download the Alpha's iOS build
+        run: gh run download "${{ steps.alpha.outputs.run_id }}" --name codevisor-ios --dir dist/ios-testflight
       - name: Generate TestFlight release notes
         env:
           VERSION: ${{ steps.alpha.outputs.version }}
@@ -52,7 +59,7 @@ jobs:
           node scripts/release/generate-release-notes.mjs \
             --channel alpha --version "$VERSION" --commit "$SOURCE_SHA" \
             --output dist/ios-testflight/RELEASE_NOTES.md
-      - name: Check or submit the uploaded build
+      - name: Check or submit the build
         env:
           VERSION: ${{ steps.alpha.outputs.version }}
           CODEVISOR_BUILD_NUMBER: ${{ steps.alpha.outputs.build }}
@@ -63,11 +70,8 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           CHECK_ONLY: ${{ inputs.check_only }}
-        shell: bash
         run: |
-          arguments=()
-          if [[ "$CHECK_ONLY" == true ]]; then
-            arguments+=(--check)
-          fi
+          check=()
+          [[ "$CHECK_ONLY" == true ]] && check=(--check)
           node scripts/release/promote-ios-testflight.mjs "$VERSION" \
-            dist/ios-testflight dist/ios-testflight/RELEASE_NOTES.md "${arguments[@]}"
+            dist/ios-testflight dist/ios-testflight/RELEASE_NOTES.md "${check[@]}"

@@ -1,15 +1,18 @@
 import { spawn } from "node:child_process"
-import { readFile } from "node:fs/promises"
+import { appendFile, readFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
 import { appStoreClient, deliverInternalBuild, findApp } from "./app-store-connect.mjs"
 import {
   assertAlphaUpload,
   fileSHA256,
+  isUploadLimitError,
   testFlightConfiguration,
   verifyBuildRecord,
   withSigningKey
 } from "./ios-testflight-config.mjs"
+
+class UploadLimitReached extends Error {}
 
 assertAlphaUpload(process.env)
 const configuration = testFlightConfiguration(process.argv[2])
@@ -22,7 +25,7 @@ const app = await findApp(client, configuration.bundleId)
 if (record.appId !== app.id)
   throw new Error("The prepared artifact belongs to a different App Store Connect app.")
 
-const result = await deliverInternalBuild(client, { ...configuration, appId: app.id }, () =>
+const upload = () =>
   withSigningKey(
     configuration,
     (keyPath) =>
@@ -43,19 +46,42 @@ const result = await deliverInternalBuild(client, { ...configuration, appId: app
           ],
           {
             env: { ...process.env, API_PRIVATE_KEYS_DIR: dirname(keyPath) },
-            stdio: "inherit"
+            stdio: ["ignore", "pipe", "pipe"]
           }
         )
+        let output = ""
+        for (const [stream, sink] of [
+          [child.stdout, process.stdout],
+          [child.stderr, process.stderr]
+        ])
+          stream.on("data", (chunk) => {
+            output += chunk
+            sink.write(chunk)
+          })
         child.once("error", reject)
-        child.once("exit", (code) =>
-          code === 0
-            ? resolveUpload()
-            : reject(new Error(`TestFlight upload exited with code ${code}.`))
-        )
+        child.once("close", (code) => {
+          if (code === 0) resolveUpload()
+          else if (isUploadLimitError(output)) reject(new UploadLimitReached())
+          else reject(new Error(`TestFlight upload exited with code ${code}.`))
+        })
       })
   )
-)
+
+let result
+try {
+  result = await deliverInternalBuild(client, { ...configuration, appId: app.id }, upload)
+} catch (error) {
+  if (!(error instanceof UploadLimitReached)) throw error
+  // Apple's per-app daily upload limit is not a build failure. No marker is
+  // attached, so the next Publish Alpha run retries after the limit resets.
+  const message = `Skipped TestFlight upload of ${configuration.version} (${configuration.buildNumber}): Apple's daily upload limit is reached.`
+  console.log(`::warning title=TestFlight upload skipped::${message}`)
+  if (process.env.GITHUB_STEP_SUMMARY)
+    await appendFile(process.env.GITHUB_STEP_SUMMARY, `${message}\n`)
+  process.exit(0)
+}
 console.log(
   `Internal TestFlight ${configuration.version} (${configuration.buildNumber}) is processed and assigned to ${result.group.attributes.name}.`
 )
 console.log(`https://appstoreconnect.apple.com/apps/${app.id}/testflight`)
+if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "uploaded=true\n")

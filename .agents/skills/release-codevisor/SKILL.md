@@ -5,13 +5,24 @@ description: Promote the successful Alpha artifact set at current Codevisor main
 
 # Release Codevisor
 
-Stable is a promotion, never a rebuild. The `Build Alpha` workflow creates the only
-signed and notarized app/server artifact set for a commit. `Publish Alpha`
-publishes those bytes to the Alpha Sparkle channel. `Publish Stable` attaches the same
-bytes to the Stable tag, advances the Stable Sparkle and Linux manifests,
-updates Homebrew, and attaches a versioned Chrome extension package. Chrome Web
-Store publication is a separate, explicit workflow and must not run as part of
-an app release.
+Stable is a promotion, never a rebuild. Three workflows produce every release:
+
+- `Build` (`build.yml`) builds, tests, and signs the app, server,
+  and iOS artifacts on every push to main. It never contacts Apple's
+  distribution services.
+- `Publish Alpha` (`publish-alpha.yml`) runs every 30 minutes or on dispatch
+  and ships the newest successful build: it notarizes the app, publishes the
+  Alpha Sparkle and server feeds, then creates the `vVERSION-alpha.BUILD`
+  prerelease with every artifact plus `release-provenance.json`. That
+  prerelease is the release record. Its TestFlight job then uploads iOS to the
+  internal group and attaches `ios-testflight-build.json`; a missing marker is
+  retried on the next run. Builds superseded between runs are never published
+  and cannot be promoted.
+- `Publish Stable` (`publish-stable.yml`) takes a published Alpha tag, verifies
+  it, and ships the same bytes as Stable: tag, Stable Sparkle and server feeds,
+  Homebrew, and a versioned Chrome extension package. Chrome Web Store
+  publication is a separate, explicit workflow and must not run as part of an
+  app release.
 
 After publication verification passes, `Publish Stable` marks the release as
 GitHub `latest`. Alpha releases remain prereleases and never advance `latest`.
@@ -25,26 +36,22 @@ Do not create, move, or push a version tag manually. The workflow owns the tag.
 
 ## Prepare
 
-Require a clean release scope and current remote state:
+Require a clean release scope and find the Alpha to promote:
 
 ```sh
 git status --short
 git fetch origin main --tags
-main_sha="$(git rev-parse origin/main)"
-gh run list --workflow release-candidate.yml --commit "$main_sha" --status success --limit 5
+git tag --points-at origin/main --list 'v*-alpha.*'
 ```
 
-If main HEAD has no successful Alpha yet (its build is still running or
-failed), you may instead promote the newest successful Alpha on `main`. Find
-it with `gh run list --workflow release-candidate.yml --branch main --status
-success --limit 5` and use that run's `headSha` as `source_sha` in place of
-`main_sha` below; it must be an ancestor of `origin/main`.
+If main HEAD has no published Alpha yet, dispatch `publish-alpha.yml` (it
+publishes the newest successful Build run) and monitor it, or promote an older
+published Alpha instead: `gh release list --limit 10` lists them. Record the
+Alpha's commit as `source_sha`:
 
-Inspect the successful run's `codevisor-release-provenance` artifact. It must
-say `channel: alpha`, use the source SHA, and contain the numeric version and
-build number. Also require a published `vVERSION-alpha.BUILD` prerelease for
-that provenance. If the Alpha publisher has not run, dispatch
-`publish-release-candidate.yml` and monitor it first.
+```sh
+source_sha="$(git rev-parse 'vVERSION-alpha.BUILD^{commit}')"
+```
 
 Generate the prospective Stable notes locally:
 
@@ -66,15 +73,15 @@ Confirm the numeric version and ensure its immutable tag is unused:
 
 ```sh
 git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}
-gh workflow run release.yml --ref main -f version=VERSION
+gh workflow run publish-stable.yml --ref main -f version=VERSION
 ```
 
-Without `alpha_tag`, the workflow promotes the Alpha built at current main
-HEAD and fails if main moved. To promote an older Alpha on `main`, pass its
-prerelease tag; the workflow tags that Alpha's commit, not HEAD:
+Without `alpha_tag`, the workflow promotes the Alpha published for current main
+HEAD. To promote an older published Alpha, pass its tag; the workflow tags that
+Alpha's commit, not HEAD:
 
 ```sh
-gh workflow run release.yml --ref main -f version=VERSION -f alpha_tag=vVERSION-alpha.BUILD
+gh workflow run publish-stable.yml --ref main -f version=VERSION -f alpha_tag=vVERSION-alpha.BUILD
 ```
 
 Monitor the resulting `Publish Stable` workflow through completion.
@@ -88,8 +95,8 @@ Verify all of the following before reporting success:
 - The Stable macOS ZIP SHA-256 values equal the corresponding Alpha ZIP
   SHA-256 values byte-for-byte.
 - The GitHub release body equals the generated changelog and is non-empty.
-- Both Sparkle appcasts contain the promoted build without an Alpha channel,
-  and the enclosures have valid Ed25519 signatures.
+- The arm64 Sparkle appcast contains the promoted build without an Alpha
+  channel, and its enclosure has a valid Ed25519 signature.
 - `https://updates.codevisor.dev/server/stable.json` reports `VERSION` and all
   four server targets.
 - macOS artifacts are Developer ID signed, notarized, and stapled.
@@ -100,6 +107,6 @@ Verify all of the following before reporting success:
 - GitHub `latest` points to the promoted Stable release, and both architecture
   download URLs under `releases/latest/download` resolve to that release.
 
-If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha,
-and dispatch the next unused version. If it fails after tagging, repair the
+If publication fails before tagging, fix `main`, wait for the new HEAD's Alpha
+to be published, and dispatch the next unused version. If it fails after tagging, repair the
 same release idempotently without moving the tag or rebuilding artifacts.
