@@ -45,8 +45,6 @@ export interface StartSessionDeps {
   readonly locateClaude: (definition: HarnessDefinition) => string
   readonly queryFn: ClaudeQueryFn
   readonly readFile: (path: string) => string | undefined
-  /// Delay before resuming a turn whose SDK stream died; doubles per attempt.
-  readonly streamRecoveryBackoffMs: number
   readonly wrapCommand: ((key: string, command: string) => string) | undefined
 }
 
@@ -61,7 +59,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
     locateClaude,
     queryFn,
     readFile,
-    streamRecoveryBackoffMs,
     wrapCommand
   } = deps
 
@@ -285,7 +282,6 @@ export const makeStartSession = (deps: StartSessionDeps) => {
 
     const resumeAfterStreamDeath = (): Promise<boolean> =>
       resumeSessionAfterStreamDeath(created, {
-        backoffMs: streamRecoveryBackoffMs,
         options,
         pump,
         queryFn

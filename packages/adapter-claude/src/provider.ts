@@ -40,12 +40,6 @@ export interface ClaudeProviderConfig {
   readonly scanAgentSessions?: () => Promise<ReadonlyArray<AgentSessionSummary>>
   readonly readFile?: (path: string) => string | undefined
   readonly checkVersion?: (claudePath: string) => Promise<string>
-  /// Bounded wait for Claude to produce its normal terminal result after an
-  /// interrupt. Exposed for deterministic unit tests.
-  readonly cancelGraceMs?: number
-  /// Delay before resuming a turn whose SDK stream died (doubles per attempt).
-  /// Exposed for deterministic unit tests.
-  readonly streamRecoveryBackoffMs?: number
   /// When set (and `wrapCommand` is present), background Bash commands are
   /// rewritten to tee their output through a server-owned terminal so clients
   /// can attach to the live process; foreground commands are untouched.
@@ -71,7 +65,6 @@ export const makeClaudeProvider = (
     })
   const checkVersion = config.checkVersion ?? runClaudeVersion
   const wrapCommand = config.backgroundTerminals?.wrapCommand
-  const cancelGraceMs = config.cancelGraceMs ?? 1_500
   const versionCache = new Map<string, string>()
 
   const locateClaude = (definition: HarnessDefinition): string => {
@@ -103,10 +96,9 @@ export const makeClaudeProvider = (
     locateClaude,
     queryFn,
     readFile,
-    streamRecoveryBackoffMs: config.streamRecoveryBackoffMs ?? 1_000,
     wrapCommand
   })
-  const handleFor = makeClaudeSessionHandle(cancelGraceMs)
+  const handleFor = makeClaudeSessionHandle()
 
   return {
     createSession: (

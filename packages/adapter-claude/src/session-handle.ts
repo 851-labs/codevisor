@@ -26,10 +26,13 @@ import {
   finishActiveTurn
 } from "./turn-lifecycle.js"
 
-/// Session-handle wiring extracted from makeClaudeProvider as a deps-factory
-/// (the makeSkillsOperations pattern): the handleFor body is unchanged, its
-/// closed-over provider dependency is injected.
-export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
+/// Bounded wait for Claude to produce its normal terminal result after an
+/// interrupt before the session is force-ended and retired.
+const CANCEL_GRACE_MS = 1_500
+
+/// Session-handle wiring extracted from makeClaudeProvider as a factory (the
+/// makeSkillsOperations pattern).
+export const makeClaudeSessionHandle = () => {
   const handleFor = (session: ClaudeSession): AgentSessionHandle => ({
     cancel: adapterPromise("cancel", async () => {
       if (session.cancelInFlight !== undefined) return session.cancelInFlight
@@ -54,7 +57,7 @@ export const makeClaudeSessionHandle = (cancelGraceMs: number) => {
         // processing the interrupt.
         let timeout: ReturnType<typeof setTimeout> | undefined
         const timedOut = new Promise<"timeout">((resolvePromise) => {
-          timeout = setTimeout(() => resolvePromise("timeout"), cancelGraceMs)
+          timeout = setTimeout(() => resolvePromise("timeout"), CANCEL_GRACE_MS)
         })
         // Acknowledgement is not completion. Keep waiting for the captured
         // terminal event; an interrupt rejection forces recovery immediately.

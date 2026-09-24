@@ -12,10 +12,10 @@ import { pushResumeAfterInterruptionPrompt } from "./turn-recovery.js"
 /// turn with an error the user can do nothing about. Past the cap the turn
 /// ends and surfaces the failure.
 const MAX_STREAM_RECOVERIES = 2
+/// Delay before the first resumption; doubles per attempt.
+const STREAM_RECOVERY_BACKOFF_MS = 1_000
 
 export interface StreamRecoveryDeps {
-  /// Delay before the first resumption; doubles per attempt.
-  readonly backoffMs: number
   /// The options the session's first query was started with.
   readonly options: ClaudeOptions
   /// Starts the message pump for a query (the session's own pump).
@@ -42,7 +42,7 @@ export const resumeSessionAfterStreamDeath = async (
   if (session.streamRecoveries >= MAX_STREAM_RECOVERIES) return false
   const attempt = session.streamRecoveries
   session.streamRecoveries += 1
-  await sleep(deps.backoffMs * 2 ** attempt)
+  await sleep(STREAM_RECOVERY_BACKOFF_MS * 2 ** attempt)
   // The session may have been retired or cancelled while backing off.
   if (session.retired || session.abort.signal.aborted || !session.turnActive) return false
   // State that died with the CLI process: a permission/question picker whose
