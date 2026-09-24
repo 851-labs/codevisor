@@ -6,6 +6,10 @@ enum ComposerKeyCommand {
   case moveSelectionDown
   case acceptSelection
   case dismissSelection
+  /// ↑ with the caret on the first visual line: recall an older prompt.
+  case recallPreviousPrompt
+  /// ↓ with the caret on the last visual line: recall a newer prompt.
+  case recallNextPrompt
 }
 
 /// Attachment-worthy pasteboard content intercepted by the composer's paste.
@@ -220,9 +224,20 @@ struct ChatInputEditor: NSViewRepresentable {
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
       switch commandSelector {
       case #selector(NSResponder.moveUp(_:)):
-        return parent.onKeyCommand?(.moveSelectionUp) == true
+        if parent.onKeyCommand?(.moveSelectionUp) == true { return true }
+        // Past the menu, ↑ on the first line walks back through the
+        // chat's sent prompts, like a terminal. Anywhere else it moves
+        // the caret as usual.
+        guard let textView = textView as? SubmittingTextView,
+          textView.isCaretOnEdgeLine(.first)
+        else { return false }
+        return parent.onKeyCommand?(.recallPreviousPrompt) == true
       case #selector(NSResponder.moveDown(_:)):
-        return parent.onKeyCommand?(.moveSelectionDown) == true
+        if parent.onKeyCommand?(.moveSelectionDown) == true { return true }
+        guard let textView = textView as? SubmittingTextView,
+          textView.isCaretOnEdgeLine(.last)
+        else { return false }
+        return parent.onKeyCommand?(.recallNextPrompt) == true
       case #selector(NSResponder.insertTab(_:)):
         return parent.onKeyCommand?(.acceptSelection) == true
       case #selector(NSResponder.cancelOperation(_:)):
@@ -390,6 +405,38 @@ final class SubmittingTextView: NSTextView {
       return true
     }
     return pasteboard.availableType(from: [.png, .tiff]) != nil
+  }
+
+  enum EdgeLine { case first, last }
+
+  /// True when the caret (no selection) sits on the first or last *visual*
+  /// line, so ↑/↓ inside wrapped or multi-line text keeps moving the caret
+  /// and only the edge line hands off to prompt history.
+  func isCaretOnEdgeLine(_ edge: EdgeLine) -> Bool {
+    let selection = selectedRange()
+    guard selection.length == 0, !hasMarkedText() else { return false }
+    let length = (string as NSString).length
+    guard length > 0 else { return true }
+    guard let layoutManager, let textContainer else { return false }
+    layoutManager.ensureLayout(for: textContainer)
+    let caretRect = firstLineFragment(at: selection.location, layoutManager: layoutManager)
+    let edgeRect = firstLineFragment(
+      at: edge == .first ? 0 : length,
+      layoutManager: layoutManager
+    )
+    return abs(caretRect.minY - edgeRect.minY) < 0.5
+  }
+
+  /// The line fragment holding the caret at `location`. A caret after a
+  /// trailing newline lives on the extra line fragment below the text.
+  private func firstLineFragment(at location: Int, layoutManager: NSLayoutManager) -> NSRect {
+    let length = (string as NSString).length
+    if location >= length, layoutManager.extraLineFragmentTextContainer != nil {
+      return layoutManager.extraLineFragmentRect
+    }
+    let characterIndex = min(location, max(length - 1, 0))
+    let glyphIndex = layoutManager.glyphIndexForCharacter(at: characterIndex)
+    return layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
   }
 
   override func keyDown(with event: NSEvent) {
