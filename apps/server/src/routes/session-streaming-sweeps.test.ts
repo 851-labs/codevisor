@@ -19,7 +19,8 @@ import {
   runningServers,
   tempDirs,
   idleRestartCoordinator,
-  waitFor
+  waitFor,
+  listSubjectEvents
 } from "../test-support.js"
 import { drainPromptQueue, makeTurnDispatchListener } from "./prompt-queue.js"
 
@@ -184,7 +185,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     })
     // The repair flows through the event pipeline: connected clients receive
     // a live terminal event instead of discovering the row on a full reload.
-    const events = await run(services.db.listSubjectEvents(session.id))
+    const events = listSubjectEvents(services, session.id)
     expect(events.map((event) => event.kind)).toContain("session.updated")
     expect(
       events.some(
@@ -414,7 +415,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     // The user echo event carries the client's id back, so clients can
     // reconcile their optimistic message by identity.
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(session.id))).some(
+      listSubjectEvents(services, session.id).some(
         (event) =>
           event.kind === "session.output" &&
           (event.payload as { messageId?: string }).messageId === messageId &&

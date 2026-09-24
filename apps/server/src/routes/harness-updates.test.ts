@@ -13,7 +13,8 @@ import {
   run,
   runningServers,
   startWithApp,
-  waitFor
+  waitFor,
+  listSubjectEvents
 } from "../test-support.js"
 
 describe("harness update checks", () => {
@@ -356,13 +357,13 @@ describe("harness update checks", () => {
     })
     expect(second.status).toBe(202)
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(session.id))).some(
+      listSubjectEvents(services, session.id).some(
         (event) => event.kind === "session.updateGate.updated"
       )
     )
     expect(agents.prompts).toHaveLength(0)
     // The transcript-facing hold marker was persisted for replay.
-    const heldEvents = await run(services.db.listSubjectEvents(session.id))
+    const heldEvents = listSubjectEvents(services, session.id)
     expect(
       heldEvents.some(
         (event) =>

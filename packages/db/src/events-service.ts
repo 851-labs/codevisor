@@ -7,8 +7,6 @@ import { isSessionShellEvent, withChatItemId, jsonRecord } from "./event-payload
 import { insertSessionEvent, projectChatEvent } from "./event-projection.js"
 import { canonicalUuid } from "./ids.js"
 import { materializeNavigationDelta } from "./navigation-delta.js"
-import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
-import type { EventRow, SessionEventRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { projectSessionAttention, projectSessionSidebarState } from "./session-attention.js"
@@ -19,10 +17,7 @@ import { textPatchForEvent } from "./transcript-state.js"
 
 export const makeEventsService = (
   context: ServiceContext
-): Pick<
-  CodevisorDatabaseService,
-  "appendEvent" | "latestEventCursor" | "listEvents" | "listSubjectEvents" | "readSyncBatch"
-> => {
+): Pick<CodevisorDatabaseService, "appendEvent" | "latestEventCursor" | "readSyncBatch"> => {
   const { sqlite, config } = context
 
   const appendEvent = Effect.fn("CodevisorDatabase.appendEvent")(function* (
@@ -144,31 +139,6 @@ export const makeEventsService = (
         readonly cursor: number
       }
       return row.cursor
-    }),
-    listEvents: (since) =>
-      attempt("listEvents", () =>
-        sqlite
-          .prepare("select * from events where id > ? order by id asc")
-          .all(since)
-          .map((row) => eventFromRow(row as EventRow))
-      ),
-    listSubjectEvents: (rawSubjectId, since = 0) =>
-      attempt("listSubjectEvents", () => {
-        const subjectId = canonicalUuid(rawSubjectId)
-        const isSession =
-          sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
-        return isSession
-          ? sqlite
-              .prepare(
-                `select * from session_events
-                 where session_id = ? and revision > ? order by revision asc`
-              )
-              .all(subjectId, since)
-              .map((row) => sessionEventFromRow(row as SessionEventRow))
-          : sqlite
-              .prepare("select * from events where subject_id = ? and id > ? order by id asc")
-              .all(subjectId, since)
-              .map((row) => eventFromRow(row as EventRow))
-      })
+    })
   }
 }

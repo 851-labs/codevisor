@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
 describe("sessions routes", () => {
@@ -48,7 +48,7 @@ describe("sessions routes", () => {
       (await jsonRequest(server, `/v1/sessions/${second.id}`, { method: "DELETE" })).status
     ).toBe(204)
     expect(await run(services.db.listWorkspaces)).toHaveLength(0)
-    const events = await run(services.db.listEvents(0))
+    const events = listEvents(services)
     expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
 
     // A chat that belongs to no workspace has no cascade to run.

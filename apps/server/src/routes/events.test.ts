@@ -15,7 +15,8 @@ import {
   runningServers,
   start,
   startWithApp,
-  tempDirs
+  tempDirs,
+  listSubjectEvents
 } from "../test-support.js"
 import { attachEventSocket } from "./events.js"
 
@@ -123,7 +124,7 @@ describe("event routes", () => {
       }
     })
 
-    const sessionEvents = await run(services.db.listSubjectEvents(session.id))
+    const sessionEvents = listSubjectEvents(services, session.id)
     const assistantItemId = (
       await run(services.db.getTranscriptPage(session.id, undefined, 8))
     ).items.find((item) => item.role === "assistant")?.id

@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, start, tempDirs, listEvents } from "../test-support.js"
 
 describe("workspace materialization", () => {
   it("materializes native workspace identities when sessions assign them", async () => {
@@ -93,7 +93,7 @@ describe("workspace materialization", () => {
         })
       ])
     )
-    expect(await run(services.db.listEvents(0))).toEqual(
+    expect(listEvents(services)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "workspace.updated", subjectId: "native-workspace" }),
         expect.objectContaining({ kind: "workspace.updated", subjectId: "patched-workspace" })

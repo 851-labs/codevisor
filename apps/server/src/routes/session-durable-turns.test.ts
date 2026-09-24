@@ -20,7 +20,8 @@ import {
   run,
   runningServers,
   startWithApp,
-  tempDirs
+  tempDirs,
+  listSubjectEvents
 } from "../test-support.js"
 
 describe("durable session turns", () => {
@@ -162,7 +163,7 @@ describe("durable session turns", () => {
     // Closed silently: a restart is not something the user acts on.
     expect(page.items.at(-1)).toMatchObject({ isGenerating: false, stopReason: "end_turn" })
     expect(page.items.at(-1)).not.toHaveProperty("stopDetail")
-    const events = await run(services.db.listSubjectEvents(session.id))
+    const events = listSubjectEvents(services, session.id)
     expect(events.map((event) => event.payload)).toContainEqual(
       expect.objectContaining({
         outcome: "cancelled",
@@ -377,9 +378,9 @@ describe("durable session turns", () => {
     expect(await run(services.db.listProcessingPromptQueue(dispatchedSession.id))).toEqual([])
     expect(await run(services.db.listProcessingPromptQueue(attachedMissingSession.id))).toEqual([])
 
-    const before = await run(services.db.listSubjectEvents(session.id))
+    const before = listSubjectEvents(services, session.id)
     await reconcileOrphanedSessionTurns(services, await run(makeEventFanout), "server-a")
-    expect(await run(services.db.listSubjectEvents(session.id))).toHaveLength(before.length)
+    expect(listSubjectEvents(services, session.id)).toHaveLength(before.length)
   })
 
   it("terminalizes an orphaned turn even when its agent session cannot be restored yet", async () => {

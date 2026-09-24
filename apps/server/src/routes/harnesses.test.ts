@@ -11,7 +11,8 @@ import {
   runningServers,
   startWithApp,
   tempDirs,
-  waitFor
+  waitFor,
+  listSubjectEvents
 } from "../test-support.js"
 import { makeAuthFixture } from "./harness-auth-test-support.js"
 
@@ -335,9 +336,7 @@ describe("harness routes", () => {
     })
     await waitFor(() => vi.mocked(auth.markAccountExpired).mock.calls.length === 3)
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(created.id))).some(
-        (event) => event.kind === "session.error"
-      )
+      listSubjectEvents(services, created.id).some((event) => event.kind === "session.error")
     )
 
     const explicitAccountSession = await jsonRequest(server, "/v1/sessions", {
@@ -379,7 +378,7 @@ describe("harness routes", () => {
     )
     await waitFor(async () => (await run(services.db.listPromptQueue(legacy.id))).length === 0)
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(legacy.id))).some(
+      listSubjectEvents(services, legacy.id).some(
         (event) =>
           event.kind === "session.updated" &&
           typeof event.payload === "object" &&
@@ -398,9 +397,7 @@ describe("harness routes", () => {
       body: JSON.stringify({ text: "blocked" })
     })
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(blocked.id))).some(
-        (event) => event.kind === "session.error"
-      )
+      listSubjectEvents(services, blocked.id).some((event) => event.kind === "session.error")
     )
   })
 })

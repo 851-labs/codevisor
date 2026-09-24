@@ -6,7 +6,14 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { CodevisorServerServices } from "../server-context.js"
 import { makeEventFanout } from "../server.js"
-import { makeServices, run, tempDirs, jsonRequest, waitFor } from "../test-support.js"
+import {
+  makeServices,
+  run,
+  tempDirs,
+  jsonRequest,
+  waitFor,
+  listSubjectEvents
+} from "../test-support.js"
 import { sessionEventSink } from "./session-events.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
@@ -32,9 +39,7 @@ const fixture = async () => {
       payload: { turnState: "ended", stopReason: "end_turn" }
     })
   const events = async () =>
-    (await run(services.db.listSubjectEvents(session.id))).filter(
-      (event) => event.kind === "session.updated"
-    )
+    listSubjectEvents(services, session.id).filter((event) => event.kind === "session.updated")
   return { services, session, ended, events }
 }
 

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { initialWorkspacePosition, type Workspace } from "@codevisor/api"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, readSseEvents, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
 
 describe("workspace ordering over HTTP", () => {
   it("publishes revisioned moves, returns the winner to a stale client, and snapshots the same order", async () => {
@@ -32,7 +32,7 @@ describe("workspace ordering over HTTP", () => {
       })
     ).body as Workspace
     expect(third.sidebarPosition! < frontier).toBe(true)
-    const replay = await run(services.db.listEvents(0))
+    const replay = listEvents(services)
     const live = readSseEvents(server, 1, replay.at(-1)?.id ?? 0)
     const position = initialWorkspacePosition(100, first.id)
     const moved = await jsonRequest(server, "/v1/workspaces/first", {

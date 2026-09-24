@@ -13,7 +13,8 @@ import {
   runningServers,
   startWithApp,
   tempDirs,
-  waitFor
+  waitFor,
+  listSubjectEvents
 } from "../test-support.js"
 
 describe("harness account routes", () => {
@@ -84,7 +85,7 @@ describe("harness account routes", () => {
         (await run(services.db.getSessionSummary(pinned.id))).harnessAccountId === "active-account"
     )
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(pinned.id))).some(
+      listSubjectEvents(services, pinned.id).some(
         (event) =>
           event.kind === "session.updated" &&
           typeof event.payload === "object" &&
@@ -130,9 +131,7 @@ describe("harness account routes", () => {
       body: JSON.stringify({ text: "stranded" })
     })
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(stranded.id))).some(
-        (event) => event.kind === "session.error"
-      )
+      listSubjectEvents(services, stranded.id).some((event) => event.kind === "session.error")
     )
     expect((await run(services.db.getSessionSummary(stranded.id))).harnessAccountId).toBe(
       "dead-account"

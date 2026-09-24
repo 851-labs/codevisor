@@ -1,7 +1,7 @@
 import type { TranscriptBodyPage } from "@codevisor/api"
 import { afterEach, expect, it, vi } from "vitest"
 
-import { jsonRequest, run } from "../test-support.js"
+import { jsonRequest, run, listEvents, listSubjectEvents } from "../test-support.js"
 import { createFirstSession, setUpWorkspace } from "./session-test-support.js"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -30,7 +30,7 @@ it("keeps the transcript driver opt-in and limits mutations to its own fixtures"
   for (const status of ["started", "completed", "started", "failed"]) {
     expect((await post({ action: "compaction", sessionId, status })).status).toBe(200)
   }
-  const compactions = (await run(services.db.listSubjectEvents(sessionId)))
+  const compactions = listSubjectEvents(services, sessionId)
     .filter(
       (event) =>
         (event.payload as { sessionUpdate?: string }).sessionUpdate === "context_compaction"
@@ -55,7 +55,7 @@ it("keeps the transcript driver opt-in and limits mutations to its own fixtures"
 it("rejects browser requests and invalid fixture parameters before creating history", async () => {
   vi.stubEnv("TRANSCRIPT_STRESS", "1")
   const { server, services, workspaceFolder } = await setUpWorkspace()
-  const before = await run(services.db.listEvents(0))
+  const before = listEvents(services)
   const requests: RequestInit[] = [
     { method: "GET" },
     { method: "POST", headers: { Origin: "http://localhost" }, body: "{}" },
@@ -70,7 +70,7 @@ it("rejects browser requests and invalid fixture parameters before creating hist
     requests.map((request) => jsonRequest(server, "/dev/transcript-stress", request))
   )
   expect(responses.map((response) => response.status)).toEqual([403, 403, 400, 400, 400, 400, 400])
-  expect(await run(services.db.listEvents(0))).toEqual(before)
+  expect(listEvents(services)).toEqual(before)
 })
 
 it("defaults to 500 completed turns followed by one controllable live turn", async () => {
@@ -180,7 +180,7 @@ it("seeds mixed Markdown and preserves provider text-part identities and phases"
   expect(
     (await post({ action: "chunk", sessionId, messageId: "answer", phase: "final" })).status
   ).toBe(200)
-  const events = await run(services.db.listSubjectEvents(sessionId))
+  const events = listSubjectEvents(services, sessionId)
   const chatItemId = detail.conversation.at(-1)!.id
   expect(
     events

@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, readSseEvents, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
 
 describe("workspace routes", () => {
   it("atomically promotes a new-tab pane into its deferred chat", async () => {
@@ -71,7 +71,7 @@ describe("workspace routes", () => {
       ).status
     ).toBe(409)
 
-    const replay = await run(services.db.listEvents(0))
+    const replay = listEvents(services)
     const live = readSseEvents(server, 2, replay.at(-1)?.id ?? 0)
     const promoted = await jsonRequest(
       server,
@@ -180,7 +180,7 @@ describe("workspace routes", () => {
     })
 
     expect(await jsonRequest(server, "/v1/workspace-panes")).toEqual({ status: 200, body: [] })
-    const replay = await run(services.db.listEvents(0))
+    const replay = listEvents(services)
     const live = readSseEvents(server, 1, replay.at(-1)?.id ?? 0)
     const created = await jsonRequest(server, "/v1/workspaces/workspace-panes/panes/pane-1", {
       body: JSON.stringify({
@@ -315,7 +315,7 @@ describe("workspace routes", () => {
 
     // A body id matching the path is allowed; the second PUT updates in place
     // and publishes the same workspace.updated kind as the create.
-    const replayBeforePut = await run(services.db.listEvents(0))
+    const replayBeforePut = listEvents(services)
     const livePut = readSseEvents(server, 1, replayBeforePut.at(-1)?.id ?? 0)
     const renamed = await jsonRequest(server, "/v1/workspaces/workspace-1", {
       body: JSON.stringify({
@@ -426,7 +426,7 @@ describe("workspace routes", () => {
 
     // Deleting the workspace's LAST session cascades: the workspace is
     // removed and announced without a separate DELETE call.
-    const replayBeforeDelete = await run(services.db.listEvents(0))
+    const replayBeforeDelete = listEvents(services)
     const liveDelete = readSseEvents(server, 2, replayBeforeDelete.at(-1)?.id ?? 0)
     await jsonRequest(server, `/v1/sessions/${session.id}`, { method: "DELETE" })
     expect(await liveDelete).toEqual([
@@ -442,7 +442,7 @@ describe("workspace routes", () => {
     expect(
       (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
     ).toBe(204)
-    expect(await run(services.db.listEvents(0))).toEqual(
+    expect(listEvents(services)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "workspace.updated",

@@ -2,11 +2,12 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeDatabase } from "./index.js"
-import { run, tempDatabase } from "./test-support.js"
+import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
   it("uses monotonic per-session revisions independent of the global event log", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const filename = tempDatabase()
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/session-revisions" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
     const initialCursor = await run(db.latestEventCursor)
@@ -26,18 +27,18 @@ describe("@codevisor/db", () => {
     expect(second.subjectRevision).toBe(2)
     expect(second.id).toBe(2)
     expect(second.globalEventId).toBeUndefined()
-    expect((await run(db.listSubjectEvents(session.id))).map((event) => event.id)).toEqual([1, 2])
+    expect(listSubjectEvents(filename, session.id).map((event) => event.id)).toEqual([1, 2])
     const assistantItem = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.find(
       (item) => item.role === "assistant"
     )
     expect(assistantItem).toBeDefined()
     expect(first.payload).toMatchObject({ chatItemId: assistantItem?.id })
     expect(second.payload).toMatchObject({ chatItemId: assistantItem?.id })
-    expect((await run(db.listSubjectEvents(session.id)))[0]?.payload).toMatchObject({
+    expect(listSubjectEvents(filename, session.id)[0]?.payload).toMatchObject({
       chatItemId: assistantItem?.id
     })
     expect(
-      (await run(db.listEvents(0)))
+      listEvents(filename)
         .filter((event) => event.kind !== "navigation.changed")
         .map((event) => event.kind)
     ).toEqual(["project.updated"])
@@ -408,9 +409,9 @@ describe("@codevisor/db", () => {
       stopReason: "manual"
     })
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({ id: session.id })
-    expect((await run(db.listSubjectEvents(session.id))).length).toBeGreaterThan(20)
-    expect((await run(db.listSubjectEvents(project.id))).length).toBeGreaterThan(0)
-    expect((await run(db.listSubjectEvents("missing-subject"))).length).toBe(1)
+    expect(listSubjectEvents(filename, session.id).length).toBeGreaterThan(20)
+    expect(listSubjectEvents(filename, project.id).length).toBeGreaterThan(0)
+    expect(listSubjectEvents(filename, "missing-subject").length).toBe(1)
     await Effect.runPromise(db.close)
   })
 

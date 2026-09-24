@@ -8,7 +8,14 @@ import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "../archive-jobs.js"
 import { makeEventFanout, type RouteState } from "../server.js"
-import { jsonRequest, run, start, tempDirs, idleRestartCoordinator } from "../test-support.js"
+import {
+  jsonRequest,
+  run,
+  start,
+  tempDirs,
+  idleRestartCoordinator,
+  listEvents
+} from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
 import { ensureAgentSessionFor } from "./session-workspace.js"
 
@@ -233,7 +240,7 @@ describe("workspace process cleanup", () => {
       ).toBe(200)
       await started.promise
       expect(
-        (await run(services.db.listEvents(0))).some(
+        listEvents(services).some(
           (event) =>
             event.kind === "workspace.updated" &&
             (event.payload as { isArchived?: boolean }).isArchived

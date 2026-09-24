@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, readWebSocketEvents, run, waitFor } from "../test-support.js"
+import {
+  jsonRequest,
+  readWebSocketEvents,
+  run,
+  waitFor,
+  listSubjectEvents
+} from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
 describe("session transcript routes", () => {
@@ -59,7 +65,7 @@ describe("session transcript routes", () => {
         rawConversation = (await run(services.db.getSessionDetail(session.id))).conversation.map(
           (item) => item.text
         )
-        rawEvents = await run(services.db.listSubjectEvents(session.id))
+        rawEvents = listSubjectEvents(services, session.id)
         return rawConversation.includes("Raw answer without id")
       },
       () => JSON.stringify({ rawConversation, rawEvents })
@@ -69,7 +75,7 @@ describe("session transcript routes", () => {
     ).toEqual(
       expect.arrayContaining(["hello", "Echo: hello", "raw chunks", "Raw answer without id"])
     )
-    expect(await run(services.db.listSubjectEvents(session.id))).toEqual(
+    expect(listSubjectEvents(services, session.id)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "session.output",

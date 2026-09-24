@@ -10,11 +10,11 @@ import { describe, expect, it } from "vitest"
 import {
   jsonRequest,
   makeServices,
-  run,
   runningServers,
   start,
   startWithApp,
-  tempDirs
+  tempDirs,
+  listSubjectEvents
 } from "../test-support.js"
 import { resetRepoUrlDiscoveryCache } from "./project-repo-identity.js"
 
@@ -114,7 +114,7 @@ describe("project routes", () => {
       expect(existsSync(join(reposRoot, "widget", "README.md"))).toBe(true)
 
       // Clone progress reached the event log under the client-supplied id.
-      const events = await run(services.db.listSubjectEvents("cloned-project"))
+      const events = listSubjectEvents(services, "cloned-project")
       const states = events
         .filter((event) => event.kind === "project.setup")
         .map((event) => (event.payload as { state: string }).state)
@@ -166,7 +166,7 @@ describe("project routes", () => {
       expect(missing.status).toBe(422)
       expect((missing.body as { code?: string }).code).toBeDefined()
       expect(existsSync(join(reposRoot, "gone"))).toBe(false)
-      const failedEvents = await run(services.db.listSubjectEvents("missing-project"))
+      const failedEvents = listSubjectEvents(services, "missing-project")
       expect(
         failedEvents.some(
           (event) =>
