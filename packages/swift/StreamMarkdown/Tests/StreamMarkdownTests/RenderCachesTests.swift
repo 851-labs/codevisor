@@ -13,9 +13,9 @@ struct RenderCachesTests {
     // Touch "one" so "two" becomes the eviction candidate.
     _ = cache.segments(for: "one")
     _ = cache.segments(for: "three")
-    #expect(cache.isCached("one"))
-    #expect(!cache.isCached("two"))
-    #expect(cache.isCached("three"))
+    #expect(cache.cachedSegments(for: "one") != nil)
+    #expect(cache.cachedSegments(for: "two") == nil)
+    #expect(cache.cachedSegments(for: "three") != nil)
     // Evicted texts still parse correctly on the next request.
     #expect(cache.segments(for: "two").isEmpty == false)
   }

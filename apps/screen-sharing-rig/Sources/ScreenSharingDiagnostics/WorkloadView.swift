@@ -83,7 +83,7 @@ package final class WorkloadView: NSView {
   /// a capture stream.
   package func pause() {
     stop()
-    codes?.freezeAtLastDrawn(atSeconds: CACurrentMediaTime())
+    codes?.freezeAtLastDrawn()
   }
 
   /// The frozen code after a pause; equals `sequence` (the last drawn code).

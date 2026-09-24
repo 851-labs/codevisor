@@ -17,8 +17,6 @@
     private var measuredWidth: CGFloat = -1
     private var measuredHeight: CGFloat = 1
 
-    var usesTextKit2: Bool { textLayoutManager != nil }
-
     init() {
       let contentStorage = NSTextContentStorage()
       let layoutManager = NSTextLayoutManager()

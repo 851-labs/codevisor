@@ -19,7 +19,7 @@ struct SettledMarkdownViewTests {
     view.setSelectedRange(NSRange(location: 7, length: 60))
     let after = view.contentHeight(forWidth: 280)
 
-    #expect(view.usesTextKit2)
+    #expect(view.textLayoutManager != nil)
     #expect(before > 1)
     #expect(before == after)
     #expect(view.selectedRange() == NSRange(location: 7, length: 60))
@@ -104,7 +104,7 @@ struct SettledMarkdownViewTests {
 
     #expect(view.resignFirstResponder())
     #expect(view.selectedRange() == NSRange(location: 14, length: 0))
-    #expect(view.usesTextKit2)
+    #expect(view.textLayoutManager != nil)
   }
 
   @Test("TextKit 2 preserves the established TextKit 1 line metrics")
