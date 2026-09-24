@@ -294,7 +294,7 @@ describe("refreshPluginReadiness", () => {
     // No plugins manager: nothing derived, nothing published. The shared
     // fixture ships without one, so the services object IS that machine.
     const base = services as unknown as Parameters<typeof refreshPluginReadiness>[0]
-    await refreshPluginReadiness(base, config, fanout)
+    await refreshPluginReadiness(base, config, fanout, [])
     expect(await run(services.db.getSyncEntries("plugin-readiness"))).toEqual([])
 
     // A managed install with provenance, one disabled sibling, and a
@@ -365,7 +365,7 @@ describe("refreshPluginReadiness", () => {
       ...base,
       plugins: { list: () => Promise.reject(new Error("boom")) }
     } as unknown as typeof base
-    await expect(refreshPluginReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+    await expect(refreshPluginReadiness(poisoned, config, fanout, [])).resolves.toBeUndefined()
   })
 })
 

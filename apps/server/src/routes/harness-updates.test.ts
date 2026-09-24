@@ -37,11 +37,10 @@ describe("harness update checks", () => {
         })),
       forcePendingUpdate: async () => {},
       installMethods: async () => [],
-      uninstallInfo: async () => ({ available: true }),
-      beginUninstall: async (id: string) => {
-        if (id !== "codex") throw new Error("Uninstall unavailable")
-        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
-      },
+      beginUninstall: async () => ({
+        terminalId: "unused",
+        lifecycle: { phase: "uninstalling" as const }
+      }),
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -114,11 +113,10 @@ describe("harness update checks", () => {
         calls.push(`force ${id}`)
       },
       installMethods: async () => [],
-      uninstallInfo: async () => ({ available: true }),
-      beginUninstall: async (id: string) => {
-        if (id !== "codex") throw new Error("Uninstall unavailable")
-        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
-      },
+      beginUninstall: async () => ({
+        terminalId: "unused",
+        lifecycle: { phase: "uninstalling" as const }
+      }),
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -148,6 +146,11 @@ describe("harness update checks", () => {
     })
     expect(badInstall.status).toBe(409)
     expect(badInstall.body).toMatchObject({ error: "no runnable install method" })
+    // Install authors the fleet catalog — the one document Settings
+    // renders — never a machine-local layer.
+    expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
+      { key: "codex", value: { name: "Codex", enabled: true, installed: true, uninstall: false } }
+    ])
 
     // Custom-harness collection accepts only GET/PUT — other verbs fall
     // through to later routes rather than mutating the store.
@@ -197,30 +200,6 @@ describe("harness update checks", () => {
       method: "POST"
     })
     expect(badBundled.status).toBe(409)
-
-    const info = await jsonRequest(server, "/v1/harnesses/codex/uninstall")
-    expect(info.body).toEqual({ available: true })
-    const uninstall = await jsonRequest(server, "/v1/harnesses/codex/uninstall", { method: "POST" })
-    expect(uninstall.status).toBe(202)
-    expect(uninstall.body).toMatchObject({
-      accepted: true,
-      terminalId: "uninstall-terminal",
-      lifecycle: { phase: "uninstalling" }
-    })
-    // Install and uninstall both author the fleet catalog — the one document
-    // Settings renders — never a machine-local layer.
-    expect((await jsonRequest(server, "/v1/harnesses")).body).toMatchObject([
-      { settings: { global: { enabled: false, installed: false } }, desiredEnabled: false }
-    ])
-    expect(
-      (await jsonRequest(server, "/v1/harnesses/unknown/uninstall", { method: "POST" })).status
-    ).toBe(409)
-    expect(await run(services.db.getSyncEntries("harnesses"))).toMatchObject([
-      {
-        key: "codex",
-        value: { name: "Codex", enabled: false, installed: false, uninstall: true }
-      }
-    ])
 
     expect(calls).toEqual([
       "install codex brew",
@@ -312,7 +291,6 @@ describe("harness update checks", () => {
     runningServers.push(server)
 
     for (const [path, method] of [
-      ["/v1/harnesses/codex/uninstall", "GET"],
       ["/v1/harnesses/check-updates", "POST"],
       ["/v1/harnesses/codex/install", "POST"],
       ["/v1/harnesses/codex/update", "POST"],
@@ -342,11 +320,10 @@ describe("harness update checks", () => {
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
       forcePendingUpdate: async () => {},
       installMethods: async () => [],
-      uninstallInfo: async () => ({ available: true }),
-      beginUninstall: async (id: string) => {
-        if (id !== "codex") throw new Error("Uninstall unavailable")
-        return { terminalId: "uninstall-terminal", lifecycle: { phase: "uninstalling" as const } }
-      },
+      beginUninstall: async () => ({
+        terminalId: "unused",
+        lifecycle: { phase: "uninstalling" as const }
+      }),
       isGated: (harnessId: string) => gated.has(harnessId),
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),

@@ -82,9 +82,6 @@ export interface HarnessUpdateCheckOutcome {
 }
 
 export interface HarnessLifecycleManager {
-  readonly uninstallInfo: (
-    harnessId: string
-  ) => Promise<import("@codevisor/api").HarnessUninstallInfo>
   readonly beginUninstall: (
     harnessId: string
   ) => Promise<{ readonly terminalId: string; readonly lifecycle: HarnessLifecycleState }>

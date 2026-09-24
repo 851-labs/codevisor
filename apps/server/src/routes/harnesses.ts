@@ -66,23 +66,6 @@ export const routeHarnesses = async (
     }).catch(swallowError)
   }
 
-  const uninstallId = matchRoute(url.pathname, "/v1/harnesses/:id/uninstall")
-  if (uninstallId !== undefined && (request.method === "GET" || request.method === "POST")) {
-    if (services.lifecycle === undefined) throw new HttpFailure(501, "Uninstall unavailable")
-    try {
-      if (request.method === "GET") {
-        writeJson(response, 200, await services.lifecycle.uninstallInfo(uninstallId))
-      } else {
-        const outcome = await services.lifecycle.beginUninstall(uninstallId)
-        await writeCatalog(uninstallId, { installed: false, enabled: false })
-        writeJson(response, 202, { accepted: true, ...outcome })
-      }
-    } catch (cause) {
-      throw conflictFrom(cause)
-    }
-    return true
-  }
-
   if (request.method === "GET" && url.pathname === "/v1/harnesses") {
     const includeLifecycle = url.searchParams.get("include") === "lifecycle"
     writeJson(response, 200, await discoverHarnesses(services, false, undefined, includeLifecycle))

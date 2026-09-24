@@ -15,7 +15,6 @@ export { automationSkillPath } from "./mcp-automation-builtins.js"
 export type { ToolGatewayConfig } from "./mcp-gateway.js"
 export type { PluginGatewayTool, PluginToolSource } from "./mcp-plugin-tools.js"
 export { NodeStreamableHttpTransport } from "./mcp-http-transport.js"
-export { boundedMcpTimerDelay } from "./mcp-oauth.js"
 
 export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const core = makeMcpManagerCore(config)

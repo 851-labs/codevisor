@@ -141,11 +141,6 @@ describe("@codevisor/agent-runtime", () => {
     expect(resolveCalls).toBe(2)
   })
 
-  it("treats refreshEnvironment as a no-op without a resolveEnv", async () => {
-    const runtime = makeAcpAgentRuntime({ env: { PATH: "/fixed" } })
-    await expect(run(runtime.refreshEnvironment)).resolves.toBeUndefined()
-  })
-
   it("merges injected extra harnesses and tags them as custom", async () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
@@ -232,18 +227,13 @@ describe("@codevisor/agent-runtime", () => {
     expect(codex?.source).toBe("registry")
   })
 
-  it("keeps the builtin catalog identity when no extras are injected", () => {
-    const runtime = makeAcpAgentRuntime({ env: { PATH: "/bin" } })
-    expect(runtime.catalog).toBe(harnessCatalog)
-  })
-
   it("swaps custom entries live via setExtraHarnesses", async () => {
     const runtime = makeAcpAgentRuntime({
       env: { PATH: "/bin" },
       executableExists: () => false,
       locateExecutable: () => undefined
     })
-    expect(runtime.catalog).toBe(harnessCatalog)
+    expect(runtime.catalog).toEqual(harnessCatalog)
 
     runtime.setExtraHarnesses([
       {
@@ -260,7 +250,7 @@ describe("@codevisor/agent-runtime", () => {
     expect(harnesses.find((harness) => harness.id === "late-agent")?.source).toBe("custom")
 
     runtime.setExtraHarnesses([])
-    expect(runtime.catalog).toBe(harnessCatalog)
+    expect(runtime.catalog).toEqual(harnessCatalog)
   })
 
   it("propagates resolveEnv failures as runtime errors and recovers", async () => {

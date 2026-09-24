@@ -174,30 +174,6 @@ export const routeSync = async (
     return true
   }
 
-  if (url.pathname === "/v1/sync/mcp-readiness/publish" && request.method === "POST") {
-    await refreshMcpReadiness(services, config, fanout)
-    writeJson(response, 200, { published: true })
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/harness-readiness/publish" && request.method === "POST") {
-    await refreshHarnessReadiness(services, config, fanout)
-    writeJson(response, 200, { published: true })
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/plugin-readiness/publish" && request.method === "POST") {
-    await refreshPluginReadiness(services, config, fanout)
-    writeJson(response, 200, { published: true })
-    return true
-  }
-
-  if (url.pathname === "/v1/sync/skill-readiness/publish" && request.method === "POST") {
-    await refreshSkillReadiness(services, config, fanout)
-    writeJson(response, 200, { published: true })
-    return true
-  }
-
   if (url.pathname === "/v1/sync/accounts/publish" && request.method === "POST") {
     const result = await publishAccountsRoster({
       db: services.db,

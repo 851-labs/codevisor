@@ -57,7 +57,7 @@ export const makeAgentRuntimeCore = (config: AgentRuntimeConfig) => {
   // rather than capturing.
   const extraHarnesses = withoutBuiltinCollisions(config.extraHarnesses ?? [])
   const state: AgentRuntimeState = {
-    catalog: extraHarnesses.length === 0 ? harnessCatalog : [...harnessCatalog, ...extraHarnesses],
+    catalog: [...harnessCatalog, ...extraHarnesses],
     currentEnv: config.env ?? process.env,
     envRefresh: undefined,
     extraHarnesses

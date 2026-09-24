@@ -156,13 +156,12 @@ export const refreshHarnessReadiness = async (
 /// Re-derives and publishes this machine's skill readiness entry after a
 /// skills pass. `missingBlobs` carries the just-finished pass's stranded
 /// entries so "waiting for another machine to send this" survives as the
-/// row's reason; the on-demand publish has no pass and reports the static
-/// picture. Change-detected and best-effort like the other three.
+/// row's reason. Change-detected and best-effort like the other three.
 export const refreshSkillReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout,
-  missingBlobs: SkillsSyncStatus["missingBlobs"] = []
+  missingBlobs: SkillsSyncStatus["missingBlobs"]
 ): Promise<void> => {
   const skills = services.skills
   if (skills === undefined) return
@@ -236,13 +235,12 @@ export const makeAuthSyncRefreshScheduler = (
 
 /// Re-derives and publishes this machine's plugin readiness entry (Phase
 /// 24, third readiness instance). `blocked` carries the just-finished
-/// pass's refusals so "needs ffmpeg" survives as the row's reason; the
-/// on-demand publish has no pass and reports the static picture.
+/// pass's refusals so "needs ffmpeg" survives as the row's reason.
 export const refreshPluginReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout,
-  blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }> = []
+  blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }>
 ): Promise<void> => {
   const manager = services.plugins
   if (manager === undefined) return
