@@ -2,7 +2,11 @@ import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { makeMemoryRestartSnapshotStore, makeRestartCoordinator } from "./restart-drain.js"
+import {
+  DRAINED_WITHOUT_RESTART_GRACE_MS,
+  makeMemoryRestartSnapshotStore,
+  makeRestartCoordinator
+} from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
 import {
@@ -66,10 +70,7 @@ const makeHarness = async () => {
     logs,
     redrained,
     sessions: { live, fresh, archived },
-    make: (
-      overrides: Partial<AgentRuntimeService> = {},
-      options: { drainedGraceMs?: number; defaultTimeoutMs?: number } = {}
-    ) =>
+    make: (overrides: Partial<AgentRuntimeService> = {}) =>
       makeRestartCoordinator({
         services: { ...services, agents: { ...agents, ...overrides } },
         fanout,
@@ -78,8 +79,7 @@ const makeHarness = async () => {
         log: (line) => logs.push(line),
         redrain: async (sessionId) => {
           redrained.push(sessionId)
-        },
-        ...options
+        }
       })
   }
 }
@@ -243,15 +243,17 @@ describe("restart coordinator", () => {
 
   it("abandons a drain the server never followed with a restart", async () => {
     const harness = await makeHarness()
-    const coordinator = harness.make({}, { drainedGraceMs: 20 })
+    const coordinator = harness.make()
     expect((await coordinator.begin()).state).toBe("drained")
     expect(coordinator.isGated()).toBe(true)
-    await vi.advanceTimersByTimeAsync(20)
+    await vi.advanceTimersByTimeAsync(DRAINED_WITHOUT_RESTART_GRACE_MS - 1)
+    expect(coordinator.state().state).toBe("drained")
+    await vi.advanceTimersByTimeAsync(1)
     expect(coordinator.state().state).toBe("idle")
     expect(harness.logs.some((line) => line.includes("never restarted"))).toBe(true)
     // Cancelling again is a no-op; cancelling a drained server clears the timer.
     expect((await coordinator.cancel()).state).toBe("idle")
-    const again = harness.make({}, { drainedGraceMs: 60_000 })
+    const again = harness.make()
     expect((await again.begin()).state).toBe("drained")
     expect((await again.cancel()).state).toBe("idle")
     again.close()
