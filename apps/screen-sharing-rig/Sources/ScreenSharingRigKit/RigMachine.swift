@@ -58,7 +58,7 @@ public struct RigMachine: Sendable, Equatable, Identifiable, Hashable {
     RigMachine(
       id: "tuftlord-mac",
       name: "tuftlord",
-      detail: "macOS Screen Sharing (VNC password) on tuftlords-macbook-pro.local",
+      detail: "macOS Screen Sharing on tuftlords-macbook-pro.local",
       connection: .vnc(host: "tuftlords-macbook-pro.local", port: 5900, password: .keychain),
       systemImage: "laptopcomputer"),
   ]
