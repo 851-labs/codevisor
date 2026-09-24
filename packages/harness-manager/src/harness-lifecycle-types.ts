@@ -65,11 +65,6 @@ export interface HarnessLifecycleManagerConfig {
   readonly checkCacheMs?: number
   /// Kills a hung install/update run; default 10min.
   readonly operationTimeoutMs?: number
-  /// After an updater exits successfully, keep the lifecycle in `updating`
-  /// while the installed binary catches up to the requested target. Defaults
-  /// to 2min, with a 500ms local-version probe cadence.
-  readonly updateVerificationTimeoutMs?: number
-  readonly updateVerificationPollIntervalMs?: number
   /// Kill switch for the when-idle prompt gate (CODEVISOR_HARNESS_UPDATE_GATE=0):
   /// updates still run, prompts just dispatch on the old binary.
   readonly gateEnabled?: boolean

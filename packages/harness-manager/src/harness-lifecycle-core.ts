@@ -33,8 +33,6 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
   const arch = config.arch ?? process.arch
   const checkCacheMs = config.checkCacheMs ?? 5 * 60_000
   const checkIntervalMs = config.checkIntervalMs ?? 6 * 60 * 60_000
-  const updateVerificationTimeoutMs = config.updateVerificationTimeoutMs ?? 2 * 60_000
-  const updateVerificationPollIntervalMs = config.updateVerificationPollIntervalMs ?? 500
   const readBundleShortVersion = config.readBundleShortVersion ?? defaultReadBundleShortVersion
   const spawnShell = config.spawnShell ?? defaultSpawnShell
   const operationTimeoutMs = config.operationTimeoutMs ?? 10 * 60_000
@@ -131,9 +129,7 @@ export const makeHarnessLifecycleCore = (config: HarnessLifecycleManagerConfig) 
     readBundleShortVersion,
     resolveEnv,
     setOperation,
-    spawnShell,
-    updateVerificationPollIntervalMs,
-    updateVerificationTimeoutMs
+    spawnShell
   }
 }
 
