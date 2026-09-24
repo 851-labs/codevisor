@@ -55,7 +55,7 @@ export const scanPlugins = (root: string = defaultPluginsRoot()): PluginScan => 
     return { invalid, plugins }
   }
   const seenIds = new Map<string, string>()
-  for (const entry of readdirSync(root).sort()) {
+  for (const entry of readdirSync(root).toSorted()) {
     if (entry.startsWith(".")) {
       continue
     }

@@ -76,6 +76,9 @@ const syncDirectory = async (path: string): Promise<void> => {
   }
 }
 
+const safePathSegment = (value: string): string =>
+  value.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_") || "file"
+
 export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
   const root = join(dataDir, "attachments")
   const objectsRoot = join(root, "objects", "sha256")
@@ -202,10 +205,8 @@ export const makeAttachmentStore = (dataDir: string): AttachmentStore => {
   // A named copy gives tools a usable extension without exposing the object
   // store to edits made through the model-facing path.
   const materialize = async (metadata: FileMetadata): Promise<string> => {
-    const safe = (value: string): string =>
-      value.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "_") || "file"
-    const directory = join(root, "files", safe(metadata.id))
-    const path = join(directory, safe(metadata.name))
+    const directory = join(root, "files", safePathSegment(metadata.id))
+    const path = join(directory, safePathSegment(metadata.name))
     await mkdir(directory, { recursive: true })
     try {
       await copyFile(objectPath(metadata.sha256), path, constants.COPYFILE_EXCL)

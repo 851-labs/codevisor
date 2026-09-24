@@ -50,17 +50,18 @@ it("hydrates persisted runtime configuration and selects only durable work for r
   expect(await run(db.listSessionsRequiringResume)).toEqual([])
 })
 
+const event = (id: number, table: unknown, subjectId: string, payload = {}): EventEnvelope => ({
+  id,
+  serverId: "local",
+  kind: "navigation.changed",
+  subjectId,
+  createdAt: "2026-09-16",
+  payload: { table, ...payload }
+})
+
 it("coalesces navigation entity upserts and deletions and rejects unusable or oversized deltas", async () => {
   const { db, sqlite, config, session, project } = await memoryDatabase()
   const context = createServiceContext(sqlite, config)
-  const event = (id: number, table: unknown, subjectId: string, payload = {}): EventEnvelope => ({
-    id,
-    serverId: "local",
-    kind: "navigation.changed",
-    subjectId,
-    createdAt: "2026-09-16",
-    payload: { table, ...payload }
-  })
   const materialize = (events: EventEnvelope[]) =>
     materializeNavigationDelta(context, { events, cursor: 99, requiresSnapshot: false })
   sqlite

@@ -36,7 +36,7 @@ export const sanitizeName = (name: string): string => {
   const sanitized = name
     .toLowerCase()
     .replace(/[^a-z0-9._]+/g, "-")
-    .replace(/^[.\-]+|[.\-]+$/g, "")
+    .replace(/^[.-]+|[.-]+$/g, "")
   return sanitized.substring(0, 255) || "unnamed-skill"
 }
 
@@ -128,7 +128,7 @@ export const skillContentHash = async (dir: string): Promise<string> => {
   const hash = createHash("sha256")
   const walk = async (current: string, prefix: string): Promise<void> => {
     const entries = await readdir(current, { withFileTypes: true })
-    const names = entries.map((entry) => entry.name).sort()
+    const names = entries.map((entry) => entry.name).toSorted()
     for (const name of names) {
       const entry = entries.find((candidate) => candidate.name === name) as (typeof entries)[number]
       const entryPath = join(current, name)

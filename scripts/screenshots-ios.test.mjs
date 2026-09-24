@@ -31,14 +31,15 @@ test("options stay rooted in this checkout and reject missing or unknown argumen
   }
 })
 
+const runtime = (version, supported = Object.values(devices), isAvailable = true) => ({
+  name: `iOS ${version}`,
+  identifier: `com.apple.CoreSimulator.SimRuntime.iOS-${version.replaceAll(".", "-")}`,
+  version,
+  isAvailable,
+  supportedDeviceTypes: supported.map(({ type }) => ({ identifier: type }))
+})
+
 test("runtime selection requires supported devices and ignores unavailable runtimes", () => {
-  const runtime = (version, supported = Object.values(devices), isAvailable = true) => ({
-    name: `iOS ${version}`,
-    identifier: `com.apple.CoreSimulator.SimRuntime.iOS-${version.replaceAll(".", "-")}`,
-    version,
-    isAvailable,
-    supportedDeviceTypes: supported.map(({ type }) => ({ identifier: type }))
-  })
   const candidates = [
     runtime("26.2"),
     runtime("26.10"),

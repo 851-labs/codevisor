@@ -12,7 +12,7 @@ import {
 import { homedir } from "node:os"
 import { dirname, join, relative, sep } from "node:path"
 
-import type WebSocket from "ws"
+import type { WebSocket } from "ws"
 
 import { CdpConnection } from "./browser-cdp.js"
 import { findServerResource, type ServerResourceOptions } from "./server-resources.js"
@@ -208,7 +208,7 @@ export const createBrowserExtensionArchive = (extension: string): string => {
   const fixedDosTime = 0
   const fixedDosDate = (40 << 9) | (1 << 5) | 1 // 2020-01-01
 
-  for (const file of [...extensionFiles(extension)].sort()) {
+  for (const file of [...extensionFiles(extension)].toSorted()) {
     const name = relative(extension, file).split(sep).join("/")
     const nameBytes = Buffer.from(name, "utf8")
     const data = readFileSync(file)

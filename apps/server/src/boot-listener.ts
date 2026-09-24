@@ -51,6 +51,10 @@ const BOOT_REFUSED = JSON.stringify({ error: "Server is updating its data" })
 
 const defaultLog = (line: string): void => console.error(line)
 
+const onSocket = (_request: IncomingMessage, socket: Socket): void => {
+  socket.destroy()
+}
+
 /// Binds the boot listener unless something already serves the port — the
 /// same shadow-bind guard the real start applies, so an accidental second
 /// `serve` never hijacks a live server's clients with 503s. Ephemeral
@@ -117,9 +121,6 @@ export const startBootListener = (
       }
       response.writeHead(503, { "Content-Type": "application/json", Connection: "close" })
       response.end(BOOT_REFUSED)
-    }
-    const onSocket = (_request: IncomingMessage, socket: Socket): void => {
-      socket.destroy()
     }
     const server = createServer(onRequest)
     server.on("upgrade", onSocket)

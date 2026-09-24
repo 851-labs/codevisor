@@ -27,6 +27,15 @@ import {
 // reader so the route's two shapes are deterministic on any test machine.
 vi.mock("./infra/tailnet.js", () => ({ readTailnetPeers: vi.fn() }))
 
+const attentionEvent = (subjectId: string, sidebarState: "inProgress" | "idle") => ({
+  id: 1,
+  serverId: "server-a",
+  kind: "session.attention.updated" as const,
+  subjectId,
+  createdAt: new Date().toISOString(),
+  payload: { sidebarState }
+})
+
 describe("@codevisor/server", () => {
   it("holds host sleep only while at least one session is active", async () => {
     const { services } = await makeServices("server-a")
@@ -39,23 +48,17 @@ describe("@codevisor/server", () => {
       stop: vi.fn()
     }
     const server = await startWithApp(services, fanout, { sessionActivity })
-    const event = (subjectId: string, sidebarState: "inProgress" | "idle") => ({
-      id: 1,
-      serverId: "server-a",
-      kind: "session.attention.updated" as const,
-      subjectId,
-      createdAt: new Date().toISOString(),
-      payload: { sidebarState }
-    })
 
-    await run(fanout.publish(event("session-a", "inProgress")))
-    await run(fanout.publish(event("session-a", "inProgress")))
-    await run(fanout.publish(event("session-b", "inProgress")))
-    await run(fanout.publish({ ...event("ignored-kind", "idle"), kind: "session.updated" }))
-    await run(fanout.publish({ ...event("invalid-payload", "idle"), payload: null }))
-    await run(fanout.publish(event("session-a", "idle")))
-    await run(fanout.publish(event("session-b", "idle")))
-    await run(fanout.publish(event("session-b", "idle")))
+    await run(fanout.publish(attentionEvent("session-a", "inProgress")))
+    await run(fanout.publish(attentionEvent("session-a", "inProgress")))
+    await run(fanout.publish(attentionEvent("session-b", "inProgress")))
+    await run(
+      fanout.publish({ ...attentionEvent("ignored-kind", "idle"), kind: "session.updated" })
+    )
+    await run(fanout.publish({ ...attentionEvent("invalid-payload", "idle"), payload: null }))
+    await run(fanout.publish(attentionEvent("session-a", "idle")))
+    await run(fanout.publish(attentionEvent("session-b", "idle")))
+    await run(fanout.publish(attentionEvent("session-b", "idle")))
 
     expect(updates).toEqual([
       ["session-a", true],

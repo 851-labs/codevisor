@@ -32,8 +32,8 @@ export const downloadedChromiumPath = (browsersDir: string): string | undefined 
   const roots = readdirSync(browsersDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.startsWith("chromium-"))
     .map((entry) => join(browsersDir, entry.name))
-    .sort()
-    .reverse()
+    .toSorted()
+    .toReversed()
   for (const root of roots) {
     const candidates =
       process.platform === "darwin"

@@ -51,6 +51,14 @@ const TAB_GROUP_COLORS: ReadonlySet<string> = new Set([
   "orange"
 ])
 
+const toTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value !== "string") return undefined
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) throw new Error(`Invalid history date: ${value}`)
+  return parsed
+}
+
 export const runtimeKey = (context: AutomationProviderContext, backend: BrowserBackend): string =>
   backend === "builtin"
     ? `builtin:${context.sessionId}`
@@ -348,13 +356,6 @@ export const makeBrowserToolInvoker = (state: BrowserToolSessionState) => {
     if (toolName === "user.history") {
       if (backend !== "extension") {
         throw new Error("Browser history is only available with the user Chrome backend")
-      }
-      const toTimestamp = (value: unknown): number | undefined => {
-        if (typeof value === "number" && Number.isFinite(value)) return value
-        if (typeof value !== "string") return undefined
-        const parsed = Date.parse(value)
-        if (Number.isNaN(parsed)) throw new Error(`Invalid history date: ${value}`)
-        return parsed
       }
       const raw = await active.connection.send<{
         entries?: Array<{ url?: string; title?: string; lastVisitTime?: number }>

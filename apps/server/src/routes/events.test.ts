@@ -19,6 +19,23 @@ import {
 } from "../test-support.js"
 import { attachEventSocket } from "./events.js"
 
+const makeFakeSocket = () => {
+  const sent: string[] = []
+  const closers: Array<() => void> = []
+  return {
+    sent,
+    readyState: 1, // WebSocket.OPEN
+    send: (raw: string) => sent.push(raw),
+    on: (event: string, handler: () => void) => {
+      if (event === "close") closers.push(handler)
+    },
+    close: () => closers.forEach((handler) => handler())
+  }
+}
+
+const parseSentEvent = (raw: string): { kind: string; id: number } =>
+  JSON.parse(raw) as { kind: string; id: number }
+
 describe("event routes", () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -288,21 +305,6 @@ describe("event routes", () => {
   it("interleaves keepalives on session sockets so silence is measurable", async () => {
     const { services } = await makeServices("server-a")
     const fanout = await run(makeEventFanout)
-    const makeFakeSocket = () => {
-      const sent: string[] = []
-      const closers: Array<() => void> = []
-      return {
-        sent,
-        readyState: 1, // WebSocket.OPEN
-        send: (raw: string) => sent.push(raw),
-        on: (event: string, handler: () => void) => {
-          if (event === "close") closers.push(handler)
-        },
-        close: () => closers.forEach((handler) => handler())
-      }
-    }
-    const parse = (raw: string): { kind: string; id: number } =>
-      JSON.parse(raw) as { kind: string; id: number }
 
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
     // Session sockets carry keepalives, stamped with the socket's own cursor
@@ -317,7 +319,7 @@ describe("event routes", () => {
       "session-keepalive"
     )
     await vi.advanceTimersByTimeAsync(25_000)
-    const keepalives = scoped.sent.map(parse).filter((event) => event.kind === "keepalive")
+    const keepalives = scoped.sent.map(parseSentEvent).filter((event) => event.kind === "keepalive")
     expect(keepalives.length).toBeGreaterThan(0)
     expect(keepalives[0]).toMatchObject({ id: 0, kind: "keepalive" })
     expect(JSON.parse(scoped.sent[0]!)).toMatchObject({
@@ -338,10 +340,7 @@ describe("event routes", () => {
     await run(fanout.publish(committed))
     await vi.advanceTimersByTimeAsync(25_000)
     expect(
-      connected.sent
-        .map(parse)
-        .filter((event) => event.kind === "keepalive")
-        .at(-1)?.id
+      connected.sent.map(parseSentEvent).findLast((event) => event.kind === "keepalive")?.id
     ).toBe(committed.subjectRevision)
 
     // Close stops the timer.
@@ -363,7 +362,7 @@ describe("event routes", () => {
       undefined
     )
     await vi.advanceTimersByTimeAsync(25_000)
-    expect(global.sent.map(parse)).toEqual([
+    expect(global.sent.map(parseSentEvent)).toEqual([
       expect.objectContaining({ id: 0, kind: "keepalive" }),
       expect.objectContaining({ id: 0, kind: "keepalive" })
     ])

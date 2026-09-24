@@ -60,8 +60,6 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const installedListeners = new Set<() => void>()
   const maintaining = new Set<string>()
   let isClosing = false
-  /* v8 ignore next -- replaced before the supervisor can invoke it. */
-  let requestMaintenance: (pluginId: string) => void = () => undefined
   /// PluginsManagerConfig is a strict widening of the supervisor's config
   /// (minus dataDir/onStateChange, which the manager owns), so it passes
   /// through wholesale; the supervisor ignores the manager-only keys.
@@ -230,7 +228,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       maintaining.delete(pluginId)
     }
   }
-  requestMaintenance = (pluginId) => {
+  const requestMaintenance = (pluginId: string): void => {
     void maintain(pluginId)
   }
 

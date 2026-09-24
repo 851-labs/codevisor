@@ -238,10 +238,7 @@ describe("harness authentication refresh", () => {
       })
     )
 
-    let releaseProbe: () => void = () => undefined
-    const probeGate = new Promise<void>((resolve) => {
-      releaseProbe = resolve
-    })
+    const { promise: probeGate, resolve: releaseProbe } = Promise.withResolvers<void>()
     const probeStarted = Promise.withResolvers<void>()
     const allJoined = Promise.withResolvers<void>()
     const probeHarnessAuth = vi.fn(() =>

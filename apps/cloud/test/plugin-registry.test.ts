@@ -99,6 +99,11 @@ const githubStub = (repos: RepoFixture[]): StubFetch => {
   }
 }
 
+const failingFetch =
+  (body: string, status: number): StubFetch["fetch"] =>
+  () =>
+    Promise.resolve(new Response(body, { status }))
+
 const readIndex = async (): Promise<PluginIndex> => {
   const raw = await env.PLUGIN_INDEX.get(PLUGIN_INDEX_KEY)
   expect(raw).not.toBeNull()
@@ -290,8 +295,7 @@ describe("refreshPluginIndex", () => {
       { owner: "octocat", name: "notes", manifest: JSON.stringify(manifest()) }
     ])
     await refreshPluginIndex({ ...env, GITHUB_FETCH: good.fetch })
-    const failing: StubFetch["fetch"] = () =>
-      Promise.resolve(new Response("rate limited", { status: 403 }))
+    const failing = failingFetch("rate limited", 403)
     await expect(refreshPluginIndex({ ...env, GITHUB_FETCH: failing })).rejects.toThrow(
       "GitHub search failed with status 403"
     )
@@ -349,7 +353,7 @@ describe("plugin registry routes", () => {
     expect(await refreshed.json()).toMatchObject({ indexed: 1, rejected: 0 })
     expect((await readIndex()).entries[0]?.id).toBe("octocat.notes")
 
-    const failing: StubFetch["fetch"] = () => Promise.resolve(new Response("nope", { status: 500 }))
+    const failing = failingFetch("nope", 500)
     const failed = await worker.fetch(new Request(`${BASE}/plugins/refresh`, { method: "POST" }), {
       ...env,
       GITHUB_FETCH: failing

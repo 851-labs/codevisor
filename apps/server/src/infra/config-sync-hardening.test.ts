@@ -37,6 +37,12 @@ const serverNamed = async (machine: Machine, name: string) => {
   return found
 }
 
+const oauthMaterial = (token: string, savedAt: number) =>
+  JSON.stringify({
+    tokens: { access_token: token, refresh_token: `r-${token}`, token_type: "bearer" },
+    tokensSavedAt: savedAt
+  })
+
 describe("config sync hardening", () => {
   it(
     "three machines racing edits on skewed clocks converge without oscillating",
@@ -181,18 +187,13 @@ describe("config sync hardening", () => {
 
       // The race: BOTH machines complete an authorize while partitioned —
       // each holds material it owns, with different token families.
-      const material = (token: string, savedAt: number) =>
-        JSON.stringify({
-          tokens: { access_token: token, refresh_token: `r-${token}`, token_type: "bearer" },
-          tokensSavedAt: savedAt
-        })
       await a.mcp.importOAuthMaterial((await serverNamed(a, "Scoped")).id, {
         owner: "hard-oauth-a",
-        material: material("at-a", 1_000)
+        material: oauthMaterial("at-a", 1_000)
       })
       await b.mcp.importOAuthMaterial((await serverNamed(b, "Scoped")).id, {
         owner: "hard-oauth-b",
-        material: material("at-b", 2_000)
+        material: oauthMaterial("at-b", 2_000)
       })
       const claimA = await reconcileMcps(a)
       const claimB = await reconcileMcps(b)
@@ -210,7 +211,7 @@ describe("config sync hardening", () => {
       const envelopeOwner = async (machine: Machine) => {
         const entries = await run(machine.db.getSyncEntries(MCPS_SYNC_NAMESPACE))
         const scoped = entries.find((entry) => entry.key === "Scoped")
-        return (scoped?.value as { oauth?: { owner?: string } }).oauth?.owner
+        return (scoped!.value as { oauth?: { owner?: string } }).oauth?.owner
       }
       const ownerOnA = await envelopeOwner(a)
       const ownerOnB = await envelopeOwner(b)

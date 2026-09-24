@@ -15,6 +15,15 @@ const bindingNames = (value: unknown): string[] => {
   throw new Error("Unsupported REPL binding pattern")
 }
 
+const reserve = (name: string) => {
+  if (
+    ["computer", "browser", "tools", "globalThis"].includes(name) ||
+    name.startsWith("__codevisor")
+  )
+    throw new Error(`Reserved REPL binding: ${name}`)
+  return `globalThis[${JSON.stringify(name)}]`
+}
+
 /** Async cells use explicit global bindings; declarations inside functions/blocks remain local. */
 export const computerUseCellBody = (code: string): string => {
   const source = transform(code, { transforms: ["typescript"], disableESTransforms: true }).code
@@ -22,14 +31,6 @@ export const computerUseCellBody = (code: string): string => {
     .body
   const slice = (node: { start?: number | null; end?: number | null }) =>
     source.slice(node.start ?? 0, node.end ?? source.length)
-  const reserve = (name: string) => {
-    if (
-      ["computer", "browser", "tools", "globalThis"].includes(name) ||
-      name.startsWith("__codevisor")
-    )
-      throw new Error(`Reserved REPL binding: ${name}`)
-    return `globalThis[${JSON.stringify(name)}]`
-  }
   return nodes
     .map((node, index) => {
       if (node.type === "VariableDeclaration")

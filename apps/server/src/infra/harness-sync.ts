@@ -82,7 +82,7 @@ const normalizedSpec = (spec: CustomHarnessSpec): CustomHarnessSpec => ({
   ...(spec.env === undefined
     ? {}
     : {
-        env: Object.fromEntries(Object.entries(spec.env).sort(([a], [b]) => a.localeCompare(b)))
+        env: Object.fromEntries(Object.entries(spec.env).toSorted(([a], [b]) => a.localeCompare(b)))
       })
 })
 

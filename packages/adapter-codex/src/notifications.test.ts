@@ -136,7 +136,7 @@ describe("CodexProvider", () => {
       stopKind: "usageLimit",
       turnState: "ended"
     })
-    expect((events.at(-1)?.payload as Record<string, unknown>).retryable).toBeUndefined()
+    expect((events.at(-1)!.payload as Record<string, unknown>).retryable).toBeUndefined()
   })
 
   it("labels a retryable HTTP 429 as temporary request throttling", async () => {

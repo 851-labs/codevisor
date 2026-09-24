@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it, vi } from "vitest"
-import WebSocket, { WebSocketServer } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 
 import { observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"

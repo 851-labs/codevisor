@@ -188,7 +188,7 @@ describe("makeSkillsManager", () => {
     expect(
       group(scan, "claude-code")
         .skills.map((skill) => ({ c: skill.classification, d: skill.directoryName }))
-        .sort((a, b) => a.d.localeCompare(b.d))
+        .toSorted((a, b) => a.d.localeCompare(b.d))
     ).toEqual([
       { c: "broken", d: "dangling" },
       { c: "broken", d: "loop" }

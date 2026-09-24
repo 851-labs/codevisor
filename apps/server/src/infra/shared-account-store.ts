@@ -96,7 +96,7 @@ export const makeSharedAccountStore = (db: CodevisorDatabaseService, serverId: s
     selected: async (harnessId: string, machine: boolean): Promise<string | undefined> => {
       const available = (await accounts())
         .filter((account) => account.harnessId === harnessId && account.credential !== undefined)
-        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+        .toSorted((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
       if (machine) {
         const overrides = await Effect.runPromise(db.getSyncEntries(SHARED_ACCOUNT_OVERRIDES))
         const override = overrides.find((entry) => entry.key === harnessId)

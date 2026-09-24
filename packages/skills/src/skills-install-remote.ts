@@ -34,7 +34,7 @@ const discoverSkillDirs = async (root: string, depth = 3): Promise<ReadonlyArray
     if (EXCLUDE_DIRS.has(entry.name) || entry.name === "node_modules") continue
     found.push(...(await discoverSkillDirs(join(root, entry.name), depth - 1)))
   }
-  return found.sort()
+  return found.toSorted()
 }
 
 /// Discovering and importing skills from remote sources: git repositories
@@ -103,7 +103,7 @@ export const makeSkillsRemoteOperations = (context: SkillsInstallContext) => {
           name: document.name
         })
       }
-      return { skills: skills.sort((a, b) => a.directoryName.localeCompare(b.directoryName)) }
+      return { skills: skills.toSorted((a, b) => a.directoryName.localeCompare(b.directoryName)) }
     } finally {
       await rm(staging, { force: true, recursive: true })
     }
@@ -126,8 +126,8 @@ export const makeSkillsRemoteOperations = (context: SkillsInstallContext) => {
           const document = await readSkillDocument(dir, basename(dir))
           // readSkillDocument always yields a non-empty name (frontmatter
           // name or the directory name), so both forms match directly.
-          const candidates = [sanitizeName(basename(dir)), sanitizeName(document.name)]
-          if (requested.some((name) => candidates.includes(name))) matched.push(dir)
+          const candidates = new Set([sanitizeName(basename(dir)), sanitizeName(document.name)])
+          if (requested.some((name) => candidates.has(name))) matched.push(dir)
         }
         if (matched.length === 0) {
           throw new SkillsError(

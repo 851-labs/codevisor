@@ -18,16 +18,17 @@ export const openCommandTerminal = (
   if (integration === undefined || session.commandTerminals.has(itemId)) return
   const terminalKey = backgroundTerminalKey(session.key, itemId)
   const codexPid = session.client.pid
-  const stream = integration.registry.register(terminalKey, {
-    ...(codexPid === undefined || command.length === 0
+  const stream = integration.registry.register(
+    terminalKey,
+    codexPid === undefined || command.length === 0
       ? {}
       : {
           kill: () => {
             void session.killCommandProcesses(codexPid, command).catch(() => undefined)
           },
           stop: () => session.killCommandProcesses(codexPid, command)
-        })
-  })
+        }
+  )
   const terminal: CodexCommandTerminal = {
     description: command.length > 0 ? firstLine(command) : "command",
     itemId,
@@ -97,7 +98,7 @@ export const emitCodexBackgroundTasks = (session: CodexSession): void => {
 /// Connection teardown: the codex process (and every command it ran) is gone;
 /// exit the mirrors so attached tabs see the stream end.
 export const closeCommandTerminals = (session: CodexSession): void => {
-  for (const terminal of [...session.commandTerminals.values()]) {
+  for (const terminal of Array.from(session.commandTerminals.values())) {
     if (terminal.promotionTimer !== undefined) {
       clearTimeout(terminal.promotionTimer)
       terminal.promotionTimer = undefined

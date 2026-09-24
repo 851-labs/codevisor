@@ -267,7 +267,7 @@ export const routeFs = async (
       path: join(path, entry.name),
       isGitRepo: existsSync(join(path, entry.name, ".git"))
     }))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+    .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
   const body: FsListResponse = {
     path,
     parent: path === "/" ? null : dirname(path),

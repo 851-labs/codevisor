@@ -257,7 +257,8 @@ export const assertReadOnlyFunction = (source: string): void => {
     })
   } catch (cause) {
     throw new Error(
-      `evaluate expects a JavaScript function: ${cause instanceof Error ? cause.message : String(cause)}`
+      `evaluate expects a JavaScript function: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause }
     )
   }
   const mutatingMethods = new Set([

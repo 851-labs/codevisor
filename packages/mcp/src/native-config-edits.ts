@@ -47,7 +47,7 @@ const canonicalJson = (value: unknown): string => {
   }
   if (value !== null && typeof value === "object" && !(value instanceof Date)) {
     const entries = Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .toSorted(([a], [b]) => a.localeCompare(b))
       .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     return `{${entries.join(",")}}`
   }

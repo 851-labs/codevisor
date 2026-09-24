@@ -226,11 +226,7 @@ export const makePluginTransactionEngine = (
   ): Promise<Value> => {
     paths(pluginId)
     const previous = locks.get(pluginId) ?? Promise.resolve()
-    /* v8 ignore next -- the Promise constructor below replaces this synchronously. */
-    let release = (): void => undefined
-    const gate = new Promise<void>((resolvePromise) => {
-      release = resolvePromise
-    })
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>()
     const tail = previous.then(() => gate)
     locks.set(pluginId, tail)
     await previous

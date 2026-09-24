@@ -58,10 +58,7 @@ export const dispatchMouseEvent = async (
   page: PageHandle,
   params: Readonly<Record<string, unknown>>
 ): Promise<MouseDispatch> => {
-  let resolveDialog = (): void => undefined
-  const dialog = new Promise<void>((resolve) => {
-    resolveDialog = resolve
-  })
+  const { promise: dialog, resolve: resolveDialog } = Promise.withResolvers<void>()
   const stop = runtime.connection.on(
     "Page.javascriptDialogOpening",
     () => resolveDialog(),

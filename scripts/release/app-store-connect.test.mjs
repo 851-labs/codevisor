@@ -98,10 +98,11 @@ function missingBuildError(id = "build", type = "builds", status = 404) {
   )
 }
 
+const decode = (value) => JSON.parse(Buffer.from(value, "base64url"))
+
 test("API authentication creates an ES256 token with Apple's audience and a bounded lifetime", () => {
   const token = appStoreToken(credentials, 1_700_000_000_000)
   const [header, payload, signature] = token.split(".")
-  const decode = (value) => JSON.parse(Buffer.from(value, "base64url"))
   assert.deepEqual(decode(header), { alg: "ES256", kid: "EXAMPLEKEY", typ: "JWT" })
   assert.deepEqual(decode(payload), {
     iss: "example-issuer",

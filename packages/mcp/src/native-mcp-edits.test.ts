@@ -146,7 +146,7 @@ docs = { command = "docs-mcp" }
     expect(
       harnessGroup(scan, "claude-code")
         .servers.map((server) => server.serverName)
-        .sort()
+        .toSorted()
     ).toEqual(["docs", "linear"])
     expect(await manager.listRemovals()).toHaveLength(0)
     await expect(manager.restoreRemoval(removal.id)).rejects.toMatchObject({
@@ -167,7 +167,7 @@ docs = { command = "docs-mcp" }
     expect(
       harnessGroup(scan, "codex")
         .servers.map((server) => server.serverName)
-        .sort()
+        .toSorted()
     ).toEqual(["docs", "linear"])
   })
 

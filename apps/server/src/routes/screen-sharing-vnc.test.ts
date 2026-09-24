@@ -85,6 +85,12 @@ const nextMessage = (socket: WebSocket): Promise<Buffer> =>
 const closed = (socket: WebSocket): Promise<number> =>
   new Promise((resolve) => socket.once("close", resolve))
 
+const statusOf = (socket: WebSocket) =>
+  new Promise<number>((resolve) => {
+    socket.once("unexpected-response", (_request, response) => resolve(response.statusCode ?? 0))
+    socket.once("error", () => undefined)
+  })
+
 const start = async (
   config: ScreenSharingVNCConfig,
   auth?: { allowLocalhostWithoutAuth: boolean; requireBearerToken: boolean }
@@ -278,13 +284,6 @@ describe("VNC screen sharing provider", () => {
     const vnc = await fakeVNC()
     const config = { port: vnc.port, name: "Desktop" }
     const { socketUrl } = await start(config)
-    const statusOf = (socket: WebSocket) =>
-      new Promise<number>((resolve) => {
-        socket.once("unexpected-response", (_request, response) =>
-          resolve(response.statusCode ?? 0)
-        )
-        socket.once("error", () => undefined)
-      })
     expect(await statusOf(new WebSocket(socketUrl("vnc:1")))).toBe(404)
     expect(
       await statusOf(

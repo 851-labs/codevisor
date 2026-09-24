@@ -62,7 +62,7 @@ export const disconnect = async (
   const closed = new Promise<void>((resolve) => {
     acknowledgeClose = resolve
   })
-  let restore = () => {}
+  let restore: (() => void) | undefined
   await runInDurableObject(stub, (hub) => {
     const close = hub.webSocketClose.bind(hub)
     const observed = vi.spyOn(hub, "webSocketClose").mockImplementation(async (socket) => {
@@ -78,7 +78,7 @@ export const disconnect = async (
     })
   } finally {
     await runInDurableObject(stub, () => {
-      restore()
+      restore?.()
     })
   }
 }

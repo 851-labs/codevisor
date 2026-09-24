@@ -436,7 +436,7 @@ describe("@codevisor/api", () => {
         (method) => `${method.toUpperCase()} ${path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, ":$1")}`
       )
     )
-    expect(documented.sort()).toEqual([...endpoints].sort())
+    expect(documented.toSorted()).toEqual([...endpoints].toSorted())
     const operations = Object.values(doc.paths).flatMap((path) => Object.values(path)) as Array<
       Record<string, unknown>
     >

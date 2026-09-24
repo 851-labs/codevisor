@@ -114,7 +114,7 @@ describe("owned process shutdown", () => {
     expect(processTree(entries, [30], false).map((p) => p.pid)).toEqual([32, 31])
     const fake = fakeSystem(entries)
     await stopProcessTree(30, { system: fake.system })
-    expect(fake.signals.map(([pid]) => pid).sort()).toEqual([30, 31, 32])
+    expect(fake.signals.map(([pid]) => pid).toSorted()).toEqual([30, 31, 32])
   })
 
   it("waits for cleanup commands created by a SIGTERM handler", async () => {

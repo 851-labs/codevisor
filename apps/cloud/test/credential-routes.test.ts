@@ -75,7 +75,7 @@ describe("encrypted credential coordinator API", () => {
     const states = await Promise.all(
       both.map((value) => value.json() as Promise<{ status: string }>)
     )
-    expect(states.map((value) => value.status).sort()).toEqual(["acquired", "busy"])
+    expect(states.map((value) => value.status).toSorted()).toEqual(["acquired", "busy"])
     const owner = states[0]!.status === "acquired" ? a : b,
       other = owner === a ? b : a
     expect(await (await command(owner, id, { action: "start", operationId })).json()).toMatchObject(

@@ -48,7 +48,7 @@ export const finishActiveTurn = (
   session.pendingPrompt = undefined
   const toolEvents: Array<RuntimeEvent> = []
   // Anything still open never got a tool_result (interrupt/failure/stream end).
-  for (const toolUseId of [...session.openToolCalls]) {
+  for (const toolUseId of Array.from(session.openToolCalls)) {
     session.openToolCalls.delete(toolUseId)
     toolEvents.push({
       kind: "session.output",

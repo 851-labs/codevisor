@@ -69,7 +69,7 @@ describe("plugin sync", () => {
     ]
 
     const first = await reconcilePlugins(world.deps)
-    expect([...first.status.published].sort()).toEqual(["acme.paused", "acme.tunes"])
+    expect([...first.status.published].toSorted()).toEqual(["acme.paused", "acme.tunes"])
     expect(first.changedEntries.find((entry) => entry.key === "acme.tunes")?.value).toEqual({
       enabled: true,
       source: "acme/tunes"
@@ -106,9 +106,9 @@ describe("plugin sync", () => {
     // disabled right after, and the applied records land.
     delete world.state.installFailure
     const second = await reconcilePlugins(world.deps)
-    expect([...second.status.installed].sort()).toEqual(["acme.paused", "acme.tunes"])
-    expect([...second.status.applied].sort()).toEqual(["acme.paused", "acme.tunes"])
-    expect(world.calls.installs.sort()).toEqual(["acme/paused", "acme/tunes"])
+    expect([...second.status.installed].toSorted()).toEqual(["acme.paused", "acme.tunes"])
+    expect([...second.status.applied].toSorted()).toEqual(["acme.paused", "acme.tunes"])
+    expect(world.calls.installs.toSorted()).toEqual(["acme/paused", "acme/tunes"])
     expect(world.calls.enabled).toEqual([["acme.paused", false]])
     expect(second.status.published).toEqual([])
   })

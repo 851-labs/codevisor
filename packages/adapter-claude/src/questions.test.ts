@@ -100,10 +100,10 @@ describe("ClaudeProvider", () => {
       {} as never
     )
     await fake.drain()
-    expect((events.at(-1)?.payload as Record<string, unknown>).sessionUpdate).toBe("question")
+    expect((events.at(-1)!.payload as Record<string, unknown>).sessionUpdate).toBe("question")
     await run(
       created.handle.answerQuestion!(
-        (events.at(-1)?.payload as Record<string, unknown>).questionId as string,
+        (events.at(-1)!.payload as Record<string, unknown>).questionId as string,
         { outcome: "cancelled" }
       )
     )
@@ -115,12 +115,12 @@ describe("ClaudeProvider", () => {
     expect(events.at(-1)?.payload).toMatchObject({ modeId: "acceptEdits" })
     const asked = fake.options!.canUseTool!("Bash", { command: "ls" } as never, {} as never)
     await fake.drain()
-    expect((events.at(-1)?.payload as Record<string, unknown>).questions).toMatchObject([
+    expect((events.at(-1)!.payload as Record<string, unknown>).questions).toMatchObject([
       { header: "Permission" }
     ])
     await run(
       created.handle.answerQuestion!(
-        (events.at(-1)?.payload as Record<string, unknown>).questionId as string,
+        (events.at(-1)!.payload as Record<string, unknown>).questionId as string,
         { answers: { approval: { answers: ["Deny"] } }, outcome: "answered" }
       )
     )
@@ -277,7 +277,7 @@ describe("ClaudeProvider", () => {
 
     const first = ask("First?")
     await fake.drain()
-    const firstId = (events.at(-1)?.payload as Record<string, unknown>).questionId as string
+    const firstId = (events.at(-1)!.payload as Record<string, unknown>).questionId as string
     await run(created.handle.answerQuestion!(firstId, { outcome: "cancelled" }))
     await expect(first).resolves.toEqual({
       behavior: "deny",

@@ -14,6 +14,14 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
+const text = (
+  result: Awaited<ReturnType<ReturnType<typeof makeBrowserUseProvider>["invoke"]>>
+): string => {
+  const block = result.content[0]
+  if (block?.type !== "text") throw new Error(JSON.stringify(result.content))
+  return block.text
+}
+
 describe("Browser Use pointer and tab lifecycle", () => {
   it(
     "composes held-button drags and held modifiers like Playwright's Mouse and Keyboard",
@@ -93,11 +101,6 @@ describe("Browser Use pointer and tab lifecycle", () => {
       if (provider.status().backend === "missing") return
       const context = { sessionId: "finalize-test", projectId: "finalize-test" }
       await provider.invoke(context, "use_backend", { backend: "managed" })
-      const text = (result: Awaited<ReturnType<typeof provider.invoke>>): string => {
-        const block = result.content[0]
-        if (block?.type !== "text") throw new Error(JSON.stringify(result.content))
-        return block.text
-      }
       const tabIds = (result: Awaited<ReturnType<typeof provider.invoke>>): string[] =>
         (JSON.parse(text(result)) as { tabs: Array<{ id: string; selected: boolean }> }).tabs
           .filter((tab) => tab.selected)

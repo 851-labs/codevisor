@@ -361,13 +361,14 @@ describe("relay coalescing", () => {
   })
 })
 
+const framed = (prefix: number, body: Uint8Array): Uint8Array => {
+  const plaintext = new Uint8Array(body.byteLength + 1)
+  plaintext[0] = prefix
+  plaintext.set(body, 1)
+  return plaintext
+}
+
 describe("negotiated compression", () => {
-  const framed = (prefix: number, body: Uint8Array): Uint8Array => {
-    const plaintext = new Uint8Array(body.byteLength + 1)
-    plaintext[0] = prefix
-    plaintext.set(body, 1)
-    return plaintext
-  }
   const compressingHarness = () =>
     harness({
       compressPayload: (bytes) =>

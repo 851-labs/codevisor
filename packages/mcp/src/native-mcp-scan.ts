@@ -168,7 +168,7 @@ export const makeNativeMcpScanner = (
       for (const location of project.locations) folders.add(location.folderPath)
     }
     const servers: Array<DiscoveredServer> = []
-    for (const folder of [...folders].sort()) {
+    for (const folder of [...folders].toSorted()) {
       const configPath = join(folder, projectFile)
       try {
         const result = await readServers(definition, {
@@ -261,5 +261,5 @@ const coalesceCandidates = (
   }
   return [...byIdentity.values()]
     .map(({ candidate, foundIn }) => ({ ...candidate, foundIn: [...foundIn] }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .toSorted((a, b) => a.name.localeCompare(b.name))
 }

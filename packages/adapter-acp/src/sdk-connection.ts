@@ -93,6 +93,18 @@ const isAuthenticationRequired = (cause: unknown): boolean => {
   )
 }
 
+const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
+  toolGateway === undefined
+    ? []
+    : [
+        {
+          type: "http" as const,
+          name: toolGateway.name,
+          url: toolGateway.url,
+          headers: [{ name: "Authorization", value: `Bearer ${toolGateway.bearerToken}` }]
+        }
+      ]
+
 export const sdkConnection = (
   connection: acp.ClientConnection,
   stderr: () => string,
@@ -103,18 +115,6 @@ export const sdkConnection = (
   const promptCapabilities = options.promptCapabilities ?? {}
   const questions = options.questions
   const auth = options.auth ?? { methods: [], canLogout: false }
-
-  const mcpServers = (toolGateway: ToolGatewayConfig | undefined) =>
-    toolGateway === undefined
-      ? []
-      : [
-          {
-            type: "http" as const,
-            name: toolGateway.name,
-            url: toolGateway.url,
-            headers: [{ name: "Authorization", value: `Bearer ${toolGateway.bearerToken}` }]
-          }
-        ]
 
   const base: AcpAgentConnection = {
     probeAuth: (cwd) =>

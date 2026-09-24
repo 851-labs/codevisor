@@ -53,6 +53,12 @@ const harness = (backend: "extension" | "managed" = "extension") => {
   return { call, invoke, runtime, sent }
 }
 
+const text = (result: Awaited<ReturnType<ReturnType<typeof harness>["invoke"]>>) => {
+  const block = result.content[0]
+  if (block?.type !== "text") throw new Error("Missing tool text")
+  return JSON.parse(block.text) as Record<string, unknown>
+}
+
 describe("tab_groups", () => {
   it("relays every action to the extension with validated arguments", async () => {
     const { call, sent } = harness()
@@ -115,11 +121,6 @@ describe("tab_groups", () => {
 
   it("keeps handed-off tabs visible to later turns without ever closing them", async () => {
     const { invoke, runtime } = harness()
-    const text = (result: Awaited<ReturnType<typeof invoke>>) => {
-      const block = result.content[0]
-      if (block?.type !== "text") throw new Error("Missing tool text")
-      return JSON.parse(block.text) as Record<string, unknown>
-    }
     runtime.connection.send = (async (method: string) => {
       if (method === "Target.getTargets") {
         return {

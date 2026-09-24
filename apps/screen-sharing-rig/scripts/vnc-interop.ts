@@ -128,7 +128,6 @@ async function waitForReady(container: string, deadlineMs = 30_000): Promise<voi
   while (Date.now() - started < deadlineMs) {
     if (docker(["logs", container], { allowFailure: true }).stdout.includes("vnc-interop: ready"))
       return
-    // oxlint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
   throw new Error(`The interop desktop wasn't ready within ${deadlineMs / 1000} s`)
@@ -139,7 +138,6 @@ async function waitForGreeting(port: number, deadlineMs = 30_000): Promise<void>
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
     // Retries are sequential by design: each attempt waits for the previous one.
-    // oxlint-disable-next-line no-await-in-loop
     const greeting = await new Promise<string | null>((resolve) => {
       const socket = connect({ host: "127.0.0.1", port })
       let data = ""
@@ -156,7 +154,6 @@ async function waitForGreeting(port: number, deadlineMs = 30_000): Promise<void>
       socket.on("close", () => finish(null))
     })
     if (greeting?.startsWith("RFB ")) return
-    // oxlint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   throw new Error(`No RFB greeting on 127.0.0.1:${port} within ${deadlineMs / 1000} s`)

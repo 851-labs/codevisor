@@ -46,9 +46,9 @@ describe("@codevisor/agent-runtime", () => {
       kind: "session.updated",
       payload: { turnState: "ended", initiatedBy: "user", stopReason: "end_turn" }
     })
-    const startedTurnId = (events[0]?.payload as { turnId?: string }).turnId
+    const startedTurnId = (events[0]!.payload as { turnId?: string }).turnId
     expect(startedTurnId).toBeTruthy()
-    expect((events[3]?.payload as { turnId?: string }).turnId).toBe(startedTurnId)
+    expect((events[3]!.payload as { turnId?: string }).turnId).toBe(startedTurnId)
 
     expect(connector.connections[0]?.prompts).toEqual([[sessionId, "hello"]])
 

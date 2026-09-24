@@ -79,7 +79,6 @@ export const routeTranscriptStress = async (
     state.activePromptSessions.add(session.id)
     owned.add(session.id)
     // A turn must be durably ended before the next begins; fanout order matters.
-    /* oxlint-disable no-await-in-loop */
     for (let index = 0; index < turns; index++) {
       await run(
         services.db.appendConversationItem(
@@ -102,7 +101,6 @@ export const routeTranscriptStress = async (
         stopReason: "end_turn"
       })
     }
-    /* oxlint-enable no-await-in-loop */
     await run(
       services.db.appendConversationItem(
         session.id,

@@ -40,7 +40,7 @@ export const promoteAssistantArtifacts = async (
 ): Promise<boolean> => {
   const page = await run(services.db.getTranscriptPage(sessionId, undefined, 8))
   const item = [...page.items]
-    .reverse()
+    .toReversed()
     .find((candidate) => candidate.role === "assistant" && candidate.isGenerating)
   if (item === undefined) return false
   const references = markdownFileReferences(item.text)
@@ -54,7 +54,7 @@ export const promoteAssistantArtifacts = async (
   }
   const session = await run(services.db.getSessionSummary(sessionId))
   let markdown = item.text
-  for (const reference of [...references].reverse()) {
+  for (const reference of [...references].toReversed()) {
     if (!shouldCaptureFile(reference)) continue
     const path = localArtifactPath(reference.target, session.cwd)
     if (path === undefined) continue

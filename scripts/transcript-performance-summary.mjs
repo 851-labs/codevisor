@@ -14,7 +14,7 @@ export function summarizeTranscriptPerformance(records) {
     groups.set(record.name, values)
   }
   const timings = {}
-  for (const [name, values] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [name, values] of [...groups].toSorted(([a], [b]) => a.localeCompare(b))) {
     values.sort((a, b) => a - b)
     const percentile = (fraction) =>
       Math.round(values[Math.max(0, Math.ceil(values.length * fraction) - 1)] * 1000) / 1000

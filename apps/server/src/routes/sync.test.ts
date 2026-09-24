@@ -443,7 +443,7 @@ describe("/v1/sync", () => {
       published: [],
       installed: ["acme.tunes"]
     })
-    expect([...(result.body as { applied: Array<string> }).applied].sort()).toEqual([
+    expect([...(result.body as { applied: Array<string> }).applied].toSorted()).toEqual([
       "acme.paused",
       "acme.tunes"
     ])

@@ -85,7 +85,7 @@ export const mergeSyncEntries = (
       changed.push(entry)
     }
   }
-  const merged = [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key))
+  const merged = [...byKey.values()].toSorted((a, b) => a.key.localeCompare(b.key))
   return { merged, changed }
 }
 

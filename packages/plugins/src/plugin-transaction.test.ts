@@ -291,14 +291,8 @@ describe("plugin transactions", () => {
   it("serializes operations for one plugin without blocking another plugin", async () => {
     const current = fixture(async () => undefined)
     const order: Array<string> = []
-    let releaseFirst = (): void => undefined
-    let firstEntered = (): void => undefined
-    const entered = new Promise<void>((resolvePromise) => {
-      firstEntered = resolvePromise
-    })
-    const gate = new Promise<void>((resolvePromise) => {
-      releaseFirst = resolvePromise
-    })
+    const { promise: entered, resolve: firstEntered } = Promise.withResolvers<void>()
+    const { promise: gate, resolve: releaseFirst } = Promise.withResolvers<void>()
     const first = current.engine.withLock("owner.example", async () => {
       order.push("first:start")
       firstEntered()

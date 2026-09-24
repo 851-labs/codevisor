@@ -62,6 +62,50 @@ export interface PiAuthManager {
 
 const publicFlow = (flow: InternalFlow): PiAuthProviderFlow => structuredClone(flow.value)
 
+const waitForUpdate = async (
+  flow: InternalFlow,
+  revision: number,
+  timeoutMs = 150
+): Promise<void> => {
+  if (flow.revision !== revision) return
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      flow.waiters.delete(wake)
+      resolve()
+    }, timeoutMs)
+    const wake = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    flow.waiters.add(wake)
+  })
+}
+
+const eventValue = (event: AuthEvent): PiAuthEvent => {
+  switch (event.type) {
+    case "auth_url":
+      return {
+        type: event.type,
+        url: event.url,
+        ...(event.instructions === undefined ? {} : { message: event.instructions })
+      }
+    case "device_code":
+      return {
+        type: event.type,
+        userCode: event.userCode,
+        verificationUrl: event.verificationUri
+      }
+    case "info":
+      return {
+        type: event.type,
+        message: event.message,
+        ...(event.links?.[0]?.url === undefined ? {} : { url: event.links[0].url })
+      }
+    case "progress":
+      return { type: event.type, message: event.message }
+  }
+}
+
 export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager => {
   const catalog = config.providers ?? builtinProviders()
   const flows = new Map<string, InternalFlow>()
@@ -122,25 +166,6 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
     config.onFlowChanged?.(publicFlow(flow))
   }
 
-  const waitForUpdate = async (
-    flow: InternalFlow,
-    revision: number,
-    timeoutMs = 150
-  ): Promise<void> => {
-    if (flow.revision !== revision) return
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        flow.waiters.delete(wake)
-        resolve()
-      }, timeoutMs)
-      const wake = () => {
-        clearTimeout(timer)
-        resolve()
-      }
-      flow.waiters.add(wake)
-    })
-  }
-
   const promptValue = (prompt: AuthPrompt): PiAuthPrompt => ({
     id: randomUUID(),
     type: prompt.type,
@@ -150,31 +175,6 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
       : { placeholder: prompt.placeholder }),
     options: prompt.type === "select" ? [...prompt.options] : []
   })
-
-  const eventValue = (event: AuthEvent): PiAuthEvent => {
-    switch (event.type) {
-      case "auth_url":
-        return {
-          type: event.type,
-          url: event.url,
-          ...(event.instructions === undefined ? {} : { message: event.instructions })
-        }
-      case "device_code":
-        return {
-          type: event.type,
-          userCode: event.userCode,
-          verificationUrl: event.verificationUri
-        }
-      case "info":
-        return {
-          type: event.type,
-          message: event.message,
-          ...(event.links?.[0]?.url === undefined ? {} : { url: event.links[0].url })
-        }
-      case "progress":
-        return { type: event.type, message: event.message }
-    }
-  }
 
   const runLogin = async (
     flow: InternalFlow,
@@ -250,7 +250,7 @@ export const makePiAuthManager = (config: PiAuthManagerConfig): PiAuthManager =>
           }
         })
         .filter((provider): provider is PiAuthProvider => provider !== undefined)
-        .sort((left, right) => left.name.localeCompare(right.name))
+        .toSorted((left, right) => left.name.localeCompare(right.name))
     },
     beginLogin: async (providerId, method, shared = false) => {
       const provider = findProvider(providerId)

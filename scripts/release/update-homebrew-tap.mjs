@@ -21,7 +21,9 @@ const files = readdirSync(artifactDir)
 const appZip = files.find((file) => file === "Codevisor-macOS.zip")
 const armZip = files.find((file) => file === "Codevisor-macOS-arm64.zip")
 const intelZip = files.find((file) => file === "Codevisor-macOS-x64.zip")
-const serverArchives = files.filter((file) => /^codevisor-server-.+\.tar\.gz$/.test(file)).sort()
+const serverArchives = files
+  .filter((file) => /^codevisor-server-.+\.tar\.gz$/.test(file))
+  .toSorted()
 
 if (appZip === undefined && (armZip === undefined || intelZip === undefined)) {
   throw new Error(
@@ -87,7 +89,7 @@ writeFileSync(
   binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor-terminal-proxy"
 
   # The codevisor-server formula links the same launcher names; installing
-  # both would collide in \$HOMEBREW_PREFIX/bin.
+  # both would collide in $HOMEBREW_PREFIX/bin.
   conflicts_with formula: "851-labs/tap/codevisor-server"
 
   # Quit a running app before the bundle is swapped. The preflight covers

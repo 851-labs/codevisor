@@ -205,7 +205,9 @@ describe("adaptDirectSocket", () => {
     const adapted = adaptDirectSocket(socket)
     const seen: (string | Uint8Array)[] = []
     const closes: number[] = []
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
     adapted.onmessage = (data) => seen.push(data)
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- the adapted socket only exposes handler properties
     adapted.onclose = (code) => closes.push(code)
 
     emitter.emit("message", Buffer.from("hello"), false)

@@ -237,14 +237,14 @@ export const migrateLinuxDataLayout = async (options: MigrationOptions): Promise
     }
     await rm(join(source, "server-startup.json"), { force: true })
     await rm(join(source, "server.pid"), { force: true })
-    for (const lease of leases.splice(0).reverse()) await lease.release()
+    for (const lease of leases.splice(0).toReversed()) await lease.release()
     await rmdir(source)
     await symlink(target, source, "dir")
     await rm(journalPath)
     await updateService(options, source)
     options.log(`Codevisor data migration complete: ${target}`)
   } finally {
-    for (const lease of leases.reverse()) await lease.release()
+    for (const lease of leases.toReversed()) await lease.release()
     await guard.release()
   }
 }

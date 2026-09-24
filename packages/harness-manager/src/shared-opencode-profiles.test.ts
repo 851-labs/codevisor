@@ -14,7 +14,7 @@ import {
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  for (const cleanup of cleanups.splice(0).toReversed()) await cleanup()
 })
 const id = "shared-00000000-0000-0000-0000-000000000001"
 const document = (label = "Work", activeProfileId = "default") =>
@@ -158,44 +158,49 @@ it("retries profile deletion failures without forgetting ownership", async () =>
   expect(await run(f.db.getHarnessAccount(id))).toBeUndefined()
 })
 
+const apiKey = (key: string) => ({ type: "api", key })
+
 it("applies shared keys without publishing or replacing local credentials and removals", async () => {
   const f = await fixture()
   const source = sharedProfileCredentialSource(id, f.dataDir)
   const path = join(f.dataDir, "data", "opencode", "auth.json")
-  const key = (key: string) => ({ type: "api", key })
   expect(await source.read()).toBeUndefined()
   expect(source.tombstoneOnAbsence).toBe(false)
-  await source.apply(JSON.stringify({ openai: key("one"), google: key("one"), groq: key("one") }))
+  await source.apply(
+    JSON.stringify({ openai: apiKey("one"), google: apiKey("one"), groq: apiKey("one") })
+  )
   const current = JSON.parse(await readFile(path, "utf8"))
   delete current.google
-  current.openai = key("local")
+  current.openai = apiKey("local")
   current.anthropic = { type: "oauth", access: "machine-only" }
   await writeFile(path, JSON.stringify(current))
   await source.apply(
     JSON.stringify({
-      openai: key("two"),
-      google: key("two"),
-      anthropic: key("two"),
-      groq: key("two"),
-      openrouter: key("two")
+      openai: apiKey("two"),
+      google: apiKey("two"),
+      anthropic: apiKey("two"),
+      groq: apiKey("two"),
+      openrouter: apiKey("two")
     })
   )
   expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-    openai: key("local"),
+    openai: apiKey("local"),
     anthropic: current.anthropic,
-    groq: key("two"),
-    openrouter: key("two")
+    groq: apiKey("two"),
+    openrouter: apiKey("two")
   })
   await source.apply("{}")
   expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-    openai: key("local"),
+    openai: apiKey("local"),
     anthropic: current.anthropic
   })
   expect(await source.read()).toBeUndefined()
   // Reconstructing the source simulates a restart; the local override survives.
-  await sharedProfileCredentialSource(id, f.dataDir).apply(JSON.stringify({ openai: key("three") }))
+  await sharedProfileCredentialSource(id, f.dataDir).apply(
+    JSON.stringify({ openai: apiKey("three") })
+  )
   expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-    openai: key("local"),
+    openai: apiKey("local"),
     anthropic: current.anthropic
   })
 })

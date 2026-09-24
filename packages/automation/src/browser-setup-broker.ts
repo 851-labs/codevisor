@@ -127,11 +127,9 @@ export const makeBrowserSetupBroker = (
       await resolveAutomatically(asked.questionId)
       return "connected"
     }
-    let unsubscribe = (): void => undefined
-    const connected = new Promise<"connected">((resolve) => {
-      unsubscribe = provider.onExtensionConnectionChange((isConnected) => {
-        if (isConnected) resolve("connected")
-      })
+    const { promise: connected, resolve } = Promise.withResolvers<"connected">()
+    const unsubscribe = provider.onExtensionConnectionChange((isConnected) => {
+      if (isConnected) resolve("connected")
     })
     const result = await Promise.race([asked.answer, connected])
     unsubscribe()

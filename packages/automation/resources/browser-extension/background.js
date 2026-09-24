@@ -114,9 +114,9 @@ class CodevisorConnection {
     chrome.tabs.onRemoved.addListener(this.onTabRemoved)
     chrome.downloads.onCreated.addListener(this.onDownloadCreated)
     chrome.downloads.onChanged.addListener(this.onDownloadChanged)
-    socket.onmessage = (event) => this.receive(event.data)
-    socket.onclose = () => this.close()
-    socket.onerror = () => this.close()
+    socket.addEventListener("message", (event) => this.receive(event.data))
+    socket.addEventListener("close", () => this.close())
+    socket.addEventListener("error", () => this.close())
     this.keepalive = setInterval(
       () => this.send({ method: "Codevisor.keepalive", params: {} }),
       20_000
@@ -468,7 +468,7 @@ const reconnectNow = () => {
   lastConnectionError = undefined
   const socket = activeSocket
   activeSocket = undefined
-  for (const connection of [...connections]) connection.close()
+  for (const connection of Array.from(connections)) connection.close()
   if (socket && socket.readyState !== WebSocket.CLOSED) socket.close()
   connectToCodevisor()
 }

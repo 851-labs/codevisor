@@ -53,6 +53,8 @@ import type {
   BrowserUseProvider
 } from "./browser-use-provider-types.js"
 
+const extensionEndpoint = (): string | undefined => process.env.CODEVISOR_BROWSER_CDP_URL
+
 export const makeBrowserUseProvider = (
   dataDir: string,
   db?: CodevisorDatabaseService
@@ -89,7 +91,6 @@ export const makeBrowserUseProvider = (
   let setupPromise: Promise<void> | undefined
   let setupError: string | undefined
 
-  const extensionEndpoint = (): string | undefined => process.env.CODEVISOR_BROWSER_CDP_URL
   const status = () => {
     const extension = browserExtensionInstallation()
     return {

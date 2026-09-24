@@ -347,7 +347,7 @@ describe("sessions routes", () => {
         method: "POST"
       })
     ])
-    expect([firstConcurrent.status, secondConcurrent.status].sort()).toEqual([200, 201])
+    expect([firstConcurrent.status, secondConcurrent.status].toSorted()).toEqual([200, 201])
     expect(firstConcurrent.body).toMatchObject({
       agentSessionId: "agent-codex-codevisor",
       id: "client-session-concurrent"

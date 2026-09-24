@@ -10,10 +10,10 @@
   "plugins": ["typescript", "import", "unicorn", "oxc"],
   "categories": {
     "suspicious": "error",
-    "perf": "warn"
+    "perf": "error"
   },
   "rules": {
-    "no-console": "warn",
+    "no-console": "off",
     "typescript/no-explicit-any": "error",
     "max-lines": [
       "error",
@@ -27,17 +27,19 @@
         "case": "kebabCase"
       }
     ],
-    "no-unsafe-optional-chaining": "warn",
-    "preserve-caught-error": "warn",
-    "no-useless-escape": "warn",
-    "no-control-regex": "warn",
-    "no-new": "warn",
-    "import/no-named-as-default": "warn",
-    "unicorn/consistent-function-scoping": "warn",
-    "unicorn/no-array-sort": "warn",
-    "unicorn/no-array-reverse": "warn",
-    "unicorn/no-useless-spread": "warn",
-    "unicorn/prefer-add-event-listener": "warn",
-    "unicorn/require-module-specifiers": "warn"
+    "no-unsafe-optional-chaining": "error",
+    "preserve-caught-error": "error",
+    "no-useless-escape": "error",
+    "no-control-regex": "error",
+    "no-new": "error",
+    "import/no-named-as-default": "error",
+    "unicorn/consistent-function-scoping": "error",
+    "unicorn/no-array-sort": "error",
+    "unicorn/no-array-reverse": "error",
+    "unicorn/no-useless-spread": "error",
+    "unicorn/prefer-add-event-listener": "error",
+    "unicorn/require-module-specifiers": "error",
+    "no-await-in-loop": "off",
+    "oxc/no-map-spread": "off"
   }
 }

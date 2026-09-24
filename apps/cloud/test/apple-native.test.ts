@@ -116,7 +116,7 @@ describe("native Apple authentication", () => {
       request("apple/native/complete", body),
       request("apple/native/complete", body)
     ])
-    expect(results.map((response) => response.status).sort()).toEqual([200, 401])
+    expect(results.map((response) => response.status).toSorted()).toEqual([200, 401])
     expect((await request("apple/native/complete", body)).status).toBe(401)
   })
 

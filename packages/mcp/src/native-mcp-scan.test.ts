@@ -249,7 +249,7 @@ command = "docs-mcp"
       "node_repl",
       "cua_repl"
     ])
-    expect(scan.candidates.map((candidate) => candidate.identity).sort()).toEqual([
+    expect(scan.candidates.map((candidate) => candidate.identity).toSorted()).toEqual([
       "docs-mcp",
       "user-cua-repl",
       "user-node-repl"

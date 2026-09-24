@@ -23,7 +23,7 @@ test("every Swift suite that changes the global executor is isolated", () => {
       /\b(?:TestStore|TestStoreOf|withMainSerialExecutor)\b/.test(readFileSync(path, "utf8"))
     )
     .map((path) => basename(path, ".swift"))
-  assert.deepEqual(suites.sort(), [...mainSerialExecutorSuites].sort())
+  assert.deepEqual(suites.toSorted(), [...mainSerialExecutorSuites].toSorted())
 })
 
 test("test selections are complementary and unrelated suites cannot enter the isolated process", () => {

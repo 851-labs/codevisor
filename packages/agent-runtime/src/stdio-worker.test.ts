@@ -34,7 +34,7 @@ const fixture = () => {
   const stdin = new PassThrough()
   const stdout = new PassThrough()
   const stderr = new PassThrough()
-  let exit: (error?: Error) => void = () => {}
+  let exit: ((error?: Error) => void) | undefined
   const endpoint: StdioEndpoint = {
     stdin,
     stdout,
@@ -45,7 +45,7 @@ const fixture = () => {
     },
     kill: vi.fn()
   }
-  return { endpoint, stdin, stdout, stderr, exit: (error?: Error) => exit(error) }
+  return { endpoint, stdin, stdout, stderr, exit: (error?: Error) => exit?.(error) }
 }
 
 it("bounds queued worker input and drains replies before reporting process exit", ({

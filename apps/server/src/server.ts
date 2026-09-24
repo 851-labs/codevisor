@@ -204,7 +204,7 @@ export const makeCodevisorServerApp = (
     )?.name
     /* v8 ignore next -- defensive: releases for uncataloged harnesses fall back to the id. */
     const harnessName = catalogName ?? harnessId
-    for (const [sessionId, gatedHarnessId] of [...routeState.gatedSessions]) {
+    for (const [sessionId, gatedHarnessId] of Array.from(routeState.gatedSessions)) {
       if (gatedHarnessId !== harnessId) continue
       routeState.gatedSessions.delete(sessionId)
       void appendAndPublish(services.db, fanout, "session.updateGate.updated", sessionId, {

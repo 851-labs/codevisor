@@ -25,7 +25,8 @@ export const routeBrowserFrame = async (
     }
     if (!node.frameId) throw new Error("The frame document is not available")
     const sessionId = await attachTarget(runtime, node.frameId, page.sessionId)
-    page = { ...page, sessionId }
+    // Only the session changes as frames nest; every other field stays the original page's.
+    page = { ...original, sessionId }
     frame = []
   }
   return { page, locator: { ...value, frame } }
