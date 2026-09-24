@@ -139,18 +139,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     )
   }
 
-  /// A terminal using the original bare session key, retained for importing
-  /// shells created before separate pane identities existed.
-  public static func initial(sessionId: UUID) -> PaneGroupState {
-    let pane = PaneDescriptorState(
-      id: UUID(),
-      kind: .terminal,
-      name: "Terminal 1",
-      terminalKey: sessionId.uuidString
-    )
-    return PaneGroupState(panes: [pane], selectedPaneId: pane.id)
-  }
-
   /// The state a center group starts with when the workspace has no chat to
   /// bind: the same New Tab placeholder the user gets from `addNewTabPane`,
   /// so nothing here invents a chat or a session-scoped key.

@@ -63,21 +63,6 @@ public final class RemoteDirectoryBrowserModel {
     return columns.first?.listing?.path
   }
 
-  /// Ancestor paths of the current browse root, deepest first, for the
-  /// breadcrumb popup. Includes the root column itself.
-  public var breadcrumb: [String] {
-    guard let firstPath = columns.first?.listing?.path ?? columns.first.map(\.path) else { return [] }
-    var paths = [firstPath]
-    var current = firstPath
-    while current != "/", !current.isEmpty {
-      let parent = (current as NSString).deletingLastPathComponent
-      guard parent != current, !parent.isEmpty else { break }
-      paths.append(parent)
-      current = parent
-    }
-    return paths
-  }
-
   /// Whether anything above the current leftmost column exists to walk up to.
   public var canGoUp: Bool {
     columns.first?.listing?.parent != nil

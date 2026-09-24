@@ -11,19 +11,16 @@ import Foundation
 public protocol PaneGroupRepository: Sendable {
   func load(sessionId: UUID?) -> PaneGroupState?
   func save(_ state: PaneGroupState, sessionId: UUID?)
-  func legacyPanes(sessionId: UUID) -> [PaneDescriptorState]
   func removeAll()
 }
 
 public extension PaneGroupRepository {
-  func legacyPanes(sessionId: UUID) -> [PaneDescriptorState] { [] }
   func removeAll() {}
 }
 
-/// File/in-memory storage for pre-workspace sessions and standalone groups.
-/// The older bare-session key is read only during workspace migration; active
-/// groups use the existing ":center" key. Cached decoding avoids disk reads
-/// on every selection change.
+/// File/in-memory storage for pre-workspace sessions and standalone groups,
+/// keyed "<session>:center". Cached decoding avoids disk reads on every
+/// selection change.
 public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked Sendable {
   private let store: any PersistenceStore
   private let key = "paneGroups"
@@ -65,10 +62,6 @@ public final class DefaultPaneGroupRepository: PaneGroupRepository, @unchecked S
         "Failed to clear \(self.key, privacy: .public): \(String(describing: error), privacy: .public)"
       )
     }
-  }
-
-  public func legacyPanes(sessionId: UUID) -> [PaneDescriptorState] {
-    loadAll()[sessionId.uuidString]?.panes ?? []
   }
 
   private func loadAll() -> [String: PaneGroupState] {

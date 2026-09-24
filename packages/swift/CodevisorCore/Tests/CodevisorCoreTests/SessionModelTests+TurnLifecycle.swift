@@ -101,10 +101,18 @@ extension SessionModelTests {
     )
 
     await model.loadHistory()
-    model.recordSessionFailure(
-      "Select a signed-in harness account before continuing this session",
-      requiresHarnessAuthentication: true
-    )
+    client.emit(
+      ServerEventEnvelope(
+        id: 1,
+        serverId: "local",
+        kind: "session.authRequired",
+        subjectId: sessionId.uuidString,
+        createdAt: "2026-06-30T00:00:01.000Z",
+        payload: .object([
+          "detail": .string("Select a signed-in harness account before continuing this session")
+        ])
+      ))
+    await settleUntil { model.errorRequiresHarnessAuthentication }
 
     #expect(userMessages(model).map(\.text) == ["Keep this message visible."])
     #expect(model.errorRequiresHarnessAuthentication)

@@ -36,7 +36,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _sessionEventSinceValues: [Int] = []
   private var _transcriptPageRequests: [(before: String?, limit: Int)] = []
   private var _transcriptDetailRequestCount = 0
-  private var _transcriptDetailThroughRevisions: [Int?] = []
   private var _transcriptDetailGate: AsyncStream<Void>?
   private var _transcriptPageFailuresRemaining = 0
   private var _promptQueueResponse: [ServerPromptQueueItem] = []
@@ -63,7 +62,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   var olderTranscriptPage: ServerTranscriptPage?
   let transcriptDetailRequests = TestSignal()
   var transcriptDetailsByItem: [String: ServerTranscriptItemDetails] = [:]
-  var transcriptDetailsByCursor: [String: ServerTranscriptItemDetails] = [:]
   var transcriptDetailHandler: (@Sendable (String, String?) async throws -> ServerTranscriptItemDetails)?
   var transcriptBodyHandler: (@Sendable (String, String, String, Int) async throws -> ServerTranscriptBodyPage)?
   private var _transcriptBodyRequests: [Int] = []
@@ -174,10 +172,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { _transcriptDetailRequestCount }
   }
 
-  var transcriptDetailThroughRevisions: [Int?] {
-    lock.withLock { _transcriptDetailThroughRevisions }
-  }
-
   func holdTranscriptDetails(until gate: AsyncStream<Void>) {
     lock.withLock { _transcriptDetailGate = gate }
   }
@@ -234,10 +228,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     lock.withLock { _questionAnswers }
   }
 
-  var browserExtensionInstallerOpenCount: Int {
-    lock.withLock { _configUpdates.count(where: { $0.0 == "browser-extension-installer" }) }
-  }
-
   func holdQuestionAnswers(until gate: AsyncStream<Void>) {
     lock.withLock { _questionAnswerGate = gate }
   }
@@ -288,7 +278,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     let gate = lock.withLock {
       _transcriptDetailRequestCount += 1
       _transcriptDetailCursors.append(after)
-      _transcriptDetailThroughRevisions.append(nil)
       return _transcriptDetailGate
     }
     transcriptDetailRequests.signal()
@@ -296,7 +285,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     if let gate {
       for await _ in gate { break }
     }
-    guard let details = after.flatMap({ transcriptDetailsByCursor[$0] }) ?? transcriptDetailsByItem[itemId] else {
+    guard let details = transcriptDetailsByItem[itemId] else {
       throw CodevisorServerClientError.httpStatus(404, "")
     }
     return details
@@ -459,11 +448,6 @@ extension FakeSessionServerClient {
   }
   func setSessionMode(id: UUID, modeId: String) async throws {
     lock.withLock { _runtimeRequests.append("mode:\(modeId)") }
-  }
-
-  func installDevelopmentBrowserExtension() async throws -> ServerBrowserUseConfiguration {
-    lock.withLock { _configUpdates.append(("browser-extension-installer", "open")) }
-    return .init(chromeAvailable: true, chromeConnected: false, managedAvailable: true)
   }
 
   func setSessionConfig(id: UUID, configId: String, value: String) async throws {

@@ -162,7 +162,7 @@ struct ConfigOptionCacheTests {
 
     cache.invalidateCapabilities(forServer: "local")
 
-    #expect(!cache.store([capability(model: "stale")], forServer: "local", ifRevision: revision))
+    #expect(!cache.storeIfEmpty([capability(model: "stale")], forServer: "local", ifRevision: revision))
     #expect(cache.capabilities(forServer: "local").isEmpty)
   }
 

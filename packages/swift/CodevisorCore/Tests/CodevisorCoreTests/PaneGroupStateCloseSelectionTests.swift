@@ -50,23 +50,6 @@ struct PaneGroupStateCloseSelectionTests {
     state.closePane(id: file)
     #expect(state.selectedPaneId == agent)
   }
-
-  @Test("Closing an unselected pane leaves the selection alone")
-  func closingUnselectedPaneKeepsSelection() {
-    var (state, chat, _, file) = groupWithAgentTerminalBetween()
-    state.selectPane(id: chat)
-    state.closePane(id: file)
-    #expect(state.selectedPaneId == chat)
-  }
-
-  @Test("Closing the only pane clears the selection")
-  func closingLastPaneClearsSelection() {
-    var state = PaneGroupState()
-    let only = state.addTerminalPane(sessionId: sessionId).id
-    state.closePane(id: only)
-    #expect(state.selectedPaneId == nil)
-    #expect(state.panes.isEmpty)
-  }
 }
 
 extension PaneDescriptorState {

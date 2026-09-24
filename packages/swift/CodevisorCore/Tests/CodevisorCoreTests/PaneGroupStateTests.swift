@@ -13,17 +13,6 @@ struct PaneGroupStateTests {
     #expect(state.selectedPaneId == nil)
   }
 
-  @Test("Initial state has one selected terminal pane keyed on the bare session UUID")
-  func initialState() {
-    let state = PaneGroupState.initial(sessionId: sessionId)
-    #expect(state.panes.count == 1)
-    #expect(state.panes[0].name == "Terminal 1")
-    #expect(state.panes[0].kind == .terminal)
-    // Migration: pane 1 must reattach to shells created before panes existed.
-    #expect(state.panes[0].terminalKey == sessionId.uuidString)
-    #expect(state.selectedPaneId == state.panes[0].id)
-  }
-
   @Test("The first requested terminal materializes from an empty group")
   func lazyFirstTerminal() {
     var state = PaneGroupState()
@@ -41,24 +30,13 @@ struct PaneGroupStateTests {
 
   @Test("Adding a pane names it Terminal N, selects it and uses a synthetic key")
   func addPane() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     let added = state.addTerminalPane(sessionId: sessionId)
     #expect(added.name == "Terminal 2")
     #expect(state.panes.count == 2)
     #expect(state.selectedPaneId == added.id)
     #expect(added.terminalKey == "\(sessionId.uuidString):\(added.id.uuidString)")
-  }
-
-  @Test("A New Tab placeholder converts to a terminal in place")
-  func newTabPaneConvertsToTerminal() {
-    var state = PaneGroupState.centerInitial(sessionId: sessionId)
-    let placeholder = state.addNewTabPane()
-    #expect(placeholder.kind == .newTab)
-    let converted = state.convertNewTabPane(
-      id: placeholder.id, to: .terminal, sessionId: sessionId
-    )
-    #expect(converted?.kind == .terminal)
-    #expect(converted?.id == placeholder.id)
   }
 
   @Test("Shared reconciliation promotes a placeholder without replacing local presentation")
@@ -132,7 +110,8 @@ struct PaneGroupStateTests {
     #expect(PaneGroupState.nextTerminalName(existing: ["Terminal 1", "Terminal 3"]) == "Terminal 4")
     #expect(PaneGroupState.nextTerminalName(existing: ["Renamed", "Terminal 2"]) == "Terminal 3")
 
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     let second = state.addTerminalPane(sessionId: sessionId)
     state.closePane(id: second.id)
     // After closing "Terminal 2" of [1, 2], the next add is "Terminal 2" again.
@@ -141,7 +120,8 @@ struct PaneGroupStateTests {
 
   @Test("Closing the selected pane selects the pane before it, else the one after")
   func closeSelectsNeighbor() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     let first = state.panes[0]
     let second = state.addTerminalPane(sessionId: sessionId)
     let third = state.addTerminalPane(sessionId: sessionId)
@@ -155,7 +135,8 @@ struct PaneGroupStateTests {
 
   @Test("Closing a non-selected pane keeps the selection")
   func closeKeepsSelection() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     let first = state.panes[0]
     let second = state.addTerminalPane(sessionId: sessionId)
     state.closePane(id: first.id)
@@ -164,7 +145,8 @@ struct PaneGroupStateTests {
 
   @Test("Closing the last remaining pane clears selection")
   func closeLastClearsSelection() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.selectPane(id: state.panes[0].id)
     state.closePane(id: state.panes[0].id)
     #expect(state.panes.isEmpty)
@@ -173,7 +155,8 @@ struct PaneGroupStateTests {
 
   @Test("Selecting a pane ignores unknown identities")
   func selectPane() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.selectPane(id: state.panes[0].id)
     // Unknown ids are ignored.
     state.selectPane(id: UUID())

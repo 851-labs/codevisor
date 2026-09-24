@@ -67,35 +67,6 @@ extension SessionModelTests {
     #expect(model.configOptions.first?.currentValue == "low")
   }
 
-  @Test("Fresh harness capabilities replace draft model options")
-  func refreshedCapabilitiesReplaceConfigOptions() {
-    let sessionId = UUID()
-    let client = FakeSessionServerClient(sessionId: sessionId)
-    let original = SessionConfigOption(
-      id: "model",
-      name: "Model",
-      category: "model",
-      currentValue: "old",
-      options: [SessionConfigSelectOption(value: "old", name: "Old")]
-    )
-    let refreshed = SessionConfigOption(
-      id: "model",
-      name: "Model",
-      category: "model",
-      currentValue: "new",
-      options: [SessionConfigSelectOption(value: "new", name: "New")]
-    )
-    let model = SessionModel(
-      serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
-      sessionId: sessionId.uuidString,
-      configOptions: [original]
-    )
-
-    model.replaceConfigOptions([refreshed])
-
-    #expect(model.configOptions == [refreshed])
-  }
-
   @Test("History paints the persisted answer and loads tools only on disclosure")
   func loadHistoryRestoresState() async {
     let sessionId = UUID()

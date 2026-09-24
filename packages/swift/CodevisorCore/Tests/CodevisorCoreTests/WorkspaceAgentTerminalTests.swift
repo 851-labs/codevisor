@@ -38,7 +38,8 @@ struct WorkspaceAgentTerminalTests {
   func scopedPruning() throws {
     var workspace = workspace()
     let selected = workspace.selectedCenterTabId
-    let user = PaneGroupState.initial(sessionId: owner).panes[0]
+    var userGroup = PaneGroupState()
+    let user = userGroup.addTerminalPane(sessionId: owner)
     workspace.upsertCenterPane(user, selecting: false)
     let first = workspace.syncAgentTerminals([("first", "dev")], owner: owner, pruneEnded: true)
     let second = workspace.syncAgentTerminals([("second", "tests")], owner: otherOwner, pruneEnded: true)
@@ -104,7 +105,8 @@ struct WorkspaceAgentTerminalTests {
   @Test("Matching a user terminal never adopts or prunes it")
   func userTerminalSurvives() {
     var workspace = workspace()
-    let user = PaneGroupState.initial(sessionId: owner).panes[0]
+    var userGroup = PaneGroupState()
+    let user = userGroup.addTerminalPane(sessionId: owner)
     workspace.upsertCenterPane(user, selecting: false)
     #expect(workspace.syncAgentTerminals([(user.terminalKey, "dev")], owner: owner, pruneEnded: true).isEmpty)
     #expect(workspace.syncAgentTerminals([], owner: owner, pruneEnded: true).isEmpty)

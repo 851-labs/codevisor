@@ -93,12 +93,12 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "claude-code",
       configValues: ["model": "fable", "reasoning": "low"]
     )
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "codex",
       configValues: ["model": "gpt-5.5", "reasoning": "high"]
     )
@@ -158,9 +158,9 @@ struct DefaultModelSelectionTests {
     #expect(controller.modelOption?.currentValue == "gpt-5.6-sol")
     #expect(controller.thoughtLevelOptions.first?.currentValue == "xhigh")
     // Browsing to the machine does not replace its durable fallback.
-    #expect(defaults.lastHarnessId(forServer: "machine-b") == "claude-code")
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
     #expect(
-      defaults.configSelections(forHarness: "codex", onServer: "machine-b") == [
+      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")) == [
         "model": "gpt-5.5", "reasoning": "high",
       ])
   }
@@ -170,7 +170,7 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "codex",
       configValues: ["model": "gpt-5.5", "reasoning": "high"]
     )
@@ -226,7 +226,7 @@ struct DefaultModelSelectionTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "codex")
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "codex",
       configValues: ["model": "gpt-5.6-sol", "reasoning": "high"]
     )

@@ -427,10 +427,6 @@ extension MachineController {
     connectionsById.compactMapValues(\.status)
   }
 
-  public var updateInfoByMachineId: [String: ServerUpdateInfo] {
-    connectionsById.compactMapValues(\.updateInfo)
-  }
-
   public var availabilityByMachineId: [String: ServerAvailability] {
     connectionsById.compactMapValues(\.availability)
   }

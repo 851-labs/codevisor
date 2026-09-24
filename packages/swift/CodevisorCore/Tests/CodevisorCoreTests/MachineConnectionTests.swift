@@ -196,7 +196,7 @@ struct MachineConnectionTests {
       ])
     )
     try await waitForSync {
-      controller.updateInfoByMachineId[remote.id]?.latestVersion == "9.9.9"
+      controller.serverUpdateInfo(for: remote.id)?.latestVersion == "9.9.9"
     }
     controller.stopEventSync()
   }
@@ -247,8 +247,8 @@ struct MachineConnectionTests {
     await controller.connectMachine(remoteB.id)
     await controller.refreshServerUpdates()
 
-    #expect(controller.updateInfoByMachineId[remoteA.id]?.latestVersion == "0.2.0")
-    #expect(controller.updateInfoByMachineId[remoteB.id]?.latestVersion == "0.3.0")
+    #expect(controller.serverUpdateInfo(for: remoteA.id)?.latestVersion == "0.2.0")
+    #expect(controller.serverUpdateInfo(for: remoteB.id)?.latestVersion == "0.3.0")
     // The periodic sweep reads each server's CACHED check — forcing is
     // reserved for the user's explicit "Check Again", or every client
     // would hammer the release origin on every pass.

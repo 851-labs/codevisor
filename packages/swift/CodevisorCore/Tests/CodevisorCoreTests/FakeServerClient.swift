@@ -61,7 +61,6 @@ actor FakeServerClient: CodevisorServerClienting {
   /// "network" call in flight while the app state changes underneath it.
   private var listDelay: (@Sendable () async -> Void)?
   private var projectUpsertDelay: (@Sendable () async -> Void)?
-  private var sessionUpsertDelay: (@Sendable () async -> Void)?
   /// When set, deleteProject/deleteSession suspend on this first — lets
   /// tests hold the server DELETE in flight while refreshes race it.
   private var deleteDelay: (@Sendable () async -> Void)?
@@ -78,10 +77,6 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func setProjectUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
     projectUpsertDelay = delay
-  }
-
-  func setSessionUpsertDelay(_ delay: @escaping @Sendable () async -> Void) {
-    sessionUpsertDelay = delay
   }
 
   func setDeleteDelay(_ delay: @escaping @Sendable () async -> Void) {
@@ -133,7 +128,6 @@ actor FakeServerClient: CodevisorServerClienting {
   func listSessions() async throws -> [ServerSession] { sessions }
 
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {
-    if let sessionUpsertDelay { await sessionUpsertDelay() }
     let serverSession = serverSession(from: session)
     upsertedSessionIDs.append(serverSession.id)
     changed.signal()
