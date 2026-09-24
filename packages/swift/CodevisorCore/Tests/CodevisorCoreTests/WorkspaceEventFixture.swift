@@ -65,10 +65,10 @@ final class WorkspaceEventFixture {
   }
 
   /// A server snapshot with this workspace archived.
-  func archivedSnapshot() -> ServerWorkspaceSnapshot {
+  func archivedSnapshot() -> FakeWorkspaceSnapshot {
     var record = WorkspaceSyncModel.serverWorkspace(from: workspace)
     record.isArchived = true
-    return ServerWorkspaceSnapshot(workspaces: [record], panes: fake.workspacePanes ?? [])
+    return FakeWorkspaceSnapshot(workspaces: [record], panes: fake.workspacePanes ?? [])
   }
 
   /// Stops every navigation task and waits for them to finish.

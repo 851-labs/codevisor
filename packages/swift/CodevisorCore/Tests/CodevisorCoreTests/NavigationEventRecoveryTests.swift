@@ -161,7 +161,7 @@ struct NavigationEventRecoveryTests {
     let fixture = await WorkspaceEventFixture(navigationClock: clock)
     let started = TestSignal()
     let release = TestSignal()
-    let stale = ServerWorkspaceSnapshot(
+    let stale = FakeWorkspaceSnapshot(
       workspaces: [WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)], panes: []
     )
     let fresh = fixture.archivedSnapshot()

@@ -104,8 +104,6 @@ actor FakeServerClient: CodevisorServerClienting {
 
   func listHarnesses() async throws -> [ServerHarness] { [] }
 
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
-
   func listProjects() async throws -> [ServerProject] {
     if let listDelay { await listDelay() }
     return projects
@@ -133,10 +131,6 @@ actor FakeServerClient: CodevisorServerClienting {
   }
 
   func listSessions() async throws -> [ServerSession] { sessions }
-
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
-    fatalError("unused")
-  }
 
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {
     if let sessionUpsertDelay { await sessionUpsertDelay() }

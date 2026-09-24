@@ -19,9 +19,3 @@ public struct ServerHarnessSettings: Codable, Equatable, Sendable {
     self.override = override
   }
 }
-
-public struct ServerHarnessUninstallInfo: Codable, Equatable, Sendable {
-  public var available: Bool
-  public var detail: String?
-  public var command: String?
-}

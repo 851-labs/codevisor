@@ -176,19 +176,6 @@ extension CodevisorServerClient {
     var skills: [ServerRemoteSkillCandidate]
   }
 
-  private struct ImportSkillBody: Encodable {
-    var path: String
-  }
-
-  private struct SetSkillInstalledBody: Encodable {
-    var installed: Bool
-  }
-
-  private struct MakeSkillGlobalBody: Encodable {
-    var harnessId: String
-    var directoryName: String
-  }
-
   private struct SyncSkillsBody: Encodable {
     var directoryNames: [String]?
   }
@@ -222,38 +209,11 @@ extension CodevisorServerClient {
     )
   }
 
-  public func importSkill(path: String) async throws -> ServerSkillsScan {
-    try await send("/v1/skills/import", method: "POST", body: ImportSkillBody(path: path))
-  }
-
   public func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
     try await send(
       "/v1/skills/\(pathComponent(directoryName))",
       method: "DELETE",
       body: Optional<EmptyBody>.none
-    )
-  }
-
-  public func setSkillInstalled(
-    directoryName: String,
-    harnessId: String,
-    installed: Bool
-  ) async throws -> ServerSkillsScan {
-    try await send(
-      "/v1/skills/\(pathComponent(directoryName))/harnesses/\(pathComponent(harnessId))",
-      method: "PUT",
-      body: SetSkillInstalledBody(installed: installed)
-    )
-  }
-
-  public func makeSkillGlobal(
-    harnessId: String,
-    directoryName: String
-  ) async throws -> ServerSkillsScan {
-    try await send(
-      "/v1/skills/make-global",
-      method: "POST",
-      body: MakeSkillGlobalBody(harnessId: harnessId, directoryName: directoryName)
     )
   }
 

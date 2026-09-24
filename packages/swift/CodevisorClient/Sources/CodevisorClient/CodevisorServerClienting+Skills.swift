@@ -17,10 +17,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func importSkill(path: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
   func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate] {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -30,14 +26,6 @@ public extension CodevisorServerClienting {
   }
 
   func removeSkill(directoryName: String) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan {
     throw CodevisorServerClientError.invalidResponse
   }
 

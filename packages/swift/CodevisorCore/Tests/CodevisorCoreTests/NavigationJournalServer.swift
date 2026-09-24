@@ -233,12 +233,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
 
   func listProjects() async throws -> [ServerProject] { current.projects }
   func listSessions() async throws -> [ServerSession] { current.sessions }
-  func listWorkspaces() async throws -> [ServerWorkspace]? { current.workspaces }
-  func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { current.panes }
-  func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
-    let state = current
-    return ServerWorkspaceSnapshot(workspaces: state.workspaces, panes: state.panes)
-  }
 
   // MARK: - Unused by navigation
 
@@ -250,13 +244,9 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   func issuePairingToken() async throws -> ServerPairingToken { throw CodevisorServerClientError.invalidResponse }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
   func listHarnesses() async throws -> [ServerHarness] { [] }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func upsertProject(_ project: Project) async throws -> ServerProject { serverProject(from: project) }
   func updateProject(_ project: Project) async throws -> ServerProject { serverProject(from: project) }
   func deleteProject(id: UUID) async throws {}
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail { throw CodevisorServerClientError.invalidResponse }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { try await upsertSession(session) }
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
     ServerPromptAccepted(accepted: true, sessionId: id.uuidString)

@@ -217,14 +217,6 @@ extension CodevisorServerClient {
     )
   }
 
-  public func connectMcpServer(id: String) async throws -> ServerMcpServer {
-    try await send(
-      "/v1/mcps/\(pathComponent(id))/connect",
-      method: "POST",
-      body: Optional<EmptyBody>.none
-    )
-  }
-
   public func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
     try await send(
       "/v1/mcps/\(pathComponent(id))/oauth-start",
@@ -285,10 +277,6 @@ extension CodevisorServerClient {
       method: "POST",
       body: RemoveNativeMcpBody(harnessId: harnessId, serverName: serverName)
     )
-  }
-
-  public func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval] {
-    try await get("/v1/native-mcps/removals")
   }
 
   public func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan {

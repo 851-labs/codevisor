@@ -213,17 +213,6 @@ public struct ServerWorkspacePane: Codable, Equatable, Sendable {
   }
 }
 
-/// Workspaces and their shared pane registry captured in one server read.
-public struct ServerWorkspaceSnapshot: Decodable, Equatable, Sendable {
-  public var workspaces: [ServerWorkspace]
-  public var panes: [ServerWorkspacePane]
-
-  public init(workspaces: [ServerWorkspace], panes: [ServerWorkspacePane]) {
-    self.workspaces = workspaces
-    self.panes = panes
-  }
-}
-
 private struct ServerWorkspacePaneClose: Decodable {
   var pane: ServerWorkspacePane?
 }
@@ -319,37 +308,6 @@ private struct CreateScratchProjectBody: Encodable {
   var id: String
 }
 
-/// Moves a not-yet-started session to another project/worktree. Deliberately
-/// its own body (not `UpdateSessionBody`): sending `projectId` makes the
-/// server treat the PATCH as a directory move, which is refused once the
-/// agent has started — routine updates must never carry it.
-private struct MoveSessionBody: Encodable {
-  var projectId: String
-  var worktreeName: String?
-}
-
-private struct UpsertWorkspaceBody: Encodable {
-  var sidebarOrderHead: String?
-  var id: String
-  var projectId: String
-  var name: String
-  var hasCustomName: Bool
-  var rootDirectory: String?
-  var isArchived: Bool
-  var createdAt: String
-
-  init(_ workspace: ServerWorkspace) {
-    sidebarOrderHead = WorkspaceOrderClock.shared.head
-    id = workspace.id
-    projectId = workspace.projectId
-    name = workspace.name
-    hasCustomName = workspace.hasCustomName
-    rootDirectory = workspace.rootDirectory
-    isArchived = workspace.isArchived
-    createdAt = workspace.createdAt
-  }
-}
-
 extension CodevisorServerClient {
   public func listProjects() async throws -> [ServerProject] {
     try await get("/v1/projects")
@@ -385,62 +343,6 @@ extension CodevisorServerClient {
       method: "POST",
       body: CreateScratchProjectBody(id: id.uuidString)
     )
-  }
-
-  public func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession {
-    try await send(
-      "/v1/sessions/\(id.uuidString)",
-      method: "PATCH",
-      body: MoveSessionBody(projectId: projectId.uuidString, worktreeName: worktreeName)
-    )
-  }
-
-  public func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] {
-    try await get("/v1/projects/\(projectId.uuidString)/worktrees")
-  }
-
-  public func listWorkspaces() async throws -> [ServerWorkspace]? {
-    do {
-      return try await get("/v1/workspaces")
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return nil
-    } catch CodevisorServerClientError.httpStatus(405, _) {
-      return nil
-    }
-  }
-
-  public func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
-    do {
-      return try await get("/v1/workspace-snapshot")
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return nil
-    } catch CodevisorServerClientError.httpStatus(405, _) {
-      return nil
-    }
-  }
-
-  public func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? {
-    do {
-      return try await send(
-        "/v1/workspaces/\(workspace.id)",
-        method: "PUT",
-        body: UpsertWorkspaceBody(workspace)
-      )
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return nil
-    } catch CodevisorServerClientError.httpStatus(405, _) {
-      return nil
-    }
-  }
-
-  public func listWorkspacePanes() async throws -> [ServerWorkspacePane]? {
-    do {
-      return try await get("/v1/workspace-panes")
-    } catch CodevisorServerClientError.httpStatus(404, _) {
-      return nil
-    } catch CodevisorServerClientError.httpStatus(405, _) {
-      return nil
-    }
   }
 
   public func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
