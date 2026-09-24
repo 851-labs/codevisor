@@ -76,18 +76,32 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sessions.transcript",
-    "Read a reverse-paginated session transcript.",
+    "Read a reverse-paginated session transcript, newest page first. Items are oldest-to-newest. When hasMore is true, pass the page's nextBefore back unchanged as before to read the next older page; pass nextAfter as before to read newer items.",
     "GET",
     "/v1/sessions/:id/transcript",
     {
-      query: [integerQuery("before", "Exclusive transcript cursor."), integerQuery("limit")]
+      query: [
+        stringQuery(
+          "before",
+          "Opaque cursor copied unchanged from a previous page's nextBefore or nextAfter."
+        ),
+        integerQuery("limit", "Items per page, from 1. Defaults to 32.")
+      ]
     }
   ),
   apiTool(
     "sessions.transcript_details",
-    "Read the detailed events for one transcript item.",
+    "Read the detailed events for one transcript item, one page at a time. Pass the page's nextAfter (or previousBefore) back unchanged as after to continue.",
     "GET",
-    "/v1/sessions/:id/transcript/:itemId/details"
+    "/v1/sessions/:id/transcript/:itemId/details",
+    {
+      query: [
+        stringQuery(
+          "after",
+          "Opaque cursor copied unchanged from a previous page's nextAfter or previousBefore, or latest for the newest entries."
+        )
+      ]
+    }
   ),
   apiTool(
     "sessions.queue_list",
