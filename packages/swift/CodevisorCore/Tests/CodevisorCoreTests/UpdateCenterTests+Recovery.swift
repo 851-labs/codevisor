@@ -17,7 +17,7 @@ extension UpdateCenterTests {
     let controller = try makeController(fakes: ["local": fake, remote.id: fake], remotes: [remote])
     defer { controller.stopEventSync() }
     let app = AppUpdateModel(currentVersion: "1.0")
-    app.checkHandler = { _ in }
+    app.checkHandler = {}
     app.reportAvailable(version: "2.0", releasePageURL: nil)
     var installs = 0
     app.installHandler = { _ in installs += 1 }
@@ -46,7 +46,7 @@ extension UpdateCenterTests {
     let controller = try makeController(fakes: [remote.id: fake], remotes: [remote])
     defer { controller.stopEventSync() }
     let app = AppUpdateModel(currentVersion: "1.0")
-    app.checkHandler = { _ in }
+    app.checkHandler = {}
     app.reportAvailable(version: "2.0", releasePageURL: nil)
     let center = UpdateCenter(machines: controller, appUpdate: app)
     await center.refresh()
@@ -56,8 +56,7 @@ extension UpdateCenterTests {
     #expect(center.updateAllNotice != nil)
     #expect(center.components.filter(\.isFailed).count == 4)
 
-    app.checkHandler = { userInitiated in
-      #expect(userInitiated)
+    app.checkHandler = {
       #expect(center.updateAllNotice == nil)
       #expect(center.components.allSatisfy { !$0.isFailed })
       #expect(app.progress == nil)
@@ -88,7 +87,7 @@ extension UpdateCenterTests {
     connection.updateStatusMessage = "Downloading…"
     connection.updateProgress = 0.5
     let app = AppUpdateModel(currentVersion: "1.0")
-    app.checkHandler = { _ in Issue.record("An active install must not start a check") }
+    app.checkHandler = { Issue.record("An active install must not start a check") }
     app.reportInstalling(version: "2.0", releasePageURL: nil)
     app.reportProgress("Downloading…", fraction: 0.4)
     let center = UpdateCenter(machines: controller, appUpdate: app)

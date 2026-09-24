@@ -49,7 +49,6 @@ struct ThemeManagerTests {
     #expect(palette != nil)
     #expect(palette?.isDark == true)
     #expect(manager.palette(forThemeId: "pierre:pierre-dark") == palette)
-    #expect(manager.themeData(for: .dark) != nil)
   }
 
   @Test("Unknown stored ids fall back to system without clobbering")

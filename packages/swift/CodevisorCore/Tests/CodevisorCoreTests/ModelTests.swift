@@ -141,9 +141,6 @@ struct ModelTests {
     #expect(TranscriptEntry.text(id: "1", markdown: "x").id == "text:1")
     #expect(TranscriptEntry.tool(ToolCall(toolCallId: "1", title: "t")).id == "tool:1")
     #expect(TranscriptEntry.contextCompaction(id: "1", status: .started).id == "compaction:1")
-    #expect(TranscriptEntry.text(id: "1", markdown: "x").isText)
-    #expect(!TranscriptEntry.tool(ToolCall(toolCallId: "1", title: "t")).isText)
-    #expect(!TranscriptEntry.contextCompaction(id: "1", status: .completed).isText)
   }
 
   @Test("ConversationItem id mirrors the wrapped message")
@@ -159,7 +156,6 @@ struct ModelTests {
     let turn = AssistantTurn()
     #expect(turn.finalText == nil)
     #expect(turn.workedEntries.isEmpty)
-    #expect(turn.hasWorkedContent == false)
     #expect(turn.toolCalls.isEmpty)
   }
 

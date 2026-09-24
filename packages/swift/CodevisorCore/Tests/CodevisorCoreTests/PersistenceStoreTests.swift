@@ -2,34 +2,8 @@ import Foundation
 import Testing
 @testable import CodevisorCore
 
-@Suite("Repositories")
-struct RepositoryTests {
-  @Test("Corrupted data decodes as empty")
-  func corruptedData() {
-    let store = InMemoryStore(storage: ["projects": Data("not json".utf8)])
-    let repository = CodableRepository<Project>(store: store, key: "projects")
-    #expect(repository.load().isEmpty)
-  }
-
-  @Test("Corrupt file is quarantined instead of overwritten")
-  func corruptFileQuarantine() throws {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("codevisor-store-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: directory) }
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try Data("not json".utf8).write(to: directory.appendingPathComponent("projects.json"))
-
-    let store = FileSystemStore(directory: directory)
-    let repository = CodableRepository<Project>(store: store, key: "projects")
-    #expect(repository.load().isEmpty)
-
-    // The unreadable payload was renamed to a .corrupt-<timestamp> backup
-    // so the next save can't destroy the only copy.
-    let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-    #expect(!contents.contains("projects.json"))
-    #expect(contents.contains { $0.hasPrefix("projects.json.corrupt-") })
-  }
-
+@Suite("Persistence stores")
+struct PersistenceStoreTests {
   @Test("FileSystemStore persists to a temp directory")
   func fileSystemStore() throws {
     let directory = FileManager.default.temporaryDirectory
@@ -37,16 +11,13 @@ struct RepositoryTests {
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let store = FileSystemStore(directory: directory)
-    let repository = CodableRepository<ChatSession>(store: store, key: "sessions")
-    let session = ChatSession(projectId: UUID(), title: "Persisted")
-    repository.save([session])
+    try store.saveData(Data([1, 2, 3]), forKey: "sessions")
     // Writes land on a background queue (they must not block the main
     // thread in the app); drain before reading through a fresh store.
     store.flushPendingWrites()
 
     // A fresh store reading the same directory sees the data.
-    let reopened = CodableRepository<ChatSession>(store: FileSystemStore(directory: directory), key: "sessions")
-    #expect(reopened.load() == [session])
+    #expect(FileSystemStore(directory: directory).loadData(forKey: "sessions") == Data([1, 2, 3]))
   }
 
   @Test("InMemoryStore reads back written keys")

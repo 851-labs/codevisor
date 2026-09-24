@@ -49,7 +49,6 @@ struct TranscriptWorkedRowProjectionTests {
     let rows = TranscriptActiveRowProjection.rows(for: .assistant(message))
 
     #expect(rows.map(\.id) == [.activeChrome(message.id, .activity)])
-    #expect(!message.turn.hasWorkedContent)
     var historical = message
     historical.turn.isGenerating = false
     #expect(historical.turn.workedItems.isEmpty)

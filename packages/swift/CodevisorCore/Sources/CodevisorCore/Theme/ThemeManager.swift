@@ -98,21 +98,6 @@ public final class ThemeManager {
     return palette
   }
 
-  /// The raw theme JSON for the active theme of the given scheme (what the
-  /// syntax highlighter consumes); nil for system entries.
-  public func themeData(for scheme: ThemeDescriptor.SchemeType) -> Data? {
-    let id = themeId(for: scheme)
-    guard !ThemeCatalog.isSystemTheme(id: id) else { return nil }
-    do {
-      return try catalog.loadThemeData(id: id)
-    } catch {
-      Log.theming.error(
-        "Failed to load theme data for \(id, privacy: .public); syntax highlighting falls back to the stock look: \(String(describing: error), privacy: .public)"
-      )
-      return nil
-    }
-  }
-
   // MARK: - Custom themes
 
   /// Imports a theme JSON file the user picked. Reads through the security
