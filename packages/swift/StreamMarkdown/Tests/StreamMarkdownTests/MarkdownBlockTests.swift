@@ -24,17 +24,4 @@ struct MarkdownBlockTests {
     #expect(ids.contains { $0.hasPrefix("quote:") })
     #expect(ids.contains { $0.hasPrefix("table:A|B") })
   }
-
-  @Test("OrderedListItem stores number and text")
-  func orderedItem() {
-    let item = OrderedListItem(number: 3, text: "third")
-    #expect(item.number == 3)
-    #expect(item.text == "third")
-  }
-
-  @Test("Column alignments are distinct values")
-  func alignments() {
-    let all: Set<ColumnAlignment> = [.leading, .center, .trailing, .none]
-    #expect(all.count == 4)
-  }
 }

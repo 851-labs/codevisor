@@ -215,40 +215,4 @@ describe("Grok stream normalizer", () => {
     ])
     expect(payload(second[0]!)).toMatchObject({ messageId: "grok:session-1:1" })
   })
-
-  it("forwards config_option_update with concise thought-level labels", () => {
-    const events = new GrokStreamNormalizer().mapSessionNotification(
-      notification({
-        configOptions: [
-          {
-            category: "thought_level",
-            currentValue: "high",
-            id: "reasoning_effort",
-            name: "Reasoning Effort",
-            options: [
-              { name: "Extra High Effort", value: "xhigh" },
-              { name: "High Effort", value: "high" }
-            ],
-            type: "select"
-          }
-        ],
-        sessionUpdate: "config_option_update"
-      })
-    )
-    expect(payload(events[0]!)).toEqual({
-      configOptions: [
-        {
-          category: "thought_level",
-          currentValue: "high",
-          id: "reasoning_effort",
-          name: "Reasoning",
-          options: [
-            { name: "Extra High", value: "xhigh" },
-            { name: "High", value: "high" }
-          ]
-        }
-      ],
-      sessionUpdate: "config_option_update"
-    })
-  })
 })

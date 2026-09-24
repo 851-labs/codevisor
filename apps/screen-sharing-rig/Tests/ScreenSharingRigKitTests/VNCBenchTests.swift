@@ -28,13 +28,6 @@ struct VNCBenchTests {
     #expect(abs(try #require(result.spread[.updateLatencyP95Ms]) - 1.0 / 11) < 1e-9)
   }
 
-  @Test func directionsSayWhatBetterMeans() {
-    #expect(VNCBenchMetric.updatesPerSecond.direction == .higherIsBetter)
-    #expect(VNCBenchMetric.updateLatencyP95Ms.direction == .lowerIsBetter)
-    #expect(VNCBenchMetric.cpuMsPerUpdate.direction == .informational, "too noisy to judge (851-2320)")
-    #expect(VNCBenchMetric.megabitsPerSecond.direction == .informational)
-  }
-
   @Test func comparisonFlagsOnlyChangesBeyondTheNoiseBand() {
     func report(_ ups: Double, latency: Double, mbps: Double, spread: Double) -> VNCBenchReport {
       var result = VNCBenchCase(

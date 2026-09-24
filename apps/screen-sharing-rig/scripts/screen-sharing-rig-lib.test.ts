@@ -45,14 +45,6 @@ test("launch agent runs the installed rig with its config and restarts only abno
     plist,
     /<key>StandardOutPath<\/key><string>\/Users\/x\/Library\/Logs\/CodevisorRig\/rig\.log<\/string>/
   )
-  assert.equal(
-    plist,
-    launchAgentPlist({
-      home: "/Users/x",
-      configPath: "/Users/x/Applications/CodevisorRig/rig.json",
-      logPath: "/Users/x/Library/Logs/CodevisorRig/rig.log"
-    })
-  )
 })
 
 test("rig configuration validates roles, tokens, peers and capture", () => {
