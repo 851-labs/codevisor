@@ -133,21 +133,28 @@
               host: host, port: port, password: credential?.password, username: credential?.username)
           })
       case .server(let url, let sshTarget):
-        let client: CodevisorServerClient
+        let connected: (client: CodevisorServerClient, token: String?, provider: String?)
         do {
-          client = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: false, progress: progress)
+          connected = try await Self.client(
+            machine.id, url: url, sshTarget: sshTarget, fresh: false, progress: progress)
         } catch CodevisorServerClientError.httpStatus(401, _) {
           // The machine rotated its token: ask it again, once.
-          client = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: true, progress: progress)
+          connected = try await Self.client(machine.id, url: url, sshTarget: sshTarget, fresh: true, progress: progress)
         }
-        return .native(client: client, workspaceId: UUID(), paneId: UUID())
+        // A native display (not the server's VNC socket) needs a real Screen Sharing pane (851-2384).
+        guard connected.provider != "vnc", let token = connected.token else {
+          return .native(client: connected.client, workspaceId: UUID(), paneId: UUID())
+        }
+        progress("Preparing the rig's Screen Sharing pane…")
+        try await RigServerPane.ensure(baseURL: url, token: token)
+        return .native(client: connected.client, workspaceId: RigServerPane.workspaceId, paneId: RigServerPane.paneId)
       }
     }
 
     /// A client whose token the server accepted (a `capabilities` round trip). `fresh` skips the Keychain.
     private static func client(
       _ id: String, url: URL, sshTarget: String, fresh: Bool, progress: @MainActor (String) -> Void
-    ) async throws -> CodevisorServerClient {
+    ) async throws -> (client: CodevisorServerClient, token: String?, provider: String?) {
       var token = fresh ? nil : RigKeychain.machineTokens.read(id)
       if token == nil {
         progress("Asking \(sshTarget) for its token…")
@@ -158,9 +165,9 @@
       }
       progress("Connecting to \(url.host() ?? id)…")
       let client = CodevisorServerClient(config: CodevisorServerConfig(baseURL: url, bearerToken: token))
-      _ = try await client.screenSharing(
+      let reply = try await client.screenSharing(
         ServerScreenSharingRequest(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID()))
-      return client
+      return (client, token, reply.provider)
     }
   }
 
