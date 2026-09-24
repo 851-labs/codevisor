@@ -231,34 +231,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return pane
   }
 
-  /// Ensures a tab exists for an agent-owned background terminal (keyed by
-  /// the task's `terminalKey`). Unlike `addTerminalPane` this never steals
-  /// selection. Returns the existing pane when one is already
-  /// attached to that terminal.
-  @discardableResult
-  public mutating func ensureAgentTerminalPane(
-    name: String,
-    terminalKey: String,
-    ownerChatSessionId: UUID? = nil
-  ) -> PaneDescriptorState {
-    if let existing = panes.first(where: { $0.terminalKey == terminalKey }) {
-      return existing
-    }
-    let pane = PaneDescriptorState(
-      id: UUID(),
-      kind: .terminal,
-      name: name,
-      terminalKey: terminalKey,
-      attachOnly: true,
-      ownerChatSessionId: ownerChatSessionId
-    )
-    panes.append(pane)
-    if selectedPaneId == nil {
-      selectedPaneId = pane.id
-    }
-    return pane
-  }
-
   /// Appends a chat pane and selects it. A nil session id is a DRAFT: the
   /// pane hosts the new-chat composer and binds to a session on first send.
   @discardableResult
@@ -465,21 +437,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     let before = panes[..<index].last(where: visibility.includes)
     let after = panes[index...].first(where: visibility.includes)
     return (before ?? after ?? panes[min(index, panes.count - 1)]).id
-  }
-
-  /// Moves the pane with `id` into the slot currently occupied by the pane
-  /// with `targetId` (drag-to-reorder swap-flow semantics: the dragged tab
-  /// takes the hovered tab's position). Selection follows the pane.
-  public mutating func movePane(id: UUID, onto targetId: UUID) {
-    guard id != targetId,
-      let from = panes.firstIndex(where: { $0.id == id }),
-      let target = panes.firstIndex(where: { $0.id == targetId })
-    else { return }
-    let pane = panes.remove(at: from)
-    // After removal the same index lands the pane after the target when
-    // dragging right and before it when dragging left — both take the
-    // target's visual slot.
-    panes.insert(pane, at: target)
   }
 
   /// Selects an existing pane, ignoring unknown identities.

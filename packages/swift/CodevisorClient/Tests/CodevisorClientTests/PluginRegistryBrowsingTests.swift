@@ -57,23 +57,6 @@ struct PluginRegistryBrowsingTests {
     #expect(PluginRegistryBrowsing.filter(entries, query: "zzz").isEmpty)
   }
 
-  @Test("Capability summaries pluralize panes and tools and omit absent kinds")
-  func capabilitySummaries() {
-    #expect(PluginRegistryBrowsing.capabilitySummary(for: gitDiff) == "1 pane · 1 agent tool")
-    #expect(PluginRegistryBrowsing.capabilitySummary(for: notes) == "2 agent tools")
-    var bare = notes
-    bare.tools = nil
-    #expect(PluginRegistryBrowsing.capabilitySummary(for: bare).isEmpty)
-    bare.tools = []
-    #expect(PluginRegistryBrowsing.capabilitySummary(for: bare).isEmpty)
-    var panesOnly = gitDiff
-    panesOnly.tools = nil
-    panesOnly.panes.append(
-      ServerPluginPaneDescriptor(type: "log", title: "Log", path: "/panes/log/")
-    )
-    #expect(PluginRegistryBrowsing.capabilitySummary(for: panesOnly) == "2 panes")
-  }
-
   @Test("Installed markers key off the plugin id, not the repo")
   func installedMarkers() {
     #expect(PluginRegistryBrowsing.isInstalled(gitDiff, installedIds: ["acme.git-diff"]))

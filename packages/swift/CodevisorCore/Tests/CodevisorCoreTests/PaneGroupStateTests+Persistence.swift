@@ -3,48 +3,6 @@ import Testing
 @testable import CodevisorCore
 
 extension PaneGroupStateTests {
-  @Test("A reordered pane array and its selection survive persistence")
-  func reorderedPanePersistence() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
-    let first = state.panes[0]
-    let second = state.addTerminalPane(sessionId: sessionId)
-    let third = state.addNewTabPane()
-    state.selectPane(id: second.id)
-
-    state.movePane(id: first.id, onto: third.id)
-    let decoded = try JSONDecoder().decode(
-      PaneGroupState.self,
-      from: JSONEncoder().encode(state)
-    )
-
-    #expect(decoded.panes.map(\.id) == [second.id, third.id, first.id])
-    #expect(decoded.selectedPaneId == second.id)
-  }
-
-  @Test("Agent terminal panes are keyed, deduped, and never steal selection")
-  func agentTerminalPanes() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
-    let selectedBefore = state.selectedPaneId
-    let key = "\(sessionId.uuidString):bg:tool-1"
-
-    let pane = state.ensureAgentTerminalPane(name: "npm run dev", terminalKey: key)
-    #expect(pane.attachOnly)
-    #expect(pane.name == "npm run dev")
-    #expect(state.panes.count == 2)
-    #expect(state.selectedPaneId == selectedBefore)
-
-    // Re-ensuring the same terminal key returns the existing pane.
-    let again = state.ensureAgentTerminalPane(name: "renamed", terminalKey: key)
-    #expect(again.id == pane.id)
-    #expect(state.panes.count == 2)
-
-    // With nothing selected (empty group), the agent pane becomes the
-    // selection so the bar has a coherent state.
-    var empty = PaneGroupState()
-    let first = empty.ensureAgentTerminalPane(name: "dev", terminalKey: key)
-    #expect(empty.selectedPaneId == first.id)
-  }
-
   @Test("Descriptors persisted before attachOnly existed decode as user shells")
   func decodeLegacyDescriptor() throws {
     let legacy = Data(
@@ -83,12 +41,12 @@ extension PaneGroupStateTests {
   func agentTerminalOwner() throws {
     var state = PaneGroupState.initial(sessionId: sessionId)
     let owner = UUID()
-    let pane = state.ensureAgentTerminalPane(
+    let pane = PaneDescriptorState.agentTerminal(
       name: "bun run dev",
       terminalKey: "\(sessionId.uuidString):bg:tool-2",
-      ownerChatSessionId: owner
+      owner: owner
     )
-    #expect(pane.ownerChatSessionId == owner)
+    state.panes.append(pane)
     let decoded = try JSONDecoder().decode(
       PaneGroupState.self, from: JSONEncoder().encode(state)
     )

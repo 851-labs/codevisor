@@ -20,6 +20,11 @@ struct ClientLayoutFocusTests {
     )
   }
 
+  /// The selected pane of the selected tab's active leaf.
+  private func focusedPaneId(in workspace: Workspace) -> UUID? {
+    workspace.selectedCenterTab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPaneId }
+  }
+
   private func apply(
     _ action: [String: Any], to workspace: Workspace, compact: Bool = false, focus: Bool?
   ) throws -> Workspace {
@@ -55,7 +60,7 @@ struct ClientLayoutFocusTests {
         #expect(surface.paneId == updated.centerTabs.last?.root.allGroups.first?.state.selectedPaneId)
       } else {
         #expect(surface.tabId == original.selectedCenterTabId)
-        #expect(surface.sessionId == original.focusedChatId(activeLeafId: nil))
+        #expect(surface.paneId == focusedPaneId(in: original))
       }
     }
     #expect(updated.centerTabs.count == original.centerTabs.count + 3)
@@ -86,7 +91,7 @@ struct ClientLayoutFocusTests {
       } else {
         #expect(result.selectedCenterTabId == original.selectedCenterTabId)
         #expect(result.selectedCenterTab?.activeLeafId == active)
-        #expect(result.focusedChatId(activeLeafId: nil) == original.focusedChatId(activeLeafId: nil))
+        #expect(focusedPaneId(in: result) == focusedPaneId(in: original))
         #expect(result.centerTabs.first(where: { $0.id == original.centerTabs[1].id })?.activeLeafId == target)
       }
     }
@@ -120,7 +125,7 @@ struct ClientLayoutFocusTests {
     ] {
       let result = try apply(action, to: original, focus: focus)
       #expect(result.selectedCenterTab?.activeLeafId == active)
-      #expect(result.focusedChatId(activeLeafId: nil) == original.focusedChatId(activeLeafId: nil))
+      #expect(focusedPaneId(in: result) == focusedPaneId(in: original))
       for tab in result.centerTabs { #expect(tab.root.group(id: tab.activeLeafId) != nil) }
     }
   }

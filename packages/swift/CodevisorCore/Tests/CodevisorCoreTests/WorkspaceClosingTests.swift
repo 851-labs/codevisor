@@ -80,7 +80,7 @@ struct WorkspaceClosingTests {
   func closingSelectedTabSkipsAgentTerminalTabs() {
     let chat = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
     var agentGroup = PaneGroupState()
-    agentGroup.ensureAgentTerminalPane(name: "dev server", terminalKey: "task-1")
+    agentGroup.appendAgentTerminal(name: "dev server", terminalKey: "task-1")
     let agent = WorkspaceTab(root: .leaf(agentGroup))
     var closingGroup = PaneGroupState()
     closingGroup.addTerminalPane(sessionId: UUID())
@@ -100,7 +100,7 @@ struct WorkspaceClosingTests {
     closingGroup.addTerminalPane(sessionId: UUID())
     let closing = WorkspaceTab(root: .leaf(closingGroup))
     var agentGroup = PaneGroupState()
-    agentGroup.ensureAgentTerminalPane(name: "tests", terminalKey: "task-2")
+    agentGroup.appendAgentTerminal(name: "tests", terminalKey: "task-2")
     let agent = WorkspaceTab(root: .leaf(agentGroup))
     let chat = WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
     var workspace = makeWorkspace(tabs: [closing, agent, chat], selected: closing.id)

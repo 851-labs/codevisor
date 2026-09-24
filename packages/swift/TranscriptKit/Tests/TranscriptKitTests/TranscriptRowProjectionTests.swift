@@ -179,39 +179,6 @@ struct TranscriptRowProjectionTests {
     )
   }
 
-  @Test func activeBlockRowsReplaceOnlyTheirMatchingProjectionSlot() throws {
-    let first = ConversationItem.assistant(
-      AssistantMessage(
-        turn: AssistantTurn(
-          entries: [.text(id: "answer", markdown: "First\n\nSecond")],
-          isGenerating: true
-        )
-      )
-    )
-    let next = ConversationItem.assistant(
-      AssistantMessage(turn: AssistantTurn(isGenerating: true))
-    )
-    let baseRows = try TranscriptRowProjectionCache.project(
-      makeInput(active: first),
-      options: .init(includesConnectingRow: true)
-    )
-    let activeRows = TranscriptActiveRowProjection.rows(for: first)
-    let staleRows = TranscriptActiveRowProjection.rows(for: next)
-
-    #expect(
-      TranscriptActiveRowProjection.replacingActiveSlot(
-        in: baseRows,
-        with: activeRows
-      ).count == activeRows.count
-    )
-    #expect(
-      TranscriptActiveRowProjection.replacingActiveSlot(
-        in: baseRows,
-        with: staleRows
-      ) == baseRows
-    )
-  }
-
   @Test func freshActiveTurnUsesItsKnownActivityHeightBeforeBlockProjection() throws {
     let active = ConversationItem.assistant(
       AssistantMessage(turn: AssistantTurn(isGenerating: true))

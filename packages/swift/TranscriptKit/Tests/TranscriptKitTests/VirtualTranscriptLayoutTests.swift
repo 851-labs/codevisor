@@ -197,7 +197,7 @@ struct VirtualTranscriptLayoutTests {
 
   @Test func incrementalMeasurementProducesOneNonOverlappingGeometrySnapshot() throws {
     let initial = VirtualTranscriptLayout(items: items, measuredHeights: [:], spacing: 10)
-    let measured = try #require(initial.updatingHeight(forKey: "b", to: 460))
+    let measured = try #require(initial.updatingHeights(["b": 460]))
 
     #expect(measured.heights == [100, 460, 300, 400])
     #expect(measured.topOffsets == [0, 110, 580, 890])

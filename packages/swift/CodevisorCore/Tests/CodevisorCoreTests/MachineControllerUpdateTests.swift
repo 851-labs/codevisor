@@ -4,6 +4,18 @@ import ACPKit
 
 @testable import CodevisorCore
 
+/// Per-machine update state as the update surfaces read it from
+/// `connectionsById`; a machine with no connection is idle.
+extension MachineController {
+  func serverUpdatePhase(for machineId: String) -> ServerUpdatePhase {
+    connectionsById[machineId]?.updatePhase ?? .idle
+  }
+
+  func serverUpdateInfo(for machineId: String) -> ServerUpdateInfo? {
+    connectionsById[machineId]?.updateInfo
+  }
+}
+
 /// Server self-update flows: check/apply round trips, restart confirmation,
 /// and failure surfacing. Split from MachineControllerTests.swift to keep
 /// that suite within size limits.

@@ -15,7 +15,7 @@ struct PaneGroupStateCloseSelectionTests {
   ) {
     var state = PaneGroupState()
     let chat = state.addChatPane(sessionId: sessionId).id
-    let agent = state.ensureAgentTerminalPane(name: "dev server", terminalKey: "task-1").id
+    let agent = state.appendAgentTerminal(name: "dev server", terminalKey: "task-1")
     let file = state.addTerminalPane(sessionId: sessionId).id
     state.selectPane(id: file)
     return (state, chat, agent, file)
@@ -33,7 +33,7 @@ struct PaneGroupStateCloseSelectionTests {
   func fallsForwardToListedPane() {
     var state = PaneGroupState()
     let first = state.addTerminalPane(sessionId: sessionId).id
-    let agent = state.ensureAgentTerminalPane(name: "tests", terminalKey: "task-2").id
+    let agent = state.appendAgentTerminal(name: "tests", terminalKey: "task-2")
     let last = state.addTerminalPane(sessionId: sessionId).id
     state.selectPane(id: first)
     state.closePane(id: first)
@@ -44,7 +44,7 @@ struct PaneGroupStateCloseSelectionTests {
   @Test("Only agent terminals left: the neighbor rule still yields a selection")
   func fallsBackToNeighborWhenNothingIsListed() {
     var state = PaneGroupState()
-    let agent = state.ensureAgentTerminalPane(name: "build", terminalKey: "task-3").id
+    let agent = state.appendAgentTerminal(name: "build", terminalKey: "task-3")
     let file = state.addTerminalPane(sessionId: sessionId).id
     state.selectPane(id: file)
     state.closePane(id: file)
@@ -66,5 +66,28 @@ struct PaneGroupStateCloseSelectionTests {
     state.closePane(id: only)
     #expect(state.selectedPaneId == nil)
     #expect(state.panes.isEmpty)
+  }
+}
+
+extension PaneDescriptorState {
+  /// An agent-owned background terminal, shaped like the tabs
+  /// `Workspace.syncAgentTerminals` creates.
+  static func agentTerminal(name: String, terminalKey: String, owner: UUID? = nil) -> Self {
+    PaneDescriptorState(
+      id: UUID(), kind: .terminal, name: name, terminalKey: terminalKey,
+      attachOnly: true, ownerChatSessionId: owner
+    )
+  }
+}
+
+extension PaneGroupState {
+  /// Appends an agent terminal tab and selects it only when the group had
+  /// no selection, returning its id.
+  @discardableResult
+  mutating func appendAgentTerminal(name: String, terminalKey: String) -> UUID {
+    let pane = PaneDescriptorState.agentTerminal(name: name, terminalKey: terminalKey)
+    panes.append(pane)
+    if selectedPaneId == nil { selectedPaneId = pane.id }
+    return pane.id
   }
 }
