@@ -2,12 +2,14 @@ import { Schema } from "effect"
 
 export const ScreenSharingRequest = Schema.Struct({
   version: Schema.Literal(1),
-  operation: Schema.Literals(["capabilities", "start", "restart", "heartbeat", "stop"]),
+  operation: Schema.Literals(["capabilities", "start", "restart", "heartbeat", "stop", "setScale"]),
   workspaceId: Schema.String,
   paneId: Schema.String,
   viewerId: Schema.String,
   displayId: Schema.optional(Schema.String),
-  offer: Schema.optional(Schema.String)
+  offer: Schema.optional(Schema.String),
+  /// `setScale` (851-2339): the desktop's UI scale, 1× or 2× (a VNC desktop whose server can set it).
+  scale: Schema.optional(Schema.Literals([1, 2]))
 })
 export type ScreenSharingRequest = typeof ScreenSharingRequest.Type
 
@@ -23,7 +25,12 @@ export const ScreenSharingReply = Schema.Struct({
       id: Schema.String,
       name: Schema.String,
       width: Schema.Number,
-      height: Schema.Number
+      height: Schema.Number,
+      /// UI scales `setScale` accepts for this display; absent when it can't be set (851-2339).
+      scales: Schema.optional(Schema.Array(Schema.Number)),
+      /// The size the desktop was provisioned at, for a viewer that stops resizing it.
+      defaultWidth: Schema.optional(Schema.Number),
+      defaultHeight: Schema.optional(Schema.Number)
     })
   ),
   answer: Schema.optional(Schema.String),

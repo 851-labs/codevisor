@@ -149,6 +149,7 @@ actor SharingTransport: ServerRequestTransport {
       if first, blockFirstStart { await releaseFirstStart.wait() }
       reply = .init(status: payload.operation == .restart ? restartStatus : "connecting", answer: "fixture answer")
     case .heartbeat: reply = .init(status: heartbeatStatus)
+    case .setScale: reply = .init(status: "unsupported")
     case .stop:
       stopWasCancelled = stopWasCancelled || Task.isCancelled
       reply = .init(status: "stopped")

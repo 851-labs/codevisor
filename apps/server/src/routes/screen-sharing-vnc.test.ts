@@ -24,6 +24,23 @@ describe("VNC screen sharing configuration", () => {
     expect(readScreenSharingVNC(dir)).toEqual({ port: 5901, name: "Desktop" })
   })
 
+  it("reads the desktop kind and its provisioned size (851-2339)", () => {
+    expect(
+      parseScreenSharingVNC(
+        '{ "vnc": { "port": 5901, "desktop": "xfce", "defaultSize": "1440x900" } }'
+      )
+    ).toEqual({
+      port: 5901,
+      name: "Desktop",
+      desktop: "xfce",
+      defaultWidth: 1440,
+      defaultHeight: 900
+    })
+    expect(
+      parseScreenSharingVNC('{ "vnc": { "port": 5901, "desktop": "gnome", "defaultSize": "big" } }')
+    ).toEqual({ port: 5901, name: "Desktop" })
+  })
+
   it("ignores anything but a loopback port", () => {
     for (const text of [
       "",

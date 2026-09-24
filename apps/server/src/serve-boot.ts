@@ -15,6 +15,7 @@ import {
 } from "./infra/background-terminal-host.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
+import { xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
 import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "./server-context-types.js"
 import type { StartupReporter } from "./startup-progress.js"
@@ -40,7 +41,9 @@ export const screenSharingProvider = (
   if (native !== undefined) return { screenSharing: native, screenSharingVNC: undefined }
   const vnc = readScreenSharingVNC(dataDir)
   if (vnc === undefined) return { screenSharing: undefined, screenSharingVNC: undefined }
-  return { screenSharing: vncScreenSharing(vnc), screenSharingVNC: vnc }
+  // An Xfce desktop's scale can be set (851-2339); display N listens on 5900 + N.
+  const scaler = vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900) : undefined
+  return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
 }
 /// Background cache only: clients checking on the user's behalf pass
 /// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
