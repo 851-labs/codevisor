@@ -3,6 +3,7 @@
   import CodevisorCoreMac
   import ComposableArchitecture
   import Foundation
+  import os
   import ScreenSharing
   import ScreenSharingRigKit
   import Security
@@ -104,17 +105,21 @@
       switch machine.connection {
       case .vnc(let host, let port, let source):
         if source == .keychain { progress("Signing in to \(host)…") }
+        // The sign-in's connection becomes the viewer's first one: one sign-in per
+        // connect (a Mac account's is a 4096-bit key exchange, 851-2353).
+        let signedIn = RigSignedInConnection()
         let outcome = try await RigVNCSignIn.signIn(
           machineId: machine.id, password: source, typed: typed, store: RigKeychain.vncPasswords
         ) { credential in
-          try await VNCConnection.open(
-            host: host, port: port, password: credential.password, username: credential.username
-          ).client.close()
+          signedIn.keep(
+            try await VNCConnection.open(
+              host: host, port: port, password: credential.password, username: credential.username))
         }
         let credential: RigVNCCredential?
         switch outcome {
         case .signedIn(let accepted): credential = accepted
         case .needsPassword(let reason):
+          signedIn.close()
           // Offer the account fields when the Mac supports Apple's account sign-in (type 30, 851-2342).
           let offered = (try? await VNCConnection.securityTypes(host: host, port: port)) ?? []
           throw PasswordPrompt(
@@ -123,7 +128,8 @@
         return .vnc(
           displayId: RigMachine.vncDisplayId(port: port),
           open: {
-            try await VNCConnection.open(
+            if let kept = signedIn.take() { return kept }
+            return try await VNCConnection.open(
               host: host, port: port, password: credential?.password, username: credential?.username)
           })
       case .server(let url, let sshTarget):
@@ -156,6 +162,27 @@
         ServerScreenSharingRequest(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID()))
       return client
     }
+  }
+
+  /// The connection the rig's sign-in opened, handed to the viewer's first `open`.
+  final class RigSignedInConnection: Sendable {
+    private let connection = OSAllocatedUnfairLock<(client: RFBClient, outcome: RFBHandshake.Outcome)?>(
+      uncheckedState: nil)
+
+    func keep(_ opened: (client: RFBClient, outcome: RFBHandshake.Outcome)) {
+      connection.withLockUnchecked { $0 = opened }
+    }
+
+    func take() -> (client: RFBClient, outcome: RFBHandshake.Outcome)? {
+      connection.withLockUnchecked { kept in
+        defer { kept = nil }
+        return kept
+      }
+    }
+
+    func close() { take()?.client.close() }
+
+    deinit { close() }
   }
 
   /// Why the rig is asking for a VNC password: nil before the first attempt, else the server's rejection.
