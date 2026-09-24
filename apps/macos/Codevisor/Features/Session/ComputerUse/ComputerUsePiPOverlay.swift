@@ -164,28 +164,50 @@ struct ComputerUsePiPOverlay: View {
   @ViewBuilder
   private var contextMenu: some View {
     if !model.isRemote {
-      Button("Show \(model.title)") { model.activateTarget() }
-        .disabled(!model.canActivateTarget)
+      Button {
+        model.activateTarget()
+      } label: {
+        menuLabel("Show \(model.title)", "macwindow")
+      }
+      .disabled(!model.canActivateTarget)
     }
-    Button("Refresh") { model.reload() }
-      .disabled(!model.canReload)
+    Button {
+      model.reload()
+    } label: {
+      menuLabel("Refresh", "arrow.clockwise")
+    }
+    .disabled(!model.canReload)
     Divider()
     Picker(
-      "Move to",
       selection: Binding(
         get: { model.corner },
         set: { corner in withAnimation(snapAnimation) { model.corner = corner } }
       )
     ) {
       ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
-        Text(corner.title).tag(corner)
+        menuLabel(corner.title, corner.systemImage).tag(corner)
       }
+    } label: {
+      menuLabel("Move to", "arrow.up.and.down.and.arrow.left.and.right")
     }
     .pickerStyle(.menu)
-    Button("Reset Size") { withAnimation(snapAnimation) { model.resetSize() } }
-      .disabled(!model.hasCustomSize)
+    Button {
+      withAnimation(snapAnimation) { model.resetSize() }
+    } label: {
+      menuLabel("Reset Size", "arrow.down.right.and.arrow.up.left")
+    }
+    .disabled(!model.hasCustomSize)
     Divider()
-    Button("Close") { model.dismiss() }
+    Button {
+      model.dismiss()
+    } label: {
+      menuLabel("Close", "xmark")
+    }
+  }
+
+  /// macOS menus drop a label's icon unless the style asks for it.
+  private func menuLabel(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 
   /// The on-screen pointer scaled by the card's zoom of the window.
@@ -296,6 +318,15 @@ extension ComputerUseLivePreviewCorner {
     case .topTrailing: "Top Right"
     case .bottomLeading: "Bottom Left"
     case .bottomTrailing: "Bottom Right"
+    }
+  }
+
+  fileprivate var systemImage: String {
+    switch self {
+    case .topLeading: "rectangle.inset.topleft.filled"
+    case .topTrailing: "rectangle.inset.topright.filled"
+    case .bottomLeading: "rectangle.inset.bottomleft.filled"
+    case .bottomTrailing: "rectangle.inset.bottomright.filled"
     }
   }
 
