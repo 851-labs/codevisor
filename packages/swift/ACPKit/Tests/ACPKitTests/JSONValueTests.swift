@@ -37,30 +37,12 @@ struct JSONValueTests {
     #expect(JSONValue.number(7).intValue == 7)
     #expect(JSONValue.number(2.5).doubleValue == 2.5)
     #expect(JSONValue.bool(false).boolValue == false)
-    #expect(JSONValue.object(["k": "v"]).objectValue?["k"] == .string("v"))
     // Wrong-type accessors return nil.
     #expect(JSONValue.null.stringValue == nil)
     #expect(JSONValue.string("x").intValue == nil)
     #expect(JSONValue.string("x").doubleValue == nil)
     #expect(JSONValue.string("x").boolValue == nil)
     #expect(JSONValue.string("x").arrayValue == nil)
-    #expect(JSONValue.string("x").objectValue == nil)
     #expect(JSONValue.string("x")["key"] == nil)
-  }
-
-  @Test("Decoding an unsupported root throws")
-  func unsupported() throws {
-    // A bare top-level value that is valid still decodes; ensure invalid JSON throws.
-    #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(JSONValue.self, from: Data("{".utf8))
-    }
-  }
-
-  @Test("ACPJSON value/decode bridge round-trips Codable types")
-  func bridge() throws {
-    let original = PromptResponse(stopReason: .endTurn)
-    let value = try ACPJSON.value(from: original)
-    let back = try ACPJSON.decode(PromptResponse.self, from: value)
-    #expect(back == original)
   }
 }

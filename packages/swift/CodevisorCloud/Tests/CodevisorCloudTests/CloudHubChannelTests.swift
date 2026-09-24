@@ -35,8 +35,8 @@ struct CloudHubChannelTests {
     #expect(decoded["params"]?["hello"] == .string("world"))
 
     // App → machine data frames carry seq 1, 2, ... after the open.
-    try await channel.sendJSON(["kind": "first"])
-    try await channel.sendJSON(["kind": "second"])
+    try await channel.send(plaintext: JSONEncoder().encode(["kind": "first"]))
+    try await channel.send(plaintext: JSONEncoder().encode(["kind": "second"]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 2 })
     let sentSeqs = scripted.relayEnvelopes.filter {
       if case .data = $0.frame { return true }
@@ -117,7 +117,7 @@ struct CloudHubChannelTests {
 
     // The dead channel rejects further sends.
     await #expect(throws: CloudHubConnectionError.channelClosed) {
-      try await channel.sendJSON(["kind": "after-close"])
+      try await channel.send(plaintext: JSONEncoder().encode(["kind": "after-close"]))
     }
     await hub.shutdown()
   }
@@ -170,7 +170,7 @@ struct CloudHubChannelTests {
 
     // App → machine payloads carry the RAW framing byte, which the
     // scripted machine strips before recording.
-    try await channel.sendJSON(["kind": "request"])
+    try await channel.send(plaintext: JSONEncoder().encode(["kind": "request"]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 1 })
     let request = try #require(machine.channel(channel.id)?.messages.first)
     #expect(try JSONDecoder().decode([String: String].self, from: request) == ["kind": "request"])

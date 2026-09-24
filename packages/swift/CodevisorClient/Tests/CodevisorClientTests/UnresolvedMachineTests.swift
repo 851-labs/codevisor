@@ -14,17 +14,11 @@ struct UnresolvedMachineTests {
 
     #expect(machine.id == "stage3v")  // the real server id, not a substitute
     #expect(!machine.isLocal)
-    #expect(machine.isUnresolved)
     #expect(machine.id != CodevisorMachine.local.id)
     #expect(machine.baseURL != CodevisorMachine.local.baseURL)
     // A reserved name that cannot resolve, so a request fails instead of
     // reaching some other server.
     #expect(machine.baseURL.host() == "unresolved.invalid")
     #expect(machine.token == nil)
-  }
-
-  @Test func theLocalMachineIsNotMistakenForAnUnresolvedOne() {
-    #expect(CodevisorMachine.local.isLocal)
-    #expect(!CodevisorMachine.local.isUnresolved)
   }
 }

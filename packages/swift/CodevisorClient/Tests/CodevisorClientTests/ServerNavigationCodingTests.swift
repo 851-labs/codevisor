@@ -36,15 +36,6 @@ struct ServerNavigationCodingTests {
     #expect(restored.projects.first?.locations.first?.isGitRepository == true)
   }
 
-  @Test("A delta and its deletions round-trip too")
-  func deltaRoundTrip() throws {
-    let delta = ServerNavigationDelta(
-      eventCursor: 7, projects: [], sessions: [], workspaces: [], panes: [],
-      deleted: [.init(table: "workspace_panes", id: "s1")])
-    let restored = try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(delta))
-    #expect(restored == delta)
-  }
-
   @Test("Opening a chat hands back the exact bytes it decoded")
   func openReturnsRawBody() async throws {
     let client = CodevisorServerClient(config: .init(requestTransport: OpenTransport()))

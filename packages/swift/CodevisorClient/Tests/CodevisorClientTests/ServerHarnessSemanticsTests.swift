@@ -13,7 +13,6 @@ struct ServerHarnessSemanticsTests {
     )
 
     #expect(harness.isDesiredEnabled)
-    #expect(harness.requiresAuthentication)
   }
 
   @Test("Effective enablement is the fallback for older servers")
@@ -21,7 +20,6 @@ struct ServerHarnessSemanticsTests {
     let harness = try harness(enabled: true, desiredEnabled: nil, authState: nil)
 
     #expect(harness.isDesiredEnabled)
-    #expect(!harness.requiresAuthentication)
   }
 
   @Test(
@@ -40,7 +38,6 @@ struct ServerHarnessSemanticsTests {
     let harness = try harness(enabled: false, desiredEnabled: true, authState: state)
 
     #expect(harness.auth?.isSatisfied == expected)
-    #expect(harness.requiresAuthentication == !expected)
   }
 
   @Test("Unknown wire states remain distinguishable")

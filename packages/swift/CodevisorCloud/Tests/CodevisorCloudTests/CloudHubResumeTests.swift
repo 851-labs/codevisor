@@ -66,7 +66,7 @@ struct CloudHubResumeTests {
       onMessage: { recorder.record($0) },
       onClosed: { recorder.recordClose($0) }
     )
-    try await channel.sendJSON(["n": 1])
+    try await channel.send(plaintext: JSONEncoder().encode(["n": 1]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 1 })
 
     // The socket dies mid-session. Channels suspend instead of failing.
@@ -76,7 +76,7 @@ struct CloudHubResumeTests {
     #expect(await !hub.isWelcomed)
     // A suspended send fails fast WITHOUT burning a seq.
     await #expect(throws: CloudHubConnectionError.disconnected) {
-      try await channel.sendJSON(["lost": true])
+      try await channel.send(plaintext: JSONEncoder().encode(["lost": true]))
     }
 
     // The run loop reconnects, presents the token, and the hub resumes.
@@ -86,7 +86,7 @@ struct CloudHubResumeTests {
     #expect(recorder.closes.isEmpty)
 
     // The channel keeps flowing with a gapless seq counter.
-    try await channel.sendJSON(["n": 2])
+    try await channel.send(plaintext: JSONEncoder().encode(["n": 2]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 2 })
     scripted.relayToApp(
       machineId: machine.deviceId,

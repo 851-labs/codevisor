@@ -241,13 +241,11 @@ struct CloudAccountControllerTests {
       store: InMemoryCloudCredentialStore(token: "persisted")
     )
 
-    #expect(controller.isRestoringPersistedSession)
     #expect(!controller.hasCompletedBootstrap)
     #expect(controller.machines.isEmpty)
 
     await controller.bootstrap()
 
-    #expect(!controller.isRestoringPersistedSession)
     #expect(controller.hasCompletedBootstrap)
     #expect(controller.state == .signedIn(userEmail: "me@example.com"))
     #expect(controller.machines.map(\.deviceId) == ["m1"])

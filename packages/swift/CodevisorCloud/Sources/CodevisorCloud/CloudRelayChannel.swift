@@ -12,12 +12,6 @@ public final class CloudRelayChannel: Sendable {
     self.host = host
   }
 
-  /// Seals and sends one JSON payload on the channel.
-  @discardableResult
-  public func sendJSON(_ value: some Encodable & Sendable) async throws -> Int {
-    try await host.send(channelId: id, plaintext: JSONEncoder().encode(value))
-  }
-
   /// Seals and sends raw plaintext bytes on the channel.
   @discardableResult
   public func send(plaintext: Data) async throws -> Int {

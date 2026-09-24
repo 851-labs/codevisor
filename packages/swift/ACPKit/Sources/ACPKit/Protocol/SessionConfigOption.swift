@@ -108,25 +108,3 @@ public extension SessionConfigOption {
     public static let speed = "speed"
   }
 }
-
-/// `session/set_config_option` request params.
-public struct SetSessionConfigOptionRequest: Sendable, Codable, Equatable {
-  public var sessionId: String
-  public var configId: String
-  public var value: String
-
-  public init(sessionId: String, configId: String, value: String) {
-    self.sessionId = sessionId
-    self.configId = configId
-    self.value = value
-  }
-}
-
-/// `session/set_config_option` response with the updated option set.
-public struct SetSessionConfigOptionResponse: Sendable, Codable, Equatable {
-  public var configOptions: [SessionConfigOption]
-
-  public init(configOptions: [SessionConfigOption]) {
-    self.configOptions = configOptions
-  }
-}

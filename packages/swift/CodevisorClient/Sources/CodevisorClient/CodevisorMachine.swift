@@ -42,10 +42,6 @@ public struct CodevisorMachine: Identifiable, Sendable, Codable, Equatable {
       id: id, name: id, baseURL: URL(string: "http://unresolved.invalid")!, kind: "unresolved")
   }
 
-  /// True for the placeholder above: its server is not reachable and its panes
-  /// must not act as though they own local resources.
-  public var isUnresolved: Bool { kind == "unresolved" }
-
   /// True for machines reached through the Codevisor Cloud relay (their ids
   /// are `cloud:<deviceId>`; they are synthesized from cloud presence, not
   /// stored in the registry).
