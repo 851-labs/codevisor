@@ -180,9 +180,6 @@ package final class ScreenSharingOwnedWork {
   package init() {}
   private var handles: [Task<Void, Never>]?
 
-  /// Nil until `close(with:)`; then the number of retained handles.
-  package var count: Int? { handles?.count }
-
   package func close(with tasks: [Task<Void, Never>]) {
     guard handles == nil else { return }
     handles = tasks

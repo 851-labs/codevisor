@@ -184,7 +184,7 @@ struct ScreenSharingOwnershipTests {
     // implementation would answer one waiter with the handle count and the
     // other with zero under every interleaving; both must answer the same.
     let work = ScreenSharingOwnedWork()
-    #expect(await work.join() == nil && work.count == nil)
+    #expect(await work.join() == nil)
     let gate = TestSignal()
     let released = TestSignal()
     let pending = Task { @MainActor in
@@ -192,8 +192,7 @@ struct ScreenSharingOwnershipTests {
       released.signal()
     }
     work.close(with: [pending])
-    work.close(with: [])
-    #expect(work.count == 1)
+    work.close(with: [])  // a repeated close keeps the first handles
     let entered = TestSignal()
     let finished = TestSignal()
     async let first: Int? = {

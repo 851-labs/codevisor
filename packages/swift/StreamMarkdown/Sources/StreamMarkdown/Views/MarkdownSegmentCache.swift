@@ -58,11 +58,6 @@ public final class MarkdownSegmentCache {
     MarkdownSegment.segments(from: parser.parse(text))
   }
 
-  /// Test hook: whether a text is currently cached (observes LRU eviction).
-  func isCached(_ text: String) -> Bool {
-    entries[text] != nil
-  }
-
   func store(_ segments: [MarkdownSegment], for text: String) {
     entries[text] = segments
     order.append(text)

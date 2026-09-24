@@ -30,8 +30,6 @@ public final class ScreenSharingLocalChannel<Message: Sendable>: ScreenSharingMe
   public var onMessage: ((Message) -> Void)?
   public var onAvailabilityChanged: ((Bool) -> Void)?
   public var isAvailable: Bool { !closed && peer?.closed == false }
-  /// Messages accepted by `send` on this end, in order (diagnostic).
-  public private(set) var sentCount = 0
   private weak var peer: ScreenSharingLocalChannel<Message>?
   private let hop: Hop
   private var closed = false
@@ -52,7 +50,6 @@ public final class ScreenSharingLocalChannel<Message: Sendable>: ScreenSharingMe
   @discardableResult
   public func send(_ message: Message) -> Bool {
     guard isAvailable, let peer else { return false }
-    sentCount += 1
     hop { [weak peer] in
       guard let peer, !peer.closed else { return }
       peer.onMessage?(message)

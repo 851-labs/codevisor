@@ -30,7 +30,7 @@ import ScreenSharing
       record.record(code: sequence.drawn(atSeconds: t), startedAtSeconds: t)
     }
     #expect(record.samples.map(\.code) == [0, 1, 2, 3, 4])
-    sequence.freezeAtLastDrawn(atSeconds: 200.09)
+    sequence.freezeAtLastDrawn()
     for tick in 5..<10 {
       let t = 200 + (Double(tick) + 0.5) / 60  // mid-slot draw start: floor is exactly `tick`
       record.record(code: sequence.drawn(atSeconds: t), startedAtSeconds: t)

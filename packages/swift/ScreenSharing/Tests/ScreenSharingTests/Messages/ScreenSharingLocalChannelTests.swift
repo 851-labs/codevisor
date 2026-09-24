@@ -28,7 +28,6 @@ struct ScreenSharingLocalChannelTests {
     #expect(viewerReceived.isEmpty)
     hop.drain()
     #expect(viewerReceived == [10, 20])
-    #expect(viewer.sentCount == 2 && host.sentCount == 2)
   }
 
   @Test func closingOneEndMakesBothUnavailableAndRefusesLaterSends() {
@@ -54,18 +53,16 @@ struct ScreenSharingLocalChannelTests {
     #expect(hostAvailability == [false] && viewerAvailability == [false])
   }
 
-  @Test func aBurstKeepsItsOrderThroughOneHopAndCountsOnlyAcceptedSends() {
+  @Test func aBurstKeepsItsOrderThroughOneHopAndRefusesSendsAfterClose() {
     let hop = ScreenSharingManualHop()
     let (viewer, host) = ScreenSharingLocalChannel<Int>.pair(hop: hop.schedule)
     var received: [Int] = []
     host.onMessage = { received.append($0) }
     for value in 1...64 { #expect(viewer.send(value)) }
-    #expect(viewer.sentCount == 64)
     hop.drain()
     #expect(received == Array(1...64))
     host.close()
     #expect(!viewer.send(65))
-    #expect(viewer.sentCount == 64)
   }
 
   @Test func closingFromInsideDeliveryDropsTheRestOfTheBatch() {

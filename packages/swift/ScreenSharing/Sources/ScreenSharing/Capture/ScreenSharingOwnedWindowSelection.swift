@@ -193,9 +193,7 @@ public struct ScreenSharingWorkloadSequence: Sendable {
   public let framesPerSecond: Int
   public let startedAtSeconds: Double
   public private(set) var lastDrawnCode: Int?
-  public private(set) var lastDrawnAtSeconds: Double?
   public private(set) var frozenCode: Int?
-  public private(set) var frozenAtSeconds: Double?
 
   public init(framesPerSecond: Int, startedAtSeconds: Double) {
     self.framesPerSecond = framesPerSecond
@@ -208,15 +206,13 @@ public struct ScreenSharingWorkloadSequence: Sendable {
   public mutating func drawn(atSeconds now: Double) -> Int {
     let code = frozenCode ?? Int(max(0, now - startedAtSeconds) * Double(framesPerSecond))
     lastDrawnCode = code
-    lastDrawnAtSeconds = now
     return code
   }
 
   /// Freezes at the last DRAWN code (0 if nothing was drawn yet). Idempotent:
   /// the first boundary wins.
-  public mutating func freezeAtLastDrawn(atSeconds now: Double) {
+  public mutating func freezeAtLastDrawn() {
     guard frozenCode == nil else { return }
     frozenCode = lastDrawnCode ?? 0
-    frozenAtSeconds = now
   }
 }
