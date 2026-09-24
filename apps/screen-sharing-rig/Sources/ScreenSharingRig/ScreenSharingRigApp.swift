@@ -27,6 +27,10 @@
           VNCRecordCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
+        if arguments.first == "vnc-keys" {
+          VNCKeysCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
         if arguments.first == "vnc-sample" {
           VNCSampleCommand.main(arguments: Array(arguments.dropFirst()))
           return
