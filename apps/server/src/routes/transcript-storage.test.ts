@@ -1,3 +1,7 @@
+import { codevisorTools, makeCodevisorProvider } from "@codevisor/automation"
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation"
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv"
 import { expect, it } from "vitest"
 
 import { jsonRequest, run } from "../test-support.js"
@@ -62,4 +66,45 @@ it("serves a navigation snapshot and validates bidirectional transcript and body
         )
       ).status
     ).toBe(200)
+})
+
+it("pages the agent transcript tools with the cursors the route returns", async () => {
+  const { server, services, workspace } = await setUpWorkspace()
+  const session = await createFirstSession(server, workspace)
+  for (const text of ["first", "second", "third"])
+    await run(services.db.appendConversationItem(session.id, "user", text, text, false))
+  const provider = makeCodevisorProvider(
+    () => server.url,
+    async () => "unused"
+  )
+  const validator = new AjvJsonSchemaValidator()
+  // Agents build arguments from the published input schema (and the gateway
+  // rejects unknown ones), so every call must satisfy that schema first.
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const tool = codevisorTools.find((candidate) => candidate.name === name)!
+    expect(validator.getValidator(tool.inputSchema as JsonSchemaType)(args)).toMatchObject({
+      valid: true
+    })
+    const result = (await provider.invoke({ sessionId: session.id }, name, args)) as CallToolResult
+    const content = result.content[0]
+    if (content?.type !== "text") throw new Error("Expected text tool content")
+    return JSON.parse(content.text) as Record<string, unknown> & {
+      readonly items: ReadonlyArray<{ readonly id: string; readonly text: string }>
+    }
+  }
+
+  const newest = await call("sessions.transcript", { limit: 2 })
+  expect(newest.items.map((item) => item.text)).toEqual(["second", "third"])
+  expect(newest).toMatchObject({ hasMore: true, nextBefore: expect.any(String) })
+  const older = await call("sessions.transcript", { before: newest.nextBefore, limit: 2 })
+  expect(older.items.map((item) => item.text)).toEqual(["first"])
+  expect(older.hasMore).toBe(false)
+  const newer = await call("sessions.transcript", { before: older.nextAfter, limit: 2 })
+  expect(newer.items.map((item) => item.text)).toEqual(["second", "third"])
+
+  const details = await call("sessions.transcript_details", {
+    itemId: older.items[0]!.id,
+    after: "latest"
+  })
+  expect(details).toMatchObject({ entries: [expect.objectContaining({ key: "message::first" })] })
 })

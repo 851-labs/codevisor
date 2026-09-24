@@ -67,8 +67,7 @@ describe("Codevisor MCP provider", () => {
     const transcript = codevisorTools.find((tool) => tool.name === "sessions.transcript")!
     expect(transcript.inputSchema).toMatchObject({
       properties: {
-        sessionId: { description: "Session id. Defaults to the calling session." },
-        before: { description: "Exclusive transcript cursor." }
+        sessionId: { description: "Session id. Defaults to the calling session." }
       }
     })
     const capabilities = codevisorTools.find((tool) => tool.name === "server.capabilities")!

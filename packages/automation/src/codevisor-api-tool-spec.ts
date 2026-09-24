@@ -40,10 +40,10 @@ export const booleanQuery = (name: string, description?: string): QueryParameter
   ...(description === undefined ? {} : { description })
 })
 
-export const integerQuery = (name: string, description?: string): QueryParameter => ({
+export const integerQuery = (name: string, description: string): QueryParameter => ({
   name,
   schema: { type: "integer", minimum: 0 },
-  ...(description === undefined ? {} : { description })
+  description
 })
 
 export const objectSchema = (schema: Schema.Constraint): JsonSchema => {
