@@ -34,6 +34,10 @@ final class ComputerUsePiPModel {
   private static var dismissedSessions: Set<UUID> = []
   /// Where the user last left each session's card; survives tab switches.
   private static var cornerBySession: [UUID: ComputerUseLivePreviewCorner] = [:]
+  /// The card area the user last chose in each session, and anywhere: a new
+  /// chat starts at the size the user last settled on.
+  private static var areaBySession: [UUID: CGFloat] = [:]
+  private static var lastArea: CGFloat?
 
   static let hideDelay: Duration = .seconds(2)
 
@@ -44,6 +48,14 @@ final class ComputerUsePiPModel {
   private(set) var isDismissed: Bool
   var corner: ComputerUseLivePreviewCorner {
     didSet { Self.cornerBySession[chatSessionID] = corner }
+  }
+  /// The preferred card area in square points; nil until the user resizes,
+  /// meaning the default fit.
+  var area: CGFloat? {
+    didSet {
+      Self.areaBySession[chatSessionID] = area
+      if let area { Self.lastArea = area }
+    }
   }
   /// Local only: true from a stop until the hide delay elapses, so the card
   /// shows the stopped state briefly instead of vanishing mid-glance.
@@ -59,6 +71,7 @@ final class ComputerUsePiPModel {
     self.preview = preview ?? .shared
     isDismissed = Self.dismissedSessions.contains(chatSessionID)
     corner = Self.cornerBySession[chatSessionID] ?? .topTrailing
+    area = Self.areaBySession[chatSessionID] ?? Self.lastArea
   }
 
   var isRemote: Bool {

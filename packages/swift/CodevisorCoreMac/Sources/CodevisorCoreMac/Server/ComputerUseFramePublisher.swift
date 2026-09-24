@@ -13,6 +13,13 @@ protocol ComputerUseFrameSink: AnyObject, Sendable {
   @MainActor func prepare(size: CGSize)
   /// Called on the capture output queue.
   func push(_ frame: ScreenSharingVideoFrame)
+  /// The longer side, in pixels, this sink displays frames at; 0 for no
+  /// preference. The stream captures at least that sharp, within a ceiling.
+  var requestedDimension: CGFloat { get }
+}
+
+extension ComputerUseFrameSink {
+  var requestedDimension: CGFloat { 0 }
 }
 
 /// The frame to deliver for a ScreenCaptureKit sample, or nil for the
@@ -84,8 +91,15 @@ final class ComputerUseFramePublisher: NSObject, SCStreamOutput, @unchecked Send
 }
 
 /// Feeds the in-app preview. The mailbox holds only the newest frame.
-final class ComputerUseMailboxSink: ComputerUseFrameSink {
+final class ComputerUseMailboxSink: ComputerUseFrameSink, @unchecked Sendable {
   let mailbox: ScreenSharingFrameMailbox
+  private let lock = NSLock()
+  private var displayDimension: CGFloat = 0
+
+  var requestedDimension: CGFloat {
+    get { lock.withLock { displayDimension } }
+    set { lock.withLock { displayDimension = newValue } }
+  }
 
   init(mailbox: ScreenSharingFrameMailbox) {
     self.mailbox = mailbox
