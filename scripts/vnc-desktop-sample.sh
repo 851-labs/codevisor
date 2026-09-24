@@ -30,15 +30,18 @@ quality_args=()
 
 remote() { ssh -o BatchMode=yes "$target" "export DISPLAY=:$display; $1"; }
 
-ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "$local_port:127.0.0.1:$((5900 + display))" "$target" &
-tunnel=$!
+# The tunnel: ssh -f returns once the forward is up, so nothing probes the VNC port. A probe
+# (nc -z) is a connection dropped mid-handshake, which TigerVNC counts as a failed sign-in;
+# a few of them blacklist 127.0.0.1, which is also where codevisor-server connects from.
+control=$(mktemp -u /tmp/codevisor-tunnel.XXXXXX)
+ssh -f -N -M -S "$control" -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -L "$local_port:127.0.0.1:$((5900 + display))" "$target"
 cleanup() {
   remote 'xdotool search --name "^vnc-sample$" windowclose 2>/dev/null || pkill -f "title=vnc-sample" || true' \
     >/dev/null 2>&1 || true
-  kill "$tunnel" 2>/dev/null || true
+  ssh -S "$control" -O exit "$target" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-for _ in $(seq 1 50); do nc -z 127.0.0.1 "$local_port" 2>/dev/null && break; sleep 0.1; done
 
 remote 'command -v xdotool >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q xdotool >/dev/null'
 remote 'setsid xfce4-terminal --disable-server --title=vnc-sample --geometry 80x20+200+150 >/dev/null 2>&1 < /dev/null &'

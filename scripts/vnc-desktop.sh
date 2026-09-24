@@ -19,6 +19,9 @@
 # - xfwm4's compositor is off: shadows and fades only add repaints to send.
 # - GEOMETRY is only the size the desktop starts at; the viewer resizes it to
 #   its window (ExtendedDesktopSize/RandR, 851-2314).
+# - No sign-in blacklist (-UseBlacklist=0): Xvnc listens on localhost only with no password,
+#   so there is nothing to brute-force, and its only client, codevisor-server, connects from
+#   127.0.0.1: a few dropped connections from there must not lock the desktop out (851-2335).
 # - Xvnc settings reviewed and left at their defaults: FrameRate 60 (the most
 #   updates per second a viewer can use), CompareFB 2 (drop unchanged pixels,
 #   adaptively), DeferUpdate 1 ms. The client picks encodings and JPEG quality.
@@ -48,8 +51,10 @@ if ! command -v vncserver >/dev/null; then
   apt-get update -q
   apt-get install -y -q tigervnc-standalone-server tigervnc-common xfce4 xfce4-terminal dbus-x11 xclip >/dev/null
 fi
-# xdotool: scripts/vnc-desktop-sample.sh drives the desktop with it.
+# xdotool: scripts/vnc-desktop-sample.sh drives the desktop with it. Mousepad: Xfce's text
+# editor, which scripts/vnc-desktop-shortcuts.sh checks ⌘C/⌘V in (851-2335).
 command -v xdotool >/dev/null || apt-get install -y -q xdotool >/dev/null
+command -v mousepad >/dev/null || apt-get install -y -q mousepad >/dev/null
 mkdir -p ~/.vnc
 cat > ~/.vnc/xstartup <<'XS'
 #!/bin/sh
@@ -68,7 +73,7 @@ After=network.target
 Type=forking
 User=root
 ExecStartPre=-/usr/bin/vncserver -kill :%i
-ExecStart=/usr/bin/vncserver :%i -localhost yes -geometry $GEOMETRY -depth 24 -SecurityTypes None
+ExecStart=/usr/bin/vncserver :%i -localhost yes -geometry $GEOMETRY -depth 24 -SecurityTypes None -UseBlacklist=0
 ExecStop=/usr/bin/vncserver -kill :%i
 Restart=on-failure
 
