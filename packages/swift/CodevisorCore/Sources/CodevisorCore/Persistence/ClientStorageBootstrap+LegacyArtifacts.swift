@@ -4,6 +4,14 @@ import Foundation
 extension ClientStorageBootstrap {
   private static let recoveryRetention: TimeInterval = 30 * 24 * 60 * 60
 
+  /// Disposable caches whose readers were removed. Nothing imports them, so
+  /// cleanup deletes them outright instead of moving them into recovery.
+  private static let retiredCacheDirectoryNames = [
+    // iOS pane preview JPEGs (up to 64 MB), orphaned when PaneSnapshotCache
+    // was removed.
+    "Pane Previews"
+  ]
+
   private static let exactLegacyKeys: Set<String> = [
     "projects",
     "sessions",
@@ -178,6 +186,19 @@ extension ClientStorageBootstrap {
         modified < cutoff
       else { continue }
       try? fileManager.removeItem(at: child)
+    }
+  }
+
+  /// Best-effort and idempotent: runs on every launch so a directory
+  /// recreated by an older build is removed too, and never blocks startup.
+  static func removeRetiredCaches(
+    in directory: URL,
+    fileManager: FileManager
+  ) {
+    for name in retiredCacheDirectoryNames {
+      let url = directory.appendingPathComponent(name, isDirectory: true)
+      guard fileManager.fileExists(atPath: url.path) else { continue }
+      try? fileManager.removeItem(at: url)
     }
   }
 }
