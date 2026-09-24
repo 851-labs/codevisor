@@ -12,14 +12,18 @@
   /// that carries pixels: the keystroke-to-screen latency a user feels.
   enum VNCSampleCommand {
     static let usage = """
-      Usage: screen-sharing-rig vnc-sample --host H --port P [--password P] [--seconds 10]
-                                           [--keys 0] [--key-gap-ms 250] [--quality 0-9]
-                                           [--desktop-size WxH]
+      Usage: screen-sharing-rig vnc-sample --host H --port P [--password P | --keychain MACHINE]
+                                           [--seconds 10] [--keys 0] [--key-gap-ms 250]
+                                           [--quality 0-9] [--desktop-size WxH] [--trace FILE]
       Prints one JSON line: updates/s, Mbit/s, bytes/update and round-trip p50 over --seconds,
       then echo latency p50/p95 (ms) over --keys keystrokes. Run the desktop's workload
       alongside (e.g. over ssh); keep the desktop otherwise still while typing.
       --desktop-size asks the server to resize the desktop first (as a viewer pane does) and
       holds it for the sample.
+      --keychain signs in with the credential the rig stored for MACHINE (e.g. tuftlord), a
+      Mac account's user name and password included; nothing is printed or written.
+      --trace writes one JSON line per update: time, bytes, rectangles per encoding,
+      request-to-applied latency, header-to-applied time and the link's share.
       """
 
     static func main(arguments: [String]) {
@@ -36,14 +40,24 @@
         values[String(argument.dropFirst(2))] = value
       }
       guard let host = values["host"], let port = values["port"].flatMap(UInt16.init) else { fail(usage) }
+      var credential = RigVNCCredential(password: values["password"] ?? "")
+      if let machine = values["keychain"] {
+        guard let stored = RigKeychain.vncPasswords.read(machine) else {
+          fail("vnc-sample: no stored credential for \(machine)")
+        }
+        credential = RigVNCCredential.decode(stored)
+      }
       let options = Options(
         seconds: values["seconds"].flatMap(Double.init) ?? 10, keys: values["keys"].flatMap(Int.init) ?? 0,
         keyGap: .milliseconds(values["key-gap-ms"].flatMap(Int.init) ?? 250),
         quality: values["quality"].flatMap(Int.init),
-        desktopSize: values["desktop-size"].map { $0.split(separator: "x").compactMap { Int($0) } })
+        desktopSize: values["desktop-size"].map { $0.split(separator: "x").compactMap { Int($0) } },
+        trace: values["trace"])
       Task {
         do {
-          let result = try await sample(host: host, port: port, password: values["password"], options: options)
+          let result = try await sample(
+            host: host, port: port, password: credential.password.isEmpty ? nil : credential.password,
+            username: credential.username, options: options)
           let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
           print(String(decoding: data, as: UTF8.self))
           exit(EXIT_SUCCESS)
@@ -60,13 +74,20 @@
       var keyGap: Duration
       var quality: Int?
       var desktopSize: [Int]?
+      var trace: String?
     }
 
-    static func sample(host: String, port: UInt16, password: String?, options: Options) async throws -> [String: Any] {
+    static func sample(
+      host: String, port: UInt16, password: String?, username: String? = nil, options: Options
+    ) async throws -> [String: Any] {
       let client = try RFBClient(
         transport: try await RFBNetworkTransport.connect(host: host, port: port), qualityLevel: options.quality)
-      let outcome = try await client.connect(password: password)
-      let log = SampleLog()
+      let outcome = try await client.connect(password: password, username: username)
+      let log = SampleLog(
+        trace: options.trace.flatMap { path in
+          FileManager.default.createFile(atPath: path, contents: nil)
+          return FileHandle(forWritingAtPath: path)
+        })
       let run = Task {
         try await client.run(
           onUpdate: { _, update in log.update(update) },
@@ -112,6 +133,18 @@
         "updatesPerSecond": rounded(Double(passive.updates) / seconds),
         "mbitPerSecond": rounded(Double(passive.bytes) * 8 / seconds / 1_000_000),
         "bytesPerUpdate": passive.updates > 0 ? passive.bytes / passive.updates : 0,
+        "encodings": passive.encodings.map { "\($0.key):\($0.value)" }.sorted().joined(separator: " "),
+        "latencyP50Ms": rounded(VNCBenchStatistics.percentile(passive.latencies, 0.5)),
+        // Per stage: request → first byte (round trip + the server's own time), then the
+        // network's share of reading the update, then the rest of applying it (decode).
+        "serverWaitP50Ms": rounded(VNCBenchStatistics.percentile(passive.serverWaits, 0.5)),
+        "serverWaitP95Ms": rounded(VNCBenchStatistics.percentile(passive.serverWaits, 0.95)),
+        "transferP50Ms": rounded(VNCBenchStatistics.percentile(passive.linkWaits, 0.5)),
+        "transferP95Ms": rounded(VNCBenchStatistics.percentile(passive.linkWaits, 0.95)),
+        "decodeP50Ms": rounded(VNCBenchStatistics.percentile(passive.decodes, 0.5)),
+        "decodeP95Ms": rounded(VNCBenchStatistics.percentile(passive.decodes, 0.95)),
+        "decodeMsPerMegapixel": rounded(
+          passive.pixels > 0 ? passive.decodes.reduce(0, +) / (Double(passive.pixels) / 1_000_000) : nil),
         "roundTripP50Ms": rounded(VNCBenchStatistics.median(passive.roundTrips)),
         "echoP50Ms": rounded(VNCBenchStatistics.percentile(echoes, 0.5)),
         "echoP95Ms": rounded(VNCBenchStatistics.percentile(echoes, 0.95)),
@@ -131,9 +164,20 @@
       var updates = 0
       var bytes = 0
       var roundTrips: [Double] = []
+      var encodings: [Int32: Int] = [:]
+      var latencies: [Double] = []
+      var applies: [Double] = []
+      var linkWaits: [Double] = []
+      var serverWaits: [Double] = []
+      var decodes: [Double] = []
+      var pixels = 0
     }
 
     private let lock = NSLock()
+    private let trace: FileHandle?
+    private let started = ContinuousClock.now
+
+    init(trace: FileHandle?) { self.trace = trace }
     private var current = Snapshot()
     private var sawFirst = false
     private var firstWaiter: CheckedContinuation<Void, Never>?
@@ -143,6 +187,32 @@
       let (first, armed): (CheckedContinuation<Void, Never>?, Echo?) = lock.withLock {
         current.updates += 1
         current.bytes += update.byteCount
+        current.encodings.merge(update.encodingCounts, uniquingKeysWith: +)
+        func ms(_ duration: Duration?) -> Double? { duration.map { $0 / .milliseconds(1) } }
+        let link = update.linkDuration / .milliseconds(1)
+        if let latency = ms(update.latency) {
+          current.latencies.append(latency)
+          if let apply = ms(update.transferDuration) { current.serverWaits.append(max(0, latency - apply)) }
+        }
+        if let apply = ms(update.transferDuration) {
+          current.applies.append(apply)
+          current.decodes.append(max(0, apply - link))
+        }
+        current.linkWaits.append(link)
+        current.pixels += update.rectangles.reduce(0) { $0 + $1.width * $1.height }
+        if let trace {
+          let line: [String: Any] = [
+            "t": (started.duration(to: .now) / .milliseconds(1)).rounded(), "bytes": update.byteCount,
+            "rects": update.rectangles.count,
+            "enc": Dictionary(uniqueKeysWithValues: update.encodingCounts.map { ("\($0.key)", $0.value) }),
+            "latencyMs": ms(update.latency) ?? -1, "applyMs": ms(update.transferDuration) ?? -1,
+            "linkMs": update.linkDuration / .milliseconds(1), "linkBytes": update.linkBytes,
+            "area": update.rectangles.reduce(0) { $0 + $1.width * $1.height },
+          ]
+          if let data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) {
+            trace.write(data + Data("\n".utf8))
+          }
+        }
         var first: CheckedContinuation<Void, Never>?
         if !sawFirst, !update.rectangles.isEmpty {
           sawFirst = true
