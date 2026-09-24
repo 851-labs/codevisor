@@ -5,13 +5,15 @@ import CodevisorCoreMac
 import SwiftUI
 
 struct ComputerUsePiPOverlay: View {
-  static let maxWidth: CGFloat = 320
-  static let maxHeight: CGFloat = 260
-
   @State private var model: ComputerUsePiPModel
   @State private var isHovering = false
   /// The pointer's offset from the card's resting corner while dragging.
   @State private var dragOffset: CGSize = .zero
+  /// The area while a resize handle is being dragged, and the size the
+  /// card had when that drag began.
+  @State private var liveArea: CGFloat?
+  @State private var resizeStartSize: CGSize?
+  @Environment(\.displayScale) private var displayScale
   private let isTurnRunning: Bool
   /// Height of the floating composer, so bottom corners sit above it.
   private let composerHeight: CGFloat
@@ -37,10 +39,11 @@ struct ComputerUsePiPOverlay: View {
         // Fills the pane without taking clicks; only the card is interactive.
         Color.clear.allowsHitTesting(false)
         if model.isVisible, let viewer = model.viewer {
-          let size = cardSize(viewer: viewer)
+          let aspect = aspect(viewer: viewer)
+          let size = cardSize(aspect: aspect, container: geometry.size, insets: insets)
           let origin = ComputerUseLivePreviewLayout.origin(
             corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
-          card(viewer: viewer, size: size)
+          card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
             .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
             .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
@@ -59,12 +62,65 @@ struct ComputerUsePiPOverlay: View {
     .onDisappear { model.teardown() }
   }
 
-  private func cardSize(viewer: ComputerUseLivePreviewViewer) -> CGSize {
-    computerUseLivePreviewSize(
-      frameSize: viewer.frameSize ?? .zero,
-      maxWidth: Self.maxWidth,
-      maxHeight: Self.maxHeight
+  /// The stream's width ÷ height, or a landscape default before the first
+  /// frame arrives.
+  private func aspect(viewer: ComputerUseLivePreviewViewer) -> CGFloat {
+    guard let frame = viewer.frameSize, frame.width > 0, frame.height > 0 else { return 16.0 / 10.0 }
+    return frame.width / frame.height
+  }
+
+  private func cardSize(
+    aspect: CGFloat,
+    container: CGSize,
+    insets: ComputerUseLivePreviewInsets
+  ) -> CGSize {
+    ComputerUseLivePreviewLayout.size(
+      area: liveArea ?? model.area ?? ComputerUseLivePreviewLayout.defaultArea(aspect: aspect),
+      aspect: aspect,
+      container: container,
+      insets: insets
     )
+  }
+
+  /// Thin zones along each edge and corner that resize the card, with the
+  /// native frame-resize pointer. The card stays anchored to its corner, so
+  /// dragging any handle outward grows it away from that corner.
+  private func resizeHandles(
+    size: CGSize,
+    aspect: CGFloat,
+    viewer: ComputerUseLivePreviewViewer
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      ForEach(ComputerUseLivePreviewResizeHandle.allCases, id: \.self) { handle in
+        let zone = handle.zone(in: size)
+        Color.clear
+          .contentShape(Rectangle())
+          .frame(width: zone.width, height: zone.height)
+          .offset(x: zone.minX, y: zone.minY)
+          .pointerStyle(.frameResize(position: handle.framePosition))
+          .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.coordinateSpace))
+              .onChanged { value in
+                let start = resizeStartSize ?? size
+                resizeStartSize = start
+                liveArea = ComputerUseLivePreviewLayout.resizedArea(
+                  handle: handle, startSize: start, translation: value.translation, aspect: aspect)
+              }
+              .onEnded { _ in
+                if let liveArea { model.area = liveArea }
+                liveArea = nil
+                resizeStartSize = nil
+              }
+          )
+          .accessibilityHidden(true)
+      }
+    }
+    .frame(width: size.width, height: size.height, alignment: .topLeading)
+    // The capture follows the size the card settles at, not every drag step.
+    .onChange(of: resizeStartSize == nil ? size : nil) { _, settled in
+      if let settled { viewer.setDisplaySize(settled, backingScale: displayScale) }
+    }
+    .onAppear { viewer.setDisplaySize(size, backingScale: displayScale) }
   }
 
   /// Follows the pointer 1:1, then settles in the corner the release is
@@ -93,7 +149,11 @@ struct ComputerUsePiPOverlay: View {
       }
   }
 
-  private func card(viewer: ComputerUseLivePreviewViewer, size: CGSize) -> some View {
+  private func card(
+    viewer: ComputerUseLivePreviewViewer,
+    size: CGSize,
+    resizeHandles: some View
+  ) -> some View {
     let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
     return ZStack(alignment: .topLeading) {
       ComputerUsePiPSurface(viewer: viewer)
@@ -115,12 +175,6 @@ struct ComputerUsePiPOverlay: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .allowsHitTesting(false)
       }
-      // Native PiP's control: hidden until hover, then a glass close button.
-      closeButton
-        .padding(8)
-        .opacity(isHovering ? 1 : 0)
-        .scaleEffect(isHovering ? 1 : 0.9)
-        .allowsHitTesting(isHovering)
     }
     .frame(width: size.width, height: size.height)
     .background(.black)
@@ -130,6 +184,19 @@ struct ComputerUsePiPOverlay: View {
     }
     .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     .contentShape(shape)
+    // Outside the rounded content shape, so the corner handles reach the
+    // card's square corners rather than stopping at the curve.
+    .overlay(alignment: .topLeading) {
+      ZStack(alignment: .topLeading) {
+        resizeHandles
+        // Native PiP's control: hidden until hover, then a glass close button.
+        closeButton
+          .padding(8)
+          .opacity(isHovering ? 1 : 0)
+          .scaleEffect(isHovering ? 1 : 0.9)
+          .allowsHitTesting(isHovering)
+      }
+    }
     .onHover { isHovering = $0 }
     .onTapGesture { model.activateTarget() }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
@@ -200,6 +267,44 @@ extension ComputerUseLivePreviewCorner {
   /// The card grows out of, and shrinks into, its own corner.
   fileprivate var unitPoint: UnitPoint {
     switch self {
+    case .topLeading: .topLeading
+    case .topTrailing: .topTrailing
+    case .bottomLeading: .bottomLeading
+    case .bottomTrailing: .bottomTrailing
+    }
+  }
+}
+
+extension ComputerUseLivePreviewResizeHandle {
+  private static let edgeThickness: CGFloat = 6
+  private static let cornerLength: CGFloat = 14
+
+  /// Where the handle's hit zone sits within a card of `size`, top-left
+  /// origin. Edges leave the corners to the corner handles.
+  fileprivate func zone(in size: CGSize) -> CGRect {
+    let edge = Self.edgeThickness
+    let corner = Self.cornerLength
+    let horizontalEdge = max(0, size.width - corner * 2)
+    let verticalEdge = max(0, size.height - corner * 2)
+    switch self {
+    case .top: return CGRect(x: corner, y: 0, width: horizontalEdge, height: edge)
+    case .bottom: return CGRect(x: corner, y: size.height - edge, width: horizontalEdge, height: edge)
+    case .leading: return CGRect(x: 0, y: corner, width: edge, height: verticalEdge)
+    case .trailing: return CGRect(x: size.width - edge, y: corner, width: edge, height: verticalEdge)
+    case .topLeading: return CGRect(x: 0, y: 0, width: corner, height: corner)
+    case .topTrailing: return CGRect(x: size.width - corner, y: 0, width: corner, height: corner)
+    case .bottomLeading: return CGRect(x: 0, y: size.height - corner, width: corner, height: corner)
+    case .bottomTrailing:
+      return CGRect(x: size.width - corner, y: size.height - corner, width: corner, height: corner)
+    }
+  }
+
+  fileprivate var framePosition: FrameResizePosition {
+    switch self {
+    case .top: .top
+    case .bottom: .bottom
+    case .leading: .leading
+    case .trailing: .trailing
     case .topLeading: .topLeading
     case .topTrailing: .topTrailing
     case .bottomLeading: .bottomLeading

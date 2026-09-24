@@ -78,3 +78,103 @@ public enum ComputerUseLivePreviewLayout {
     }
   }
 }
+
+// MARK: - Resizing
+
+/// An edge or corner the card is resized from.
+public enum ComputerUseLivePreviewResizeHandle: CaseIterable, Equatable, Sendable {
+  case top, bottom, leading, trailing
+  case topLeading, topTrailing, bottomLeading, bottomTrailing
+
+  /// -1, 0 or +1: which way along each axis dragging grows the card.
+  public var horizontal: CGFloat {
+    switch self {
+    case .leading, .topLeading, .bottomLeading: -1
+    case .trailing, .topTrailing, .bottomTrailing: 1
+    case .top, .bottom: 0
+    }
+  }
+
+  public var vertical: CGFloat {
+    switch self {
+    case .top, .topLeading, .topTrailing: -1
+    case .bottom, .bottomLeading, .bottomTrailing: 1
+    case .leading, .trailing: 0
+    }
+  }
+}
+
+extension ComputerUseLivePreviewLayout {
+  /// The shorter side never goes below this, so the video stays legible.
+  public static let minimumShortSide: CGFloat = 120
+  /// The longer side never goes below this, so the glass close button fits.
+  public static let minimumLongSide: CGFloat = 200
+  /// The card never takes more than this share of the pane's width.
+  public static let maximumWidthFraction: CGFloat = 0.6
+  /// The size a new card starts at, before the user resizes it.
+  public static let defaultBounds = CGSize(width: 320, height: 260)
+
+  /// The area of a card aspect-fitted into the default bounds.
+  public static func defaultArea(aspect: CGFloat) -> CGFloat {
+    let size = computerUseLivePreviewSize(
+      frameSize: CGSize(width: max(aspect, 0.01), height: 1),
+      maxWidth: defaultBounds.width,
+      maxHeight: defaultBounds.height
+    )
+    return size.width * size.height
+  }
+
+  /// The card's size for a preferred `area` at the stream's `aspect`
+  /// (width ÷ height), clamped to the limits. Storing an area rather than a
+  /// width keeps the card about as large when the controlled window switches
+  /// between portrait and landscape. Where the limits cannot all hold at
+  /// that aspect, they win and the video letterboxes inside the card.
+  public static func size(
+    area: CGFloat,
+    aspect: CGFloat,
+    container: CGSize,
+    insets: ComputerUseLivePreviewInsets
+  ) -> CGSize {
+    let aspect = aspect.isFinite && aspect > 0 ? aspect : 16.0 / 10.0
+    let area = area.isFinite && area > 0 ? area : defaultArea(aspect: aspect)
+    let landscape = aspect >= 1
+    // Aspect-locked width range.
+    let minimumWidth =
+      landscape
+      ? max(minimumLongSide, minimumShortSide * aspect)
+      : max(minimumShortSide, minimumLongSide * aspect)
+    let availableWidth = max(0, container.width - insets.leading - insets.trailing)
+    let availableHeight = max(0, container.height - insets.top - insets.bottom)
+    let maximumWidth = min(availableWidth * maximumWidthFraction, availableHeight * aspect)
+    var width = (area * aspect).squareRoot()
+    width = min(max(width, minimumWidth), max(minimumWidth, maximumWidth))
+    var height = width / aspect
+    // Hard bounds: never beyond the pane, never a sliver.
+    let hardMaximumWidth = max(minimumShortSide, min(availableWidth, availableWidth * maximumWidthFraction))
+    width = min(width, hardMaximumWidth)
+    height = min(max(height, minimumShortSide), max(minimumShortSide, availableHeight))
+    return CGSize(width: width.rounded(), height: height.rounded())
+  }
+
+  /// The area after dragging `handle` by `translation` from a card that
+  /// started at `startSize`. Dragging outward grows the card; a corner
+  /// follows whichever axis moved further, keeping the aspect locked.
+  public static func resizedArea(
+    handle: ComputerUseLivePreviewResizeHandle,
+    startSize: CGSize,
+    translation: CGSize,
+    aspect: CGFloat
+  ) -> CGFloat {
+    let aspect = aspect.isFinite && aspect > 0 ? aspect : startSize.width / max(startSize.height, 1)
+    let byWidth = handle.horizontal * translation.width
+    let byHeight = handle.vertical * translation.height * aspect
+    let widthDelta: CGFloat
+    switch (handle.horizontal != 0, handle.vertical != 0) {
+    case (true, true): widthDelta = abs(byWidth) >= abs(byHeight) ? byWidth : byHeight
+    case (true, false): widthDelta = byWidth
+    default: widthDelta = byHeight
+    }
+    let width = max(1, startSize.width + widthDelta)
+    return width * (width / aspect)
+  }
+}

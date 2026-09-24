@@ -8,75 +8,6 @@ struct ComputerUseShareKey: Hashable, Sendable {
   let pid: pid_t
 }
 
-enum ComputerUseNativePreviewMetrics {
-  static let maximumDimension: CGFloat = 960
-  static let fallbackSize = CGSize(width: 640, height: 360)
-  /// Enough to keep the system's sharing preview populated.
-  static let idleFramesPerSecond: Int32 = 5
-  /// Watchable when a live preview viewer is attached.
-  static let viewingFramesPerSecond: Int32 = 15
-  /// SCK stops delivering once the client holds the whole pool. A viewer's
-  /// renderer can pin three buffers at once (mailbox slot, last frame kept
-  /// for redraws, the frame in flight on the GPU), so leave headroom.
-  static let queueDepth = 5
-}
-
-struct ComputerUseNativePreviewSettings: Equatable, Sendable {
-  let size: CGSize
-  let framesPerSecond: Int32
-}
-
-func computerUseNativePreviewFramesPerSecond(viewerCount: Int) -> Int32 {
-  viewerCount > 0
-    ? ComputerUseNativePreviewMetrics.viewingFramesPerSecond
-    : ComputerUseNativePreviewMetrics.idleFramesPerSecond
-}
-
-func computerUseNativePreviewSettings(
-  windowFrame: CGRect,
-  pointPixelScale: CGFloat,
-  viewerCount: Int
-) -> ComputerUseNativePreviewSettings {
-  ComputerUseNativePreviewSettings(
-    size: computerUseNativePreviewSize(windowFrame: windowFrame, pointPixelScale: pointPixelScale),
-    framesPerSecond: computerUseNativePreviewFramesPerSecond(viewerCount: viewerCount)
-  )
-}
-
-/// Produces an even-sized, aspect-preserving preview buffer. The model still
-/// receives an independent full-resolution screenshot on demand; this stream
-/// exists for macOS's native sharing UI and lifecycle.
-func computerUseNativePreviewSize(
-  windowFrame: CGRect,
-  pointPixelScale: CGFloat,
-  maximumDimension: CGFloat = ComputerUseNativePreviewMetrics.maximumDimension
-) -> CGSize {
-  guard windowFrame.width.isFinite,
-    windowFrame.height.isFinite,
-    windowFrame.width > 0,
-    windowFrame.height > 0,
-    pointPixelScale.isFinite,
-    pointPixelScale > 0,
-    maximumDimension.isFinite,
-    maximumDimension >= 2
-  else { return ComputerUseNativePreviewMetrics.fallbackSize }
-
-  let nativeSize = CGSize(
-    width: windowFrame.width * pointPixelScale,
-    height: windowFrame.height * pointPixelScale
-  )
-  let reduction = min(1, maximumDimension / max(nativeSize.width, nativeSize.height))
-
-  func evenDimension(_ value: CGFloat) -> CGFloat {
-    CGFloat(max(2, Int((value * reduction).rounded(.down)) & ~1))
-  }
-
-  return CGSize(
-    width: evenDimension(nativeSize.width),
-    height: evenDimension(nativeSize.height)
-  )
-}
-
 /// ScreenCaptureKit delivers picker observer callbacks on an internal queue,
 /// while `SCStream` and `SCContentFilter` have not adopted `Sendable`. Keep the
 /// unchecked crossing tightly scoped to the hop into this type's main-actor
@@ -102,6 +33,9 @@ final class ComputerUseNativeSharing: NSObject,
     var keys: Set<ComputerUseShareKey>
     var pointPixelScale: CGFloat
     var settings: ComputerUseNativePreviewSettings
+    /// The window's last known frame, so a viewer's size request can resize
+    /// the stream without waiting for a tool call.
+    var windowFrame: CGRect
   }
 
   private var entriesByWindowID: [CGWindowID: Entry] = [:]
@@ -233,13 +167,12 @@ final class ComputerUseNativeSharing: NSObject,
 
       let filter = SCContentFilter(desktopIndependentWindow: window)
       let pointPixelScale = max(1, CGFloat(filter.pointPixelScale))
-      let viewers = viewerCount(
-        sessions: Set((pendingKeysByWindowID[windowID] ?? []).map(\.sessionID))
-      )
+      let pendingSessions = Set((pendingKeysByWindowID[windowID] ?? []).map(\.sessionID))
       let settings = computerUseNativePreviewSettings(
         windowFrame: window.frame,
         pointPixelScale: pointPixelScale,
-        viewerCount: viewers
+        viewerCount: viewerCount(sessions: pendingSessions),
+        requestedDimension: requestedDimension(sessions: pendingSessions)
       )
       let stream = SCStream(
         filter: filter,
@@ -271,7 +204,8 @@ final class ComputerUseNativeSharing: NSObject,
         publisher: publisher,
         keys: keys,
         pointPixelScale: pointPixelScale,
-        settings: settings
+        settings: settings,
+        windowFrame: window.frame
       )
       entriesByWindowID[windowID] = entry
       keys.forEach { windowIDByKey[$0] = windowID }
@@ -304,12 +238,16 @@ final class ComputerUseNativeSharing: NSObject,
   }
 
   private func refreshPreviewConfiguration(windowID: CGWindowID, windowFrame: CGRect) {
-    guard let entry = entriesByWindowID[windowID] else { return }
+    guard var entry = entriesByWindowID[windowID] else { return }
+    entry.windowFrame = windowFrame
+    entriesByWindowID[windowID] = entry
+    let sessions = Set(entry.keys.map(\.sessionID))
     apply(
       computerUseNativePreviewSettings(
         windowFrame: windowFrame,
         pointPixelScale: entry.pointPixelScale,
-        viewerCount: viewerCount(sessions: Set(entry.keys.map(\.sessionID)))
+        viewerCount: viewerCount(sessions: sessions),
+        requestedDimension: requestedDimension(sessions: sessions)
       ),
       windowID: windowID
     )
@@ -399,6 +337,19 @@ final class ComputerUseNativeSharing: NSObject,
     sessions.reduce(0) { $0 + (sinksBySession[$1]?.count ?? 0) }
   }
 
+  private func requestedDimension(sessions: Set<String>) -> CGFloat {
+    sessions.flatMap { sinksBySession[$0]?.values.map(\.requestedDimension) ?? [] }.max() ?? 0
+  }
+
+  /// A viewer now displays the preview at a different pixel size.
+  func requestedDimensionChanged(sessionID: String) {
+    let windowIDs = Set(windowIDByKey.filter { $0.key.sessionID == sessionID }.map(\.value))
+    for windowID in windowIDs {
+      guard let entry = entriesByWindowID[windowID] else { continue }
+      refreshPreviewConfiguration(windowID: windowID, windowFrame: entry.windowFrame)
+    }
+  }
+
   /// Points the stream's publisher at the sinks of every session sharing
   /// the window, and matches its frame rate to whether anyone is watching.
   private func resubscribe(windowID: CGWindowID) {
@@ -412,13 +363,7 @@ final class ComputerUseNativeSharing: NSObject,
       sink.prepare(size: entry.settings.size)
     }
     entry.publisher.setSinks(sinks)
-    apply(
-      ComputerUseNativePreviewSettings(
-        size: entry.settings.size,
-        framesPerSecond: computerUseNativePreviewFramesPerSecond(viewerCount: sinks.count)
-      ),
-      windowID: windowID
-    )
+    refreshPreviewConfiguration(windowID: windowID, windowFrame: entry.windowFrame)
   }
 
   private func detach(key: ComputerUseShareKey, intentional: Bool) {

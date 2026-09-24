@@ -191,9 +191,15 @@ public final class ComputerUseLivePreview {
       return nil
     }
     let bridgeSessionID = activity.bridgeSessionID
-    let token = attachSink(sessionID: bridgeSessionID, sink: ComputerUseMailboxSink(mailbox: mailbox))
+    let sink = ComputerUseMailboxSink(mailbox: mailbox)
+    let token = attachSink(sessionID: bridgeSessionID, sink: sink)
     let viewer = ComputerUseLivePreviewViewer(title: activity.appName, phase: .live) { [weak self] in
       self?.detachSink(sessionID: bridgeSessionID, token: token)
+    }
+    viewer.onDisplayDimension = { dimension in
+      guard abs(sink.requestedDimension - dimension) >= 1 else { return }
+      sink.requestedDimension = dimension
+      ComputerUseNativeSharing.shared.requestedDimensionChanged(sessionID: bridgeSessionID)
     }
     viewer.install(surface)
     return viewer
@@ -269,6 +275,17 @@ public final class ComputerUseLivePreviewViewer {
 
   func update(phase: Phase) { self.phase = phase }
   func update(title: String) { self.title = title }
+
+  /// Local viewers ask the capture for enough pixels to fill this size.
+  @ObservationIgnored var onDisplayDimension: ((CGFloat) -> Void)?
+
+  /// The card settled at `size` points on a display with `backingScale`.
+  /// Call when a resize ends rather than on every drag step: each change
+  /// reconfigures the capture stream.
+  public func setDisplaySize(_ size: CGSize, backingScale: CGFloat) {
+    guard !isDetached else { return }
+    onDisplayDimension?(max(size.width, size.height) * max(1, backingScale))
+  }
 
   public func setBackgroundColor(_ color: NSColor) {
     background = color
