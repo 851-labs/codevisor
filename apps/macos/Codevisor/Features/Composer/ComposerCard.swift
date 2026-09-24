@@ -38,6 +38,8 @@ struct ComposerCard: View {
   /// keys off the token at the caret, so it triggers mid-message too.
   @State private var selection = NSRange(location: 0, length: 0)
   @State private var slashSelection = 0
+  /// ↑/↓ prompt-recall position; nil until the first ↑ of a navigation.
+  @State private var promptHistory: ComposerPromptHistory?
   @State private var isSlashMenuDismissed = false
   @State private var slashMenuContentHeight: CGFloat = 0
   @State private var isStopButtonHovered = false
@@ -590,7 +592,16 @@ private extension ComposerCard {
       controller.exitGoalComposer()
       return true
     }
-    return false
+    // Terminal-style recall of this chat's sent prompts.
+    guard command == .recallPreviousPrompt || command == .recallNextPrompt else { return false }
+    let older = command == .recallPreviousPrompt
+    guard let caret = controller.recallPrompt(&promptHistory, older: older) else {
+      // At the oldest prompt, swallow ↑ so the caret stays put; at the
+      // draft (or with no history), the arrow moves the caret as usual.
+      return older && promptHistory != nil
+    }
+    selection = caret
+    return true
   }
 
   private func handleSlashMenuKeyCommand(_ command: ComposerKeyCommand) -> Bool {
@@ -610,6 +621,8 @@ private extension ComposerCard {
       isSlashMenuDismissed = true
       slashSelection = 0
       return true
+    case .recallPreviousPrompt, .recallNextPrompt:
+      return false
     }
   }
 }
