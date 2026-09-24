@@ -53,39 +53,25 @@ xcode_args=(
 )
 
 ghostty_framework="$repo_root/apps/macos/Frameworks/GhosttyKit.xcframework"
-ghostty_plist="$ghostty_framework/Info.plist"
-ghostty_library=""
-ghostty_slice_dir=""
-plist_value() {
-  /usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$1" "$ghostty_plist" 2>/dev/null
-}
 library_has_arch() {
   lipo -archs "$1" 2>/dev/null | tr " " "\n" | grep -qx "$2"
 }
 # The xcframework also carries iOS device and simulator slices whose archives
-# contain arm64 too, so an arm64 check alone cannot tell them apart. Select the
-# slice the way Xcode does: from Info.plist, by platform and variant.
-if [[ ! -f "$ghostty_plist" ]]; then
-  echo "error: GhosttyKit.xcframework is missing its Info.plist at $ghostty_plist" >&2
+# contain arm64 too, so an arm64 check alone cannot tell them apart. Xcode
+# names each slice <platform>-<archs>[-<variant>] and allows one per platform
+# and variant; macOS has no variant, so its library is the one under macos-*.
+# Mac Catalyst and simulator slices are ios-* and can never match.
+shopt -s nullglob
+ghostty_candidates=("$ghostty_framework"/macos-*/*.a)
+shopt -u nullglob
+if [[ ${#ghostty_candidates[@]} -ne 1 ]]; then
+  echo "error: GhosttyKit must include exactly one macOS static library (found ${#ghostty_candidates[@]})." >&2
   exit 1
 fi
-index=0
-while plist_value "$index" >/dev/null; do
-  if [[ "$(plist_value "$index:SupportedPlatform")" == "macos" ]] &&
-    ! plist_value "$index:SupportedPlatformVariant" >/dev/null; then
-    ghostty_slice_dir="$ghostty_framework/$(plist_value "$index:LibraryIdentifier")"
-    ghostty_library="$ghostty_slice_dir/$(plist_value "$index:LibraryPath")"
-    break
-  fi
-  index=$((index + 1))
-done
-
+ghostty_library="${ghostty_candidates[0]}"
+ghostty_slice_dir="$(dirname "$ghostty_library")"
 ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
 ghostty_resources="$repo_root/apps/macos/Codevisor/Resources/ghostty-resources.tar.gz"
-if [[ -z "$ghostty_library" || ! -f "$ghostty_library" ]]; then
-  echo "error: GhosttyKit must include a macOS static library." >&2
-  exit 1
-fi
 lipo -info "$ghostty_library" || true
 if ! library_has_arch "$ghostty_library" arm64; then
   echo "error: GhosttyKit macOS library $ghostty_library has no arm64 slice." >&2

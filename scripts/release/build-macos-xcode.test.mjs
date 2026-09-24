@@ -12,39 +12,19 @@ test("the release build passes the macOS Ghostty archive without overriding proj
   await mkdir(join(script, ".."), { recursive: true })
   await copyFile(new URL("./build-macos-xcode.sh", import.meta.url), script)
   // Mirror a real GhosttyKit.xcframework: the iOS slices sort before the macOS
-  // slice and their archives also contain arm64, so only Info.plist tells them apart.
+  // slice and their archives also contain arm64 (the lipo stub reports it for all).
   const framework = join(root, "apps/macos/Frameworks/GhosttyKit.xcframework")
   const slices = [
-    { id: "ios-arm64", archive: "libghostty-internal.a", platform: "ios" },
-    {
-      id: "ios-arm64-simulator",
-      archive: "libghostty-internal.a",
-      platform: "ios",
-      variant: "simulator"
-    },
-    { id: "macos custom slice", archive: "custom archive.a", platform: "macos" }
+    ["ios-arm64", "libghostty-internal.a"],
+    ["ios-arm64-simulator", "libghostty-internal.a"],
+    ["macos-arm64 custom slice", "custom archive.a"]
   ]
-  for (const { id, archive } of slices) {
+  for (const [id, archive] of slices) {
     await mkdir(join(framework, id, "Headers"), { recursive: true })
     await writeFile(join(framework, id, archive), "fixture")
     await writeFile(join(framework, id, "Headers/ghostty.h"), "fixture")
   }
-  const entries = slices.map(({ id, archive, platform, variant }) =>
-    [
-      "<dict>",
-      `<key>LibraryIdentifier</key><string>${id}</string>`,
-      `<key>LibraryPath</key><string>${archive}</string>`,
-      "<key>HeadersPath</key><string>Headers</string>",
-      `<key>SupportedPlatform</key><string>${platform}</string>`,
-      variant ? `<key>SupportedPlatformVariant</key><string>${variant}</string>` : "",
-      "</dict>"
-    ].join("")
-  )
-  await writeFile(
-    join(framework, "Info.plist"),
-    `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>AvailableLibraries</key><array>${entries.join("")}</array></dict></plist>\n`
-  )
-  const slice = join(framework, "macos custom slice")
+  const slice = join(framework, "macos-arm64 custom slice")
   const library = join(slice, "custom archive.a")
   const resources = join(root, "apps/macos/Codevisor/Resources")
   await mkdir(resources, { recursive: true })
