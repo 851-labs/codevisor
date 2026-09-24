@@ -320,6 +320,37 @@ struct ClientDatabaseTests {
   }
 
   @MainActor
+  @Test("Launch removes orphaned iOS pane previews and keeps sibling data")
+  func retiredPanePreviewsRemoved() throws {
+    let fileManager = FileManager.default
+    let directory = temporaryDirectory()
+    defer { try? fileManager.removeItem(at: directory) }
+    let previews = directory.appendingPathComponent("Pane Previews", isDirectory: true)
+    try fileManager.createDirectory(at: previews, withIntermediateDirectories: true)
+    try Data([0xFF, 0xD8]).write(
+      to: previews.appendingPathComponent("v1-workspace-pane.preview")
+    )
+    let siblingDirectory = directory.appendingPathComponent("Themes", isDirectory: true)
+    try fileManager.createDirectory(at: siblingDirectory, withIntermediateDirectories: true)
+    let siblingFile = siblingDirectory.appendingPathComponent("custom.json")
+    try Data("{}".utf8).write(to: siblingFile)
+
+    for _ in 0..<2 {
+      _ = try ClientStorageBootstrap.open(
+        directory: directory,
+        credentials: InMemoryMachineCredentialStore(),
+        migrateRenamedApplicationSupport: false
+      )
+      #expect(!fileManager.fileExists(atPath: previews.path))
+      #expect(fileManager.fileExists(atPath: siblingFile.path))
+      #expect(
+        fileManager.fileExists(
+          atPath: directory.appendingPathComponent(ClientDatabase.fileName).path
+        ))
+    }
+  }
+
+  @MainActor
   @Test("A failed cleanup resumes without re-importing or deleting its source")
   func cleanupRetry() throws {
     let directory = temporaryDirectory()

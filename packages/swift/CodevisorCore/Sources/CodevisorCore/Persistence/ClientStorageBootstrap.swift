@@ -130,6 +130,7 @@ public enum ClientStorageBootstrap {
     }
 
     pruneExpiredRecovery(in: directory, fileManager: fileManager)
+    removeRetiredCaches(in: directory, fileManager: fileManager)
     return ClientStorage(
       database: database,
       store: store
