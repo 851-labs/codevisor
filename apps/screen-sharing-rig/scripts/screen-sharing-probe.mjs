@@ -6,7 +6,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
+const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const packagePath = join(root, "apps/screen-sharing-rig")
 const args = process.argv.slice(2)
 const releaseIndex = args.indexOf("--release")
