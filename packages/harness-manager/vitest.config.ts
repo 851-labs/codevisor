@@ -36,6 +36,7 @@ export default defineConfig({
         "src/harness-lifecycle-support.ts",
         "src/harness-lifecycle-test-support.ts",
         "src/harness-lifecycle-updates.ts",
+        "src/shared-credential-vault-test-support.ts",
         "src/opencode-auth.ts",
         "src/opencode-auth-server.ts",
         "src/pi-auth.ts"

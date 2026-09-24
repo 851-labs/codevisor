@@ -1,72 +1,12 @@
-import { coordinateCredential, type CredentialRecord } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
 import type { SharedTokenBundle, CredentialCoordinator } from "./shared-credential-types.js"
+import { fixture, gate, original, refreshed } from "./shared-credential-vault-test-support.js"
 import {
   makeSharedCredentialVault,
   openSharedCredential,
   sealSharedCredential
 } from "./shared-credential-vault.js"
-
-const original: SharedTokenBundle = {
-  harnessId: "codex",
-  subject: "user",
-  organizationId: "workspace",
-  accessToken: "old-access",
-  refreshToken: "old-refresh",
-  expiresAt: 1,
-  ownership: "managed"
-}
-const refreshed = {
-  ...original,
-  accessToken: "new-access",
-  refreshToken: "new-refresh",
-  expiresAt: 10_000_000
-}
-const gate = <T = void>() => {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
-    resolve = done
-  })
-  return { promise, resolve }
-}
-const fixture = () => {
-  const records = new Map<string, CredentialRecord>()
-  let time = 100_000
-  const coordinate =
-    (owner: string): CredentialCoordinator =>
-    async (id, command) => {
-      const next = coordinateCredential(records.get(id), command, owner, time)
-      if (next.record) records.set(id, next.record)
-      return next.result
-    }
-  const receipts = new Map<string, { operationId: string; sealed: string }>()
-  const receipt = {
-    read: async (id: string) => receipts.get(id),
-    write: async (id: string, value: { operationId: string; sealed: string }) => {
-      receipts.set(id, value)
-    },
-    remove: async (id: string) => {
-      receipts.delete(id)
-    }
-  }
-  const config = {
-    coordinate: coordinate("a"),
-    rotate: vi.fn(async () => refreshed),
-    receipt,
-    now: () => time,
-    elapsed: () => time
-  }
-  return {
-    config,
-    coordinate,
-    records,
-    receipts,
-    setTime: (value: number) => {
-      time = value
-    }
-  }
-}
 
 describe("encrypted shared credential vault", () => {
   it("authenticates the credential id and rejects modified ciphertext and wrong keys", () => {
