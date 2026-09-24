@@ -6,12 +6,10 @@ import UIKit
 /// Builds the sidebar's workspace sections from the fleet and answers the
 /// rows' requests: opening, closing, renaming, and adding tabs.
 extension HomeView {
-  /// Active chats from machines with a current snapshot. Cached chats stay
-  /// hidden until their machine answers.
+  /// Chats from machines with a current snapshot. Cached chats stay hidden
+  /// until their machine answers.
   var activeSessions: [ChatSession] {
-    projectList.sessions.filter {
-      !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId)
-    }
+    projectList.sessions.filter { currentNavigationMachineIDs.contains($0.serverId) }
   }
 
   /// Workspaces enter newest-first; the saved manual order then owns the
@@ -35,12 +33,12 @@ extension HomeView {
       // Suppress superseded automatic workspaces whose chats all moved
       // elsewhere. Empty workspaces have no chat ids and remain visible.
       guard workspace.chatSessionIds.isEmpty || !routedIDs.isEmpty else { return nil }
-      // A terminal-only workspace still mounts through an archived chat
-      // retained in the session index after its chat tab was closed.
+      // A terminal-only workspace still mounts through a closed chat
+      // retained in the session index after its chat tab went away.
       let anchor =
         routedIDs.lazy
         .compactMap { sessionsByKey[Self.sessionKey(workspace.serverId, $0)] }
-        .first { !$0.isArchived }
+        .first
         ?? projectList.sessions.first {
           $0.serverId == workspace.serverId
             && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
@@ -78,9 +76,6 @@ extension HomeView {
         pane.kind == .chat
         ? pane.chatSessionId.flatMap { sessionsByKey[Self.sessionKey(workspace.serverId, $0)] }
         : nil
-      // A chat archived elsewhere may linger in the layout until sync
-      // catches up; it is not an open tab.
-      if let chat, chat.isArchived { return }
       rows.append(
         HomeSidebarTabRow(
           id: pane.id,
@@ -218,7 +213,7 @@ extension HomeView {
         $0.serverId == section.serverId && $0.id == chatId
       })
     {
-      environment.archiveSession(session)
+      environment.closeSession(session)
     } else if let workspace = environment.workspaces.workspace(id: section.id) {
       var state = WorkspaceScreen.compactPaneState(from: workspace)
       if let closed = state.panes.first(where: { $0.id == row.id }), closed.kind == .terminal {

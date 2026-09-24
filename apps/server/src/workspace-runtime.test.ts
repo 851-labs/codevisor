@@ -2,7 +2,7 @@ import type { SessionSummary } from "@codevisor/api"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { archiveSessionRuntime } from "./server-session-effects.js"
+import { retireSessionRuntime } from "./server-workspace-effects.js"
 import { makeServices } from "./test-support.js"
 import { settleCleanup } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
@@ -23,12 +23,12 @@ describe("workspace cleanup coordination", () => {
       }
     )
     await expect(
-      archiveSessionRuntime(services, { id: "chat", agentSessionId: "agent" } as SessionSummary)
+      retireSessionRuntime(services, { id: "chat", agentSessionId: "agent" } as SessionSummary)
     ).rejects.toThrow("cleanup failed")
     expect(closed).toHaveBeenCalledWith("agent")
     terminal.remove()
     const { mcp: _mcp, ...withoutMcp } = services
-    await archiveSessionRuntime(withoutMcp, { id: "empty", agentSessionId: "" } as SessionSummary)
+    await retireSessionRuntime(withoutMcp, { id: "empty", agentSessionId: "" } as SessionSummary)
     expect(closed).toHaveBeenCalledTimes(1)
     await expect(
       settleCleanup([Promise.reject(new Error("failed")), Promise.resolve()])

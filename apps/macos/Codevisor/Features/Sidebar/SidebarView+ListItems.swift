@@ -6,15 +6,14 @@ extension SidebarView {
   /// order never controls the workspace list.
   var activeSessionItems: [SidebarSessionListItem] {
     let projects = list.projects.filter {
-      !$0.isArchived && environment.machines.machine(for: $0.serverId) != nil
+      environment.machines.machine(for: $0.serverId) != nil
     }
     let projectsByID = Dictionary(
       projects.map { ($0.sidebarFleetItemID, $0) },
       uniquingKeysWith: { first, _ in first }
     )
     return list.sessions.compactMap { session in
-      guard !session.isArchived,
-        session.origin == .codevisor || list.showsImportedSessions,
+      guard session.origin == .codevisor || list.showsImportedSessions,
         let project = projectsByID[.project(serverId: session.serverId, id: session.projectId)]
       else { return nil }
       return SidebarSessionListItem(session: session, project: project)

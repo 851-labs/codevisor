@@ -29,14 +29,14 @@ struct ServerAgentServiceTests {
         ServerSession(
           id: "s1", projectId: "p1", serverId: "local", harnessId: "claude-code",
           agentSessionId: "agent-1", title: "DB chat", origin: .imported,
-          isArchived: false, worktreeName: nil, cwd: "/db/repo",
+          worktreeName: nil, cwd: "/db/repo",
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-02T00:00:00.000Z", usage: nil
         ),
         ServerSession(
           id: "s2", projectId: "p1", serverId: "local", harnessId: "codex",
           agentSessionId: nil, title: "Other harness", origin: .codevisor,
-          isArchived: false, worktreeName: nil, cwd: "/db/repo",
+          worktreeName: nil, cwd: "/db/repo",
           createdAt: "2026-01-01T00:00:00.000Z", updatedAt: nil, usage: nil
         ),
       ]

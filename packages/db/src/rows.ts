@@ -1,4 +1,5 @@
 import type {
+  ArchivedWorktreeState,
   AttachmentKind,
   EventKind,
   FileMetadata,
@@ -20,8 +21,6 @@ import type {
 export interface ProjectRow {
   readonly id: string
   readonly name: string
-  readonly is_archived: number
-  readonly archived_at: string | null
   readonly origin: Project["origin"]
   readonly created_at: string
   readonly repo_url: string | null
@@ -38,6 +37,7 @@ export interface ArchivedWorktreeRow {
   readonly parent_sha: string
   readonly snapshot_ref: string
   readonly created_at: string
+  readonly state: ArchivedWorktreeState
 }
 
 export interface ProjectLocationRow {
@@ -69,7 +69,6 @@ export interface WorkspaceRow {
   readonly root_directory: string | null
   readonly is_archived: number
   readonly archived_at: string | null
-  readonly archive_cascade_from: string | null
   readonly created_at: string
   readonly updated_at: string | null
 }
@@ -98,9 +97,6 @@ export interface SessionRow {
   readonly title: string
   readonly title_is_user_set: number
   readonly origin: SessionSummary["origin"]
-  readonly is_archived: number
-  readonly archived_at: string | null
-  readonly archive_cascade_from: string | null
   readonly worktree_name: string | null
   readonly workspace_id: string | null
   readonly created_at: string

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { runGit, snapshotRefFor } from "@codevisor/worktrees"
 import Database from "better-sqlite3"
-import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
@@ -75,157 +75,115 @@ const setUpGitProjects = async () => {
 }
 
 describe("project worktree archive routes", () => {
-  it("archives and restores worktrees together with their sessions", async () => {
+  it("archives and restores the worktree its workspace owns", async () => {
     await withWorktreesRoot(async () => {
-      const { server, services, worktreeNames } = await setUpGitProjects()
-      // Archiving a session deletes its worktree from disk once no active
-      // session still relies on it. Set up a dedicated worktree shared by two
-      // sessions plus an unrelated session in another project.
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({ projectId: "plain-project", harnessId: "codex" }),
-        method: "POST"
-      })
-      const solo = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "solo work" }),
-          method: "POST"
-        })
-      ).body as { readonly name: string; readonly path: string }
-      expect(existsSync(solo.path)).toBe(true)
-      const soloSession = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: solo.name
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-      const sharer = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: solo.name
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
+      const { server, services, repoFolder, worktreeNames } = await setUpGitProjects()
 
-      // The worktree survives while another active session still uses it.
-      await jsonRequest(server, `/v1/sessions/${soloSession.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
+      /// A workspace anchored on a fresh worktree, plus `chats` chats in it.
+      /// The workspace owns the directory, so archiving it is what reclaims
+      /// the files.
+      const makeWorkspace = async (id: string, name: string, chats = 1) => {
+        const worktree = (
+          await jsonRequest(server, "/v1/projects/git-project/worktrees", {
+            body: JSON.stringify({ name }),
+            method: "POST"
+          })
+        ).body as { readonly id: string; readonly name: string; readonly path: string }
+        await jsonRequest(server, `/v1/workspaces/${id}`, {
+          body: JSON.stringify({
+            projectId: "git-project",
+            name,
+            hasCustomName: false,
+            rootDirectory: worktree.path
+          }),
+          method: "PUT"
+        })
+        const sessions: Array<string> = []
+        for (let index = 0; index < chats; index += 1) {
+          sessions.push(
+            (
+              (
+                await jsonRequest(server, "/v1/sessions", {
+                  body: JSON.stringify({
+                    projectId: "git-project",
+                    workspaceId: id,
+                    harnessId: "codex",
+                    worktreeName: worktree.name
+                  }),
+                  method: "POST"
+                })
+              ).body as { readonly id: string }
+            ).id
+          )
+        }
+        return { worktree, sessions }
+      }
+      const setArchived = (id: string, isArchived: boolean) =>
+        jsonRequest(server, `/v1/workspaces/${id}`, {
+          body: JSON.stringify({ isArchived }),
+          method: "PATCH"
+        })
+
+      const { worktree: solo, sessions: soloChats } = await makeWorkspace("solo-ws", "solo work", 2)
+      expect(existsSync(solo.path)).toBe(true)
+
+      // A second workspace sharing the same directory keeps it alive.
+      await jsonRequest(server, "/v1/workspaces/sharer-ws", {
+        body: JSON.stringify({
+          projectId: "git-project",
+          name: "sharer",
+          hasCustomName: false,
+          rootDirectory: solo.path
+        }),
+        method: "PUT"
       })
+      await setArchived("solo-ws", true)
       expect(existsSync(solo.path)).toBe(true)
       expect(await worktreeNames()).toContain(solo.name)
 
-      // Archiving the final active session removes it from git and disk.
-      await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
-      })
+      // Archiving the last workspace on that directory removes it from git and
+      // disk, and records a completed archive that restore can navigate by.
+      await setArchived("sharer-ws", true)
       expect(existsSync(solo.path)).toBe(false)
       expect(await worktreeNames()).not.toContain(solo.name)
-      const removedWorktreeHistory = (await run(
-        services.db.listSubjectEvents(sharer.id)
-      )) as ReadonlyArray<{ readonly kind: string }>
-      expect(removedWorktreeHistory.some((event) => event.kind === "worktree.setup")).toBe(false)
+      expect(
+        (await run(services.db.listArchivedWorktrees("git-project"))).find(
+          (archived) => archived.originalName === solo.name
+        )?.state
+      ).toBe("complete")
 
       // Re-archiving once the worktree record is gone is a harmless no-op.
-      expect(
-        (
-          await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
-            body: JSON.stringify({ isArchived: true }),
-            method: "PATCH"
-          })
-        ).status
-      ).toBe(200)
+      expect((await setArchived("sharer-ws", true)).status).toBe(200)
 
-      // Unarchiving rebuilds the worktree from its snapshot and reclaims the
-      // freed name, so the restored chat resolves to the same cwd as before.
-      const restored = (
-        await jsonRequest(server, `/v1/sessions/${sharer.id}`, {
-          body: JSON.stringify({ isArchived: false }),
-          method: "PATCH"
-        })
-      ).body as {
-        readonly worktreeName: string
-        readonly cwd: string
+      // Restoring rebuilds the worktree from its snapshot and reclaims the
+      // freed name, so every chat in the workspace resolves to its old cwd.
+      const restored = (await setArchived("solo-ws", false)).body as {
         readonly isArchived: boolean
+        readonly rootDirectory: string
       }
       expect(restored.isArchived).toBe(false)
-      expect(restored.worktreeName).toBe(solo.name)
+      expect(restored.rootDirectory).toBe(solo.path)
       expect(existsSync(solo.path)).toBe(true)
       expect(await worktreeNames()).toContain(solo.name)
-      expect(restored.cwd).toBe(solo.path)
+      const rejoined = (await jsonRequest(server, `/v1/sessions/${soloChats[0]}`)).body as {
+        readonly session: { readonly cwd: string }
+      }
+      expect(rejoined.session.cwd).toBe(solo.path)
 
-      // The restore is announced as its own event kind: clients must move the
-      // row between sidebar sections, not just repaint it.
-      const restoreHistory = (await run(
-        services.db.listSubjectEvents(sharer.id)
-      )) as ReadonlyArray<{ readonly kind: string }>
-      expect(restoreHistory.some((event) => event.kind === "session.unarchived")).toBe(true)
-
-      // The other session that shared the worktree is still archived, and
-      // unarchiving it now simply reattaches to the live worktree.
-      const rejoined = (
-        await jsonRequest(server, `/v1/sessions/${soloSession.id}`, {
-          body: JSON.stringify({ isArchived: false }),
-          method: "PATCH"
-        })
-      ).body as { readonly worktreeName: string; readonly cwd: string }
-      expect(rejoined.worktreeName).toBe(solo.name)
-      expect(rejoined.cwd).toBe(solo.path)
-      expect(await worktreeNames()).toContain(solo.name)
-
-      // Gitignored files are not snapshotted — putting a .env into a git
-      // object that may later be pushed is worse than losing it — so the
-      // client is told exactly what went away with the worktree.
-      const ignoredTree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "with ignored" }),
-          method: "POST"
-        })
-      ).body as { readonly id: string; readonly name: string; readonly path: string }
+      // Gitignored files are not snapshotted — putting a .env into a git object
+      // that may later be pushed is worse than losing it — so the client is
+      // told exactly what went away with the worktree.
+      const { worktree: ignoredTree, sessions: ignoredChats } = await makeWorkspace(
+        "ignored-ws",
+        "with ignored",
+        2
+      )
       writeFileSync(join(ignoredTree.path, ".gitignore"), ".env\n")
       writeFileSync(join(ignoredTree.path, ".env"), "SECRET=1\n")
-      const ignoredSession = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: ignoredTree.name
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-      // A second chat in the same worktree: when the restore has to rename,
-      // every chat pointing at the old name must follow it, not just the one
-      // being unarchived.
-      const ignoredSibling = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: ignoredTree.name
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-      await jsonRequest(server, `/v1/sessions/${ignoredSibling.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
-      })
-      await jsonRequest(server, `/v1/sessions/${ignoredSession.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
-      })
+      await setArchived("ignored-ws", true)
       const ignoredHistory = (await run(
-        services.db.listSubjectEvents(ignoredSession.id)
+        services.db.listSubjectEvents("ignored-ws")
       )) as ReadonlyArray<{
-        readonly kind: string
         readonly payload?: { readonly archiveDroppedIgnoredPaths?: ReadonlyArray<string> }
       }>
       expect(
@@ -234,8 +192,8 @@ describe("project worktree archive routes", () => {
         )
       ).toBe(true)
 
-      // The freed name is taken by a new worktree before the restore, so the
-      // chat comes back under a suffixed name rather than colliding.
+      // The freed name is taken before the restore, so the workspace comes back
+      // under a suffixed name rather than adopting the squatter's files.
       const squatter = (
         await jsonRequest(server, "/v1/projects/git-project/worktrees", {
           body: JSON.stringify({ name: ignoredTree.name }),
@@ -243,55 +201,29 @@ describe("project worktree archive routes", () => {
         })
       ).body as { readonly name: string; readonly path: string }
       expect(squatter.name).toBe(ignoredTree.name)
-      const suffixed = (
-        await jsonRequest(server, `/v1/sessions/${ignoredSession.id}`, {
-          body: JSON.stringify({ isArchived: false }),
-          method: "PATCH"
-        })
-      ).body as { readonly worktreeName: string; readonly cwd: string }
-      // Restored under its own name plus a suffix, and — critically — into
-      // its own directory rather than adopting the squatter's.
-      expect(suffixed.worktreeName).not.toBe(ignoredTree.name)
-      expect(suffixed.worktreeName.startsWith(ignoredTree.name)).toBe(true)
-      expect(suffixed.cwd).not.toBe(squatter.path)
-      expect(existsSync(suffixed.cwd)).toBe(true)
-      // The sibling's pointer was rewritten too, so unarchiving it later finds
-      // the worktree under its new name instead of a name nobody owns.
-      const siblingAfterRename = (await jsonRequest(server, `/v1/sessions/${ignoredSibling.id}`))
-        .body as { readonly session: { readonly worktreeName: string } }
-      expect(siblingAfterRename.session.worktreeName).toBe(suffixed.worktreeName)
+      const suffixed = (await setArchived("ignored-ws", false)).body as {
+        readonly rootDirectory: string
+      }
+      expect(suffixed.rootDirectory).not.toBe(squatter.path)
+      expect(suffixed.rootDirectory).not.toBe(ignoredTree.path)
+      expect(existsSync(suffixed.rootDirectory)).toBe(true)
+      // Every chat in the workspace follows the rename, not just one, or the
+      // others would resolve to a name nobody owns.
+      for (const chatId of ignoredChats) {
+        const chat = (await jsonRequest(server, `/v1/sessions/${chatId}`)).body as {
+          readonly session: { readonly cwd: string }
+        }
+        expect(chat.session.cwd).toBe(suffixed.rootDirectory)
+      }
 
-      // A snapshot that has gone missing (an archive predating snapshots, or a
-      // pruned ref) still unarchives — the chat is what matters — but says so
-      // rather than pretending the files came back.
-      const orphanTree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "orphan" }),
-          method: "POST"
-        })
-      ).body as { readonly id: string; readonly name: string }
-      const orphanSession = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({
-            projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: orphanTree.name
-          }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-      await jsonRequest(server, `/v1/sessions/${orphanSession.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
-      })
-      await Effect.runPromise(services.db.deleteArchivedWorktree(orphanTree.id))
-      const orphanRestored = await jsonRequest(server, `/v1/sessions/${orphanSession.id}`, {
-        body: JSON.stringify({ isArchived: false }),
-        method: "PATCH"
-      })
-      expect(orphanRestored.body).toMatchObject({ isArchived: false })
+      // A snapshot that has gone missing still restores — the chats matter more
+      // than the files — but says so rather than pretending they came back.
+      const { worktree: orphanTree } = await makeWorkspace("orphan-ws", "orphan")
+      await setArchived("orphan-ws", true)
+      await run(services.db.deleteArchivedWorktree(orphanTree.id))
+      expect((await setArchived("orphan-ws", false)).body).toMatchObject({ isArchived: false })
       const orphanHistory = (await run(
-        services.db.listSubjectEvents(orphanSession.id)
+        services.db.listSubjectEvents("orphan-ws")
       )) as ReadonlyArray<{
         readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
       }>
@@ -299,43 +231,57 @@ describe("project worktree archive routes", () => {
         true
       )
 
-      // A chat pointing at a worktree row that no longer exists archives
+      // A workspace pointing at a worktree row that no longer exists archives
       // cleanly: there is nothing to snapshot, so it is a plain flag flip.
-      const strayTree = (
-        await jsonRequest(server, "/v1/projects/git-project/worktrees", {
-          body: JSON.stringify({ name: "stray" }),
-          method: "POST"
-        })
-      ).body as { readonly id: string; readonly name: string }
-      const straySession = (
-        await jsonRequest(server, "/v1/sessions", {
+      const { worktree: strayTree } = await makeWorkspace("stray-ws", "stray")
+      await run(services.db.deleteWorktree(strayTree.id))
+      expect((await setArchived("stray-ws", true)).body).toMatchObject({ isArchived: true })
+
+      // A directory that is not a Codevisor worktree path (the project folder
+      // itself, or anything else a client pinned) has no name to look a
+      // snapshot up by, so archive and restore are both no-ops on the files.
+      for (const [id, rootDirectory] of [
+        ["rooted-ws", repoFolder],
+        ["relative-ws", "noslash"]
+      ] as const) {
+        await jsonRequest(server, `/v1/workspaces/${id}`, {
           body: JSON.stringify({
             projectId: "git-project",
-            harnessId: "codex",
-            worktreeName: strayTree.name
+            name: id,
+            hasCustomName: false,
+            rootDirectory
           }),
-          method: "POST"
+          method: "PUT"
         })
-      ).body as { readonly id: string }
-      await Effect.runPromise(services.db.deleteWorktree(strayTree.id))
-      const strayArchived = await jsonRequest(server, `/v1/sessions/${straySession.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
-      })
-      expect(strayArchived.body).toMatchObject({ isArchived: true })
+        await setArchived(id, true)
+        expect((await setArchived(id, false)).body).toMatchObject({ isArchived: false })
+      }
+      expect(existsSync(repoFolder)).toBe(true)
 
-      // Archiving a session that never had a worktree leaves worktrees intact.
-      const plainSession = (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ projectId: "git-project", harnessId: "codex" }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-      const before = (await worktreeNames()).length
-      await jsonRequest(server, `/v1/sessions/${plainSession.id}`, {
-        body: JSON.stringify({ isArchived: true }),
-        method: "PATCH"
+      // A snapshot ref pruned out from under a recorded archive: the restore
+      // rebuilds the worktree from the parent commit and must NOT delete a
+      // record whose contents it could not apply.
+      const { worktree: prunedTree } = await makeWorkspace("pruned-ws", "pruned")
+      await setArchived("pruned-ws", true)
+      await runGit("drop-snapshot", ["update-ref", "-d", snapshotRefFor(prunedTree.id)], repoFolder)
+      const prunedBack = await setArchived("pruned-ws", false)
+      expect(prunedBack.body).toMatchObject({ isArchived: false })
+      const prunedHistory = (await run(
+        services.db.listSubjectEvents("pruned-ws")
+      )) as ReadonlyArray<{
+        readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
+      }>
+      expect(prunedHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(
+        true
+      )
+
+      // A workspace that never had a worktree leaves every worktree intact.
+      await jsonRequest(server, "/v1/workspaces/plain-ws", {
+        body: JSON.stringify({ projectId: "git-project", name: "plain", hasCustomName: false }),
+        method: "PUT"
       })
+      const before = (await worktreeNames()).length
+      await setArchived("plain-ws", true)
       expect((await worktreeNames()).length).toBe(before)
     })
   })

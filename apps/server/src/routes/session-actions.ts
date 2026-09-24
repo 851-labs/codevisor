@@ -21,6 +21,7 @@ import {
   matchRouteParams,
   readSchema,
   run,
+  sessionIsArchived,
   swallowError,
   writeJson
 } from "../server-context.js"
@@ -98,7 +99,7 @@ export const routeSessionActions = async (
           ).session
         : payload.update === undefined
           ? existing
-          : await applySessionUpdate(services, fanout, config, openSessionId, payload.update)
+          : await applySessionUpdate(services, fanout, openSessionId, payload.update)
     const transcript = withUpdateGate(
       await run(services.db.getTranscriptPage(openSessionId, undefined, limit)),
       services,
@@ -235,7 +236,9 @@ export const routeSessionActions = async (
 
   const promptSessionId = matchRoute(url.pathname, "/v1/sessions/:id/prompt")
   if (promptSessionId !== undefined && request.method === "POST") {
-    if ((await run(services.db.getSessionSummary(promptSessionId))).isArchived) {
+    if (
+      await sessionIsArchived(services, await run(services.db.getSessionSummary(promptSessionId)))
+    ) {
       throw new HttpFailure(409, "Restore the workspace before sending a prompt")
     }
     const payload = await readSchema(request, PromptRequest)

@@ -16,7 +16,7 @@ struct ComposerRunTargetBar: View {
   let onLocation: (Bool) -> Void
   let onManageMachines: () -> Void
   let onManageProject: () -> Void
-  let onArchiveProject: (Project) -> Void
+  let onDeleteProject: (Project) -> Void
 
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .footnote) private var minimumMachineWidth = 88.0
@@ -47,7 +47,7 @@ struct ComposerRunTargetBar: View {
       ComposerProjectMenu(
         currentProject: project,
         onSelected: onProject,
-        onArchiveProject: onArchiveProject
+        onDeleteProject: onDeleteProject
       ) {
         chipLabel(
           projectName,

@@ -142,8 +142,6 @@ struct SessionControllerConfigurationTests {
     var attentionUpdate = original
     attentionUpdate.title = "Renamed remotely"
     attentionUpdate.origin = .imported
-    attentionUpdate.isArchived = true
-    attentionUpdate.archivedAt = Date(timeIntervalSince1970: 200)
     attentionUpdate.createdAt = Date(timeIntervalSince1970: 100)
     attentionUpdate.updatedAt = Date(timeIntervalSince1970: 300)
     attentionUpdate.sidebarState = .waitingForUser

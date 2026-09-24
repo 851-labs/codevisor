@@ -45,7 +45,7 @@ describe("session title ownership", () => {
       ).toBeUndefined()
       expect((await run(db.getSessionSummary(session.id))).title).toBe("New Chat")
       // Metadata-only PATCHes must preserve ownership too.
-      await run(db.updateSession(session.id, { titleIntent: "rename", isArchived: true }))
+      await run(db.updateSession(session.id, { titleIntent: "rename", worktreeName: "sushi" }))
       expect(
         await run(db.updateSessionTitleFromHarness(session.id, "Another title"))
       ).toBeUndefined()

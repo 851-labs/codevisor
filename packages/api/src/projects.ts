@@ -32,11 +32,6 @@ export type ProjectGitBranch = typeof ProjectGitBranch.Type
 export const Project = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  isArchived: Schema.Boolean,
-  /// When the row was archived. `isArchived` is the derived mirror kept for
-  /// clients predating the archived-sections release; new UI should sort and
-  /// label from this timestamp.
-  archivedAt: Schema.optional(Schema.String),
   origin: SessionOrigin,
   createdAt: Schema.String,
   locations: Schema.Array(ProjectLocation),
@@ -75,7 +70,6 @@ export const CreateProjectRequest = Schema.Struct({
   id: Schema.optional(Schema.String),
   folderPath: Schema.String,
   name: Schema.optional(Schema.String),
-  isArchived: Schema.optional(Schema.Boolean),
   origin: Schema.optional(SessionOrigin),
   createdAt: Schema.optional(Schema.String),
   repoUrl: Schema.optional(Schema.String)
@@ -157,10 +151,6 @@ export type FsMkdirResponse = typeof FsMkdirResponse.Type
 
 export const UpdateProjectRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
-  /// Archiving a project cascades to its workspaces and sessions; unarchiving
-  /// revives only the children that same cascade archived. See
-  /// `archive_cascade_from` in @codevisor/db.
-  isArchived: Schema.optional(Schema.Boolean),
   /// Null clears an explicit selection and restores the legacy default.
   worktreeBase: Schema.optional(Schema.NullOr(ProjectWorktreeBase))
 })

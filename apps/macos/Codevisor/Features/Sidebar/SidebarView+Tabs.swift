@@ -179,7 +179,7 @@ extension SidebarView {
     for pane in panes where pane.kind == .chat {
       guard let id = pane.chatSessionId,
         let session = list.sessions.first(where: {
-          $0.serverId == serverId && $0.id == id && !$0.isArchived
+          $0.serverId == serverId && $0.id == id
         })
       else { continue }
       return session
@@ -207,7 +207,6 @@ extension SidebarView {
     guard store?.selectDestination(.leaf(leafId), in: workspace.id) == true else { return }
     let paneChat = state.selectedPane
       .flatMap { sessionForPane($0, serverId: workspace.serverId) }
-      .flatMap { $0.isArchived ? nil : $0 }
     apply(
       workspace.selectionRoute(
         activatedChatSessionId: paneChat?.id,

@@ -32,12 +32,13 @@ struct WorkspaceSidebarRouteTests {
     )
     environment.workspaces.save(workspace)
 
-    environment.archiveSession(closing)
+    environment.closeSession(closing)
 
     let updated = try #require(environment.workspaces.workspace(id: workspace.id))
     #expect(updated.selectedCenterTab == pageTab)
     #expect(updated.pane(containingChat: closing.id) == nil)
-    #expect(environment.projectList.sessions.first(where: { $0.id == closing.id })?.isArchived == true)
+    // Closing removes the pane; the chat row itself is untouched.
+    #expect(environment.projectList.sessions.contains { $0.id == closing.id })
     #expect(
       environment.workspaceSync.routeDisposition(
         sessionId: closing.id, serverId: closing.serverId, preservingSelectedPane: true

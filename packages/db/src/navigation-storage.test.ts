@@ -39,7 +39,14 @@ it("hydrates persisted runtime configuration and selects only durable work for r
   expect(await run(db.listSessionsRequiringResume)).toEqual([])
   await run(db.appendEvent("session.updated", session.id, { goal: { status: "active" } }))
   expect(await run(db.listSessionsRequiringResume)).toEqual([session.id])
-  sqlite.prepare("update sessions set is_archived = 1 where id = ?").run(session.id)
+  // Archive lives on the workspace now: a chat is skipped for resume because
+  // the workspace holding it is archived, never because of its own state.
+  const workspace = await run(
+    db.upsertWorkspace({ projectId: session.projectId, name: "work", hasCustomName: false })
+  )
+  await run(db.setSessionWorkspace(session.id, workspace.id))
+  expect(await run(db.listSessionsRequiringResume)).toEqual([session.id])
+  await run(db.updateWorkspace(workspace.id, { isArchived: true }))
   expect(await run(db.listSessionsRequiringResume)).toEqual([])
 })
 

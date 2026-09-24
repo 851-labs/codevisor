@@ -126,8 +126,8 @@ export interface CodevisorDatabaseService {
   readonly upsertWorkspace: (
     request: UpsertWorkspaceRequest
   ) => Effect.Effect<Workspace, DatabaseError>
-  /// Partial update. Flipping `isArchived` cascades to the workspace's
-  /// sessions with provenance; see `archive_cascade_from`.
+  /// Partial update. `isArchived` is the only archive state in the schema:
+  /// the workspace owns it, and its chats follow by belonging to it.
   readonly updateWorkspace: (
     id: string,
     request: UpdateWorkspaceRequest
@@ -219,7 +219,6 @@ export interface CodevisorDatabaseService {
     id: string,
     title: string
   ) => Effect.Effect<SessionSummary | undefined, DatabaseError>
-  readonly archiveSession: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
   readonly deleteSession: (id: string) => Effect.Effect<void, DatabaseError>
   readonly appendConversationItem: (
     sessionId: string,

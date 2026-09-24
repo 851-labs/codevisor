@@ -23,7 +23,6 @@ struct AppEnvironmentTests {
   func previewSeed() {
     let environment = AppEnvironment.preview()
     #expect(environment.projectList.projects.count == AppEnvironment.sampleProjects.count)
-    #expect(environment.projectList.hasArchivedProjects)
   }
 
   @Test("Preview environment can use a custom seed")
@@ -246,24 +245,24 @@ struct AppEnvironmentTests {
       legacyGroups: nil
     )
 
-    environment.archiveSession(session)
+    environment.closeSession(session)
 
-    #expect(environment.projectList.sessions.first?.isArchived == true)
+    // Closing is pane removal: the chat itself is untouched and its
+    // workspace stays live with a New Tab page.
+    #expect(environment.projectList.sessions.count == 1)
     let retainedWorkspace = environment.workspaces.workspace(id: workspace.id)
     #expect(retainedWorkspace?.isArchived == false)
     #expect(retainedWorkspace?.pane(containingChat: session.id) == nil)
     #expect(retainedWorkspace?.centerTree.allGroups[0].state.selectedPane?.kind == .newTab)
   }
 
-  @Test("Sidebar archiving the final active chat archives its workspace")
-  func sidebarArchivingFinalChatArchivesWorkspace() {
+  @Test("Closing the last chat leaves the workspace live on its New Tab page")
+  func closingFinalChatKeepsWorkspaceLive() {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
     let first = ChatSession(projectId: project.id, harnessId: "codex", title: "First")
     let second = ChatSession(projectId: project.id, harnessId: "codex", title: "Second")
     let environment = AppEnvironment.preview(
-      seedProjects: [project],
-      seedSessions: [first, second]
-    )
+      seedProjects: [project], seedSessions: [first, second])
     var workspace = environment.workspaces.ensureWorkspace(
       for: WorkspaceSessionSeed(
         sessionId: first.id,
@@ -282,20 +281,23 @@ struct AppEnvironmentTests {
     }
     environment.workspaces.save(workspace)
 
-    #expect(!environment.archiveSessionAndWorkspaceIfEmpty(first))
-    let afterFirstArchive = environment.workspaces.workspace(id: workspace.id)
-    #expect(afterFirstArchive?.isArchived == false)
-    #expect(afterFirstArchive?.pane(containingChat: first.id) == nil)
-    #expect(afterFirstArchive?.pane(containingChat: second.id) != nil)
-    #expect(environment.archiveSessionAndWorkspaceIfEmpty(second))
-    let afterFinalArchive = environment.workspaces.workspace(id: workspace.id)
-    #expect(afterFinalArchive?.isArchived == true)
-    #expect(afterFinalArchive?.pane(containingChat: second.id) != nil)
-    #expect(environment.projectList.sessions.allSatisfy { $0.isArchived })
+    environment.closeSession(first)
+    let afterFirst = environment.workspaces.workspace(id: workspace.id)
+    #expect(afterFirst?.isArchived == false)
+    #expect(afterFirst?.pane(containingChat: first.id) == nil)
+    #expect(afterFirst?.pane(containingChat: second.id) != nil)
+
+    // Auto-archiving on the last close was old behavior from when a
+    // workspace could not exist without a chat. It stays live now.
+    environment.closeSession(second)
+    let afterFinal = environment.workspaces.workspace(id: workspace.id)
+    #expect(afterFinal?.isArchived == false)
+    #expect(afterFinal?.pane(containingChat: second.id) == nil)
+    #expect(environment.projectList.sessions.count == 2)
   }
 
-  @Test("Archiving a workspace archives each of its active chats")
-  func archivingWorkspaceArchivesChats() {
+  @Test("Archiving a workspace hides it without touching its chats")
+  func archivingWorkspaceHidesIt() {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
     let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
     let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
@@ -312,8 +314,10 @@ struct AppEnvironmentTests {
 
     environment.archiveWorkspace(workspace)
 
+    // The workspace carries the archive on its own: its chats have no such
+    // state to cascade to, and their panes survive for the restore.
     #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
-    #expect(environment.projectList.sessions.first?.isArchived == true)
+    #expect(environment.workspaces.workspace(id: workspace.id)?.pane(containingChat: session.id) != nil)
   }
 
   @Test("Restoring a workspace clears its archived flag")

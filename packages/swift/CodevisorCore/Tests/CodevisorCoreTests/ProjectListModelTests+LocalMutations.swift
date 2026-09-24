@@ -58,33 +58,27 @@ extension ProjectListModelTests {
     #expect(reloaded.projects.count == 1)
   }
 
-  @Test("Adding the same folder twice does not duplicate and un-archives")
+  @Test("Adding the same folder twice does not duplicate")
   func addDeduplicates() {
     let (model, _, _) = makeModel()
     let url = URL(fileURLWithPath: "/tmp/proj")
     let first = model.addProject(folderURL: url)
-    model.archive(first)
     let second = model.addProject(folderURL: url)
     #expect(model.projects.count == 1)
     #expect(second.id == first.id)
-    #expect(second.isArchived == false)
   }
 
-  @Test("Archiving moves a project between sections")
-  func archiving() {
+  @Test("Deleting a project removes it from the active list")
+  func deletingRemovesFromActiveList() {
     let (model, _, _) = makeModel()
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     #expect(model.activeProjects.count == 1)
-    #expect(model.hasArchivedProjects == false)
 
-    model.archive(project)
+    // Projects are deleted rather than archived: there is no hidden section
+    // they can fall into and be recovered from.
+    model.removeProject(project)
     #expect(model.activeProjects.isEmpty)
-    #expect(model.archivedProjects.count == 1)
-    #expect(model.hasArchivedProjects)
-
-    model.unarchive(project)
-    #expect(model.activeProjects.count == 1)
-    #expect(model.hasArchivedProjects == false)
+    #expect(model.isProjectDeleted(id: project.id, serverId: project.serverId))
   }
 
   @Test("Active and archived projects are sorted newest-first")
@@ -188,15 +182,17 @@ extension ProjectListModelTests {
     #expect(model.sessions(in: project).isEmpty)
   }
 
-  @Test("Archiving a session hides it from the active list but keeps it")
-  func archiveSession() {
+  @Test("A chat stays listed until it is actually deleted")
+  func chatsPersistUntilDeleted() {
     let (model, _, sessionStore) = makeModel()
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     let session = model.newSession(in: project)
-    model.archiveSession(session)
+    // Closing a chat is pane removal on its workspace, so the model keeps
+    // listing the chat: nothing here hides it.
+    #expect(model.sessions(in: project).count == 1)
+    #expect(DefaultSessionRepository(store: sessionStore).load().contains { $0.id == session.id })
+    model.deleteSession(session)
     #expect(model.sessions(in: project).isEmpty)
-    // Still persisted (not deleted).
-    #expect(DefaultSessionRepository(store: sessionStore).load().contains { $0.id == session.id && $0.isArchived })
   }
 
   @Test("Removing a project also removes its sessions")

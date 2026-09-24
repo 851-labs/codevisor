@@ -387,10 +387,32 @@ describe("workspace routes", () => {
       500
     )
 
-    // A workspace that still owns a session is protected by its foreign key.
+    // A workspace that still owns chats detaches them first, so the delete
+    // succeeds instead of raising a foreign-key error after its worktree has
+    // already been reclaimed. `sessions.workspace_id` has no ON DELETE clause,
+    // so without that detach this is a 500 with the files already gone.
+    await jsonRequest(server, "/v1/workspaces/occupied", {
+      body: JSON.stringify({ projectId: project.id, name: "Occupied", hasCustomName: false }),
+      method: "PUT"
+    })
+    const occupant = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({
+          projectId: project.id,
+          workspaceId: "occupied",
+          harnessId: "codex",
+          deferAgentSession: true
+        }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
     expect(
-      (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
-    ).toBe(500)
+      (await jsonRequest(server, "/v1/workspaces/occupied", { method: "DELETE" })).status
+    ).toBe(204)
+    expect(
+      (await run(services.db.listSessions)).find((candidate) => candidate.id === occupant.id)
+        ?.workspaceId
+    ).toBeUndefined()
     // A sessionless workspace deletes explicitly — the plain route path.
     await jsonRequest(server, "/v1/workspaces/solo", {
       body: JSON.stringify({ projectId: project.id, name: "Solo", hasCustomName: false }),

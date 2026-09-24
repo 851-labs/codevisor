@@ -140,7 +140,7 @@ extension ProjectListModel {
   /// pick when the user chooses the group itself.
   public func mostRecentlyUsedMember(of group: ProjectGroup) -> Project {
     var latestByKey: [String: Date] = [:]
-    for session in sessions where !session.isArchived {
+    for session in sessions {
       let key = "\(session.serverId)|\(session.projectId.uuidString)"
       latestByKey[key] = max(latestByKey[key] ?? .distantPast, session.updatedAt ?? session.createdAt)
     }

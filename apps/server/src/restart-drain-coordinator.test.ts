@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeMemoryRestartSnapshotStore, makeRestartCoordinator } from "./restart-drain.js"
 import { resumeSessionsAfterRestart } from "./restart-resume.js"
 import { makeEventFanout } from "./server-context.js"
-import { idleRestartCoordinator, makeServices, run } from "./test-support.js"
+import {
+  archiveSessionViaWorkspace,
+  idleRestartCoordinator,
+  makeServices,
+  run
+} from "./test-support.js"
 
 /// The coordinator's edge paths, driven directly: interruption when a
 /// harness will not cancel, snapshot selection, abandonment mid-drain, and
@@ -50,7 +55,7 @@ const makeHarness = async () => {
       title: "Old"
     })
   )
-  await run(services.db.updateSession(archived.id, { isArchived: true }))
+  await archiveSessionViaWorkspace(services, project.id, archived.id)
   return {
     agents,
     services,

@@ -57,12 +57,12 @@ extension SessionStore {
       environment.workspaces.workspaceId(forSession: session.id)
       .flatMap { environment.workspaces.workspace(id: $0)?.tabId(containingChat: session.id) } != nil
     var workspace = workspace(for: session, project: project)
-    if !session.isArchived, workspace.tabId(containingChat: session.id) == nil {
+    if workspace.tabId(containingChat: session.id) == nil {
       let group = PaneGroupState.centerInitial(sessionId: session.id)
       workspace.centerTabs.append(WorkspaceTab(root: .leaf(group)))
       environment.workspaces.save(workspace)
     }
-    if !session.isArchived, !hadChatPane {
+    if !hadChatPane {
       // The one-time migration is complete. Publish panes created by explicit
       // navigation now so the next snapshot and other devices retain them.
       for pane in workspace.centerTabs.flatMap({ $0.root.allGroups.flatMap { $0.state.panes } })

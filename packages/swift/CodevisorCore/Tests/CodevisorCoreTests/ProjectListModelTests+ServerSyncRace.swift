@@ -39,7 +39,6 @@ extension ProjectListModelTests {
       "harnessId": .string(remote.harnessId),
       "title": .string(remote.title),
       "origin": .string(remote.origin.rawValue),
-      "isArchived": .bool(remote.isArchived),
       "createdAt": .string(remote.createdAt),
     ])
     _ = await model.applyServerSessionEvent(

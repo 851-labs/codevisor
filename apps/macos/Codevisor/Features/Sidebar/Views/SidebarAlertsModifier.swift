@@ -2,17 +2,14 @@ import CodevisorCore
 import SwiftUI
 
 /// The sidebar's confirmation and rename alerts, in the same order they were
-/// chained on the sidebar content: import, workspace rename,
-/// archived-item restore.
+/// chained on the sidebar content: import, then workspace rename.
 struct SidebarAlertsModifier: ViewModifier {
   @Binding var pendingImport: PendingSessionImport?
   @Binding var renamingWorkspace: Workspace?
   @Binding var workspaceRenameTitle: String
-  @Binding var restoreRequest: ArchivedRestoreRequest?
   let onImport: (PendingSessionImport) -> Void
   /// Receives the workspace with its new name already applied and pinned.
   let onRenameWorkspace: (Workspace) -> Void
-  let onPerformRestore: (ArchivedRestoreRequest) -> Void
 
   func body(content: Content) -> some View {
     content
@@ -52,25 +49,6 @@ struct SidebarAlertsModifier: ViewModifier {
         }
         Button("Cancel", role: .cancel) {}
       }
-      // Confirm before restoring an archived item into the active list.
-      .alert(
-        restoreAlertTitle,
-        isPresented: Binding(
-          get: { restoreRequest != nil },
-          set: { if !$0 { restoreRequest = nil } }
-        ),
-        presenting: restoreRequest
-      ) { request in
-        Button("Restore") { onPerformRestore(request) }
-        Button("Cancel", role: .cancel) {}
-      } message: { request in
-        Text("“\(request.name)” will move back into the sidebar.")
-      }
-  }
-
-  private var restoreAlertTitle: String {
-    guard let restoreRequest else { return "Restore?" }
-    return "Restore \(restoreRequest.kind)?"
   }
 
   private func importPromptMessage(for pending: PendingSessionImport) -> String {

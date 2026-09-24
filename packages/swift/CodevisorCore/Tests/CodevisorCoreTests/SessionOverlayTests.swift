@@ -22,7 +22,6 @@ struct SessionOverlayTests {
     #expect(session.serverId == "local")
     #expect(session.harnessId == "")
     #expect(session.origin == .codevisor)
-    #expect(session.isArchived == false)
   }
 
   @Test("Settings persist onboarding and import choice")

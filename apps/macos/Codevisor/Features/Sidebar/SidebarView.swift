@@ -4,9 +4,6 @@ import CodevisorTheming
 import CodevisorUI
 import os
 
-/// How many archived chats one page reveals.
-let archivedPageSize = 10
-
 /// The sidebar: a New Chat action and fleet-wide workspaces with their tabs.
 ///
 /// Built on `ScrollView` + `VStack` (not `List`), because the sidebar-styled
@@ -30,16 +27,11 @@ struct SidebarView: View {
   @State var workspaceRevision = 0
   @State var workspaceDrag: SidebarWorkspaceDrag?
   @State var workspaceGeometry = SidebarWorkspaceGeometryStore()
-  @ClientPreference("sidebar.showArchived", default: false) var showArchived
   /// Collapsed by default: the archive is a place you go looking for
   /// something, not something that should crowd the live list.
-  @ClientPreference("sidebar.archivedExpanded", default: false) var archivedExpanded
   /// Page state is deliberately NOT persisted: reopening the archive should
   /// start at the newest page rather than restoring a deep scroll.
-  @State var archivedVisibleCount = archivedPageSize
-  @State var isLoadingMoreArchived = false
   /// The item a click is asking to restore, driving the confirmation alert.
-  @State var restoreRequest: ArchivedRestoreRequest?
 
   var list: ProjectListModel { environment.projectList }
   var isReordering: Bool { workspaceDrag != nil }
@@ -93,17 +85,11 @@ struct SidebarView: View {
               .transition(.identity)
           }
 
-          if showArchived {
-            archivedSection
-          }
-
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
         .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceTabRowIDs)
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedExpanded)
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: archivedVisibleCount)
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
@@ -121,9 +107,6 @@ struct SidebarView: View {
     sidebarContent
       .themedSurface(.sidebar)
       .contentShape(Rectangle())
-      .contextMenu {
-        Toggle("Show Archived", isOn: $showArchived)
-      }
       .addProjectFlow(addProjectFlow) { project in
         selection = .newChat(NewChatTarget(project))
         offerSessionImport(for: project)
@@ -137,7 +120,6 @@ struct SidebarView: View {
           pendingImport: $pendingImport,
           renamingWorkspace: $renamingWorkspace,
           workspaceRenameTitle: $workspaceRenameTitle,
-          restoreRequest: $restoreRequest,
           onImport: { environment.importSessions($0.sessions, into: $0.project) },
           onRenameWorkspace: { renamed in
             environment.workspaceSync.renameWorkspace(
@@ -145,7 +127,6 @@ struct SidebarView: View {
             )
             workspaceRevision += 1
           },
-          onPerformRestore: { performRestore($0) }
         )
       )
       .modifier(
@@ -158,14 +139,6 @@ struct SidebarView: View {
 
   private var sidebarChangeObserversView: some View {
     sidebarAlertsView
-      // Collapsing resets paging so reopening starts at the newest page
-      // instead of restoring a deep scroll the user has forgotten about.
-      .onChange(of: archivedExpanded) { _, isExpanded in
-        if !isExpanded {
-          archivedVisibleCount = archivedPageSize
-          isLoadingMoreArchived = false
-        }
-      }
       // Keyed on assignments as well as ids: a chat created elsewhere can
       // arrive before the server's workspace membership does, and the
       // backfill must run again once it lands to re-home the chat.

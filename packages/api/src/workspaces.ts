@@ -177,6 +177,9 @@ export type Worktree = typeof Worktree.Type
 /// keyed by id and treats `originalName` only as the name it prefers to
 /// reclaim. `parentSha` is the commit the snapshot was taken against — the
 /// restore target when the original branch has moved or been deleted.
+export const ArchivedWorktreeState = Schema.Literals(["pending", "complete"])
+export type ArchivedWorktreeState = typeof ArchivedWorktreeState.Type
+
 export const ArchivedWorktree = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -185,7 +188,12 @@ export const ArchivedWorktree = Schema.Struct({
   branch: Schema.String,
   parentSha: Schema.String,
   snapshotRef: Schema.String,
-  createdAt: Schema.String
+  createdAt: Schema.String,
+  /// `pending` means the snapshot exists but the working files may not have
+  /// been removed yet. The record is written BEFORE the destructive step so an
+  /// interrupted archive is always recoverable; the boot reconciler finishes
+  /// the removal and promotes the row to `complete`.
+  state: ArchivedWorktreeState
 })
 export type ArchivedWorktree = typeof ArchivedWorktree.Type
 

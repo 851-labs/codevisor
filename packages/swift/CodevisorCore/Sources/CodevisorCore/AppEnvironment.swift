@@ -196,6 +196,10 @@ public final class AppEnvironment {
     // (no workspace models are cached yet); sessions load synchronously
     // in ProjectListModel.init, so the grouping inputs are complete.
     // In-memory repositories (previews, iOS) no-op via the marker.
+    // A workspace archived before the upload could reach the server hid its
+    // chats on this machine only, with nothing able to reconcile it. Reveal
+    // those before any window renders.
+    ClientOnlyArchiveRepair.runIfNeeded(workspaces: workspaces)
     WorkspaceWorktreeSplitMigration.runIfNeeded(
       workspaces: workspaces,
       sessions: projectList.sessions.map {
@@ -460,7 +464,6 @@ public final class AppEnvironment {
     // No sessions reference this one, so previews exercise the
     // "No sessions yet" empty state.
     Project.fromFolder(URL(fileURLWithPath: "/Users/me/src/scratch"), createdAt: Date(timeIntervalSince1970: 750)),
-    archivedSampleProject,
   ]
 
   /// Mock sessions for the sample projects, so sidebar previews show
@@ -491,13 +494,6 @@ public final class AppEnvironment {
       updatedAt: Date(timeIntervalSinceNow: -345_600)
     ),
   ]
-
-  private static var archivedSampleProject: Project {
-    var project = Project.fromFolder(
-      URL(fileURLWithPath: "/Users/me/src/old"), createdAt: Date(timeIntervalSince1970: 500))
-    project.isArchived = true
-    return project
-  }
 }
 
 /// A no-op harness service used in previews.

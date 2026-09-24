@@ -54,7 +54,7 @@ extension SessionStore {
               $0.serverId == workspace.serverId && $0.id == chatId
             })
           {
-            environment.archiveSession(chat)
+            environment.closeSession(chat)
           } else if descriptor.chatSessionId == nil {
             removePaneDraft(paneId: descriptor.id)
           }

@@ -10,19 +10,24 @@ extension ProjectListModel {
     // identity is commonly discovered while its initial fetch is in flight.
     invalidateRecordLifetime(for: serverId)
     invalidateSnapshotRefreshes(for: serverId)
+    // Markers go first and unconditionally. They outlived the rows they
+    // described when this returned early, and a marker stranded under a
+    // pruned cloud id re-applied to live rows if that id ever came back.
+    pendingServerProjectIds = pendingServerProjectIds.filter { $0.serverId != serverId }
+    pendingServerSessionIds = pendingServerSessionIds.filter { $0.serverId != serverId }
+    pendingDeletedProjectIds = pendingDeletedProjectIds.filter { $0.serverId != serverId }
     let hadProjects = projects.contains { $0.serverId == serverId }
     let hadSessions = sessions.contains { $0.serverId == serverId }
     guard hadProjects || hadSessions else { return }
     projects.removeAll { $0.serverId == serverId }
     sessions.removeAll { $0.serverId == serverId }
-    pendingServerProjectIds = pendingServerProjectIds.filter { $0.serverId != serverId }
     persistProjects()
     persistSessions()
   }
 
   /// Adds a project on an EXPLICIT machine — the fleet-wide picker's "New
   /// Project…" flow, which may target a machine other than the selected
-  /// one. Dedupe and un-archive semantics match `addProject(folderURL:)`.
+  /// one. Dedupe semantics match `addProject(folderURL:)`.
   ///
   /// The upsert is AWAITED so the returned record carries the server's git
   /// probe: the picker needs `isGitRepository` immediately to decide
@@ -38,7 +43,6 @@ extension ProjectListModel {
     if let index = projects.firstIndex(where: {
       $0.serverId == serverId && $0.folderURL == folderURL
     }) {
-      projects[index].isArchived = false
       local = projects[index]
     } else {
       local = Project.fromFolder(folderURL, serverId: serverId)

@@ -10,7 +10,7 @@ import {
 
 import {
   appendAndPublish,
-  applyCascadedSessionEffects,
+  applyWorkspaceArchiveEffects,
   HttpFailure,
   matchRoute,
   matchRouteParams,
@@ -172,46 +172,56 @@ export const routeWorkspaces = async (
         `Workspace id in the body (${payload.id}) does not match the path (${workspaceId})`
       )
     }
-    const sessionsBefore = await run(services.db.listSessions)
+    const wasArchived = (await run(services.db.listWorkspaces)).some(
+      (candidate) =>
+        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
+    )
     const workspace = await run(services.db.upsertWorkspace({ ...payload, id: workspaceId }))
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
     // A PUT can flip the archive bit exactly like the PATCH below, so it owes
     // the same teardown/restore.
-    await applyCascadedSessionEffects(
+    const settled = await applyWorkspaceArchiveEffects(
       services,
       fanout,
       config,
-      sessionsBefore,
-      workspace.isArchived ? [workspace.id] : []
+      workspace,
+      wasArchived
     )
-    writeJson(response, 200, workspace)
+    writeJson(response, 200, settled)
     return true
   }
 
   if (workspaceId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateWorkspaceRequestSchema)
-    const sessionsBefore =
-      payload.isArchived === undefined ? [] : await run(services.db.listSessions)
+    const wasArchived = (await run(services.db.listWorkspaces)).some(
+      (candidate) =>
+        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
+    )
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    if (payload.isArchived !== undefined) {
-      await applyCascadedSessionEffects(
-        services,
-        fanout,
-        config,
-        sessionsBefore,
-        workspace.isArchived ? [workspace.id] : []
-      )
-    }
-    writeJson(response, 200, workspace)
+    const settled = await applyWorkspaceArchiveEffects(
+      services,
+      fanout,
+      config,
+      workspace,
+      wasArchived
+    )
+    writeJson(response, 200, settled)
     return true
   }
 
   if (workspaceId !== undefined && request.method === "DELETE") {
-    const sessionsBefore = await run(services.db.listSessions)
+    const wasArchived = (await run(services.db.listWorkspaces)).some(
+      (candidate) =>
+        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
+    )
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-    await applyCascadedSessionEffects(services, fanout, config, sessionsBefore, [workspace.id])
+    await applyWorkspaceArchiveEffects(services, fanout, config, workspace, wasArchived)
+    // `sessions.workspace_id` has no ON DELETE clause and foreign keys are
+    // enforced, so the chats must let go of the workspace before it can be
+    // dropped -- otherwise this raises after the worktree is already gone.
+    for (const session of await run(services.db.listSessions)) {
+      if (session.workspaceId?.toLowerCase() !== workspaceId.toLowerCase()) continue
+      await run(services.db.setSessionWorkspace(session.id, null))
+    }
     await run(services.db.deleteWorkspace(workspaceId))
     await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
       id: workspaceId

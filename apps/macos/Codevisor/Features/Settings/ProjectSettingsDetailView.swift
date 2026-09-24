@@ -25,7 +25,7 @@ struct ProjectSettingsDetailView: View {
         ForEach(group.members, id: \.settingsCheckoutID) { project in
           ProjectCheckoutSettingsSection(
             project: project,
-            allowsCheckoutArchive: group.members.count > 1
+            allowsCheckoutDeletion: group.members.count > 1
           ) { saving in
             if saving {
               savingCheckoutIDs.insert(project.settingsCheckoutID)
@@ -35,12 +35,12 @@ struct ProjectSettingsDetailView: View {
           }
         }
         Section {
-          ProjectSettingsArchiveButton(
+          ProjectSettingsDeleteButton(
             projects: group.members,
-            title: "Archive Project…",
-            confirmationTitle: "Archive \(group.name)?",
+            title: "Delete Project…",
+            confirmationTitle: "Delete \(group.name)?",
             message:
-              "This archives all \(group.members.count) of this project's checkouts and their workspaces and chats. You can restore them from Archived."
+              "This permanently deletes all \(group.members.count) of this project's checkouts and every workspace and chat in them, along with their worktree files. This cannot be undone."
           ) {
             SettingsRouter.shared.panePath = []
           }
@@ -50,7 +50,7 @@ struct ProjectSettingsDetailView: View {
         ContentUnavailableView {
           Label("Project Unavailable", systemImage: "folder")
         } description: {
-          Text("This project may have been archived or removed.")
+          Text("This project may have been removed.")
         } actions: {
           Button("Back to Projects") { SettingsRouter.shared.panePath = [] }
             .settingsActionTint(theme)
@@ -66,13 +66,13 @@ private struct ProjectCheckoutSettingsSection: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   let project: Project
-  let allowsCheckoutArchive: Bool
+  let allowsCheckoutDeletion: Bool
   let onSavingChanged: (Bool) -> Void
   @State private var editor: ProjectWorktreeSettingsModel
 
-  init(project: Project, allowsCheckoutArchive: Bool, onSavingChanged: @escaping (Bool) -> Void) {
+  init(project: Project, allowsCheckoutDeletion: Bool, onSavingChanged: @escaping (Bool) -> Void) {
     self.project = project
-    self.allowsCheckoutArchive = allowsCheckoutArchive
+    self.allowsCheckoutDeletion = allowsCheckoutDeletion
     self.onSavingChanged = onSavingChanged
     _editor = State(initialValue: ProjectWorktreeSettingsModel(worktreeBase: project.worktreeBase))
   }
@@ -116,13 +116,13 @@ private struct ProjectCheckoutSettingsSection: View {
           if editor.isSaving { ProgressView().controlSize(.small) }
         }
       }
-      if allowsCheckoutArchive {
-        ProjectSettingsArchiveButton(
+      if allowsCheckoutDeletion {
+        ProjectSettingsDeleteButton(
           projects: [project],
-          title: "Archive Checkout…",
-          confirmationTitle: "Archive checkout on \(machineName)?",
+          title: "Delete Checkout…",
+          confirmationTitle: "Delete checkout on \(machineName)?",
           message:
-            "This archives \(project.folderURL.path) and its workspaces and chats on \(machineName). Other checkouts are unchanged. You can restore it from Archived."
+            "This permanently deletes \(project.folderURL.path) from Codevisor along with its workspaces, chats and worktree files on \(machineName). Other checkouts are unchanged. This cannot be undone."
         ) {}
         .disabled(editor.isSaving)
       }
@@ -158,23 +158,23 @@ private struct ProjectCheckoutSettingsSection: View {
   }
 }
 
-private struct ProjectSettingsArchiveButton: View {
+private struct ProjectSettingsDeleteButton: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   let projects: [Project]
   let title: String
   let confirmationTitle: String
   let message: String
-  let onArchived: () -> Void
+  let onDeleted: () -> Void
   @State private var confirming = false
 
   var body: some View {
     Button(title, role: .destructive) { confirming = true }
       .settingsActionTint(theme)
       .confirmationDialog(confirmationTitle, isPresented: $confirming, titleVisibility: .visible) {
-        Button("Archive", role: .destructive) {
-          projects.forEach(environment.projectList.archive)
-          onArchived()
+        Button("Delete", role: .destructive) {
+          projects.forEach(environment.projectList.removeProject)
+          onDeleted()
         }
         .settingsActionTint(theme)
         Button("Cancel", role: .cancel) {}

@@ -8,7 +8,7 @@ import { attempt } from "./errors.js"
 import { detectGitLocation } from "./project-location-state.js"
 import { projectFromRow } from "./row-mappers.js"
 import type { ProjectRow } from "./rows.js"
-import { archivedStamp, type ServiceContext } from "./service-context.js"
+import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 
 export const makeProjectsService = (
@@ -23,45 +23,6 @@ export const makeProjectsService = (
   | "setProjectLocationGitState"
 > => {
   const { sqlite, config, locationRowsFor, getProject } = context
-
-  /// Archiving a container archives the children that were still active, and
-  /// stamps each with the container id that did it. Children already archived
-  /// on their own are left completely untouched — including their original
-  /// `archived_at` — so the later unarchive can tell the two groups apart.
-  ///
-  /// Callers must already hold a transaction (see updateProject).
-  const cascadeArchiveProject = (projectId: string, stamp: string): void => {
-    sqlite
-      .prepare(
-        `update workspaces set is_archived = 1, archived_at = ?, archive_cascade_from = ?
-         where project_id = ? collate nocase and is_archived = 0`
-      )
-      .run(stamp, projectId, projectId)
-    sqlite
-      .prepare(
-        `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
-         where project_id = ? collate nocase and is_archived = 0`
-      )
-      .run(stamp, projectId, projectId)
-  }
-
-  /// The exact inverse: revive only rows whose provenance names this project.
-  /// A chat the user archived by hand before the project was archived has a
-  /// null (or workspace-scoped) `archive_cascade_from` and stays archived.
-  const cascadeUnarchiveProject = (projectId: string): void => {
-    sqlite
-      .prepare(
-        `update workspaces set is_archived = 0, archived_at = null, archive_cascade_from = null
-         where project_id = ? collate nocase and archive_cascade_from = ? collate nocase`
-      )
-      .run(projectId, projectId)
-    sqlite
-      .prepare(
-        `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
-         where project_id = ? collate nocase and archive_cascade_from = ? collate nocase`
-      )
-      .run(projectId, projectId)
-  }
 
   const createProject = Effect.fn("CodevisorDatabase.createProject")(function* (
     request: CreateProjectRequest
@@ -100,14 +61,13 @@ export const makeProjectsService = (
           sqlite
             .prepare(
               `insert into projects (
-                id, name, is_archived, origin, created_at, repo_url,
+                id, name, origin, created_at, repo_url,
                 worktree_base_remote, worktree_base_branch
-              ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+              ) values (?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               projectId,
               request.name ?? basename(request.folderPath),
-              (request.isArchived ?? false) ? 1 : 0,
               request.origin ?? "codevisor",
               createdAt,
               request.repoUrl ?? null,
@@ -135,7 +95,6 @@ export const makeProjectsService = (
       const project: Project = {
         id: projectId,
         name: request.name ?? basename(request.folderPath),
-        isArchived: request.isArchived ?? false,
         origin: request.origin ?? "codevisor",
         createdAt,
         locations: [location],
@@ -145,14 +104,13 @@ export const makeProjectsService = (
         sqlite
           .prepare(
             `insert into projects (
-              id, name, is_archived, origin, created_at, repo_url,
+              id, name, origin, created_at, repo_url,
               worktree_base_remote, worktree_base_branch
-            ) values (?, ?, ?, ?, ?, ?, ?, ?)`
+            ) values (?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
             project.id,
             project.name,
-            project.isArchived ? 1 : 0,
             project.origin,
             project.createdAt,
             project.repoUrl ?? null,
@@ -190,41 +148,22 @@ export const makeProjectsService = (
     updateProject: (id, request) =>
       attempt("updateProject", () => {
         const current = getProject(id)
-        // `archivedStamp` returns a moment exactly when the row ends up
-        // archived, so the stamp carries the resulting state too: deriving
-        // the flag and both transitions from it keeps them consistent by
-        // construction rather than by three parallel conditions.
-        const stamp = archivedStamp(request.isArchived, current.isArchived, current.archivedAt)
         const worktreeBase =
           request.worktreeBase === undefined
             ? current.worktreeBase
             : (request.worktreeBase ?? undefined)
-        const archiving = stamp !== null && !current.isArchived
-        const unarchiving = stamp === null && current.isArchived
-        // One transaction so a cascade can never half-apply: a project that
-        // reads as archived while its sessions still read as active would
-        // strand those chats in no sidebar section at all.
-        sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `update projects set name = ?, is_archived = ?, archived_at = ?,
-                worktree_base_remote = ?, worktree_base_branch = ?
-               where id = ? collate nocase`
-            )
-            .run(
-              request.name ?? current.name,
-              stamp === null ? 0 : 1,
-              stamp,
-              worktreeBase?.remote ?? null,
-              worktreeBase?.branch ?? null,
-              id
-            )
-          if (stamp !== null && archiving) {
-            cascadeArchiveProject(id, stamp)
-          } else if (unarchiving) {
-            cascadeUnarchiveProject(id)
-          }
-        })()
+        sqlite
+          .prepare(
+            `update projects set name = ?,
+              worktree_base_remote = ?, worktree_base_branch = ?
+             where id = ? collate nocase`
+          )
+          .run(
+            request.name ?? current.name,
+            worktreeBase?.remote ?? null,
+            worktreeBase?.branch ?? null,
+            id
+          )
         return getProject(id)
       }),
     setProjectLocationGitState: (id, isGitRepository) =>

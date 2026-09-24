@@ -26,18 +26,23 @@ describe("workspace process cleanup", () => {
   for (const deferred of [true, false]) {
     it(`retires an agent when archive races its ${deferred ? "first" : "resumed"} load`, async () => {
       const { server, services } = await setup()
+      await jsonRequest(server, "/v1/workspaces/work", {
+        method: "PUT",
+        body: JSON.stringify({ projectId: "project", name: "Work", hasCustomName: false })
+      })
       await jsonRequest(server, "/v1/sessions", {
         method: "POST",
         body: JSON.stringify({
           id: "chat",
           projectId: "project",
+          workspaceId: "work",
           harnessId: "codex",
           deferAgentSession: deferred
         })
       })
       vi.spyOn(services.agents, "loadAgentSession").mockImplementation((_harness, id) =>
         Effect.gen(function* () {
-          yield* services.db.updateSession("chat", { isArchived: true }).pipe(Effect.orDie)
+          yield* services.db.updateWorkspace("work", { isArchived: true }).pipe(Effect.orDie)
           return { sessionId: id, configOptions: [] }
         })
       )
@@ -103,8 +108,8 @@ describe("workspace process cleanup", () => {
     expect(prompt).not.toHaveBeenCalled()
     expect(await run(services.db.listPromptQueue("chat"))).toHaveLength(1)
   })
-  for (const owner of ["chat", "workspace"]) {
-    it(`rejects a terminal whose ${owner} is archived during spawn`, async () => {
+  {
+    it("rejects a terminal whose workspace is archived during spawn", async () => {
       const { server, services, spawner, folder } = await setup()
       await jsonRequest(server, "/v1/workspaces/work", {
         method: "PUT",
@@ -126,9 +131,7 @@ describe("workspace process cleanup", () => {
       vi.spyOn(services.terminal, "createTerminal").mockImplementation((request) =>
         Effect.gen(function* () {
           const terminal = yield* create(request)
-          if (owner === "chat")
-            yield* services.db.updateSession("chat", { isArchived: true }).pipe(Effect.orDie)
-          else yield* services.db.updateWorkspace("work", { isArchived: true }).pipe(Effect.orDie)
+          yield* services.db.updateWorkspace("work", { isArchived: true }).pipe(Effect.orDie)
           return terminal
         })
       )
@@ -339,14 +342,16 @@ describe("workspace process cleanup", () => {
           throw new Error(`Archive ended before cleanup started: ${JSON.stringify(result)}`)
         })
       ])
-      duplicate = jsonRequest(server, "/v1/sessions/one", {
+      // A second archive of the same workspace lands while the first is still
+      // tearing down: the retry must be a no-op, not a second snapshot.
+      duplicate = jsonRequest(server, "/v1/workspaces/work", {
         method: "PATCH",
         body: JSON.stringify({ isArchived: true })
       })
       expect(existsSync(join(worktree.path, "changes.txt"))).toBe(true)
-      expect((await run(services.db.listSessions)).every((session) => session.isArchived)).toBe(
-        true
-      )
+      expect(
+        (await run(services.db.listWorkspaces)).every((workspace) => workspace.isArchived)
+      ).toBe(true)
       expect(
         (
           await jsonRequest(server, "/v1/sessions/two/prompt", {

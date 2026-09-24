@@ -49,37 +49,6 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
-  it("cascades project archive to workspaces and sessions, and reverses only what it archived", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/cascade" }))
-    const workspace = await run(
-      db.upsertWorkspace({ projectId: project.id, name: "main", hasCustomName: false })
-    )
-    const cascaded = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    const handArchived = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-
-    // The user archives one chat by hand, well before the project is archived.
-    await run(db.updateSession(handArchived.id, { isArchived: true }))
-    const handStamp = (await run(db.getSessionSummary(handArchived.id))).archivedAt
-    expect(handStamp).toBeDefined()
-
-    await run(db.updateProject(project.id, { isArchived: true }))
-    expect((await run(db.getSessionSummary(cascaded.id))).isArchived).toBe(true)
-    expect((await run(db.listWorkspaces)).find((w) => w.id === workspace.id)?.isArchived).toBe(true)
-    // The hand-archived chat keeps its original moment: the cascade must not
-    // restamp rows it did not archive.
-    expect((await run(db.getSessionSummary(handArchived.id))).archivedAt).toBe(handStamp)
-
-    await run(db.updateProject(project.id, { isArchived: false }))
-    expect((await run(db.getSessionSummary(cascaded.id))).isArchived).toBe(false)
-    expect((await run(db.listWorkspaces)).find((w) => w.id === workspace.id)?.isArchived).toBe(
-      false
-    )
-    // The whole point of provenance: this one stays archived.
-    expect((await run(db.getSessionSummary(handArchived.id))).isArchived).toBe(true)
-    await run(db.close)
-  })
-
   it("treats a folder as one project per server: idempotent creates and id merges", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const original = await run(db.createProject({ folderPath: "/tmp/duplicate" }))
@@ -101,13 +70,11 @@ describe("@codevisor/db", () => {
       db.createProject({
         folderPath: "/tmp/duplicate",
         id: "client-id-2",
-        isArchived: true,
         name: "merged",
         origin: "imported"
       })
     )
     expect(merged.id).toBe("client-id-2")
-    expect(merged.isArchived).toBe(true)
     expect(merged.name).toBe("merged")
 
     // Merge again with a bare request — defaults apply on the merge path too.
@@ -115,7 +82,6 @@ describe("@codevisor/db", () => {
       db.createProject({ folderPath: "/tmp/duplicate", id: "client-id-3" })
     )
     expect(remerged.id).toBe("client-id-3")
-    expect(remerged.isArchived).toBe(false)
     expect(remerged.name).toBe("duplicate")
     expect(merged.locations[0]?.folderPath).toBe("/tmp/duplicate")
     const projects = await run(db.listProjects)

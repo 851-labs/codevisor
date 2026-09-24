@@ -144,6 +144,21 @@ export const makeServices = async (serverId = "test") => {
   }
 }
 
+/// Chats carry no archive state: their workspace does. Puts the chat in its
+/// own workspace and archives that, which is what "this chat is archived"
+/// means under the workspace-owned model.
+export const archiveSessionViaWorkspace = async (
+  services: CodevisorServerServices,
+  projectId: string,
+  sessionId: string
+): Promise<void> => {
+  const workspace = await run(
+    services.db.upsertWorkspace({ projectId, name: "archived", hasCustomName: false })
+  )
+  await run(services.db.setSessionWorkspace(sessionId, workspace.id))
+  await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
+}
+
 export const start = async (
   auth = { allowLocalhostWithoutAuth: true, requireBearerToken: false }
 ) => {

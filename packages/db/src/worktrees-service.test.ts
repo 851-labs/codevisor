@@ -18,6 +18,7 @@ describe("@codevisor/db", () => {
         projectId: project.id,
         serverId: "local",
         originalName: "sushi",
+        state: "complete",
         branch: "codevisor/sushi",
         parentSha: "a".repeat(40),
         snapshotRef: `refs/codevisor/archived/${worktree.id}`,

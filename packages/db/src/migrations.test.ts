@@ -22,7 +22,6 @@ describe("@codevisor/db", () => {
         id: "project-client-id",
         folderPath: "/tmp/client",
         name: "Client Project",
-        isArchived: true,
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
@@ -33,7 +32,6 @@ describe("@codevisor/db", () => {
     expect(clientProject).toMatchObject({
       id: "project-client-id",
       name: "Client Project",
-      isArchived: true,
       origin: "imported",
       createdAt: "2026-06-30T00:00:00.000Z"
     })
@@ -46,16 +44,11 @@ describe("@codevisor/db", () => {
 
     const updatedProject = await run(
       db.updateProject(firstProject.id, {
-        isArchived: true,
         name: "Archived Codevisor"
       })
     )
-    expect(updatedProject).toMatchObject({
-      isArchived: true,
-      name: "Archived Codevisor"
-    })
+    expect(updatedProject).toMatchObject({ name: "Archived Codevisor" })
     expect(await run(db.updateProject(secondProject.id, {}))).toMatchObject({
-      isArchived: false,
       name: "Named Project"
     })
     await expect(run(db.updateProject("missing", { name: "nope" }))).rejects.toBeInstanceOf(
@@ -84,7 +77,6 @@ describe("@codevisor/db", () => {
         agentSessionId: "agent-client-id",
         title: "Client Session",
         origin: "imported",
-        isArchived: true,
         createdAt: "2026-06-30T00:00:00.000Z",
         updatedAt: "2026-06-30T00:01:00.000Z"
       })
@@ -97,13 +89,11 @@ describe("@codevisor/db", () => {
     expect(clientSession).toMatchObject({
       agentSessionId: "agent-client-id",
       id: "session-client-id",
-      isArchived: true,
       origin: "imported",
       title: "Client Session",
       updatedAt: "2026-06-30T00:01:00.000Z"
     })
     expect(await run(db.updateSession(secondSession.id, {}))).toMatchObject({
-      isArchived: false,
       title: "Explicit title"
     })
     expect(
@@ -119,10 +109,9 @@ describe("@codevisor/db", () => {
     })
 
     const renamedSession = await run(
-      db.updateSession(firstSession.id, { isArchived: true, title: "Renamed session" })
+      db.updateSession(firstSession.id, { title: "Renamed session" })
     )
     expect(renamedSession).toMatchObject({
-      isArchived: true,
       title: "Renamed session"
     })
     expect(
@@ -246,11 +235,9 @@ describe("@codevisor/db", () => {
     expect((await run(db.listSessions)).map((session) => session.id)).toContain(firstSession.id)
     expect((await run(db.listProjects)).map((project) => project.id)).toContain(secondProject.id)
 
-    expect((await run(db.archiveSession(firstSession.id))).isArchived).toBe(true)
     await expect(run(db.updateSession("missing", { title: "Missing" }))).rejects.toBeInstanceOf(
       DatabaseError
     )
-    await expect(run(db.archiveSession("missing"))).rejects.toBeInstanceOf(DatabaseError)
     await run(db.deleteSession(secondSession.id))
     await expect(run(db.getSessionDetail(secondSession.id))).rejects.toBeInstanceOf(DatabaseError)
     expect(

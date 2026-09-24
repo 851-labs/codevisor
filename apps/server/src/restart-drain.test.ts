@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest"
 import { observableFixture } from "./changes-test-support.js"
 import type { CodevisorServerUpdater, RunningCodevisorServer } from "./server.js"
 import {
+  archiveSessionViaWorkspace,
   jsonRequest,
   makeServices,
   run,
@@ -201,7 +202,7 @@ describe("restart drain", () => {
         title: "Archived"
       })
     )
-    await run(services.db.updateSession(archived.id, { isArchived: true }))
+    await archiveSessionViaWorkspace(services, project.id, archived.id)
     writeFileSync(
       snapshotPath,
       JSON.stringify({ sessions: [doomed.id, archived.id, idle.id, "no-such-session", sessionId] })

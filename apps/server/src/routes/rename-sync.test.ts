@@ -43,7 +43,7 @@ describe("shared names", () => {
           body: JSON.stringify({ title: "Shared chat", titleIntent: "rename" })
         })
       ).body
-    ).toMatchObject({ title: "Shared chat", isArchived: false, workspaceId: "shared-workspace" })
+    ).toMatchObject({ title: "Shared chat", workspaceId: "shared-workspace" })
     const expected = [
       expect.objectContaining({
         kind: "workspace.updated",

@@ -89,8 +89,6 @@ export const SessionSummary = Schema.Struct({
   agentSessionId: Schema.optional(Schema.String),
   title: Schema.String,
   origin: SessionOrigin,
-  isArchived: Schema.Boolean,
-  archivedAt: Schema.optional(Schema.String),
   worktreeName: Schema.optional(Schema.String),
   /// The pane workspace this session belongs to, when a client has assigned
   /// one. Optional for sessions created before workspaces existed.
@@ -349,7 +347,6 @@ export const CreateSessionRequest = Schema.Struct({
   deferAgentSession: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   origin: Schema.optional(SessionOrigin),
-  isArchived: Schema.optional(Schema.Boolean),
   worktreeName: Schema.optional(Schema.String),
   /// Create the session already belonging to a pane workspace.
   workspaceId: Schema.optional(Schema.String),
@@ -361,7 +358,6 @@ export type CreateSessionRequest = typeof CreateSessionRequest.Type
 export const UpdateSessionRequest = Schema.Struct({
   sidebarOrderHead: Schema.optional(WorkspacePosition),
   agentSessionId: Schema.optional(Schema.String),
-  isArchived: Schema.optional(Schema.Boolean),
   title: Schema.optional(Schema.String),
   /// Native snapshot sync may fill a placeholder, but only Rename owns the title.
   /// Omitted preserves the legacy PATCH behavior for older clients.

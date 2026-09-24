@@ -15,11 +15,11 @@ export const EventKind = Schema.Literals([
   "session.created",
   "session.updated",
   "session.attention.updated",
+  /// Legacy, never emitted: chats stopped carrying archive state when the
+  /// workspace became the only thing that can be archived. Both kinds remain
+  /// decodable because the `events` table still holds rows recorded under
+  /// them, and replaying that history must not fail.
   "session.archived",
-  /// Emitted when a chat leaves the archive. Distinct from `session.updated`
-  /// because clients must move the row between sidebar sections and may need
-  /// to re-resolve its cwd: restore can hand back a different worktree name
-  /// when the original was reclaimed while the chat sat archived.
   "session.unarchived",
   "session.deleted",
   "session.output",

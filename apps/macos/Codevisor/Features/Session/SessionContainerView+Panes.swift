@@ -58,7 +58,7 @@ extension SessionContainerView {
           if let closed = environment.projectList.sessions.first(where: {
             $0.serverId == selectedWorkspace.serverId && $0.id == closedSessionId
           }) {
-            environment.archiveSession(closed)
+            environment.closeSession(closed)
           }
         } else {
           // A draft closed unsent: discard its composer state.

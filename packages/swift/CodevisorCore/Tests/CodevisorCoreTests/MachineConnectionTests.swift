@@ -51,7 +51,6 @@ struct MachineConnectionTests {
       agentSessionId: nil,
       title: "Background work",
       origin: .codevisor,
-      isArchived: false,
       createdAt: "2026-06-30T00:00:01.000Z",
       updatedAt: "2026-06-30T00:00:02.000Z",
       usage: nil
@@ -66,7 +65,6 @@ struct MachineConnectionTests {
       "harnessId": .string(session.harnessId),
       "title": .string(session.title),
       "origin": .string(session.origin.rawValue),
-      "isArchived": .bool(session.isArchived),
       "createdAt": .string(session.createdAt),
       "updatedAt": .string(session.updatedAt ?? session.createdAt),
     ])

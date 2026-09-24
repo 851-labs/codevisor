@@ -166,7 +166,7 @@ struct WorkspaceEventFixture {
       clientFactory: { _ in client }, navigationClock: navigationClock
     )
     let project = ServerProject(
-      id: workspace.projectId.uuidString, name: "Shared", isArchived: false, origin: .codevisor,
+      id: workspace.projectId.uuidString, name: "Shared", origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z", locations: [])
     let sessions = projectList.sessions.map { serverSession(from: $0) }
     let records = [WorkspaceSyncModel.serverWorkspace(from: workspace)]

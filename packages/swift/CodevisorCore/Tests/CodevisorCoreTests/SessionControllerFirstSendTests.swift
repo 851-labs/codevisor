@@ -232,7 +232,7 @@ struct SessionControllerFirstSendTests {
           "session": [
             "id": sessionID.uuidString, "projectId": project.id.uuidString,
             "serverId": "local", "harnessId": "codex", "title": "Draft",
-            "origin": "codevisor", "isArchived": false, "createdAt": "2026-09-08T17:45:00Z",
+            "origin": "codevisor", "createdAt": "2026-09-08T17:45:00Z",
           ],
           "transcript": [
             "items": [], "setupActivities": [], "stateUpdates": [], "hasNewer": false, "hasMore": false,

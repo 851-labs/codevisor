@@ -29,7 +29,7 @@ import { availableProductionWorktreeName } from "@codevisor/worktrees"
 
 import {
   appendAndPublish,
-  applyCascadedSessionEffects,
+  discardProjectWorktrees,
   assertLocationFolderExists,
   existingDirectory,
   failureMessage,
@@ -37,7 +37,6 @@ import {
   HttpFailure,
   localLocationOrFail,
   matchRoute,
-  publishChangedWorkspaces,
   readSchema,
   run,
   swallowError,
@@ -166,36 +165,21 @@ export const routeProjects = async (
   const projectId = matchRoute(url.pathname, "/v1/projects/:id")
   if (projectId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateProjectRequestSchema)
-    // Captured before the write so the cascade's effects can be replayed for
-    // exactly the children whose state changed.
-    const sessionsBefore =
-      payload.isArchived === undefined ? [] : await run(services.db.listSessions)
-    const workspacesBefore =
-      payload.isArchived === undefined ? [] : await run(services.db.listWorkspaces)
     const project = await run(services.db.updateProject(projectId, payload))
     await appendAndPublish(services.db, fanout, "project.updated", project.id, project)
-    if (payload.isArchived !== undefined) {
-      await publishChangedWorkspaces(services, fanout, workspacesBefore)
-      await applyCascadedSessionEffects(
-        services,
-        fanout,
-        config,
-        sessionsBefore,
-        payload.isArchived
-          ? workspacesBefore
-              .filter((workspace) => workspace.projectId === project.id)
-              .map((workspace) => workspace.id)
-          : []
-      )
-    }
     writeJson(response, 200, await probeProject(serverId, project))
     return true
   }
 
   if (projectId !== undefined && request.method === "DELETE") {
-    const target = (await run(services.db.listProjects)).find(
+    const targets = (await run(services.db.listProjects)).filter(
       (candidate) => candidate.id.toLowerCase() === projectId.toLowerCase()
     )
+    // Deleting a project is permanent and takes its chats with it, so the
+    // files it owns must go too. Row deletion cascades; the filesystem does
+    // not, and every worktree directory, branch and snapshot ref would
+    // otherwise stay behind with nothing left to name it.
+    for (const target of targets) await discardProjectWorktrees(services, config.id, target)
     await run(services.db.deleteProject(projectId))
     await appendAndPublish(services.db, fanout, "project.deleted", projectId, {
       id: projectId
@@ -203,9 +187,9 @@ export const routeProjects = async (
     // Deleting a scratch project retires its workspace folder too — but only
     // when the folder is still empty. Anything the user put there stays on
     // disk rather than vanishing with the row.
-    const folderPath = target?.locations.find(
-      (location) => location.serverId === serverId
-    )?.folderPath
+    const folderPath = targets
+      .flatMap((target) => target.locations)
+      .find((location) => location.serverId === serverId)?.folderPath
     if (folderPath !== undefined && dirname(folderPath) === scratchWorkspacesRoot()) {
       try {
         rmdirSync(folderPath)

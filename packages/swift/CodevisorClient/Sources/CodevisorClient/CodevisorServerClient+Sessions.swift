@@ -89,7 +89,6 @@ struct CreateSessionBody: Encodable {
   var agentSessionId: String?
   var title: String
   var origin: SessionOrigin
-  var isArchived: Bool
   var worktreeName: String?
   var workspaceId: String?
   var createdAt: String
@@ -109,7 +108,6 @@ struct CreateSessionBody: Encodable {
     agentSessionId = session.agentSessionId
     title = session.title
     origin = session.origin
-    isArchived = session.isArchived
     worktreeName = session.worktreeName
     self.workspaceId = workspaceId?.uuidString
     createdAt = ServerDateCoding.string(from: session.createdAt)
@@ -121,7 +119,6 @@ struct CreateSessionBody: Encodable {
 struct UpdateSessionBody: Encodable {
   var sidebarOrderHead = WorkspaceOrderClock.shared.head
   var agentSessionId: String?
-  var isArchived: Bool
   var title: String
   var titleIntent = "fallback"
   /// Sessions created EAGERLY (before their worktree exists) get the
@@ -139,7 +136,6 @@ struct UpdateSessionBody: Encodable {
 
   init(session: ChatSession, workspaceId: UUID? = nil) {
     agentSessionId = session.agentSessionId
-    isArchived = session.isArchived
     title = session.title
     worktreeName = session.worktreeName
     self.workspaceId = workspaceId?.uuidString

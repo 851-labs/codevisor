@@ -48,6 +48,7 @@ import type {
   RunningCodevisorServer
 } from "./server-context.js"
 import { handleRequest } from "./server-router.js"
+import { reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
 export * from "./server-context.js"
 export { defaultServerConfig } from "./server-config.js"
@@ -413,6 +414,11 @@ export const startCodevisorServer = (
               fanout,
               services.resolveGitEnvironment
             ).catch(swallowError)
+            // Converge whatever the last run left on disk: finish interrupted
+            // archives, drop worktree rows whose files are gone, and prune
+            // snapshot refs nothing can restore. Off the boot path and
+            // best-effort — housekeeping must never keep the server down.
+            void reconcileWorktreeArchives(services, config).catch(swallowError)
             resolve({
               host: config.host,
               port,

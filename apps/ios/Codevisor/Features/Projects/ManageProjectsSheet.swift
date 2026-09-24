@@ -8,7 +8,7 @@ struct ManageProjectsSheet: View {
   @Environment(\.dismiss) private var dismiss
 
   let serverId: String
-  let onArchive: (Project) -> Void
+  let onDelete: (Project) -> Void
 
   @State private var destination: Destination?
   @State private var isLoading = true
@@ -104,7 +104,7 @@ struct ManageProjectsSheet: View {
           project: project,
           client: environment.machines.client(for: serverId),
           didUpdate: { await load() },
-          onArchive: { onArchive(project) }
+          onDelete: { onDelete(project) }
         )
       }
     }

@@ -8,25 +8,25 @@ struct ManageProjectSheet: View {
   let project: Project
   let client: any CodevisorServerClienting
   let didUpdate: () async -> Void
-  let onArchive: () -> Void
+  let onDelete: () -> Void
 
   @State private var branches: [ServerProjectGitBranch] = []
   @State private var selectedBase: ProjectWorktreeBase?
   @State private var isLoading = true
   @State private var isSaving = false
   @State private var errorMessage: String?
-  @State private var isConfirmingArchive = false
+  @State private var isConfirmingDelete = false
 
   init(
     project: Project,
     client: any CodevisorServerClienting,
     didUpdate: @escaping () async -> Void,
-    onArchive: @escaping () -> Void
+    onDelete: @escaping () -> Void
   ) {
     self.project = project
     self.client = client
     self.didUpdate = didUpdate
-    self.onArchive = onArchive
+    self.onDelete = onDelete
     _selectedBase = State(initialValue: project.worktreeBase)
   }
 
@@ -64,21 +64,23 @@ struct ManageProjectSheet: View {
         }
 
         Section {
-          Button("Archive Project…", role: .destructive) {
-            isConfirmingArchive = true
+          Button("Delete Project…", role: .destructive) {
+            isConfirmingDelete = true
           }
           .disabled(isSaving)
           .confirmationDialog(
-            "Archive \(project.name)?",
-            isPresented: $isConfirmingArchive,
+            "Delete \(project.name)?",
+            isPresented: $isConfirmingDelete,
             titleVisibility: .visible
           ) {
-            Button("Archive Project", role: .destructive) {
-              onArchive()
+            Button("Delete Project", role: .destructive) {
+              onDelete()
               dismiss()
             }
           } message: {
-            Text("This also archives the project's workspaces and chats.")
+            Text(
+              "This permanently deletes the project's workspaces, chats and worktree files. This cannot be undone."
+            )
           }
         }
       }

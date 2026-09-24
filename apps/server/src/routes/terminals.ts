@@ -33,8 +33,9 @@ export const routeTerminals = async (
         candidate.paneType === "terminal" && candidate.resourceId?.toLowerCase() === key
     )
     const workspaces = await run(services.db.listWorkspaces)
+    // The workspace carries the archive, and the chat's own workspace is
+    // already covered here, so there is no separate per-chat state to check.
     if (
-      session?.isArchived ||
       workspaces.some(
         (workspace) =>
           workspace.isArchived &&
@@ -45,13 +46,11 @@ export const routeTerminals = async (
     }
     const terminal = await run(services.terminal.createTerminal(payload))
     // A concurrent archive may have happened while the PTY was spawning.
-    const archivedNow =
-      (await run(services.db.listWorkspaces)).some(
-        (workspace) =>
-          workspace.isArchived &&
-          (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
-      ) ||
-      (session !== undefined && (await run(services.db.getSessionSummary(session.id))).isArchived)
+    const archivedNow = (await run(services.db.listWorkspaces)).some(
+      (workspace) =>
+        workspace.isArchived &&
+        (workspace.id === pane?.workspaceId || workspace.id === session?.workspaceId)
+    )
     if (archivedNow) {
       await run(services.terminal.closeTerminal(terminal.terminalId))
       throw new HttpFailure(409, "Workspace was archived while starting the terminal")

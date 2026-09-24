@@ -9,7 +9,7 @@ import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
 import { sessionFromRow } from "./row-mappers.js"
 import type { SessionRow } from "./rows.js"
-import { archivedStamp, type ServiceContext } from "./service-context.js"
+import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import {
   attentionSettleDeadline,
@@ -38,9 +38,9 @@ export const insertSessionRow = (
     .prepare(
       `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
-            title, origin, is_archived, worktree_name, workspace_id, created_at, updated_at,
+            title, origin, worktree_name, workspace_id, created_at, updated_at,
             sidebar_state, sidebar_state_changed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
     )
     .run(
       id,
@@ -51,7 +51,6 @@ export const insertSessionRow = (
       request.agentSessionId ?? null,
       request.title ?? "New Session",
       request.origin ?? "codevisor",
-      (request.isArchived ?? false) ? 1 : 0,
       request.worktreeName ?? null,
       request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
       request.createdAt ?? now,
@@ -78,7 +77,6 @@ export const makeSessionsService = (
   | "updateSession"
   | "replaceSessionConfigSelections"
   | "updateSessionTitleFromHarness"
-  | "archiveSession"
   | "deleteSession"
 > => {
   const { sqlite, config, localLocationFor, sessionSummarySelect, getSession } = context
@@ -223,14 +221,6 @@ export const makeSessionsService = (
                 when ? is not null and ? <> title then 1
                 else title_is_user_set
               end,
-              is_archived = ?,
-              archived_at = ?,
-              -- A direct archive/unarchive is a user act on this one chat, so
-              -- it clears cascade provenance: a later project unarchive must
-              -- not drag this row back with it. Updates that do NOT touch the
-              -- archive bit (a rename, a worktree remap) must leave provenance
-              -- alone, or restoring one chat would strand its siblings.
-              archive_cascade_from = case when ? = 1 then null else archive_cascade_from end,
               agent_session_id = ?, worktree_name = ?, project_id = ?,
               harness_id = ?, harness_account_id = ?, updated_at = ?
              where id = ?`
@@ -244,9 +234,6 @@ export const makeSessionsService = (
             request.title ?? null,
             request.title ?? null,
             request.title ?? null,
-            (request.isArchived ?? current.isArchived) ? 1 : 0,
-            archivedStamp(request.isArchived, current.isArchived, current.archivedAt),
-            request.isArchived === undefined ? 0 : 1,
             request.agentSessionId ?? current.agentSessionId ?? null,
             // A project move re-homes the session's directory: a stale
             // worktree name from the old project must not survive it, so the
@@ -287,12 +274,6 @@ export const makeSessionsService = (
           getSession(id)
           return undefined
         }
-        return getSession(id)
-      }),
-    archiveSession: (rawId) =>
-      attempt("archiveSession", () => {
-        const id = canonicalUuid(rawId)
-        sqlite.prepare("update sessions set is_archived = 1 where id = ?").run(id)
         return getSession(id)
       }),
     deleteSession: (rawId) =>

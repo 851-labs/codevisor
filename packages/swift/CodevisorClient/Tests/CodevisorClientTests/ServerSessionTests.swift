@@ -17,7 +17,6 @@ struct ServerSessionTests {
       agentSessionId: "agent-session",
       title: "Remote chat",
       origin: .codevisor,
-      isArchived: false,
       createdAt: "2026-08-19T17:24:12.550Z"
     )
 

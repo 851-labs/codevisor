@@ -11,17 +11,18 @@ import { defaultServerConfig, startCodevisorServer } from "../server.js"
 import { jsonRequest, makeServices, run, runningServers, start, tempDirs } from "../test-support.js"
 
 describe("project lifecycle routes", () => {
-  it("cascades archive across projects, workspaces, and chats with provenance", async () => {
+  it("archives workspaces independently, leaving chats and bystanders alone", async () => {
+    // The workspace is the only thing that carries archive state, so there is
+    // no cascade to get wrong: archiving one workspace must not touch another,
+    // and a chat has no archive flag of its own to fall out of step with.
     const { server } = await start()
-    const folder = mkdtempSync(join(tmpdir(), "codevisor-cascade-"))
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-archive-"))
     tempDirs.push(folder)
     await jsonRequest(server, "/v1/projects", {
-      body: JSON.stringify({ folderPath: folder, id: "cascade-project" }),
+      body: JSON.stringify({ folderPath: folder, id: "archive-project" }),
       method: "POST"
     })
-    // A workspace in an unrelated project, present for every cascade below: it
-    // must never be republished, or clients would move rows that never changed.
-    const otherFolder = mkdtempSync(join(tmpdir(), "codevisor-cascade-other-"))
+    const otherFolder = mkdtempSync(join(tmpdir(), "codevisor-archive-other-"))
     tempDirs.push(otherFolder)
     await jsonRequest(server, "/v1/projects", {
       body: JSON.stringify({ folderPath: otherFolder, id: "bystander-project" }),
@@ -36,111 +37,67 @@ describe("project lifecycle routes", () => {
       method: "PUT"
     })
     const workspace = (
-      await jsonRequest(server, "/v1/workspaces/cascade-workspace", {
+      await jsonRequest(server, "/v1/workspaces/archive-workspace", {
         body: JSON.stringify({
-          projectId: "cascade-project",
+          projectId: "archive-project",
           name: "main",
           hasCustomName: false
         }),
         method: "PUT"
       })
     ).body as { readonly id: string }
-
-    const makeSession = async (id: string) =>
-      (
-        await jsonRequest(server, "/v1/sessions", {
-          body: JSON.stringify({ id, projectId: "cascade-project", harnessId: "codex" }),
-          method: "POST"
-        })
-      ).body as { readonly id: string }
-    const cascaded = await makeSession("cascade-chat")
-    const handArchived = await makeSession("hand-archived-chat")
-
-    // The user archives one chat themselves, before any cascade runs.
-    await jsonRequest(server, `/v1/sessions/${handArchived.id}`, {
-      body: JSON.stringify({ isArchived: true }),
-      method: "PATCH"
+    await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        id: "workspace-chat",
+        projectId: "archive-project",
+        harnessId: "codex",
+        workspaceId: workspace.id
+      }),
+      method: "POST"
     })
 
     const archivedStateOf = async (id: string) =>
-      (
-        (await jsonRequest(server, "/v1/sessions")).body as ReadonlyArray<{
-          readonly id: string
-          readonly isArchived: boolean
-        }>
-      ).find((session) => session.id === id)?.isArchived
-    const workspaceArchived = async () =>
       (
         (await jsonRequest(server, "/v1/workspaces")).body as ReadonlyArray<{
           readonly id: string
           readonly isArchived: boolean
         }>
-      ).find((candidate) => candidate.id === workspace.id)?.isArchived
+      ).find((candidate) => candidate.id === id)?.isArchived
+    const paneCount = async (id: string) =>
+      (
+        (await jsonRequest(server, "/v1/workspace-snapshot")).body as {
+          readonly panes: ReadonlyArray<{ readonly workspaceId: string }>
+        }
+      ).panes.filter((pane) => pane.workspaceId === id).length
 
-    await jsonRequest(server, "/v1/projects/cascade-project", {
-      body: JSON.stringify({ isArchived: true }),
-      method: "PATCH"
-    })
-    expect(await archivedStateOf(cascaded.id)).toBe(true)
-    expect(await workspaceArchived()).toBe(true)
-
-    await jsonRequest(server, "/v1/projects/cascade-project", {
-      body: JSON.stringify({ isArchived: false }),
-      method: "PATCH"
-    })
-    expect(await archivedStateOf(cascaded.id)).toBe(false)
-    expect(await workspaceArchived()).toBe(false)
-    // Provenance: the chat the user archived by hand is NOT resurrected by
-    // unarchiving the project around it.
-    expect(await archivedStateOf(handArchived.id)).toBe(true)
-
-    // A workspace PATCH cascades one level down, to its own chats only.
-    const inWorkspace = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          id: "workspace-chat",
-          projectId: "cascade-project",
-          harnessId: "codex",
-          workspaceId: workspace.id
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    expect(await paneCount(workspace.id)).toBe(1)
 
     await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
       body: JSON.stringify({ isArchived: true }),
       method: "PATCH"
     })
-    expect(await archivedStateOf(inWorkspace.id)).toBe(true)
-    // A sibling chat outside the workspace is untouched.
-    expect(await archivedStateOf(cascaded.id)).toBe(false)
+    expect(await archivedStateOf(workspace.id)).toBe(true)
+    // The tab survives the archive so restoring reopens exactly what was open.
+    expect(await paneCount(workspace.id)).toBe(1)
+    expect(await archivedStateOf("bystander-workspace")).toBe(false)
 
     await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
       body: JSON.stringify({ isArchived: false }),
       method: "PATCH"
     })
-    expect(await archivedStateOf(inWorkspace.id)).toBe(false)
+    expect(await archivedStateOf(workspace.id)).toBe(false)
+    expect(await paneCount(workspace.id)).toBe(1)
 
-    const bystander = (
-      (await jsonRequest(server, "/v1/workspaces")).body as ReadonlyArray<{
-        readonly id: string
-        readonly isArchived: boolean
-      }>
-    ).find((candidate) => candidate.id === "bystander-workspace")
-    expect(bystander?.isArchived).toBe(false)
-
-    // A PATCH that says nothing about archiving skips the cascade entirely
-    // rather than republishing every session as unchanged.
+    // A PATCH that says nothing about archiving leaves the bit alone.
     const renamed = await jsonRequest(server, `/v1/workspaces/${workspace.id}`, {
       body: JSON.stringify({ name: "renamed" }),
       method: "PATCH"
     })
     expect(renamed.status).toBe(200)
     expect(renamed.body).toMatchObject({ name: "renamed", isArchived: false })
-    expect(await archivedStateOf(inWorkspace.id)).toBe(false)
   })
 
-  it("archives a chat with no worktree without touching the filesystem", async () => {
+  it("archives a workspace with no worktree without touching the filesystem", async () => {
     // Non-git projects never get a worktree, so archiving is a pure flag flip
     // — the snapshot machinery must not engage at all.
     const { server } = await start()
@@ -150,25 +107,32 @@ describe("project lifecycle routes", () => {
       body: JSON.stringify({ folderPath: folder, id: "plain-archive-project" }),
       method: "POST"
     })
-    const session = (
-      await jsonRequest(server, "/v1/sessions", {
-        body: JSON.stringify({
-          projectId: "plain-archive-project",
-          harnessId: "test",
-          deferAgentSession: true
-        }),
-        method: "POST"
-      })
-    ).body as { readonly id: string }
+    await jsonRequest(server, "/v1/workspaces/plain-workspace", {
+      body: JSON.stringify({
+        projectId: "plain-archive-project",
+        name: "plain",
+        hasCustomName: false
+      }),
+      method: "PUT"
+    })
+    await jsonRequest(server, "/v1/sessions", {
+      body: JSON.stringify({
+        projectId: "plain-archive-project",
+        workspaceId: "plain-workspace",
+        harnessId: "test",
+        deferAgentSession: true
+      }),
+      method: "POST"
+    })
 
-    const archived = await jsonRequest(server, `/v1/sessions/${session.id}`, {
+    const archived = await jsonRequest(server, "/v1/workspaces/plain-workspace", {
       body: JSON.stringify({ isArchived: true }),
       method: "PATCH"
     })
     expect(archived.body).toMatchObject({ isArchived: true })
 
     // Restoring finds no snapshot record and still succeeds.
-    const restored = await jsonRequest(server, `/v1/sessions/${session.id}`, {
+    const restored = await jsonRequest(server, "/v1/workspaces/plain-workspace", {
       body: JSON.stringify({ isArchived: false }),
       method: "PATCH"
     })

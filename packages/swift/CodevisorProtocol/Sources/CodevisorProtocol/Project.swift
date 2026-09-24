@@ -53,7 +53,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
   /// projects default to "local".
   public var serverId: String
   public var name: String
-  public var isArchived: Bool
   /// Whether the project was added in Codevisor or created while importing
   /// external sessions. Imported projects with no visible sessions are hidden.
   public var origin: SessionOrigin
@@ -82,7 +81,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     id: UUID = UUID(),
     serverId: String = "local",
     name: String,
-    isArchived: Bool = false,
     origin: SessionOrigin = .codevisor,
     createdAt: Date = Date(),
     locations: [ProjectLocation] = [],
@@ -94,7 +92,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     self.id = id
     self.serverId = serverId
     self.name = name
-    self.isArchived = isArchived
     self.origin = origin
     self.createdAt = createdAt
     self.locations = locations
@@ -142,7 +139,7 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
   }
 
   private enum Keys: String, CodingKey {
-    case id, serverId, name, folderURL, isArchived, origin, createdAt, locations
+    case id, serverId, name, folderURL, origin, createdAt, locations
     case isScratch, worktreeBase, repoUrl, repoKey
   }
 
@@ -153,7 +150,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     id = try container.decode(UUID.self, forKey: .id)
     serverId = try container.decodeIfPresent(String.self, forKey: .serverId) ?? "local"
     name = try container.decode(String.self, forKey: .name)
-    isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     origin = try container.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .codevisor
     createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     isScratch = try container.decodeIfPresent(Bool.self, forKey: .isScratch) ?? false
@@ -176,7 +172,6 @@ public struct Project: Identifiable, Sendable, Codable, Equatable {
     try container.encode(id, forKey: .id)
     try container.encode(serverId, forKey: .serverId)
     try container.encode(name, forKey: .name)
-    try container.encode(isArchived, forKey: .isArchived)
     try container.encode(origin, forKey: .origin)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(locations, forKey: .locations)

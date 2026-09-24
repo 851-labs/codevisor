@@ -279,7 +279,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
         agentSessionId: "agent-session",
         title: "Server session",
         origin: .codevisor,
-        isArchived: false,
         createdAt: "2026-06-30T00:00:00.000Z",
         updatedAt: nil,
         usage: nil

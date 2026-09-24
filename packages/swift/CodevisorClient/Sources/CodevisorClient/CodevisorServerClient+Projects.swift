@@ -54,7 +54,6 @@ public struct ServerFsListing: Decodable, Equatable, Sendable {
 public struct ServerProject: Decodable, Equatable, Sendable {
   public var id: String
   public var name: String
-  public var isArchived: Bool
   public var origin: SessionOrigin
   public var createdAt: String
   public var locations: [ServerProjectLocation]
@@ -78,7 +77,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
       id: uuid,
       serverId: serverId,
       name: name,
-      isArchived: isArchived,
       origin: origin,
       createdAt: try ServerDateCoding.date(from: createdAt),
       locations: locations.map { location in
@@ -105,7 +103,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
   public init(
     id: String,
     name: String,
-    isArchived: Bool,
     origin: SessionOrigin,
     createdAt: String,
     locations: [ServerProjectLocation],
@@ -116,7 +113,6 @@ public struct ServerProject: Decodable, Equatable, Sendable {
   ) {
     self.id = id
     self.name = name
-    self.isArchived = isArchived
     self.origin = origin
     self.createdAt = createdAt
     self.locations = locations
@@ -288,7 +284,6 @@ struct CreateProjectBody: Encodable {
   var id: String
   var folderPath: String
   var name: String
-  var isArchived: Bool
   var origin: SessionOrigin
   var createdAt: String
 
@@ -296,7 +291,6 @@ struct CreateProjectBody: Encodable {
     id = project.id.uuidString
     folderPath = project.folderURL.path
     name = project.name
-    isArchived = project.isArchived
     origin = project.origin
     createdAt = ServerDateCoding.string(from: project.createdAt)
   }
@@ -304,11 +298,9 @@ struct CreateProjectBody: Encodable {
 
 private struct UpdateProjectBody: Encodable {
   var name: String
-  var isArchived: Bool
 
   init(project: Project) {
     name = project.name
-    isArchived = project.isArchived
   }
 }
 

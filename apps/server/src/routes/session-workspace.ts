@@ -12,14 +12,12 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 
 import {
   appendAndPublish,
-  archiveSessionRuntime,
-  archiveSessionWorktree,
   assertLocationFolderExists,
   existingDirectory,
   getProjectOrFail,
   HttpFailure,
   localLocationOrFail,
-  restoreSessionWorktree,
+  sessionIsArchived,
   run,
   type CodevisorServerConfig,
   type CodevisorServerServices,
@@ -137,19 +135,20 @@ export const createSessionIfMissing = async (
   return { session, created: true }
 }
 
-/// The full PATCH side-effect set — archive teardown and the
-/// updated/archived event fanout — shared by PATCH /v1/sessions/:id and the
+/// The full PATCH side-effect set, shared by PATCH /v1/sessions/:id and the
 /// combined /open route so opening a chat behaves exactly like the discrete
 /// update it replaced.
+///
+/// Chats carry no archive state: their workspace does, and the worktree is
+/// reclaimed when that workspace is archived. Closing a chat is pane removal,
+/// which `setSessionWorkspace(id, null)` performs.
 export const applySessionUpdate = async (
   services: CodevisorServerServices,
   fanout: EventFanout,
-  config: CodevisorServerConfig,
   sessionId: string,
   payload: UpdateSessionRequest
 ): Promise<SessionSummary> => {
   const before = await findSession(services.db, sessionId)
-  const wasArchived = before?.isArchived === true
   if (payload.workspaceId !== undefined && before !== undefined) {
     const project = await getProjectOrFail(services.db, payload.projectId ?? before.projectId)
     await ensureSessionWorkspace(
@@ -168,40 +167,7 @@ export const applySessionUpdate = async (
     session = await run(services.db.getSessionSummary(sessionId))
   }
 
-  if (session.isArchived && !wasArchived) {
-    await archiveSessionRuntime(services, session)
-    const ignored = await archiveSessionWorktree(services, config.id, session)
-    if (ignored.length > 0) {
-      // Gitignored files are deliberately not snapshotted (they can hold
-      // secrets and are usually regenerable). Tell the client which ones went
-      // away with the worktree rather than losing them silently.
-      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
-        ...session,
-        archiveDroppedIgnoredPaths: ignored
-      })
-    }
-  } else if (!session.isArchived && wasArchived) {
-    const restored = await restoreSessionWorktree(services, config.id, session)
-    session = restored.session
-    if (!restored.restoredFiles) {
-      await appendAndPublish(services.db, fanout, "session.updated", session.id, {
-        ...session,
-        archiveRestoreIncomplete: true
-      })
-    }
-  }
-
-  await appendAndPublish(
-    services.db,
-    fanout,
-    session.isArchived
-      ? "session.archived"
-      : wasArchived
-        ? "session.unarchived"
-        : "session.updated",
-    session.id,
-    session
-  )
+  await appendAndPublish(services.db, fanout, "session.updated", session.id, session)
   return session
 }
 
@@ -301,7 +267,7 @@ export const ensureAgentSessionFor = async (
   sessionId: string
 ): Promise<AgentSessionMetadata> => {
   let session = await run(services.db.getSessionSummary(sessionId))
-  if (session.isArchived)
+  if (await sessionIsArchived(services, session))
     throw new HttpFailure(409, "Restore the workspace before starting its agent")
   const project = await getProjectOrFail(services.db, session.projectId)
   const cwd = await resolveSessionCwdOrFail(services, serverId, project, session.worktreeName)
@@ -356,7 +322,7 @@ export const ensureAgentSessionFor = async (
         toolGateway
       )
     )
-    if ((await run(services.db.getSessionSummary(sessionId))).isArchived) {
+    if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
       await run(services.agents.closeAgentSession(agentSessionId))
       throw new HttpFailure(409, "Workspace was archived while starting its agent")
     }
@@ -375,7 +341,7 @@ export const ensureAgentSessionFor = async (
       toolGateway
     )
   )
-  if ((await run(services.db.getSessionSummary(sessionId))).isArchived) {
+  if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId)))) {
     await run(services.agents.closeAgentSession(agentSessionId))
     throw new HttpFailure(409, "Workspace was archived while starting its agent")
   }

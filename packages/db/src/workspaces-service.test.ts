@@ -5,38 +5,55 @@ import { DatabaseError, makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
-  it("cascades workspace archive to its sessions without touching siblings", async () => {
+  it("archives the workspace alone and keeps its chats' tabs for the restore", async () => {
+    // The workspace is the only thing that carries archive state. Its chats
+    // have none to cascade to, and their panes must survive so restoring the
+    // workspace brings back exactly the tabs the user left open.
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/ws-cascade" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-archive" }))
     const workspace = await run(
       db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
     )
     const inside = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    const outside = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
     await run(db.setSessionWorkspace(inside.id, workspace.id))
+    const paneIds = (await run(db.listWorkspacePanes))
+      .filter((pane) => pane.workspaceId === workspace.id)
+      .map((pane) => pane.id)
+    expect(paneIds).toHaveLength(1)
 
     await run(db.updateWorkspace(workspace.id, { isArchived: true }))
-    expect((await run(db.getSessionSummary(inside.id))).isArchived).toBe(true)
-    expect((await run(db.getSessionSummary(outside.id))).isArchived).toBe(false)
+
+    const archived = (await run(db.listWorkspaces)).find(
+      (candidate) => candidate.id === workspace.id
+    )
+    expect(archived?.isArchived).toBe(true)
+    expect(archived?.archivedAt).toBeDefined()
+    // The tab is still recorded, so the restore has something to reopen.
+    expect(
+      (await run(db.listWorkspacePanes))
+        .filter((pane) => pane.workspaceId === workspace.id)
+        .map((pane) => pane.id)
+    ).toEqual(paneIds)
 
     await run(db.updateWorkspace(workspace.id, { isArchived: false }))
-    expect((await run(db.getSessionSummary(inside.id))).isArchived).toBe(false)
+    const restored = (await run(db.listWorkspaces)).find(
+      (candidate) => candidate.id === workspace.id
+    )
+    expect(restored?.isArchived).toBe(false)
+    expect(restored?.archivedAt).toBeUndefined()
     await run(db.close)
   })
 
-  it("cascades through a full workspace upsert, not just a patch", async () => {
-    // The macOS client writes workspaces with PUT, so the upsert path owes
-    // the same cascade a PATCH does — otherwise archiving from that client
-    // would hide the workspace while leaving its chats in the sidebar.
+  it("flips the archive bit through a full upsert, not just a patch", async () => {
+    // The macOS client writes workspaces with PUT, so the upsert path owes the
+    // same transition a PATCH does.
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/ws-upsert-cascade" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/ws-upsert" }))
     const workspace = await run(
       db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
     )
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    await run(db.setSessionWorkspace(session.id, workspace.id))
 
-    await run(
+    const archived = await run(
       db.upsertWorkspace({
         id: workspace.id,
         projectId: project.id,
@@ -45,9 +62,10 @@ describe("@codevisor/db", () => {
         isArchived: true
       })
     )
-    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(true)
+    expect(archived.isArchived).toBe(true)
+    expect(archived.archivedAt).toBeDefined()
 
-    await run(
+    const revived = await run(
       db.upsertWorkspace({
         id: workspace.id,
         projectId: project.id,
@@ -56,7 +74,8 @@ describe("@codevisor/db", () => {
         isArchived: false
       })
     )
-    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(false)
+    expect(revived.isArchived).toBe(false)
+    expect(revived.archivedAt).toBeUndefined()
     await run(db.close)
   })
 
@@ -82,22 +101,23 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
-  it("re-archiving an already archived workspace does not cascade again", async () => {
+  it("re-archiving an already archived workspace keeps its original moment", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/ws-rearchive" }))
     const workspace = await run(
       db.upsertWorkspace({ projectId: project.id, name: "feature", hasCustomName: false })
     )
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-    await run(db.setSessionWorkspace(session.id, workspace.id))
     await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+    const first = (await run(db.listWorkspaces)).find(
+      (candidate) => candidate.id === workspace.id
+    )?.archivedAt
 
-    // Restore the chat by hand, then re-archive the already-archived
-    // workspace: the no-op transition must not drag the chat back down.
-    await run(db.updateSession(session.id, { isArchived: false }))
-    await run(db.updateWorkspace(workspace.id, { isArchived: true }))
+    // A retry after a failed teardown must not restamp the moment the user
+    // sees, or the row would jump to the top of any archive ordering.
+    const again = await run(db.updateWorkspace(workspace.id, { isArchived: true }))
 
-    expect((await run(db.getSessionSummary(session.id))).isArchived).toBe(false)
+    expect(again.isArchived).toBe(true)
+    expect(again.archivedAt).toBe(first)
     await run(db.close)
   })
 

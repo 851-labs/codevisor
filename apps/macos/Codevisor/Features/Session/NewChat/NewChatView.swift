@@ -224,8 +224,8 @@ struct NewChatView: View {
         setUpController()
       }
     }
-    .onChange(of: selectedDraftProjectIsArchived, initial: true) { _, isArchived in
-      if isArchived, let controller { selectNoProject(controller) }
+    .onChange(of: selectedDraftProjectIsDeleted, initial: true) { _, isDeleted in
+      if isDeleted, let controller { selectNoProject(controller) }
     }
     // Established installs stay stale-while-revalidate. The one-shot
     // onboarding handoff keeps its loading surface mounted until this

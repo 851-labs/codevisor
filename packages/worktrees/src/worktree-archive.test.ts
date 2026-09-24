@@ -7,21 +7,26 @@ import { describe, expect, it } from "vitest"
 import { makeGitRepo } from "./git-test-support.js"
 import { addWorktree, listCodevisorWorktreeBranchNames, removeWorktree, runGit } from "./git.js"
 import {
-  archiveWorktreeFiles,
   chooseRestoreName,
   deleteSnapshot,
   meaningfulIgnoredPaths,
   releaseBranch,
+  removeArchivedWorktreeFiles,
   restoreWorktree,
   snapshotExists,
   snapshotRefFor,
   snapshotWorktree
 } from "./worktree-archive.js"
 
-/// Mirrors the production archive path (snapshot, delete files, release the
-/// branch) so tests exercise the same invariants the server relies on.
-const archive = (repo: string, path: string, id: string, name: string) =>
-  archiveWorktreeFiles(repo, path, id, `codevisor/${name}`, removeWorktree)
+/// Mirrors the production archive path (snapshot, record, delete files,
+/// release the branch) so tests exercise the same invariants the server relies
+/// on. The server records the archive between the two calls; that ordering is
+/// covered by the server's own reconciler tests.
+const archive = async (repo: string, path: string, id: string, name: string) => {
+  const snapshot = await snapshotWorktree(repo, path, id)
+  await removeArchivedWorktreeFiles(repo, path, `codevisor/${name}`, removeWorktree)
+  return snapshot
+}
 
 const git = (repo: string, ...args: ReadonlyArray<string>): string =>
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
@@ -110,7 +115,7 @@ describe("worktree archive snapshots", () => {
     expect(existsSync(join(restorePath, "node_modules"))).toBe(false)
     // ...but the user is warned about the one that is not regenerable.
     expect(snapshot.ignoredPaths).toContain("secret.env")
-    expect(snapshot.ignoredPaths.some((p) => p.includes("node_modules"))).toBe(false)
+    expect(snapshot.ignoredPaths.some((path) => path.includes("node_modules"))).toBe(false)
   })
 
   it("suffixes the name when the original was reclaimed while archived", async () => {

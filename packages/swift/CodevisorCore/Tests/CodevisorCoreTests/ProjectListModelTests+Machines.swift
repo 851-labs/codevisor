@@ -75,16 +75,16 @@ extension ProjectListModelTests {
       sessionRepository: DefaultSessionRepository(store: sessionStore)
     )
 
-    model.archive(remoteProject)
-    var archivedRemote = remoteProject
-    archivedRemote.isArchived = true
+    var renamedRemote = remoteProject
+    renamedRemote.name = "Renamed remote project"
     let fake = FakeServerClient(
-      projects: [serverProject(from: archivedRemote)], sessions: [serverSession(from: remoteSession)])
+      projects: [serverProject(from: renamedRemote)], sessions: [serverSession(from: remoteSession)])
     model.configureServerClientProvider { $0 == "remote-a" ? fake : nil }
     await model.renameSession(remoteSession, to: "Renamed remote")?.value
 
-    #expect(model.projects.first { $0.serverId == "local" }?.isArchived == false)
-    #expect(model.projects.first { $0.serverId == "remote-a" }?.isArchived == true)
+    // A write scoped to one machine never rewrites the other's record.
+    #expect(model.projects.first { $0.serverId == "local" }?.name == localProject.name)
+    #expect(model.projects.first { $0.serverId == "remote-a" }?.name == "Renamed remote project")
     #expect(model.sessions.first { $0.serverId == "local" }?.title == "Local chat")
     #expect(model.sessions.first { $0.serverId == "remote-a" }?.title == "Renamed remote")
 

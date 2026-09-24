@@ -22,7 +22,6 @@ extension MachineControllerTests {
     let project = ServerProject(
       id: projectId.uuidString,
       name: "Shared",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -44,7 +43,6 @@ extension MachineControllerTests {
       agentSessionId: nil,
       title: "New Chat",
       origin: .codevisor,
-      isArchived: false,
       worktreeName: nil,
       workspaceId: workspaceId.uuidString,
       cwd: "/tmp/stale-pane",

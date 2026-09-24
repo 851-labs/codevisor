@@ -54,7 +54,7 @@ extension SessionStore {
     // stable ephemeral stand-in instead.
     if environment.workspaces.workspaceId(forSession: session.id) == nil,
       !environment.projectList.sessions.contains(where: {
-        $0.serverId == session.serverId && $0.id == session.id && !$0.isArchived
+        $0.serverId == session.serverId && $0.id == session.id
       })
     {
       if let cached = ephemeralWorkspaces[session.id] { return cached }

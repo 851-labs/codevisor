@@ -45,11 +45,10 @@ public extension WorkspaceRepository {
     }
   }
 
-  /// A stand-in workspace for a chat that is NO LONGER ACTIVE and has no
-  /// persisted workspace (the archive that removed the chat deleted it,
-  /// index entry included). Shaped exactly like the record
-  /// `ensureWorkspace` would mint — but NEVER saved: the still-mounted
-  /// screen of a just-archived chat keeps rendering during its teardown
+  /// A stand-in workspace for a chat with no persisted workspace, because
+  /// the workspace was deleted out from under it, index entry included.
+  /// Shaped exactly like the record `ensureWorkspace` would mint — but NEVER
+  /// saved: the still-mounted screen keeps rendering through its teardown
   /// without resurrecting the deleted workspace behind the sidebar's back.
   func ephemeralWorkspace(for seed: WorkspaceSessionSeed) -> Workspace {
     var center = PaneGroupState.centerInitial(sessionId: seed.sessionId)
@@ -199,11 +198,10 @@ public final class DefaultWorkspaceRepository: WorkspaceRepository, @unchecked S
     } else {
       payload.workspaces.append(workspace)
     }
-    // The index only GROWS on save: a chat whose tab was closed (its
-    // session archived) keeps routing to the workspace it lived in —
-    // dropping the entry would make ensureWorkspace mint a duplicate
-    // workspace next time that session renders. Entries die with their
-    // workspace (see delete).
+    // The index only GROWS on save: a chat whose tab was closed keeps
+    // routing to the workspace it lived in — dropping the entry would make
+    // ensureWorkspace mint a duplicate workspace next time that session
+    // renders. Entries die with their workspace (see delete).
     for sessionId in workspace.chatSessionIds {
       payload.sessionIndex[sessionId] = workspace.id
     }

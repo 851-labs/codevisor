@@ -162,16 +162,6 @@ public final class ProjectListModel {
       persistPendingServerProjects()
     }
   }
-  /// Archives are optimistic: the row leaves the sidebar before the server
-  /// round-trip completes. Keep that local state authoritative until a
-  /// server snapshot actually acknowledges `isArchived`, otherwise an
-  /// older in-flight snapshot briefly resurrects the row.
-  var pendingArchivedSessionIds: Set<ScopedSessionID> = [] {
-    didSet {
-      guard pendingArchivedSessionIds != oldValue else { return }
-      persistPendingArchivedSessions()
-    }
-  }
   /// Project deletions are optimistic too: the rows leave immediately
   /// while the server DELETE is in flight. A refresh snapshot fetched in
   /// that window (an archive PATCH fans out events that trigger one) still
@@ -196,7 +186,7 @@ public final class ProjectListModel {
     load()
     loadPendingServerProjects()
     loadPendingServerSessions()
-    loadPendingArchivedSessions()
+    purgeLegacyArchivedSessionMarkers()
     // A project added just before the previous process exited remains
     // protected from an older server snapshot and retries its upload.
     for pending in pendingServerProjectIds {
@@ -215,18 +205,6 @@ public final class ProjectListModel {
         $0.serverId == pending.serverId && $0.id == pending.id
       }) {
         syncSession(session)
-      }
-    }
-    // A quit while an archive upload was in flight must not let the next
-    // launch's initial server refresh revive the row. Retry the archived
-    // record; the marker clears once a matching snapshot is observed.
-    for pending in pendingArchivedSessionIds {
-      if let session = sessions.first(where: {
-        $0.serverId == pending.serverId && $0.id == pending.id && $0.isArchived
-      }) {
-        syncSession(session)
-      } else {
-        pendingArchivedSessionIds.remove(pending)
       }
     }
     refreshFromServerIfConfigured()
@@ -331,7 +309,6 @@ public final class ProjectListModel {
   public func deleteSession(_ session: ChatSession) {
     let scopedId = ScopedSessionID(serverId: session.serverId, id: session.id)
     pendingServerSessionIds.remove(scopedId)
-    pendingArchivedSessionIds.remove(scopedId)
     sessions.removeAll { $0.serverId == session.serverId && $0.id == session.id }
     persistSessions()
     deleteSessionFromServer(session.id, serverId: session.serverId)
@@ -348,7 +325,6 @@ public final class ProjectListModel {
     }
     let scopedId = ScopedSessionID(serverId: serverId, id: id)
     pendingServerSessionIds.remove(scopedId)
-    pendingArchivedSessionIds.remove(scopedId)
     sessions.removeAll { $0.serverId == serverId && $0.id == id }
     persistSessions()
     return previousWorkspace != nil
@@ -367,7 +343,6 @@ public final class ProjectListModel {
       workspaceAssignmentsByServer[serverId]?.removeValue(forKey: sessionId.id)
     }
     pendingServerSessionIds.subtract(removedSessionIds)
-    pendingArchivedSessionIds.subtract(removedSessionIds)
     projects.removeAll { $0.serverId == serverId && $0.id == id }
     sessions.removeAll { $0.serverId == serverId && $0.projectId == id }
     persistProjects()
@@ -383,10 +358,6 @@ public final class ProjectListModel {
         ScopedSessionID(serverId: selectedServerId, id: $0)
       })
     pendingServerSessionIds.subtract(
-      sessionIDs.map {
-        ScopedSessionID(serverId: selectedServerId, id: $0)
-      })
-    pendingArchivedSessionIds.subtract(
       sessionIDs.map {
         ScopedSessionID(serverId: selectedServerId, id: $0)
       })

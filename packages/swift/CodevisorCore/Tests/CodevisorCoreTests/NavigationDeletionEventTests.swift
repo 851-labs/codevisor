@@ -106,17 +106,17 @@ struct NavigationDeletionEventTests {
 
   @Test(
     "Live session state and deletions supersede older project/session snapshots",
-    arguments: ["session.archived", "session.deleted", "project.deleted"])
+    arguments: ["session.updated", "session.deleted", "project.deleted"])
   func liveEventSupersedesProjectSnapshot(kind: String) async throws {
     let fixture = WorkspaceEventFixture()
     let model = fixture.sync.projectList
     let project = ServerProject(
-      id: fixture.workspace.projectId.uuidString, name: "Shared", isArchived: false, origin: .codevisor,
+      id: fixture.workspace.projectId.uuidString, name: "Shared", origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z", locations: []
     )
     let session = ServerSession(
       id: fixture.anchorSessionId.uuidString, projectId: project.id, serverId: "local",
-      harnessId: "codex", title: "Chat", origin: .codevisor, isArchived: false,
+      harnessId: "codex", title: "Chat", origin: .codevisor,
       workspaceId: fixture.workspace.id.uuidString, createdAt: "2026-06-30T00:00:00.000Z"
     )
     let client = FakeServerClient(projects: [project], sessions: [session])
@@ -141,17 +141,16 @@ struct NavigationDeletionEventTests {
         id: 1, serverId: "local", kind: kind, subjectId: session.id, createdAt: session.createdAt,
         payload: .object([
           "id": .string(session.id), "projectId": .string(project.id), "serverId": .string("local"),
-          "harnessId": .string("codex"), "title": .string("Archived remotely"),
-          "origin": .string("codevisor"), "isArchived": .bool(true), "createdAt": .string(session.createdAt),
+          "harnessId": .string("codex"), "title": .string("Renamed remotely"),
+          "origin": .string("codevisor"), "createdAt": .string(session.createdAt),
         ])
       )
       _ = await model.applyServerSessionEvent(event, serverId: fixture.serverId)
     }
     release.signal()
     #expect(await refresh.value == .superseded)
-    if kind == "session.archived" {
-      #expect(model.sessions.first?.isArchived == true)
-      #expect(model.sessions.first?.title == "Archived remotely")
+    if kind == "session.updated" {
+      #expect(model.sessions.first?.title == "Renamed remotely")
     } else {
       #expect(model.sessions.isEmpty)
     }

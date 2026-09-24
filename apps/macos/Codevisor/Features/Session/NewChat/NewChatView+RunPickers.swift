@@ -331,14 +331,14 @@ extension NewChatView {
     }
   }
 
-  /// Settings can archive the checkout while this standalone draft stays
-  /// mounted. A missing cache entry during refresh is not an archive.
-  var selectedDraftProjectIsArchived: Bool {
+  /// Settings can delete the checkout while this standalone draft stays
+  /// mounted. A missing cache entry during refresh is not a deletion.
+  var selectedDraftProjectIsDeleted: Bool {
     guard showsRunPickers, let controller else { return false }
-    return environment.projectList.projects.contains {
-      $0.serverId == controller.project.serverId
-        && $0.id == controller.project.id && $0.isArchived
-    }
+    return environment.projectList.isProjectDeleted(
+      id: controller.project.id,
+      serverId: controller.project.serverId
+    )
   }
 
   private func selectRunLocation(newWorktree: Bool, controller: SessionController) {

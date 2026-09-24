@@ -50,6 +50,18 @@ describe("sessions routes", () => {
     expect(await run(services.db.listWorkspaces)).toHaveLength(0)
     const events = await run(services.db.listEvents(0))
     expect(events.some((event) => event.kind === "workspace.deleted")).toBe(true)
+
+    // A chat that belongs to no workspace has no cascade to run.
+    const detached = (
+      await jsonRequest(server, "/v1/sessions", {
+        body: JSON.stringify({ projectId: project.id, harnessId: "codex" }),
+        method: "POST"
+      })
+    ).body as { readonly id: string }
+    expect(
+      (await jsonRequest(server, `/v1/sessions/${detached.id}`, { method: "DELETE" })).status
+    ).toBe(204)
+    expect(await run(services.db.listWorkspaces)).toHaveLength(0)
   })
 
   it("opens a session in one round-trip, creating project and session only when missing", async () => {
@@ -104,11 +116,11 @@ describe("sessions routes", () => {
       }
     })
 
-    // Archive the project, then re-open with the original (now stale)
-    // snapshot: the existing project must NOT be reverted to unarchived, the
-    // session must not be re-created, and the update payload applies.
+    // Rename the project, then re-open with the original (now stale) snapshot:
+    // the existing project must NOT be reverted to its old name, the session
+    // must not be re-created, and the update payload applies.
     await jsonRequest(server, "/v1/projects/open-project-1", {
-      body: JSON.stringify({ isArchived: true }),
+      body: JSON.stringify({ name: "Renamed project" }),
       method: "PATCH"
     })
     const reopened = await jsonRequest(server, "/v1/sessions/open-session-1/open", {
@@ -129,9 +141,11 @@ describe("sessions routes", () => {
     expect(agents.creations).toHaveLength(1)
     const projects = (await jsonRequest(server, "/v1/projects")).body as ReadonlyArray<{
       readonly id: string
-      readonly isArchived: boolean
+      readonly name: string
     }>
-    expect(projects.find((candidate) => candidate.id === "open-project-1")?.isArchived).toBe(true)
+    expect(projects.find((candidate) => candidate.id === "open-project-1")?.name).toBe(
+      "Renamed project"
+    )
 
     // A body/path session-id mismatch is rejected before any writes.
     expect(

@@ -48,7 +48,6 @@ describe("@codevisor/api", () => {
     const legacy = decode(Project)({
       id: "project-1",
       name: "Legacy",
-      isArchived: false,
       origin: "herdman",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: []
@@ -62,7 +61,6 @@ describe("@codevisor/api", () => {
     const project = decode(Project)({
       id: "project-1",
       name: "Codevisor",
-      isArchived: false,
       origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -80,7 +78,6 @@ describe("@codevisor/api", () => {
     expect(encode(Project)(project)).toEqual({
       id: "project-1",
       name: "Codevisor",
-      isArchived: false,
       origin: "codevisor",
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -116,13 +113,11 @@ describe("@codevisor/api", () => {
         id: "project-1",
         folderPath: "/Users/me/src/Codevisor",
         name: "Codevisor",
-        isArchived: true,
         origin: "imported",
         createdAt: "2026-06-30T00:00:00.000Z"
       })
     ).toMatchObject({
       id: "project-1",
-      isArchived: true,
       origin: "imported"
     })
 
@@ -134,7 +129,6 @@ describe("@codevisor/api", () => {
         agentSessionId: "agent-1",
         title: "Synced",
         origin: "codevisor",
-        isArchived: false,
         deferAgentSession: true,
         worktreeName: "fix-auth",
         workspaceId: "workspace-1",
@@ -283,7 +277,6 @@ describe("@codevisor/api", () => {
         harnessId: "codex",
         title: "Synced",
         origin: "codevisor",
-        isArchived: false,
         createdAt: "2026-06-30T00:00:00.000Z"
       },
       conversation: [

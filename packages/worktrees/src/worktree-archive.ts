@@ -135,7 +135,11 @@ export const snapshotWorktree = async (
   }
 }
 
-/// Archives a worktree end to end: capture, delete the files, release the name.
+/// The destructive half of archiving, split from `snapshotWorktree` so the
+/// caller can record the archive BEFORE any files are deleted. That ordering is
+/// what makes an interrupted archive recoverable: the snapshot ref and its
+/// `archived_worktrees` row already exist, so a crash here leaves a `pending`
+/// row the reconciler finishes rather than an orphaned ref nothing names.
 ///
 /// The branch deletion is the subtle half. Worktree names are picked against
 /// BOTH the database and the repo's `refs/heads/codevisor/` namespace (a name
@@ -144,18 +148,52 @@ export const snapshotWorktree = async (
 /// forever and defeat the point of archiving. Dropping it is safe precisely
 /// because the snapshot commit has the branch tip as its parent: the ref keeps
 /// every commit reachable, and restore recreates the branch from `parentSha`.
-export const archiveWorktreeFiles = async (
+export const removeArchivedWorktreeFiles = async (
   repoDir: string,
   worktreeDir: string,
-  worktreeId: string,
   branch: string,
   removeFiles: (repoDir: string, path: string, env?: NodeJS.ProcessEnv) => Promise<unknown>,
   env?: NodeJS.ProcessEnv
-): Promise<WorktreeSnapshot> => {
-  const snapshot = await snapshotWorktree(repoDir, worktreeDir, worktreeId, env)
+): Promise<void> => {
   await removeFiles(repoDir, worktreeDir, env)
   await releaseBranch(repoDir, branch, env)
-  return snapshot
+}
+
+/// Every snapshot ref currently in the repository, by worktree id. The GC pass
+/// diffs these against `archived_worktrees`: a ref with no row can never be
+/// restored and pins its objects forever, because these refs are deliberately
+/// built to survive `git gc --prune=now`.
+export const listSnapshotRefWorktreeIds = async (
+  repoDir: string,
+  env?: NodeJS.ProcessEnv
+): Promise<ReadonlyArray<string>> => {
+  try {
+    const output = await runGit(
+      "list-archive-refs",
+      ["for-each-ref", "--format=%(refname:strip=3)", "refs/codevisor/archived/"],
+      repoDir,
+      env
+    )
+    return output
+      .split("\n")
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0)
+  } catch {
+    // A repository we cannot read is not one we should prune.
+    return []
+  }
+}
+
+/// Unregisters worktree directories git still lists but that no longer exist.
+export const pruneWorktreeRegistrations = async (
+  repoDir: string,
+  env?: NodeJS.ProcessEnv
+): Promise<void> => {
+  try {
+    await runGit("worktree-prune", ["worktree", "prune"], repoDir, env)
+  } catch {
+    // Best effort: pruning is housekeeping, never a failure the user sees.
+  }
 }
 
 /// Best-effort: a branch another worktree still has checked out cannot be

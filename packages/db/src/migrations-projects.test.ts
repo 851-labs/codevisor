@@ -5,33 +5,99 @@ import { describe, expect, it } from "vitest"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { buildV4Fixture, run, tempDatabase } from "./test-support.js"
 
+/// Column names of one table, read straight from the file so schema
+/// assertions do not depend on the service's own mapping.
+const sqliteColumns = (filename: string, table: string): ReadonlyArray<string> => {
+  const sqlite = new Database(filename)
+  try {
+    return (sqlite.pragma(`table_info(${table})`) as ReadonlyArray<{ readonly name: string }>).map(
+      (column) => column.name
+    )
+  } finally {
+    sqlite.close()
+  }
+}
+
 describe("@codevisor/db project and archive upgrades", () => {
-  it("backfills archived timestamps for rows archived before the column existed", async () => {
+  it("moves archive state onto the workspace and closes individually archived chats", async () => {
     const filename = tempDatabase()
-    buildV4Fixture(filename)
-    // Mark the pre-existing rows archived the way the old schema could: a bare
-    // boolean with no moment attached.
-    const legacy = new Database(filename)
-    legacy.exec(`
-      update sessions set is_archived = 1 where id = 'sess-1';
-      update workspaces set is_archived = 1 where id = 'ws-1';
+    // Build modern state through the public API, then rewind migration 50 and
+    // re-create the pre-50 archive columns so the upgrade runs for real.
+    const seed = await run(makeDatabase({ filename, serverId: "local" }))
+    const project = await run(seed.createProject({ folderPath: "/tmp/archive-upgrade" }))
+    const retired = await run(seed.createProject({ folderPath: "/tmp/retired-project" }))
+    const liveWorkspace = await run(
+      seed.upsertWorkspace({ projectId: project.id, name: "live", hasCustomName: false })
+    )
+    const archivedWorkspace = await run(
+      seed.upsertWorkspace({
+        projectId: project.id,
+        name: "archived",
+        hasCustomName: false,
+        isArchived: true
+      })
+    )
+    const retiredWorkspace = await run(
+      seed.upsertWorkspace({ projectId: retired.id, name: "retired", hasCustomName: false })
+    )
+    const closedByHand = await run(
+      seed.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    const wentWithWorkspace = await run(
+      seed.createSession({ projectId: project.id, harnessId: "codex" })
+    )
+    await run(seed.setSessionWorkspace(closedByHand.id, liveWorkspace.id))
+    await run(seed.setSessionWorkspace(wentWithWorkspace.id, archivedWorkspace.id))
+    await run(seed.close)
+
+    const sqlite = new Database(filename)
+    sqlite.exec(`
+      alter table sessions add column is_archived integer not null default 0;
+      alter table sessions add column archived_at text;
+      alter table sessions add column archive_cascade_from text;
+      alter table projects add column is_archived integer not null default 0;
+      alter table projects add column archived_at text;
+      alter table workspaces add column archive_cascade_from text;
+      alter table archived_worktrees drop column state;
+      delete from schema_migrations where id = 50;
     `)
-    legacy.close()
+    const archiveSession = sqlite.prepare(
+      "update sessions set is_archived = 1, archived_at = '2026-06-01T00:00:00.000Z' where id = ?"
+    )
+    archiveSession.run(closedByHand.id)
+    archiveSession.run(wentWithWorkspace.id)
+    sqlite
+      .prepare(
+        "update projects set is_archived = 1, archived_at = '2026-06-02T00:00:00.000Z' where id = ?"
+      )
+      .run(retired.id)
+    sqlite.close()
 
-    const db = await run(makeDatabase({ filename, serverId: "machine-a" }))
+    const db = await run(makeDatabase({ filename, serverId: "local" }))
+    const panes = await run(db.listWorkspacePanes)
+    const workspaces = await run(db.listWorkspaces)
 
-    const session = await run(db.getSessionSummary("sess-1"))
-    expect(session.isArchived).toBe(true)
-    // A timestamp must exist so the row can be sorted and labelled in the
-    // archived section rather than sinking to the bottom forever...
-    expect(session.archivedAt).toBeDefined()
-    // ...but it must not claim the chat was archived at migration time.
-    expect(session.archivedAt?.startsWith("2026-06-01")).toBe(true)
+    // Archived on its own means the user closed that tab, so the pane goes.
+    expect(panes.some((pane) => pane.resourceId === closedByHand.id)).toBe(false)
+    // Archived along with its workspace is not a closed tab: the workspace now
+    // carries the archive, and restoring it must bring this tab back.
+    expect(panes.some((pane) => pane.resourceId === wentWithWorkspace.id)).toBe(true)
 
-    const project = (await run(db.listProjects)).find((candidate) => candidate.id === "ws-1")
-    expect(project?.isArchived).toBe(true)
-    expect(project?.archivedAt).toBeDefined()
+    // An archived project pushes its state down onto the workspaces, which are
+    // the only rows that still carry it.
+    expect(workspaces.find((w) => w.id === retiredWorkspace.id)?.isArchived).toBe(true)
+    expect(workspaces.find((w) => w.id === retiredWorkspace.id)?.archivedAt).toBe(
+      "2026-06-02T00:00:00.000Z"
+    )
+    // Workspaces in a live project are untouched.
+    expect(workspaces.find((w) => w.id === liveWorkspace.id)?.isArchived).toBe(false)
+    expect(workspaces.find((w) => w.id === archivedWorkspace.id)?.isArchived).toBe(true)
 
+    const columns = (name: string) =>
+      (sqliteColumns(filename, name) as ReadonlyArray<string>).join(",")
+    expect(columns("sessions")).not.toContain("is_archived")
+    expect(columns("projects")).not.toContain("is_archived")
+    expect(columns("workspaces")).not.toContain("archive_cascade_from")
     await run(db.close)
   })
 

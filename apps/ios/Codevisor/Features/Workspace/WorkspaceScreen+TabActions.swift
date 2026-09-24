@@ -113,7 +113,7 @@ extension WorkspaceScreen {
         $0.serverId == resolvedServerId && $0.id == sessionId
       })
     {
-      environment.archiveSession(closed)
+      environment.closeSession(closed)
     }
     if let workspaceId = owningWorkspaceId {
       environment.workspaceSync.deletePane(

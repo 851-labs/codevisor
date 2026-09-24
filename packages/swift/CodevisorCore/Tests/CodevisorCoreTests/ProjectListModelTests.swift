@@ -25,7 +25,6 @@ struct ProjectListModelTests {
     let server = ServerProject(
       id: UUID().uuidString,
       name: "widget",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-07-03T00:00:00.000Z",
       locations: [
@@ -58,11 +57,9 @@ struct ProjectListModelTests {
     #expect(project.folderURL == url)
     #expect(project.locations.allSatisfy { $0.projectId == id })
 
-    // Adopting the same project again reuses (and un-archives) the entry.
-    model.archive(project)
+    // Adopting the same project again reuses the entry.
     let again = model.adoptServerProject(id: id, folderURL: url, name: "widget")
     #expect(again.id == id)
-    #expect(again.isArchived == false)
     #expect(model.projects.filter { $0.id == id }.count == 1)
   }
 
@@ -251,44 +248,6 @@ struct ProjectListModelTests {
     }
     await model.refreshFromServer()
     #expect(model.projects.filter { $0.id == project.id }.count == 1)
-  }
-
-  @Test("Stale server refresh cannot revive a pending archived session")
-  func serverRefreshPreservesPendingArchive() async throws {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/pending-archive"))
-    let session = ChatSession(
-      projectId: project.id,
-      harnessId: "codex",
-      title: "Archive me"
-    )
-    let fakeServer = FakeServerClient(
-      projects: [serverProject(from: project)],
-      sessions: [serverSession(from: session)]
-    )
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      serverClient: fakeServer
-    )
-    try await waitUntil { model.sessions.contains { $0.id == session.id } }
-
-    // Hold the archive upload so a refresh can return the older active
-    // record in between the optimistic local update and server ack.
-    let archiveUpload = Latch()
-    await fakeServer.setSessionUpsertDelay { await archiveUpload.wait() }
-    model.archiveSession(session)
-    #expect(model.sessions(in: project).isEmpty)
-
-    await model.refreshFromServer()
-    #expect(model.sessions(in: project).isEmpty)
-    #expect(model.sessions.first { $0.id == session.id }?.isArchived == true)
-
-    await archiveUpload.open()
-    await fakeServer.waitForSnapshot { snapshot in
-      return snapshot.upsertedSessionIDs.contains(session.id.uuidString)
-    }
-    await model.refreshFromServer()
-    #expect(model.sessions(in: project).isEmpty)
   }
 
   @Test("Stale server refresh cannot resurrect an optimistically deleted project")

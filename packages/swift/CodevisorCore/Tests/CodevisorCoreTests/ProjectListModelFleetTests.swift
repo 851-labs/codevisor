@@ -107,7 +107,8 @@ struct ProjectListModelFleetTests {
       syncToServer: false
     )
 
-    model.archiveSession(session)
+    // A fleet write routes to the record's OWN machine, not the selected one.
+    model.syncSession(session)
 
     await remoteClient.waitForSnapshot { snapshot in
       snapshot.upsertedSessionIDs.contains(

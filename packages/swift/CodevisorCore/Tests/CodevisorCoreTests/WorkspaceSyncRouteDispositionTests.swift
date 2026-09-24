@@ -3,11 +3,11 @@ import Testing
 
 @testable import CodevisorCore
 
-/// The keep/sibling/dismiss policy for a workspace whose chats have all
-/// been archived. Nous lists such a workspace by its terminal/plugin tabs,
-/// and a session route is the only way to mount it, so the archived chat
-/// still routed to it must keep the route — unless nothing but the New
-/// Tab placeholder is left.
+/// The keep/sibling/dismiss policy for a workspace whose chats are all
+/// CLOSED — they still belong to it, but none of them has a pane. The
+/// sidebar lists such a workspace by its terminal/plugin tabs, and a session
+/// route is the only way to mount it, so the closed chat still assigned to it
+/// must keep the route — unless nothing but the New Tab placeholder is left.
 @MainActor
 struct WorkspaceSyncRouteDispositionTests {
   @MainActor
@@ -25,7 +25,6 @@ struct WorkspaceSyncRouteDispositionTests {
       let project = ServerProject(
         id: projectId.uuidString,
         name: "codevisor",
-        isArchived: false,
         origin: .codevisor,
         createdAt: "2026-06-30T00:00:00.000Z",
         locations: [
@@ -45,9 +44,8 @@ struct WorkspaceSyncRouteDispositionTests {
         serverId: "local",
         harnessId: "codex",
         agentSessionId: nil,
-        title: "Archived chat",
+        title: "Closed chat",
         origin: .codevisor,
-        isArchived: true,
         worktreeName: nil,
         workspaceId: workspaceId.uuidString,
         cwd: "/tmp/octopus",
@@ -95,11 +93,15 @@ struct WorkspaceSyncRouteDispositionTests {
       return workspaceSync
     }
 
+    /// The chat tab that seeds the session index, exactly as an open chat
+    /// would. `closeChatTab` then removes it: the index only grows, so the
+    /// chat keeps pointing at this workspace after its tab is gone -- which
+    /// is what "closed" means and what the route still anchors on.
     var chatTab: WorkspaceTab {
       let chat = PaneDescriptorState(
         id: sessionId,
         kind: .chat,
-        name: "Archived chat",
+        name: "Closed chat",
         terminalKey: sessionId.uuidString,
         chatSessionId: sessionId
       )
@@ -107,10 +109,17 @@ struct WorkspaceSyncRouteDispositionTests {
         root: .leaf(PaneGroupState(panes: [chat], selectedPaneId: chat.id))
       )
     }
+
+    func closeChatTab(keeping remaining: [WorkspaceTab]) {
+      guard var workspace = repository.workspace(id: workspaceId) else { return }
+      workspace.centerTabs = remaining
+      workspace.selectedCenterTabId = remaining[0].id
+      repository.save(workspace)
+    }
   }
 
-  @Test("A chat-less workspace with a live terminal keeps its archived anchor route")
-  func terminalKeepsArchivedAnchorRoute() async throws {
+  @Test("A chat-less workspace with a live terminal keeps its closed anchor route")
+  func terminalKeepsClosedAnchorRoute() async throws {
     let fixture = Fixture()
     let terminal = PaneDescriptorState(
       id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "shell"
@@ -119,9 +128,11 @@ struct WorkspaceSyncRouteDispositionTests {
       root: .leaf(PaneGroupState(panes: [terminal], selectedPaneId: terminal.id))
     )
     let sync = await fixture.makeSync(layout: [terminalTab, fixture.chatTab])
+    // Closing the chat's tab is the whole of "this chat is closed": the chat
+    // row and its workspace membership are untouched.
+    fixture.closeChatTab(keeping: [terminalTab])
 
-    let session = try #require(fixture.projectList.sessions.first { $0.id == fixture.sessionId })
-    #expect(session.isArchived)
+    #expect(fixture.projectList.sessions.contains { $0.id == fixture.sessionId })
     #expect(fixture.repository.workspaceId(forSession: fixture.sessionId) == fixture.workspaceId)
     #expect(fixture.repository.workspace(id: fixture.workspaceId)?.hasOpenNonChatContent == true)
 
@@ -135,8 +146,8 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(sync.routeDisposition(sessionId: fixture.sessionId, serverId: "local") == .keep)
   }
 
-  @Test("A workspace left with only the New Tab placeholder dismisses its archived anchor")
-  func placeholderOnlyDismissesArchivedAnchor() async throws {
+  @Test("A workspace left with only the New Tab placeholder dismisses its closed anchor")
+  func placeholderOnlyDismissesClosedAnchor() async throws {
     let fixture = Fixture()
     let placeholderId = UUID()
     let placeholder = PaneDescriptorState(
@@ -146,6 +157,7 @@ struct WorkspaceSyncRouteDispositionTests {
       root: .leaf(PaneGroupState(panes: [placeholder], selectedPaneId: placeholderId))
     )
     let sync = await fixture.makeSync(layout: [placeholderTab, fixture.chatTab])
+    fixture.closeChatTab(keeping: [placeholderTab])
 
     #expect(fixture.repository.workspace(id: fixture.workspaceId)?.hasOpenNonChatContent == false)
     #expect(
@@ -158,7 +170,7 @@ struct WorkspaceSyncRouteDispositionTests {
     #expect(sync.routeDisposition(sessionId: fixture.sessionId, serverId: "local") == .dismiss)
   }
 
-  @Test("An archived chat that is not routed to the workspace does not keep it")
+  @Test("A closed chat that is not assigned to the workspace does not keep it")
   func unroutedAnchorDismisses() async throws {
     let fixture = Fixture()
     let terminal = PaneDescriptorState(

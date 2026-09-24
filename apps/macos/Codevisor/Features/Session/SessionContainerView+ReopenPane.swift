@@ -29,7 +29,7 @@ extension SessionContainerView {
 
   /// Browser semantics: the most recently closed pane comes back as a new
   /// top tab, placed right after the tab it came from when that tab still
-  /// exists, else at its old index. A chat returns unarchived; a terminal
+  /// exists, else at its old index. A chat simply gets its pane back; a terminal
   /// returns as a fresh shell under its old name (closing deleted its
   /// server shell); a plugin pane reloads. Entries whose chat no longer
   /// exists are skipped in favor of the next one.
@@ -74,13 +74,10 @@ extension SessionContainerView {
     switch closed.kind {
     case .chat:
       guard let chatId = closed.chatSessionId,
-        let chat = environment.projectList.sessions.first(where: {
+        environment.projectList.sessions.contains(where: {
           $0.serverId == selectedWorkspace.serverId && $0.id == chatId
         })
       else { return nil }
-      if chat.isArchived {
-        environment.projectList.unarchiveSession(chat)
-      }
       return PaneDescriptorState(
         id: paneId, kind: .chat, name: closed.name,
         terminalKey: paneId.uuidString, chatSessionId: chatId

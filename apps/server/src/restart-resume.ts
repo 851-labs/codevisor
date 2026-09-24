@@ -49,7 +49,17 @@ export const resumeSessionsAfterRestart = async (
       state: "released"
     }).catch(swallowError)
   }
-  const targets = requested.filter((id) => known.get(id)?.isArchived === false)
+  const archivedWorkspaceIds = new Set(
+    (await run(services.db.listWorkspaces))
+      .filter((workspace) => workspace.isArchived)
+      .map((workspace) => workspace.id.toLowerCase())
+  )
+  const targets = requested.filter((id) => {
+    const session = known.get(id)
+    if (session === undefined) return false
+    const workspaceId = session.workspaceId?.toLowerCase()
+    return workspaceId === undefined || !archivedWorkspaceIds.has(workspaceId)
+  })
   if (targets.length === 0) return []
   log(`Resuming ${targets.length} session(s) after the restart`)
   const resumed: Array<string> = []

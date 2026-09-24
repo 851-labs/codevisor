@@ -25,7 +25,9 @@ export const makeNavigationService = (context: ServiceContext) => ({
     (
       context.sqlite
         .prepare(
-          `select id from sessions where is_archived = 0 and (
+          `select sessions.id from sessions
+      left join workspaces on workspaces.id = sessions.workspace_id collate nocase
+      where coalesce(workspaces.is_archived, 0) = 0 and (
       json_extract(goal_state, '$.status') = 'active'
       or exists (select 1 from json_each(background_tasks) where json_extract(value, '$.status') in ('running', 'pending', 'in_progress'))
       or exists (select 1 from prompt_queue_items where session_id = sessions.id))`

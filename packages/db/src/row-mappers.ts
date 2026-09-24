@@ -63,8 +63,6 @@ export const projectFromRow = (
 ): Project => ({
   id: row.id,
   name: row.name,
-  isArchived: row.is_archived === 1,
-  ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
   origin: row.origin,
   createdAt: row.created_at,
   locations: locations.map(projectLocationFromRow),
@@ -91,7 +89,8 @@ export const archivedWorktreeFromRow = (row: ArchivedWorktreeRow): ArchivedWorkt
   branch: row.branch,
   parentSha: row.parent_sha,
   snapshotRef: row.snapshot_ref,
-  createdAt: row.created_at
+  createdAt: row.created_at,
+  state: row.state
 })
 
 export const worktreeFromRow = (row: WorktreeRow): Worktree => ({
@@ -145,8 +144,6 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
     ...(row.agent_session_id === null ? {} : { agentSessionId: row.agent_session_id }),
     title: row.title,
     origin: row.origin,
-    isArchived: row.is_archived === 1,
-    ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
     ...(row.worktree_name === null ? {} : { worktreeName: row.worktree_name }),
     ...(row.workspace_id === null ? {} : { workspaceId: row.workspace_id }),
     ...(cwd === undefined ? {} : { cwd }),

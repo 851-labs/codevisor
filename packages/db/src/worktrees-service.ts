@@ -66,13 +66,15 @@ export const makeWorktreesService = (
         sqlite
           .prepare(
             `insert into archived_worktrees (
-               id, project_id, server_id, original_name, branch, parent_sha, snapshot_ref, created_at
-             ) values (?, ?, ?, ?, ?, ?, ?, ?)
+               id, project_id, server_id, original_name, branch, parent_sha, snapshot_ref,
+               created_at, state
+             ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
              on conflict(id) do update set
                original_name = excluded.original_name,
                branch = excluded.branch,
                parent_sha = excluded.parent_sha,
-               snapshot_ref = excluded.snapshot_ref`
+               snapshot_ref = excluded.snapshot_ref,
+               state = excluded.state`
           )
           .run(
             id,
@@ -82,7 +84,8 @@ export const makeWorktreesService = (
             record.branch,
             record.parentSha,
             record.snapshotRef,
-            record.createdAt
+            record.createdAt,
+            record.state
           )
         return archivedWorktreeFromRow(
           sqlite

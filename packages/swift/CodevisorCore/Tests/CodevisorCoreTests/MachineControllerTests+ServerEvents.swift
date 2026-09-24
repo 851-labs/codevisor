@@ -15,7 +15,6 @@ extension MachineControllerTests {
         ServerProject(
           id: projectId.uuidString,
           name: "Shared",
-          isArchived: false,
           origin: .codevisor,
           createdAt: "2026-06-30T00:00:00.000Z",
           locations: [
@@ -53,7 +52,6 @@ extension MachineControllerTests {
         agentSessionId: nil,
         title: "From another client",
         origin: .codevisor,
-        isArchived: false,
         createdAt: "2026-06-30T00:00:01.000Z",
         updatedAt: nil,
         usage: nil
@@ -75,7 +73,6 @@ extension MachineControllerTests {
       agentSessionId: nil,
       title: "Updated incrementally",
       origin: .codevisor,
-      isArchived: false,
       createdAt: "2026-06-30T00:00:01.000Z",
       updatedAt: "2026-06-30T00:00:02.000Z",
       usage: nil
@@ -145,7 +142,6 @@ extension MachineControllerTests {
     let project = ServerProject(
       id: projectId.uuidString,
       name: "Shared",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -159,7 +155,7 @@ extension MachineControllerTests {
         )
       ]
     )
-    func serverSession(id: UUID, isArchived: Bool, workspaceId: UUID?) -> ServerSession {
+    func serverSession(id: UUID, workspaceId: UUID?) -> ServerSession {
       ServerSession(
         id: id.uuidString,
         projectId: projectId.uuidString,
@@ -168,7 +164,6 @@ extension MachineControllerTests {
         agentSessionId: nil,
         title: "Shared chat",
         origin: .codevisor,
-        isArchived: isArchived,
         worktreeName: nil,
         workspaceId: workspaceId?.uuidString,
         cwd: "/tmp/shared",
@@ -195,8 +190,8 @@ extension MachineControllerTests {
     let fake = SyncFakeServerClient(
       projects: [project],
       sessions: [
-        serverSession(id: sessionId, isArchived: false, workspaceId: workspaceId),
-        serverSession(id: siblingSessionId, isArchived: false, workspaceId: workspaceId),
+        serverSession(id: sessionId, workspaceId: workspaceId),
+        serverSession(id: siblingSessionId, workspaceId: workspaceId),
       ],
       workspaces: [serverWorkspace(isArchived: false)],
       panes: [sessionId, siblingSessionId].map { id in
@@ -240,77 +235,17 @@ extension MachineControllerTests {
       ) == .keep
     )
 
-    // Archiving one chat selects a surviving sibling on both platforms.
-    let archivedSession = serverSession(
-      id: sessionId,
-      isArchived: true,
-      workspaceId: workspaceId
-    )
-    let activeSibling = serverSession(
-      id: siblingSessionId,
-      isArchived: false,
-      workspaceId: workspaceId
-    )
-    fake.setSessions([archivedSession, activeSibling])
-    fake.emit(
-      kind: "session.archived",
-      subjectId: sessionId.uuidString,
-      payload: sessionPayload(archivedSession)
-    )
-    try await waitForSync {
-      projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
-    }
-    #expect(
-      workspaceSync.routeDisposition(
-        workspaceId: workspaceId,
-        anchorSessionId: sessionId,
-        serverId: "local"
-      ) == .selectSession(siblingSessionId)
-    )
-    #expect(
-      workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local")
-        == .selectSession(siblingSessionId)
-    )
-
-    // The previously missing unarchive event restores the original route.
-    let unarchivedSession = serverSession(
-      id: sessionId,
-      isArchived: false,
-      workspaceId: workspaceId
-    )
-    fake.setSessions([unarchivedSession, activeSibling])
-    fake.emit(
-      kind: "session.unarchived",
-      subjectId: sessionId.uuidString,
-      payload: sessionPayload(unarchivedSession)
-    )
-    try await waitForSync {
-      projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
-    }
-    #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
-
-    let archivedSibling = serverSession(
-      id: siblingSessionId,
-      isArchived: true,
-      workspaceId: workspaceId
-    )
-    fake.setSessions([archivedSession, archivedSibling])
+    // Archiving the WORKSPACE dismisses every route into it. Chats carry no
+    // archive state of their own, so there is no per-chat event here --
+    // closing a chat is pane removal, covered by the pane-close routing tests.
+    let chatSession = serverSession(id: sessionId, workspaceId: workspaceId)
+    let siblingSession = serverSession(id: siblingSessionId, workspaceId: workspaceId)
+    fake.setSessions([chatSession, siblingSession])
     fake.setWorkspaces([serverWorkspace(isArchived: true)])
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
-    fake.emit(
-      kind: "session.archived",
-      subjectId: sessionId.uuidString,
-      payload: sessionPayload(archivedSession)
-    )
-    fake.emit(
-      kind: "session.archived",
-      subjectId: siblingSessionId.uuidString,
-      payload: sessionPayload(archivedSibling)
-    )
     try await waitForSync {
       _ = workspaceSync.revision
       return workspaceRepository.workspace(id: workspaceId)?.isArchived == true
-        && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == true
     }
     #expect(
       workspaceSync.routeDisposition(
@@ -320,34 +255,18 @@ extension MachineControllerTests {
       ) == .dismiss
     )
 
-    let unarchivedSibling = serverSession(
-      id: siblingSessionId,
-      isArchived: false,
-      workspaceId: workspaceId
-    )
-    fake.setSessions([unarchivedSession, unarchivedSibling])
+    // Restoring the workspace restores the route, layout intact.
     fake.setWorkspaces([serverWorkspace(isArchived: false)])
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
-    fake.emit(
-      kind: "session.unarchived",
-      subjectId: sessionId.uuidString,
-      payload: sessionPayload(unarchivedSession)
-    )
-    fake.emit(
-      kind: "session.unarchived",
-      subjectId: siblingSessionId.uuidString,
-      payload: sessionPayload(unarchivedSibling)
-    )
     try await waitForSync {
       _ = workspaceSync.revision
       return workspaceRepository.workspace(id: workspaceId)?.isArchived == false
-        && projectList.sessions.first(where: { $0.id == sessionId })?.isArchived == false
     }
     #expect(workspaceSync.routeDisposition(sessionId: sessionId, serverId: "local") == .keep)
 
     fake.setSessions([
-      serverSession(id: sessionId, isArchived: false, workspaceId: nil),
-      serverSession(id: siblingSessionId, isArchived: false, workspaceId: nil),
+      serverSession(id: sessionId, workspaceId: nil),
+      serverSession(id: siblingSessionId, workspaceId: nil),
     ])
     fake.setWorkspaces([])
     fake.emit(kind: "workspace.deleted", subjectId: workspaceId.uuidString)
@@ -369,7 +288,6 @@ private func sessionPayload(_ session: ServerSession) -> JSONValue {
     "harnessId": .string(session.harnessId),
     "title": .string(session.title),
     "origin": .string(session.origin.rawValue),
-    "isArchived": .bool(session.isArchived),
     "createdAt": .string(session.createdAt),
   ]
   if let agentSessionId = session.agentSessionId {

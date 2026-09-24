@@ -245,7 +245,7 @@ extension MachineControllerCloudTests {
       """
     provider.requestTransport.responsesByPath["/v1/events/cursor"] = #"{"cursor":0}"#
     provider.requestTransport.responsesByPath["/v1/projects"] = """
-      [{"id":"\(projectId.uuidString)","name":"racing-twin","isArchived":false,
+      [{"id":"\(projectId.uuidString)","name":"racing-twin",
         "origin":"codevisor","createdAt":"2026-06-30T00:00:00.000Z",
         "locations":[{"id":"loc-1","projectId":"\(projectId.uuidString)",
           "serverId":"local","folderPath":"/srv/racing-twin",
@@ -254,7 +254,7 @@ extension MachineControllerCloudTests {
     provider.requestTransport.responsesByPath["/v1/sessions"] = """
       [{"id":"\(sessionId.uuidString)","projectId":"\(projectId.uuidString)",
         "serverId":"local","harnessId":"codex","agentSessionId":null,
-        "title":"racing twin chat","origin":"codevisor","isArchived":false,
+        "title":"racing twin chat","origin":"codevisor",
         "createdAt":"2026-06-30T00:00:01.000Z",
         "updatedAt":"2026-06-30T00:00:02.000Z","usage":null}]
       """

@@ -5,10 +5,6 @@ import Foundation
 /// sessions merge into the shared serverId-keyed repositories, selected or
 /// not — the flattened sidebar's data precondition.
 extension ProjectListModel {
-  public var hasArchivedProjects: Bool {
-    projects.contains { $0.serverId == selectedServerId && $0.isArchived }
-  }
-
   /// One machine's authoritative snapshot, merged into the shared
   /// serverId-keyed repositories — machine-agnostic, so BACKGROUND
   /// machines' chats are present (and orderable in a flattened list)
@@ -117,7 +113,6 @@ extension ProjectListModel {
       .filter { session in
         session.projectId == project.id
           && session.serverId == project.serverId
-          && !session.isArchived
           && (session.origin == .codevisor || showsImportedSessions)
       }
       .sorted { ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt) }
@@ -126,9 +121,7 @@ extension ProjectListModel {
   /// Active projects across EVERY machine — the flattened sidebar's root.
   public var fleetActiveProjects: [Project] {
     projects
-      .filter {
-        !$0.isArchived && ($0.origin == .codevisor || !fleetSessions(in: $0).isEmpty)
-      }
+      .filter { $0.origin == .codevisor || !fleetSessions(in: $0).isEmpty }
       .sorted { $0.createdAt > $1.createdAt }
   }
 

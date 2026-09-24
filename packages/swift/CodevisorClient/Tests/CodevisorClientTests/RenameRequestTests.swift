@@ -48,7 +48,7 @@ private actor RenameTransport: ServerRequestTransport {
     requests.append(request)
     let record = """
       {"id":"\(Self.sessionId)","projectId":"\(Self.projectId)","serverId":"local",
-       "title":"Shared title","harnessId":"codex","origin":"codevisor","isArchived":false,
+       "title":"Shared title","harnessId":"codex","origin":"codevisor",
        "createdAt":"2026-06-30T00:00:00Z"}
       """
     let body = request.httpMethod == "GET" ? (sessionExists ? "[\(record)]" : "[]") : record

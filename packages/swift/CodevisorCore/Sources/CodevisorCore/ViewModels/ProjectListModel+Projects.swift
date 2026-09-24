@@ -7,7 +7,6 @@ extension ProjectListModel {
     projects
       .filter {
         $0.serverId == selectedServerId
-          && !$0.isArchived
           && ($0.origin == .codevisor || hasVisibleSessions(in: $0))
       }
       .sorted { $0.createdAt > $1.createdAt }
@@ -45,15 +44,16 @@ extension ProjectListModel {
     .map(\.element)
   }
 
-  /// Projects in the archived section.
-  public var archivedProjects: [Project] {
-    projects
-      .filter { $0.serverId == selectedServerId && $0.isArchived }
-      .sorted { $0.createdAt > $1.createdAt }
+  /// Whether this project has been deleted from under a surface that is
+  /// still showing it. Deliberately reads the deletion tombstone rather than
+  /// "absent from `projects`": a refresh gap briefly empties the cache, and
+  /// treating that as a deletion would discard the user's draft.
+  public func isProjectDeleted(id: UUID, serverId: String) -> Bool {
+    pendingDeletedProjectIds.contains(ScopedSessionID(serverId: serverId, id: id))
   }
 
   /// Adds a project for a folder, reusing an existing entry if the folder
-  /// is already present (un-archiving it if needed).
+  /// is already present.
   @discardableResult
   public func addProject(folderURL: URL) -> Project {
     addProject(folderURL: folderURL, serverId: selectedServerId)
@@ -64,8 +64,6 @@ extension ProjectListModel {
   @discardableResult
   public func addProject(folderURL: URL, serverId: String) -> Project {
     if let index = projects.firstIndex(where: { $0.serverId == serverId && $0.folderURL == folderURL }) {
-      projects[index].isArchived = false
-      persistProjects()
       syncProject(projects[index])
       return projects[index]
     }
@@ -88,8 +86,6 @@ extension ProjectListModel {
       ScopedSessionID(serverId: server, id: id)
     )
     if let index = projects.firstIndex(where: { $0.serverId == server && $0.id == id }) {
-      projects[index].isArchived = false
-      persistProjects()
       return projects[index]
     }
     var project = Project.fromFolder(folderURL, serverId: server)
@@ -123,14 +119,6 @@ extension ProjectListModel {
     persistProjects()
   }
 
-  public func archive(_ project: Project) {
-    setArchived(true, for: project)
-  }
-
-  public func unarchive(_ project: Project) {
-    setArchived(false, for: project)
-  }
-
   public func removeProject(_ project: Project) {
     pendingServerProjectIds.remove(
       ScopedSessionID(serverId: project.serverId, id: project.id)
@@ -146,10 +134,6 @@ extension ProjectListModel {
       removedSessionIDs.map {
         ScopedSessionID(serverId: project.serverId, id: $0)
       })
-    pendingArchivedSessionIds.subtract(
-      removedSessionIDs.map {
-        ScopedSessionID(serverId: project.serverId, id: $0)
-      })
     projects.removeAll { $0.serverId == project.serverId && $0.id == project.id }
     sessions.removeAll { $0.serverId == project.serverId && $0.projectId == project.id }
     persistProjects()
@@ -159,16 +143,5 @@ extension ProjectListModel {
       serverId: project.serverId,
       removedSessionIDs: removedSessionIDs
     )
-  }
-
-  private func setArchived(_ archived: Bool, for project: Project) {
-    guard
-      let index = projects.firstIndex(where: {
-        $0.serverId == project.serverId && $0.id == project.id
-      })
-    else { return }
-    projects[index].isArchived = archived
-    persistProjects()
-    syncProject(projects[index])
   }
 }

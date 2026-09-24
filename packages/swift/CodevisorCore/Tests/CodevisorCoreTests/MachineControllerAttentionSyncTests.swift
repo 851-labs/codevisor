@@ -116,7 +116,7 @@ private final class Client {
       eventCursor: 0,
       projects: [
         ServerProject(
-          id: background.projectId.uuidString, name: "Shared", isArchived: false, origin: .codevisor,
+          id: background.projectId.uuidString, name: "Shared", origin: .codevisor,
           createdAt: "2026-06-30T00:00:00.000Z", locations: [])
       ], sessions: [foreground, background].map { serverSession(from: $0) }, workspaces: [], panes: [])
     machine.startEventSync(serverId: background.serverId, client: fake, since: 0)

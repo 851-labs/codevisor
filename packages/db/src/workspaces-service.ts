@@ -7,7 +7,6 @@ import {
   type UpsertWorkspaceRequest,
   type Workspace
 } from "@codevisor/api"
-import type Database from "better-sqlite3"
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
@@ -16,30 +15,6 @@ import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
 import { makeSessionWorkspacesService } from "./session-workspaces-service.js"
-
-/// Same contract as the project cascade, one level down. Pane layout is kept
-/// (the workspace row survives) so restoring revives the surface intact.
-const cascadeArchiveWorkspace = (
-  sqlite: Database.Database,
-  workspaceId: string,
-  stamp: string
-): void => {
-  sqlite
-    .prepare(
-      `update sessions set is_archived = 1, archived_at = ?, archive_cascade_from = ?
-       where workspace_id = ? collate nocase and is_archived = 0`
-    )
-    .run(stamp, workspaceId, workspaceId)
-}
-
-const cascadeUnarchiveWorkspace = (sqlite: Database.Database, workspaceId: string): void => {
-  sqlite
-    .prepare(
-      `update sessions set is_archived = 0, archived_at = null, archive_cascade_from = null
-       where workspace_id = ? collate nocase and archive_cascade_from = ? collate nocase`
-    )
-    .run(workspaceId, workspaceId)
-}
 
 /// The synchronous upsert behind `upsertWorkspace`, exported so the atomic
 /// workspace create can run it inside its own transaction.
@@ -70,11 +45,9 @@ export const upsertWorkspaceRow = (
     existing?.is_archived === 1,
     existing?.archived_at ?? undefined
   )
-  const wasArchived = existing?.is_archived === 1
-  sqlite.transaction(() => {
-    sqlite
-      .prepare(
-        `insert into workspaces (
+  sqlite
+    .prepare(
+      `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
                  root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position
                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
@@ -86,29 +59,20 @@ export const upsertWorkspaceRow = (
                  is_archived = excluded.is_archived,
                  archived_at = excluded.archived_at,
                  updated_at = ?`
-      )
-      .run(
-        id,
-        config.serverId,
-        projectId,
-        request.name,
-        request.hasCustomName ? 1 : 0,
-        request.rootDirectory ?? null,
-        stamp === null ? 0 : 1,
-        stamp,
-        request.createdAt ?? now,
-        position,
-        now
-      )
-    // A full upsert can flip the archive bit just like a PATCH, so it
-    // owes the same cascade — otherwise archiving via PUT would leave
-    // the workspace's chats visible under a hidden workspace.
-    if (stamp !== null && !wasArchived) {
-      cascadeArchiveWorkspace(sqlite, id, stamp)
-    } else if (stamp === null && wasArchived) {
-      cascadeUnarchiveWorkspace(sqlite, id)
-    }
-  })()
+    )
+    .run(
+      id,
+      config.serverId,
+      projectId,
+      request.name,
+      request.hasCustomName ? 1 : 0,
+      request.rootDirectory ?? null,
+      stamp === null ? 0 : 1,
+      stamp,
+      request.createdAt ?? now,
+      position,
+      now
+    )
   return workspaceFromRow(
     sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
   )
@@ -186,32 +150,25 @@ export const makeWorkspacesService = (
           wasArchived,
           existing.archived_at ?? undefined
         )
-        sqlite.transaction(() => {
-          sqlite
-            .prepare(
-              `update workspaces set
-                 name = ?, has_custom_name = ?, root_directory = ?,
-                 is_archived = ?, archived_at = ?, updated_at = ?,
-                 sidebar_position = ?, sidebar_order_revision = ?
-               where id = ?`
-            )
-            .run(
-              request.name ?? existing.name,
-              (request.hasCustomName ?? existing.has_custom_name === 1) ? 1 : 0,
-              request.rootDirectory ?? existing.root_directory,
-              stamp === null ? 0 : 1,
-              stamp,
-              isoTimestamp(),
-              request.sidebarOrder?.position ?? existing.sidebar_position,
-              existing.sidebar_order_revision + (request.sidebarOrder === undefined ? 0 : 1),
-              id
-            )
-          if (stamp !== null && !wasArchived) {
-            cascadeArchiveWorkspace(sqlite, id, stamp)
-          } else if (stamp === null && wasArchived) {
-            cascadeUnarchiveWorkspace(sqlite, id)
-          }
-        })()
+        sqlite
+          .prepare(
+            `update workspaces set
+               name = ?, has_custom_name = ?, root_directory = ?,
+               is_archived = ?, archived_at = ?, updated_at = ?,
+               sidebar_position = ?, sidebar_order_revision = ?
+             where id = ?`
+          )
+          .run(
+            request.name ?? existing.name,
+            (request.hasCustomName ?? existing.has_custom_name === 1) ? 1 : 0,
+            request.rootDirectory ?? existing.root_directory,
+            stamp === null ? 0 : 1,
+            stamp,
+            isoTimestamp(),
+            request.sidebarOrder?.position ?? existing.sidebar_position,
+            existing.sidebar_order_revision + (request.sidebarOrder === undefined ? 0 : 1),
+            id
+          )
         return workspaceFromRow(
           sqlite.prepare("select * from workspaces where id = ?").get(id) as WorkspaceRow
         )

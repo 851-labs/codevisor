@@ -20,7 +20,7 @@ func navigationFixtureJSON(_ row: ServerWorkspace) -> JSONValue {
 }
 func navigationFixtureJSON(_ row: ServerProject) -> JSONValue {
   .object([
-    "id": .string(row.id), "name": .string(row.name), "isArchived": .bool(row.isArchived),
+    "id": .string(row.id), "name": .string(row.name),
     "origin": .string(row.origin.rawValue), "createdAt": .string(row.createdAt),
     "locations": .array(
       row.locations.map { location in
@@ -36,7 +36,7 @@ func navigationFixtureJSON(_ row: ServerSession) -> JSONValue {
   var object: [String: JSONValue] = [
     "id": .string(row.id), "projectId": .string(row.projectId), "serverId": .string(row.serverId),
     "harnessId": .string(row.harnessId), "title": .string(row.title), "origin": .string(row.origin.rawValue),
-    "isArchived": .bool(row.isArchived), "createdAt": .string(row.createdAt),
+    "createdAt": .string(row.createdAt),
   ]
   object["workspaceId"] = row.workspaceId.map(JSONValue.string)
   object["agentSessionId"] = row.agentSessionId.map(JSONValue.string)

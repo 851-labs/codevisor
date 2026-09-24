@@ -15,7 +15,6 @@ struct MachineNavigationSyncTests {
     let project = ServerProject(
       id: projectId.uuidString,
       name: "Shared",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-08-21T20:00:00.000Z",
       locations: [
@@ -36,7 +35,6 @@ struct MachineNavigationSyncTests {
       harnessId: "codex",
       title: "Initially active",
       origin: .codevisor,
-      isArchived: false,
       createdAt: "2026-08-21T20:00:01.000Z"
     )
     let fake = NavigationSyncFakeServerClient(projects: [project], sessions: [active])
@@ -49,15 +47,13 @@ struct MachineNavigationSyncTests {
 
     await controller.refreshNavigationState(for: "local")
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
-    #expect(projectList.sessions.first?.isArchived == false)
+    #expect(projectList.sessions.first?.title == "Initially active")
 
     let snapshotGate = Latch()
     fake.configureListSessionDelay { await snapshotGate.wait() }
-    var archivedSnapshot = active
-    archivedSnapshot.title = "Archived by snapshot"
-    archivedSnapshot.isArchived = true
-    archivedSnapshot.archivedAt = "2026-08-21T21:00:00.000Z"
-    fake.setSessions([archivedSnapshot])
+    var snapshotUpdate = active
+    snapshotUpdate.title = "Renamed by snapshot"
+    fake.setSessions([snapshotUpdate])
 
     let callCountBeforeRefresh = fake.listSessionCallCount
     let firstRefresh = Task {
@@ -77,7 +73,7 @@ struct MachineNavigationSyncTests {
 
     // This event lands after the cursor was captured but while the list
     // request is blocked. It must replay after the snapshot commits.
-    var replayed = archivedSnapshot
+    var replayed = snapshotUpdate
     replayed.title = "Updated during snapshot"
     replayed.updatedAt = "2026-08-21T21:00:01.000Z"
     fake.emit(
@@ -102,8 +98,10 @@ struct MachineNavigationSyncTests {
         == "Updated during snapshot"
     }
 
+    // The replayed event lands after the snapshot commits, so its title is
+    // the one that survives — the ordering this test exists to pin.
     let reconciled = try #require(projectList.sessions.first { $0.id == sessionId })
-    #expect(reconciled.isArchived)
+    #expect(reconciled.title == "Updated during snapshot")
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     #expect(fake.listSessionCallCount == callCountBeforeRefresh + 1)
   }
@@ -291,7 +289,6 @@ private func navigationSessionPayload(_ session: ServerSession) -> JSONValue {
     "harnessId": .string(session.harnessId),
     "title": .string(session.title),
     "origin": .string(session.origin.rawValue),
-    "isArchived": .bool(session.isArchived),
     "createdAt": .string(session.createdAt),
   ]
   if let updatedAt = session.updatedAt {

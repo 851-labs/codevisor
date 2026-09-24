@@ -115,7 +115,7 @@ final class ChatControllerCache {
         canonical.projectServerId =
           environment.machines.canonicalComposerMachineId(for: savedServerId) ?? savedServerId
         return canonical.restoredProject(
-          in: environment.projectList.projects.filter { !$0.isArchived }, defaultServerId: serverId
+          in: environment.projectList.projects, defaultServerId: serverId
         )
       } ?? environment.composerDefaults.lastProjectId(forServer: serverId).flatMap {
         rememberedId in

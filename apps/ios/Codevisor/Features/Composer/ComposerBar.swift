@@ -281,7 +281,7 @@ struct ComposerBar: View {
         project: project,
         client: environment.machines.client(for: project.serverId),
         didUpdate: { await environment.projectList.refreshFromServer() },
-        onArchive: { archiveManagedProject(project) }
+        onDelete: { deleteManagedProject(project) }
       )
     }
     .alert(

@@ -228,7 +228,6 @@ func serverProject(from project: Project) -> ServerProject {
   ServerProject(
     id: project.id.uuidString,
     name: project.name,
-    isArchived: project.isArchived,
     origin: project.origin,
     createdAt: serverDateString(from: project.createdAt),
     locations: project.locations.map { location in
@@ -253,7 +252,6 @@ func serverSession(from session: ChatSession) -> ServerSession {
     agentSessionId: session.agentSessionId,
     title: session.title,
     origin: session.origin,
-    isArchived: session.isArchived,
     worktreeName: session.worktreeName,
     cwd: session.cwd,
     createdAt: serverDateString(from: session.createdAt),

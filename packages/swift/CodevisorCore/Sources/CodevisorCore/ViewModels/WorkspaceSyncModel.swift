@@ -132,13 +132,11 @@ public final class WorkspaceSyncModel {
       return .dismiss
     }
     guard
-      let session = projectList.sessions.first(where: {
-        $0.id == sessionId && $0.serverId == serverId
-      })
+      projectList.sessions.contains(where: { $0.id == sessionId && $0.serverId == serverId })
     else { return .dismiss }
-    guard let workspaceId = repository.workspaceId(forSession: sessionId) else {
-      return session.isArchived ? .dismiss : .keep
-    }
+    // A chat with no workspace has no archive state anywhere above it, so
+    // nothing can dismiss its route.
+    guard let workspaceId = repository.workspaceId(forSession: sessionId) else { return .keep }
     return routeDisposition(
       workspaceId: workspaceId,
       anchorSessionId: sessionId,
@@ -162,8 +160,8 @@ public final class WorkspaceSyncModel {
       $0.serverId == serverId && $0.id == anchorSessionId
     }
     // macOS may be showing a browser, terminal, or New Tab through a chat
-    // route. Archiving that hidden routing chat must not replace the page
-    // with a sibling chat. The archived route still owns this workspace.
+    // route. Closing that hidden routing chat must not replace the page
+    // with a sibling chat. The closed route still owns this workspace.
     if preservingSelectedPane, hasAnchor,
       repository.workspaceId(forSession: anchorSessionId) == workspaceId,
       let tab = workspace.selectedCenterTab,
@@ -173,13 +171,15 @@ public final class WorkspaceSyncModel {
       return .keep
     }
 
+    // "Open" is pane presence, not membership: a closed chat keeps belonging
+    // to its workspace, and routing must not land on a tab that is gone.
     let active = projectList.sessions.filter { session in
       session.serverId == serverId
-        && !session.isArchived
         && repository.workspaceId(forSession: session.id) == workspaceId
+        && workspace.pane(containingChat: session.id) != nil
     }
     if active.contains(where: { $0.id == anchorSessionId }) { return .keep }
-    // The route anchors the workspace, not the visible pane. Archiving a
+    // The route anchors the workspace, not the visible pane. Closing a
     // chat must not select some other chat's tab when the current layout
     // still has content. Pane closure already chooses the surviving split
     // (or adjacent tab); keep that selection until the user navigates.

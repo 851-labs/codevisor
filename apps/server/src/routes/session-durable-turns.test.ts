@@ -14,6 +14,7 @@ import {
   startCodevisorServer
 } from "../server.js"
 import {
+  archiveSessionViaWorkspace,
   jsonRequest,
   makeServices,
   run,
@@ -76,7 +77,7 @@ describe("durable session turns", () => {
         turnState: "started"
       })
     )
-    await run(services.db.archiveSession(archived.id))
+    await archiveSessionViaWorkspace(services, project.id, archived.id)
     // A concurrent-writer incident can strand a streaming row mid-transcript:
     // the conversation moved past it, so it is not the newest item and no
     // future terminal event can ever close it.

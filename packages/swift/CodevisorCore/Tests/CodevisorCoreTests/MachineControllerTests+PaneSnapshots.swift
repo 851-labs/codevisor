@@ -15,7 +15,6 @@ extension MachineControllerTests {
     let project = ServerProject(
       id: projectId.uuidString,
       name: "Shared",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -37,7 +36,6 @@ extension MachineControllerTests {
       agentSessionId: nil,
       title: "Chat",
       origin: .codevisor,
-      isArchived: false,
       worktreeName: nil,
       workspaceId: workspaceId.uuidString,
       cwd: "/tmp/shared-panes",
@@ -134,7 +132,6 @@ extension MachineControllerTests {
     let project = ServerProject(
       id: projectId.uuidString,
       name: "Legacy",
-      isArchived: false,
       origin: .codevisor,
       createdAt: "2026-06-30T00:00:00.000Z",
       locations: [
@@ -156,7 +153,6 @@ extension MachineControllerTests {
       agentSessionId: nil,
       title: "Legacy chat",
       origin: .codevisor,
-      isArchived: false,
       worktreeName: nil,
       workspaceId: nil,
       cwd: "/tmp/legacy-workspace",

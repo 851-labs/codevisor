@@ -178,7 +178,7 @@ export const routeSessions = async (
       // machine (missing folder, unknown worktree) rather than at first send.
       await resolveSessionCwdOrFail(services, config.id, project, payload.worktreeName)
     }
-    const session = await applySessionUpdate(services, fanout, config, sessionId, payload)
+    const session = await applySessionUpdate(services, fanout, sessionId, payload)
     writeJson(response, 200, session)
     return true
   }

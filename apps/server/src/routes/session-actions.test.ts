@@ -318,12 +318,13 @@ describe("session action routes", () => {
           method: "PATCH"
         })
       ).body
-    ).toMatchObject({ isArchived: false, title: "Retitled" })
+    ).toMatchObject({ title: "Retitled" })
     // Retitling never touches the runtime.
     expect(agents.closes).toEqual([])
 
-    // Archiving retires the runtime: the agent session closes and its
-    // background-task terminals (and only those) are killed and removed.
+    // Archiving the chat's WORKSPACE retires its runtime: the agent session
+    // closes and its background-task terminals (and only those) are killed and
+    // removed. Chats carry no archive state of their own.
     const backgroundProcess = { killCount: 0 }
     const backgroundTerminal = services.terminal.registerExternalTerminal(
       { sessionId: `${session.agentSessionId}:bg:tool-1` },
@@ -339,9 +340,17 @@ describe("session action routes", () => {
       { sessionId: "other-session:bg:tool-9" },
       { kill: () => undefined, resize: () => undefined, write: () => undefined }
     )
+    await jsonRequest(server, "/v1/workspaces/archive-me", {
+      body: JSON.stringify({ projectId: workspace.id, name: "Archive me", hasCustomName: false }),
+      method: "PUT"
+    })
+    await jsonRequest(server, `/v1/sessions/${session.id}`, {
+      body: JSON.stringify({ workspaceId: "archive-me" }),
+      method: "PATCH"
+    })
     expect(
       (
-        await jsonRequest(server, `/v1/sessions/${session.id}`, {
+        await jsonRequest(server, "/v1/workspaces/archive-me", {
           body: JSON.stringify({ isArchived: true }),
           method: "PATCH"
         })
@@ -354,7 +363,8 @@ describe("session action routes", () => {
     ).rejects.toBeInstanceOf(TerminalError)
     expect(await run(services.terminal.terminalFrames(unrelatedTerminal.terminalId))).toEqual([])
 
-    // A session with no runtime identity archives without touching the runtime.
+    // A workspace whose chat has no runtime identity archives without touching
+    // the runtime.
     const runtimelessSession = (
       await jsonRequest(server, "/v1/sessions", {
         body: JSON.stringify({
@@ -366,7 +376,15 @@ describe("session action routes", () => {
         method: "POST"
       })
     ).body as { readonly id: string }
+    await jsonRequest(server, "/v1/workspaces/runtimeless", {
+      body: JSON.stringify({ projectId: workspace.id, name: "Runtimeless", hasCustomName: false }),
+      method: "PUT"
+    })
     await jsonRequest(server, `/v1/sessions/${runtimelessSession.id}`, {
+      body: JSON.stringify({ workspaceId: "runtimeless" }),
+      method: "PATCH"
+    })
+    await jsonRequest(server, "/v1/workspaces/runtimeless", {
       body: JSON.stringify({ isArchived: true }),
       method: "PATCH"
     })

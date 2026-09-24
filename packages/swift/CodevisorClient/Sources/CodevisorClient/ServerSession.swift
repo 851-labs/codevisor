@@ -172,9 +172,7 @@ public struct ServerSession: Decodable, Equatable, Sendable {
   public var agentSessionId: String?
   public var title: String
   public var origin: SessionOrigin
-  public var isArchived: Bool
   /// Optional so a server predating archive timestamps still decodes.
-  public var archivedAt: String? = nil
   public var worktreeName: String?
   public var workspaceId: String? = nil
   public var cwd: String?
@@ -218,10 +216,8 @@ public struct ServerSession: Decodable, Equatable, Sendable {
       agentSessionId: agentSessionId.flatMap { $0.isEmpty ? nil : $0 },
       title: title,
       origin: origin,
-      isArchived: isArchived,
       // Tolerated rather than thrown on: an unparseable archive stamp
       // should cost ordering precision, not drop the whole chat.
-      archivedAt: archivedAt.flatMap { try? ServerDateCoding.date(from: $0) },
       worktreeName: worktreeName,
       cwd: cwd,
       configSelections: configSelections,
@@ -253,8 +249,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     agentSessionId: String? = nil,
     title: String,
     origin: SessionOrigin,
-    isArchived: Bool,
-    archivedAt: String? = nil,
     worktreeName: String? = nil,
     workspaceId: String? = nil,
     cwd: String? = nil,
@@ -280,8 +274,6 @@ public struct ServerSession: Decodable, Equatable, Sendable {
     self.agentSessionId = agentSessionId
     self.title = title
     self.origin = origin
-    self.isArchived = isArchived
-    self.archivedAt = archivedAt
     self.worktreeName = worktreeName
     self.workspaceId = workspaceId
     self.cwd = cwd

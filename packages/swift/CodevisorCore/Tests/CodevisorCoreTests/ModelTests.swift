@@ -49,7 +49,6 @@ struct ModelTests {
   func projectFromFolder() {
     let project = Project.fromFolder(URL(fileURLWithPath: "/Users/x/Projects/Codevisor"))
     #expect(project.name == "Codevisor")
-    #expect(project.isArchived == false)
   }
 
   @Test("Project and session encode and decode")
@@ -68,13 +67,13 @@ struct ModelTests {
     let legacy = try JSONDecoder().decode(
       ServerProject.self,
       from: Data(
-        #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Legacy","isArchived":false,"symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[]}"#
+        #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Legacy","symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[]}"#
           .utf8)
     )
     let configured = try JSONDecoder().decode(
       ServerProject.self,
       from: Data(
-        #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Configured","isArchived":false,"symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[],"worktreeBase":{"remote":"upstream","branch":"develop"}}"#
+        #"{"id":"6604c914-659b-401a-a008-edbd7ea9738f","name":"Configured","symbolName":"folder","origin":"codevisor","createdAt":"2026-08-19T00:00:00.000Z","locations":[],"worktreeBase":{"remote":"upstream","branch":"develop"}}"#
           .utf8)
     )
 
@@ -88,7 +87,7 @@ struct ModelTests {
     let id = UUID()
     let json = """
       {"id":"\(id.uuidString)","serverId":"local","name":"Legacy",
-       "folderURL":"file:///Users/me/src/legacy/","isArchived":false,
+       "folderURL":"file:///Users/me/src/legacy/",
        "symbolName":"folder","origin":"codevisor","createdAt":768000000}
       """
     let project = try JSONDecoder().decode(Project.self, from: Data(json.utf8))

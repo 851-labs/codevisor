@@ -40,25 +40,6 @@ describe("@codevisor/db", () => {
     expect(movedBack.cwd).toBe(worktreePath(destination.id, "spry-otter"))
   })
 
-  it("keeps the original archived moment when an archived row is updated again", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/stamp" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-
-    await run(db.updateSession(session.id, { isArchived: true }))
-    const first = (await run(db.getSessionSummary(session.id))).archivedAt
-    // An unrelated field changes while the chat stays archived.
-    await run(db.updateSession(session.id, { title: "renamed while archived" }))
-    const after = await run(db.getSessionSummary(session.id))
-    expect(after.archivedAt).toBe(first)
-    expect(after.title).toBe("renamed while archived")
-
-    // Unarchiving clears the stamp entirely.
-    await run(db.updateSession(session.id, { isArchived: false }))
-    expect((await run(db.getSessionSummary(session.id))).archivedAt).toBeUndefined()
-    await run(db.close)
-  })
-
   it("persists the resolved config selections for each session", async () => {
     const filename = tempDatabase()
     const db = await run(makeDatabase({ filename, serverId: "local" }))

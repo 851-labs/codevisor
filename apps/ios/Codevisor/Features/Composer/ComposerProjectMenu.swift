@@ -8,7 +8,7 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
 
   let currentProject: Project
   let onSelected: (Project) -> Void
-  let onArchiveProject: (Project) -> Void
+  let onDeleteProject: (Project) -> Void
   @ViewBuilder let label: () -> MenuLabel
 
   @State private var isLoading = true
@@ -75,7 +75,7 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
     .menuOrder(.fixed)
     .task(id: serverId) { await load() }
     .sheet(isPresented: $showsProjectManagement) {
-      ManageProjectsSheet(serverId: serverId, onArchive: onArchiveProject)
+      ManageProjectsSheet(serverId: serverId, onDelete: onDeleteProject)
     }
   }
 

@@ -65,7 +65,6 @@ extension ProjectListModel {
     invalidateSnapshotRefreshes(for: serverId)
 
     let session = update.session
-    let scopedId = ScopedSessionID(serverId: serverId, id: session.id)
     guard
       !pendingDeletedProjectIds.contains(
         ScopedSessionID(serverId: serverId, id: session.projectId)
@@ -74,17 +73,7 @@ extension ProjectListModel {
       return .applied(workspaceMembershipChanged: false)
     }
 
-    // A live event can overtake a list request that already captured the
-    // older state. Keep the optimistic row protected until mergeSessions
-    // observes its id in an authoritative snapshot.
     var reconciled = session
-    if pendingArchivedSessionIds.contains(scopedId) {
-      if session.isArchived {
-        pendingArchivedSessionIds.remove(scopedId)
-      } else {
-        reconciled.isArchived = true
-      }
-    }
 
     var assignments = workspaceAssignmentsByServer[serverId] ?? [:]
     let previousWorkspace = assignments[session.id]
@@ -235,26 +224,10 @@ extension ProjectListModel {
       $0.serverId == serverId
         && pendingServerSessionIds.contains(ScopedSessionID(serverId: serverId, id: $0.id))
     }
-    let reconciledRemote = remote.map { session -> ChatSession in
-      let scopedId = ScopedSessionID(serverId: serverId, id: session.id)
-      guard pendingArchivedSessionIds.contains(scopedId) else { return session }
-      if session.isArchived {
-        // This snapshot was taken after the archive reached the
-        // server, so future server state can be authoritative again.
-        pendingArchivedSessionIds.remove(scopedId)
-        return session
-      }
-      // Preserve all newer remote metadata while holding only the
-      // optimistic archived flag against this stale snapshot.
-      var archived = session
-      archived.isArchived = true
-      return archived
-    }
-    let missingPendingArchives = pendingArchivedSessionIds.filter {
-      $0.serverId == serverId && !remoteIds.contains($0)
-    }
-    pendingArchivedSessionIds.subtract(missingPendingArchives)
-    return (otherServers + pending + reconciledRemote).sorted {
+    // No client-side override survives here: the server's copy of a chat is
+    // authoritative, full stop. The override this used to hold is what let
+    // one machine hide a chat every other machine still showed.
+    return (otherServers + pending + remote).sorted {
       ($0.updatedAt ?? $0.createdAt) > ($1.updatedAt ?? $1.createdAt)
     }
   }

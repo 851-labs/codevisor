@@ -7,6 +7,7 @@ import {
   failureMessage,
   resolvePromptAttachments,
   run,
+  sessionIsArchived,
   swallowError,
   type CodevisorServerServices,
   type EventFanout,
@@ -22,10 +23,10 @@ export const reconcileOrphanedSessionTurns = async (
 ): Promise<void> => {
   const sessions = await run(services.db.listSessions)
   for (const session of sessions) {
-    if (session.isArchived) {
-      // Archived sessions get no turn restoration, but a stale streaming row
-      // must still be closed — unarchiving would otherwise resurface it as an
-      // endless in-progress turn.
+    if (await sessionIsArchived(services, session)) {
+      // Chats in an archived workspace get no turn restoration, but a stale
+      // streaming row must still be closed — restoring the workspace would
+      // otherwise resurface it as an endless in-progress turn.
       await run(services.db.closeStaleAssistantChatItems(session.id))
       continue
     }
@@ -358,7 +359,8 @@ export const drainPromptQueue = async (
   if (busyHarnessId !== undefined) services.lifecycle?.notifyTurnStarted(busyHarnessId)
   try {
     while (true) {
-      if ((await run(services.db.getSessionSummary(sessionId))).isArchived) return
+      if (await sessionIsArchived(services, await run(services.db.getSessionSummary(sessionId))))
+        return
       // A gate that closed mid-drain (Update Now) holds the *next* item —
       // registering the session so the release re-drains what remains.
       /* v8 ignore start -- timing-dependent: requires the gate to close between
