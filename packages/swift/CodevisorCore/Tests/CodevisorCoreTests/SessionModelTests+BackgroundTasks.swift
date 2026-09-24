@@ -22,36 +22,11 @@ extension SessionModelTests {
     #expect(model.isWaitingOnBackgroundTasks == false)
     #expect(model.hasBackgroundTaskSnapshot == false)
 
-    var runtimeEdges = 0
-    model.onRuntimeStateChanged = { runtimeEdges += 1 }
     // The prompt echo consumed envelope ids 1-2; manual emits continue
     // the monotonic sequence from 3.
     client.emit(
       ServerEventEnvelope(
         id: 3,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:01.000Z",
-        payload: .object(["runtimeState": .string("running")])
-      ))
-    await settleUntil { model.runtimeState == .running }
-    #expect(model.isRuntimeIdle == false)
-    client.emit(
-      ServerEventEnvelope(
-        id: 4,
-        serverId: "local",
-        kind: "session.updated",
-        subjectId: sessionId.uuidString,
-        createdAt: "2026-06-30T00:00:01.500Z",
-        payload: .object(["runtimeState": .string("idle")])
-      ))
-    await settleUntil { model.isRuntimeIdle }
-    #expect(runtimeEdges == 2)
-
-    client.emit(
-      ServerEventEnvelope(
-        id: 5,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -86,7 +61,7 @@ extension SessionModelTests {
     // never fire) is not pending work: the turn is done for the user.
     client.emit(
       ServerEventEnvelope(
-        id: 6,
+        id: 4,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -111,7 +86,7 @@ extension SessionModelTests {
     // the waiting indicator: it is running, not being waited on.
     client.emit(
       ServerEventEnvelope(
-        id: 7,
+        id: 5,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -145,7 +120,7 @@ extension SessionModelTests {
     // The empty replace-on-update snapshot clears the indicator.
     client.emit(
       ServerEventEnvelope(
-        id: 8,
+        id: 6,
         serverId: "local",
         kind: "session.updated",
         subjectId: sessionId.uuidString,
@@ -351,7 +326,7 @@ extension SessionModelTests {
       ])
 
     await model(client, sessionId: sessionId) { model in
-      await model.loadHistory()
+      await model.loadHistoryForInitialDisplay()
       #expect(await model.loadTranscriptDetails(itemId: itemId.uuidString))
       guard case let .assistant(message) = model.conversation.last else {
         Issue.record("expected assistant")

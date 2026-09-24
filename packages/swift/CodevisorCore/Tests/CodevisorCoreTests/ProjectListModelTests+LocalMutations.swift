@@ -72,12 +72,12 @@ extension ProjectListModelTests {
   func deletingRemovesFromActiveList() {
     let model = NavigationFixture().projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    #expect(model.activeProjects.count == 1)
+    #expect(model.fleetActiveProjects.count == 1)
 
     // Projects are deleted rather than archived: there is no hidden section
     // they can fall into and be recovered from.
     model.removeProject(project)
-    #expect(model.activeProjects.isEmpty)
+    #expect(model.fleetActiveProjects.isEmpty)
     #expect(model.isProjectDeleted(id: project.id, serverId: project.serverId))
   }
 
@@ -88,7 +88,7 @@ extension ProjectListModelTests {
       Project.fromFolder(URL(fileURLWithPath: "/tmp/old"), createdAt: Date(timeIntervalSince1970: 1)),
       Project.fromFolder(URL(fileURLWithPath: "/tmp/new"), createdAt: Date(timeIntervalSince1970: 9)),
     ])
-    #expect(fixture.projectList.activeProjects.map(\.name) == ["new", "old"])
+    #expect(fixture.projectList.fleetActiveProjects.map(\.name) == ["new", "old"])
   }
 
   @Test("New sessions are scoped to a project and survive a relaunch")
@@ -99,7 +99,7 @@ extension ProjectListModelTests {
     let other = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/b"))
     let session = model.newSession(in: project, title: "First", harnessId: "claude")
     model.newSession(in: other)
-    #expect(model.sessions(in: project).map(\.id) == [session.id])
+    #expect(model.fleetSessions(in: project).map(\.id) == [session.id])
 
     PersistenceEncoding.drain()
     #expect(NavigationFixture(persistence: persistence).projectList.sessions.count == 2)
@@ -114,9 +114,9 @@ extension ProjectListModelTests {
     await fixture.install(projects: [project], sessions: [session])
 
     model.renameSession(session, to: "Renamed")
-    #expect(model.sessions(in: project).first?.title == "Renamed")
+    #expect(model.fleetSessions(in: project).first?.title == "Renamed")
     model.deleteSession(session)
-    #expect(model.sessions(in: project).isEmpty)
+    #expect(model.fleetSessions(in: project).isEmpty)
   }
 
   @Test("Removing a project also removes its sessions")
@@ -151,7 +151,7 @@ extension ProjectListModelTests {
     // Importing the same discoveries again must not duplicate anything.
     model.importSessions(imported, into: project)
 
-    let sessions = model.sessions(in: project)
+    let sessions = model.fleetSessions(in: project)
     #expect(sessions.count == 2)
     #expect(sessions.allSatisfy { $0.origin == .imported })
     #expect(sessions.contains { $0.agentSessionId == "ext-1" && $0.title == "Old chat" })
@@ -186,7 +186,7 @@ extension ProjectListModelTests {
         )
       ], serverId: "local")
 
-    let refreshed = model.sessions(in: project).first!
+    let refreshed = model.fleetSessions(in: project).first!
     #expect(model.sessions.count == 1)
     #expect(refreshed.title == "My title")
     let fractionalFormatter = ISO8601DateFormatter()
@@ -208,6 +208,6 @@ extension ProjectListModelTests {
           info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", updatedAt: oldTimestamp)
         )
       ], serverId: "local")
-    #expect(model.sessions(in: project).first?.updatedAt == refreshed.updatedAt)
+    #expect(model.fleetSessions(in: project).first?.updatedAt == refreshed.updatedAt)
   }
 }

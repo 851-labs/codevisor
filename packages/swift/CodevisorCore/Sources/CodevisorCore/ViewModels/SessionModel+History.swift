@@ -21,12 +21,7 @@ extension SessionModel {
   /// call) skips the transcript round-trip entirely; the consumer still
   /// resumes from the page's own event cursor, so nothing between the
   /// page's snapshot and "now" is skipped.
-  public func loadHistory(preloaded: TranscriptHistoryPage? = nil) async {
-    surfaceHistoryLoadFailure(
-      await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: false)
-    )
-  }
-
+  ///
   /// Initial navigation only needs the transcript page to paint. Queue state
   /// is auxiliary composer chrome, so fetch it after streaming has started
   /// without extending selection-to-transcript latency.
@@ -151,7 +146,7 @@ extension SessionModel {
       // plan event can never be skipped on reopen or another device.
       sessionPlan = page.sessionPlan
       isSending = lastTurnIsGenerating
-      if isSending { noteProviderActivity(.modelStream) }
+      if isSending { noteProviderActivity() }
       serverEventCursor = page.eventCursor
       if preservingContent { applySynchronization(.catchingUp) }
       await startConsumer()

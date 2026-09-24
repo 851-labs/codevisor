@@ -21,7 +21,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.updateGateHarnessName == "Codevisor")
 
     // The server restarted between the `waiting` event and now, so no
@@ -32,7 +32,7 @@ extension SessionModelTests {
       hasMore: false,
       eventCursor: 1
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.updateGateHarnessName == nil)
   }
 
@@ -51,7 +51,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await model.send("first prompt")
 
     #expect(client.sessionEventSinceValues == [0])
@@ -150,7 +150,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     #expect(model.pendingQuestion == question)
     #expect(model.isSending)
@@ -203,7 +203,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await settleUntil { !client.sessionEventSinceValues.isEmpty }
 
     // The stream resumes the same provider message after the reopen.
@@ -255,7 +255,7 @@ extension SessionModelTests {
       now: { Date(timeIntervalSince1970: 100) }
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     client.emit(
       ServerEventEnvelope(
         id: 10,

@@ -15,7 +15,7 @@ extension SessionModelTests {
     let transport = ServerSessionTransport(client: client, sessionId: sessionId)
     let model = SessionModel(serverTransport: transport, sessionId: sessionId.uuidString)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     model.viewDidAppear()
     let cached = model.conversation
 
@@ -71,7 +71,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString, connectionRecoveryScheduler: scheduler.scheduler)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     client.failNextTranscriptPages(100)
     await model.reconcileFromServer()
     await settleUntil { scheduler.pendingCount == 1 }

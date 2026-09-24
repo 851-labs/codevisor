@@ -85,7 +85,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await client.eventReads.wait()
 
     #expect(client.sessionEventSinceValues == [42])
@@ -175,7 +175,7 @@ extension SessionModelTests {
     )
     controller.model = model
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await settleUntil { client.sessionEventSinceValues == [7] }
 
     #expect(model.sessionPlan?.entries.first?.status == .inProgress)
@@ -349,7 +349,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.conversation.count == 1)
     #expect(model.hasOlderHistory)
     #expect(client.transcriptPageRequests.first?.before == nil)
@@ -385,7 +385,7 @@ extension SessionModelTests {
     // again. The in-memory session restores its hydrated turn before that
     // page is published, so reopening needs neither a loading row nor a
     // second details request.
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     guard case let .assistant(restoredMessage) = model.conversation.last else {
       Issue.record("expected cached hydrated assistant")
       return
@@ -489,7 +489,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     #expect(
       userMessages(model).first?.attachments == [

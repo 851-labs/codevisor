@@ -4,15 +4,6 @@ import ACPKit
 extension SessionModel {
   // MARK: - Settled/active storage
 
-  /// The active slot remains mounted after completion for stable rendering.
-  /// It becomes receipt-eligible only once the assistant turn has stopped.
-  var activeFinishedResponseItemId: UUID? {
-    guard case let .assistant(message)? = activeItem,
-      !message.turn.isGenerating
-    else { return nil }
-    return message.id
-  }
-
   /// Moves the active bubble into the settled list. Called only at bubble
   /// boundaries, so `settledConversation` (and the boundary-guarded
   /// `hasActiveItem`) never change on a token flush.

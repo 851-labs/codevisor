@@ -1,17 +1,6 @@
 import Foundation
 
 extension ProjectListModel {
-  /// Projects shown in the main section: user-added ones always appear;
-  /// imported ones only when they have a visible session.
-  public var activeProjects: [Project] {
-    projects
-      .filter {
-        $0.serverId == selectedServerId
-          && ($0.origin == .codevisor || hasVisibleSessions(in: $0))
-      }
-      .sorted { $0.createdAt > $1.createdAt }
-  }
-
   /// Whether this project is being deleted from under a surface that is
   /// still showing it. Reads the waiting delete rather than "absent from
   /// `projects`", which a machine going quiet must not be mistaken for.

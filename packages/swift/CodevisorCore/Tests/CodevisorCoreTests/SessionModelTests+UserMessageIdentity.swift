@@ -42,7 +42,7 @@ extension SessionModelTests {
         }
         """.utf8))
 
-    await model.loadHistory(preloaded: transport.historyPage(from: page))
+    await model.loadHistoryForInitialDisplay(preloaded: transport.historyPage(from: page))
 
     #expect(model.conversation.map(\.id) == [outgoing.id, assistantID])
     #expect(model.isSending)
@@ -77,7 +77,7 @@ extension SessionModelTests {
       sessionId: sessionID.uuidString)
     defer { model.shutdown() }
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     #expect(model.conversation.map(\.id) == [firstID, secondID, fallbackID])
   }

@@ -36,16 +36,10 @@ extension SessionModel {
       self.usage = usage
     case let .goalUpdate(goal):
       self.goal = goal
-      if !isReplayingHistory { onGoalChanged?() }
     case .goalCleared:
       goal = nil
-      if !isReplayingHistory { onGoalChanged?() }
     case let .question(request):
-      let isNewQuestion = pendingQuestion?.questionId != request.questionId
       pendingQuestion = request
-      if isNewQuestion, !isReplayingHistory {
-        onActionRequired?()
-      }
     case let .questionResolved(resolution):
       if pendingQuestion?.questionId == resolution.questionId {
         pendingQuestion = nil
@@ -163,8 +157,8 @@ extension SessionModel {
     if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization != .reconnecting {
       stopConnectionRecovery()
     }
-    if !isReplayingHistory, let phase = providerActivityPhase(for: event) {
-      noteProviderActivity(phase)
+    if !isReplayingHistory, providerActivityPhase(for: event) != nil {
+      noteProviderActivity()
     }
     switch event {
     case .synchronization:
@@ -193,7 +187,7 @@ extension SessionModel {
       if promotedFromQueue {
         onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
       }
-    case let .finished(stopReason, stopDetail, stopKind, retryable, initiatedBy, chatItemId):
+    case let .finished(stopReason, stopDetail, stopKind, retryable, _, chatItemId):
       let activeTurnContinues = finish(
         stopReason: stopReason,
         outcome: stopReason == .cancelled ? .cancelled : .completed,
@@ -202,10 +196,6 @@ extension SessionModel {
         retryable: retryable,
         chatItemId: chatItemId
       )
-      lastTurnInitiator = initiatedBy
-      lastTurnEndedWithError =
-        stopDetail != nil
-        || (stopReason != .endTurn && stopReason != .cancelled)
       if !activeTurnContinues { endTurn() }
     case let .failed(message, retryable, chatItemId):
       errorMessage = message
@@ -216,15 +206,11 @@ extension SessionModel {
         retryable: retryable,
         chatItemId: chatItemId
       )
-      lastTurnInitiator = .user
-      lastTurnEndedWithError = true
       if !activeTurnContinues { endTurn() }
     case let .authenticationRequired(message):
       errorMessage = message
       harnessAuthenticationErrorMessage = message
       finish(stopReason: nil, outcome: .failed, stopDetail: message)
-      lastTurnInitiator = .user
-      lastTurnEndedWithError = true
       endTurn()
     case let .retrying(retry):
       // A transient failure is being retried — the turn is still alive.
@@ -242,9 +228,8 @@ extension SessionModel {
     case let .backgroundTasks(tasks):
       backgroundTasks = tasks
       hasBackgroundTaskSnapshot = true
-    case let .runtimeState(state):
-      runtimeState = state
-      onRuntimeStateChanged?()
+    case .runtimeState:
+      break
     case let .planApprovalRequired(required):
       pendingPlanApproval = required
       onPlanApprovalChanged?(required)
@@ -352,23 +337,21 @@ extension SessionModel {
     stalledTurnSchedule?.cancel()
     stalledTurnSchedule = nil
     isTakingLongerThanExpected = false
-    providerActivityPhase = nil
     if wasSending { onTurnEnded?() }
   }
 
-  func noteProviderActivity(_ phase: SessionProviderActivityPhase) {
+  func noteProviderActivity() {
     // Guarded for the same reason `isSending` is in `apply(_ update:)`:
     // `@Observable` fires on every set regardless of value, and this runs
-    // for EVERY applied stream event. The composer is the only reader of
-    // both properties, so unguarded writes re-rendered the whole composer
-    // card — text view, model/harness menus, glass surface — at stream
-    // rate, which is what made typing feel buffered while chats ran.
+    // for EVERY applied stream event. The composer reads this property, so
+    // an unguarded write re-rendered the whole composer card — text view,
+    // model/harness menus, glass surface — at stream rate, which is what
+    // made typing feel buffered while chats ran.
     //
     // The quiet-turn timer below is deliberately NOT part of the guard: it
     // must be cancelled and re-armed on every activity event, or a turn
-    // that streams steadily under one phase would keep the task armed by
-    // its FIRST chunk and falsely report itself stalled mid-stream.
-    if providerActivityPhase != phase { providerActivityPhase = phase }
+    // that streams steadily would keep the task armed by its FIRST chunk
+    // and falsely report itself stalled mid-stream.
     if isTakingLongerThanExpected { isTakingLongerThanExpected = false }
     stalledTurnSchedule?.cancel()
     let quietInterval = stalledTurnQuietInterval
@@ -504,7 +487,6 @@ extension SessionModel {
     rememberRemovedQueueItems(in: queue)
     queuedPrompts = queue
     promptQueueRevision &+= 1
-    onQueuedPromptsChanged?()
   }
 
   private func rememberRemovedQueueItems(in updatedQueue: [ServerPromptQueueItem]) {

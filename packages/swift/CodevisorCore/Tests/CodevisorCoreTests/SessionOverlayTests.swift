@@ -76,7 +76,7 @@ struct SessionOverlayTests {
     #expect(model.sessions.count == 3)
     #expect(model.sessions.allSatisfy { $0.origin == .imported })
     let proj = model.projects.first { $0.folderURL.path == "/Users/x/proj" }!
-    #expect(model.sessions(in: proj).count == 2)
+    #expect(model.fleetSessions(in: proj).count == 2)
   }
 
   @Test("Imported sessions and their projects hide when import is off")
@@ -90,12 +90,12 @@ struct SessionOverlayTests {
     let proj = model.projects.first!
 
     model.showsImportedSessions = false
-    #expect(model.sessions(in: proj).isEmpty)
-    #expect(model.activeProjects.isEmpty)  // imported-only project hidden
+    #expect(model.fleetSessions(in: proj).isEmpty)
+    #expect(model.fleetActiveProjects.isEmpty)  // imported-only project hidden
 
     model.showsImportedSessions = true
-    #expect(model.sessions(in: proj).count == 1)
-    #expect(model.activeProjects.count == 1)
+    #expect(model.fleetSessions(in: proj).count == 1)
+    #expect(model.fleetActiveProjects.count == 1)
   }
 
   @Test("User-added projects stay visible even when empty")
@@ -103,7 +103,7 @@ struct SessionOverlayTests {
     let model = makeModel()
     model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mine"))
     model.showsImportedSessions = false
-    #expect(model.activeProjects.count == 1)
+    #expect(model.fleetActiveProjects.count == 1)
   }
 
   @Test("setAgentSessionId records the agent session id")

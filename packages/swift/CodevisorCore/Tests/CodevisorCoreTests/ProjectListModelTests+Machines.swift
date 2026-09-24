@@ -38,8 +38,6 @@ extension ProjectListModelTests {
     #expect(model.projects.contains { $0.id == localProject.id && $0.serverId == "local" })
     #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
     #expect(model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" })
-    // The selected machine's sidebar shows only its own projects.
-    #expect(model.activeProjects.map(\.id) == [localProject.id])
   }
 
   @Test("Identical project and session ids stay isolated between machines")
@@ -113,7 +111,6 @@ extension ProjectListModelTests {
     let model = fixture.projectList
     #expect(!model.projects.contains { $0.id == remoteProject.id && $0.serverId == "local" })
     #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
-    #expect(model.activeProjects.isEmpty)
   }
 
   @Test("Imports are filed under the machine they were discovered on, not the current selection")
@@ -131,8 +128,6 @@ extension ProjectListModelTests {
     #expect(!model.projects.isEmpty)
     #expect(model.projects.allSatisfy { $0.serverId == "remote-mac-mini" })
     #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
-    // Nothing leaks into the (selected) local sidebar.
-    #expect(model.activeProjects.isEmpty)
   }
 
   @Test("Sessions imported into a project inherit the project's machine")
@@ -152,6 +147,5 @@ extension ProjectListModelTests {
 
     #expect(model.sessions.count == 1)
     #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
-    #expect(model.activeProjects.isEmpty)
   }
 }

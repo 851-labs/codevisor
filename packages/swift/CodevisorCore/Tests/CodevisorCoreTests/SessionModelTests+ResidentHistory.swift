@@ -25,7 +25,7 @@ extension SessionModelTests {
         eventCursor: 1)
     }
     client.initialTranscriptPage = page(64..<96)
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     let latest = model.conversation
     client.olderTranscriptPage = page(0..<64)
     #expect(await model.loadOlderHistory() == 64)

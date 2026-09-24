@@ -130,7 +130,7 @@ struct AppEnvironmentTests {
     #expect(environment.settings.hasCompletedOnboarding)
     #expect(!environment.settings.importExternalSessions)
     #expect(!environment.projectList.showsImportedSessions)
-    #expect(environment.projectList.sessions(in: project).isEmpty)
+    #expect(environment.projectList.fleetSessions(in: project).isEmpty)
   }
 
   @Test("Onboarding with multiple folders adds every project and returns the first")
