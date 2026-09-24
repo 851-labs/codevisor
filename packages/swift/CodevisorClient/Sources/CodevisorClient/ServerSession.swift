@@ -540,8 +540,6 @@ public struct ServerTranscriptItemDetails: Decodable, Equatable, Sendable {
 }
 
 public struct ServerTranscriptBodyPage: Decodable, Sendable {
-  public var markdownPrefix: String? = nil
-  public var leadingText: String? = nil
   public var revision: Int
   public var encoding: String
   public var text: String

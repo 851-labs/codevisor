@@ -297,8 +297,6 @@ export const TranscriptItemDetails = Schema.Struct({
 export type TranscriptItemDetails = typeof TranscriptItemDetails.Type
 
 export const TranscriptBodyPage = Schema.Struct({
-  leadingText: Schema.optional(Schema.String),
-  markdownPrefix: Schema.optional(Schema.String),
   revision: Schema.Number,
   encoding: Schema.Literals(["text", "json"]),
   text: Schema.String,
