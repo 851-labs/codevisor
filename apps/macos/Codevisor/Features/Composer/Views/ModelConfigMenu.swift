@@ -38,9 +38,9 @@ struct ModelConfigMenu: View {
         .frame(minWidth: 96)
         .help("Loading model settings")
         .accessibilityLabel("Loading model settings")
-    } else if !modelGroups.isEmpty || !settingsOptions.isEmpty {
+    } else if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty || !settingsOptions.isEmpty {
       HStack(spacing: 10) {
-        if !modelGroups.isEmpty {
+        if !modelGroups.isEmpty || !signInRequiredHarnesses.isEmpty {
           modelButton
         }
         if !settingsOptions.isEmpty {
@@ -61,6 +61,20 @@ private extension ModelConfigMenu {
             .searchTerms([model.value, group.name])
         }
         .favorites($favoriteModelIDs)
+      }
+      // An enabled harness whose account needs attention has no model list,
+      // so without these rows it would vanish from the picker as if it were
+      // turned off.
+      for harness in signInRequiredHarnesses {
+        Autocomplete.Section(harness.name, id: "sign-in:\(harness.id)") {
+          Autocomplete.Action(
+            "Sign in to use \(harness.name)…",
+            id: "sign-in:\(harness.id)",
+            systemImage: "person.crop.circle.badge.exclamationmark"
+          ) { showHarnessAccounts(harness.id) }
+          .searchTerms([harness.name, harness.id])
+          .help("\(harness.name)'s account on this machine needs to be signed in again")
+        }
       }
       Autocomplete.Footer(id: "actions") {
         Autocomplete.Action("Manage Harnesses…", action: showHarnessSettings)
@@ -136,6 +150,25 @@ private extension ModelConfigMenu {
     isPresented = false
     SettingsRouter.shared.showHarnesses(machineId: controller.project.serverId)
     openSettings()
+  }
+
+  private func showHarnessAccounts(_ harnessId: String) {
+    isPresented = false
+    SettingsRouter.shared.showHarnessAccounts(
+      machineId: controller.project.serverId,
+      harnessId: harnessId
+    )
+    openSettings()
+  }
+
+  /// Enabled harnesses the server reports as blocked on sign-in. Only a new
+  /// chat can switch harness, so only its picker offers them.
+  private var signInRequiredHarnesses: [ServerHarness] {
+    guard controller.canChooseHarness else { return [] }
+    let usable = Set(modelGroups.map(\.id))
+    return environment.configCache
+      .signInRequired(forServer: controller.project.serverId)
+      .filter { !usable.contains($0.id) }
   }
 
   private var modelGroups: [ModelMenuGroup] {
