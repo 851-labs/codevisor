@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-import ACPKit
 @testable import CodevisorCore
 @testable import CodevisorCoreMac
 
@@ -15,6 +14,8 @@ extension LocalCodevisorServerTests {
       host: "0.0.0.0",
       port: 49362,
       name: "Test Mac",
+      bootId: "test-boot",
+      ownerPid: 4242,
       environment: [:]
     )
 
@@ -36,6 +37,7 @@ extension LocalCodevisorServerTests {
     #expect(configuration.arguments.contains("test-boot"))
     #expect(configuration.arguments.contains("--app-owned"))
     #expect(configuration.arguments.contains("--owner-pid"))
+    #expect(configuration.arguments.contains("4242"))
   }
 
   @Test("Launch command preserves PATH lookup when Node falls back to env")
@@ -48,6 +50,8 @@ extension LocalCodevisorServerTests {
       host: "0.0.0.0",
       port: 49362,
       name: "Test Mac",
+      bootId: "test-boot",
+      ownerPid: 4242,
       environment: ["PATH": "/opt/homebrew/bin:/usr/bin"]
     )
 

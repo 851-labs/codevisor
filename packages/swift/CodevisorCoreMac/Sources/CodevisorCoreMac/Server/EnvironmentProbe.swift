@@ -1,29 +1,13 @@
 import CodevisorCore
 import Foundation
 
-/// Checks whether files exist and are executable.
-///
-/// Abstracted so discovery can be tested with a virtual file system.
-public protocol FileProbing: Sendable {
-  func isExecutableFile(atPath path: String) -> Bool
-}
-
-/// A `FileProbing` backed by `FileManager`.
-public struct DefaultFileProbe: FileProbing {
-  public init() {}
-  public func isExecutableFile(atPath path: String) -> Bool {
-    FileManager.default.isExecutableFile(atPath: path)
-  }
-}
-
-/// Resolves the user's shell environment and locates executables on `PATH`.
+/// Resolves the user's shell environment.
 ///
 /// GUI applications inherit a minimal `PATH` that usually excludes Homebrew,
 /// nvm, asdf, etc., so the real `PATH` is recovered by asking the user's login
 /// shell.
 public struct EnvironmentProbe: Sendable {
   private let runner: any CommandRunner
-  private let fileProbe: any FileProbing
   private let loginShell: URL
   private let baseEnvironment: [String: String]
 
@@ -65,12 +49,10 @@ public struct EnvironmentProbe: Sendable {
 
   public init(
     runner: any CommandRunner = ProcessCommandRunner(),
-    fileProbe: any FileProbing = DefaultFileProbe(),
     loginShell: URL = EnvironmentProbe.userLoginShell(),
     baseEnvironment: [String: String] = ProcessInfo.processInfo.environment
   ) {
     self.runner = runner
-    self.fileProbe = fileProbe
     self.loginShell = loginShell
     self.baseEnvironment = baseEnvironment
   }
@@ -139,44 +121,4 @@ public struct EnvironmentProbe: Sendable {
     environment["PATH"] = path
     return environment
   }
-
-  /// Locates an executable by name within a colon-separated `PATH`.
-  public func locate(_ name: String, inPath path: String) -> URL? {
-    for directory in path.split(separator: ":").map(String.init) where !directory.isEmpty {
-      let candidate = (directory as NSString).appendingPathComponent(name)
-      if fileProbe.isExecutableFile(atPath: candidate) {
-        return URL(fileURLWithPath: candidate)
-      }
-    }
-    return nil
-  }
-
-  /// Lists executables in a `PATH` whose file name matches a predicate.
-  public func executables(inPath path: String, matching predicate: @Sendable (String) -> Bool) -> [URL] {
-    var results: [URL] = []
-    let fileManager = FileManager.default
-    for directory in path.split(separator: ":").map(String.init) where !directory.isEmpty {
-      let entries: [String]
-      do {
-        entries = try fileManager.contentsOfDirectory(atPath: directory)
-      } catch {
-        // Nonexistent PATH entries are routine noise; an existing but
-        // unreadable directory hides installed CLIs.
-        if fileManager.fileExists(atPath: directory) {
-          Log.server.debug(
-            "Skipping unreadable PATH directory \(directory, privacy: .public): \(String(describing: error), privacy: .public)"
-          )
-        }
-        continue
-      }
-      for entry in entries where predicate(entry) {
-        let fullPath = (directory as NSString).appendingPathComponent(entry)
-        if fileProbe.isExecutableFile(atPath: fullPath) {
-          results.append(URL(fileURLWithPath: fullPath))
-        }
-      }
-    }
-    return results
-  }
-
 }

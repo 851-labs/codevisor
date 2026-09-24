@@ -226,32 +226,41 @@ struct CloudHubConnectionTests {
     await hub.shutdown()
   }
 
-  @Test("Keepalive pongs record the relay RTT")
-  func keepaliveMeasuresRtt() async throws {
+  @Test("An answered keepalive keeps the hub socket past the pong deadline")
+  func answeredKeepaliveKeepsSocket() async throws {
     let scripted = ScriptedCloudHub()
+    // The test answers the ping itself, once the pong deadline is armed.
+    scripted.respondsToPing = false
+    let transport = FakeWebSocketTransport { _ in scripted.socket }
     let clock = TestClock()
     let hub = CloudHubConnection(
       serverURL: URL(string: "https://cloud.example.com")!,
       credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
       deviceName: "Test App",
       deviceOS: "macOS",
-      webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
+      webSocketTransport: transport,
       readyTimeout: .seconds(2),
       heartbeatInterval: .seconds(30),
-      heartbeatTimeout: .seconds(2),
+      heartbeatTimeout: .seconds(10),
       sleep: clock.sleep,
-      now: { clock.now },
       reconnectDelay: { _ in .seconds(1) }
     )
 
     try await hub.waitUntilReady()
-    #expect(await hub.lastRttMillis == nil)
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
     #expect(await waitUntil { scripted.socket.sentTexts.contains(#"{"t":"ping"}"#) })
-    await scripted.socket.receiving.wait(for: 3)
-    let rtt = try #require(await hub.lastRttMillis)
-    #expect(rtt == 0)
+    await clock.waitForSleep(.seconds(10))
+    scripted.socket.pushJSON(#"{"t":"pong"}"#)
+    await scripted.socket.drain()
+    await clock.waitForSleep(.seconds(30), count: 2)
+
+    // The pong disarmed the deadline: only the next heartbeat is pending,
+    // so advancing past the deadline cannot tear the socket down.
+    #expect(clock.pendingCount == 1)
+    clock.advance(by: .seconds(10))
+    #expect(scripted.socket.cancelled.value == 0)
+    #expect(transport.requests.count == 1)
     await hub.shutdown()
   }
 

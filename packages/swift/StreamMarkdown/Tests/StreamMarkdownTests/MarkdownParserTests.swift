@@ -150,13 +150,6 @@ struct MarkdownParserTests {
     #expect(parser.parse("\n\n") == [])
   }
 
-  @Test("Blocks expose stable identities")
-  func identities() {
-    let blocks = parser.parse("# A\n\nB")
-    #expect(Set(blocks.map(\.id)).count == 2)
-    #expect(MarkdownBlock.thematicBreak.id == "hr")
-  }
-
   @Test("Resolves reference links using the complete document")
   func referenceLinks() {
     let blocks = parser.parse(

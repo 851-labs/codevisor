@@ -32,8 +32,6 @@ final class FakeEndpointClient {
     stream(for: endpoint).1.yield(event)
   }
 
-  func finish(_ endpoint: ScreenSharingViewerEndpoint.ID) { stream(for: endpoint).1.finish() }
-
   var value: ScreenSharingEndpointClient {
     ScreenSharingEndpointClient(
       beginInput: { [self] endpoint, lease in

@@ -161,19 +161,6 @@ func computerUseSnapshotMatchesWindow(
   return snapshotWindowID == targetWindowID
 }
 
-/// The pixel size a screenshot of `windowFrame` would have on a display with
-/// `pointPixelScale`, mirroring the capture configuration in `screenshot`.
-func computerUseDerivedScreenshotPixelSize(
-  windowFrame: CGRect,
-  pointPixelScale: CGFloat
-) -> CGSize {
-  let scale = max(1, pointPixelScale)
-  return CGSize(
-    width: (windowFrame.width * scale).rounded(),
-    height: (windowFrame.height * scale).rounded()
-  )
-}
-
 func computerUseScreenshotFrame(
   screenFrame: CGRect,
   screenshotPixelSize: CGSize?,

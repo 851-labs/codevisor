@@ -7,13 +7,6 @@ private typealias CGEventSetWindowLocationFunction = @convention(c) (CGEvent, CG
 private typealias SLEventPostToPidFunction = @convention(c) (pid_t, CGEvent) -> Void
 private typealias SLEventSetIntegerValueFieldFunction = @convention(c) (CGEvent, UInt32, Int64) -> Void
 
-enum ComputerUseClickAddressing: Equatable {
-  case semantic
-  case pixel
-  case ambiguous
-  case invalid
-}
-
 struct ComputerUseChromiumClickStep: Equatable {
   enum Kind: Equatable {
     case move
@@ -36,20 +29,6 @@ func computerUseMouseButton(named name: String) -> String? {
   case "middle", "m": "middle"
   default: nil
   }
-}
-
-func computerUseClickAddressing(
-  snapshotID: String?,
-  elementID: String?,
-  x: Double?,
-  y: Double?
-) -> ComputerUseClickAddressing {
-  let hasSemanticTarget = elementID != nil
-  let hasPixelTarget = x != nil || y != nil
-  if hasSemanticTarget && hasPixelTarget { return .ambiguous }
-  if snapshotID != nil, elementID != nil { return .semantic }
-  if x != nil, y != nil { return .pixel }
-  return .invalid
 }
 
 func computerUseUsesChromiumInput(

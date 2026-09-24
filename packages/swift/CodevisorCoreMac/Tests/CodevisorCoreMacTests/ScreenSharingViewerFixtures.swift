@@ -60,7 +60,6 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   var initialDesktopSize: (width: Int, height: Int)? = (1024, 768)
   var linkBitsPerSecond: Double?
   var deliversVideo = true
-  var channelAvailableOnAccept = true
   weak var surface: FakeSurface?
   private(set) var offers = 0
   private(set) var answers: [String] = []
@@ -74,7 +73,7 @@ final class FakeMediaSession: NativeScreenSharingMediaSession {
   }
   func accept(_ answer: String) async throws {
     answers.append(answer)
-    controlChannel.isAvailable = channelAvailableOnAccept
+    controlChannel.isAvailable = true
     if deliversVideo { surface?.present() }
   }
   func statistics() async -> [String: String] { [:] }

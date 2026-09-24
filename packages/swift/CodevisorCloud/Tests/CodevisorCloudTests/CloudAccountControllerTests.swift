@@ -374,23 +374,19 @@ struct CloudAccountControllerTests {
     let client = FakeCloudClient()
     client.verifyResult = .success("t")
     client.sessions["t"] = CloudSessionUser(userId: "u1", email: "me@example.com")
-    client.discoverResult = .success(
-      CloudInstanceInfo(service: "codevisor-cloud", instance: "My Homelab")
-    )
+    client.discoverResult = .success(CloudInstanceInfo(service: "codevisor-cloud"))
     let (controller, _, store) = makeController(client: client)
     await controller.completeSignIn(ott: "ott")
 
     try await controller.setCustomServer(URL(string: "https://cloud.example.com")!)
 
     #expect(try store.serverURL() == URL(string: "https://cloud.example.com")!)
-    #expect(controller.customInstanceName == "My Homelab")
     #expect(controller.state == .signedOut)
     #expect(try store.token() == nil)
 
     // Clearing restores the default instance.
     try await controller.setCustomServer(nil)
     #expect(try store.serverURL() == nil)
-    #expect(controller.customInstanceName == nil)
   }
 
   @Test("Sign-in URL percent-encodes the handoff redirect")

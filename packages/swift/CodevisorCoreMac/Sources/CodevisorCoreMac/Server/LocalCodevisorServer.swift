@@ -10,8 +10,8 @@ public struct LocalCodevisorServerLaunchRequest: Equatable, Sendable {
   public var host: String
   public var port: Int
   public var name: String
-  public var bootId: String = "test-boot"
-  public var ownerPid: Int32 = 1
+  public var bootId: String
+  public var ownerPid: Int32
   public var environment: [String: String]
   public var dataUpgradeStatusURL: URL? = nil
 }

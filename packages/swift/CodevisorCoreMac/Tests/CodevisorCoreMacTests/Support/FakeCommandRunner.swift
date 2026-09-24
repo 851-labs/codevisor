@@ -23,11 +23,3 @@ final class FakeCommandRunner: CommandRunner, @unchecked Sendable {
     return try result.get()
   }
 }
-
-/// A file probe backed by an explicit set of executable paths.
-struct FakeFileProbe: FileProbing {
-  let executablePaths: Set<String>
-  func isExecutableFile(atPath path: String) -> Bool {
-    executablePaths.contains(path)
-  }
-}

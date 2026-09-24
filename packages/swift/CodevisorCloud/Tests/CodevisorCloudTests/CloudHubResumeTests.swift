@@ -12,21 +12,6 @@ import CodevisorProtocol
 /// does not (or nobody answers within the suspension deadline).
 @Suite("CloudHubConnection resume")
 struct CloudHubResumeTests {
-  @Observable
-  final class Recorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var receivedMessages: [Data] = []
-    private var closeReasons: [CloudChannelCloseReason?] = []
-
-    var messages: [Data] { lock.withLock { receivedMessages } }
-    var closes: [CloudChannelCloseReason?] { lock.withLock { closeReasons } }
-
-    func record(_ data: Data) { lock.withLock { receivedMessages.append(data) } }
-    func recordClose(_ reason: CloudChannelCloseReason?) {
-      lock.withLock { closeReasons.append(reason) }
-    }
-  }
-
   private func makeResumableHub(
     _ scripted: ScriptedCloudHub,
     suspension: Duration = .seconds(70),

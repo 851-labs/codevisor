@@ -116,8 +116,7 @@ func makeDirectConnection(
     heartbeatInterval: heartbeatInterval,
     heartbeatTimeout: heartbeatTimeout,
     onDown: onDown,
-    sleep: clock.sleep,
-    now: { clock.now }
+    sleep: clock.sleep
   )
 }
 
@@ -198,24 +197,36 @@ struct CloudDirectConnectionTests {
     #expect(downs.messages.count == 1)
   }
 
-  @Test("Keepalive pongs record the direct-pipe RTT")
-  func keepaliveMeasuresRtt() async throws {
+  @Test("An answered keepalive keeps the pipe up past the pong deadline")
+  func answeredKeepaliveKeepsPipeUp() async throws {
     let scripted = ScriptedDirectMachine()
+    // The test answers the ping itself, once the pong deadline is armed.
+    scripted.respondsToPing = false
+    let downs = Recorder()
     let clock = TestClock()
     let connection = makeDirectConnection(
       to: scripted,
       heartbeatInterval: .seconds(10),
       heartbeatTimeout: .seconds(5),
       clock: clock
-    )
+    ) { downs.record(Data()) }
+
     try await connection.waitUntilReady()
-    #expect(await connection.lastRttMillis == nil)
     await clock.waitForSleep(.seconds(10))
     clock.advance(by: .seconds(10))
     #expect(await waitUntil { scripted.pings == 1 })
-    await scripted.socket.receiving.wait(for: 3)
-    let rtt = try #require(await connection.lastRttMillis)
-    #expect(rtt == 0)
+    await clock.waitForSleep(.seconds(5))
+    scripted.socket.pushJSON(#"{"t":"pong"}"#)
+    await scripted.socket.drain()
+    await clock.waitForSleep(.seconds(10), count: 2)
+
+    // Past the pong deadline and on to the next heartbeat: an unanswered
+    // deadline would take the pipe down and never send the second ping.
+    clock.advance(by: .seconds(10))
+    #expect(await waitUntil { scripted.pings == 2 || !downs.messages.isEmpty })
+    #expect(downs.messages.isEmpty)
+    #expect(scripted.pings == 2)
+    #expect(await connection.isReady)
     await connection.shutdown()
   }
 

@@ -122,18 +122,6 @@
       )
     }
 
-    static func prepareCell(
-      _ markdown: String,
-      isHeader: Bool,
-      theme: MarkdownTheme
-    ) -> PreparedCell {
-      prepareResolvedCell(
-        MarkdownParser().parseInline(markdown),
-        isHeader: isHeader,
-        theme: theme
-      )
-    }
-
     /// The widest whitespace-free fragment of the cell — the width below which
     /// word wrapping runs out and TextKit starts breaking mid-word. Whitespace
     /// is where table cells actually wrap; other break opportunities (hyphens,

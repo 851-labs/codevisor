@@ -133,11 +133,11 @@ struct MarkdownTableRendererTests {
       rows: [["zats/permiso", "Swift", prose]], theme: .default, width: 800
     )
     let widths = columnWidths(attributed)
-    let repoMin = MarkdownTableRenderer.prepareCell(
-      "zats/permiso", isHeader: false, theme: .default
+    let repoMin = MarkdownTableRenderer.prepareResolvedCell(
+      MarkdownParser().parseInline("zats/permiso"), isHeader: false, theme: .default
     ).minimumWidth
-    let langMin = MarkdownTableRenderer.prepareCell(
-      "Swift", isHeader: false, theme: .default
+    let langMin = MarkdownTableRenderer.prepareResolvedCell(
+      MarkdownParser().parseInline("Swift"), isHeader: false, theme: .default
     ).minimumWidth
     // Sanity: the min-content measurement is real, not a degenerate 1pt.
     #expect(repoMin > 20)
@@ -230,12 +230,12 @@ struct MarkdownTableRendererTests {
 
   @Test("A cell's minimum width is its widest word, not its full line")
   func minimumWidthIsWidestWord() {
-    let cell = MarkdownTableRenderer.prepareCell(
-      "several ordinary words in a sentence", isHeader: false, theme: .default
+    let cell = MarkdownTableRenderer.prepareResolvedCell(
+      MarkdownParser().parseInline("several ordinary words in a sentence"), isHeader: false, theme: .default
     )
     #expect(cell.minimumWidth < cell.naturalWidth)
-    let word = MarkdownTableRenderer.prepareCell(
-      "ordinary", isHeader: false, theme: .default
+    let word = MarkdownTableRenderer.prepareResolvedCell(
+      MarkdownParser().parseInline("ordinary"), isHeader: false, theme: .default
     )
     // The widest word here is "ordinary"/"sentence"-sized, far below the
     // full unwrapped line.
