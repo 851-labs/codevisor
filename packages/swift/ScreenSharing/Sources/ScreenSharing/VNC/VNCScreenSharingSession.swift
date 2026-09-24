@@ -242,23 +242,25 @@
   public enum VNCConnection {
     /// TCP, handshake and authentication; the client is closed on any failure.
     public static func open(
-      host: String, port: UInt16, password: String?
+      host: String, port: UInt16, password: String?, username: String? = nil
     ) async throws -> (
       client: RFBClient, outcome: RFBHandshake.Outcome
     ) {
-      try await open(transport: try await RFBNetworkTransport.connect(host: host, port: port), password: password)
+      try await open(
+        transport: try await RFBNetworkTransport.connect(host: host, port: port), password: password,
+        username: username)
     }
 
     /// Handshake and authentication over a connected transport; the client
     /// (and with it the transport) is closed on any failure.
     public static func open(
-      transport: any RFBTransport, password: String?
+      transport: any RFBTransport, password: String?, username: String? = nil
     ) async throws -> (
       client: RFBClient, outcome: RFBHandshake.Outcome
     ) {
       let client = try RFBClient(transport: transport)
       do {
-        return (client, try await client.connect(password: password))
+        return (client, try await client.connect(password: password, username: username))
       } catch {
         client.close()
         throw error
