@@ -5,17 +5,47 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
-test("the release build passes the selected Ghostty archive without overriding project linker flags", async (t) => {
+test("the release build passes the macOS Ghostty archive without overriding project linker flags", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "codevisor-release-linking-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const script = join(root, "scripts/release/build-macos-xcode.sh")
   await mkdir(join(script, ".."), { recursive: true })
   await copyFile(new URL("./build-macos-xcode.sh", import.meta.url), script)
-  const slice = join(root, "apps/macos/Frameworks/GhosttyKit.xcframework/custom slice")
-  await mkdir(join(slice, "Headers"), { recursive: true })
+  // Mirror a real GhosttyKit.xcframework: the iOS slices sort before the macOS
+  // slice and their archives also contain arm64, so only Info.plist tells them apart.
+  const framework = join(root, "apps/macos/Frameworks/GhosttyKit.xcframework")
+  const slices = [
+    { id: "ios-arm64", archive: "libghostty-internal.a", platform: "ios" },
+    {
+      id: "ios-arm64-simulator",
+      archive: "libghostty-internal.a",
+      platform: "ios",
+      variant: "simulator"
+    },
+    { id: "macos custom slice", archive: "custom archive.a", platform: "macos" }
+  ]
+  for (const { id, archive } of slices) {
+    await mkdir(join(framework, id, "Headers"), { recursive: true })
+    await writeFile(join(framework, id, archive), "fixture")
+    await writeFile(join(framework, id, "Headers/ghostty.h"), "fixture")
+  }
+  const entries = slices.map(({ id, archive, platform, variant }) =>
+    [
+      "<dict>",
+      `<key>LibraryIdentifier</key><string>${id}</string>`,
+      `<key>LibraryPath</key><string>${archive}</string>`,
+      "<key>HeadersPath</key><string>Headers</string>",
+      `<key>SupportedPlatform</key><string>${platform}</string>`,
+      variant ? `<key>SupportedPlatformVariant</key><string>${variant}</string>` : "",
+      "</dict>"
+    ].join("")
+  )
+  await writeFile(
+    join(framework, "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>AvailableLibraries</key><array>${entries.join("")}</array></dict></plist>\n`
+  )
+  const slice = join(framework, "macos custom slice")
   const library = join(slice, "custom archive.a")
-  await writeFile(library, "fixture")
-  await writeFile(join(slice, "Headers/ghostty.h"), "fixture")
   const resources = join(root, "apps/macos/Codevisor/Resources")
   await mkdir(resources, { recursive: true })
   await writeFile(join(resources, "ghostty-resources.tar.gz"), "fixture")
