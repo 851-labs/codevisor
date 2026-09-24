@@ -272,10 +272,26 @@
 
   @MainActor
   private final class NativeMarkdownSeparatorView: NativeMarkdownContentView {
+    /// Resolved in `updateLayer()`, not here: see the note on
+    /// `NativeMarkdownCodeBlockView.fillColor`.
+    private let ruleColor: NSColor
+
     init(color: NSColor) {
+      ruleColor = color
       super.init(frame: .zero)
       wantsLayer = true
-      layer?.backgroundColor = color.cgColor
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+      super.updateLayer()
+      layer?.backgroundColor = ruleColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+      super.viewDidChangeEffectiveAppearance()
+      needsDisplay = true
     }
 
     @available(*, unavailable)

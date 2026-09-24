@@ -22,6 +22,13 @@
     private let languageLabel = NSTextField(labelWithString: "")
     private let copyButton = NSButton()
     private let divider = NSBox()
+    /// The block fill, kept as a dynamic NSColor and resolved to a CGColor
+    /// only inside `updateLayer()`. `NSColor.cgColor` resolves against
+    /// `NSAppearance.current`, which is the view's effective appearance
+    /// during a layer update but is whatever the last drawing context left
+    /// behind at init time — a System theme's `Color.secondary` fill baked
+    /// there can come out inverted, and never corrects itself.
+    private let fillColor: NSColor
     private let scrollView = TranscriptHorizontalScrollView()
     private let codeTextView = TranscriptSurfaceTextView(usingTextLayoutManager: true)
     private var highlightTask: Task<Void, Never>?
@@ -34,6 +41,7 @@
       self.language = language
       self.code = code
       self.theme = theme
+      fillColor = NSColor(theme.codeBackground)
       super.init(frame: .zero)
       configureChrome()
       configureTextView()
@@ -83,9 +91,25 @@
       codeTextView.frame = NSRect(origin: .zero, size: contentSize)
     }
 
+    /// The view paints nothing but its fill, so let AppKit drive that
+    /// through `updateLayer()` — which runs with the view's own appearance
+    /// current — instead of baking a CGColor at init.
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+      super.updateLayer()
+      layer?.backgroundColor = fillColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+      super.viewDidChangeEffectiveAppearance()
+      // Light/dark can flip under a settled row: the theme value is
+      // unchanged, so nothing upstream rebuilds this view.
+      needsDisplay = true
+    }
+
     private func configureChrome() {
       wantsLayer = true
-      layer?.backgroundColor = NSColor(theme.codeBackground).cgColor
       layer?.cornerRadius = 8
       layer?.masksToBounds = true
 

@@ -148,8 +148,26 @@
 
     override var isFlipped: Bool { true }
 
+    override var wantsUpdateLayer: Bool { true }
+
+    /// Held dynamic and resolved in `updateLayer()`: see the note on
+    /// `NativeMarkdownCodeBlockView.fillColor`.
+    private var borderColor: NSColor = .separatorColor
+
     func setBorderColor(_ color: NSColor) {
-      layer?.borderColor = color.cgColor
+      guard color != borderColor else { return }
+      borderColor = color
+      needsDisplay = true
+    }
+
+    override func updateLayer() {
+      super.updateLayer()
+      layer?.borderColor = borderColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+      super.viewDidChangeEffectiveAppearance()
+      needsDisplay = true
     }
 
     override func layout() {

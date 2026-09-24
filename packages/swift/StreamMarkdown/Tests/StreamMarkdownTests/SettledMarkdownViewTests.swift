@@ -217,6 +217,58 @@ struct SettledMarkdownViewTests {
     #expect((label?.frame.minY ?? .infinity) < (scrollView?.frame.minY ?? 0))
   }
 
+  @Test("Code block fill follows the view's appearance, not the ambient one")
+  func codeBlockFillTracksAppearance() {
+    // Drive the display pass explicitly rather than waiting on a run loop:
+    // `updateLayer()` only runs when the view actually draws, and the test
+    // must not depend on a window server being attached.
+    func fill(_ view: NSView) -> NSColor? {
+      guard let block = view.subviews.first else { return nil }
+      block.displayIfNeeded()
+      guard let cg = block.layer?.backgroundColor else { return nil }
+      return NSColor(cgColor: cg)?.usingColorSpace(.sRGB)
+    }
+    // MarkdownTheme.default's code fill is Color.secondary — a dynamic
+    // color. Resolving it to a CGColor uses NSAppearance.current, which at
+    // view-build time is whatever the last drawing context left behind, not
+    // the view's own appearance.
+    let light = NSAppearance(named: .aqua)!
+    let dark = NSAppearance(named: .darkAqua)!
+
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+      styleMask: [.borderless], backing: .buffered, defer: false
+    )
+    window.appearance = light
+    let view = SettledMarkdownView()
+    window.contentView?.addSubview(view)
+    window.displayIfNeeded()
+
+    // Build the row while DARK is the ambient drawing appearance.
+    dark.performAsCurrentDrawingAppearance {
+      view.setContent(
+        blocks: [.codeBlock(language: nil, code: "let answer = 42", isComplete: true)],
+        theme: .default, streamID: "appearance", linkAction: nil)
+    }
+    view.frame = NSRect(x: 0, y: 0, width: 400, height: view.contentHeight(forWidth: 400))
+    window.contentView?.layoutSubtreeIfNeeded()
+    window.displayIfNeeded()
+
+    // The window is light, so the fill must be the light one (dark ink on a
+    // light page), not the dark theme's light ink — which would be invisible.
+    // Compare against the midpoint, not an exact channel value: the dark
+    // resolution goes through extended sRGB and can land a hair past 1.0.
+    let inLightWindow = fill(view)
+    #expect((inLightWindow?.brightnessComponent ?? 1) < 0.5)
+    #expect((inLightWindow?.alphaComponent ?? 0) > 0)
+
+    // A live light/dark switch leaves the theme value untouched, so nothing
+    // upstream rebuilds the row: the view has to follow on its own.
+    window.appearance = dark
+    window.contentView?.layoutSubtreeIfNeeded()
+    #expect((fill(view)?.brightnessComponent ?? 0) > 0.5)
+  }
+
   @Test("Syntax colors do not remeasure immutable code geometry")
   func codeHighlightKeepsMeasuredGeometry() {
     let code = "let answer = 42\nprint(answer)"
