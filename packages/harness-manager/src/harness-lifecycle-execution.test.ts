@@ -15,6 +15,7 @@ import {
   fakeTerminal,
   fakeSpawner,
   installableDefinition,
+  installMethodsFor,
   waitForLifecycleSettle
 } from "./harness-lifecycle-test-support.js"
 import { makeHarnessLifecycleManager } from "./harness-lifecycle.js"
@@ -33,7 +34,7 @@ describe("harness lifecycle install/update execution", () => {
       db,
       resolveEnv: async () => ({ PATH: bin })
     })
-    const methods = await lifecycle.installMethods("fake-cli")
+    const methods = await installMethodsFor(lifecycle, "fake-cli")
     expect(methods).toEqual([
       {
         available: false,

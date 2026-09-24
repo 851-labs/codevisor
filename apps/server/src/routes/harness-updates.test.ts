@@ -36,11 +36,7 @@ describe("harness update checks", () => {
           updateInfo: { latestVersion: "9.9.9", updateAvailable: true }
         })),
       forcePendingUpdate: async () => {},
-      installMethods: async () => [],
-      beginUninstall: async () => ({
-        terminalId: "unused",
-        lifecycle: { phase: "uninstalling" as const }
-      }),
+      beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -112,11 +108,7 @@ describe("harness update checks", () => {
         if (id !== "codex") throw new Error("No pending update")
         calls.push(`force ${id}`)
       },
-      installMethods: async () => [],
-      beginUninstall: async () => ({
-        terminalId: "unused",
-        lifecycle: { phase: "uninstalling" as const }
-      }),
+      beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: () => {},
       notifyTurnStarted: () => {},
@@ -319,11 +311,7 @@ describe("harness update checks", () => {
       checkForUpdates: async () => [],
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
       forcePendingUpdate: async () => {},
-      installMethods: async () => [],
-      beginUninstall: async () => ({
-        terminalId: "unused",
-        lifecycle: { phase: "uninstalling" as const }
-      }),
+      beginUninstall: async () => {},
       isGated: (harnessId: string) => gated.has(harnessId),
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),

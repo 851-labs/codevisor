@@ -235,10 +235,6 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
           }
         }
       }),
-    terminalFrames: (terminalId, since = 0) =>
-      terminalAttempt("terminalFrames", () =>
-        getTerminal(terminalId, "terminalFrames").frames.filter((frame) => frame.seq > since)
-      ),
     closeTerminal: (terminalId) =>
       terminalPromise("closeTerminal", async () => {
         const terminal = getTerminal(terminalId, "closeTerminal")

@@ -2,7 +2,14 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeTerminalManager, TerminalError, TerminalManager } from "./index.js"
-import { run, makeSpawner, inputFrame, resizeFrame, closeFrame } from "./test-support.js"
+import {
+  run,
+  makeSpawner,
+  inputFrame,
+  resizeFrame,
+  closeFrame,
+  replayedFrames
+} from "./test-support.js"
 
 describe("@codevisor/terminal terminal manager", () => {
   it("creates terminals through an Effect layer and rejects invalid dimensions", async () => {
@@ -114,12 +121,12 @@ describe("@codevisor/terminal terminal manager", () => {
       { type: "output", seq: 1, data: "hello" },
       { type: "exit", seq: 2, exitCode: 7 }
     ])
-    expect(await run(manager.terminalFrames(terminal.terminalId))).toEqual([
+    expect(await run(replayedFrames(manager, terminal.terminalId))).toEqual([
       { type: "output", seq: 1, data: "hello" },
       { type: "exit", seq: 2, exitCode: 7 },
       { type: "output", seq: 3, data: "after-disconnect" }
     ])
-    expect(await run(manager.terminalFrames(terminal.terminalId, 1))).toEqual([
+    expect(await run(replayedFrames(manager, terminal.terminalId, 1))).toEqual([
       { type: "exit", seq: 2, exitCode: 7 },
       { type: "output", seq: 3, data: "after-disconnect" }
     ])
@@ -166,7 +173,7 @@ describe("@codevisor/terminal terminal manager", () => {
 
     await run(manager.handleClientFrame(terminal.terminalId, closeFrame(1)))
     expect(spawner.processes[0]?.killCount).toBe(1)
-    await expect(run(manager.terminalFrames("missing"))).rejects.toBeInstanceOf(TerminalError)
+    await expect(run(replayedFrames(manager, "missing"))).rejects.toBeInstanceOf(TerminalError)
     await expect(run(manager.closeTerminal("missing"))).rejects.toBeInstanceOf(TerminalError)
   })
 
@@ -189,7 +196,7 @@ describe("@codevisor/terminal terminal manager", () => {
     // Live terminal: killed and unregistered, so the next create respawns.
     expect(await run(manager.closeTerminalForSession("session-5"))).toBe(true)
     expect(spawner.processes[0]?.killCount).toBe(1)
-    await expect(run(manager.terminalFrames(terminal.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, terminal.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
     const replacement = await run(

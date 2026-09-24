@@ -44,7 +44,6 @@ export interface DirectChannelHostOptions {
   peerKeyPins: PeerKeyPinStore
   compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
   decompressPayload?: (bytes: Uint8Array) => Uint8Array
-  helloTimeoutMs?: number
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   log?: (line: string) => void
 }
@@ -84,7 +83,7 @@ export class DirectChannelHost {
     let cancelHelloTimeout: CancelTimeout | undefined = scheduleTimeout(() => {
       cancelHelloTimeout = undefined
       socket.close(DIRECT_CLOSE_HELLO_TIMEOUT, "hello timeout")
-    }, options.helloTimeoutMs ?? 10_000)
+    }, 10_000)
 
     // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onmessage = (data) => {

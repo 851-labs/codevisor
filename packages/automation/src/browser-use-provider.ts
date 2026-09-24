@@ -38,7 +38,6 @@ import { browserUseTools } from "./browser-use-tools.js"
 
 export { managedBrowserSandboxArguments } from "./browser-chromium.js"
 export type { ManagedBrowserLaunchEnvironment } from "./browser-chromium.js"
-export { browserKeyDescription } from "./browser-input.js"
 export { browserUseTools } from "./browser-use-tools.js"
 
 export type {
@@ -264,10 +263,6 @@ export const makeBrowserUseProvider = (
     acceptExtensionConnection: (socket) => {
       runtimes.delete("extension")
       extensionRelay.accept(socket)
-    },
-    waitForExtensionConnection: async () => {
-      if (extensionEndpoint() !== undefined || extensionRelay.connected()) return
-      await extensionRelay.connect()
     },
     onExtensionConnectionChange: extensionRelay.onConnectionChange,
     openDevelopmentExtensionFolder: () =>

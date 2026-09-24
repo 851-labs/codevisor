@@ -1,3 +1,6 @@
+import type { PluginsManager } from "@codevisor/plugins"
+import type { SkillsManager } from "@codevisor/skills"
+
 import {
   ACCOUNTS_SYNC_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
@@ -161,10 +164,9 @@ export const refreshSkillReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout,
+  skills: SkillsManager,
   missingBlobs: SkillsSyncStatus["missingBlobs"]
 ): Promise<void> => {
-  const skills = services.skills
-  if (skills === undefined) return
   try {
     const result = await publishSkillReadiness({
       db: services.db,
@@ -240,10 +242,9 @@ export const refreshPluginReadiness = async (
   services: CodevisorServerServices,
   config: CodevisorServerConfig,
   fanout: EventFanout,
+  manager: PluginsManager,
   blocked: ReadonlyArray<{ readonly id: string; readonly reason: string }>
 ): Promise<void> => {
-  const manager = services.plugins
-  if (manager === undefined) return
   try {
     const blockedById = new Map(blocked.map((entry) => [entry.id, entry.reason]))
     const local = (await manager.list()).plugins

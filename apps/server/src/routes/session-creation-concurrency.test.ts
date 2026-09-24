@@ -56,7 +56,7 @@ it("joins a pending session creation without starting another agent", async () =
     services,
     fanout,
     state,
-    defaultServerConfig({ id: "server-a" }),
+    defaultServerConfig({ bootId: "test-boot", id: "server-a" }),
     payload
   )
   await entered.promise
@@ -64,7 +64,7 @@ it("joins a pending session creation without starting another agent", async () =
     services,
     fanout,
     state,
-    defaultServerConfig({ id: "server-a" }),
+    defaultServerConfig({ bootId: "test-boot", id: "server-a" }),
     payload
   )
   await joined.promise

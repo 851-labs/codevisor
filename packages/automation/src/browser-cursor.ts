@@ -6,13 +6,6 @@ import {
   type PointerReply
 } from "./browser-cursor-overlay.js"
 
-export {
-  pointerOverlayExpression,
-  pointerOverlaySource,
-  type PointerCommand,
-  type PointerReply
-} from "./browser-cursor-overlay.js"
-
 /**
  * Browser Use cursor presentation.
  *

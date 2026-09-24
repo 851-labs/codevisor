@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { makeTerminalManager, TerminalError } from "./index.js"
-import { run, FakeProcess, makeSpawner, inputFrame } from "./test-support.js"
+import { run, FakeProcess, makeSpawner, inputFrame, replayedFrames } from "./test-support.js"
 
 describe("@codevisor/terminal terminal manager snapshots", () => {
   it("restores snapshotted terminals as closed scrollback with a synthetic exit", async () => {
@@ -69,7 +69,7 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
 
     // Already-exited externals do not gain a second exit frame, and input
     // frames stay meaningless no-ops rather than errors.
-    const frames = await run(restored.terminalFrames(handle.terminalId))
+    const frames = await run(replayedFrames(restored, handle.terminalId))
     expect(frames.map((frame) => frame.type)).toEqual(["output", "exit"])
     await run(restored.handleClientFrame(handle.terminalId, inputFrame(1, "ignored")))
   })
@@ -85,7 +85,7 @@ describe("@codevisor/terminal terminal manager snapshots", () => {
 
     // The live terminal was not clobbered: it still accepts output.
     handle.output("still live")
-    const frames = await run(manager.terminalFrames(handle.terminalId))
+    const frames = await run(replayedFrames(manager, handle.terminalId))
     expect(frames.filter((frame) => frame.type === "output")).toHaveLength(2)
     expect(frames.filter((frame) => frame.type === "exit")).toHaveLength(0)
   })

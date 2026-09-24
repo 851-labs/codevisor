@@ -101,16 +101,16 @@ export interface AgentSessionScanOptions {
   /// Newest sessions to return; bounds file reads on machines with hundreds
   /// of session files. Default 40.
   readonly limit?: number
-  /// Bytes read from the head of each session file. Default 256 KiB —
-  /// enough to find the cwd and the first user message.
-  readonly maxReadBytes?: number
   readonly fs?: AgentSessionFileSystem
 }
+
+/// Bytes read from the head of each session file: 256 KiB is enough to find
+/// the cwd and the first user message.
+const maxReadBytes = 256 * 1024
 
 const resolved = (options: AgentSessionScanOptions) => ({
   homedir: options.homedir ?? osHomedir(),
   limit: options.limit ?? 40,
-  maxReadBytes: options.maxReadBytes ?? 256 * 1024,
   fs: options.fs ?? defaultAgentSessionFileSystem
 })
 
@@ -153,7 +153,7 @@ const newestFirst = (
 export const listClaudeAgentSessions = async (
   options: AgentSessionScanOptions = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
-  const { homedir, limit, maxReadBytes, fs } = resolved(options)
+  const { homedir, limit, fs } = resolved(options)
   const root = join(homedir, ".claude", "projects")
   const candidates: SessionFileCandidate[] = []
   for (const project of await fs.listDirectory(root)) {
@@ -228,7 +228,7 @@ const fileStem = (path: string): string => {
 export const listCodexAgentSessions = async (
   options: AgentSessionScanOptions = {}
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
-  const { homedir, limit, maxReadBytes, fs } = resolved(options)
+  const { homedir, limit, fs } = resolved(options)
   const root = join(homedir, ".codex", "sessions")
   const candidates: SessionFileCandidate[] = []
   const walk = async (directory: string, depth: number): Promise<void> => {

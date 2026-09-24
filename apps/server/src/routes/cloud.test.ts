@@ -9,7 +9,12 @@ describe("cloud routes", () => {
     const server = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "server-cloud", port: 0, cloudDeviceId: "device-123" })
+        defaultServerConfig({
+          bootId: "test-boot",
+          id: "server-cloud",
+          port: 0,
+          cloudDeviceId: "device-123"
+        })
       )
     )
     runningServers.push(server)
@@ -59,7 +64,7 @@ describe("cloud routes", () => {
     const server = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "server-cloud-live", port: 0, cloud })
+        defaultServerConfig({ bootId: "test-boot", id: "server-cloud-live", port: 0, cloud })
       )
     )
     runningServers.push(server)

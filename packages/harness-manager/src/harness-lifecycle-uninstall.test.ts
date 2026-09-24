@@ -129,8 +129,7 @@ describe("harness uninstall", () => {
 
   it("uses the owning npm prefix, streams progress, verifies removal, and releases dispatch", async () => {
     const world = await fixture("/tools/it's node/lib/node_modules/fake-cli/bin/cli.js")
-    const result = await world.lifecycle.beginUninstall("fake-cli")
-    expect(result.lifecycle.phase).toBe("uninstalling")
+    await world.lifecycle.beginUninstall("fake-cli")
     await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("Another operation")
     expect(world.lifecycle.isGated("fake-cli")).toBe(true)
     expect(world.spawns[0]?.command).toContain("'--prefix' '/tools/it'\\''s node' 'fake-cli'")

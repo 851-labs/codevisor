@@ -28,11 +28,7 @@ describe("archived chats and update turn accounting", () => {
       checkForUpdates: async () => [],
       decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
       forcePendingUpdate: async () => {},
-      installMethods: async () => [],
-      beginUninstall: async () => ({
-        terminalId: "unused",
-        lifecycle: { phase: "uninstalling" as const }
-      }),
+      beginUninstall: async () => {},
       isGated: () => false,
       notifyTurnEnded: (harnessId: string) => turns.push(`end ${harnessId}`),
       notifyTurnStarted: (harnessId: string) => turns.push(`start ${harnessId}`),

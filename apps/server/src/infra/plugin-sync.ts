@@ -46,7 +46,6 @@ export interface LocalPluginState {
 export interface PluginSyncDeps {
   readonly db: CodevisorDatabaseService
   readonly serverId: string
-  readonly now?: () => number
   readonly listPlugins: () => Promise<ReadonlyArray<LocalPluginState>>
   /// Installs from a replicated source (registry repo or git url); throws
   /// on unmet requirements or fetch failures (surfaced as blocked).
@@ -89,7 +88,6 @@ const reasonFrom = (cause: unknown): string =>
 
 /// One reconcile pass; see the module doc for the model.
 export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSyncResult> => {
-  const now = deps.now ?? Date.now
   const locals = await deps.listPlugins()
   const localById = new Map(locals.map((plugin) => [plugin.id, plugin]))
   const replica = await run(deps.db.getSyncEntries(PLUGINS_SYNC_NAMESPACE))
@@ -110,7 +108,7 @@ export const reconcilePlugins = async (deps: PluginSyncDeps): Promise<PluginSync
   const appliedWrites: Array<SyncEntryRecord> = []
   let clock: SyncTimestampValue | undefined = latestSyncTimestamp([...replica, ...appliedEntries])
   const stamp = (): SyncTimestampValue => {
-    clock = nextSyncTimestamp(deps.serverId, clock, now())
+    clock = nextSyncTimestamp(deps.serverId, clock, Date.now())
     return clock
   }
 

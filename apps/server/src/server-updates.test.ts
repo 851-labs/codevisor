@@ -22,7 +22,10 @@ describe("@codevisor/server self-updates", () => {
 
     // Servers without an updater refuse remote update requests.
     const plain = await run(
-      startCodevisorServer(services, defaultServerConfig({ id: "server-plain", port: 0 }))
+      startCodevisorServer(
+        services,
+        defaultServerConfig({ bootId: "test-boot", id: "server-plain", port: 0 })
+      )
     )
     runningServers.push(plain)
     expect((await jsonRequest(plain, "/v1/update/apply", { method: "POST" })).status).toBe(409)
@@ -40,6 +43,7 @@ describe("@codevisor/server self-updates", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           id: "server-updatable",
           port: 0,
           updater: {
@@ -134,6 +138,7 @@ describe("@codevisor/server self-updates", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           id: "server-update-events",
           port: 0,
           updater: {
@@ -175,6 +180,7 @@ describe("@codevisor/server self-updates", () => {
       startCodevisorServer(
         services,
         defaultServerConfig({
+          bootId: "test-boot",
           id: "server-busy",
           port: 0,
           updater: {

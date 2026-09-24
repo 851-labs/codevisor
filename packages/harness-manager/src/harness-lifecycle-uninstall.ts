@@ -130,7 +130,7 @@ export const makeHarnessUninstall = (
     for (const listener of core.gateListeners) listener(id)
   }
   return {
-    beginUninstall: async (id: string) => {
+    beginUninstall: async (id: string): Promise<void> => {
       if ((core.busyCounts.get(id) ?? 0) > 0)
         throw new Error("Finish or stop active chats before uninstalling")
       const phase = core.operations.get(id)?.phase
@@ -142,7 +142,7 @@ export const makeHarnessUninstall = (
         const plan = await resolvePlan(id)
         if (!plan.available) throw new Error(plan.detail)
         const target = plan.target
-        return await runner.runOperation({
+        await runner.runOperation({
           harnessId: id,
           phase: "uninstalling",
           command: plan.command,

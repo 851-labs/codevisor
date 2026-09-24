@@ -384,7 +384,7 @@ describe("streaming turn sweeps and prompt gating", () => {
     const server = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "server-prompt-message-id", port: 0 })
+        defaultServerConfig({ bootId: "test-boot", id: "server-prompt-message-id", port: 0 })
       )
     )
     runningServers.push(server)

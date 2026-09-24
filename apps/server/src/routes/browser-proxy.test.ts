@@ -74,7 +74,14 @@ describe("browser proxy session", () => {
       restart: idleRestartCoordinator()
     }
     const http = createServer((req, res) => {
-      void handleRequest(services, defaultServerConfig(), fanout, state, req, res)
+      void handleRequest(
+        services,
+        defaultServerConfig({ bootId: "test-boot" }),
+        fanout,
+        state,
+        req,
+        res
+      )
     })
     http.listen(0, "127.0.0.1")
     await once(http, "listening")

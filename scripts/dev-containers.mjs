@@ -19,7 +19,6 @@ import { join } from "node:path"
 
 import { syncLinuxWorkspace } from "./dev-container-workspace.mjs"
 import { pathExists } from "./dev-shared.mjs"
-export { syncLinuxWorkspace }
 
 export function devRemoteHomeMounts(remoteRootHost) {
   return [

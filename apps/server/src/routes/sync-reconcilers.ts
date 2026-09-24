@@ -2,15 +2,9 @@ import type { SyncEntryRecord } from "@codevisor/sync"
 
 import { MCPS_SYNC_NAMESPACE, reconcileMcps } from "../infra/config-sync.js"
 import { CREDENTIALS_SYNC_NAMESPACE, reconcileCredentials } from "../infra/credential-sync.js"
-import {
-  HARNESSES_SYNC_NAMESPACE,
-  reconcileHarnesses,
-  type HarnessSyncStatus
-} from "../infra/harness-sync.js"
+import { HARNESSES_SYNC_NAMESPACE, reconcileHarnesses } from "../infra/harness-sync.js"
 import { PLUGINS_SYNC_NAMESPACE, pluginSyncOrigin, reconcilePlugins } from "../infra/plugin-sync.js"
-import type { PluginSyncStatus } from "../infra/plugin-sync.js"
 import { reconcileSkills, SKILLS_SYNC_NAMESPACE } from "../infra/skills-sync.js"
-import type { SkillsSyncStatus } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   run,
@@ -39,6 +33,9 @@ export type SyncReconcileNamespace = "skills" | "mcps" | "harnesses" | "plugins"
 export interface SyncReconcileOutcome {
   readonly status: unknown
   readonly changedEntries: ReadonlyArray<SyncEntryRecord>
+  /// Republishes this machine's readiness entry for the plane, carrying the
+  /// pass's own status; absent for planes without a readiness entry.
+  readonly refreshReadiness?: (fanout: EventFanout) => Promise<void>
 }
 
 /// The participation flag lives in a dot-named namespace the HTTP surface
@@ -63,21 +60,26 @@ export const reconcileForNamespace = async (
       const blobs = services.syncBlobs
       const skills = services.skills
       if (blobs === undefined || skills === undefined) return undefined
-      return reconcileSkills({ db: services.db, skills, blobs, serverId: config.id })
+      const outcome = await reconcileSkills({ db: services.db, skills, blobs, serverId: config.id })
+      return {
+        ...outcome,
+        refreshReadiness: (fanout) =>
+          refreshSkillReadiness(services, config, fanout, skills, outcome.status.missingBlobs)
+      }
     }
     case "mcps": {
       const mcp = services.mcp
       if (mcp === undefined) return undefined
-      return reconcileMcps({
-        db: services.db,
-        mcp,
-        serverId: config.id
-      })
+      const outcome = await reconcileMcps({ db: services.db, mcp, serverId: config.id })
+      return {
+        ...outcome,
+        refreshReadiness: (fanout) => refreshMcpReadiness(services, config, fanout)
+      }
     }
     case "harnesses": {
       const lifecycle = services.lifecycle
       const custom = services.customHarnesses
-      return reconcileHarnesses({
+      const outcome = await reconcileHarnesses({
         db: services.db,
         serverId: config.id,
         listHarnesses: async () => {
@@ -117,6 +119,11 @@ export const reconcileForNamespace = async (
           if (custom !== undefined) await custom.replace(specs)
         }
       })
+      return {
+        ...outcome,
+        refreshReadiness: (fanout) =>
+          refreshHarnessReadiness(services, config, fanout, outcome.status.blocked)
+      }
     }
     case "credentials": {
       await services.sharedAccounts?.reconcile()
@@ -144,7 +151,7 @@ export const reconcileForNamespace = async (
     case "plugins": {
       const manager = services.plugins
       if (manager === undefined) return undefined
-      return reconcilePlugins({
+      const outcome = await reconcilePlugins({
         db: services.db,
         serverId: config.id,
         listPlugins: async () =>
@@ -166,6 +173,11 @@ export const reconcileForNamespace = async (
           await manager.remove(pluginId)
         }
       })
+      return {
+        ...outcome,
+        refreshReadiness: (fanout) =>
+          refreshPluginReadiness(services, config, fanout, manager, outcome.status.blocked)
+      }
     }
   }
 }
@@ -207,31 +219,7 @@ export const runBackgroundSyncReconcile = async (
     const result = await reconcileForNamespace(services, config, namespace)
     if (result === undefined) return
     publishSyncChanged(services, fanout, namespace, result.changedEntries)
-    if (namespace === "mcps") await refreshMcpReadiness(services, config, fanout)
-    if (namespace === "skills") {
-      await refreshSkillReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as SkillsSyncStatus).missingBlobs
-      )
-    }
-    if (namespace === "harnesses") {
-      await refreshHarnessReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as HarnessSyncStatus).blocked
-      )
-    }
-    if (namespace === "plugins") {
-      await refreshPluginReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as PluginSyncStatus).blocked
-      )
-    }
+    await result.refreshReadiness?.(fanout)
     // Auth mutations ride the harnesses trigger; the credential ferry
     // re-hashes its files on the same beat (cheap when nothing changed).
     if (namespace === "harnesses") {

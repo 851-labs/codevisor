@@ -257,9 +257,6 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<FileMetadata, DatabaseError>
   readonly createDiskFile: (metadata: FileMetadata) => Effect.Effect<FileMetadata, DatabaseError>
   readonly getFileMetadata: (id: string) => Effect.Effect<FileMetadata | undefined, DatabaseError>
-  readonly getFile: (
-    id: string
-  ) => Effect.Effect<{ metadata: FileMetadata; data: Buffer } | undefined, DatabaseError>
   readonly getFileStorage: (
     id: string
   ) => Effect.Effect<FileStorageRecord | undefined, DatabaseError>
@@ -307,15 +304,6 @@ export interface CodevisorDatabaseService {
     sessionId: string,
     messageId: string
   ) => Effect.Effect<boolean, DatabaseError>
-  /// Marks every still-streaming assistant chat item as failed except
-  /// `excludeItemId`. Streaming rows are process-owned: whenever no live turn
-  /// exists for them (server startup, crash recovery), they can never emit
-  /// again and would otherwise render as an endless in-progress turn.
-  readonly failStaleAssistantChatItems: (
-    sessionId: string,
-    stopDetail: string,
-    excludeItemId?: string
-  ) => Effect.Effect<number, DatabaseError>
   /// Completes every still-streaming assistant chat item except
   /// `excludeItemId` as an ordinary finished response (no failure status or
   /// stop detail) — healing for a lost terminal event. Returns the count.

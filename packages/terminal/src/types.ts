@@ -108,10 +108,6 @@ export interface TerminalManagerService {
     terminalId: string,
     frame: TerminalClientFrame
   ) => Effect.Effect<void, TerminalError>
-  readonly terminalFrames: (
-    terminalId: string,
-    since?: number
-  ) => Effect.Effect<ReadonlyArray<TerminalServerFrame>, TerminalError>
   readonly closeTerminal: (terminalId: string) => Effect.Effect<void, TerminalError>
   /// Kills the live terminal for a session (if any), so the next createTerminal
   /// for that session spawns a fresh shell. Returns whether one was closed.

@@ -22,11 +22,10 @@ describe("@codevisor/db", () => {
     })
     expect(metadata.sha256).toHaveLength(64)
 
-    const stored = await run(db.getFile(metadata.id))
+    const stored = await run(db.getFileStorage(metadata.id))
     expect(stored?.metadata).toEqual(metadata)
     expect(stored?.data.equals(bytes)).toBe(true)
     expect(await run(db.getFileMetadata(metadata.id))).toEqual(metadata)
-    expect(await run(db.getFile("missing-file"))).toBeUndefined()
     expect(await run(db.getFileMetadata("missing-file"))).toBeUndefined()
 
     const ref = {

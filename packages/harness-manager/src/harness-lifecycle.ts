@@ -28,7 +28,7 @@ export const makeHarnessLifecycleManager = (
   const runner = makeHarnessOperationRunner(core, detection)
   const gate = makeHarnessUpdateGate(core, runner)
   const bundledApp = makeBundledAppOperations(core, detection, runner)
-  const { checkIntervalMs, definitionOrThrow, listeners, loadStates, operations } = core
+  const { checkIntervalMs, listeners, loadStates, operations } = core
 
   const decorateHarnesses = async (
     harnesses: ReadonlyArray<Harness>
@@ -97,7 +97,6 @@ export const makeHarnessLifecycleManager = (
       return detection.checkForUpdates(force, harnessIds)
     },
     decorateHarnesses,
-    installMethods: async (harnessId) => runner.resolveInstallMethods(definitionOrThrow(harnessId)),
     startPeriodicChecks,
     subscribe: (listener) => {
       listeners.add(listener)

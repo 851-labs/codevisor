@@ -20,7 +20,7 @@ describe("server boot identity", () => {
     const server = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "machine-abc", kind: "local", port: 0 })
+        defaultServerConfig({ bootId: "test-boot", id: "machine-abc", kind: "local", port: 0 })
       )
     )
     runningServers.push(server)
@@ -67,7 +67,7 @@ describe("server boot identity", () => {
     const running = await run(
       startCodevisorServer(
         services,
-        defaultServerConfig({ id: "machine-abc", kind: "local", port: 0 })
+        defaultServerConfig({ bootId: "test-boot", id: "machine-abc", kind: "local", port: 0 })
       )
     )
     runningServers.push(running)

@@ -60,7 +60,6 @@ export interface SkillsSyncDeps {
   readonly skills: SkillsManager
   readonly blobs: BlobStore
   readonly serverId: string
-  readonly now?: () => number
 }
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
@@ -127,7 +126,6 @@ const entryHash = (entry: SyncEntryRecord): string | undefined => {
 
 /// One reconcile pass; see the module doc for the model.
 export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncResult> => {
-  const now = deps.now ?? Date.now
   const scan = await deps.skills.list()
   const localSkills = new Map(scan.global.map((skill) => [skill.directoryName, skill]))
   const localHashes = new Map<string, string>()
@@ -152,7 +150,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   const appliedWrites: Array<SyncEntryRecord> = []
   let clock = latestSyncTimestamp([...replica, ...appliedEntries])
   const stamp = (): SyncEntryRecord["timestamp"] => {
-    clock = nextSyncTimestamp(deps.serverId, clock, now())
+    clock = nextSyncTimestamp(deps.serverId, clock, Date.now())
     return clock
   }
 

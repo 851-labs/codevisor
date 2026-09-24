@@ -291,58 +291,6 @@ describe("@codevisor/db", () => {
     await run(db.close)
   })
 
-  it("fails stale streaming assistant items without touching the active item", async () => {
-    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
-    const project = await run(db.createProject({ folderPath: "/tmp/stale-assistant-items" }))
-    const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
-
-    expect(await run(db.failStaleAssistantChatItems(session.id, "Server restarted"))).toBe(0)
-
-    await run(
-      db.appendEvent("session.updated", session.id, { turnId: "turn-stale", turnState: "started" })
-    )
-    await run(
-      db.appendEvent("session.output", session.id, {
-        content: { type: "text", text: "durable answer" },
-        messageId: "answer-stale",
-        sessionUpdate: "agent_message_chunk"
-      })
-    )
-    const stale = (await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)!
-
-    expect(
-      await run(db.failStaleAssistantChatItems(session.id, "Server restarted", stale.id))
-    ).toBe(0)
-    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
-      id: stale.id,
-      isGenerating: true
-    })
-
-    expect(await run(db.failStaleAssistantChatItems(session.id, "Server restarted"))).toBe(1)
-    expect((await run(db.getTranscriptPage(session.id, undefined, 8))).items.at(-1)).toMatchObject({
-      id: stale.id,
-      isGenerating: false,
-      stopDetail: "Server restarted",
-      stopReason: "interrupted",
-      text: "durable answer"
-    })
-
-    // Clearing the failed projection pointer ensures later output opens a
-    // fresh assistant item instead of reviving the interrupted one.
-    await run(
-      db.appendEvent("session.output", session.id, {
-        content: { type: "text", text: "fresh answer" },
-        messageId: "answer-fresh",
-        sessionUpdate: "agent_message_chunk"
-      })
-    )
-    const items = (await run(db.getTranscriptPage(session.id, undefined, 8))).items
-    expect(items).toHaveLength(2)
-    expect(items[1]).toMatchObject({ isGenerating: true, text: "fresh answer" })
-    expect(items[1]?.id).not.toBe(stale.id)
-    await run(db.close)
-  })
-
   it("lists sessions with streaming items only once their event log is quiet", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/quiet-streaming" }))
@@ -374,7 +322,7 @@ describe("@codevisor/db", () => {
     // all completed never qualify no matter how quiet they are.
     expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([streaming.id])
     // Once repaired, the session drops out.
-    await run(db.failStaleAssistantChatItems(streaming.id, "closed by sweep"))
+    await run(db.closeStaleAssistantChatItems(streaming.id))
     expect(await run(db.listQuietStreamingSessions(afterEvents))).toEqual([])
     await run(db.close)
   })

@@ -7,7 +7,8 @@ import {
   makeSpawner,
   inputFrame,
   resizeFrame,
-  closeFrame
+  closeFrame,
+  replayedFrames
 } from "./test-support.js"
 
 describe("@codevisor/terminal terminal manager external terminals", () => {
@@ -47,7 +48,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
       })
     )
     expect(attached.terminalId).toBe(handle.terminalId)
-    expect(await run(manager.terminalFrames(handle.terminalId))).toEqual([
+    expect(await run(replayedFrames(manager, handle.terminalId))).toEqual([
       { type: "output", seq: 1, data: "line1\r\nline2\r\nline3\r\n" }
     ])
 
@@ -65,7 +66,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
       manager.createTerminal({ sessionId: "bg-key-1", cwd: "/tmp", cols: 80, rows: 24 })
     )
     expect(reattached.terminalId).toBe(handle.terminalId)
-    const frames = await run(manager.terminalFrames(handle.terminalId, 1))
+    const frames = await run(replayedFrames(manager, handle.terminalId, 1))
     expect(frames[0]).toEqual({ type: "exit", seq: 2, exitCode: 3 })
     expect(spawner.requests).toHaveLength(0)
 
@@ -75,7 +76,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
 
     // An explicit session close finally removes the exited terminal.
     expect(await run(manager.closeTerminalForSession("bg-key-1"))).toBe(false)
-    await expect(run(manager.terminalFrames(handle.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, handle.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
   })
@@ -91,7 +92,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     const second = new FakeProcess()
     const secondHandle = manager.registerExternalTerminal({ sessionId: "bg-key-2" }, second)
     secondHandle.output("raw\nbytes")
-    expect(await run(manager.terminalFrames(secondHandle.terminalId))).toEqual([
+    expect(await run(replayedFrames(manager, secondHandle.terminalId))).toEqual([
       { type: "output", seq: 1, data: "raw\nbytes" }
     ])
     // The session key now resolves to the replacement terminal.
@@ -106,7 +107,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     // remove() drops a never-surfaced terminal entirely.
     const third = manager.registerExternalTerminal({ sessionId: "bg-key-3" }, new FakeProcess())
     third.remove()
-    await expect(run(manager.terminalFrames(third.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, third.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
     expect(await run(manager.closeTerminalForSession("bg-key-3"))).toBe(false)
@@ -117,12 +118,12 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     const first = manager.registerExternalTerminal({ sessionId: "bg-key-5" }, new FakeProcess())
     // A signal-terminated process reports an exit frame without a code.
     first.exit()
-    expect(await run(manager.terminalFrames(first.terminalId))).toEqual([{ type: "exit", seq: 1 }])
+    expect(await run(replayedFrames(manager, first.terminalId))).toEqual([{ type: "exit", seq: 1 }])
     const replacement = manager.registerExternalTerminal(
       { sessionId: "bg-key-5" },
       new FakeProcess()
     )
-    await expect(run(manager.terminalFrames(first.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, first.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
     expect(
@@ -153,14 +154,14 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     expect(await run(manager.closeTerminalsForSessionPrefix("agent-1:bg:"))).toBe(2)
     // Live processes are killed; exited ones just lose their scrollback.
     expect(runningProcess.killCount).toBe(1)
-    await expect(run(manager.terminalFrames(running.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, running.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
-    await expect(run(manager.terminalFrames(exited.terminalId))).rejects.toBeInstanceOf(
+    await expect(run(replayedFrames(manager, exited.terminalId))).rejects.toBeInstanceOf(
       TerminalError
     )
     // Other sessions' terminals are untouched, and a second sweep finds nothing.
-    expect(await run(manager.terminalFrames(unrelated.terminalId))).toEqual([])
+    expect(await run(replayedFrames(manager, unrelated.terminalId))).toEqual([])
     expect(await run(manager.closeTerminalsForSessionPrefix("agent-1:bg:"))).toBe(0)
   })
 
@@ -170,7 +171,7 @@ describe("@codevisor/terminal terminal manager external terminals", () => {
     for (let index = 0; index < 20_001; index += 1) {
       handle.output(`chunk-${index}`)
     }
-    const frames = await run(manager.terminalFrames(handle.terminalId))
+    const frames = await run(replayedFrames(manager, handle.terminalId))
     expect(frames).toHaveLength(20_000)
     expect(frames[0]).toEqual({ type: "output", seq: 2, data: "chunk-1" })
   })

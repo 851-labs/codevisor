@@ -63,47 +63,12 @@ export const makeTranscriptService = (
   | "appendConversationItem"
   | "hasConversationMessage"
   | "hasTerminalAssistantAfterMessage"
-  | "failStaleAssistantChatItems"
   | "closeStaleAssistantChatItems"
   | "listQuietStreamingSessions"
   | "getSessionActionResult"
   | "saveSessionActionResult"
 > => {
   const { sqlite, getSession } = context
-
-  /// Shared body of the two stale-row settlers: every still-streaming
-  /// assistant row (except `excludeItemId`) is finished by `finish`, and the
-  /// projection's write pointer is dropped from any row it settled — a
-  /// finished row can never be the write target again; a pointer left on
-  /// one would resurrect it on the next assistant event.
-  const settleStaleAssistantChatItems = (
-    rawSessionId: string,
-    excludeItemId: string | undefined,
-    finish: (sessionId: string, itemId: string, now: string) => void
-  ): number => {
-    const sessionId = canonicalUuid(rawSessionId)
-    getSession(sessionId)
-    return sqlite.transaction(() => {
-      const stale = sqlite
-        .prepare(
-          `select id from chat_items
-           where session_id = ? and role = 'assistant' and status = 'streaming' and id != ?
-           order by position asc`
-        )
-        .all(sessionId, excludeItemId ?? "") as Array<{ id: string }>
-      const now = isoTimestamp()
-      for (const row of stale) finish(sessionId, row.id, now)
-      if (stale.length > 0) {
-        sqlite
-          .prepare(
-            `update session_chat_state set current_item_id = null
-             where session_id = ? and current_item_id in (${stale.map(() => "?").join(", ")})`
-          )
-          .run(sessionId, ...stale.map((row) => row.id))
-      }
-      return stale.length
-    })()
-  }
 
   const service: Pick<
     CodevisorDatabaseService,
@@ -114,7 +79,6 @@ export const makeTranscriptService = (
     | "appendConversationItem"
     | "hasConversationMessage"
     | "hasTerminalAssistantAfterMessage"
-    | "failStaleAssistantChatItems"
     | "closeStaleAssistantChatItems"
     | "listQuietStreamingSessions"
     | "getSessionActionResult"
@@ -372,28 +336,35 @@ export const makeTranscriptService = (
             .all(quietSinceIso) as Array<{ session_id: string }>
         ).map((row) => row.session_id)
       ),
-    failStaleAssistantChatItems: (rawSessionId, stopDetail, excludeItemId) =>
-      attempt("failStaleAssistantChatItems", () =>
-        settleStaleAssistantChatItems(rawSessionId, excludeItemId, (sessionId, itemId, now) =>
-          finishAssistantChatItem(
-            sqlite,
-            sessionId,
-            itemId,
-            now,
-            "interrupted",
-            stopDetail,
-            undefined,
-            false,
-            true
-          )
-        )
-      ),
     closeStaleAssistantChatItems: (rawSessionId, excludeItemId) =>
-      attempt("closeStaleAssistantChatItems", () =>
-        settleStaleAssistantChatItems(rawSessionId, excludeItemId, (sessionId, itemId, now) =>
-          finishAssistantChatItem(sqlite, sessionId, itemId, now, "end_turn")
-        )
-      ),
+      attempt("closeStaleAssistantChatItems", () => {
+        const sessionId = canonicalUuid(rawSessionId)
+        getSession(sessionId)
+        return sqlite.transaction(() => {
+          const stale = sqlite
+            .prepare(
+              `select id from chat_items
+               where session_id = ? and role = 'assistant' and status = 'streaming' and id != ?
+               order by position asc`
+            )
+            .all(sessionId, excludeItemId ?? "") as Array<{ id: string }>
+          const now = isoTimestamp()
+          for (const row of stale) {
+            finishAssistantChatItem(sqlite, sessionId, row.id, now, "end_turn")
+          }
+          // A finished row can never be the write target again; a pointer
+          // left on one would resurrect it on the next assistant event.
+          if (stale.length > 0) {
+            sqlite
+              .prepare(
+                `update session_chat_state set current_item_id = null
+                 where session_id = ? and current_item_id in (${stale.map(() => "?").join(", ")})`
+              )
+              .run(sessionId, ...stale.map((row) => row.id))
+          }
+          return stale.length
+        })()
+      }),
     getSessionActionResult: (sessionId, clientActionId) =>
       attempt("getSessionActionResult", () => {
         const row = sqlite

@@ -136,7 +136,6 @@ describe("/v1/sync/harness-readiness", () => {
         decorateHarnesses: async (list: ReadonlyArray<Harness>) => list,
         beginUninstall: async () => {
           started = true
-          return { terminalId: "remove" }
         }
       } as unknown as NonNullable<CodevisorServerServices["lifecycle"]>
       const server = await startWithApp({ ...services, ...(available ? { lifecycle } : {}) })
@@ -258,7 +257,13 @@ describe("/v1/sync/plugin-readiness", () => {
     const withPlugins = { ...services, plugins: pluginsStub([]) }
     const server = await startWithApp(withPlugins, undefined, { id: "server-plr" })
 
-    await refreshPluginReadiness(withPlugins, machine("server-plr"), await run(makeEventFanout), [])
+    await refreshPluginReadiness(
+      withPlugins,
+      machine("server-plr"),
+      await run(makeEventFanout),
+      withPlugins.plugins,
+      []
+    )
 
     const document = (await jsonRequest(server, "/v1/sync/plugin-readiness")).body as {
       entries: Array<{ key: string; value: { plugins: Array<{ id: string; state: string }> } }>
@@ -284,9 +289,10 @@ describe("/v1/sync/plugin-readiness", () => {
       })
     } as unknown as NonNullable<CodevisorServerServices["plugins"]>
     await refreshPluginReadiness(
-      { ...services, plugins },
+      services,
       machine("server-plr-failed"),
       await run(makeEventFanout),
+      plugins,
       []
     )
     const entries = await run(services.db.getSyncEntries("plugin-readiness"))
@@ -324,12 +330,10 @@ describe("/v1/sync/skill-readiness", () => {
       }
     })
     await refreshSkillReadiness(
-      {
-        ...services,
-        skills: skillsStub([]) as unknown as NonNullable<CodevisorServerServices["skills"]>
-      },
+      services,
       machine("server-skr"),
       fanout,
+      skillsStub([]) as unknown as NonNullable<CodevisorServerServices["skills"]>,
       []
     )
 
@@ -353,22 +357,18 @@ describe("/v1/sync/skill-readiness", () => {
 })
 
 describe("refreshSkillReadiness", () => {
-  it("skips machines without a skills manager and swallows scan failures", async () => {
+  it("swallows scan failures", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-skr-edge")
     const config = machine("server-skr-edge")
 
-    // The test host has no skills manager: nothing to derive or publish.
-    expect("skills" in services).toBe(false)
-    await refreshSkillReadiness(services, config, fanout, [])
-    expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
-
     // A failing scan never breaks the pass that triggered the refresh.
     const poisoned = {
-      ...services,
-      skills: { list: () => Promise.reject(new Error("boom")) }
-    } as unknown as CodevisorServerServices
-    await expect(refreshSkillReadiness(poisoned, config, fanout, [])).resolves.toBeUndefined()
+      list: () => Promise.reject(new Error("boom"))
+    } as unknown as NonNullable<CodevisorServerServices["skills"]>
+    await expect(
+      refreshSkillReadiness(services, config, fanout, poisoned, [])
+    ).resolves.toBeUndefined()
     expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
   })
 })

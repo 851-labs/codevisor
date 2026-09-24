@@ -47,7 +47,6 @@ export interface LegacySyncIdentityDeps {
   /// id are re-owned too — otherwise it would mirror its own tokens and
   /// never refresh them.
   readonly mcp?: McpManager | undefined
-  readonly now?: () => number
 }
 
 export interface LegacySyncIdentityResult {
@@ -69,7 +68,6 @@ export const adoptLegacySyncIdentity = async (
   if (deps.kind !== "local" || deps.serverId === LEGACY_LOCAL_SERVER_ID) {
     return { changed: [], adoptedOAuth: [] }
   }
-  const now = deps.now ?? Date.now
   const changed: Array<{ namespace: string; entries: ReadonlyArray<SyncEntryRecord> }> = []
 
   const overlays = await run(deps.db.getSyncEntries(MCP_OVERLAYS_NAMESPACE))
@@ -78,7 +76,7 @@ export const adoptLegacySyncIdentity = async (
   )
   let clock = latestSyncTimestamp(overlays)
   const stamp = () => {
-    clock = nextSyncTimestamp(deps.serverId, clock, now())
+    clock = nextSyncTimestamp(deps.serverId, clock, Date.now())
     return clock
   }
   const overlayWrites: Array<SyncEntryRecord> = []
@@ -107,7 +105,7 @@ export const adoptLegacySyncIdentity = async (
     const entries = await run(deps.db.getSyncEntries(namespace))
     const legacy = entries.find((entry) => entry.key === LEGACY_LOCAL_SERVER_ID)
     if (legacy === undefined || legacy.deleted === true) continue
-    const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(entries), now())
+    const timestamp = nextSyncTimestamp(deps.serverId, latestSyncTimestamp(entries), Date.now())
     const result = await run(
       deps.db.mergeSyncEntries(namespace, [
         { key: LEGACY_LOCAL_SERVER_ID, value: null, deleted: true, timestamp }

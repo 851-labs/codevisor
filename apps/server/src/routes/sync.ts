@@ -12,10 +12,8 @@ import {
 } from "@codevisor/sync"
 
 import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-sync.js"
-import type { HarnessSyncStatus } from "../infra/harness-sync.js"
 import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
-import type { SkillsSyncStatus } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   HttpFailure,
@@ -27,12 +25,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import {
-  refreshHarnessReadiness,
-  refreshMcpReadiness,
-  refreshPluginReadiness,
-  refreshSkillReadiness
-} from "./sync-readiness.js"
+import { refreshMcpReadiness } from "./sync-readiness.js"
 import {
   PARTICIPATION_NAMESPACE,
   publishSyncChanged,
@@ -145,31 +138,7 @@ export const routeSync = async (
       throw new HttpFailure(501, RECONCILE_UNAVAILABLE[reconcilePlane])
     }
     publishSyncChanged(services, fanout, reconcilePlane, result.changedEntries)
-    if (reconcilePlane === "mcps") await refreshMcpReadiness(services, config, fanout)
-    if (reconcilePlane === "harnesses") {
-      await refreshHarnessReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as HarnessSyncStatus).blocked
-      )
-    }
-    if (reconcilePlane === "skills") {
-      await refreshSkillReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as SkillsSyncStatus).missingBlobs
-      )
-    }
-    if (reconcilePlane === "plugins") {
-      await refreshPluginReadiness(
-        services,
-        config,
-        fanout,
-        (result.status as { blocked: ReadonlyArray<{ id: string; reason: string }> }).blocked
-      )
-    }
+    await result.refreshReadiness?.(fanout)
     writeJson(response, 200, result.status)
     return true
   }

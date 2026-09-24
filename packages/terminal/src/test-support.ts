@@ -1,14 +1,32 @@
-import type { TerminalClientFrame } from "@codevisor/api"
+import type { TerminalClientFrame, TerminalServerFrame } from "@codevisor/api"
 import { Effect } from "effect"
 
 import type {
+  TerminalError,
   TerminalHandlers,
+  TerminalManagerService,
   TerminalProcess,
   TerminalSpawnRequest,
   TerminalSpawner
 } from "./index.js"
 
 export const run = <A>(effect: Effect.Effect<A, unknown>): Promise<A> => Effect.runPromise(effect)
+
+/// The frames a client attaching after `lastOutputSeq` receives as replay.
+export const replayedFrames = (
+  manager: TerminalManagerService,
+  terminalId: string,
+  lastOutputSeq = 0
+): Effect.Effect<ReadonlyArray<TerminalServerFrame>, TerminalError> => {
+  const frames: Array<TerminalServerFrame> = []
+  return Effect.map(
+    manager.connectTerminal(terminalId, lastOutputSeq, (frame) => frames.push(frame)),
+    (disconnect) => {
+      disconnect()
+      return frames
+    }
+  )
+}
 
 export class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []

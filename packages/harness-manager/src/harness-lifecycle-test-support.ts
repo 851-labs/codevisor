@@ -9,7 +9,7 @@ import type { CodevisorDatabaseService } from "@codevisor/db"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
 
-import type { LifecycleProcess } from "./harness-lifecycle.js"
+import type { HarnessLifecycleManager, LifecycleProcess } from "./harness-lifecycle.js"
 
 export const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)
 
@@ -42,6 +42,15 @@ export const harness = (id: string, path: string, version?: string): Harness => 
   enabled: true,
   readiness: { state: "ready", path, ...(version === undefined ? {} : { version }) }
 })
+
+/// The install methods decorateHarnesses resolves for a harness that is not
+/// installed on this machine.
+export const installMethodsFor = async (lifecycle: HarnessLifecycleManager, id: string) => {
+  const [decorated] = await lifecycle.decorateHarnesses([
+    { ...harness(id, ""), readiness: { state: "unavailable" } }
+  ])
+  return decorated?.installMethods ?? []
+}
 
 export const agentsStub = (
   definitions: ReadonlyArray<HarnessDefinition>,

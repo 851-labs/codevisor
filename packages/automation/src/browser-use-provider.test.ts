@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { observeCdp } from "./browser-cdp-test-support.js"
-import { pointerOverlayExpression } from "./browser-cursor.js"
+import { pointerOverlayExpression } from "./browser-cursor-overlay.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
 
 const directories: string[] = []

@@ -62,9 +62,6 @@ export interface MachineConnectionOptions {
   onWelcome?: (info: { resumed: boolean; replayedFrames: number }) => void
   scheduleReconnect?: (callback: () => void, delayMs: number) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
-  welcomeTimeoutMs?: number
-  heartbeatIntervalMs?: number
-  pongTimeoutMs?: number
   random?: () => number
   /// Clock for RTT measurement; injectable for tests.
   now?: () => number
@@ -171,7 +168,7 @@ export class CloudMachineConnection {
     this.#cancelWelcomeTimeout = this.#scheduleTimeout(() => {
       this.#cancelWelcomeTimeout = undefined
       this.#forceReconnect(socket, { kind: "welcome-timeout" })
-    }, this.options.welcomeTimeoutMs ?? 15_000)
+    }, 15_000)
     // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onopen = () => {
       if (this.#socket !== socket) return
@@ -301,8 +298,8 @@ export class CloudMachineConnection {
       this.#cancelPongTimeout = this.#scheduleTimeout(() => {
         this.#cancelPongTimeout = undefined
         this.#forceReconnect(socket, { kind: "heartbeat-timeout" })
-      }, this.options.pongTimeoutMs ?? 10_000)
-    }, this.options.heartbeatIntervalMs ?? 30_000)
+      }, 10_000)
+    }, 30_000)
   }
 
   #onSocketClosed(socket: CloudSocket, code: number): void {
