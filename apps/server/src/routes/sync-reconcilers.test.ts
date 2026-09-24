@@ -165,9 +165,21 @@ describe("runBackgroundSyncReconcile", () => {
   it("fires end to end from a config mutation over HTTP", async () => {
     const { services } = await makeServices("server-bg-http")
     const fanout = await run(makeEventFanout)
-    const reconciled = Promise.withResolvers<void>()
+    // Seeded without HTTP, so only a mutation-triggered pass can publish it.
+    // A pass fired by the rejected POST would publish it alone, first.
+    await services.mcp?.create({
+      authType: "none",
+      enabled: false,
+      name: "Seeded",
+      transport: "http",
+      url: "https://seeded.example.com/mcp"
+    })
+    const reconciled = Promise.withResolvers<ReadonlyArray<string>>()
     const unsubscribe = fanout.subscribe((event) => {
-      if (event.kind === "sync.changed" && event.subjectId === "mcps") reconciled.resolve()
+      if (event.kind === "sync.changed" && event.subjectId === "mcps") {
+        const { entries } = event.payload as { entries: ReadonlyArray<{ key: string }> }
+        reconciled.resolve(entries.map((entry) => entry.key).toSorted())
+      }
     })
     const server = await startWithApp(services, fanout)
 
@@ -192,10 +204,8 @@ describe("runBackgroundSyncReconcile", () => {
 
     // The response-finish hook runs in the background; the replica entry
     // appears without any client calling a reconcile route.
-    await reconciled.promise
+    expect(await reconciled.promise).toEqual(["Imported", "Seeded"])
     unsubscribe()
-    const entries = await run(services.db.getSyncEntries("mcps"))
-    expect(entries.map((entry) => entry.key)).toEqual(["Imported"])
   })
 })
 
@@ -208,6 +218,7 @@ describe("refreshMcpReadiness", () => {
     const { mcp: omitted, ...withoutMcp } = services
     void omitted
     await refreshMcpReadiness(withoutMcp, config, fanout)
+    expect(await run(services.db.getSyncEntries("mcp-readiness"))).toEqual([])
 
     // A failing manager never breaks the pass that triggered the refresh.
     const poisoned = {

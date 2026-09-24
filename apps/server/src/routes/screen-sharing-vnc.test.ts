@@ -298,8 +298,13 @@ describe("VNC screen sharing provider", () => {
     expect(await closed(orphan)).toBe(1011)
   })
 
-  it("requires the machine token when loopback is not trusted", async () => {
-    const config = { port: 5901, name: "Desktop" }
+  it("requires the machine token when loopback is not trusted", async ({ onTestFinished }) => {
+    const vnc = await fakeVNC()
+    onTestFinished(async () => {
+      for (const connection of vnc.connections) connection.destroy()
+      await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
+    })
+    const config = { port: vnc.port, name: "Desktop" }
     const { services, socketUrl } = await start(config, {
       allowLocalhostWithoutAuth: false,
       requireBearerToken: true
@@ -311,6 +316,12 @@ describe("VNC screen sharing provider", () => {
     })
     expect(status).toBe(401)
     const token = await run(services.db.issuePairingToken)
-    expect(typeof token).toBe("string")
+    const authorized = new WebSocket(socketUrl(vncDisplayId(config)), {
+      headers: { authorization: `Bearer ${token}` }
+    })
+    expect((await nextMessage(authorized)).toString()).toBe("RFB 003.008\n")
+    const done = closed(authorized)
+    authorized.close()
+    await done
   })
 })

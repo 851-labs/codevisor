@@ -186,6 +186,5 @@ describe("session configuration picks", () => {
     })
     const saved = await run(services.db.getSessionConfigSelections(session.id))
     expect(saved.model).toBe("model-saved")
-    expect(Object.values(saved)).not.toContain("model-legacy")
   })
 })

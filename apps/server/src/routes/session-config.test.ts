@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -334,7 +335,18 @@ describe("session configuration routes", () => {
 
   it("falls back to the session server's project location for branch diffs", async () => {
     const { services } = await makeServices("server-a")
-    const project = await run(services.db.createProject({ folderPath: "/tmp" }))
+    // A committed repo with one untracked two-line file: only a real git
+    // directory yields totals, so null can only mean "no location resolved".
+    const folder = mkdtempSync(join(tmpdir(), "codevisor-branch-diff-"))
+    tempDirs.push(folder)
+    execFileSync("git", ["init", "-b", "main"], { cwd: folder, stdio: "ignore" })
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
+      { cwd: folder, stdio: "ignore" }
+    )
+    writeFileSync(join(folder, "notes.txt"), "one\ntwo\n")
+    const project = await run(services.db.createProject({ folderPath: folder }))
     const session = await run(
       services.db.createSession({ projectId: project.id, harnessId: "codex" })
     )
@@ -353,7 +365,7 @@ describe("session configuration routes", () => {
     runningServers.push(server)
 
     expect(await jsonRequest(server, `/v1/sessions/${session.id}/branch-diff`)).toEqual({
-      body: null,
+      body: { added: 2, removed: 0 },
       status: 200
     })
     projectedServerId = "server-without-location"
