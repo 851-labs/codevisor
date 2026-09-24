@@ -95,3 +95,16 @@ export function testCount(output) {
     passed: runs.length > 0 && runs.every((match) => match[2] === "passed")
   }
 }
+
+/// The bench layer's failure text for the report: this build's bench-error.txt
+/// and origin/main's, each fenced so its lines survive Markdown (851-2337).
+export function benchFailure(current, main) {
+  const block = (title, text) =>
+    text.trim() ? `**${title}**\n\n\`\`\`text\n${text.trim()}\n\`\`\`\n` : ""
+  return [
+    block("vnc-bench failed (this build)", current),
+    block("vnc-bench failed (origin/main)", main)
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
