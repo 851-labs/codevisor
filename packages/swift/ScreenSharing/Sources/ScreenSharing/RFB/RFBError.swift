@@ -203,6 +203,8 @@ public struct RFBUpdate: Sendable, Equatable {
   public var linkDuration: Duration = .zero
   /// Tight rectangles that arrived as JPEG.
   public var jpegRectangles = 0
+  /// Rectangles per encoding number (pseudo-encodings included), for measuring what a server sends.
+  public var encodingCounts: [Int32: Int] = [:]
   public init(rectangles: [RFBRectangle], resized: Bool) { self.rectangles = rectangles; self.resized = resized }
 
   public static func == (lhs: RFBUpdate, rhs: RFBUpdate) -> Bool {

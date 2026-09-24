@@ -203,11 +203,13 @@ public actor RFBClient {
     var pointer: RFBPoint?
     var desktopSize: RFBDesktopSizeResult?
     var jpegRectangles = 0
+    var encodingCounts: [Int32: Int] = [:]
     for _ in 0..<count {
       let x = Int(try await stream.u16()), y = Int(try await stream.u16())
       let width = Int(try await stream.u16()), height = Int(try await stream.u16())
       let rect = RFBRectangle(x: x, y: y, width: width, height: height)
       let encoding = try await stream.s32()
+      encodingCounts[encoding, default: 0] += 1
       switch RFBEncoding(rawValue: encoding) {
       case .raw:
         try framebuffer.validate(rect)
@@ -266,6 +268,7 @@ public actor RFBClient {
     update.pointer = pointer
     update.desktopSize = desktopSize
     update.jpegRectangles = jpegRectangles
+    update.encodingCounts = encodingCounts
     return update
   }
 }
