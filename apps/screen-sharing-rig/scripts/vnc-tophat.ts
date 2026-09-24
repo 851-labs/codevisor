@@ -299,7 +299,8 @@ function contaboFlow() {
   // 851-2340: Dynamic Resolution (on by default) makes the desktop follow the window; off, it
   // keeps its size. Checked by resizing the rig window both ways; always switched back on.
   const start = window()
-  const settle = (predicate, what) => {
+  type Size = { width: number; height: number }
+  const settle = (predicate: (size: Size) => boolean, what: string) => {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       pause(500)
       const size = videoSize()
@@ -307,7 +308,7 @@ function contaboFlow() {
     }
     return { ok: false, detail: `${what}: ${JSON.stringify(videoSize())}` }
   }
-  let fixed
+  let fixed: Size | undefined
   try {
     axStep("turn Dynamic Resolution off", "press", "Dynamic Resolution")
     fixed = videoSize()
@@ -326,11 +327,11 @@ function contaboFlow() {
   }
   const fixedWidth = fixed?.width ?? 0
   step("on: the desktop follows the smaller window", () =>
-    settle((size) => size.width !== fixedWidth, "never followed")
+    settle((size: Size) => size.width !== fixedWidth, "never followed")
   )
   step("on: and back when the window grows again", () => {
     ax("resize", String(start.width), String(start.height))
-    return settle((size) => Math.abs(size.width - fixedWidth) <= 2, "never grew back")
+    return settle((size: Size) => Math.abs(size.width - fixedWidth) <= 2, "never grew back")
   })
   {
     // After a while of streaming the quality policy has seen the link (851-2329): report what it chose.

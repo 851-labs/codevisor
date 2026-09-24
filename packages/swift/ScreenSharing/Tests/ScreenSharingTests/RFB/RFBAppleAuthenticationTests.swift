@@ -129,4 +129,13 @@ struct RFBAppleAuthenticationTests {
     defer { client.close() }
     #expect(outcome.security == .vncAuthentication)
   }
+
+  /// 851-2342: the sign-in form asks for a user name only when the Mac offers account sign-in.
+  @Test func theOfferedSecurityTypesAreReadWithoutSigningIn() async throws {
+    let server = try await server(account: ("alex", "correct horse"))
+    defer { server.stop() }
+    #expect(
+      try await VNCConnection.securityTypes(host: "127.0.0.1", port: server.port)
+        == [RFBSecurityType.appleRemoteDesktop.rawValue, RFBSecurityType.vncAuthentication.rawValue])
+  }
 }

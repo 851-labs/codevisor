@@ -45,11 +45,12 @@
       prepare()
     }
 
-    /// Connects with the password the user typed; it is kept only once the server accepts it.
-    func signIn(password: String, remember: Bool) {
+    /// Connects with what the user typed (a Mac account, or the VNC password); it is kept
+    /// only once the server accepts it.
+    func signIn(username: String?, password: String, remember: Bool) {
       store?.send(.paneClosed)
       store = nil
-      prepare(typed: RigVNCSignIn.Typed(password: password, remember: remember))
+      prepare(typed: RigVNCSignIn.Typed(username: username, password: password, remember: remember))
     }
 
     /// Removes this machine's stored VNC password and asks for it again.
@@ -105,17 +106,26 @@
         if source == .keychain { progress("Signing in to \(host)…") }
         let outcome = try await RigVNCSignIn.signIn(
           machineId: machine.id, password: source, typed: typed, store: RigKeychain.vncPasswords
-        ) { password in
-          try await VNCConnection.open(host: host, port: port, password: password).client.close()
+        ) { credential in
+          try await VNCConnection.open(
+            host: host, port: port, password: credential.password, username: credential.username
+          ).client.close()
         }
-        let password: String?
+        let credential: RigVNCCredential?
         switch outcome {
-        case .signedIn(let accepted): password = accepted
-        case .needsPassword(let reason): throw PasswordPrompt(reason: reason)
+        case .signedIn(let accepted): credential = accepted
+        case .needsPassword(let reason):
+          // Offer the account fields when the Mac supports Apple's account sign-in (type 30, 851-2342).
+          let offered = (try? await VNCConnection.securityTypes(host: host, port: port)) ?? []
+          throw PasswordPrompt(
+            reason: reason, accountSignIn: offered.contains(RFBSecurityType.appleRemoteDesktop.rawValue))
         }
         return .vnc(
           displayId: RigMachine.vncDisplayId(port: port),
-          open: { try await VNCConnection.open(host: host, port: port, password: password) })
+          open: {
+            try await VNCConnection.open(
+              host: host, port: port, password: credential?.password, username: credential?.username)
+          })
       case .server(let url, let sshTarget):
         let client: CodevisorServerClient
         do {
@@ -151,6 +161,8 @@
   /// Why the rig is asking for a VNC password: nil before the first attempt, else the server's rejection.
   struct PasswordPrompt: Error, Equatable {
     let reason: String?
+    /// The Mac offers account sign-in: ask for a user name too (851-2342).
+    var accountSignIn = false
   }
 
   struct RigMachineError: LocalizedError {
@@ -207,7 +219,9 @@
             connection(store)
           }
         } else if let prompt = model.passwordPrompt {
-          RigVNCPasswordForm(machine: model.machine, prompt: prompt) { model.signIn(password: $0, remember: $1) }
+          RigVNCPasswordForm(machine: model.machine, prompt: prompt) {
+            model.signIn(username: $0, password: $1, remember: $2)
+          }
         } else if let message = model.failure {
           failure(message) { model.retry() }
         } else {
@@ -281,16 +295,19 @@
   private struct RigVNCPasswordForm: View {
     let machine: RigMachine
     let prompt: PasswordPrompt
-    let submit: (String, Bool) -> Void
+    let submit: (String?, String, Bool) -> Void
+    @State private var username = ""
     @State private var password = ""
     @State private var remember = true
-    @FocusState private var focused: Bool
+    private enum Field { case username, password }
+    @FocusState private var focused: Field?
 
     var body: some View {
       VStack(spacing: 4) {
         VStack(spacing: 8) {
           Image(systemName: "lock.display").font(.largeTitle).foregroundStyle(.secondary)
-          Text("Enter the VNC password for \(machine.name)").font(.headline)
+          Text(prompt.accountSignIn ? "Sign in to \(machine.name)" : "Enter the VNC password for \(machine.name)")
+            .font(.headline)
         }
         Form {
           if let reason = prompt.reason {
@@ -299,9 +316,20 @@
             }
           }
           Section {
+            if prompt.accountSignIn {
+              TextField("User name", text: $username, prompt: Text("This Mac's account"))
+                .focused($focused, equals: .username).onSubmit(connect)
+            }
             SecureField("Password", text: $password, prompt: Text("Required"))
-              .focused($focused).onSubmit(connect)
+              .focused($focused, equals: .password).onSubmit(connect)
             Toggle("Remember in Keychain", isOn: $remember)
+          } footer: {
+            if prompt.accountSignIn {
+              Text(
+                "Signing in as the Mac's user lets it know who you are. Leave the user name empty to use the VNC password."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }
           }
         }
         .formStyle(.grouped)
@@ -315,12 +343,12 @@
         .frame(width: 400 - 40)
       }
       .padding(24)
-      .onAppear { focused = true }
+      .onAppear { focused = prompt.accountSignIn ? .username : .password }
     }
 
     private func connect() {
       guard !password.isEmpty else { return }
-      submit(password, remember)
+      submit(username.trimmingCharacters(in: .whitespaces), password, remember)
     }
   }
 

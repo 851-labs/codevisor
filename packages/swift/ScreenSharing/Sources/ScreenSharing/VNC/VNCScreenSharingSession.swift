@@ -251,6 +251,22 @@
         username: username)
     }
 
+    /// The security types a server offers, read from the start of a handshake
+    /// that is then abandoned (a sign-in form asks for a user name only when
+    /// the Mac offers account sign-in, 851-2342). A 3.3 server names one type.
+    public static func securityTypes(host: String, port: UInt16) async throws -> [UInt8] {
+      let transport = try await RFBNetworkTransport.connect(host: host, port: port)
+      defer { transport.close() }
+      let stream = RFBInputStream(transport: transport)
+      guard let version = RFBProtocolVersion.parse(try await stream.bytes(12)), version >= .v3_3 else {
+        throw RFBError.protocolMismatch("no RFB greeting")
+      }
+      let chosen: RFBProtocolVersion = version >= .v3_8 ? .v3_8 : (version >= .v3_7 ? .v3_7 : .v3_3)
+      try await transport.write(chosen.encoded)
+      if chosen == .v3_3 { return [UInt8(clamping: try await stream.u32())] }
+      return try await stream.bytes(Int(try await stream.u8()))
+    }
+
     /// Handshake and authentication over a connected transport; the client
     /// (and with it the transport) is closed on any failure.
     public static func open(
