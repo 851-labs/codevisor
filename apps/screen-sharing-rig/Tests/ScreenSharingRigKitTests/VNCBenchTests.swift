@@ -45,7 +45,7 @@ struct VNCBenchTests {
     #expect(worse.regressions.map(\.metric) == [.updatesPerSecond, .updateLatencyP95Ms])
     let better = VNCBenchComparison(baseline: baseline, current: report(150, latency: 10, mbps: 1, spread: 0.02))
     #expect(better.regressions.isEmpty)
-    #expect(better.improvements.map(\.metric) == [.updatesPerSecond, .updateLatencyP95Ms])
+    #expect(better.rows.filter { $0.verdict == .improved }.map(\.metric) == [.updatesPerSecond, .updateLatencyP95Ms])
     // A noisy baseline widens the band.
     let noisy = report(100, latency: 20, mbps: 5, spread: 0.3)
     #expect(
@@ -59,8 +59,8 @@ struct VNCBenchTests {
         cases: [VNCBenchCase(scene: "typing", profile: "wan150", runs: [[.cpuMsPerUpdate: cpu]])])
     }
     let comparison = VNCBenchComparison(baseline: report(0.54), current: report(1.31))
-    #expect(comparison.regressions.isEmpty && comparison.improvements.isEmpty)
-    #expect(comparison.rows.first?.verdict == .informational)
+    #expect(comparison.regressions.isEmpty)
+    #expect(comparison.rows.map(\.verdict) == [.informational])
   }
 
   @Test func sub_millisecondLatencyChangesAreNoise() {

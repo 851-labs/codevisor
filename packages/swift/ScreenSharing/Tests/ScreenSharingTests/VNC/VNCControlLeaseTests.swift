@@ -68,7 +68,6 @@ struct VNCControlLeaseTests {
     emulator.serverLease(.revoked(by: "Laptop"))
     await awaitObserved { viewer.received.count == 2 }
     #expect(viewer.received.last == .revoked(lease: lease, reason: "Laptop took control."))
-    #expect(!emulator.hasLease)
     #expect(outbox().last == .pointerEvent(buttons: 0, x: 50, y: 50))
     // A second grant without a pending request is ignored; so is a revoke without a lease.
     emulator.serverLease(.granted)

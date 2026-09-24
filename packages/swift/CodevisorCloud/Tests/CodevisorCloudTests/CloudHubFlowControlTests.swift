@@ -7,28 +7,6 @@ import CodevisorProtocol
 
 @Suite("CloudHubConnection flow control")
 struct CloudHubFlowControlTests {
-  private final class Recorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var receivedMessages: [Data] = []
-    private var closeReasons: [CloudChannelCloseReason?] = []
-
-    var messages: [Data] {
-      lock.withLock { receivedMessages }
-    }
-
-    var closes: [CloudChannelCloseReason?] {
-      lock.withLock { closeReasons }
-    }
-
-    func record(_ data: Data) {
-      lock.withLock { receivedMessages.append(data) }
-    }
-
-    func recordClose(_ reason: CloudChannelCloseReason?) {
-      lock.withLock { closeReasons.append(reason) }
-    }
-  }
-
   @Test("A flow-controlled channel rejects data beyond its granted ciphertext budget")
   func flowControlEnforcement() async throws {
     let machine = ScriptedRelayMachine()

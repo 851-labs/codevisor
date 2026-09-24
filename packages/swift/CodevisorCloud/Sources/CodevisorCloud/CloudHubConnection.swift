@@ -25,7 +25,6 @@ public actor CloudHubConnection {
   let deviceOS: String
   let appVersion: String?
   let sleep: @Sendable (Duration) async throws -> Void
-  let now: @Sendable () -> ContinuousClock.Instant
   private let reconnectDelay: @Sendable (Int) -> Duration
   private let onMachineWait: @Sendable () -> Void
   private let readyTimeout: Duration
@@ -44,11 +43,6 @@ public actor CloudHubConnection {
   var isWelcomed = false
   var heartbeatTimeoutTask: Task<Void, Never>?
   var awaitingPongOnSocketID: UUID?
-  /// When the outstanding keepalive ping left, for RTT measurement.
-  var pingSentAt: ContinuousClock.Instant?
-  /// Relay round-trip time from the most recent keepalive ping/pong —
-  /// path-latency observability, never used for routing decisions.
-  public internal(set) var lastRttMillis: Int?
   private var fatalFailure: CloudHubConnectionError?
   private var waiterSeq = 0
   var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
@@ -135,14 +129,12 @@ public actor CloudHubConnection {
     heartbeatTimeout: Duration = .seconds(10),
     resumeSuspensionTimeout: Duration = .seconds(70),
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-    now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
     reconnectDelay: @escaping @Sendable (Int) -> Duration = { failures in
       .milliseconds(min(5_000, 250 * (1 << min(failures, 5))) + Int.random(in: 0...250))
     },
     onMachineWait: @escaping @Sendable () -> Void = {}
   ) {
     self.sleep = sleep
-    self.now = now
     self.reconnectDelay = reconnectDelay
     self.onMachineWait = onMachineWait
     self.serverURL = serverURL

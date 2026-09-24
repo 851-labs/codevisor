@@ -64,7 +64,6 @@ struct AppInstanceLeaseTests {
     await handoff?.waitForExit()
     let successor = try AppInstanceLease.acquire(at: lockURL)
     #expect(successor != nil)
-    #expect(handoff?.isRunning == false)
   }
 
   @Test("Cancelling an aborted update releases the inherited lock")

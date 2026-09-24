@@ -14,7 +14,7 @@ Legend: **(a)** must surface a human-readable error to the user · **(b)** log-o
 - Attachment `.failed(...)` + retry UI (`SessionController.swift:790-819`, `ComposerView.swift:608-624`)
 - Settings `@State` error strings + `.alert` (`SettingsView.swift:59/226`, `AppearanceSettingsView.swift:12/81-91`, `MachinesSettingsView.swift:66-77`)
 - `NSAlert` in menu commands (`MachineCommands.swift:79-83`, `AppUpdateCommands.swift:53-58`)
-- `ServerStatusModel.errorMessage`, `MachineController.serverUpdatePhase.failed`, `LocalCodevisorServer.state = .unavailable`, `AppUpdateModel.phase = .failed`
+- `MachineController.serverUpdatePhase.failed`, `LocalCodevisorServer.state = .unavailable`, `AppUpdateModel.phase = .failed`
 - `CodevisorServerClientError` + `serverErrorMessage(_:)` helper (`Server/CodevisorServerClient.swift:4/15`)
 - Missing entirely: any global/toast-style surface for errors that happen outside a session or a settings pane (persistence writes, background sync, event streams).
 
@@ -79,7 +79,6 @@ Persistence and sync failures that lose state invisibly:
 - `CodevisorCore/Server/CodevisorServerClient.swift:982` — WS stream reconnects forever, no "disconnected" state
 - `CodevisorCore/Server/MachineController.swift:248` — event-sync errors discarded
 - `CodevisorCore/Server/CommandRunner.swift:63` — process output read failure → looks like empty output
-- `CodevisorCore/Server/EnvironmentProbe.swift:145` — unreadable PATH dir skipped → installed CLI "not found"
 - `CodevisorCore/Theme/ThemeManager.swift:86/96` — theme load failure → silent stock-Apple look
 - `CodevisorCore/AppSettings.swift:129-130`, `ComposerDefaultsStore.swift:28/67-68`, `AppVariant.swift:47/53` — pref/cache writes lost
 - `Codevisor/Features/Session/SessionController.swift:1349` — capability fetch `catch { return false }`

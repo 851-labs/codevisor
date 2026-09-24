@@ -25,8 +25,6 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var sessionGate: TestSignal?
   private(set) var discoverCount = 0
   var machinesResult: Result<[CloudMachine], any Error> = .success([])
-  var renameError: (any Error)?
-  var removeError: (any Error)?
   var deleteError: (any Error)?
   var providers: Set<CloudSignInProvider> = [.github]
   var emailRequest: (@Sendable (CloudEmailAuthRequest) async throws -> String?)?
@@ -110,19 +108,11 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   }
 
   func rename(deviceId: String, name: String, token: String) async throws {
-    let error: (any Error)? = lock.withLock {
-      renames.append((deviceId: deviceId, name: name))
-      return renameError
-    }
-    if let error { throw error }
+    lock.withLock { renames.append((deviceId: deviceId, name: name)) }
   }
 
   func removeMachine(deviceId: String, token: String) async throws {
-    let error: (any Error)? = lock.withLock {
-      removals.append(deviceId)
-      return removeError
-    }
-    if let error { throw error }
+    lock.withLock { removals.append(deviceId) }
   }
 }
 

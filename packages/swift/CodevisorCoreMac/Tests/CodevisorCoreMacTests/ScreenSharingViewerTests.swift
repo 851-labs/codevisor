@@ -412,8 +412,6 @@ final class FakeBackend {
   var discoveryFailure: String?
   private(set) var connections: [String] = []
   let terminations = LockIsolated(0)
-  private(set) var sessions: [FakeMediaSession] = []
-  private(set) var surfaces: [FakeSurface] = []
   private(set) var endpoints: [ScreenSharingViewerEndpoint] = []
   private var continuation: AsyncStream<ScreenSharingViewerEvent>.Continuation?
 
@@ -446,8 +444,6 @@ final class FakeBackend {
     let surface = FakeSurface()
     session.surface = surface
     let endpoint = ScreenSharingViewerEndpoint(session: session, surface: surface)
-    sessions.append(session)
-    surfaces.append(surface)
     endpoints.append(endpoint)
     continuation?.yield(.opened(endpoint))
     return endpoint

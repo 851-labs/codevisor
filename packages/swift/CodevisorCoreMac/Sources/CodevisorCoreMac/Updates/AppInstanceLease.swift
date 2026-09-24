@@ -183,10 +183,6 @@ public final class AppUpdateLeaseHandoff {
     }
   }
 
-  public var isRunning: Bool {
-    process.isRunning
-  }
-
   /// Releases the inherited lease when Sparkle aborts while the old app is
   /// still alive.
   public func cancel() {

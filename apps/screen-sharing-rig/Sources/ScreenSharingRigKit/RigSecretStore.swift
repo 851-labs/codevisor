@@ -65,13 +65,3 @@ public struct RigKeychainError: LocalizedError, Equatable {
     return "Couldn't save to the Keychain: \(reason)"
   }
 }
-
-/// A store in memory: tests, and nothing else.
-public final class RigMemorySecretStore: RigSecretStore, @unchecked Sendable {
-  private let lock = NSLock()
-  private var secrets: [String: String]
-  public init(_ secrets: [String: String] = [:]) { self.secrets = secrets }
-  public func read(_ account: String) -> String? { lock.withLock { secrets[account] } }
-  public func save(_ secret: String, for account: String) throws { lock.withLock { secrets[account] = secret } }
-  public func delete(_ account: String) { _ = lock.withLock { secrets.removeValue(forKey: account) } }
-}

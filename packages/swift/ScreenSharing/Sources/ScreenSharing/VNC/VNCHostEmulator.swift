@@ -76,8 +76,6 @@
       }
     }
 
-    var hasLease: Bool { lease != nil }
-
     func serverCutText(_ text: String) { serverText = text }
 
     /// The Extended Clipboard handshake, text only.

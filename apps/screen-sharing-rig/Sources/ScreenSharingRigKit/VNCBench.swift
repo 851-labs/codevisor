@@ -199,7 +199,6 @@ public struct VNCBenchComparison: Sendable {
   public let unmatched: [String]
 
   public var regressions: [Row] { rows.filter { $0.verdict == .regressed } }
-  public var improvements: [Row] { rows.filter { $0.verdict == .improved } }
 
   public init(baseline: VNCBenchReport, current: VNCBenchReport) {
     let base = Dictionary(baseline.cases.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })

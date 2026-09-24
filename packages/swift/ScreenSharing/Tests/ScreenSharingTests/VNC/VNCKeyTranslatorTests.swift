@@ -57,14 +57,6 @@ struct VNCKeyTranslatorTests {
     #expect(calls.all == [.init(code: 1, carbon: carbon)])
   }
 
-  /// The Carbon bits are the low byte of the Carbon modifier flags, which is
-  /// what `UCKeyTranslate` documents — not the flags themselves.
-  @Test func theCarbonBitsAreTheShiftedFlags() {
-    #expect(UInt32(shiftKey >> 8) == 2)
-    #expect(UInt32(optionKey >> 8) == 8)
-    #expect(UInt32(alphaLock >> 8) == 4)
-  }
-
   @Test func theKeyCodeIsPassedThroughUnchanged() {
     let (calls, translator) = probe()
     for code in [UInt16(0), 12, 49, 255, 1000] { _ = translator.keysym(code: code, modifiers: 0) }

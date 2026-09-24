@@ -44,9 +44,6 @@ public final class CloudAccountController {
   public var lastError: String?
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
   var authenticationRevision: UInt64 = 0
-  /// The validated instance name of the current custom server, for display
-  /// in Settings. Only populated after a successful `setCustomServer`.
-  public private(set) var customInstanceName: String?
   /// Auth providers the current server advertises (/.well-known/codevisor).
   /// nil until discovery answers — treat unknown as "assume GitHub" so the
   /// hosted instance's button never flickers away on a slow network.
@@ -454,7 +451,6 @@ public final class CloudAccountController {
     guard let url else {
       signOut()
       try credentialStore.saveServerURL(nil)
-      customInstanceName = nil
       try clearMachineKeyPins()
       return
     }
@@ -464,7 +460,6 @@ public final class CloudAccountController {
     }
     signOut()
     try credentialStore.saveServerURL(url)
-    customInstanceName = info.instance
     authProviders = info.authProviders
     // A different instance has a different device-id namespace.
     try clearMachineKeyPins()

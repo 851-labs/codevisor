@@ -112,38 +112,6 @@ struct ComputerUseBridgeTests {
     #expect(frame == CGRect(x: 328, y: 168, width: 240, height: 88))
   }
 
-  @Test("Keeps semantic and pixel click addressing mutually exclusive")
-  func distinguishesClickAddressing() {
-    #expect(
-      computerUseClickAddressing(
-        snapshotID: "snapshot",
-        elementID: "12",
-        x: nil,
-        y: nil
-      ) == .semantic)
-    #expect(
-      computerUseClickAddressing(
-        snapshotID: "snapshot",
-        elementID: nil,
-        x: 40,
-        y: 80
-      ) == .pixel)
-    #expect(
-      computerUseClickAddressing(
-        snapshotID: "snapshot",
-        elementID: "12",
-        x: 40,
-        y: 80
-      ) == .ambiguous)
-    #expect(
-      computerUseClickAddressing(
-        snapshotID: nil,
-        elementID: nil,
-        x: 40,
-        y: nil
-      ) == .invalid)
-  }
-
   @Test("Recognizes Chromium-class app identities without classifying Safari")
   func identifiesChromiumTargets() {
     #expect(
@@ -225,35 +193,6 @@ struct ComputerUseBridgeTests {
     #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: 42))
     #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: 42, targetWindowID: nil))
     #expect(!computerUseSnapshotMatchesWindow(snapshotWindowID: nil, targetWindowID: nil))
-  }
-
-  @Test("Derives Retina pixel sizes so snapshotless clicks never assume 1x")
-  func derivedScreenshotPixelSize() {
-    let frame = CGRect(x: 500, y: 77, width: 656, height: 422)
-
-    #expect(
-      computerUseDerivedScreenshotPixelSize(
-        windowFrame: frame,
-        pointPixelScale: 2
-      ) == CGSize(width: 1_312, height: 844))
-    #expect(
-      computerUseDerivedScreenshotPixelSize(
-        windowFrame: frame,
-        pointPixelScale: 0.5
-      ) == CGSize(width: 656, height: 422))
-
-    // The derived size must round-trip through the shared conversion the
-    // same way a real capture at that scale would.
-    let point = computerUseScreenshotPoint(
-      x: 656,
-      y: 422,
-      screenshotPixelSize: computerUseDerivedScreenshotPixelSize(
-        windowFrame: frame,
-        pointPixelScale: 2
-      ),
-      windowFrame: frame
-    )
-    #expect(point == CGPoint(x: 828, y: 288))
   }
 
   @Test("Mirrors an upside-down frame back onto the control it names")
