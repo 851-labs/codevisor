@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, readSseEvents, run } from "../test-support.js"
+import { jsonRequest, readSseEvents, listEvents } from "../test-support.js"
 import { setUpWorkspace } from "./session-test-support.js"
 
 describe("shared names", () => {
@@ -26,7 +26,7 @@ describe("shared names", () => {
     })
     expect(created.status).toBe(201)
     const chat = created.body as { id: string }
-    const cursor = (await run(services.db.listEvents(0))).at(-1)?.id ?? 0
+    const cursor = listEvents(services).at(-1)?.id ?? 0
     const readers = [readSseEvents(server, 2, cursor), readSseEvents(server, 2, cursor)]
     expect(
       (

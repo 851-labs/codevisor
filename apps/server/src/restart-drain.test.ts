@@ -15,7 +15,8 @@ import {
   runningServers,
   startWithApp,
   tempDirs,
-  waitFor
+  waitFor,
+  listSubjectEvents
 } from "./test-support.js"
 
 /// The restart drain end to end: an update accepted while a chat is mid-turn
@@ -76,7 +77,7 @@ const gateEvents = async (
   services: Awaited<ReturnType<typeof makeServices>>["services"],
   sessionId: string
 ) =>
-  (await run(services.db.listSubjectEvents(sessionId)))
+  listSubjectEvents(services, sessionId)
     .filter((event) => event.kind === "session.updateGate.updated")
     .map((event) => event.payload as { harnessId: string; state: string })
 

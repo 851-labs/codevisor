@@ -16,7 +16,9 @@ import {
   runningServers,
   start,
   startWithApp,
-  tempDirs
+  tempDirs,
+  listEvents,
+  listSubjectEvents
 } from "../test-support.js"
 
 describe("session configuration routes", () => {
@@ -272,9 +274,7 @@ describe("session configuration routes", () => {
     })
 
     expect(
-      (await run(services.db.listEvents(0))).filter(
-        (event) => event.kind === "session.attention.updated"
-      )
+      listEvents(services).filter((event) => event.kind === "session.attention.updated")
     ).toHaveLength(3)
   })
 
@@ -318,7 +318,7 @@ describe("session configuration routes", () => {
     })
 
     // The raw event is persisted for rich replay (nested transcripts)...
-    const events = await run(services.db.listSubjectEvents(session.id))
+    const events = listSubjectEvents(services, session.id)
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

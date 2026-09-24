@@ -9,7 +9,7 @@ import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
 import { archiveJobs } from "../archive-jobs.js"
-import { jsonRequest, run, start, tempDirs } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, listSubjectEvents } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
@@ -187,9 +187,7 @@ describe("project worktree archive routes", () => {
       writeFileSync(join(ignoredTree.path, ".gitignore"), ".env\n")
       writeFileSync(join(ignoredTree.path, ".env"), "SECRET=1\n")
       await setArchived("ignored-ws", true)
-      const ignoredHistory = (await run(
-        services.db.listSubjectEvents("ignored-ws")
-      )) as ReadonlyArray<{
+      const ignoredHistory = listSubjectEvents(services, "ignored-ws") as ReadonlyArray<{
         readonly payload?: { readonly archiveDroppedIgnoredPaths?: ReadonlyArray<string> }
       }>
       expect(
@@ -228,9 +226,7 @@ describe("project worktree archive routes", () => {
       await setArchived("orphan-ws", true)
       await run(services.db.deleteArchivedWorktree(orphanTree.id))
       expect((await setArchived("orphan-ws", false)).body).toMatchObject({ isArchived: false })
-      const orphanHistory = (await run(
-        services.db.listSubjectEvents("orphan-ws")
-      )) as ReadonlyArray<{
+      const orphanHistory = listSubjectEvents(services, "orphan-ws") as ReadonlyArray<{
         readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
       }>
       expect(orphanHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(
@@ -272,9 +268,7 @@ describe("project worktree archive routes", () => {
       await runGit("drop-snapshot", ["update-ref", "-d", snapshotRefFor(prunedTree.id)], repoFolder)
       const prunedBack = await setArchived("pruned-ws", false)
       expect(prunedBack.body).toMatchObject({ isArchived: false })
-      const prunedHistory = (await run(
-        services.db.listSubjectEvents("pruned-ws")
-      )) as ReadonlyArray<{
+      const prunedHistory = listSubjectEvents(services, "pruned-ws") as ReadonlyArray<{
         readonly payload?: { readonly archiveRestoreIncomplete?: boolean }
       }>
       expect(prunedHistory.some((event) => event.payload?.archiveRestoreIncomplete === true)).toBe(

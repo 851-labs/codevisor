@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { MCPS_SYNC_NAMESPACE } from "./infra/config-sync.js"
 import { MCP_OVERLAYS_NAMESPACE, readMcpOverlays } from "./infra/mcp-fleet.js"
 import { defaultServerConfig, startCodevisorServer } from "./server.js"
-import { makeServices, run, runningServers, waitFor } from "./test-support.js"
+import { makeServices, run, runningServers, waitFor, listEvents } from "./test-support.js"
 
 describe("server boot identity", () => {
   it("adopts legacy 'local' overlays at boot and announces the change", async () => {
@@ -29,7 +29,7 @@ describe("server boot identity", () => {
       (await readMcpOverlays(services.db, "machine-abc")).disabledHere.has("GitHub")
     )
     const overlayAnnouncements = async () =>
-      (await run(services.db.listEvents(0))).filter(
+      listEvents(services).filter(
         (event) => event.kind === "sync.changed" && event.subjectId === MCP_OVERLAYS_NAMESPACE
       )
     await waitFor(async () => (await overlayAnnouncements()).length > 0)

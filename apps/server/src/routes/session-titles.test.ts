@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run } from "../test-support.js"
+import { jsonRequest, run, listEvents } from "../test-support.js"
 import { setUpWorkspace } from "./session-test-support.js"
 
 describe("session titles", () => {
@@ -38,7 +38,7 @@ describe("session titles", () => {
     expect((await run(services.db.getSessionSummary(session.id))).title).toBe(
       "Fix login validation"
     )
-    const published = await run(services.db.listEvents(0))
+    const published = listEvents(services)
     expect(
       published.some(
         (event) =>

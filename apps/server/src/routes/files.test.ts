@@ -15,7 +15,7 @@ import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
 import { sweepAttachmentTempFiles } from "../server.js"
-import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor, listSubjectEvents } from "../test-support.js"
 
 describe("file routes", () => {
   it("stores files and threads prompt attachments end to end", async () => {
@@ -246,7 +246,7 @@ describe("file routes", () => {
       { fileId: pngRef.fileId },
       { fileId: textRef.fileId }
     ])
-    const history = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+    const history = listSubjectEvents(services, session.id) as ReadonlyArray<{
       readonly payload: Record<string, unknown>
     }>
     expect(
@@ -268,7 +268,7 @@ describe("file routes", () => {
       method: "POST"
     })
     await waitFor(async () => {
-      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
         readonly kind: string
         readonly payload: Record<string, unknown>
       }>
@@ -286,7 +286,7 @@ describe("file routes", () => {
       subjectId: agentSessionId
     })
     await waitFor(async () => {
-      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
         readonly payload: Record<string, unknown>
       }>
       return events.some((event) => event.payload.text === "malformed")
@@ -311,7 +311,7 @@ describe("file routes", () => {
       ).status
     ).toBe(202)
     await waitFor(async () => {
-      const events = (await run(services.db.listSubjectEvents(session.id))) as ReadonlyArray<{
+      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
         readonly kind: string
         readonly payload: Record<string, unknown>
       }>

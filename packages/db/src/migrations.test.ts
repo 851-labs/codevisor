@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { DatabaseError, makeDatabase } from "./index.js"
-import { run, tempDatabase } from "./test-support.js"
+import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
   it("migrates once and persists projects, sessions, conversation, and events", async () => {
@@ -143,18 +143,16 @@ describe("@codevisor/db", () => {
     expect(event.id).toBe(1)
     expect(event).toMatchObject({ subjectRevision: 1 })
     expect(event.globalEventId).toBeUndefined()
-    expect(
-      (await run(db.listEvents(0))).filter((event) => event.kind !== "navigation.changed")
-    ).toEqual([])
+    expect(listEvents(filename).filter((event) => event.kind !== "navigation.changed")).toEqual([])
     expect((await run(db.getSessionDetail(firstSession.id))).eventCursor).toBe(1)
     await run(db.appendEvent("session.output", "other-subject", { text: "elsewhere" }))
     expect(
-      (await run(db.listEvents(0))).filter((event) => event.kind !== "navigation.changed")
+      listEvents(filename).filter((event) => event.kind !== "navigation.changed")
     ).toMatchObject([{ kind: "session.output", payload: { text: "elsewhere" } }])
-    expect(await run(db.listSubjectEvents(firstSession.id))).toMatchObject([
+    expect(listSubjectEvents(filename, firstSession.id)).toMatchObject([
       { id: 1, kind: "session.output", payload: { text: "chunk", index: 1 } }
     ])
-    expect(await run(db.listSubjectEvents("unknown-subject"))).toEqual([])
+    expect(listSubjectEvents(filename, "unknown-subject")).toEqual([])
 
     expect(await run(db.getSessionActionResult(firstSession.id, "prompt-1"))).toBeUndefined()
     await run(

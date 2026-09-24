@@ -3,10 +3,11 @@ export { waitFor, observableFixture } from "./changes-test-support.js"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
-import { makeAttachmentStore, makeDatabase } from "@codevisor/db"
-import type { CodevisorDatabaseService } from "@codevisor/db"
+import type { EventEnvelope } from "@codevisor/api"
+import { canonicalUuid, makeAttachmentStore, makeDatabase } from "@codevisor/db"
+import type { CodevisorDatabaseService, EventRow, SessionEventRow } from "@codevisor/db"
 import { makeMcpManager } from "@codevisor/mcp"
 import type {
   TerminalHandlers,
@@ -15,6 +16,7 @@ import type {
   TerminalSpawner
 } from "@codevisor/terminal"
 import { makeTerminalManager } from "@codevisor/terminal"
+import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { afterEach, beforeEach, onTestFinished, vi } from "vitest"
 import { WebSocket } from "ws"
@@ -143,6 +145,88 @@ export const makeServices = async (serverId = "test") => {
     spawner
   }
 }
+
+const readDatabase = <A>(
+  services: CodevisorServerServices,
+  read: (sqlite: Database.Database) => A
+): A => {
+  // makeServices keeps the database beside the attachment store.
+  const sqlite = new Database(join(dirname(services.attachments.root), "codevisor.sqlite"), {
+    readonly: true
+  })
+  try {
+    return read(sqlite)
+  } finally {
+    sqlite.close()
+  }
+}
+
+const globalEvent = (row: EventRow): EventEnvelope => ({
+  id: row.id,
+  globalEventId: row.id,
+  serverId: row.server_id,
+  kind: row.kind,
+  subjectId: row.subject_id,
+  createdAt: row.created_at,
+  payload: JSON.parse(row.payload) as unknown
+})
+
+const sessionEvent = (row: SessionEventRow): EventEnvelope => {
+  const payload = JSON.parse(row.payload) as unknown
+  return {
+    id: row.revision,
+    ...(row.global_event_id === null ? {} : { globalEventId: row.global_event_id }),
+    subjectRevision: row.revision,
+    serverId: row.server_id,
+    kind: row.kind,
+    subjectId: row.session_id,
+    createdAt: row.created_at,
+    payload:
+      row.chat_item_id !== null &&
+      typeof payload === "object" &&
+      payload !== null &&
+      !Array.isArray(payload)
+        ? { ...payload, chatItemId: row.chat_item_id }
+        : payload
+  }
+}
+
+/// The raw global event log after `since`, read straight from the events
+/// table (the sync reader trims and materializes; tests observe the log).
+export const listEvents = (
+  services: CodevisorServerServices,
+  since = 0
+): ReadonlyArray<EventEnvelope> =>
+  readDatabase(services, (sqlite) =>
+    sqlite
+      .prepare("select * from events where id > ? order by id asc")
+      .all(since)
+      .map((row) => globalEvent(row as EventRow))
+  )
+
+/// The raw event log of one subject after `since`: a session's own
+/// revisions, or the global events filed under any other subject.
+export const listSubjectEvents = (
+  services: CodevisorServerServices,
+  rawSubjectId: string,
+  since = 0
+): ReadonlyArray<EventEnvelope> =>
+  readDatabase(services, (sqlite) => {
+    const subjectId = canonicalUuid(rawSubjectId)
+    const isSession =
+      sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
+    return isSession
+      ? sqlite
+          .prepare(
+            "select * from session_events where session_id = ? and revision > ? order by revision asc"
+          )
+          .all(subjectId, since)
+          .map((row) => sessionEvent(row as SessionEventRow))
+      : sqlite
+          .prepare("select * from events where subject_id = ? and id > ? order by id asc")
+          .all(subjectId, since)
+          .map((row) => globalEvent(row as EventRow))
+  })
 
 /// Chats carry no archive state: their workspace does. Puts the chat in its
 /// own workspace and archives that, which is what "this chat is archived"

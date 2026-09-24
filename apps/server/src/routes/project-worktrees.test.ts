@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import { productionFoodWorktreeNames } from "@codevisor/worktrees"
 import { describe, expect, it } from "vitest"
 
-import { jsonRequest, run, start, tempDirs, waitFor } from "../test-support.js"
+import { jsonRequest, run, start, tempDirs, waitFor, listEvents } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
 const git = (args: ReadonlyArray<string>, cwd: string) => execFileAsync("git", [...args], { cwd })
@@ -118,7 +118,7 @@ describe("project worktree routes", () => {
       // Setup progress was streamed as ordered worktree.setup events: started,
       // git output lines (git narrates "Preparing worktree ..." on stderr),
       // then completed with the elapsed duration.
-      const setupPayloads = (await run(services.db.listEvents(0)))
+      const setupPayloads = listEvents(services)
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-fix-auth")
         .map(
           (event) =>
@@ -145,7 +145,7 @@ describe("project worktree routes", () => {
       const lastSetup = setupPayloads[setupPayloads.length - 1]
       expect(lastSetup?.state).toBe("completed")
       expect(lastSetup?.durationMs).toBeGreaterThanOrEqual(0)
-      const mirroredSetupPayloads = (await run(services.db.listEvents(0))).filter(
+      const mirroredSetupPayloads = listEvents(services).filter(
         (event) =>
           event.kind === "worktree.setup" && event.subjectId === "session-awaiting-worktree"
       )
@@ -200,7 +200,7 @@ describe("project worktree routes", () => {
         name: "doomed-2",
         branch: "codevisor/doomed-2"
       })
-      const recoveredSetup = (await run(services.db.listEvents(0)))
+      const recoveredSetup = listEvents(services)
         .filter((event) => event.kind === "worktree.setup" && event.subjectId === "wt-doomed")
         .map((event) => (event.payload as { readonly state: string }).state)
       expect(recoveredSetup[0]).toBe("started")

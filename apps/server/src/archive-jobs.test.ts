@@ -8,7 +8,7 @@ import { listSnapshotRefWorktreeIds } from "@codevisor/worktrees"
 import { describe, expect, it, vi } from "vitest"
 
 import { archiveJobs } from "./archive-jobs.js"
-import { jsonRequest, run, start, tempDirs } from "./test-support.js"
+import { jsonRequest, run, start, tempDirs, listSubjectEvents } from "./test-support.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
 const execFileAsync = promisify(execFile)
@@ -91,7 +91,7 @@ describe("archive jobs", () => {
     ).toEqual(["complete"])
     // Clients already dropped the workspace; an update after the delete would
     // bring it back.
-    const kinds = (await run(services.db.listSubjectEvents("work"))).map((event) => event.kind)
+    const kinds = listSubjectEvents(services, "work").map((event) => event.kind)
     expect(kinds.at(-1)).toBe("workspace.deleted")
   })
 

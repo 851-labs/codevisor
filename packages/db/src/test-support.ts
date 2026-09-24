@@ -2,13 +2,16 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Project, SessionSummary } from "@codevisor/api"
+import type { EventEnvelope, Project, SessionSummary } from "@codevisor/api"
 import Database from "better-sqlite3"
 import { Effect } from "effect"
 import { afterEach, onTestFinished } from "vitest"
 
 import { createService } from "./create-service.js"
 import type { DatabaseError } from "./errors.js"
+import { canonicalUuid } from "./ids.js"
+import { eventFromRow, sessionEventFromRow } from "./row-mappers.js"
+import type { EventRow, SessionEventRow } from "./rows.js"
 import type { CodevisorDatabaseConfig, CodevisorDatabaseService } from "./service.js"
 
 const tempDirs: Array<string> = []
@@ -27,6 +30,50 @@ afterEach(() => {
     rmSync(dir, { force: true, recursive: true })
   }
 })
+
+const readDatabase = <A>(filename: string, read: (sqlite: Database.Database) => A): A => {
+  const sqlite = new Database(filename, { readonly: true })
+  try {
+    return read(sqlite)
+  } finally {
+    sqlite.close()
+  }
+}
+
+/** The raw global event log after `since`, read straight from the events table. */
+export const listEvents = (filename: string, since = 0): ReadonlyArray<EventEnvelope> =>
+  readDatabase(filename, (sqlite) =>
+    sqlite
+      .prepare("select * from events where id > ? order by id asc")
+      .all(since)
+      .map((row) => eventFromRow(row as EventRow))
+  )
+
+/**
+ * The raw event log of one subject after `since`: a session's own revisions,
+ * or the global events filed under any other subject.
+ */
+export const listSubjectEvents = (
+  filename: string,
+  rawSubjectId: string,
+  since = 0
+): ReadonlyArray<EventEnvelope> =>
+  readDatabase(filename, (sqlite) => {
+    const subjectId = canonicalUuid(rawSubjectId)
+    const isSession =
+      sqlite.prepare("select 1 from sessions where id = ?").get(subjectId) !== undefined
+    return isSession
+      ? sqlite
+          .prepare(
+            "select * from session_events where session_id = ? and revision > ? order by revision asc"
+          )
+          .all(subjectId, since)
+          .map((row) => sessionEventFromRow(row as SessionEventRow))
+      : sqlite
+          .prepare("select * from events where subject_id = ? and id > ? order by id asc")
+          .all(subjectId, since)
+          .map((row) => eventFromRow(row as EventRow))
+  })
 
 /** Recreates the on-disk shape of a database last touched by migration 4. */
 export const buildV4Fixture = (filename: string): void => {

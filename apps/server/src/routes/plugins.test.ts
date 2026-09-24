@@ -15,10 +15,10 @@ import {
   pluginSummary,
   readSseEvents,
   readSseEventsOfKind,
-  run,
   runningServers,
   startWithApp,
-  tempDirs
+  tempDirs,
+  listEvents
 } from "../test-support.js"
 
 const rawUpgradeStatus = (url: string, path: string): Promise<string> =>
@@ -407,7 +407,7 @@ describe("plugin routes", () => {
     await seedPane(server, "ws-shared", "other-pane", "plugin:owner.other")
     await seedPane(server, "ws-lonely", "lonely-pane", "plugin:owner.example")
 
-    const replay = await run(services.db.listEvents(0))
+    const replay = listEvents(services)
     const live = readSseEvents(server, 2, replay.at(-1)?.id ?? 0)
     const removed = await jsonRequest(server, "/v1/plugins/owner.example", { method: "DELETE" })
     expect(removed.status).toBe(200)

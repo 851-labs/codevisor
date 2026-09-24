@@ -238,11 +238,6 @@ export interface CodevisorDatabaseService {
     subjectId?: string
   ) => Effect.Effect<SyncBatch, DatabaseError>
   readonly latestEventCursor: Effect.Effect<number, DatabaseError>
-  readonly listEvents: (since: number) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
-  readonly listSubjectEvents: (
-    subjectId: string,
-    since?: number
-  ) => Effect.Effect<ReadonlyArray<EventEnvelope>, DatabaseError>
   readonly createPromptQueueItem: (
     sessionId: string,
     text: string,

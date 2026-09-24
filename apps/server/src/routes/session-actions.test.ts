@@ -11,7 +11,9 @@ import {
   readWebSocketEvents,
   run,
   tempDirs,
-  waitFor
+  waitFor,
+  listEvents,
+  listSubjectEvents
 } from "../test-support.js"
 import { setUpWorkspace, createFirstSession } from "./session-test-support.js"
 
@@ -24,9 +26,9 @@ describe("session action routes", () => {
     const legacyWorkspaceFolder = join(legacyRoot, "legacy-agent-session")
     mkdirSync(legacyWorkspaceFolder)
     const promptCountBeforeReturnedEvents = agents.prompts.length
-    const queueEventsBeforeReturnedEvents = (
-      await run(services.db.listSubjectEvents(session.id))
-    ).filter((event) => event.kind === "session.queue.updated").length
+    const queueEventsBeforeReturnedEvents = listSubjectEvents(services, session.id).filter(
+      (event) => event.kind === "session.queue.updated"
+    ).length
     expect(
       (
         await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -41,14 +43,14 @@ describe("session action routes", () => {
     ).toEqual(expect.arrayContaining(["returned events", "Raw answer without id"]))
     await waitFor(async () => {
       const processing = await run(services.db.listProcessingPromptQueue(session.id))
-      const queueEventCount = (await run(services.db.listSubjectEvents(session.id))).filter(
+      const queueEventCount = listSubjectEvents(services, session.id).filter(
         (event) => event.kind === "session.queue.updated"
       ).length
       return processing.length === 0 && queueEventCount >= queueEventsBeforeReturnedEvents + 2
     })
 
     const promptCountBeforeSlow = agents.prompts.length
-    const queueEventsBeforeSlow = (await run(services.db.listSubjectEvents(session.id))).filter(
+    const queueEventsBeforeSlow = listSubjectEvents(services, session.id).filter(
       (event) => event.kind === "session.queue.updated"
     ).length
     const slowResponse = (
@@ -59,7 +61,7 @@ describe("session action routes", () => {
     ).body as { readonly queueItemId: string }
     expect(slowResponse.queueItemId).toBeTypeOf("string")
     await waitFor(() => agents.prompts.length === promptCountBeforeSlow + 1)
-    const immediatePromptQueueEvents = (await run(services.db.listSubjectEvents(session.id)))
+    const immediatePromptQueueEvents = listSubjectEvents(services, session.id)
       .filter((event) => event.kind === "session.queue.updated")
       .slice(queueEventsBeforeSlow)
     expect(immediatePromptQueueEvents).not.toEqual(
@@ -138,9 +140,7 @@ describe("session action routes", () => {
       ).body
     ).toMatchObject({ accepted: true, sessionId: session.id })
     await waitFor(async () =>
-      (await run(services.db.listSubjectEvents(session.id))).some(
-        (event) => event.kind === "session.error"
-      )
+      listSubjectEvents(services, session.id).some((event) => event.kind === "session.error")
     )
     expect(agents.loads).toContainEqual(["codex", session.agentSessionId, workspaceFolder])
     expect(
@@ -402,7 +402,7 @@ describe("session action routes", () => {
     expect((await readSseEvents(server, 1, "not-a-number")).at(0)).toEqual(
       expect.objectContaining({ kind: "project.created" })
     )
-    const replayEvents = await run(services.db.listEvents(0))
+    const replayEvents = listEvents(services)
     const replayEventCount = replayEvents.filter(
       (event) => event.kind !== "navigation.changed"
     ).length
@@ -428,7 +428,7 @@ describe("session action routes", () => {
       expect.objectContaining({ kind: "project.created" }),
       expect.objectContaining({ kind: "project.updated" })
     ])
-    const socketReplayEvents = await run(services.db.listEvents(0))
+    const socketReplayEvents = listEvents(services)
     const socketReplayCursor = socketReplayEvents.at(-1)?.id ?? 0
     const websocketLive = readWebSocketEvents(server, 1, socketReplayCursor)
     await jsonRequest(server, "/v1/projects", {
