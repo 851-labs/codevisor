@@ -21,6 +21,12 @@ import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
 import { appBundlePath, run } from "./harness-lifecycle-support.js"
 import type { HarnessUpdateCheckOutcome } from "./harness-lifecycle-types.js"
 
+/// After an updater exits successfully, the lifecycle stays `updating` while
+/// the installed binary catches up to the requested target, re-probing the
+/// local version at this cadence until the timeout.
+const UPDATE_VERIFICATION_TIMEOUT_MS = 2 * 60_000
+const UPDATE_VERIFICATION_POLL_INTERVAL_MS = 500
+
 const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
@@ -55,9 +61,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     loadStates,
     now,
     platform,
-    readBundleShortVersion,
-    updateVerificationPollIntervalMs,
-    updateVerificationTimeoutMs
+    readBundleShortVersion
   } = core
 
   const checkSource = async (
@@ -224,7 +228,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
     harnessId: string,
     targetVersion: string
   ): Promise<string> => {
-    const deadline = Date.now() + updateVerificationTimeoutMs
+    const deadline = Date.now() + UPDATE_VERIFICATION_TIMEOUT_MS
     let observedVersion: string | undefined
     while (true) {
       await run(config.agents.refreshEnvironment).catch(() => undefined)
@@ -241,7 +245,7 @@ export const makeHarnessUpdateDetection = (core: HarnessLifecycleCore) => {
           `Updater exited successfully, but ${harnessId} is still ${observed}; expected ${targetVersion}`
         )
       }
-      await delay(updateVerificationPollIntervalMs)
+      await delay(UPDATE_VERIFICATION_POLL_INTERVAL_MS)
     }
   }
 

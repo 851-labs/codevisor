@@ -193,9 +193,7 @@ describe("harness lifecycle install/update execution", () => {
       realpath: (path) => path,
       resolveEnv: async () => ({ PATH: bin }),
       spawnShell,
-      terminal,
-      updateVerificationPollIntervalMs: 1,
-      updateVerificationTimeoutMs: 20
+      terminal
     })
 
     await lifecycle.checkForUpdates(true)
@@ -208,7 +206,13 @@ describe("harness lifecycle install/update execution", () => {
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
     ])
     expect(whileVerifying[0]?.lifecycle?.phase).toBe("updating")
-    await vi.advanceTimersByTimeAsync(20)
+    // The local re-probe keeps waiting for the target for 2 minutes.
+    await vi.advanceTimersByTimeAsync(2 * 60_000 - 1)
+    const beforeDeadline = await lifecycle.decorateHarnesses([
+      harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
+    ])
+    expect(beforeDeadline[0]?.lifecycle?.phase).toBe("updating")
+    await vi.advanceTimersByTimeAsync(1)
     await settled
     const decorated = await lifecycle.decorateHarnesses([
       harness("fake-cli", "/Users/dev/.local/bin/fake-cli", "1.0.0")
