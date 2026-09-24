@@ -11,6 +11,9 @@ Preserve useful behavior coverage when replacing a flaky or slow test.
 
 ## Before writing a test
 
+First pass the `test-audit` skill's authoring gate: the test must protect a
+behavior or contract that existing coverage does not already catch.
+
 1. Identify the observable behavior and the smallest component that owns it.
 2. List uncontrolled inputs: clocks, task scheduling, randomness, network,
    filesystem state, process environment, locale, and global caches.
