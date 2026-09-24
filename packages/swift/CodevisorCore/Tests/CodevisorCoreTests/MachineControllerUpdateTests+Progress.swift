@@ -25,10 +25,7 @@ extension MachineControllerUpdateTests {
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollAttempts: 4,
       updateScheduler: clock.scheduler
@@ -79,10 +76,7 @@ extension MachineControllerUpdateTests {
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollAttempts: pollAttempts,
       updateScheduler: clock.scheduler

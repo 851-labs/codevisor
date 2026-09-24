@@ -176,14 +176,18 @@ struct AppEnvironmentTests {
   @Test("Onboarding publishes completion after registering projects")
   func onboardingPublishesCompletionLast() async {
     let events = OnboardingCompletionEvents()
+    let settingsStore = OnboardingSettingsStore(events: events)
     let environment = AppEnvironment(
-      projectRepository: OnboardingProjectRepository(events: events),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
       configCache: ConfigOptionCache(store: InMemoryStore()),
-      settings: AppSettingsModel(
-        store: OnboardingSettingsStore(events: events)
-      )
+      settings: AppSettingsModel(store: settingsStore)
     )
+    // What the first render after onboarding will read, sampled at the
+    // moment completion is published.
+    settingsStore.beforeCompletion = { [weak environment] in
+      MainActor.assumeIsolated {
+        if environment?.projectList.projects.isEmpty == false { events.record("projects registered") }
+      }
+    }
 
     _ = await environment.finishOnboarding(projectFolders: [
       URL(fileURLWithPath: "/Users/me/src/website")
@@ -229,21 +233,29 @@ struct AppEnvironmentTests {
     #expect(recommendations.isEmpty)
   }
 
-  @Test("Archiving a chat from a tab preserves its workspace")
-  func archivingChatPreservesWorkspace() {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/preserve-workspace"))
-    let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
-    let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
-    let workspace = environment.workspaces.ensureWorkspace(
-      for: WorkspaceSessionSeed(
-        sessionId: session.id,
-        initialName: project.name,
-        serverId: session.serverId,
-        projectId: session.projectId,
-        rootDirectory: project.folderURL.path
-      ),
-      legacyGroups: nil
-    )
+  /// An environment whose machine already has `project`, `sessions`, and one
+  /// workspace showing the first chat (plus any extra chats given).
+  private func environmentWithWorkspace(
+    _ path: String, sessions titles: [String]
+  ) async -> (AppEnvironment, Workspace, [ChatSession]) {
+    let project = Project.fromFolder(URL(fileURLWithPath: path))
+    let sessions = titles.map { ChatSession(projectId: project.id, harnessId: "codex", title: $0) }
+    let environment = AppEnvironment.preview(seedProjects: [], seedSessions: [])
+    var group = PaneGroupState.centerInitial(sessionId: sessions[0].id)
+    for session in sessions.dropFirst() { group.addChatPane(sessionId: session.id, name: session.title) }
+    let workspace = Workspace(
+      name: project.name, rootDirectory: project.folderURL.path, serverId: "local", projectId: project.id,
+      centerTree: .leaf(group), isServerSynced: true)
+    await environment.navigationStore.install(projects: [project], sessions: sessions, workspaces: [workspace])
+    return (environment, workspace, sessions)
+  }
+
+  @Test("Closing a chat from a tab preserves its workspace")
+  func closingChatPreservesWorkspace() async {
+    let (environment, workspace, sessions) = await environmentWithWorkspace(
+      "/tmp/preserve-workspace", sessions: ["Chat"])
+    let session = sessions[0]
+    #expect(environment.workspaces.workspaceId(forSession: session.id) == workspace.id)
 
     environment.closeSession(session)
 
@@ -257,29 +269,10 @@ struct AppEnvironmentTests {
   }
 
   @Test("Closing the last chat leaves the workspace live on its New Tab page")
-  func closingFinalChatKeepsWorkspaceLive() {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
-    let first = ChatSession(projectId: project.id, harnessId: "codex", title: "First")
-    let second = ChatSession(projectId: project.id, harnessId: "codex", title: "Second")
-    let environment = AppEnvironment.preview(
-      seedProjects: [project], seedSessions: [first, second])
-    var workspace = environment.workspaces.ensureWorkspace(
-      for: WorkspaceSessionSeed(
-        sessionId: first.id,
-        initialName: project.name,
-        serverId: first.serverId,
-        projectId: first.projectId,
-        rootDirectory: project.folderURL.path
-      ),
-      legacyGroups: nil
-    )
-    let groupId = workspace.centerTree.allGroups[0].id
-    workspace.centerTree = workspace.centerTree.updatingGroup(id: groupId) { group in
-      var group = group
-      group.addChatPane(sessionId: second.id, name: second.title)
-      return group
-    }
-    environment.workspaces.save(workspace)
+  func closingFinalChatKeepsWorkspaceLive() async {
+    let (environment, workspace, sessions) = await environmentWithWorkspace(
+      "/tmp/archive-workspace", sessions: ["First", "Second"])
+    let (first, second) = (sessions[0], sessions[1])
 
     environment.closeSession(first)
     let afterFirst = environment.workspaces.workspace(id: workspace.id)
@@ -297,52 +290,32 @@ struct AppEnvironmentTests {
   }
 
   @Test("Archiving a workspace hides it without touching its chats")
-  func archivingWorkspaceHidesIt() {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/archive-workspace"))
-    let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
-    let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
-    let workspace = environment.workspaces.ensureWorkspace(
-      for: WorkspaceSessionSeed(
-        sessionId: session.id,
-        initialName: project.name,
-        serverId: session.serverId,
-        projectId: session.projectId,
-        rootDirectory: project.folderURL.path
-      ),
-      legacyGroups: nil
-    )
+  func archivingWorkspaceHidesIt() async throws {
+    let (environment, workspace, sessions) = await environmentWithWorkspace(
+      "/tmp/archive-workspace", sessions: ["Chat"])
 
-    environment.archiveWorkspace(workspace)
+    environment.archiveWorkspace(try #require(environment.workspaces.workspace(id: workspace.id)))
 
     // The workspace carries the archive on its own: its chats have no such
-    // state to cascade to, and their panes survive for the restore.
+    // state to cascade to, and their panes survive for the restore. The
+    // request waits for the machine; the sidebar shows it at once.
     #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
-    #expect(environment.workspaces.workspace(id: workspace.id)?.pane(containingChat: session.id) != nil)
+    #expect(environment.workspaces.workspace(id: workspace.id)?.pane(containingChat: sessions[0].id) != nil)
+    #expect(
+      environment.navigationStore.pendingIntents.map(\.intent) == [
+        .setWorkspaceArchived(workspaceId: workspace.id, isArchived: true)
+      ])
   }
 
   @Test("Restoring a workspace clears its archived flag")
-  func unarchivingWorkspaceRestoresIt() {
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/unarchive-workspace"))
-    let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
-    let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
-    let workspace = environment.workspaces.ensureWorkspace(
-      for: WorkspaceSessionSeed(
-        sessionId: session.id,
-        initialName: project.name,
-        serverId: session.serverId,
-        projectId: session.projectId,
-        rootDirectory: project.folderURL.path
-      ),
-      legacyGroups: nil
-    )
+  func unarchivingWorkspaceRestoresIt() async throws {
+    let (environment, workspace, _) = await environmentWithWorkspace(
+      "/tmp/unarchive-workspace", sessions: ["Chat"])
 
-    environment.archiveWorkspace(workspace)
+    environment.archiveWorkspace(try #require(environment.workspaces.workspace(id: workspace.id)))
     #expect(environment.workspaces.workspace(id: workspace.id)?.isArchived == true)
 
-    guard let archived = environment.workspaces.workspace(id: workspace.id) else {
-      Issue.record("Workspace vanished after archiving")
-      return
-    }
+    let archived = try #require(environment.workspaces.workspace(id: workspace.id))
     environment.unarchiveWorkspace(archived)
 
     // Pane layout is retained across the round trip — restoring must give
@@ -351,6 +324,29 @@ struct AppEnvironmentTests {
     #expect(restored?.isArchived == false)
     #expect(restored?.id == workspace.id)
     #expect(restored?.name == workspace.name)
+    #expect(restored?.centerTabs == archived.centerTabs)
+  }
+
+  @Test("Archiving a draft workspace discards it; the server never had it")
+  func archivingDraftDiscardsIt() {
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/draft-workspace"))
+    let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Chat")
+    let environment = AppEnvironment.preview(seedProjects: [project], seedSessions: [session])
+    let draft = environment.workspaces.ensureWorkspace(
+      for: WorkspaceSessionSeed(
+        sessionId: session.id, initialName: project.name, serverId: session.serverId,
+        projectId: session.projectId, rootDirectory: project.folderURL.path),
+      legacyGroups: nil)
+    #expect(draft.isDraft)
+
+    environment.archiveWorkspace(draft)
+
+    #expect(environment.workspaces.workspace(id: draft.id) == nil)
+    #expect(
+      !environment.navigationStore.pendingIntents.contains { entry in
+        if case .setWorkspaceArchived = entry.intent { return true }
+        return false
+      })
   }
 }
 
@@ -365,19 +361,10 @@ private final class OnboardingCompletionEvents: @unchecked Sendable {
   }
 }
 
-private struct OnboardingProjectRepository: ProjectRepository {
-  let events: OnboardingCompletionEvents
-
-  func load() -> [Project] { [] }
-
-  func save(_ projects: [Project]) {
-    if !projects.isEmpty { events.record("projects registered") }
-  }
-}
-
 private final class OnboardingSettingsStore: PersistenceStore, @unchecked Sendable {
   private let backing = InMemoryStore()
   private let events: OnboardingCompletionEvents
+  var beforeCompletion: (() -> Void)?
 
   init(events: OnboardingCompletionEvents) {
     self.events = events
@@ -393,6 +380,7 @@ private final class OnboardingSettingsStore: PersistenceStore, @unchecked Sendab
       let settings = try? JSONDecoder().decode(AppSettings.self, from: data),
       settings.hasCompletedOnboarding
     else { return }
+    beforeCompletion?()
     events.record("onboarding completed")
   }
 

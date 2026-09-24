@@ -24,16 +24,8 @@ extension AppEnvironment {
       })
       .filter { $0.kind == .chat && $0.chatSessionId == session.id }
       .map(\.id)
-    let client = machines.machine(for: workspace.serverId).map { _ in
-      machines.client(for: workspace.serverId) as any CodevisorServerClienting
-    }
     for paneId in paneIds {
-      workspaceSync.closePaneLocally(
-        id: paneId,
-        workspaceId: workspace.id,
-        repository: workspaces,
-        client: client
-      )
+      workspaceSync.closePaneLocally(id: paneId, workspaceId: workspace.id, repository: workspaces)
     }
   }
 
@@ -48,42 +40,19 @@ extension AppEnvironment {
     setWorkspaceArchived(workspace, false)
   }
 
-  /// Writes the archived flag locally, then confirms it with the server.
-  ///
-  /// The local write is optimistic so the sidebar responds immediately, but
-  /// it is NOT authoritative: a failed upload reverts it. Keeping a local-only
-  /// archive was how one machine came to hide a workspace every other machine
-  /// still showed, with no marker, no retry and nothing able to notice.
-  /// Losing the optimism on failure is the honest outcome — the user sees the
-  /// workspace come back rather than silently diverging from their fleet.
+  /// Asks the workspace's machine to change its archived flag. The sidebar
+  /// reflects it at once and keeps doing so while the request waits -- across
+  /// relaunches and while offline -- and if the server refuses it, the
+  /// server's state is what shows. No device ever keeps an archive state of
+  /// its own, which is what used to let one device hide a workspace every
+  /// other device still showed.
   private func setWorkspaceArchived(_ workspace: Workspace, _ isArchived: Bool) {
-    guard machines.machine(for: workspace.serverId) != nil else {
-      Log.sync.error(
-        "Cannot archive a workspace on an unknown machine: \(workspace.serverId, privacy: .public)"
-      )
+    guard workspace.isServerSynced else {
+      // A draft the server never had: archiving it just discards it.
+      if isArchived { workspaces.delete(id: workspace.id) }
       return
     }
-    var updated = workspace
-    updated.isArchived = isArchived
-    workspaces.save(updated)
-    workspaceSync.noteLocalMutation()
-
-    let client = machines.client(for: workspace.serverId)
-    Task { [weak self] in
-      do {
-        try await client.setWorkspaceArchived(id: workspace.id, isArchived: isArchived)
-      } catch {
-        Log.sync.error(
-          "Failed to sync workspace archive state: \(String(describing: error), privacy: .public)"
-        )
-        guard let self, let current = self.workspaces.workspace(id: workspace.id),
-          current.isArchived == isArchived
-        else { return }
-        var reverted = current
-        reverted.isArchived = !isArchived
-        self.workspaces.save(reverted)
-        self.workspaceSync.noteLocalMutation()
-      }
-    }
+    navigationStore.enqueue(
+      .setWorkspaceArchived(workspaceId: workspace.id, isArchived: isArchived), machineId: workspace.serverId)
   }
 }

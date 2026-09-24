@@ -207,7 +207,21 @@ extension CodevisorServerClient {
     workspaceId: UUID?,
     transcriptLimit: Int
   ) async throws -> ServerSessionOpenResponse? {
-    return try await send(
+    try await openSessionReturningData(
+      session,
+      project: project,
+      workspaceId: workspaceId,
+      transcriptLimit: transcriptLimit
+    )?.response
+  }
+
+  public func openSessionReturningData(
+    _ session: ChatSession,
+    project: Project?,
+    workspaceId: UUID?,
+    transcriptLimit: Int
+  ) async throws -> ServerSessionOpenResult? {
+    let data = try await perform(
       "/v1/sessions/\(session.id.uuidString)/open",
       method: "POST",
       body: OpenSessionBody(
@@ -217,6 +231,7 @@ extension CodevisorServerClient {
         transcriptLimit: transcriptLimit
       )
     )
+    return ServerSessionOpenResult(response: try decoder.decode(ServerSessionOpenResponse.self, from: data), data: data)
   }
 
   public func transcriptPage(id: UUID, before: String?, limit: Int = 32) async throws -> ServerTranscriptPage {

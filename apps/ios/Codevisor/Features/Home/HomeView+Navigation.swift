@@ -64,51 +64,6 @@ extension HomeView {
     )
   }
 
-  func backfillWorkspacesIfNeeded() {
-    let sessionsById = Dictionary(
-      activeSessions.map { ($0.id, $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
-    // Before workspaces were represented in the iOS navigator, sibling
-    // chats lived only in the original chat's local pane payload. Process
-    // the broadest layouts first so their shared workspace claims every
-    // child before ordinary one-chat backfill runs.
-    let legacyLayouts = activeSessions.compactMap { session -> (ChatSession, [UUID])? in
-      guard let state = WorkspacePaneStore.shared.existingState(for: session.id) else {
-        return nil
-      }
-      var seen: Set<UUID> = []
-      let chatIds = state.panes.compactMap { pane -> UUID? in
-        guard pane.kind == .chat,
-          let id = pane.chatSessionId,
-          sessionsById[id] != nil,
-          seen.insert(id).inserted
-        else { return nil }
-        return id
-      }
-      guard chatIds.count > 1, chatIds.contains(session.id) else { return nil }
-      return (session, chatIds)
-    }
-    .sorted { $0.1.count > $1.1.count }
-
-    for (anchor, chatIds) in legacyLayouts {
-      var workspace = ensureWorkspace(for: anchor)
-      var changed = false
-      for chatId in chatIds where workspace.tabId(containingChat: chatId) == nil {
-        workspace.centerTabs.append(
-          WorkspaceTab(root: .leaf(.centerInitial(sessionId: chatId)))
-        )
-        changed = true
-      }
-      if changed { environment.workspaces.save(workspace) }
-    }
-
-    for session in activeSessions {
-      _ = ensureWorkspace(for: session)
-    }
-    workspaceRevision += 1
-  }
-
   /// Shared Core policy decides whether the current route remains valid,
   /// moves to a surviving sibling chat, or leaves the workspace entirely.
   var presentedWorkspaceDisposition: WorkspaceRouteDisposition {

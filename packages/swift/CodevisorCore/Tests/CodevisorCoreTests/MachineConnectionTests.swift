@@ -30,10 +30,7 @@ struct MachineConnectionTests {
       ),
       forKey: "machines"
     )
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let controller = MachineController(
       store: store,
       projectList: projectList,

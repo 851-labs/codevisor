@@ -25,9 +25,6 @@ struct HomeView: View {
   // Bootstrap adds the dev machine a beat after first render; the grace
   // period keeps onboarding from flashing over an already-paired install.
   @State var readyForOnboarding = false
-  /// First-launch budget: with nothing cached the spinner is allowed,
-  /// but it may never outlive the wait — after this it becomes retry.
-  @State var initialSyncDeadlineExpired = false
   @State var clientSettingsSection = "root"
   @State var clientPresentationCompletion = ClientPresentationCompletion()
   @State var presentedSettingsDestination: SettingsDestination?
@@ -142,19 +139,16 @@ struct HomeView: View {
     #endif
   }
 
-  /// True while no machine has synced and none has failed — the fleet is still converging.
-  /// Cached records stay hidden until a current snapshot arrives.
-  var initialSyncPending: Bool {
-    !anyMachineSynced && failedSyncMachines.isEmpty && hasRemoteMachines
-  }
-
   /// Consent is required even for an existing installation with paired machines.
   /// After consent, onboarding stays open until a machine is paired; the empty
   /// state can reopen it later.
   var showsOnboarding: Binding<Bool> {
     Binding(
       get: {
-        readyForOnboarding && !showsSampleSidebar && presentedSettingsDestination == nil
+        // A cached machine list that hasn't been confirmed yet may still
+        // turn out to hold machines; onboarding waits for it.
+        readyForOnboarding && environment.navigationRosterStatus != .unverified
+          && !showsSampleSidebar && presentedSettingsDestination == nil
           && (!hasAIDataSharingConsent || (!onboardingDismissed && !hasRemoteMachines))
       },
       set: { if !$0 && hasAIDataSharingConsent { onboardingDismissed = true } }
@@ -168,7 +162,7 @@ struct HomeView: View {
   var showsNewChatButton: Bool {
     if showsSampleSidebar { return true }
     guard hasAIDataSharingConsent else { return false }
-    return hasRemoteMachines && !(sidebarSections.isEmpty && !anyMachineSynced)
+    return hasRemoteMachines && launch != .loading
   }
 
   var body: some View {
@@ -187,9 +181,6 @@ struct HomeView: View {
       .onChange(of: newChatFlow?.id) { _, flowId in
         guard flowId == nil, let pending = pendingLayoutMode else { return }
         commitLayoutMode(pending)
-      }
-      .onChange(of: activeSessions.map(\.id), initial: true) { _, _ in
-        backfillWorkspacesIfNeeded()
       }
       .onChange(of: navigation.path, initial: true) { oldPath, newPath in
         IOSNavigationDiagnostics.record(
@@ -230,7 +221,7 @@ struct HomeView: View {
       let delay =
         environmentValues["CODEVISOR_DIAGNOSTIC_NEW_CHAT_SEND_DELAY_MS"].flatMap(Int.init) ?? 4000
       for _ in 0..<200 {
-        if hasRemoteMachines, anyMachineSynced,
+        if hasRemoteMachines, machines.navigationSyncStateByMachineId.values.contains(.current),
           case .ready = machines.availability(for: environment.defaultComposerServerId)
         {
           break

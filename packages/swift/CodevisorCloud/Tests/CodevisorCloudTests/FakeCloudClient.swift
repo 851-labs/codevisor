@@ -1,5 +1,6 @@
 import CodevisorClient
 import CodevisorProtocol
+import CodevisorTestSupport
 import Foundation
 @testable import CodevisorCloud
 
@@ -17,6 +18,12 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   var devLoginResult: Result<String, any Error> = .failure(CloudAccountClientError.missingToken)
   /// Tokens the fake accepts, mapped to the user get-session reports.
   var sessions: [String: CloudSessionUser] = [:]
+  /// Thrown by get-session instead of answering (an unreachable server).
+  var sessionError: (any Error)?
+  /// When set, get-session suspends until the signal fires, so tests can
+  /// observe state while validation is still waiting on the network.
+  var sessionGate: TestSignal?
+  private(set) var discoverCount = 0
   var machinesResult: Result<[CloudMachine], any Error> = .success([])
   var renameError: (any Error)?
   var removeError: (any Error)?
@@ -37,7 +44,10 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   private(set) var removals: [String] = []
 
   func discover() async throws -> CloudInstanceInfo {
-    try lock.withLock { discoverResult }.get()
+    try lock.withLock {
+      discoverCount += 1
+      return discoverResult
+    }.get()
   }
 
   func verifyOneTimeToken(_ ott: String) async throws -> String {
@@ -84,8 +94,10 @@ final class FakeCloudClient: CloudAccountClienting, @unchecked Sendable {
   }
 
   func session(token: String) async throws -> CloudSessionUser? {
-    lock.withLock {
+    if let gate = lock.withLock({ sessionGate }) { await gate.wait() }
+    return try lock.withLock {
       sessionTokens.append(token)
+      if let sessionError { throw sessionError }
       return sessions[token]
     }
   }
@@ -250,7 +262,8 @@ func makeController(
   client: FakeCloudClient = FakeCloudClient(),
   store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
   environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil,
-  presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
+  presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
+  retrySleep: @escaping @Sendable (Duration) async throws -> Void = TestClock().sleep
 ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
   let controller = CloudAccountController(
     clientFactory: { _ in client },
@@ -262,7 +275,8 @@ func makeController(
       credentialStore: store,
       prober: { _, _, _ in nil }
     ),
-    presenceSleep: presenceSleep
+    presenceSleep: presenceSleep,
+    retrySleep: retrySleep
   )
   return (controller, client, store)
 }

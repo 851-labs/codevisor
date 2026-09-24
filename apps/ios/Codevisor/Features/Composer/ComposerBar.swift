@@ -280,7 +280,10 @@ struct ComposerBar: View {
       ManageProjectSheet(
         project: project,
         client: environment.machines.client(for: project.serverId),
-        didUpdate: { await environment.projectList.refreshFromServer() },
+        didUpdate: {
+          await environment.projectList.refreshFromServer(
+            serverId: project.serverId, client: environment.machines.client(for: project.serverId))
+        },
         onDelete: { deleteManagedProject(project) }
       )
     }

@@ -15,10 +15,7 @@ struct PluginFleetStatusTests {
     )
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
     )
     return ConfigSync(machines: controller, store: store)

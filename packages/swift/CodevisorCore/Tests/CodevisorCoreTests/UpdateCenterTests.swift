@@ -32,10 +32,7 @@ struct UpdateCenterTests {
     )
     return MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
       },

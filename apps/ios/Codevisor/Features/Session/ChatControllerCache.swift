@@ -67,6 +67,7 @@ final class ChatControllerCache {
       serverClient: environment.machines.client(for: session.serverId),
       machines: environment.machines
     )
+    controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
     // Deferred sends persist the spawned agent id so relaunches resume
     // the same agent session (the same wiring the macOS store does).

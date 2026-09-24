@@ -1,7 +1,7 @@
 import Foundation
 
 /// All navigation state and its stream boundary from one database transaction.
-public struct ServerNavigationSnapshot: Decodable, Sendable {
+public struct ServerNavigationSnapshot: Codable, Equatable, Sendable {
   public var eventCursor: Int
   public var projects: [ServerProject]
   public var sessions: [ServerSession]
@@ -20,8 +20,8 @@ public struct ServerNavigationSnapshot: Decodable, Sendable {
   }
 }
 
-public struct ServerNavigationDelta: Decodable, Sendable {
-  public struct Deletion: Decodable, Sendable {
+public struct ServerNavigationDelta: Codable, Equatable, Sendable {
+  public struct Deletion: Codable, Equatable, Sendable {
     public var table: String
     public var id: String
   }

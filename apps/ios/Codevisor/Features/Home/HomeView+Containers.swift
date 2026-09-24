@@ -27,7 +27,14 @@ extension HomeView {
         sampleSidebar
       #endif
     } else if !hasRemoteMachines {
-      noMachineState
+      if environment.navigationRosterStatus == .unverified {
+        // Signed in, but the machine list isn't known yet.
+        refreshableState(allowsStateHitTesting: false) {
+          HomeNavigationSyncView(state: .loading(machineName: "your machines"))
+        }
+      } else {
+        noMachineState
+      }
     } else {
       refreshableNavigationContent
     }

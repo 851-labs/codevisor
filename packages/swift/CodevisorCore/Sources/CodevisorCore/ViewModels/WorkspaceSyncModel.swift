@@ -9,116 +9,45 @@ public enum WorkspaceRouteDisposition: Equatable, Sendable {
   case dismiss
 }
 
-/// Reconciles server-owned workspace identity/metadata with device-local pane
-/// layout. The repository deliberately remains the layout persistence layer;
-/// this observable revision is the common invalidation source for macOS and
-/// iOS navigation.
+/// The requests navigation surfaces make about workspaces and panes, and the
+/// shared routing policy both platforms apply when the server changes what
+/// is on screen.
+///
+/// Workspaces themselves come from `NavigationStore`; this model turns user
+/// actions into outbox requests (and layout changes into device-layout
+/// writes) and exposes one revision that macOS and iOS navigation observe.
 @MainActor
 @Observable
 public final class WorkspaceSyncModel {
-  struct PanePublicationKey: Hashable {
-    var workspaceId: UUID
-    var paneId: UUID
-  }
-
-  struct PendingPaneMutation {
-    var paneId: UUID
-    var workspaceId: UUID
-    var client: any CodevisorServerClienting
-    var operation: PaneMutationOperation
-  }
-
-  enum PaneMutationOperation {
-    case upsert(PaneDescriptorState)
-    case promoteChat(PaneDescriptorState, ChatSession)
-    case close
-  }
-
-  public internal(set) var revision: UInt64 = 0
-
-  @ObservationIgnored var workspaceOrderTasks: [UUID: Task<Void, Never>] = [:]
-  @ObservationIgnored var workspaceRenameTasks: [UUID: Task<Void, Never>] = [:]
-  @ObservationIgnored var pendingWorkspaceRenames: [UUID: Workspace] = [:]
+  /// Advances whenever navigation state or this device's layout changes.
+  public var revision: UInt64 { (navigationStore?.revision ?? 0) &+ localRevision }
+  private var localRevision: UInt64 = 0
 
   let repository: any WorkspaceRepository
   let projectList: ProjectListModel
-  @ObservationIgnored var sessionsInvalidatedByWorkspaceDeletion: [String: Set<UUID>] = [:]
-  @ObservationIgnored var refreshGenerationByServer: [String: UInt64] = [:]
-  @ObservationIgnored var pendingPaneMutations: [PanePublicationKey: [PendingPaneMutation]] = [:]
-  @ObservationIgnored var publishingPaneKeys: Set<PanePublicationKey> = []
-  /// While a renderer conversion is pending, this desired value is the
-  /// local authority. Snapshots containing the earlier placeholder cannot
-  /// replace it merely because their HTTP response arrived later.
-  @ObservationIgnored var optimisticPaneMutations: [PanePublicationKey: PaneDescriptorState] = [:]
-  /// A locally-closed pane stays absent while an older snapshot is in
-  /// flight. The tombstone clears only after an authoritative snapshot no
-  /// longer contains that id.
-  @ObservationIgnored var optimisticPaneDeletions: Set<PanePublicationKey> = []
-  @ObservationIgnored var confirmedPaneRevisions: [PanePublicationKey: Int] = [:]
-
-  @ObservationIgnored var onSnapshotRefreshed: ((ServerNavigationSnapshot, String) async -> Void)?
+  @ObservationIgnored var navigationStore: NavigationStore?
 
   public init(repository: any WorkspaceRepository, projectList: ProjectListModel) {
     self.repository = repository
     self.projectList = projectList
   }
 
+  /// A layout change saved through the repository; views re-read it.
   public func noteLocalMutation() {
-    revision &+= 1
+    localRevision &+= 1
   }
 
-  /// One-time, receipt-backed migration of layouts that predate server ownership.
-  /// A failed upload leaves local layout intact and the migration retryable.
-  func migrateNavigationSnapshot(
-    _ initial: ServerNavigationSnapshot, serverId: String,
-    client: any CodevisorServerClienting
-  ) async throws -> ServerNavigationSnapshot {
-    let key = "persisted-navigation-v1:\(serverId)"
-    if repository.hasPerformedMigration(key) { return initial }
-    let adoption = await adoptLocalWorkspaces(
-      initial.workspaces,
-      assignments: projectList.workspaceAssignments(for: serverId), serverId: serverId, client: client)
-    guard adoption.canReconcile else { throw CodevisorServerClientError.invalidResponse }
-    let panes = await backfillLocalPanes(
-      initial.panes, workspaceRecords: adoption.records,
-      assignments: adoption.assignments, serverId: serverId, client: client)
-    guard panes.protectedIds.isEmpty else { throw CodevisorServerClientError.invalidResponse }
-    let changed = adoption.didMutateServer || panes.records.count != initial.panes.count
-    let snapshot = changed ? try await client.navigationSnapshot() : initial
-    try Task.checkCancellation()
-    repository.markMigrationPerformed(key)
-    return snapshot
-  }
-
-  public func applyNavigationSnapshot(_ snapshot: ServerNavigationSnapshot, serverId: String) {
-    refreshGenerationByServer[serverId, default: 0] &+= 1
-    reconcile(
-      snapshot.workspaces, paneRecords: snapshot.panes,
-      protectedLocalPaneIds: [], assignments: projectList.workspaceAssignments(for: serverId),
-      serverId: serverId)
-  }
-
+  /// Fetches a machine's latest workspaces now (pull to refresh).
   @discardableResult
   public func refreshFromServer(
-    serverId: String,
-    client: any CodevisorServerClienting
+    serverId: String, client: any CodevisorServerClienting
   ) async -> ServerNavigationRefreshResult {
-    refreshGenerationByServer[serverId, default: 0] &+= 1
-    let generation = refreshGenerationByServer[serverId]
-    do {
-      let snapshot = try await migrateNavigationSnapshot(
-        try await client.navigationSnapshot(), serverId: serverId, client: client)
-      guard !Task.isCancelled, generation == refreshGenerationByServer[serverId] else { return .superseded }
-      if let onSnapshotRefreshed {
-        await onSnapshotRefreshed(snapshot, serverId)
-      } else {
-        applyNavigationSnapshot(snapshot, serverId: serverId)
-      }
-      retryWorkspaceOrders(serverId: serverId, client: client)
-      return .committed
-    } catch {
-      return .failed(String(describing: error))
-    }
+    guard let navigationStore else { return .failed("No navigation store") }
+    return await navigationStore.refresh(machineId: serverId, client: client)
+  }
+
+  func enqueue(_ intent: NavigationIntent, serverId: String) {
+    navigationStore?.enqueue(intent, machineId: serverId)
   }
 
   /// macOS routes directly to a session, while iOS carries the workspace in
@@ -128,9 +57,6 @@ public final class WorkspaceSyncModel {
     serverId: String,
     preservingSelectedPane: Bool = false
   ) -> WorkspaceRouteDisposition {
-    if sessionsInvalidatedByWorkspaceDeletion[serverId]?.contains(sessionId) == true {
-      return .dismiss
-    }
     guard
       projectList.sessions.contains(where: { $0.id == sessionId && $0.serverId == serverId })
     else { return .dismiss }

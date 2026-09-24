@@ -12,10 +12,7 @@ extension MachineControllerUpdateTests {
   ) -> MachineController {
     MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
       updatePollAttempts: attempts,

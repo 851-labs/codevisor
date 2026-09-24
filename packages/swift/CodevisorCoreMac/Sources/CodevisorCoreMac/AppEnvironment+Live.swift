@@ -28,8 +28,8 @@ extension AppEnvironment {
       )
     )
     return AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: store),
-      sessionRepository: DefaultSessionRepository(store: store),
+      navigationPersistence: store,
+      transcriptCache: .shared,
       configCache: ConfigOptionCache(store: store),
       composerDefaults: ComposerDefaultsStore(store: store),
       composerDrafts: ComposerDraftStore(store: store),
@@ -37,9 +37,7 @@ extension AppEnvironment {
       machineStore: store,
       machineCredentialStore: KeychainMachineCredentialStore.shared,
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
-      legacyCacheMigrationStore: store,
       paneGroups: DefaultPaneGroupRepository(store: store),
-      workspaces: DefaultWorkspaceRepository(store: store),
       localServer: localServer,
       appUpdate: AppUpdateModel(
         currentVersion: AppUpdateModel.bundleVersion(),

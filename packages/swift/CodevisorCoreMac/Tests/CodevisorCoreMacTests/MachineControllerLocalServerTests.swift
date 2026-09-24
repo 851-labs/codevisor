@@ -90,10 +90,10 @@ struct MachineControllerLocalServerTests {
     store: InMemoryStore
   ) {
     let store = InMemoryStore()
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let navigationStore = NavigationStore(store: InMemoryStore())
+    let projectList = ProjectListModel()
+    projectList.navigationStore = navigationStore
+    navigationStore.attach(projectList: projectList, repository: ProjectedWorkspaceRepository(store: navigationStore))
     let controller = MachineController(
       store: store,
       projectList: projectList,

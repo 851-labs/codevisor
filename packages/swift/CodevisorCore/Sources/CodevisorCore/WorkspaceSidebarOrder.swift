@@ -1,23 +1,8 @@
 import Foundation
 
-/// The exact request is durable so a lost response can be retried before a
-/// newer local drag is sent, without confusing our own commit with a conflict.
-public struct WorkspaceOrderAttempt: Codable, Sendable, Equatable {
-  public var position: String
-  public var expectedRevision: Int
-}
-
 extension Workspace {
-  mutating func copySidebarOrder(from stored: Workspace) {
-    sidebarPosition = stored.sidebarPosition
-    sidebarOrderRevision = stored.sidebarOrderRevision
-    pendingSidebarPosition = stored.pendingSidebarPosition
-    pendingSidebarOrderRevision = stored.pendingSidebarOrderRevision
-    sidebarOrderAttempt = stored.sidebarOrderAttempt
-  }
-
   public var effectiveSidebarPosition: String {
-    pendingSidebarPosition ?? sidebarPosition.flatMap { WorkspacePosition.isValid($0) ? $0 : nil }
+    sidebarPosition.flatMap { WorkspacePosition.isValid($0) ? $0 : nil }
       ?? WorkspacePosition.initial(createdAt: createdAt, id: id)
   }
 }

@@ -18,8 +18,9 @@ struct MachineControllerAttentionSyncTests {
       createdAt: Date(timeIntervalSince1970: 0)
     )
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    let clients = (0..<2).map { _ in
-      Client(fake: fake, foreground: foreground, background: background)
+    var clients: [Client] = []
+    for _ in 0..<2 {
+      clients.append(await Client(fake: fake, project: project, foreground: foreground, background: background))
     }
     defer { clients.forEach { $0.machine.stopEventSync() } }
 
@@ -91,18 +92,19 @@ struct MachineControllerAttentionSyncTests {
 
 @MainActor
 private final class Client {
+  let fixture: NavigationFixture
   let model: ProjectListModel
   let machine: MachineController
   let coordinator: SessionAttentionCoordinator
   let delivery = AttentionDelivery()
   let applied = TestSignal()
 
-  init(fake: SyncFakeServerClient, foreground: ChatSession, background: ChatSession) {
-    model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-    model.sessions = [foreground, background]
+  init(fake: SyncFakeServerClient, project: Project, foreground: ChatSession, background: ChatSession) async {
+    let fixture = NavigationFixture()
+    self.fixture = fixture
+    model = fixture.projectList
+    await fixture.install(
+      machineId: background.serverId, projects: [project], sessions: [foreground, background], cursor: 0)
     coordinator = SessionAttentionCoordinator(projectList: model)
     coordinator.notificationDelivery = delivery
     coordinator.updateFocus(
@@ -112,13 +114,6 @@ private final class Client {
     machine = MachineController(store: InMemoryStore(), projectList: model, clientFactory: { _ in fake })
     let applied = applied
     machine.onSessionStateChanged = { _, _ in applied.signal() }
-    machine.connection(for: background.serverId).navigationSnapshot = ServerNavigationSnapshot(
-      eventCursor: 0,
-      projects: [
-        ServerProject(
-          id: background.projectId.uuidString, name: "Shared", origin: .codevisor,
-          createdAt: "2026-06-30T00:00:00.000Z", locations: [])
-      ], sessions: [foreground, background].map { serverSession(from: $0) }, workspaces: [], panes: [])
     machine.startEventSync(serverId: background.serverId, client: fake, since: 0)
   }
 }

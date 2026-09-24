@@ -7,10 +7,7 @@ import ACPKit
 @Suite("Session overlay, settings, import")
 struct SessionOverlayTests {
   private func makeModel() -> ProjectListModel {
-    ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    NavigationFixture().projectList
   }
 
   @Test("Old persisted sessions decode with defaults")

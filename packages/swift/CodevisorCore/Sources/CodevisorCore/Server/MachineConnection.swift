@@ -58,7 +58,7 @@ public final class MachineConnection {
   /// Per-machine authoritative snapshot reconciliation.
   @ObservationIgnored var navigationSyncToken: UUID?
   @ObservationIgnored var navigationSyncTask: Task<Void, Never>?
-  @ObservationIgnored var navigationSnapshot: ServerNavigationSnapshot?
+
   /// Manual refresh work survives the gesture's short presentation budget.
   @ObservationIgnored var manualNavigationRefresh: MachineNavigationRefresh?
   /// Coalesces navigation-affecting events for this machine only.
@@ -203,7 +203,6 @@ extension MachineController {
     let twinId = CodevisorMachine.cloudIdPrefix + deviceId
     removeConnection(for: twinId)
     projectList.removeAllRecords(serverId: twinId)
-    workspaceSync?.removeWorkspaces(serverId: twinId)
   }
 
   /// Establishes the embedded server's cloud identity before a refreshed
@@ -231,22 +230,25 @@ extension MachineController {
   /// A wiped machine re-registers under a fresh device id, leaving its old
   /// twin's projects and chats to render as duplicates forever. Runs only
   /// after a REAL roster fetch (onMachinesRefreshed), so a signed-out or
-  /// still-loading client never mistakes "unknown" for "gone".
+  /// still-loading client never mistakes "unknown" for "gone". The launch
+  /// cache can be stale in exactly that way (a machine registered since it
+  /// was saved), so an unverified roster prunes nothing either.
   public func pruneDeadCloudRecords() {
-    guard let cloudProvider, cloudProvider.isCloudSignedIn else { return }
+    guard let cloudProvider, cloudProvider.isCloudSignedIn, cloudProvider.isCloudRosterVerified else {
+      return
+    }
     let liveDeviceIds = Set(cloudProvider.cloudMachines.map(\.deviceId))
       .union(registry.remoteMachines.compactMap(\.cloudDeviceId))
       .union(statusByMachineId.values.compactMap(\.cloudDeviceId))
     let storedServerIds = Set(
       projectList.projects.map(\.serverId) + projectList.sessions.map(\.serverId)
-    )
+    ).union(navigationStore?.cachedMachineIds ?? [])
     for serverId in storedServerIds where serverId.hasPrefix(CodevisorMachine.cloudIdPrefix) {
       guard let deviceId = CodevisorMachine.cloudDeviceId(forMachineId: serverId),
         !liveDeviceIds.contains(deviceId)
       else { continue }
       removeConnection(for: serverId)
       projectList.removeAllRecords(serverId: serverId)
-      workspaceSync?.removeWorkspaces(serverId: serverId)
     }
   }
 

@@ -236,6 +236,7 @@ final class SessionStore {
       machines: environment.machines,
       notificationDelivery: notificationDelivery
     )
+    controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
     controller.onAgentSessionCreated = { [weak projectList = environment.projectList] agentSessionId in
       projectList?.setAgentSessionId(

@@ -61,6 +61,7 @@ final class UnusedWebSocketConnection: ServerWebSocketConnecting, @unchecked Sen
 final class FakeCloudProvider: CloudMachineProviding {
   var isCloudSignedIn = true
   var cloudMachines: [CloudMachine] = []
+  var isCloudRosterVerified = true
   /// Simulates a listening loopback bridge for a machine, like
   /// CloudAccountController publishes once its bridge is up.
   var loopbackURLsByDeviceId: [String: URL] = [:]
@@ -117,10 +118,7 @@ func makeController(
   localServer: (any LocalServerControlling)? = StubLocalServer(),
   clientFactory: MachineController.ClientFactory? = nil
 ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
-  let projectList = ProjectListModel(
-    projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-    sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-  )
+  let projectList = ProjectListModel.fixture()
   let controller = MachineController(
     store: store,
     projectList: projectList,

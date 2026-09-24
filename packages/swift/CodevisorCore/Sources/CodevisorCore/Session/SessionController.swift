@@ -330,6 +330,14 @@ final public class SessionController {
   /// "Implement the plan." user turn.
   public internal(set) var pendingPlanApproval = false
 
+  /// Where this device keeps the latest page of recently opened chats. Nil
+  /// (tests, previews) means chats always wait for their open request.
+  public var transcriptCache: TranscriptPageCache?
+  /// The published model while it still shows only a cached page: the chat
+  /// hasn't opened on the server yet, so connecting must still happen, and
+  /// it reuses this model so the transcript updates in place.
+  var cachedTranscriptModel: SessionModel?
+
   public init(
     project: Project,
     configCache: ConfigOptionCache,

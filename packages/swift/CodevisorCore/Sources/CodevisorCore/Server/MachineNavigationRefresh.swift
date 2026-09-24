@@ -2,9 +2,12 @@ import Foundation
 
 extension MachineController {
   /// Refresh every machine concurrently, showing the native refresh control
-  /// until they finish or five seconds elapse. Slow work continues under each
-  /// machine's existing lifecycle; the gesture never waits for cancellation
-  /// of a transport, and a later pull reuses work that is still in flight.
+  /// until the machines that are answering have finished. Machines that are
+  /// offline or still connecting are refreshed too, but the gesture doesn't
+  /// wait for them -- it used to, which made every pull take the full five
+  /// seconds whenever one machine was away. Five seconds remains the cap.
+  /// Slow work continues under each machine's existing lifecycle, and a
+  /// later pull reuses work that is still in flight.
   public func refreshNavigation() async {
     await refreshNavigation(sleep: { try await Task.sleep(for: $0) })
   }
@@ -13,7 +16,11 @@ extension MachineController {
     sleep: @escaping @Sendable (Duration) async throws -> Void
   ) async {
     guard !Task.isCancelled else { return }
-    let refreshes = allMachines.map { manualRefresh(for: $0.id) }
+    let answering = Set(allMachines.filter { connectionsById[$0.id]?.availability == .ready }.map(\.id))
+    let refreshes = allMachines.compactMap { machine -> MachineNavigationRefresh? in
+      let refresh = manualRefresh(for: machine.id)
+      return answering.contains(machine.id) ? refresh : nil
+    }
     guard !refreshes.isEmpty else { return }
 
     let observerID = UUID()

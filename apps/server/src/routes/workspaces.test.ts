@@ -383,8 +383,10 @@ describe("workspace routes", () => {
         })
       ).status
     ).toBe(500)
+    // Deleting something already gone is a completed no-op, so an outbox
+    // retry stops instead of failing forever.
     expect((await jsonRequest(server, "/v1/workspaces/missing", { method: "DELETE" })).status).toBe(
-      500
+      204
     )
 
     // A workspace that still owns chats detaches them first, so the delete
@@ -435,11 +437,11 @@ describe("workspace routes", () => {
         payload: { id: "workspace-1" }
       })
     ])
-    // The cascade already removed the row; an explicit DELETE now surfaces
-    // exactly like any other missing workspace.
+    // The cascade already removed the row; an explicit DELETE is then a
+    // completed no-op, like any other delete of a missing workspace.
     expect(
       (await jsonRequest(server, "/v1/workspaces/workspace-1", { method: "DELETE" })).status
-    ).toBe(500)
+    ).toBe(204)
     expect(await run(services.db.listEvents(0))).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

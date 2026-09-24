@@ -2,45 +2,6 @@ import SwiftUI
 import CodevisorCore
 
 extension SidebarView {
-  /// Every active chat with the workspace the server assigns it, when
-  /// known. A change here — a chat arriving, leaving, or gaining its
-  /// assignment after the fact — is what re-runs the workspace backfill.
-  var sessionWorkspaceAssignments: [SidebarSessionListItem.ID: UUID?] {
-    var assignmentsByServer: [String: [UUID: UUID]] = [:]
-    var result: [SidebarSessionListItem.ID: UUID?] = [:]
-    for item in activeSessionItems {
-      let serverId = item.session.serverId
-      if assignmentsByServer[serverId] == nil {
-        assignmentsByServer[serverId] = environment.projectList.workspaceAssignments(for: serverId)
-      }
-      result[item.id] = assignmentsByServer[serverId]?[item.session.id]
-    }
-    return result
-  }
-
-  /// Existing chats gain owning workspaces lazily. Idempotent and cheap
-  /// after the first pass (indexed lookups). The server's assignment rides
-  /// along so a chat created elsewhere joins its workspace rather than
-  /// minting a sibling.
-  func ensureSessionWorkspaces() {
-    for item in activeSessionItems {
-      let serverId = item.session.serverId
-      _ = environment.workspaces.ensureWorkspace(
-        for: WorkspaceSessionSeed(
-          sessionId: item.session.id,
-          initialName: item.session.worktreeName ?? item.project.name,
-          serverId: serverId,
-          projectId: item.project.id,
-          rootDirectory: item.session.cwd ?? item.project.folderURL.path,
-          worktreeName: item.session.worktreeName,
-          assignedWorkspaceId: environment.projectList.workspaceAssignments(for: serverId)[item.session.id]
-        ),
-        legacyGroups: environment.paneGroups
-      )
-    }
-    workspaceRevision += 1
-  }
-
   /// One workspace: its header (the reorder handle) over its tab rows.
   /// Both report their frames so a drag can compare the lifted header
   /// against whole sections and land back on the header precisely.

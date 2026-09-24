@@ -119,19 +119,15 @@ extension MachineController {
     case "navigation.changed":
       do {
         let delta = try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(event.payload))
-        let connection = connection(for: serverId)
-        guard let current = connection.navigationSnapshot else { throw CodevisorServerClientError.invalidResponse }
-        guard delta.eventCursor > current.eventCursor else { return }
-        let snapshot = delta.applying(to: current)
-        let prepared = await ServerNavigationSnapshotBuilder.build(
-          projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
-        guard !Task.isCancelled, connection.navigationSnapshot?.eventCursor == current.eventCursor else { return }
-        projectList.commitSnapshot(prepared, serverId: serverId, origin: .liveEvent)
-        workspaceSync?.applyNavigationDelta(delta, previous: current, snapshot: snapshot, serverId: serverId)
-        connection.navigationSnapshot = snapshot
-        let changed = Set(delta.sessions.map { $0.id.lowercased() })
-        for session in projectList.sessions
-        where session.serverId == serverId && changed.contains(session.id.uuidString.lowercased()) {
+        guard let navigationStore else { return }
+        // Another device's change arrives here and simply moves the cache
+        // forward; this device's waiting changes stay laid over it.
+        guard await navigationStore.apply(delta, machineId: serverId) else {
+          scheduleNavigationRefresh(serverId: serverId, client: client)
+          return
+        }
+        let changed = Set(delta.sessions.compactMap { UUID(uuidString: $0.id) })
+        for session in projectList.sessions where session.serverId == serverId && changed.contains(session.id) {
           onSessionStateChanged?(session, nil)
         }
       } catch {
@@ -292,7 +288,8 @@ extension MachineController {
     }
     stopEventSync(for: serverId)
 
-    var snapshot: ServerNavigationSnapshot
+    let requestedAt = Date()
+    let snapshot: ServerNavigationSnapshot
     do {
       snapshot = try await client.navigationSnapshot()
     } catch {
@@ -300,25 +297,8 @@ extension MachineController {
       return
     }
     guard !Task.isCancelled else { return }
-    let initialCursor = snapshot.eventCursor
-    let prepared = await ServerNavigationSnapshotBuilder.build(
-      projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
+    await navigationStore?.replace(snapshot, machineId: serverId, requestedAt: requestedAt)
     guard !Task.isCancelled else { return }
-    projectList.commitSnapshot(prepared, serverId: serverId)
-    if let workspaceSync {
-      do {
-        snapshot = try await workspaceSync.migrateNavigationSnapshot(snapshot, serverId: serverId, client: client)
-      } catch { navigationSynchronizationFailed(String(describing: error), serverId: serverId, client: client); return }
-      guard !Task.isCancelled else { return }
-      if snapshot.eventCursor != initialCursor {
-        let migrated = await ServerNavigationSnapshotBuilder.build(
-          projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
-        guard !Task.isCancelled else { return }
-        projectList.commitSnapshot(migrated, serverId: serverId)
-      }
-      workspaceSync.applyNavigationSnapshot(snapshot, serverId: serverId)
-    }
-    connection(for: serverId).navigationSnapshot = snapshot
     startEventSync(serverId: serverId, client: client, since: snapshot.eventCursor)
     for session in projectList.sessions where session.serverId == serverId {
       onSessionStateChanged?(session, nil)
@@ -328,5 +308,7 @@ extension MachineController {
     connection.navigationFailures = 0
     connection.navigationRetryTask?.cancel()
     connection.navigationRetryTask = nil
+    // Changes made while this machine was away go out now, in order.
+    navigationStore?.executor.resume(machineId: serverId)
   }
 }

@@ -12,45 +12,42 @@ extension ProjectListModelTests {
   /// state at all, so the override is dropped on the first launch that sees it.
   @Test("Legacy archived-chat overrides are dropped so the server wins again")
   func purgesLegacyArchivedSessionMarkers() async throws {
-    let migrationStore = InMemoryStore()
-    let scoped = [ProjectListModel.ScopedSessionID(serverId: "local", id: UUID())]
-    try migrationStore.saveData(
-      PersistenceEncoding.encoder.encode(scoped),
+    let persistence = InMemoryStore()
+    try persistence.saveData(
+      Data(#"[{"serverId":"local","id":"\#(UUID().uuidString)"}]"#.utf8),
       forKey: "pending-archived-sessions-v1"
     )
 
-    _ = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      legacyMigrationStore: migrationStore
+    // Opening the app's navigation storage runs the one-time migration.
+    let environment = AppEnvironment(
+      navigationPersistence: persistence,
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      settings: AppSettingsModel(store: InMemoryStore())
     )
 
-    #expect(migrationStore.loadData(forKey: "pending-archived-sessions-v1") == nil)
+    #expect(persistence.loadData(forKey: "pending-archived-sessions-v1") == nil)
+    #expect(environment.navigationStore.pendingIntents.isEmpty)
   }
 
-  /// Pruning a duplicate machine identity used to purge only the project
-  /// markers, stranding the rest under a server id that could come back and
-  /// re-apply them to live rows.
-  @Test("Dropping a machine's records purges every marker it owned")
-  func removingMachineRecordsPurgesAllMarkers() async throws {
-    let store = InMemoryStore()
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: store),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      legacyMigrationStore: InMemoryStore()
-    )
-    let sessionId = UUID()
-    let projectId = UUID()
-    model.pendingServerProjectIds.insert(ProjectListModel.ScopedSessionID(serverId: "cloud:twin", id: projectId))
-    model.pendingServerSessionIds.insert(ProjectListModel.ScopedSessionID(serverId: "cloud:twin", id: sessionId))
-    model.pendingDeletedProjectIds.insert(ProjectListModel.ScopedSessionID(serverId: "cloud:twin", id: projectId))
+  /// Dropping a duplicate machine identity must take everything it owned
+  /// with it -- including changes still waiting to be sent -- or they would
+  /// re-apply to live rows if the identity came back.
+  @Test("Dropping a machine's records drops its waiting changes too")
+  func removingMachineRecordsDropsWaitingChanges() async throws {
+    let fixture = NavigationFixture()
+    let model = fixture.projectList
+    let twin = Project.fromFolder(URL(fileURLWithPath: "/srv/twin"), serverId: "cloud:twin")
+    await fixture.install(machineId: "cloud:twin", projects: [twin])
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/other"), serverId: "cloud:twin")
+    model.newSession(in: project, syncToServer: false)
+    model.removeProject(twin)
+    let local = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/kept"))
 
-    // No rows exist under that id: the purge must still run, because the
-    // duplicate is usually found while its first fetch is still in flight.
     model.removeAllRecords(serverId: "cloud:twin")
 
-    #expect(model.pendingServerProjectIds.isEmpty)
-    #expect(model.pendingServerSessionIds.isEmpty)
-    #expect(model.pendingDeletedProjectIds.isEmpty)
+    #expect(fixture.store.pendingIntents.map(\.machineId) == ["local"])
+    #expect(!fixture.store.hasCache(for: "cloud:twin"))
+    #expect(model.projects.map(\.id) == [local.id])
+    #expect(model.sessions.isEmpty)
   }
 }

@@ -44,23 +44,19 @@ struct SessionAttentionCoordinatorTests {
   private func makeModel(
     sessions: [ChatSession] = [],
     projects: [Project] = []
-  ) async throws -> (ProjectListModel, FakeServerClient) {
+  ) async throws -> (ProjectListModel, FakeServerClient, NavigationFixture) {
     let fakeServer = FakeServerClient(
       projects: projects.map(serverProject(from:)),
       sessions: sessions.map(serverSession(from:))
     )
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      serverClient: fakeServer
-    )
-    try await waitUntil { model.sessions.count == sessions.count }
-    return (model, fakeServer)
+    let fixture = await NavigationFixture.connected(to: fakeServer)
+    #expect(fixture.projectList.sessions.count == sessions.count)
+    return (fixture.projectList, fakeServer, fixture)
   }
 
   @Test("An unfocused live unread edge pings exactly once")
   func unreadEdgePingsOnce() async throws {
-    let (model, _) = try await makeModel()
+    let (model, _, _) = try await makeModel()
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -88,7 +84,7 @@ struct SessionAttentionCoordinatorTests {
 
   @Test("A background machine's live edge delivers, carrying its serverId")
   func backgroundMachineDelivers() async throws {
-    let (model, _) = try await makeModel()
+    let (model, _, _) = try await makeModel()
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -113,7 +109,7 @@ struct SessionAttentionCoordinatorTests {
 
   @Test("Action-required and error edges ping as actionRequired")
   func actionRequiredEdges() async throws {
-    let (model, _) = try await makeModel()
+    let (model, _, _) = try await makeModel()
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -137,7 +133,7 @@ struct SessionAttentionCoordinatorTests {
 
   @Test("Snapshot catch-ups and manual unread never ping")
   func quietOrigins() async throws {
-    let (model, _) = try await makeModel()
+    let (model, _, _) = try await makeModel()
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -167,12 +163,10 @@ struct SessionAttentionCoordinatorTests {
     let session = ChatSession(
       id: UUID(), projectId: project.id, harnessId: "codex", title: "Focused"
     )
-    let (model, fakeServer) = try await makeModel(sessions: [session], projects: [project])
+    let (model, fakeServer, fixture) = try await makeModel(sessions: [session], projects: [project])
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 2, lastSeenSequence: 0)
-    await model.refreshFromServer()
-    try await waitUntil {
-      model.sessions.first(where: { $0.id == session.id })?.unreadCount == 2
-    }
+    await fixture.refresh(from: fakeServer)
+    #expect(fixture.session(session.id)?.unreadCount == 2)
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -181,8 +175,8 @@ struct SessionAttentionCoordinatorTests {
       owner: ObjectIdentifier(delivery),
       session: SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
     )
-    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
-    }
+    #expect(fixture.session(session.id)?.unreadCount == 0)
+    await fixture.flush()
     let requests = await fakeServer.snapshot().readRequests
     #expect(requests.map(\.throughSequence) == [2])
     #expect(delivery.cleared.contains(session.id))
@@ -195,7 +189,7 @@ struct SessionAttentionCoordinatorTests {
     let session = ChatSession(
       id: UUID(), projectId: project.id, harnessId: "codex", title: "Focused"
     )
-    let (model, fakeServer) = try await makeModel(sessions: [session], projects: [project])
+    let (model, fakeServer, fixture) = try await makeModel(sessions: [session], projects: [project])
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -205,11 +199,13 @@ struct SessionAttentionCoordinatorTests {
     )
 
     // The finish arrives while focused: the model already holds the new
-    // revision when the transition fires (snapshot-merge path).
+    // revision when the transition fires (snapshot path).
     await fakeServer.setSessionAttention(id: session.id, latestSequence: 1, lastSeenSequence: 0)
-    await model.refreshFromServer()
-    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
-    }
+    await fixture.refresh(from: fakeServer)
+    // Shown read immediately; it stays read while the request is sent.
+    #expect(fixture.session(session.id)?.unreadCount == 0)
+    await fixture.flush()
+    #expect(fixture.session(session.id)?.unreadCount == 0)
     let requests = await fakeServer.snapshot().readRequests
     #expect(requests.map(\.throughSequence) == [1])
     #expect(delivery.delivered.isEmpty)
@@ -225,13 +221,14 @@ struct SessionAttentionCoordinatorTests {
         origin: .liveEvent
       ))
     #expect(delivery.delivered.map(\.kind) == [.finished])
+    await fixture.flush()
     let finalRequests = await fakeServer.snapshot().readRequests
     #expect(finalRequests.count == 1)
   }
 
   @Test("Any transition back to quiet clears delivered banners")
   func readTransitionsClearBanners() async throws {
-    let (model, _) = try await makeModel()
+    let (model, _, _) = try await makeModel()
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -253,7 +250,7 @@ struct SessionAttentionCoordinatorTests {
   func cachedChatFinishStaysUnread() async throws {
     let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/cached-chat-read"))
     let session = ChatSession(projectId: project.id, harnessId: "codex", title: "Cached")
-    let (model, fakeServer) = try await makeModel(sessions: [session], projects: [project])
+    let (model, fakeServer, fixture) = try await makeModel(sessions: [session], projects: [project])
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
@@ -273,8 +270,8 @@ struct SessionAttentionCoordinatorTests {
     finished.latestAttentionSequence = 1
     finished.unreadCount = 1
     finished.sidebarState = .unread
-    model.sessions = [finished]
-    model.emitAttentionTransition(old: session, new: finished, origin: .liveEvent)
+    await fixture.applyEvent(sessions: [finished])
+    await fixture.flush()
 
     #expect(model.sessions.first?.unreadCount == 1)
     #expect(model.sessions.first?.lastSeenAttentionSequence == 0)
@@ -288,22 +285,29 @@ struct SessionAttentionCoordinatorTests {
     let session = ChatSession(
       id: UUID(), projectId: project.id, harnessId: "codex", title: "Held"
     )
-    let (model, fakeServer) = try await makeModel(sessions: [session], projects: [project])
+    // Offline, so the unread request stays waiting while focus changes.
+    let fixture = NavigationFixture()
+    await fixture.install(projects: [project], sessions: [session])
+    let model = fixture.projectList
     let coordinator = SessionAttentionCoordinator(projectList: model)
     let delivery = FakeNotificationDelivery()
     coordinator.notificationDelivery = delivery
     let focus = SessionAttentionFocus(serverId: session.serverId, sessionId: session.id)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
 
-    await model.markSessionUnread(session.id, serverId: session.serverId)?.value
+    model.markSessionUnread(session.id, serverId: session.serverId)
     // The hold keeps focus from immediately reading the manual flag back.
-    #expect(model.sessions.first(where: { $0.id == session.id })?.unreadCount == 1)
-    #expect(await fakeServer.snapshot().readRequests.isEmpty)
+    #expect(fixture.session(session.id)?.unreadCount == 1)
+    #expect(fixture.store.pendingIntents.map(\.intent) == [.markSessionUnread(sessionId: session.id)])
 
-    // Leaving and returning re-reads it.
+    // Leaving and returning re-reads it; the read replaces the unsent unread.
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: nil)
     coordinator.updateFocus(owner: ObjectIdentifier(delivery), session: focus)
-    await fakeServer.waitForSnapshot { snapshot in snapshot.readRequests.count == 1
-    }
+    #expect(fixture.session(session.id)?.unreadCount == 0)
+    let fakeServer = FakeServerClient(
+      projects: [serverProject(from: project)], sessions: [serverSession(from: session)])
+    fixture.connect(fakeServer)
+    await fixture.flush()
+    #expect(await fakeServer.snapshot().readRequests.count == 1)
   }
 }

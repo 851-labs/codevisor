@@ -265,17 +265,6 @@ public final class MachineController {
     } else {
       registry = MachineRegistry()
     }
-    workspaceSync?.onSnapshotRefreshed = { [weak self] snapshot, serverId in
-      guard let self else { return }
-      let connection = self.connection(for: serverId)
-      guard snapshot.eventCursor >= (connection.navigationSnapshot?.eventCursor ?? 0) else { return }
-      let prepared = await ServerNavigationSnapshotBuilder.build(
-        projects: snapshot.projects, sessions: snapshot.sessions, serverId: serverId)
-      guard !Task.isCancelled, snapshot.eventCursor >= (connection.navigationSnapshot?.eventCursor ?? 0) else { return }
-      self.projectList.commitSnapshot(prepared, serverId: serverId)
-      self.workspaceSync?.applyNavigationSnapshot(snapshot, serverId: serverId)
-      connection.navigationSnapshot = snapshot
-    }
     if let credentialStore {
       var migratedCredentialIDs: Set<String> = []
       for index in registry.remoteMachines.indices {
@@ -334,7 +323,7 @@ public final class MachineController {
         markReady(for: machine.id)
       }
     }
-    projectList.configureServerClientProvider { [weak self] in self?.clientIfKnown(for: $0) }
+    configureNavigationStore()
   }
 
   /// Bridges the cloud account feature in (set once at composition time).

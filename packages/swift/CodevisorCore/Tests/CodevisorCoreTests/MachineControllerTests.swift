@@ -70,10 +70,7 @@ struct MachineControllerTests {
     let credentials = InMemoryMachineCredentialStore()
     let first = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       credentialStore: credentials
     )
 
@@ -91,10 +88,7 @@ struct MachineControllerTests {
 
     let second = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       credentialStore: credentials
     )
     #expect(second.machine(for: remote.id)?.token == "device-secret")
@@ -182,10 +176,7 @@ struct MachineControllerTests {
   @Test("Validated add rejects a bad token and adds a reachable machine")
   func validatedAdd() async throws {
     let store = InMemoryStore()
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     // A client whose probe rejects the token: the machine must not be added.
     let rejecting = MachineController(
       store: store,
@@ -203,10 +194,7 @@ struct MachineControllerTests {
     // A client that answers: the machine is added and selected.
     let accepting = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       localServer: StubLocalServer(),
       clientFactory: { _ in RescanCountingClient() }
     )

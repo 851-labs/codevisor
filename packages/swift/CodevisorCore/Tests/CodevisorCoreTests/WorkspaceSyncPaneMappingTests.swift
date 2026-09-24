@@ -13,7 +13,8 @@ struct WorkspaceSyncPaneMappingTests {
   @Test("First-send server acknowledgement retains the mounted chat pane", arguments: [false, true])
   func firstSendKeepsPaneIdentity(promotedDraft: Bool) throws {
     let sessionId = UUID()
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
     var workspace = repository.ensureWorkspace(
       for: WorkspaceSessionSeed(
         sessionId: sessionId, initialName: "Project", serverId: "local",

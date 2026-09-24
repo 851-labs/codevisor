@@ -22,6 +22,11 @@ extension HomeView {
         machineConnectionWarningButton
       }
     }
+    if syncIndicator.isSyncing, failedSyncMachines.isEmpty {
+      ToolbarItem(placement: .principal) {
+        HomeSyncIndicatorLabel(text: syncIndicator.label ?? "Syncing…")
+      }
+    }
   }
 
   /// The compose button on the compact stack: bottom trailing on a

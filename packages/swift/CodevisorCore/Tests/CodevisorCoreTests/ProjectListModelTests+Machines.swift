@@ -6,8 +6,8 @@ import ACPKit
 
 @MainActor
 extension ProjectListModelTests {
-  @Test("Server refresh is scoped to the selected machine")
-  func serverRefreshScopesToSelectedMachine() async throws {
+  @Test("A machine's refresh is filed under that machine and leaves others alone")
+  func serverRefreshScopesToMachine() async throws {
     let localProject = Project.fromFolder(
       URL(fileURLWithPath: "/tmp/local"),
       serverId: "local",
@@ -25,31 +25,25 @@ extension ProjectListModelTests {
       title: "Remote",
       createdAt: Date(timeIntervalSince1970: 3)
     )
-    let projectStore = InMemoryStore()
-    let sessionStore = InMemoryStore()
-    DefaultProjectRepository(store: projectStore).save([localProject])
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: projectStore),
-      sessionRepository: DefaultSessionRepository(store: sessionStore),
-      serverClient: FakeServerClient()
-    )
+    let fixture = NavigationFixture()
+    await fixture.install(projects: [localProject])
     let remoteServer = FakeServerClient(
       projects: [serverProject(from: remoteProject)],
       sessions: [serverSession(from: remoteSession)]
     )
 
-    model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer)
+    await fixture.refresh(from: remoteServer, machineId: "remote-mac-mini")
 
-    try await waitUntil {
-      model.projects.contains { $0.id == localProject.id && $0.serverId == "local" }
-        && model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" }
-        && model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" }
-    }
-    #expect(model.activeProjects.map(\.id) == [remoteProject.id])
+    let model = fixture.projectList
+    #expect(model.projects.contains { $0.id == localProject.id && $0.serverId == "local" })
+    #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
+    #expect(model.sessions.contains { $0.id == remoteSession.id && $0.serverId == "remote-mac-mini" })
+    // The selected machine's sidebar shows only its own projects.
+    #expect(model.activeProjects.map(\.id) == [localProject.id])
   }
 
   @Test("Identical project and session ids stay isolated between machines")
-  func duplicateIdsStayMachineScoped() async {
+  func duplicateIdsStayMachineScoped() async throws {
     let projectId = UUID()
     let sessionId = UUID()
     let localProject = Project(
@@ -66,21 +60,18 @@ extension ProjectListModelTests {
     let remoteSession = ChatSession(
       id: sessionId, projectId: projectId, serverId: "remote-a", harnessId: "codex", title: "Remote chat"
     )
-    let projectStore = InMemoryStore()
-    let sessionStore = InMemoryStore()
-    DefaultProjectRepository(store: projectStore).save([localProject, remoteProject])
-    DefaultSessionRepository(store: sessionStore).save([localSession, remoteSession])
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: projectStore),
-      sessionRepository: DefaultSessionRepository(store: sessionStore)
-    )
+    let fixture = NavigationFixture()
+    await fixture.install(machineId: "local", projects: [localProject], sessions: [localSession])
+    await fixture.install(machineId: "remote-a", projects: [remoteProject], sessions: [remoteSession])
+    let model = fixture.projectList
 
     var renamedRemote = remoteProject
     renamedRemote.name = "Renamed remote project"
     let fake = FakeServerClient(
       projects: [serverProject(from: renamedRemote)], sessions: [serverSession(from: remoteSession)])
-    model.configureServerClientProvider { $0 == "remote-a" ? fake : nil }
-    await model.renameSession(remoteSession, to: "Renamed remote")?.value
+    fixture.connect(fake, machineId: "remote-a")
+    model.renameSession(remoteSession, to: "Renamed remote")
+    await fixture.sync(with: fake, machineId: "remote-a")
 
     // A write scoped to one machine never rewrites the other's record.
     #expect(model.projects.first { $0.serverId == "local" }?.name == localProject.name)
@@ -88,20 +79,20 @@ extension ProjectListModelTests {
     #expect(model.sessions.first { $0.serverId == "local" }?.title == "Local chat")
     #expect(model.sessions.first { $0.serverId == "remote-a" }?.title == "Renamed remote")
 
-    model.removeProjectLocally(id: projectId, serverId: "remote-a")
+    model.removeProject(try #require(model.projects.first { $0.serverId == "remote-a" }))
     #expect(model.projects.contains { $0.serverId == "local" && $0.id == projectId })
     #expect(model.sessions.contains { $0.serverId == "local" && $0.id == sessionId })
     #expect(!model.projects.contains { $0.serverId == "remote-a" && $0.id == projectId })
     #expect(!model.sessions.contains { $0.serverId == "remote-a" && $0.id == sessionId })
   }
 
-  @Test("A machine switch during an in-flight refresh does not re-tag the old machine's projects")
-  func refreshDroppedAfterMachineSwitch() async throws {
+  @Test("A slow refresh from one machine is never filed under another")
+  func slowRefreshStaysOnItsMachine() async throws {
     let remoteProject = Project.fromFolder(
       URL(fileURLWithPath: "/srv/remote-only"),
       createdAt: Date(timeIntervalSince1970: 5)
     )
-    let (model, projectStore, _) = makeModel()
+    let fixture = NavigationFixture()
     let latch = Latch()
     let remoteServer = FakeServerClient(projects: [serverProject(from: remoteProject)])
     let listStarted = TestSignal()
@@ -109,28 +100,27 @@ extension ProjectListModelTests {
       listStarted.signal(); await latch.wait()
     }
 
-    // Start a refresh against the remote machine, then switch back to
-    // local while its list call is still in flight (a slow network hop).
-    model.selectServer(serverId: "remote-mac-mini", serverClient: remoteServer, refresh: false)
-    let refresh = Task { await model.refreshFromServer() }
+    // Start a refresh against the remote machine, and refresh local while
+    // its list call is still in flight (a slow network hop).
+    let refresh = Task { _ = await fixture.refresh(from: remoteServer, machineId: "remote-mac-mini") }
     await listStarted.wait()
-    model.selectServer(serverId: "local", serverClient: FakeServerClient())
+    await fixture.refresh(from: FakeServerClient(), machineId: "local")
     await latch.open()
     await refresh.value
 
-    // The stale remote response must never be filed under "local" — that
-    // would put another machine's projects in the local sidebar forever.
+    // The remote response must never be filed under "local" — that would
+    // put another machine's projects in the local sidebar forever.
+    let model = fixture.projectList
     #expect(!model.projects.contains { $0.id == remoteProject.id && $0.serverId == "local" })
+    #expect(model.projects.contains { $0.id == remoteProject.id && $0.serverId == "remote-mac-mini" })
     #expect(model.activeProjects.isEmpty)
-    let persisted = DefaultProjectRepository(store: projectStore).load()
-    #expect(!persisted.contains { $0.id == remoteProject.id && $0.serverId == "local" })
   }
 
   @Test("Imports are filed under the machine they were discovered on, not the current selection")
   func importTagsDiscoveryServer() {
-    // Discovery ran against the remote machine, but the user has since
-    // switched to local: the results still belong to the remote machine.
-    let (model, _, _) = makeModel()
+    // Discovery ran against the remote machine, but local is selected: the
+    // results still belong to the remote machine.
+    let model = NavigationFixture().projectList
     model.showsImportedSessions = true
     model.importSessions(
       [
@@ -138,6 +128,7 @@ extension ProjectListModelTests {
           harnessId: "codex", info: SessionInfo(sessionId: "r-1", cwd: "/srv/proj", title: "Remote"))
       ], serverId: "remote-mac-mini")
 
+    #expect(!model.projects.isEmpty)
     #expect(model.projects.allSatisfy { $0.serverId == "remote-mac-mini" })
     #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
     // Nothing leaks into the (selected) local sidebar.
@@ -146,21 +137,20 @@ extension ProjectListModelTests {
 
   @Test("Sessions imported into a project inherit the project's machine")
   func importIntoProjectInheritsProjectServer() {
-    let (model, _, _) = makeModel()
+    let model = NavigationFixture().projectList
     model.showsImportedSessions = true
-    // The project was added while the remote machine was selected.
-    model.selectServer(serverId: "remote-mac-mini", serverClient: nil, refresh: false)
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/proj"))
-    model.selectServer(serverId: "local", serverClient: nil, refresh: false)
+    // The project lives on the remote machine; local is selected.
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/srv/proj"), serverId: "remote-mac-mini")
 
-    // Confirming a pending import after switching back to local must not
-    // re-tag the sessions to the local machine.
+    // Confirming a pending import must not re-tag the sessions to the
+    // selected machine.
     model.importSessions(
       [
         ImportedSession(
           harnessId: "codex", info: SessionInfo(sessionId: "r-2", cwd: "/srv/proj", title: "Remote"))
       ], into: project)
 
+    #expect(model.sessions.count == 1)
     #expect(model.sessions.allSatisfy { $0.serverId == "remote-mac-mini" })
     #expect(model.activeProjects.isEmpty)
   }

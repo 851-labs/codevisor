@@ -62,3 +62,20 @@ private struct DelayedNavigationSyncProgressView: View {
     }
   }
 }
+
+/// The toolbar's quiet "Syncing…" line while cached content is on screen
+/// and machines are catching up. It never replaces the content.
+struct HomeSyncIndicatorLabel: View {
+  let text: String
+
+  var body: some View {
+    HStack(spacing: 6) {
+      ProgressView()
+        .controlSize(.mini)
+      Text(text)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
+  }
+}

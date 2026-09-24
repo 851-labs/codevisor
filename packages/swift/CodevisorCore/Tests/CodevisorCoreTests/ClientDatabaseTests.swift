@@ -79,13 +79,13 @@ struct ClientDatabaseTests {
     let store = SQLitePersistenceStore(database: database)
 
     let session = ChatSession(projectId: UUID(), title: "SQLite")
-    let sessions = DefaultSessionRepository(store: store)
+    let sessions = CodableRepository<ChatSession>(store: store, key: "sessions")
     sessions.save([session])
     #expect(sessions.load() == [session])
 
-    try store.saveData(Data("not json".utf8), forKey: "projects")
-    #expect(DefaultProjectRepository(store: store).load().isEmpty)
-    #expect(store.loadData(forKey: "projects") == nil)
+    try store.saveData(Data("not json".utf8), forKey: DeviceLayoutStore.storageKey)
+    #expect(DeviceLayoutStore(store: store).drafts.isEmpty)
+    #expect(store.loadData(forKey: DeviceLayoutStore.storageKey) == nil)
     try database.assertHealthy()
   }
 
@@ -217,8 +217,8 @@ struct ClientDatabaseTests {
       renamedLegacyDirectory: renamedLegacyDirectory
     )
 
-    #expect(DefaultProjectRepository(store: storage.store).load() == [project])
-    #expect(DefaultSessionRepository(store: storage.store).load() == [legacySession])
+    #expect(CodableRepository<Project>(store: storage.store, key: "projects").load() == [project])
+    #expect(CodableRepository<ChatSession>(store: storage.store, key: "sessions").load() == [legacySession])
     #expect(
       storage.store.loadData(
         forKey: "composer-draft-attachment-test.bin"
@@ -381,7 +381,7 @@ struct ClientDatabaseTests {
       migrateRenamedApplicationSupport: false
     )
 
-    #expect(DefaultProjectRepository(store: reopened.store).load() == [project])
+    #expect(CodableRepository<Project>(store: reopened.store, key: "projects").load() == [project])
     #expect(!FileManager.default.fileExists(atPath: source.path))
     #expect(
       try reopened.database.cleanupMigrationState(

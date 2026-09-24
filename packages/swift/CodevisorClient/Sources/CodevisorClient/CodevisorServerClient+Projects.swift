@@ -2,7 +2,7 @@ import ACPKit
 import CodevisorProtocol
 import Foundation
 
-public struct ServerProjectLocation: Decodable, Equatable, Sendable {
+public struct ServerProjectLocation: Codable, Equatable, Sendable {
   public var id: String
   public var projectId: String
   public var serverId: String
@@ -51,7 +51,7 @@ public struct ServerFsListing: Decodable, Equatable, Sendable {
   }
 }
 
-public struct ServerProject: Decodable, Equatable, Sendable {
+public struct ServerProject: Codable, Equatable, Sendable {
   public var id: String
   public var name: String
   public var origin: SessionOrigin
@@ -125,7 +125,7 @@ public struct ServerProject: Decodable, Equatable, Sendable {
 
 /// Server-owned workspace identity and navigation metadata. Pane identity is
 /// fetched separately; only each device's tab/split layout remains local.
-public struct ServerWorkspace: Decodable, Equatable, Sendable {
+public struct ServerWorkspace: Codable, Equatable, Sendable {
   public var sidebarPosition: String?
   public var sidebarOrderRevision: Int?
   public var id: String

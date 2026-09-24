@@ -346,6 +346,16 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     workspaceId: UUID?,
     transcriptLimit: Int
   ) async throws -> ServerSessionOpenResponse?
+  /// The workspace-aware open together with the response body exactly as the
+  /// server sent it, so the device can keep the chat's latest page on disk and
+  /// show it before the next open returns. `data` is nil for transports that
+  /// have no raw body; nil overall means the server predates `/open`.
+  func openSessionReturningData(
+    _ session: ChatSession,
+    project: Project?,
+    workspaceId: UUID?,
+    transcriptLimit: Int
+  ) async throws -> ServerSessionOpenResult?
   func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage
   func transcriptItemDetails(
     id: UUID,

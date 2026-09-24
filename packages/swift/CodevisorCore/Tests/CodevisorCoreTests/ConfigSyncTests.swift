@@ -32,10 +32,7 @@ struct ConfigSyncTests {
     )
     return MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         fakes[machine.id] ?? SyncFakeServerClient(projects: [], sessions: [])
       }
@@ -241,10 +238,7 @@ struct ConfigSyncTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake }
     )
 

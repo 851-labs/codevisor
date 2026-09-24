@@ -47,39 +47,32 @@ struct CodevisorApp: App {
   @ViewBuilder
   private func applicationContent(initialRoute: HomeRoute?) -> some View {
     if let environment {
-      if shouldWaitForCloudRestore(environment: environment) {
-        // A cloud-only machine list is unknown until the persisted
-        // account session has been validated and its first machine
-        // snapshot arrives. Keep the honest startup state mounted
-        // instead of briefly claiming no machine is connected.
-        CodevisorStartupSplashView()
-          .preferredColorScheme(colorScheme(for: environment))
-          .task { await environment.cloud.bootstrap() }
-      } else {
-        HomeView(initialRoute: initialRoute)
-          // Order matters: ThemedRoot reads AppEnvironment, so the
-          // environment injection must wrap it (i.e. come after).
-          .modifier(ThemedRoot())
-          .environment(environment)
-          .preferredColorScheme(colorScheme(for: environment))
-          .task { await bootstrap(environment: environment) }
-          .onChange(of: scenePhase, initial: true) { _, phase in
-            // Read = focus: a backgrounded app must not mark
-            // the open chat read while finishes land.
-            environment.attentionCoordinator.setApplicationActive(
-              phase == .active
-            )
-            guard phase == .active, hasCompletedBootstrap else { return }
-            Task { await recoverAfterForeground(environment: environment) }
-          }
-          .onChange(of: networkPath.recoveryToken) { _, _ in
-            guard scenePhase == .active, hasCompletedBootstrap else { return }
-            Task { await recoverAfterForeground(environment: environment) }
-          }
-        // `codevisor://add-machine` deeplinks are handled inside
-        // HomeView, which owns the confirmation alerts and can present
-        // them over the onboarding cover.
-      }
+      // The home screen shows immediately, from what this device already
+      // knows (cached machines and their last known workspaces), and
+      // decides for itself whether anything is still loading.
+      HomeView(initialRoute: initialRoute)
+        // Order matters: ThemedRoot reads AppEnvironment, so the
+        // environment injection must wrap it (i.e. come after).
+        .modifier(ThemedRoot())
+        .environment(environment)
+        .preferredColorScheme(colorScheme(for: environment))
+        .task { await bootstrap(environment: environment) }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+          // Read = focus: a backgrounded app must not mark
+          // the open chat read while finishes land.
+          environment.attentionCoordinator.setApplicationActive(
+            phase == .active
+          )
+          guard phase == .active, hasCompletedBootstrap else { return }
+          Task { await recoverAfterForeground(environment: environment) }
+        }
+        .onChange(of: networkPath.recoveryToken) { _, _ in
+          guard scenePhase == .active, hasCompletedBootstrap else { return }
+          Task { await recoverAfterForeground(environment: environment) }
+        }
+      // `codevisor://add-machine` deeplinks are handled inside HomeView,
+      // which owns the confirmation alerts and can present them over the
+      // onboarding cover.
     } else if let startupError {
       ClientDataStartupFailureView(
         message: startupError,
@@ -100,25 +93,13 @@ struct CodevisorApp: App {
     }
   }
 
-  /// Locally configured remotes are available synchronously and need no
-  /// launch gate. Cloud-only installs (and persisted cloud selections) do:
-  /// their apparent empty list is merely unresolved until account bootstrap.
-  private func shouldWaitForCloudRestore(environment: AppEnvironment) -> Bool {
-    guard !hasCompletedBootstrap else { return false }
-    guard environment.cloud.isRestoringPersistedSession else { return false }
-    let machines = environment.machines
-    let hasConfiguredRemote = machines.machines.contains { !$0.isLocal }
-    return environment.defaultComposerServerId.hasPrefix(CodevisorMachine.cloudIdPrefix)
-      || !hasConfiguredRemote
-  }
-
   /// A minimal iOS composition root: durable SQLite storage, no local
   /// server (iOS is a pure client — `localServer` stays nil).
   private static func makeEnvironment(storage: ClientStorage) -> AppEnvironment {
     let store = storage.store
     return AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: store),
-      sessionRepository: DefaultSessionRepository(store: store),
+      navigationPersistence: store,
+      transcriptCache: .shared,
       configCache: ConfigOptionCache(store: store),
       composerDefaults: ComposerDefaultsStore(store: store),
       composerDrafts: ComposerDraftStore(store: store),
@@ -126,9 +107,7 @@ struct CodevisorApp: App {
       machineStore: store,
       machineCredentialStore: KeychainMachineCredentialStore.shared,
       cloudCredentialStore: KeychainCloudCredentialStore.shared,
-      legacyCacheMigrationStore: store,
-      paneGroups: DefaultPaneGroupRepository(store: store),
-      workspaces: DefaultWorkspaceRepository(store: store)
+      paneGroups: DefaultPaneGroupRepository(store: store)
     )
   }
 
@@ -206,12 +185,14 @@ struct CodevisorApp: App {
     guard !recoveryInProgress else { return }
     recoveryInProgress = true
     defer { recoveryInProgress = false }
-    await environment.cloud.reconnectHub()
-    // Start chat recovery alongside machine preparation so a cached chat
-    // immediately presents inline recovery while its requests await readiness.
+    // Everything at once: nothing here has to wait for anything else, and
+    // the open chat catches up as soon as its own machine answers rather
+    // than after the cloud hub reconnects.
+    async let roster: Void = environment.cloud.retryIfUnverified()
+    async let hub: Void = environment.cloud.reconnectHub()
     async let machineRecovery: Void = environment.prepareAllMachines()
     async let chatRecovery: Void = ChatControllerCache.shared.reconcileInFlightControllers()
-    _ = await (machineRecovery, chatRecovery)
+    _ = await (roster, hub, machineRecovery, chatRecovery)
     // Re-sweep fleet update state with transport restored.
     Task { await environment.updateCenter.refresh() }
   }

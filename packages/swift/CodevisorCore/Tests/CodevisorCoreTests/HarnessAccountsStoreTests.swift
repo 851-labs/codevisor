@@ -11,8 +11,6 @@ struct HarnessAccountsStoreTests {
   func providerOAuth() async throws {
     let transport = ProviderAccountTestTransport()
     let environment = AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: AppSettingsModel(store: InMemoryStore()),
       machineClientFactory: { _ in
@@ -41,8 +39,6 @@ struct HarnessAccountsStoreTests {
   func grokSharedAccount() async throws {
     let transport = SharedAccountTestTransport()
     let environment = AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: AppSettingsModel(store: InMemoryStore()),
       machineClientFactory: { _ in
@@ -113,8 +109,6 @@ struct HarnessAccountsStoreTests {
   func sharedOAuth() async throws {
     let transport = SharedAccountTestTransport()
     let environment = AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: AppSettingsModel(store: InMemoryStore()),
       machineClientFactory: { _ in

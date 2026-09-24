@@ -22,12 +22,12 @@ extension ProjectListModel {
   /// machine the user has switched to meanwhile.
   public func importSessions(_ imported: [ImportedSession], serverId: String) {
     for item in imported {
-      if let knownIndex = sessions.firstIndex(where: {
+      if let known = sessions.first(where: {
         $0.serverId == serverId
           && $0.harnessId == item.harnessId
           && $0.agentSessionId == item.info.sessionId
       }) {
-        reconcileImportedActivity(item, at: knownIndex)
+        reconcileImportedActivity(item, of: known)
         continue
       }
       let project = findOrCreateProject(
@@ -35,7 +35,7 @@ extension ProjectListModel {
         serverId: serverId
       )
       let timestamp = Self.importTimestamp(item.info.updatedAt)
-      sessions.append(
+      importSession(
         ChatSession(
           projectId: project.id,
           serverId: serverId,
@@ -47,9 +47,6 @@ extension ProjectListModel {
           updatedAt: timestamp
         ))
     }
-    persistProjects()
-    persistSessions()
-    syncAllToServer(serverId: serverId)
   }
 
   /// Imports sessions into a specific project (they were discovered for its
@@ -57,18 +54,17 @@ extension ProjectListModel {
   /// Sessions inherit the project's server, not the currently selected one:
   /// the user may confirm a pending import after switching machines.
   public func importSessions(_ imported: [ImportedSession], into project: Project) {
-    var didChange = false
     for item in imported {
-      if let knownIndex = sessions.firstIndex(where: {
+      if let known = sessions.first(where: {
         $0.serverId == project.serverId
           && $0.harnessId == item.harnessId
           && $0.agentSessionId == item.info.sessionId
       }) {
-        didChange = reconcileImportedActivity(item, at: knownIndex) || didChange
+        reconcileImportedActivity(item, of: known)
         continue
       }
       let timestamp = Self.importTimestamp(item.info.updatedAt)
-      sessions.append(
+      importSession(
         ChatSession(
           projectId: project.id,
           serverId: project.serverId,
@@ -79,25 +75,23 @@ extension ProjectListModel {
           createdAt: timestamp ?? Date(),
           updatedAt: timestamp
         ))
-      didChange = true
     }
-    guard didChange else { return }
-    persistSessions()
-    syncAllToServer(serverId: project.serverId)
+  }
+
+  private func importSession(_ session: ChatSession) {
+    enqueue(.upsertSession(session, workspaceId: nil), serverId: session.serverId)
   }
 
   /// Native-session discovery is also our source of truth for activity that
   /// happened outside this app. Never roll a cached/server timestamp back,
   /// and leave user-edited metadata (especially the title) alone.
-  @discardableResult
-  private func reconcileImportedActivity(_ item: ImportedSession, at index: Int) -> Bool {
-    guard let discoveredAt = Self.importTimestamp(item.info.updatedAt) else {
-      return false
-    }
-    let cachedAt = sessions[index].updatedAt ?? sessions[index].createdAt
-    guard discoveredAt > cachedAt else { return false }
-    sessions[index].updatedAt = discoveredAt
-    return true
+  private func reconcileImportedActivity(_ item: ImportedSession, of known: ChatSession) {
+    guard let discoveredAt = Self.importTimestamp(item.info.updatedAt),
+      discoveredAt > known.updatedAt ?? known.createdAt
+    else { return }
+    var updated = known
+    updated.updatedAt = discoveredAt
+    importSession(updated)
   }
 
   private static func importTimestamp(_ value: String?) -> Date? {
@@ -113,7 +107,7 @@ extension ProjectListModel {
       return existing
     }
     let project = Project.fromFolder(folderURL, serverId: serverId, origin: .imported)
-    projects.append(project)
+    enqueue(.upsertProject(project), serverId: serverId)
     return project
   }
 }

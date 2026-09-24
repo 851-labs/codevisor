@@ -183,14 +183,8 @@ struct MachineControllerCloudTests {
 
     // Records that synced under the twin id before the probe landed.
     let twinId = "cloud:\(deviceId)"
-    let twinProject = Project.fromFolder(
-      URL(fileURLWithPath: "/srv/studio-work"),
-      serverId: twinId
-    )
-    projectList.projects.append(twinProject)
-    projectList.sessions.append(
-      ChatSession(projectId: twinProject.id, serverId: twinId, title: "twin chat")
-    )
+    await projectList.installProjectWithChat(machineId: twinId, folder: "/srv/studio-work", title: "twin chat")
+    #expect(projectList.projects.contains { $0.serverId == twinId })
 
     await controller.refreshStatus(for: remote.id)
 
@@ -201,21 +195,15 @@ struct MachineControllerCloudTests {
   }
 
   @Test("A resolved local registration removes its cloud twin before fleet sync")
-  func resolvedLocalRegistrationPrunesTwin() {
+  func resolvedLocalRegistrationPrunesTwin() async {
     let deviceId = "local-device"
     let twinId = "cloud:\(deviceId)"
     let (controller, projectList, provider) = makeController()
     provider.cloudMachines = [
       makeCloudMachine(deviceId: deviceId, name: "Local Through Cloud")
     ]
-    let twinProject = Project.fromFolder(
-      URL(fileURLWithPath: "/srv/local-work"),
-      serverId: twinId
-    )
-    projectList.projects.append(twinProject)
-    projectList.sessions.append(
-      ChatSession(projectId: twinProject.id, serverId: twinId, title: "duplicate")
-    )
+    await projectList.installProjectWithChat(machineId: twinId, folder: "/srv/local-work", title: "duplicate")
+    #expect(projectList.sessions.contains { $0.serverId == twinId })
 
     controller.adoptLocalCloudIdentity(deviceId: deviceId)
 
@@ -290,22 +278,16 @@ extension MachineControllerCloudTests {
 
 extension MachineControllerCloudTests {
   @Test("Dead cloud identities' records are pruned after a roster refresh")
-  func deadCloudRecordPrune() throws {
+  func deadCloudRecordPrune() async throws {
     let (controller, projectList, provider) = makeController()
     // Live machine dev-1; dev-gone was wiped and re-registered long ago.
     provider.cloudMachines = [makeCloudMachine(deviceId: "dev-1")]
     let liveId = "cloud:dev-1"
     let deadId = "cloud:dev-gone"
     for serverId in [liveId, deadId] {
-      let project = Project.fromFolder(
-        URL(fileURLWithPath: "/srv/\(serverId)"),
-        serverId: serverId
-      )
-      projectList.projects.append(project)
-      projectList.sessions.append(
-        ChatSession(projectId: project.id, serverId: serverId, title: "chat")
-      )
+      await projectList.installProjectWithChat(machineId: serverId, folder: "/srv/\(serverId)")
     }
+    #expect(projectList.sessions.contains { $0.serverId == deadId })
 
     controller.pruneDeadCloudRecords()
 
@@ -315,9 +297,16 @@ extension MachineControllerCloudTests {
     #expect(projectList.projects.contains { $0.serverId == liveId })
     #expect(projectList.sessions.contains { $0.serverId == liveId })
 
+    // An unverified (launch-cached) roster may be stale: a machine missing
+    // from it is not proof the machine is gone, so nothing is pruned.
+    provider.isCloudRosterVerified = false
+    provider.cloudMachines = []
+    controller.pruneDeadCloudRecords()
+    #expect(projectList.projects.contains { $0.serverId == liveId })
+    provider.isCloudRosterVerified = true
+
     // Signed out: the roster is unknown, not empty — nothing is pruned.
     provider.isCloudSignedIn = false
-    provider.cloudMachines = []
     controller.pruneDeadCloudRecords()
     #expect(projectList.projects.contains { $0.serverId == liveId })
   }
@@ -578,10 +567,7 @@ extension MachineControllerCloudTests {
 
     // Relaunch without a provider: selection stays persisted, but the
     // resolved machine is local.
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let second = MachineController(store: store, projectList: projectList)
     #expect(second.selectedMachineId == "cloud:dev-1")
     #expect(second.selectedMachine == .local)

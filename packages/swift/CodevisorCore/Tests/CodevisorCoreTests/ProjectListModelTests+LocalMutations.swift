@@ -5,62 +5,62 @@ import ACPKit
 
 @MainActor
 extension ProjectListModelTests {
-  @Test("Local mutations are mirrored to the configured server")
+  @Test("Local mutations are sent to the record's machine")
   func serverMutationMirroring() async throws {
     let fakeServer = FakeServerClient()
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      serverClient: fakeServer
-    )
+    let fixture = await NavigationFixture.connected(to: fakeServer)
+    let model = fixture.projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/mirrored"))
     let session = model.newSession(in: project, title: "First", harnessId: "codex")
-    await model.renameSession(session, to: "Renamed")?.value
+    await fixture.sync(with: fakeServer)
+    model.renameSession(session, to: "Renamed")
+    await fixture.sync(with: fakeServer)
+    #expect(fixture.session(session.id)?.title == "Renamed")
     model.deleteSession(session)
     model.removeProject(project)
-
-    await fakeServer.waitForSnapshot { snapshot in
-      snapshot.upsertedProjectIDs.contains(project.id.uuidString)
-        && snapshot.upsertedSessionIDs.contains(session.id.uuidString)
-        && snapshot.deletedSessionIDs.contains(session.id.uuidString)
-        && snapshot.deletedProjectIDs.contains(project.id.uuidString)
-    }
-  }
-
-  @Test("Draft sessions can be held locally until first send")
-  func draftSessionSkipsImmediateServerSync() async throws {
-    let fakeServer = FakeServerClient()
-    let model = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
-      serverClient: fakeServer
-    )
-
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/draft"))
-    _ = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
-    await fakeServer.waitForSnapshot { $0.upsertedProjectIDs.contains(project.id.uuidString) }
+    await fixture.sync(with: fakeServer)
 
     let snapshot = await fakeServer.snapshot()
-    #expect(snapshot.upsertedSessionIDs.isEmpty)
+    #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
+    // The create, then the rename (sent as an upsert by this fake).
+    #expect(snapshot.upsertedSessionIDs == [session.id.uuidString, session.id.uuidString])
+    #expect(snapshot.deletedSessionIDs == [session.id.uuidString])
+    #expect(snapshot.deletedProjectIDs == [project.id.uuidString])
+    #expect(model.projects.isEmpty)
+    #expect(fixture.store.pendingIntents.isEmpty)
   }
 
-  @Test("Adding a folder creates and persists a project")
+  @Test("Draft sessions are held locally until first send")
+  func draftSessionSkipsImmediateServerSync() async throws {
+    let fakeServer = FakeServerClient()
+    let fixture = await NavigationFixture.connected(to: fakeServer)
+    let model = fixture.projectList
+
+    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/draft"))
+    let draft = model.newSession(in: project, title: "Draft", harnessId: "codex", syncToServer: false)
+    await fixture.flush()
+
+    let snapshot = await fakeServer.snapshot()
+    #expect(snapshot.upsertedProjectIDs == [project.id.uuidString])
+    #expect(snapshot.upsertedSessionIDs.isEmpty)
+    #expect(model.sessions.contains { $0.id == draft.id })
+  }
+
+  @Test("Adding a folder creates a project that survives a relaunch")
   func addProject() {
-    let (model, store, _) = makeModel()
+    let persistence = InMemoryStore()
+    let model = NavigationFixture(persistence: persistence).projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/proj"))
     #expect(project.name == "proj")
     #expect(model.projects.count == 1)
-    // Persisted: a fresh model reads it back.
-    let reloaded = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: store),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-    #expect(reloaded.projects.count == 1)
+    // The waiting request is saved: a fresh store reads it back.
+    PersistenceEncoding.drain()
+    #expect(NavigationFixture(persistence: persistence).projectList.projects.count == 1)
   }
 
   @Test("Adding the same folder twice does not duplicate")
   func addDeduplicates() {
-    let (model, _, _) = makeModel()
+    let model = NavigationFixture().projectList
     let url = URL(fileURLWithPath: "/tmp/proj")
     let first = model.addProject(folderURL: url)
     let second = model.addProject(folderURL: url)
@@ -70,7 +70,7 @@ extension ProjectListModelTests {
 
   @Test("Deleting a project removes it from the active list")
   func deletingRemovesFromActiveList() {
-    let (model, _, _) = makeModel()
+    let model = NavigationFixture().projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     #expect(model.activeProjects.count == 1)
 
@@ -81,25 +81,18 @@ extension ProjectListModelTests {
     #expect(model.isProjectDeleted(id: project.id, serverId: project.serverId))
   }
 
-  @Test("Active and archived projects are sorted newest-first")
-  func sorting() {
-    let store = InMemoryStore()
-    let repository = DefaultProjectRepository(store: store)
-    repository.save([
-      Project(name: "old", createdAt: Date(timeIntervalSince1970: 1)),
-      Project(name: "new", createdAt: Date(timeIntervalSince1970: 9)),
+  @Test("Active projects are sorted newest-first")
+  func sorting() async {
+    let fixture = NavigationFixture()
+    await fixture.install(projects: [
+      Project.fromFolder(URL(fileURLWithPath: "/tmp/old"), createdAt: Date(timeIntervalSince1970: 1)),
+      Project.fromFolder(URL(fileURLWithPath: "/tmp/new"), createdAt: Date(timeIntervalSince1970: 9)),
     ])
-    let model = ProjectListModel(
-      projectRepository: repository,
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-    #expect(model.activeProjects.map(\.name) == ["new", "old"])
+    #expect(fixture.projectList.activeProjects.map(\.name) == ["new", "old"])
   }
 
   @Test("Active projects are ordered by their most recently created workspace")
   func workspaceRecencySorting() {
-    let store = InMemoryStore()
-    let repository = DefaultProjectRepository(store: store)
     let unusedOlder = Project(
       name: "unused-older",
       createdAt: Date(timeIntervalSince1970: 1)
@@ -116,11 +109,9 @@ extension ProjectListModelTests {
       name: "unused-newer",
       createdAt: Date(timeIntervalSince1970: 4)
     )
-    repository.save([unusedOlder, usedEarlier, usedLatest, unusedNewer])
-    let model = ProjectListModel(
-      projectRepository: repository,
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let fixture = NavigationFixture()
+    fixture.seed(projects: [unusedOlder, usedEarlier, usedLatest, unusedNewer])
+    let model = fixture.projectList
 
     func workspace(
       projectId: UUID,
@@ -155,49 +146,51 @@ extension ProjectListModelTests {
       ])
   }
 
-  @Test("New sessions are scoped to a project and persisted")
+  @Test("New sessions are scoped to a project and survive a relaunch")
   func sessions() {
-    let (model, _, sessionStore) = makeModel()
+    let persistence = InMemoryStore()
+    let model = NavigationFixture(persistence: persistence).projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     let other = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/b"))
     let session = model.newSession(in: project, title: "First", harnessId: "claude")
     model.newSession(in: other)
     #expect(model.sessions(in: project).map(\.id) == [session.id])
 
-    // Persisted.
-    let reloaded = DefaultSessionRepository(store: sessionStore).load()
-    #expect(reloaded.count == 2)
+    PersistenceEncoding.drain()
+    #expect(NavigationFixture(persistence: persistence).projectList.sessions.count == 2)
   }
 
-  @Test("Renaming and deleting sessions update state")
+  @Test("Renaming and deleting sessions show immediately")
   func renameDelete() async {
-    let (model, _, _) = makeModel()
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    let session = model.newSession(in: project)
-    model.serverClient = FakeServerClient(
-      projects: [serverProject(from: project)], sessions: [serverSession(from: session)])
-    await model.renameSession(session, to: "Renamed")?.value
+    let fixture = NavigationFixture()
+    let model = fixture.projectList
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/a"))
+    let session = ChatSession(projectId: project.id, harnessId: "codex")
+    await fixture.install(projects: [project], sessions: [session])
+
+    model.renameSession(session, to: "Renamed")
     #expect(model.sessions(in: project).first?.title == "Renamed")
     model.deleteSession(session)
     #expect(model.sessions(in: project).isEmpty)
   }
 
   @Test("A chat stays listed until it is actually deleted")
-  func chatsPersistUntilDeleted() {
-    let (model, _, sessionStore) = makeModel()
-    let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
-    let session = model.newSession(in: project)
+  func chatsPersistUntilDeleted() async {
+    let fixture = NavigationFixture()
+    let model = fixture.projectList
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/a"))
+    let session = ChatSession(projectId: project.id, harnessId: "codex")
+    await fixture.install(projects: [project], sessions: [session])
     // Closing a chat is pane removal on its workspace, so the model keeps
     // listing the chat: nothing here hides it.
     #expect(model.sessions(in: project).count == 1)
-    #expect(DefaultSessionRepository(store: sessionStore).load().contains { $0.id == session.id })
     model.deleteSession(session)
     #expect(model.sessions(in: project).isEmpty)
   }
 
   @Test("Removing a project also removes its sessions")
   func removeProject() {
-    let (model, _, _) = makeModel()
+    let model = NavigationFixture().projectList
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     model.newSession(in: project)
     model.removeProject(project)
@@ -205,9 +198,10 @@ extension ProjectListModelTests {
     #expect(model.sessions.isEmpty)
   }
 
-  @Test("Importing sessions into a project skips known ones and persists")
+  @Test("Importing sessions into a project skips known ones")
   func importIntoProject() {
-    let (model, _, sessionStore) = makeModel()
+    let persistence = InMemoryStore()
+    let model = NavigationFixture(persistence: persistence).projectList
     model.showsImportedSessions = true
     let project = model.addProject(folderURL: URL(fileURLWithPath: "/tmp/a"))
     let imported = [
@@ -231,29 +225,26 @@ extension ProjectListModelTests {
     #expect(sessions.allSatisfy { $0.origin == .imported })
     #expect(sessions.contains { $0.agentSessionId == "ext-1" && $0.title == "Old chat" })
     #expect(sessions.contains { $0.agentSessionId == "ext-2" && $0.title == "Session" })
-    #expect(DefaultSessionRepository(store: sessionStore).load().count == 2)
+    PersistenceEncoding.drain()
+    #expect(NavigationFixture(persistence: persistence).projectList.sessions.count == 2)
   }
 
   @Test("Re-importing a known session advances its activity without overwriting metadata")
-  func reimportAdvancesKnownSessionActivity() {
-    let (model, _, sessionStore) = makeModel()
+  func reimportAdvancesKnownSessionActivity() async {
+    let fixture = NavigationFixture()
+    let model = fixture.projectList
     model.showsImportedSessions = true
     let oldTimestamp = "2026-06-01T00:00:00Z"
     // Native scanners return JavaScript ISO strings with fractional
     // seconds, so exercise the exact format used by the server endpoint.
     let newTimestamp = "2026-06-03T00:00:00.123Z"
-
-    model.importSessions(
-      [
-        ImportedSession(
-          harnessId: "codex",
-          info: SessionInfo(sessionId: "ext-1", cwd: "/tmp/a", title: "Agent title", updatedAt: oldTimestamp)
-        )
-      ], serverId: "local")
-    let project = model.projects.first!
-    let imported = model.sessions(in: project).first!
-    // This test starts with already-edited metadata; rename sync is covered separately.
-    model.sessions[model.sessions.firstIndex(where: { $0.id == imported.id })!].title = "My title"
+    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/a"), origin: .imported)
+    // The server already has this import, with a title the user edited.
+    let known = ChatSession(
+      projectId: project.id, harnessId: "codex", agentSessionId: "ext-1", title: "My title",
+      origin: .imported, createdAt: ISO8601DateFormatter().date(from: oldTimestamp)!,
+      updatedAt: ISO8601DateFormatter().date(from: oldTimestamp))
+    await fixture.install(projects: [project], sessions: [known])
 
     model.importSessions(
       [
@@ -270,8 +261,13 @@ extension ProjectListModelTests {
     let fractionalFormatter = ISO8601DateFormatter()
     fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     #expect(refreshed.updatedAt == fractionalFormatter.date(from: newTimestamp))
-    let persisted = DefaultSessionRepository(store: sessionStore).load().first!
-    #expect(persisted.updatedAt == refreshed.updatedAt)
+    // The advance is a waiting upsert of the known record.
+    guard case let .upsertSession(sent, _)? = fixture.store.pendingIntents.last?.intent else {
+      Issue.record("Expected a waiting upsert")
+      return
+    }
+    #expect(sent.id == known.id)
+    #expect(sent.updatedAt == refreshed.updatedAt)
 
     // An older scanner result must never roll server/app activity back.
     model.importSessions(

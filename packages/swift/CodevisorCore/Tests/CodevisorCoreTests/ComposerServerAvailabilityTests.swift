@@ -165,10 +165,7 @@ struct ComposerServerAvailabilityTests {
       let store = InMemoryStore()
       machines = MachineController(
         store: store,
-        projectList: ProjectListModel(
-          projectRepository: DefaultProjectRepository(store: store),
-          sessionRepository: DefaultSessionRepository(store: store)
-        ),
+        projectList: ProjectListModel.fixture(),
         clientFactory: { [client] _ in client }
       )
       controller = SessionController(

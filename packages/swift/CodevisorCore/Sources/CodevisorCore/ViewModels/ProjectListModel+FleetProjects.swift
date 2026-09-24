@@ -1,79 +1,38 @@
 import Foundation
 
 extension ProjectListModel {
-  /// Drops every record stored under a server id — used when a machine
-  /// identity turns out to be a duplicate (the local machine's own cloud
-  /// twin), whose synced records would otherwise render as doubled
-  /// projects and chats forever.
+  /// Forgets every record from a machine identity -- used when one turns out
+  /// to be a duplicate (the local machine's own cloud twin), whose records
+  /// would otherwise render as doubled projects and chats.
   public func removeAllRecords(serverId: String) {
-    // Invalidate first, even when nothing has committed yet. The duplicate
-    // identity is commonly discovered while its initial fetch is in flight.
-    invalidateRecordLifetime(for: serverId)
-    invalidateSnapshotRefreshes(for: serverId)
-    // Markers go first and unconditionally. They outlived the rows they
-    // described when this returned early, and a marker stranded under a
-    // pruned cloud id re-applied to live rows if that id ever came back.
-    pendingServerProjectIds = pendingServerProjectIds.filter { $0.serverId != serverId }
-    pendingServerSessionIds = pendingServerSessionIds.filter { $0.serverId != serverId }
-    pendingDeletedProjectIds = pendingDeletedProjectIds.filter { $0.serverId != serverId }
-    let hadProjects = projects.contains { $0.serverId == serverId }
-    let hadSessions = sessions.contains { $0.serverId == serverId }
-    guard hadProjects || hadSessions else { return }
-    projects.removeAll { $0.serverId == serverId }
-    sessions.removeAll { $0.serverId == serverId }
-    persistProjects()
-    persistSessions()
+    navigationStore?.forget(machineId: serverId)
   }
 
-  /// Adds a project on an EXPLICIT machine — the fleet-wide picker's "New
-  /// Project…" flow, which may target a machine other than the selected
-  /// one. Dedupe semantics match `addProject(folderURL:)`.
-  ///
-  /// The upsert is AWAITED so the returned record carries the server's git
-  /// probe: the picker needs `isGitRepository` immediately to decide
-  /// whether to offer the worktree step. A failed upsert still returns the
-  /// local record (unprobed) — the add works offline, exactly as before.
+  /// Adds a project on an explicit machine -- the fleet-wide picker's "New
+  /// Project…" flow. The project shows at once; the upsert is also awaited
+  /// here because the picker needs the server's git probe
+  /// (`isGitRepository`) to decide whether to offer the worktree step. If the
+  /// machine can't be reached the local record comes back unprobed and the
+  /// outbox keeps trying.
   @discardableResult
   public func addProject(
     folderURL: URL,
     serverId: String,
     client: any CodevisorServerClienting
   ) async -> Project {
-    let local: Project
-    if let index = projects.firstIndex(where: {
-      $0.serverId == serverId && $0.folderURL == folderURL
-    }) {
-      local = projects[index]
-    } else {
-      local = Project.fromFolder(folderURL, serverId: serverId)
-      projects.append(local)
-    }
-    persistProjects()
-    pendingServerProjectIds.insert(
-      ScopedSessionID(serverId: serverId, id: local.id)
-    )
+    let local = addProject(folderURL: folderURL, serverId: serverId)
     do {
       let probed = try await client.upsertProject(local).project(serverId: serverId)
-      if let index = projects.firstIndex(where: {
-        $0.serverId == serverId && $0.id == local.id
-      }) {
-        projects[index].locations = probed.locations
-        // The remote is observed server-side; adopting it now lets the
-        // new record join its cross-machine group immediately.
-        projects[index].repoUrl = probed.repoUrl
-        projects[index].repoKey = probed.repoKey
-        persistProjects()
-        return projects[index]
-      }
-      return probed
+      var merged = local
+      merged.locations = probed.locations
+      // The remote is observed server-side; adopting it now lets the new
+      // record join its cross-machine group immediately.
+      merged.repoUrl = probed.repoUrl
+      merged.repoKey = probed.repoKey
+      return merged
     } catch {
       Log.sync.error(
-        "Failed to sync project \(local.id.uuidString, privacy: .public) to the server: \(String(describing: error), privacy: .public)"
-      )
-      ErrorReporter.shared.report(
-        .projectSyncFailed,
-        title: "Couldn't Sync the Project to the Server",
-        error: error
+        "Couldn't probe project \(local.id.uuidString, privacy: .public) yet: \(String(describing: error), privacy: .public)"
       )
       return local
     }

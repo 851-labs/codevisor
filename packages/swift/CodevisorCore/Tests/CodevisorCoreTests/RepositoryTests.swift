@@ -4,43 +4,10 @@ import Testing
 
 @Suite("Repositories")
 struct RepositoryTests {
-  @Test("Projects round-trip through the store")
-  func projectRoundTrip() {
-    let store = InMemoryStore()
-    let repository = DefaultProjectRepository(store: store)
-    #expect(repository.load().isEmpty)
-
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/demo"))
-    repository.save([project])
-    #expect(repository.load() == [project])
-  }
-
-  @Test("Projects migrate from the legacy workspaces cache key")
-  func legacyCacheMigration() throws {
-    let legacy = Project.fromFolder(URL(fileURLWithPath: "/tmp/old-cache"))
-    let store = InMemoryStore()
-    try store.saveData(JSONEncoder().encode([legacy]), forKey: "workspaces")
-
-    let repository = DefaultProjectRepository(store: store)
-    let migrated = repository.load()
-    #expect(migrated == [legacy])
-    // Migration persists under the new key so later saves win.
-    #expect(store.loadData(forKey: "projects") != nil)
-  }
-
-  @Test("Sessions round-trip through the store")
-  func sessionRoundTrip() {
-    let store = InMemoryStore()
-    let repository = DefaultSessionRepository(store: store)
-    let session = ChatSession(projectId: UUID(), harnessId: "demo", title: "Chat")
-    repository.save([session])
-    #expect(repository.load() == [session])
-  }
-
   @Test("Corrupted data decodes as empty")
   func corruptedData() {
     let store = InMemoryStore(storage: ["projects": Data("not json".utf8)])
-    let repository = DefaultProjectRepository(store: store)
+    let repository = CodableRepository<Project>(store: store, key: "projects")
     #expect(repository.load().isEmpty)
   }
 
@@ -53,7 +20,7 @@ struct RepositoryTests {
     try Data("not json".utf8).write(to: directory.appendingPathComponent("projects.json"))
 
     let store = FileSystemStore(directory: directory)
-    let repository = DefaultProjectRepository(store: store)
+    let repository = CodableRepository<Project>(store: store, key: "projects")
     #expect(repository.load().isEmpty)
 
     // The unreadable payload was renamed to a .corrupt-<timestamp> backup
@@ -70,7 +37,7 @@ struct RepositoryTests {
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let store = FileSystemStore(directory: directory)
-    let repository = DefaultSessionRepository(store: store)
+    let repository = CodableRepository<ChatSession>(store: store, key: "sessions")
     let session = ChatSession(projectId: UUID(), title: "Persisted")
     repository.save([session])
     // Writes land on a background queue (they must not block the main
@@ -78,7 +45,7 @@ struct RepositoryTests {
     store.flushPendingWrites()
 
     // A fresh store reading the same directory sees the data.
-    let reopened = DefaultSessionRepository(store: FileSystemStore(directory: directory))
+    let reopened = CodableRepository<ChatSession>(store: FileSystemStore(directory: directory), key: "sessions")
     #expect(reopened.load() == [session])
   }
 

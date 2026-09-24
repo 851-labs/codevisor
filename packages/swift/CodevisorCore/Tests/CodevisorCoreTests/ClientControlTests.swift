@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct ClientControlTests {
-  private func fixture() -> (DefaultWorkspaceRepository, Workspace, UUID) {
+  private func fixture() -> (ProjectedWorkspaceRepository, Workspace, UUID) {
     let pane = PaneDescriptorState(
       id: UUID(), kind: .browser, name: "Docs", terminalKey: "browser"
     )
@@ -16,7 +16,7 @@ struct ClientControlTests {
       name: "Project", rootDirectory: "/fixture", serverId: "machine", projectId: UUID(),
       centerTabs: tabs, createdAt: Date(timeIntervalSince1970: 0)
     )
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let repository = NavigationFixture().workspaces
     repository.save(workspace)
     return (repository, workspace, pane.id)
   }

@@ -94,6 +94,7 @@ struct SidebarView: View {
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
 
+      SidebarSyncFooter(indicator: environment.navigationSyncIndicator)
       SidebarUpdateFooter(center: environment.updateCenter)
     }
     // Section frames and the reorder ghost share this space, so the ghost
@@ -137,18 +138,8 @@ struct SidebarView: View {
         ))
   }
 
-  private var sidebarChangeObserversView: some View {
-    sidebarAlertsView
-      // Keyed on assignments as well as ids: a chat created elsewhere can
-      // arrive before the server's workspace membership does, and the
-      // backfill must run again once it lands to re-home the chat.
-      .onChange(of: sessionWorkspaceAssignments) { _, _ in
-        ensureSessionWorkspaces()
-      }
-  }
-
   private var sidebarSheetsView: some View {
-    sidebarChangeObserversView
+    sidebarAlertsView
       .modifier(
         SidebarSheetsModifier(
           showingRemoteMachine: $showingRemoteMachine,
@@ -175,7 +166,6 @@ struct SidebarView: View {
 
   private var sidebarConfiguredView: some View {
     sidebarSheetsView
-      .onAppear(perform: ensureSessionWorkspaces)
       // The docked sidebar answers ⇧⌘[ / ⇧⌘] (the drawer copy
       // stays passive so there is exactly one owner of the step).
       .task(id: store.map(ObjectIdentifier.init)) {

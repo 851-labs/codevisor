@@ -68,10 +68,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public let id: UUID
   public var sidebarPosition: String?
   public var sidebarOrderRevision: Int = 0
-  /// Durable optimistic intent, retried when the owning machine reconnects.
-  public var pendingSidebarPosition: String?
-  public var pendingSidebarOrderRevision: Int?
-  public var sidebarOrderAttempt: WorkspaceOrderAttempt?
   /// Display name. Automatic names begin with the project name and may
   /// follow a newly-created worktree; an explicit rename pins the name.
   public var name: String
@@ -95,33 +91,25 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   public var centerTabs: [WorkspaceTab]
   public var selectedCenterTabId: UUID
   public var createdAt: Date
-  /// Archived workspaces leave the sidebar (their chats archive with
-  /// them) but keep their layout — opening an archived chat revives the
-  /// workspace intact. Decoded leniently: payloads written before this
-  /// field existed load as not archived.
+  /// Archived workspaces leave the sidebar (their chats go with them) but
+  /// keep their layout -- opening an archived chat revives the workspace.
   public var isArchived: Bool
-  /// True once this workspace identity has appeared in an authoritative
-  /// server snapshot. This lets a later snapshot remove a remotely deleted
-  /// workspace without mistaking an older, client-only workspace for a
-  /// deletion. Decoded leniently for existing local data.
+  /// Whether the server has this workspace. False for a draft: a workspace
+  /// started on this device that its first chat will create on the server.
   public var isServerSynced: Bool
+
+  public var isDraft: Bool { !isServerSynced }
 
   private enum CodingKeys: String, CodingKey {
     case id, name, hasCustomName, rootDirectory, worktreeName, serverId
     case projectId, centerTabs, selectedCenterTabId, createdAt, isArchived
-    case isServerSynced, sidebarPosition, sidebarOrderRevision, pendingSidebarPosition, pendingSidebarOrderRevision,
-      sidebarOrderAttempt
-    /// Version-1 workspaces stored one tree whose leaves were tab groups.
-    case centerTree
+    case isServerSynced, sidebarPosition, sidebarOrderRevision
   }
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     sidebarPosition = try container.decodeIfPresent(String.self, forKey: .sidebarPosition)
     sidebarOrderRevision = try container.decodeIfPresent(Int.self, forKey: .sidebarOrderRevision) ?? 0
-    pendingSidebarPosition = try container.decodeIfPresent(String.self, forKey: .pendingSidebarPosition)
-    pendingSidebarOrderRevision = try container.decodeIfPresent(Int.self, forKey: .pendingSidebarOrderRevision)
-    sidebarOrderAttempt = try container.decodeIfPresent(WorkspaceOrderAttempt.self, forKey: .sidebarOrderAttempt)
     id = try container.decode(UUID.self, forKey: .id)
     name = try container.decode(String.self, forKey: .name)
     hasCustomName = try container.decode(Bool.self, forKey: .hasCustomName)
@@ -129,30 +117,21 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     worktreeName = try container.decodeIfPresent(String.self, forKey: .worktreeName)
     serverId = try container.decode(String.self, forKey: .serverId)
     projectId = try container.decode(UUID.self, forKey: .projectId)
-    if let decodedTabs = try container.decodeIfPresent([WorkspaceTab].self, forKey: .centerTabs) {
-      if decodedTabs.isEmpty {
-        let replacement = WorkspaceTab.placeholder()
-        centerTabs = [replacement]
-        selectedCenterTabId = replacement.id
-      } else {
-        centerTabs = decodedTabs
-        let decodedSelection = try container.decodeIfPresent(
-          UUID.self, forKey: .selectedCenterTabId
-        )
-        selectedCenterTabId =
-          decodedSelection.flatMap { candidate in
-            decodedTabs.contains { $0.id == candidate } ? candidate : nil
-          } ?? decodedTabs[0].id
-      }
+    let decodedTabs = try container.decode([WorkspaceTab].self, forKey: .centerTabs)
+    if decodedTabs.isEmpty {
+      let replacement = WorkspaceTab.placeholder()
+      centerTabs = [replacement]
+      selectedCenterTabId = replacement.id
     } else {
-      let legacy = try container.decode(SplitNode.self, forKey: .centerTree)
-      centerTabs = Self.migrateLegacyCenterTree(legacy)
-      selectedCenterTabId = centerTabs[0].id
+      centerTabs = decodedTabs
+      let decodedSelection = try container.decodeIfPresent(UUID.self, forKey: .selectedCenterTabId)
+      selectedCenterTabId =
+        decodedSelection.flatMap { candidate in decodedTabs.contains { $0.id == candidate } ? candidate : nil }
+        ?? decodedTabs[0].id
     }
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     isServerSynced = try container.decodeIfPresent(Bool.self, forKey: .isServerSynced) ?? false
-    try importLegacyPanes(from: decoder)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -171,9 +150,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     try container.encode(isServerSynced, forKey: .isServerSynced)
     try container.encodeIfPresent(sidebarPosition, forKey: .sidebarPosition)
     try container.encode(sidebarOrderRevision, forKey: .sidebarOrderRevision)
-    try container.encodeIfPresent(pendingSidebarPosition, forKey: .pendingSidebarPosition)
-    try container.encodeIfPresent(pendingSidebarOrderRevision, forKey: .pendingSidebarOrderRevision)
-    try container.encodeIfPresent(sidebarOrderAttempt, forKey: .sidebarOrderAttempt)
   }
 
   public init(
@@ -197,9 +173,9 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     self.worktreeName = worktreeName
     self.serverId = serverId
     self.projectId = projectId
-    let tabs = Self.migrateLegacyCenterTree(centerTree)
-    self.centerTabs = tabs
-    self.selectedCenterTabId = tabs[0].id
+    let tab = WorkspaceTab(root: centerTree)
+    self.centerTabs = [tab]
+    self.selectedCenterTabId = tab.id
     self.createdAt = createdAt
     self.isArchived = isArchived
     self.isServerSynced = isServerSynced
@@ -383,46 +359,5 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
   /// New Tab page has none: the server knows nothing about that page.
   public var hasRealPanes: Bool {
     allPanes.contains { $0.kind != .newTab }
-  }
-
-  /// Inverts the version-1 `split → tab groups` hierarchy. The selected
-  /// pane from every old group keeps the visible split topology; hidden
-  /// siblings become independent top tabs in deterministic reading order.
-  private static func migrateLegacyCenterTree(_ legacy: SplitNode) -> [WorkspaceTab] {
-    var overflow: [PaneDescriptorState] = []
-
-    func selectedOnly(_ node: SplitNode) -> SplitNode {
-      switch node {
-      case let .group(id, state):
-        let selected =
-          state.selectedPane
-          ?? state.panes.first
-          ?? PaneDescriptorState(
-            id: UUID(), kind: .newTab, name: "New Tab", terminalKey: UUID().uuidString
-          )
-        overflow.append(contentsOf: state.panes.filter { $0.id != selected.id })
-        var single = state
-        single.panes = [selected]
-        single.selectedPaneId = selected.id
-
-        return .group(id: id, state: single)
-      case let .split(orientation, children):
-        return .split(
-          orientation: orientation,
-          children: children.map {
-            SplitChild(fraction: $0.fraction, node: selectedOnly($0.node))
-          })
-      }
-    }
-
-    let visible = WorkspaceTab(root: selectedOnly(legacy))
-    let lifted = overflow.map { pane -> WorkspaceTab in
-      var state = PaneGroupState()
-      state.panes = [pane]
-      state.selectedPaneId = pane.id
-
-      return WorkspaceTab(root: .leaf(state))
-    }
-    return [visible] + lifted
   }
 }

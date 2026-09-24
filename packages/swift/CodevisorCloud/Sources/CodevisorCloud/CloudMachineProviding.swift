@@ -8,6 +8,10 @@ import Foundation
 public protocol CloudMachineProviding: AnyObject {
   var isCloudSignedIn: Bool { get }
   var cloudMachines: [CloudMachine] { get }
+  /// Whether `cloudMachines` came from a network fetch in this process
+  /// rather than the launch cache. Only a verified list may be treated as
+  /// proof that a machine no longer exists.
+  var isCloudRosterVerified: Bool { get }
   /// A server config whose transports tunnel through the cloud relay to
   /// this machine — nil when the relay isn't available (signed out).
   func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig?

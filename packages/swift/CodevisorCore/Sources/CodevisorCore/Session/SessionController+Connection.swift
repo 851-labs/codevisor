@@ -68,7 +68,7 @@ extension SessionController {
     }
     // A first send is connecting on its own path; it publishes the model.
     guard !isFirstSendConnecting else { return }
-    if let model {
+    if let model, model !== cachedTranscriptModel {
       // A cached chat re-binds without reconnecting. If its turn has
       // been quiet past the stall window, re-verify against durable
       // history on re-entry — "navigate away and back" then heals a
@@ -76,7 +76,7 @@ extension SessionController {
       await model.reconcileIfStalled()
       return
     }
-    guard model == nil, !isConnecting, let serverSession else { return }
+    guard model == nil || model === cachedTranscriptModel, !isConnecting, let serverSession else { return }
     // A worktree draft has no cwd until the worktree is created on first
     // send; connecting now would pin the agent to the project folder.
     guard !wantsNewWorktree || sessionCwdOverride != nil else { return }
@@ -386,15 +386,37 @@ extension SessionController {
       case let .workspace(id, _): id
       case .newWorkspace: nil
       }
-    if let opened = try await serverClient.openSession(
+    let transport: ServerSessionTransport
+    let model: SessionModel
+    let showsCachedHistory: Bool
+    if let cached = cachedTranscriptModel, cached === self.model {
+      // An earlier attempt already shows this chat's cached page; keep it.
+      transport = cached.transport
+      model = cached
+      showsCachedHistory = true
+    } else {
+      transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
+      model = makeServerSessionModel(transport: transport, harnessId: harnessId, sessionId: session.id)
+      // A chat opened before shows its last page from this device at once
+      // -- offline too -- and updates in place when the server's arrives.
+      showsCachedHistory = showCachedTranscript(
+        in: model, transport: transport, sessionId: session.id, serverId: scopedServerId)
+    }
+    if showsCachedHistory, loadsExistingHistory {
+      finishInitialHistoryLoading(sessionId: session.id, outcome: "cached")
+    }
+    if let opened = try await serverClient.openSessionReturningData(
       session,
       project: project,
       workspaceId: workspaceId,
       transcriptLimit: SessionModel.initialTranscriptPageSize
     ) {
-      session = try opened.session.chatSession(serverId: scopedServerId)
-      preloadedTranscript = opened.transcript
-      persistedRuntime = opened.runtime
+      session = try opened.response.session.chatSession(serverId: scopedServerId)
+      preloadedTranscript = opened.response.transcript
+      persistedRuntime = opened.response.runtime
+      if let data = opened.data {
+        transcriptCache?.store(data, machineId: scopedServerId, sessionId: session.id)
+      }
     } else {
       throw CodevisorServerClientError.invalidResponse
     }
@@ -406,47 +428,14 @@ extension SessionController {
       onAgentSessionCreated?(agentSessionId)
     }
 
-    let transport = ServerSessionTransport(client: serverClient, sessionId: session.id)
-    // Build the composer from saved option definitions. Opening history
-    // never starts the provider; explicit runtime actions validate selections.
-    let initialConfigOptions =
-      configOptionsByHarness[harnessId]
-      ?? configCache.options(forHarness: harnessId, onServer: project.serverId)
-    let model = SessionModel(
-      serverTransport: transport,
-      sessionId: session.id.uuidString,
-      modeState: modeStateByHarness[harnessId],
-      configOptions: initialConfigOptions
-    )
-    model.onTurnEnded = { [weak self, weak model] in
-      self?.liveTurnEndRevision &+= 1
-      if let model { self?.captureTurnEnded(model) }
-      self?.noteTurnEndedForPlanApproval()
-      self?.onTurnEnded?()
+    if showsCachedHistory {
+      await model.loadHistoryReplacingCachedDisplay(preloaded: preloadedTranscript.map(transport.historyPage(from:)))
+      cachedTranscriptModel = nil
+    } else {
+      await model.loadHistoryForInitialDisplay(
+        preloaded: preloadedTranscript.map(transport.historyPage(from:))
+      )
     }
-    model.onPromptAccepted = { [weak self, weak model] attachmentCount, isQueued in
-      self?.configurationAdjustmentMessage = nil
-      self?.captureMessageSent(model: model, attachmentCount: attachmentCount, isQueued: isQueued)
-    }
-    model.onLocalUserMessageAppended = { [weak self] messageID in
-      guard let self, pendingUserMessage?.id == messageID else { return }
-      pendingUserMessage = nil
-      // Ordinary sends already own a request before their optimistic row
-      // is published. Keep this as a fallback for any model attachment
-      // race; a first send retains its existing optimistic destination.
-      guard userSendAnimationRequest?.messageID != messageID else { return }
-      requestUserSendAnimation(for: messageID, destination: .activeTurn)
-    }
-    model.onQueuedPromptPromoted = { [weak self] messageID in
-      guard let messageID else { return }
-      self?.requestUserSendAnimation(for: messageID, destination: .activeTurn)
-    }
-    model.onPlanApprovalChanged = { [weak self] required in
-      self?.pendingPlanApproval = required
-    }
-    await model.loadHistoryForInitialDisplay(
-      preloaded: preloadedTranscript.map(transport.historyPage(from:))
-    )
     pendingPlanApproval = model.pendingPlanApproval
     if loadsExistingHistory {
       finishInitialHistoryLoading(sessionId: session.id, outcome: "ready")

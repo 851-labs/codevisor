@@ -27,6 +27,30 @@ public protocol CloudCredentialStore: Sendable {
   /// is not trusted for key continuity.
   func pinnedMachineKeys() throws -> [String: String]
   func savePinnedMachineKeys(_ pins: [String: String]) throws
+  /// The last machine list a network refresh confirmed, so launch can show
+  /// cloud machines before any request answers. Best-effort by design: a
+  /// missing or unreadable roster only costs the instant launch, never the
+  /// session, so these never throw.
+  func loadRoster() -> CachedRoster?
+  func saveRoster(_ roster: CachedRoster)
+  func clearRoster()
+}
+
+/// A device-local snapshot of the signed-in account's machine list. It is a
+/// display cache, not an authority: the controller marks it unverified until
+/// a fresh fetch succeeds, and ignores it when it was taken against a
+/// different cloud server than the one currently selected.
+public struct CachedRoster: Codable, Equatable, Sendable {
+  /// `absoluteString` of the cloud server the roster was fetched from.
+  public var serverURL: String
+  public var userEmail: String?
+  public var machines: [CloudMachine]
+
+  public init(serverURL: String, userEmail: String?, machines: [CloudMachine]) {
+    self.serverURL = serverURL
+    self.userEmail = userEmail
+    self.machines = machines
+  }
 }
 
 /// The app device's relay identity: a stable device id plus static X25519
@@ -90,17 +114,31 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
   private static let machineKeyPinsAccount = "machine-key-pins"
 
   private let values: KeychainValueStore
+  // The roster is not a secret and is read synchronously on the launch path,
+  // so it lives in preferences (an in-process cache) rather than paying for
+  // a Keychain round trip before the first frame. Scoped by service so the
+  // dev and production app variants never read each other's machines.
+  private let rosterDefaults: UserDefaults
+  private let rosterKey: String
 
   public convenience init() {
     self.init(service: KeychainCredentialServices.cloud)
   }
 
-  public init(service: String) {
+  public init(service: String, rosterDefaults: UserDefaults = .standard) {
     values = KeychainValueStore(service: service)
+    self.rosterDefaults = rosterDefaults
+    rosterKey = Self.rosterKey(service: service)
   }
 
-  public init(service: String, operations: KeychainOperations) {
+  public init(service: String, operations: KeychainOperations, rosterDefaults: UserDefaults = .standard) {
     values = KeychainValueStore(service: service, operations: operations)
+    self.rosterDefaults = rosterDefaults
+    rosterKey = Self.rosterKey(service: service)
+  }
+
+  private static func rosterKey(service: String) -> String {
+    "cloud-roster-v1.\(service)"
   }
 
   public func token() throws -> String? {
@@ -161,6 +199,22 @@ public final class KeychainCloudCredentialStore: CloudCredentialStore, @unchecke
     try write(String(decoding: data, as: UTF8.self), account: Self.machineKeyPinsAccount)
   }
 
+  public func loadRoster() -> CachedRoster? {
+    guard let data = rosterDefaults.data(forKey: rosterKey) else { return nil }
+    // An undecodable roster (older schema, corruption) is just a cold
+    // launch; the next verified refresh overwrites it.
+    return try? JSONDecoder().decode(CachedRoster.self, from: data)
+  }
+
+  public func saveRoster(_ roster: CachedRoster) {
+    guard let data = try? JSONEncoder().encode(roster) else { return }
+    rosterDefaults.set(data, forKey: rosterKey)
+  }
+
+  public func clearRoster() {
+    rosterDefaults.removeObject(forKey: rosterKey)
+  }
+
   private func read(account: String) throws -> String? {
     try mapFailure { try values.value(forAccount: account) }
   }
@@ -189,10 +243,12 @@ public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecke
   private var storedAppDeviceId: String?
   private var storedAppSecretKey: Data?
   private var storedMachineKeyPins: [String: String] = [:]
+  private var storedRoster: CachedRoster?
 
-  public init(token: String? = nil, serverURL: URL? = nil) {
+  public init(token: String? = nil, serverURL: URL? = nil, roster: CachedRoster? = nil) {
     storedToken = token
     storedServerURL = serverURL
+    storedRoster = roster
   }
 
   public func token() throws -> String? {
@@ -237,5 +293,17 @@ public final class InMemoryCloudCredentialStore: CloudCredentialStore, @unchecke
 
   public func savePinnedMachineKeys(_ pins: [String: String]) throws {
     lock.withLock { storedMachineKeyPins = pins }
+  }
+
+  public func loadRoster() -> CachedRoster? {
+    lock.withLock { storedRoster }
+  }
+
+  public func saveRoster(_ roster: CachedRoster) {
+    lock.withLock { storedRoster = roster }
+  }
+
+  public func clearRoster() {
+    lock.withLock { storedRoster = nil }
   }
 }

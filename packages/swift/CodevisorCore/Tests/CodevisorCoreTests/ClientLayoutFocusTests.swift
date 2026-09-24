@@ -40,7 +40,7 @@ struct ClientLayoutFocusTests {
       }
       original.selectedCenterTabId = original.centerTabs[0].id
     }
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let repository = NavigationFixture().workspaces
     var updated = original
     // Model a batch of agent-created threads. Each committed result must
     // preserve selection; there is no follow-up navigation to restore it.

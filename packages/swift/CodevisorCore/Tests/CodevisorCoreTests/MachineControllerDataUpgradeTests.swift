@@ -23,10 +23,7 @@ struct MachineControllerDataUpgradeTests {
     let clock = TestClock()
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       preparationSleep: clock.sleep
     )
@@ -69,10 +66,7 @@ struct MachineControllerDataUpgradeTests {
     fake.configureMigration(reports: [], failure: "disk full", immediately: true)
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake }
     )
     defer { controller.stopEventSync() }

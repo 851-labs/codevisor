@@ -8,11 +8,7 @@ extension WorkspaceSyncModel {
     var ownerChatSessionId: UUID?
   }
 
-  static func panePublicationKey(serverId: String, paneId: UUID) -> String {
-    "workspace-pane-published-v1:\(serverId):\(paneId.uuidString.lowercased())"
-  }
-
-  static func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
+  nonisolated static func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
     ServerWorkspace(
       id: workspace.id.uuidString,
       serverId: workspace.serverId,
@@ -27,7 +23,7 @@ extension WorkspaceSyncModel {
     )
   }
 
-  static func serverPane(
+  nonisolated static func serverPane(
     from pane: PaneDescriptorState,
     workspaceId: UUID,
     createdAt: Date
@@ -103,7 +99,7 @@ extension WorkspaceSyncModel {
     )
   }
 
-  static func descriptor(from record: ServerWorkspacePane) -> PaneDescriptorState? {
+  nonisolated static func descriptor(from record: ServerWorkspacePane) -> PaneDescriptorState? {
     guard let id = UUID(uuidString: record.id) else { return nil }
     if record.providerId.hasPrefix("plugin:") {
       let pluginId = String(record.providerId.dropFirst("plugin:".count))

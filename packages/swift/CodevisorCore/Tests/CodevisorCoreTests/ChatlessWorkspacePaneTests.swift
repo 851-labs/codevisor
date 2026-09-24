@@ -33,8 +33,10 @@ struct ChatlessWorkspacePaneTests {
     #expect(state.panes[0].terminalKey == state.panes[0].id.uuidString)
   }
 
+  @MainActor
   @Test func workspaceKeyedPanesPersistWithoutASessionKey() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    // Saving a workspace the server doesn't have yet makes it a draft.
+    let repository = NavigationFixture().workspaces
     var space = workspace(centerTree: .leaf(PaneGroupState.centerInitialWithoutChat()))
     let leafId = space.centerTree.allGroups[0].id
     repository.save(space)

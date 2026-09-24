@@ -1,17 +1,21 @@
 import Foundation
 import Testing
+
 @testable import CodevisorCore
 
 /// How `ensureWorkspace` honors the server's session→workspace assignment:
-/// join a known workspace, mint under the server's identity, and re-home a
-/// chat this client minted a sibling for before the assignment was known.
+/// the server's index wins, a known assigned workspace is joined, and only a
+/// chat nobody placed gets a draft -- under the server's identity when the
+/// server already named it.
+@MainActor
 @Suite("Workspace assignment routing")
 struct WorkspaceAssignmentRoutingTests {
+  private let projectId = UUID()
+
   private func seed(
     sessionId: UUID = UUID(),
     initialName: String = "Example Project",
     serverId: String = "local",
-    projectId: UUID = UUID(),
     root: String? = "/tmp/checkout",
     assignedWorkspaceId: UUID? = nil
   ) -> WorkspaceSessionSeed {
@@ -25,123 +29,123 @@ struct WorkspaceAssignmentRoutingTests {
     )
   }
 
-  @Test("A server-assigned chat joins its workspace instead of minting a sibling")
-  func assignedChatJoinsExistingWorkspace() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-    let host = repository.ensureWorkspace(for: seed(root: "/tmp/roquefort"), legacyGroups: nil)
-    let selectedTab = host.selectedCenterTabId
+  /// A server workspace holding one chat, installed from a snapshot.
+  private func serverWorkspace(
+    serverId: String = "local", chat: UUID = UUID(), isArchived: Bool = false
+  ) -> (Workspace, ChatSession) {
+    let workspace = Workspace(
+      name: "Host", rootDirectory: "/tmp/roquefort", serverId: serverId, projectId: projectId,
+      centerTabs: [WorkspaceTab(root: .leaf(.centerInitial(sessionId: chat, paneId: chat)))],
+      isArchived: isArchived, isServerSynced: true)
+    return (workspace, ChatSession(id: chat, projectId: projectId, serverId: serverId))
+  }
+
+  @Test("A server-assigned chat joins its workspace instead of minting a draft")
+  func assignedChatJoinsExistingWorkspace() async throws {
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
+    let (host, chat) = serverWorkspace()
+    await navigation.install(sessions: [chat], workspaces: [host])
+    let selectedTab = try #require(repository.workspace(id: host.id)?.selectedCenterTabId)
     let newcomer = seed(root: "/tmp/roquefort", assignedWorkspaceId: host.id)
 
     let resolved = repository.ensureWorkspace(for: newcomer, legacyGroups: nil)
 
     #expect(resolved.id == host.id)
+    #expect(resolved.isServerSynced)
     #expect(repository.loadAll().count == 1)
-    #expect(repository.workspaceId(forSession: newcomer.sessionId) == host.id)
-    #expect(resolved.chatSessionIds.contains(newcomer.sessionId))
+    #expect(navigation.store.layouts.drafts.isEmpty)
     // Joining never steals the user's place in the host workspace.
     #expect(resolved.selectedCenterTabId == selectedTab)
-    // Re-ensuring routes through the index and adds nothing.
-    let again = repository.ensureWorkspace(for: newcomer, legacyGroups: nil)
-    #expect(again.centerTabs.count == resolved.centerTabs.count)
+    // The chat's pane arrives with the server's copy of the assignment.
+    var assigned = serverSession(from: ChatSession(id: newcomer.sessionId, projectId: projectId))
+    assigned.workspaceId = host.id.uuidString
+    let pane = ServerWorkspacePane(
+      id: newcomer.sessionId.uuidString, workspaceId: host.id.uuidString, providerId: "codevisor",
+      paneType: "chat", title: "Chat", resourceKind: "session", resourceId: newcomer.sessionId.uuidString,
+      createdAt: "2026-06-30T00:00:00.000Z")
+    _ = await navigation.store.apply(.fixture(cursor: 2, sessions: [assigned], panes: [pane]), machineId: "local")
+    #expect(repository.workspaceId(forSession: newcomer.sessionId) == host.id)
+    #expect(repository.workspace(id: host.id)?.chatSessionIds.contains(newcomer.sessionId) == true)
+    #expect(repository.ensureWorkspace(for: newcomer, legacyGroups: nil).id == host.id)
+    #expect(repository.loadAll().count == 1)
   }
 
-  @Test("An assignment to an unknown workspace mints under the server's identity")
+  @Test("An assignment to a workspace this device hasn't seen drafts it under the server's identity")
   func assignedChatMintsWithServerIdentity() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
     let serverWorkspaceId = UUID()
-    let assigned = seed(
-      initialName: "roquefort", root: "/tmp/roquefort", assignedWorkspaceId: serverWorkspaceId
-    )
+    let assigned = seed(initialName: "roquefort", root: "/tmp/roquefort", assignedWorkspaceId: serverWorkspaceId)
 
     let minted = repository.ensureWorkspace(for: assigned, legacyGroups: nil)
 
     #expect(minted.id == serverWorkspaceId)
-    #expect(minted.isServerSynced == false)
+    #expect(minted.isDraft)
+    #expect(minted.pane(containingChat: assigned.sessionId)?.id == assigned.sessionId)
     #expect(repository.workspaceId(forSession: assigned.sessionId) == serverWorkspaceId)
+    #expect(navigation.store.layouts.draft(id: serverWorkspaceId) != nil)
   }
 
-  @Test("Assignments to archived or other-machine workspaces mint a fresh workspace")
-  func assignedChatIgnoresIneligibleWorkspaces() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-    var archived = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
-    archived.isArchived = true
-    repository.save(archived)
-    let remote = repository.ensureWorkspace(
-      for: seed(initialName: "Remote", serverId: "cloud:a", root: "/tmp/remote"),
-      legacyGroups: nil
-    )
+  @Test("An assignment to an archived workspace returns it; one to another machine's drafts a fresh one")
+  func assignedChatEligibility() async throws {
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
+    let (archived, archivedChat) = serverWorkspace(isArchived: true)
+    let (remote, remoteChat) = serverWorkspace(serverId: "cloud:a")
+    await navigation.install(sessions: [archivedChat], workspaces: [archived])
+    await navigation.install(machineId: "cloud:a", sessions: [remoteChat], workspaces: [remote])
 
     let intoArchived = repository.ensureWorkspace(
-      for: seed(initialName: "A", assignedWorkspaceId: archived.id),
-      legacyGroups: nil
-    )
+      for: seed(initialName: "A", assignedWorkspaceId: archived.id), legacyGroups: nil)
     let intoRemote = repository.ensureWorkspace(
-      for: seed(initialName: "B", root: "/tmp/remote", assignedWorkspaceId: remote.id),
-      legacyGroups: nil
-    )
+      for: seed(initialName: "B", root: "/tmp/remote", assignedWorkspaceId: remote.id), legacyGroups: nil)
 
-    #expect(intoArchived.id != archived.id)
+    // Reopening a chat in an archived workspace is the caller's revival.
+    #expect(intoArchived.id == archived.id)
     #expect(intoRemote.id != remote.id)
-    #expect(repository.workspace(id: archived.id)?.isArchived == true)
-    #expect(repository.workspace(id: remote.id)?.chatSessionIds.count == 1)
-    #expect(repository.loadAll().count == 4)
+    #expect(intoRemote.isDraft)
+    #expect(repository.workspace(id: remote.id)?.chatSessionIds == [remoteChat.id])
+    #expect(repository.workspace(id: remote.id)?.isServerSynced == true)
+    #expect(repository.loadAll().count == 3)
   }
 
-  @Test("A minted workspace re-homes its chat once the server names a sibling")
-  func mintedWorkspaceRehomesToAssignedSibling() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-    let host = repository.ensureWorkspace(for: seed(root: "/tmp/roquefort"), legacyGroups: nil)
-    // The chat arrived before its assignment was known: a sibling was
-    // minted at the same directory and the user opened a terminal in it.
+  @Test("Once the server places a drafted chat elsewhere, the chat routes there")
+  func draftedChatFollowsTheServerAssignment() async throws {
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
+    let (host, hostChat) = serverWorkspace()
+    await navigation.install(sessions: [hostChat], workspaces: [host])
+    // The chat arrived before its assignment was known: a draft was made.
     let raced = seed(root: "/tmp/roquefort")
-    var minted = repository.ensureWorkspace(for: raced, legacyGroups: nil)
-    let terminal = PaneDescriptorState(
-      id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "term-1"
-    )
-    _ = minted.upsertCenterPane(terminal)
-    repository.save(minted)
-    #expect(repository.loadAll().count == 2)
+    let draft = repository.ensureWorkspace(for: raced, legacyGroups: nil)
+    #expect(draft.isDraft)
+    #expect(repository.workspaceId(forSession: raced.sessionId) == draft.id)
 
-    let assigned = seed(
-      sessionId: raced.sessionId, root: raced.rootDirectory, assignedWorkspaceId: host.id
-    )
-    let resolved = repository.ensureWorkspace(for: assigned, legacyGroups: nil)
+    var assigned = serverSession(from: ChatSession(id: raced.sessionId, projectId: projectId))
+    assigned.workspaceId = host.id.uuidString
+    _ = await navigation.store.apply(.fixture(cursor: 2, sessions: [assigned]), machineId: "local")
 
-    #expect(resolved.id == host.id)
-    #expect(repository.loadAll().map(\.id) == [host.id])
     #expect(repository.workspaceId(forSession: raced.sessionId) == host.id)
-    #expect(resolved.chatSessionIds.contains(raced.sessionId))
-    #expect(resolved.allPanes.contains { $0.id == terminal.id })
+    #expect(repository.ensureWorkspace(for: raced, legacyGroups: nil).id == host.id)
   }
 
-  @Test("Server-confirmed and multi-chat workspaces keep their routing despite a conflicting assignment")
-  func confirmedRoutingWinsOverAssignment() {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-    let host = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
+  @Test("The server's index wins over a conflicting seed assignment")
+  func indexWinsOverAssignment() async throws {
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
+    let (host, hostChat) = serverWorkspace()
+    let (owner, ownerChat) = serverWorkspace()
+    await navigation.install(sessions: [hostChat, ownerChat], workspaces: [host, owner])
+    let drafted = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
+    let draftedChat = try #require(drafted.chatSessionIds.first)
 
-    var synced = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
-    synced.isServerSynced = true
-    repository.save(synced)
-    let syncedChat = synced.chatSessionIds[0]
-
-    let shared = repository.ensureWorkspace(for: seed(), legacyGroups: nil)
-    let sharedChat = shared.chatSessionIds[0]
-    var sharedWithSibling = shared
-    sharedWithSibling.centerTabs.append(
-      WorkspaceTab(root: .leaf(.centerInitial(sessionId: UUID())))
-    )
-    repository.save(sharedWithSibling)
-
-    for (chat, workspace) in [(syncedChat, synced), (sharedChat, shared)] {
-      let conflicting = seed(
-        sessionId: chat, initialName: "X", projectId: workspace.projectId,
-        root: workspace.rootDirectory, assignedWorkspaceId: host.id
-      )
-      let resolved = repository.ensureWorkspace(for: conflicting, legacyGroups: nil)
-      #expect(resolved.id == workspace.id)
-      #expect(repository.workspaceId(forSession: chat) == workspace.id)
+    for (chat, workspace) in [(ownerChat.id, owner.id), (draftedChat, drafted.id)] {
+      let conflicting = seed(sessionId: chat, initialName: "X", assignedWorkspaceId: host.id)
+      #expect(repository.ensureWorkspace(for: conflicting, legacyGroups: nil).id == workspace)
+      #expect(repository.workspaceId(forSession: chat) == workspace)
     }
     #expect(repository.loadAll().count == 3)
-    #expect(repository.workspace(id: host.id)?.chatSessionIds.count == 1)
+    #expect(repository.workspace(id: host.id)?.chatSessionIds == [hostChat.id])
   }
 }

@@ -1,22 +1,6 @@
 import Foundation
 
 extension MachineController {
-  /// A consumed event must not lose its change when its follow-up HTTP request
-  /// fails. Keep the stream alive and retry the complete navigation snapshot.
-  func refreshWorkspacesAfterEvent(serverId: String, client: any CodevisorServerClienting) async {
-    guard let workspaceSync else { return }
-    let result = await workspaceSync.refreshFromServer(serverId: serverId, client: client)
-    guard !Task.isCancelled else { return }
-    switch result {
-    case .committed:
-      break
-    case .superseded:
-      scheduleNavigationRefresh(serverId: serverId, client: client)
-    case let .failed(message):
-      navigationSynchronizationFailed(message, serverId: serverId, client: client)
-    }
-  }
-
   func navigationSynchronizationFailed(
     _ message: String, serverId: String, client: any CodevisorServerClienting
   ) {

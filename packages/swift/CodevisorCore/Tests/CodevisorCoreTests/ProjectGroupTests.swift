@@ -27,14 +27,9 @@ struct ProjectGroupTests {
   }
 
   private func model(_ projects: [Project], sessions: [ChatSession] = []) -> ProjectListModel {
-    let projectRepository = DefaultProjectRepository(store: InMemoryStore())
-    projectRepository.save(projects)
-    let sessionRepository = DefaultSessionRepository(store: InMemoryStore())
-    sessionRepository.save(sessions)
-    return ProjectListModel(
-      projectRepository: projectRepository,
-      sessionRepository: sessionRepository
-    )
+    let fixture = NavigationFixture()
+    fixture.seed(projects: projects, sessions: sessions)
+    return fixture.projectList
   }
 
   @Test("Projects with the same repo key on different machines form one group")

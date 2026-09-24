@@ -29,24 +29,22 @@ extension HomeView {
     }
   }
 
-  /// Cached records stay persisted for recovery, but Home only presents
-  /// content backed by an authoritative current snapshot.
-  var currentNavigationMachineIDs: Set<String> {
-    Set(
-      machines.allMachines.compactMap { machine in
-        machines.navigationSyncStateByMachineId[machine.id] == .current
-          ? machine.id
-          : nil
-      }
-    )
+  /// Machines this device knows about. Their cached workspaces show
+  /// immediately at launch; records from a machine that has since been
+  /// removed do not.
+  var knownMachineIDs: Set<String> {
+    Set(machines.allMachines.map(\.id))
   }
 
-  /// True once ANY machine has completed a sync this launch — enough to
-  /// honestly claim "there are no chats" instead of "still loading".
-  var anyMachineSynced: Bool {
-    machines.allMachines.contains { machine in
-      machines.navigationSyncStateByMachineId[machine.id] == .current
-    }
+  /// What Home shows, from what the device already knows: cached content
+  /// right away, a spinner only when nothing is cached anywhere, and
+  /// "No Workspaces" only once every machine has said so.
+  var launch: NavigationPresentation.Launch {
+    environment.navigationLaunch(hasVisibleContent: !sidebarSections.isEmpty)
+  }
+
+  var syncIndicator: NavigationPresentation.SyncIndicator {
+    environment.navigationSyncIndicator
   }
 
   /// The machines that failed, named — "your machines" while none have.

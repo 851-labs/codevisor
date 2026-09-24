@@ -104,7 +104,7 @@ public struct ServerFileMetadata: Decodable, Equatable, Sendable {
   }
 }
 
-public struct ServerSessionUsage: Decodable, Equatable, Sendable {
+public struct ServerSessionUsage: Codable, Equatable, Sendable {
   public var used: Double?
   public var size: Double?
   public var inputTokens: Double?
@@ -163,7 +163,7 @@ public struct ServerHarnessUsageLimits: Decodable, Equatable, Sendable {
   public var fetchedAt: String
 }
 
-public struct ServerSession: Decodable, Equatable, Sendable {
+public struct ServerSession: Codable, Equatable, Sendable {
   public var id: String
   public var projectId: String
   public var serverId: String

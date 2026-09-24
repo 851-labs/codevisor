@@ -23,10 +23,7 @@ struct MachineStatusFeaturesTests {
     )
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { machine in
         machine.id == remote.id ? fake : SyncFakeServerClient(projects: [], sessions: [])
       }
@@ -65,10 +62,7 @@ struct MachineStatusFeaturesTests {
     let store = InMemoryStore()
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
     )
     controller.connection(for: CodevisorMachine.local.id).status = MachineStatus(

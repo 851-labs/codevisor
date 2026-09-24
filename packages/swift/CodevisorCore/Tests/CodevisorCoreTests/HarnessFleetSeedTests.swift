@@ -175,10 +175,7 @@ struct HarnessFleetSeedTests {
     )
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
     )
     return ConfigSync(machines: controller, store: store)
@@ -190,8 +187,6 @@ struct HarnessFleetSeedTests {
     let settings = AppSettingsModel(store: InMemoryStore())
     if onboarded { settings.completeOnboarding(importExternalSessions: false) }
     return AppEnvironment(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore()),
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: settings,
       machineStore: machineStore,

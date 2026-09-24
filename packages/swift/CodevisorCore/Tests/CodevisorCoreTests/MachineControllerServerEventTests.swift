@@ -5,7 +5,12 @@ import ACPKit
 @testable import CodevisorCore
 
 @MainActor
-extension MachineControllerTests {
+@Suite("MachineController server events", .timeLimit(.minutes(1)))
+struct MachineControllerServerEventTests {
+  private func waitForSync(_ predicate: () -> Bool) async throws {
+    await awaitObserved(predicate)
+  }
+
   @Test("Server events keep projects and sessions in sync across clients")
   func eventSyncRefreshesAndRemoves() async throws {
     let projectId = UUID()
@@ -31,17 +36,16 @@ extension MachineControllerTests {
       ],
       sessions: []
     )
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let navigation = NavigationFixture()
+    let projectList = navigation.projectList
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
+      workspaceSync: navigation.workspaceSync,
       clientFactory: { _ in fake }
     )
 
-    // Establish the snapshot boundary before subscribing.
+    // Establish the snapshot boundary; the event stream follows from it.
     await controller.refreshNavigationState(for: "local")
     fake.setSessions([
       ServerSession(
@@ -103,13 +107,12 @@ extension MachineControllerTests {
   @Test("Plugin events bridge list invalidation and per-plugin reloads")
   func pluginEventBridging() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let navigation = NavigationFixture()
+    let projectList = navigation.projectList
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
+      workspaceSync: navigation.workspaceSync,
       clientFactory: { _ in fake }
     )
     var stateChanges: [String] = []
@@ -201,15 +204,10 @@ extension MachineControllerTests {
           createdAt: "2026-06-30T00:00:00.000Z")
       }
     )
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-    let workspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore())
-    let workspaceSync = WorkspaceSyncModel(
-      repository: workspaceRepository,
-      projectList: projectList
-    )
+    let navigation = NavigationFixture()
+    let projectList = navigation.projectList
+    let workspaceRepository = navigation.workspaces
+    let workspaceSync = navigation.workspaceSync
     let controller = MachineController(
       store: InMemoryStore(),
       projectList: projectList,
@@ -217,10 +215,9 @@ extension MachineControllerTests {
       clientFactory: { _ in fake }
     )
 
-    // Production establishes one authoritative snapshot before opening
-    // the live-only event stream.
+    // Production establishes one authoritative snapshot, then follows the
+    // event stream from its cursor.
     await controller.refreshNavigationState(for: "local")
-    controller.startEventSync(for: "local")
     fake.emit(kind: "workspace.updated", subjectId: workspaceId.uuidString)
     try await waitForSync {
       _ = workspaceSync.revision

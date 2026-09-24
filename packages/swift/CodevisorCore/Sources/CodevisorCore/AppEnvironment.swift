@@ -46,6 +46,12 @@ public final class AppEnvironment {
   /// app restarts.
   public let paneGroups: any PaneGroupRepository
   public let workspaces: any WorkspaceRepository
+  /// The one owner of navigation state: cached server state per machine,
+  /// the outbox of pending changes, and this device's layouts.
+  public let navigationStore: NavigationStore
+  /// The latest page of recently opened chats, on disk. Nil in previews and
+  /// tests, which must not write to the user's caches.
+  public let transcriptCache: TranscriptPageCache?
   /// Shared server-metadata reconciliation and navigation invalidation for
   /// both native platforms. Pane layout itself remains in `workspaces`.
   public let workspaceSync: WorkspaceSyncModel
@@ -72,8 +78,8 @@ public final class AppEnvironment {
   private let clientDataResetter: (any ClientDataResetting)?
 
   public init(
-    projectRepository: any ProjectRepository,
-    sessionRepository: any SessionRepository,
+    navigationPersistence: any PersistenceStore = InMemoryStore(),
+    transcriptCache: TranscriptPageCache? = nil,
     configCache: ConfigOptionCache,
     composerDefaults: ComposerDefaultsStore? = nil,
     composerDrafts: ComposerDraftStore? = nil,
@@ -81,9 +87,7 @@ public final class AppEnvironment {
     machineStore: any PersistenceStore = InMemoryStore(),
     machineCredentialStore: (any MachineCredentialStore)? = nil,
     cloudCredentialStore: (any CloudCredentialStore)? = nil,
-    legacyCacheMigrationStore: (any PersistenceStore)? = nil,
     paneGroups: any PaneGroupRepository = DefaultPaneGroupRepository(store: InMemoryStore()),
-    workspaces: any WorkspaceRepository = DefaultWorkspaceRepository(store: InMemoryStore()),
     localServer: (any LocalServerControlling)? = nil,
     appUpdate: AppUpdateModel? = nil,
     customThemesDirectory: URL? = nil,
@@ -92,6 +96,17 @@ public final class AppEnvironment {
   ) {
     self.harnessServiceOverride = harnessService
     self.paneGroups = paneGroups
+    self.transcriptCache = transcriptCache
+    // The old storage kept editable copies of server state; keep only the
+    // tab arrangements before the store opens (see NavigationStoreMigration).
+    NavigationStoreMigration.runIfNeeded(
+      store: navigationPersistence,
+      machineIds: [CodevisorMachine.local.id]
+        + (machineStore.loadData(forKey: "machines")
+          .flatMap { try? JSONDecoder().decode(MachineRegistry.self, from: $0) }?.remoteMachines.map(\.id) ?? []))
+    let navigationStore = NavigationStore(store: navigationPersistence)
+    self.navigationStore = navigationStore
+    let workspaces = ProjectedWorkspaceRepository(store: navigationStore)
     self.workspaces = workspaces
     self.theme = ThemeManager(
       settings: settings,
@@ -108,16 +123,15 @@ public final class AppEnvironment {
         currentBuildNumber: AppUpdateModel.bundleBuildNumber(),
         allowsAlphaUpdates: settings.alphaUpdatesEnabled
       )
-    self.projectList = ProjectListModel(
-      projectRepository: projectRepository,
-      sessionRepository: sessionRepository,
-      legacyMigrationStore: legacyCacheMigrationStore
-    )
+    self.projectList = ProjectListModel()
+    projectList.navigationStore = navigationStore
     self.attentionCoordinator = SessionAttentionCoordinator(projectList: projectList)
     self.workspaceSync = WorkspaceSyncModel(
       repository: workspaces,
       projectList: projectList
     )
+    workspaceSync.navigationStore = navigationStore
+    navigationStore.attach(projectList: projectList, repository: workspaces)
     self.configCache = configCache
     self.composerDefaults = composerDefaults ?? ComposerDefaultsStore(store: InMemoryStore())
     self.composerDrafts = composerDrafts ?? ComposerDraftStore(store: InMemoryStore())
@@ -191,24 +205,6 @@ public final class AppEnvironment {
     machines.onPluginStateChanged = { [weak self] in self?.pluginStateDidChange(onServer: $0) }
     machines.onMcpStateChanged = { [weak self] in self?.mcpStateDidChange(onServer: $0) }
     machines.onPluginUpdated = { [weak self] in self?.pluginDidUpdate(onServer: $0, pluginId: $1) }
-    // One-time split of pre-"1 workspace == 1 directory" workspaces whose
-    // chats live in different worktrees. Runs before any window renders
-    // (no workspace models are cached yet); sessions load synchronously
-    // in ProjectListModel.init, so the grouping inputs are complete.
-    // In-memory repositories (previews, iOS) no-op via the marker.
-    // Hide again the local-only workspaces an earlier release resurfaced.
-    // Runs before any window renders so the sidebar never shows them.
-    ClientOnlyArchiveRepairRevert.runIfNeeded(workspaces: workspaces)
-    WorkspaceWorktreeSplitMigration.runIfNeeded(
-      workspaces: workspaces,
-      sessions: projectList.sessions.map {
-        .init(sessionId: $0.id, worktreeName: $0.worktreeName, cwd: $0.cwd)
-      },
-      projectNames: Dictionary(
-        projectList.projects.map { ($0.id, $0.name) },
-        uniquingKeysWith: { first, _ in first }
-      )
-    )
     backfillComposerDefaultsFromPersistedState()
     // One-time compatibility bridge from the old app-wide machine
     // selection. From this point on the value lives only in the composer
@@ -425,11 +421,6 @@ public final class AppEnvironment {
     seedCapabilities: [ServerHarnessCapability] = [],
     hasOnboarded: Bool = true
   ) -> AppEnvironment {
-    let store = InMemoryStore()
-    let projectRepository = DefaultProjectRepository(store: store)
-    let sessionRepository = DefaultSessionRepository(store: InMemoryStore())
-    projectRepository.save(seedProjects)
-    sessionRepository.save(seedSessions)
     let settings = AppSettingsModel(store: InMemoryStore())
     let machineStore = InMemoryStore()
     if !seedMachines.isEmpty {
@@ -441,9 +432,7 @@ public final class AppEnvironment {
       settings.completeOnboarding(importExternalSessions: false)
       settings.setShareCrashReports(false)
     }
-    return AppEnvironment(
-      projectRepository: projectRepository,
-      sessionRepository: sessionRepository,
+    let environment = AppEnvironment(
       configCache: ConfigOptionCache(store: InMemoryStore()),
       settings: settings,
       machineStore: machineStore,
@@ -453,6 +442,15 @@ public final class AppEnvironment {
       // projects into a live dev server's database.
       machineClientFactory: { _ in PreviewServerClient(harnessCapabilities: seedCapabilities) }
     )
+    // Previews have no server; queued records show exactly as a real
+    // machine's would while they wait.
+    for project in seedProjects {
+      environment.navigationStore.enqueue(.upsertProject(project), machineId: project.serverId)
+    }
+    for session in seedSessions {
+      environment.navigationStore.enqueue(.upsertSession(session, workspaceId: nil), machineId: session.serverId)
+    }
+    return environment
   }
 
   public static let sampleProjects: [Project] = [

@@ -275,7 +275,7 @@ extension MachineController {
           connection.updatePhase = .idle
           markReady(for: machineId)
           await refreshStatus(for: machineId)
-          _ = await projectList.refreshFromServer(serverId: machineId, client: client)
+          await refreshNavigationState(for: machineId)
           resumeEventStream(for: machineId)
           return
         }
@@ -291,7 +291,7 @@ extension MachineController {
         guard refreshed?.updateAvailable != false else {
           // It landed on the target after all; the deadline just beat it.
           connection.updatePhase = .idle
-          _ = await projectList.refreshFromServer(serverId: machineId, client: client)
+          await refreshNavigationState(for: machineId)
           return
         }
         connection.updatePhase = .failed(

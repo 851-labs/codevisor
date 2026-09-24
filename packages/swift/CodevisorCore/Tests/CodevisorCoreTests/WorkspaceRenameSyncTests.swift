@@ -6,210 +6,216 @@ import Testing
 
 @MainActor
 struct WorkspaceRenameSyncTests {
-  @Test("A sidebar rename reaches the server without overwriting newer layout or archive state")
+  private func renamed(_ fixture: WorkspaceSyncFixture, _ name: String) -> Workspace {
+    var workspace = fixture.workspace
+    workspace.name = name
+    workspace.hasCustomName = true
+    return workspace
+  }
+
+  @Test("A sidebar rename reaches the server without touching layout or archive state")
   func publishesNameOnly() async throws {
-    let fixture = WorkspaceEventFixture()
-    var serverRecord = WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)
-    serverRecord.isArchived = true
-    _ = try await fixture.fake.upsertWorkspace(serverRecord)
-    // Newer layout is real content the server already knows about; an empty
-    // tab is only ever a placeholder and is retired once real panes exist.
-    var current = fixture.workspace
-    var newTabGroup = PaneGroupState()
-    let newTab = newTabGroup.addNewTabPane()
-    current.centerTabs.append(WorkspaceTab(root: .leaf(newTabGroup)))
-    fixture.repository.save(current)
-    _ = try await fixture.fake.upsertWorkspacePane(
-      WorkspaceSyncModel.serverPane(from: newTab, workspaceId: current.id, createdAt: current.createdAt))
-    var renamed = fixture.workspace
-    renamed.name = "Renamed on Mac"
-    renamed.hasCustomName = true
+    let fixture = await WorkspaceSyncFixture { workspace, _ in workspace.isArchived = true }
+    // This device's own ⌘T page: never on the server, and a rename must not lose it.
+    var layout = try #require(fixture.current)
+    var group = PaneGroupState()
+    group.addNewTabPane()
+    layout.centerTabs.append(WorkspaceTab(root: .leaf(group)))
+    fixture.repository.save(layout)
 
-    await fixture.sync.renameWorkspace(renamed, client: fixture.fake)?.value
+    fixture.sync.renameWorkspace(renamed(fixture, "Renamed on Mac"))
 
-    let local = try #require(fixture.repository.workspace(id: renamed.id))
-    #expect(local.name == renamed.name)
+    // Shown immediately, before any request.
+    let local = try #require(fixture.current)
+    #expect(local.name == "Renamed on Mac")
     #expect(local.hasCustomName)
-    #expect(local.centerTabs == current.centerTabs)
-    let remote = try #require(try await fixture.fake.listWorkspaces()?.first)
-    #expect(remote.name == renamed.name)
+    #expect(local.isArchived)
+    #expect(local.centerTabs == layout.centerTabs)
+
+    fixture.connect()
+    await fixture.settle()
+    let remote = try fixture.serverRecord(fixture.workspace.id)
+    #expect(remote.name == "Renamed on Mac")
     #expect(remote.hasCustomName)
     #expect(remote.isArchived)
-    #expect(fixture.sync.revision == 1)
+    #expect(fixture.server.requests == ["rename:Renamed on Mac"])
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == "Renamed on Mac")
+    #expect(fixture.current?.centerTabs == layout.centerTabs)
   }
 
-  @Test("A snapshot started before a confirmed rename cannot revert its name")
-  func supersedesEarlierSnapshot() async {
-    let fixture = WorkspaceEventFixture()
-    fixture.fake.setWorkspaces([WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)])
-    let started = TestSignal()
-    let release = TestSignal()
-    let snapshot = ServerWorkspaceSnapshot(
-      workspaces: [WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)], panes: []
-    )
-    fixture.fake.workspaceSnapshotHandler = {
-      if started.value == 0 {
-        started.signal()
-        await release.wait()
-        return snapshot
-      }
-      return nil
-    }
-    let refresh = Task {
-      await fixture.sync.refreshFromServer(serverId: fixture.serverId, client: fixture.fake)
-    }
-    defer { release.signal(); refresh.cancel() }
-    await started.wait()
-    var renamed = fixture.workspace
-    renamed.name = "New name"
-    renamed.hasCustomName = true
-    await fixture.sync.renameWorkspace(renamed, client: fixture.fake)?.value
-    release.signal()
+  @Test("A snapshot fetched before a rename was accepted cannot revert its name")
+  func supersedesEarlierSnapshot() async throws {
+    let fixture = await WorkspaceSyncFixture(connected: true)
+    let stale = fixture.server.current
+    let fetchedAt = Date(timeIntervalSinceNow: -60)
+    fixture.sync.renameWorkspace(renamed(fixture, "New name"))
+    await fixture.flush()
+    // Accepted, but its event hasn't arrived: the entry waits for it.
+    #expect(fixture.store.pendingIntents.count == 1)
 
-    #expect(await refresh.value == .superseded)
-    #expect(fixture.repository.workspace(id: renamed.id)?.name == renamed.name)
+    await fixture.store.replace(stale, machineId: fixture.serverId, requestedAt: fetchedAt, resetsStream: false)
+    #expect(fixture.current?.name == "New name")
+
+    await fixture.deliver()
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == "New name")
   }
 
-  @Test("A failed rename reports an error and retains the server name", arguments: [false, true])
-  func failedRename(lostAcknowledgement: Bool) async throws {
-    let fixture = WorkspaceEventFixture()
-    let reporter = ErrorReporter()
-    defer { reporter.dismissAll() }
-    let record = WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)
-    fixture.fake.setWorkspaces([record])
-    let fake = fixture.fake
-    fake.workspaceRenameHandler = { _, name, custom in
-      if lostAcknowledgement {
-        var saved = record
-        saved.name = name
-        saved.hasCustomName = custom
-        fake.setWorkspaces([saved])
+  @Test("A snapshot fetched after the rename was accepted retires it")
+  func laterSnapshotRetires() async throws {
+    let fixture = await WorkspaceSyncFixture(connected: true)
+    fixture.sync.renameWorkspace(renamed(fixture, "New name"))
+    await fixture.flush()
+    let result = await fixture.sync.refreshFromServer(serverId: fixture.serverId, client: fixture.server)
+    #expect(result == .committed)
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == "New name")
+  }
+
+  @Test("A refused rename falls back to the server's name")
+  func refusedRename() async throws {
+    let fixture = await WorkspaceSyncFixture(connected: true)
+    fixture.server.onRequest { _ in throw CodevisorServerClientError.httpStatus(422, "Invalid name") }
+    fixture.sync.renameWorkspace(renamed(fixture, "Refused"))
+    #expect(fixture.current?.name == "Refused")
+    await fixture.flush()
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == fixture.workspace.name)
+    #expect(try fixture.serverRecord(fixture.workspace.id).name == fixture.workspace.name)
+  }
+
+  @Test("A rename that loses its connection stays shown and is sent again", arguments: [false, true])
+  func retriesAfterTransportFailure(lostAcknowledgement: Bool) async throws {
+    let clock = TestClock()
+    let fixture = await WorkspaceSyncFixture(clock: clock, connected: true)
+    let server = fixture.server
+    let workspaceId = fixture.workspace.id
+    let failures = TestSignal()
+    server.onRequest { _ in
+      guard failures.value == 0 else { return }
+      failures.signal()
+      if lostAcknowledgement, var record = server.workspace(workspaceId) {
+        record.name = "Shared rename"
+        record.hasCustomName = true
+        server.commit(workspaces: [record])
       }
       throw URLError(.networkConnectionLost)
     }
-    defer { fake.workspaceRenameHandler = nil }
-    var renamed = fixture.workspace
-    renamed.name = "Shared rename"
-    renamed.hasCustomName = true
-    await fixture.sync.renameWorkspace(renamed, client: fake, errorReporter: reporter)?.value
+    fixture.sync.renameWorkspace(renamed(fixture, "Shared rename"))
+    await fixture.flush()
+    #expect(fixture.store.pendingIntents.count == 1)
+    #expect(fixture.current?.name == "Shared rename")
 
-    let expected = lostAcknowledgement ? renamed.name : fixture.workspace.name
-    #expect(fixture.repository.workspace(id: renamed.id)?.name == expected)
-    #expect(fake.workspaces.first?.name == expected)
-    #expect(reporter.entries.map(\.title) == ["Couldn't Rename Workspace"])
+    // The machine comes back: the same request is sent again, safely.
+    await fixture.settle()
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == "Shared rename")
+    #expect(try fixture.serverRecord(fixture.workspace.id).name == "Shared rename")
+    #expect(server.requests == ["rename:Shared rename", "rename:Shared rename"])
   }
 
-  @Test("Without a client a rename reports failure instead of saving locally")
-  func noClient() {
-    let fixture = WorkspaceEventFixture()
-    let reporter = ErrorReporter()
-    defer { reporter.dismissAll() }
-    var renamed = fixture.workspace
-    renamed.name = "Only here"
-    #expect(fixture.sync.renameWorkspace(renamed, client: nil, errorReporter: reporter) == nil)
-    #expect(fixture.repository.workspace(id: renamed.id) == fixture.workspace)
-    #expect(reporter.entries.count == 1)
+  @Test("Offline, a rename waits in the outbox and is sent when the machine is current")
+  func offlineRenameWaits() async throws {
+    let fixture = await WorkspaceSyncFixture()
+    fixture.sync.renameWorkspace(renamed(fixture, "Only here for now"))
+    #expect(fixture.current?.name == "Only here for now")
+    #expect(fixture.server.requests.isEmpty)
+    #expect(
+      fixture.store.pendingIntents.map(\.intent) == [
+        .renameWorkspace(workspaceId: fixture.workspace.id, name: "Only here for now", hasCustomName: true)
+      ])
+
+    fixture.connect()
+    await fixture.settle()
+    #expect(try fixture.serverRecord(fixture.workspace.id).name == "Only here for now")
   }
 
-  @Test("Renames are serialized and the most recent queued name wins")
-  func serializesRenames() async {
-    let fixture = WorkspaceEventFixture()
-    fixture.fake.setWorkspaces([WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)])
+  @Test("Blank names are ignored")
+  func blankNameIgnored() async {
+    let fixture = await WorkspaceSyncFixture()
+    #expect(fixture.sync.renameWorkspace(renamed(fixture, "   ")) == nil)
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.name == fixture.workspace.name)
+  }
+
+  @Test("Unsent renames coalesce behind the one in flight, and the latest name wins")
+  func serializesRenames() async throws {
+    let fixture = await WorkspaceSyncFixture(connected: true)
     let started = TestSignal()
     let release = TestSignal()
-    fixture.fake.workspaceRenameHandler = { _, name, _ in
-      if name == "First" { started.signal(); await release.wait() }
+    fixture.server.onRequest { name in
+      if name == "rename:First" {
+        started.signal()
+        await release.wait()
+      }
     }
-    var renamed = fixture.workspace
-    renamed.name = "First"
-    renamed.hasCustomName = true
-    let task = fixture.sync.renameWorkspace(renamed, client: fixture.fake)
-    defer { release.signal(); task?.cancel() }
+    fixture.sync.renameWorkspace(renamed(fixture, "First"))
     await started.wait()
-    #expect(fixture.repository.workspace(id: renamed.id)?.name == fixture.workspace.name)
-    renamed.name = "Intermediate"
-    fixture.sync.renameWorkspace(renamed, client: fixture.fake)
-    renamed.name = "Latest"
-    fixture.sync.renameWorkspace(renamed, client: fixture.fake)
-    #expect(fixture.fake.workspaceRenameNames == ["First"])
+    fixture.sync.renameWorkspace(renamed(fixture, "Intermediate"))
+    fixture.sync.renameWorkspace(renamed(fixture, "Latest"))
+    #expect(fixture.current?.name == "Latest")
+    #expect(fixture.store.pendingIntents.count == 2)
     release.signal()
-    await task?.value
-    #expect(fixture.fake.workspaceRenameNames == ["First", "Latest"])
-    #expect(fixture.fake.workspaces.first?.name == "Latest")
-    #expect(fixture.repository.workspace(id: renamed.id)?.name == "Latest")
+    await fixture.settle()
+    #expect(fixture.server.requests == ["rename:First", "rename:Latest"])
+    #expect(try fixture.serverRecord(fixture.workspace.id).name == "Latest")
+    #expect(fixture.current?.name == "Latest")
+    #expect(fixture.store.pendingIntents.isEmpty)
   }
 
-  @Test("A workspace is published before renaming its server record")
-  func publishesUnadoptedWorkspace() async {
-    let fixture = WorkspaceEventFixture()
-    var local = fixture.workspace
-    local.isServerSynced = false
-    local.centerTabs = [WorkspaceTab(root: .leaf(PaneGroupState()))]
-    fixture.repository.save(local)
-    var renamed = local
-    renamed.name = "Published"
+  @Test("A draft workspace is renamed on this device without a request")
+  func draftRenamesLocally() async throws {
+    let fixture = await WorkspaceSyncFixture(connected: true)
+    let draft = fixture.repository.ensureWorkspace(
+      for: WorkspaceSessionSeed(
+        sessionId: UUID(), initialName: "Draft", serverId: fixture.serverId, projectId: fixture.project.id,
+        rootDirectory: nil),
+      legacyGroups: nil)
+    #expect(draft.isDraft)
+    var renamed = draft
+    renamed.name = "Published later"
     renamed.hasCustomName = true
-    await fixture.sync.renameWorkspace(renamed, client: fixture.fake)?.value
-    #expect(fixture.fake.workspaces.first?.name == renamed.name)
-    #expect(fixture.repository.workspace(id: renamed.id)?.name == renamed.name)
-    #expect(fixture.repository.workspace(id: renamed.id)?.isServerSynced == true)
+    fixture.sync.renameWorkspace(renamed)
+    await fixture.flush()
+    #expect(fixture.repository.workspace(id: draft.id)?.name == "Published later")
+    #expect(fixture.store.layouts.draft(id: draft.id)?.name == "Published later")
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.server.requests.isEmpty)
   }
 
-  @Test("Authoritative names replace old local aliases in events and snapshots", arguments: [false, true])
-  func replacesLocalAlias(event: Bool) async {
-    let fixture = WorkspaceEventFixture()
-    var local = fixture.workspace
-    local.name = "Old device-only name"
-    local.hasCustomName = true
-    fixture.repository.saveWithSidebarOrder(local)
+  @Test("Server names replace this device's, from events and from snapshots", arguments: [false, true])
+  func serverNameWins(event: Bool) async throws {
+    let fixture = await WorkspaceSyncFixture()
+    var record = try fixture.serverRecord(fixture.workspace.id)
+    record.name = "Named elsewhere"
+    record.hasCustomName = true
+    fixture.server.commit(workspaces: [record])
     if event {
-      #expect(fixture.sync.applyServerWorkspaceEvent(fixture.event(isArchived: false), serverId: fixture.serverId))
+      await fixture.deliver()
     } else {
-      fixture.fake.setWorkspaces([WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)])
-      await fixture.sync.refreshFromServer(serverId: fixture.serverId, client: fixture.fake)
+      await fixture.sync.refreshFromServer(serverId: fixture.serverId, client: fixture.server)
     }
-    #expect(fixture.repository.workspace(id: local.id)?.name == fixture.workspace.name)
-    #expect(fixture.repository.workspace(id: local.id)?.hasCustomName == false)
+    #expect(fixture.current?.name == "Named elsewhere")
+    #expect(fixture.current?.hasCustomName == true)
   }
 
   @Test("A stale layout save cannot restore the name from before a remote rename")
-  func staleLayoutPreservesServerName() throws {
-    let fixture = WorkspaceEventFixture()
-    var stale = fixture.workspace
-    var event = fixture.event(isArchived: false)
-    event.payload = fixture.payload(isArchived: false, name: "Server name")
-    #expect(fixture.sync.applyServerWorkspaceEvent(event, serverId: fixture.serverId))
-    stale.centerTabs.append(WorkspaceTab(root: .leaf(PaneGroupState())))
+  func staleLayoutPreservesServerName() async throws {
+    let fixture = await WorkspaceSyncFixture()
+    var stale = try #require(fixture.current)
+    var record = try fixture.serverRecord(fixture.workspace.id)
+    record.name = "Server name"
+    record.hasCustomName = true
+    fixture.server.commit(workspaces: [record])
+    await fixture.deliver()
+
+    stale.centerTabs.append(WorkspaceTab(root: .leaf(PaneGroupState.centerInitialWithoutChat())))
     fixture.repository.save(stale)
-    let saved = try #require(fixture.repository.workspace(id: stale.id))
+    let saved = try #require(fixture.current)
     #expect(saved.name == "Server name")
     #expect(saved.hasCustomName)
     #expect(saved.centerTabs == stale.centerTabs)
-  }
-
-  @Test("A legacy workspace renames its existing server identity instead of creating a duplicate")
-  func renamesCanonicalWorkspace() async {
-    let fixture = WorkspaceEventFixture()
-    var local = fixture.workspace
-    local.isServerSynced = false
-    fixture.repository.save(local)
-    let canonicalId = UUID()
-    var record = WorkspaceSyncModel.serverWorkspace(from: local)
-    record.id = canonicalId.uuidString
-    fixture.fake.setWorkspaces([record])
-    let list = fixture.sync.projectList
-    var chat = serverSession(from: list.sessions[0])
-    chat.workspaceId = canonicalId.uuidString
-    fixture.fake.setSessions([chat])
-    list.workspaceAssignmentsByServer[fixture.serverId] = [fixture.anchorSessionId: canonicalId]
-    var renamed = local
-    renamed.name = "Canonical name"
-    renamed.hasCustomName = true
-    await fixture.sync.renameWorkspace(renamed, client: fixture.fake)?.value
-    #expect(fixture.fake.workspaces.count == 1)
-    #expect(fixture.fake.workspaces.first?.id == canonicalId.uuidString)
-    #expect(fixture.fake.workspaces.first?.name == renamed.name)
-    #expect(fixture.repository.workspace(id: canonicalId)?.name == renamed.name)
-    #expect(fixture.repository.workspace(id: local.id) == nil)
+    #expect(fixture.store.pendingIntents.isEmpty)
   }
 }

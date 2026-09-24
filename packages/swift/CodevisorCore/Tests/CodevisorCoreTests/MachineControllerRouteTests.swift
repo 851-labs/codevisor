@@ -31,10 +31,7 @@ struct MachineControllerRouteTests {
     localServer: (any LocalServerControlling)? = StubLocalServer(),
     clientFactory: MachineController.ClientFactory? = nil
   ) -> (controller: MachineController, projectList: ProjectListModel, provider: FakeCloudProvider) {
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let controller = MachineController(
       store: store,
       projectList: projectList,

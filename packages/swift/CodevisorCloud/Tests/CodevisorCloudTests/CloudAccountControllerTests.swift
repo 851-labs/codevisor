@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import CodevisorTestSupport
 import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
@@ -256,17 +257,24 @@ struct CloudAccountControllerTests {
   func bootstrapKeepsTokenOnNetworkFailure() async throws {
     // session(token:) returning nil means "server answered: no session"
     // and clears; a thrown error means "couldn't ask" and must not.
+    // An offline launch also stays signed in (with an unverified, empty
+    // roster) and schedules a retry instead of stranding the user.
     let store = InMemoryCloudCredentialStore(token: "kept")
+    let clock = TestClock()
     let controller = CloudAccountController(
       clientFactory: { _ in OfflineCloudClient() },
       credentialStore: store,
-      environmentCloud: nil
+      environmentCloud: nil,
+      retrySleep: clock.sleep
     )
 
     await controller.bootstrap()
 
-    #expect(controller.state == .signedOut)
+    #expect(controller.state == .signedIn(userEmail: nil))
+    #expect(!controller.isRosterVerified)
+    #expect(controller.validationRetryTask != nil)
     #expect(try store.token() == "kept")
+    controller.signOut()
   }
 
   @Test("Sign-in exchanges the one-time token and loads machines")

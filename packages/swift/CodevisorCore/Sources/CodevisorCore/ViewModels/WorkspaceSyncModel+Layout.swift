@@ -10,7 +10,7 @@ extension WorkspaceSyncModel {
   /// filling, or one whose last pane closed) holds it as a placeholder: the
   /// first real pane fills that tab in place, and any other placeholder tab
   /// is dropped. New Tabs opened beside real panes (⌘T) are kept.
-  static func reconcilePanes(
+  nonisolated static func reconcilePanes(
     in workspace: inout Workspace,
     records: [ServerWorkspacePane],
     protectedLocalPaneIds: Set<UUID>
@@ -66,7 +66,7 @@ extension WorkspaceSyncModel {
 
   /// Gives a pane that has no slot yet the placeholder tab's page, keeping
   /// the tab and leaf identity a mounted view may already hold.
-  private static func fillPlaceholderTab(
+  private nonisolated static func fillPlaceholderTab(
     with pane: PaneDescriptorState,
     in workspace: inout Workspace
   ) -> Bool {
@@ -86,13 +86,13 @@ extension WorkspaceSyncModel {
     return true
   }
 
-  static func allPanes(in workspace: Workspace) -> [PaneDescriptorState] {
+  nonisolated static func allPanes(in workspace: Workspace) -> [PaneDescriptorState] {
     workspace.centerTabs.flatMap { tab in
       tab.root.allGroups.flatMap(\.state.panes)
     }
   }
 
-  static func resourceKey(_ pane: PaneDescriptorState) -> String? {
+  nonisolated static func resourceKey(_ pane: PaneDescriptorState) -> String? {
     switch pane.kind {
     case .chat:
       pane.chatSessionId.map { "session:\($0.uuidString.lowercased())" }
@@ -103,7 +103,7 @@ extension WorkspaceSyncModel {
     }
   }
 
-  static func resourceKey(_ pane: ServerWorkspacePane) -> String? {
+  nonisolated static func resourceKey(_ pane: ServerWorkspacePane) -> String? {
     guard let kind = pane.resourceKind, let id = pane.resourceId else { return nil }
     // Files are case-sensitive resources, and document tabs deduplicate by
     // their canonical path in the UI rather than this legacy migration key.
@@ -111,7 +111,7 @@ extension WorkspaceSyncModel {
     return "\(kind.lowercased()):\(id.lowercased())"
   }
 
-  static func replacePane(
+  nonisolated static func replacePane(
     id: UUID,
     with pane: PaneDescriptorState,
     in workspace: inout Workspace
@@ -119,7 +119,7 @@ extension WorkspaceSyncModel {
     replacePane(where: { $0.id == id }, with: pane, in: &workspace)
   }
 
-  private static func replacePane(
+  private nonisolated static func replacePane(
     resourceKey key: String,
     with pane: PaneDescriptorState,
     in workspace: inout Workspace
@@ -127,7 +127,7 @@ extension WorkspaceSyncModel {
     replacePane(where: { resourceKey($0) == key }, with: pane, in: &workspace)
   }
 
-  private static func replacePane(
+  private nonisolated static func replacePane(
     where matches: (PaneDescriptorState) -> Bool,
     with pane: PaneDescriptorState,
     in workspace: inout Workspace
@@ -151,7 +151,7 @@ extension WorkspaceSyncModel {
   }
 
   @discardableResult
-  static func removePane(id: UUID, from workspace: inout Workspace) -> Bool {
+  nonisolated static func removePane(id: UUID, from workspace: inout Workspace) -> Bool {
     var removed = false
     for tabIndex in workspace.centerTabs.indices.reversed() {
       var root = workspace.centerTabs[tabIndex].root
@@ -171,7 +171,7 @@ extension WorkspaceSyncModel {
     return removed
   }
 
-  static func ensureUsableLayout(_ workspace: inout Workspace) {
+  nonisolated static func ensureUsableLayout(_ workspace: inout Workspace) {
     guard workspace.centerTabs.isEmpty else {
       if !workspace.centerTabs.contains(where: { $0.id == workspace.selectedCenterTabId }),
         let firstId = workspace.centerTabs.first?.id
@@ -185,7 +185,7 @@ extension WorkspaceSyncModel {
     workspace.selectedCenterTabId = tab.id
   }
 
-  static func pruneEmptyCenterTabs(in workspace: inout Workspace) {
+  nonisolated static func pruneEmptyCenterTabs(in workspace: inout Workspace) {
     workspace.centerTabs = workspace.centerTabs.compactMap { tab in
       guard let root = tab.root.prunedEmptyGroups else { return nil }
       var tab = tab
@@ -195,42 +195,5 @@ extension WorkspaceSyncModel {
       }
       return tab
     }
-  }
-
-  static func makeWorkspace(
-    id: UUID,
-    projectId: UUID,
-    serverId: String,
-    record: ServerWorkspace,
-    createdAt: Date,
-    worktreeName: String?,
-    sessionIds: [UUID],
-    usesPaneRegistry: Bool
-  ) -> Workspace {
-    let tabs: [WorkspaceTab]
-    if usesPaneRegistry || sessionIds.isEmpty {
-      tabs = [WorkspaceTab.placeholder()]
-    } else {
-      tabs = sessionIds.map {
-        WorkspaceTab(root: .leaf(.centerInitial(sessionId: $0)))
-      }
-    }
-    return Workspace(
-      id: id,
-      name: record.name,
-      hasCustomName: record.hasCustomName,
-      rootDirectory: record.rootDirectory,
-      worktreeName: worktreeName,
-      serverId: serverId,
-      projectId: projectId,
-      centerTabs: tabs,
-      createdAt: createdAt,
-      isArchived: record.isArchived,
-      isServerSynced: true
-    )
-  }
-
-  static func date(from value: String) -> Date? {
-    try? ServerDateCoding.date(from: value)
   }
 }

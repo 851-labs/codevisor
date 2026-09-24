@@ -18,8 +18,10 @@ struct ConvertedPaneTitleTests {
     )
   }
 
+  @MainActor
   @Test func convertingAPlaceholderPersistsItsNewNameUnderTheSamePaneId() throws {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
     // A server-authored placeholder: the record's title is what the sidebar
     // shows until the conversion is persisted.
     var seeded = PaneGroupState()
@@ -47,6 +49,9 @@ struct ConvertedPaneTitleTests {
 
     let persisted = try #require(repository.workspace(id: space.id))
     #expect(persisted.centerTree.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
+    // The device layout -- what the next launch shows -- has it too.
+    let layout = try #require(navigation.store.layouts.layout(for: space.id))
+    #expect(layout.tabs.first?.root.group(id: leafId)?.selectedPane?.name == "Screen Sharing")
   }
 
   @Test func aUserRenamedTabKeepsItsTitleAcrossTheConversion() throws {

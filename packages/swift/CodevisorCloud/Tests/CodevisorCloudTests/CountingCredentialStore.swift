@@ -108,6 +108,9 @@ final class CountingCredentialStore: CloudCredentialStore, @unchecked Sendable {
     }
     try base.savePinnedMachineKeys(pins)
   }
+  func loadRoster() -> CachedRoster? { base.loadRoster() }
+  func saveRoster(_ roster: CachedRoster) { base.saveRoster(roster) }
+  func clearRoster() { base.clearRoster() }
 }
 
 @Observable

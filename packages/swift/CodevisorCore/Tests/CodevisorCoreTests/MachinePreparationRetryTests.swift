@@ -93,10 +93,7 @@ struct MachinePreparationRetryTests {
   }
 
   private func makeController(fake: PreparationFakeServerClient, clock: TestClock) -> MachineController {
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     return MachineController(
       store: InMemoryStore(),
       projectList: projectList,

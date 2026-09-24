@@ -30,27 +30,22 @@ struct MachineNavigationRefreshTests {
     }
   }
 
-  @Test("A stalled machine cannot hold the gesture or block healthy machines", arguments: [false, true])
-  func deadlineBoundsSnapshotAndPreparation(preparing: Bool) async throws {
+  @Test("A stalled machine cannot hold the gesture or block healthy machines")
+  func deadlineBoundsStalledSnapshot() async throws {
     let clock = TestClock()
     let blocked = TestSignal()
     let release = TestSignal()
-    let stall: @Sendable () async -> Void = {
+    let client = ManualRefreshClient(snapshot: {
       blocked.signal()
       // Deliberately ignores task cancellation, like a wedged transport.
       await release.wait()
-    }
-    let client = ManualRefreshClient(
-      info: { if preparing { await stall() } },
-      snapshot: { if !preparing { await stall() } }
-    )
+    })
     let healthy = ManualRefreshClient()
     let controller = try makeController(local: client, remote: healthy)
     defer {
       release.signal()
       controller.stopEventSync()
     }
-    if preparing { controller.markFailed(for: "local", message: "Unreachable") }
     var finished = false
     let gesture = Task {
       await controller.refreshNavigation(sleep: clock.sleep)
@@ -76,6 +71,57 @@ struct MachineNavigationRefreshTests {
     await operation.value
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
     #expect(controller.connection(for: "local").manualNavigationRefresh == nil)
+  }
+
+  @Test("An unreachable machine is retried but never holds the gesture while a ready one finishes")
+  func unreachableMachineDoesNotHoldGesture() async throws {
+    let clock = TestClock()
+    let release = TestSignal()
+    // Re-preparing the failed machine stalls in its probe.
+    let client = ManualRefreshClient(info: { await release.wait() })
+    let healthy = ManualRefreshClient()
+    let controller = try makeController(local: client, remote: healthy)
+    defer {
+      release.signal()
+      controller.stopEventSync()
+    }
+    controller.markFailed(for: "local", message: "Unreachable")
+
+    // Returns once the ready machine answers, without the deadline firing.
+    await controller.refreshNavigation(sleep: clock.sleep)
+    #expect(healthy.snapshots.value == 1)
+    #expect(controller.navigationSyncStateByMachineId["healthy"] == .current)
+    #expect(clock.pendingCount == 0)
+
+    // The unreachable machine's retry still started and completes later.
+    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    await client.probes.wait()
+    #expect(controller.navigationSyncStateByMachineId["local"] != .current)
+    release.signal()
+    await operation.value
+    #expect(controller.navigationSyncStateByMachineId["local"] == .current)
+  }
+
+  @Test("With no ready machine the gesture returns immediately and retries in the background")
+  func noReadyMachineReturnsImmediately() async throws {
+    let clock = TestClock()
+    let release = TestSignal()
+    let client = ManualRefreshClient(info: { await release.wait() })
+    let controller = try makeController(local: client)
+    defer {
+      release.signal()
+      controller.stopEventSync()
+    }
+    controller.markFailed(for: "local", message: "Unreachable")
+
+    await controller.refreshNavigation(sleep: clock.sleep)
+    #expect(clock.pendingCount == 0)
+    let operation = try #require(controller.connection(for: "local").manualNavigationRefresh?.task)
+    await client.probes.wait()
+    release.signal()
+    await operation.value
+    #expect(client.snapshots.value == 1)
+    #expect(controller.navigationSyncStateByMachineId["local"] == .current)
   }
 
   @Test("Repeated pulls reuse stalled work and still refresh healthy machines")
@@ -138,7 +184,7 @@ struct MachineNavigationRefreshTests {
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
   }
 
-  @Test("Refresh joins an existing preparation and remains bounded")
+  @Test("Refresh joins an existing preparation without waiting on it")
   func joinsExistingPreparation() async throws {
     let clock = TestClock()
     let release = TestSignal()
@@ -150,16 +196,16 @@ struct MachineNavigationRefreshTests {
     }
     let preparation = Task { await controller.prepareMachine("local") }
     await client.probes.wait()
-    let gesture = Task { await controller.refreshNavigation(sleep: clock.sleep) }
-    await clock.waitForSleep(.seconds(5))
+    // A machine still preparing isn't answering: the gesture doesn't wait.
+    await controller.refreshNavigation(sleep: clock.sleep)
+    #expect(clock.pendingCount == 0)
     let operation = controller.connection(for: "local").manualNavigationRefresh?.task
-    clock.advance(by: .seconds(5))
-    await gesture.value
     #expect(client.probes.value == 1)
     #expect(client.snapshots.value == 0)
     release.signal()
     await preparation.value
     await operation?.value
+    // One snapshot: the refresh joined the preparation instead of racing it.
     #expect(client.snapshots.value == 1)
     #expect(controller.navigationSyncStateByMachineId["local"] == .current)
   }
@@ -187,10 +233,7 @@ struct MachineNavigationRefreshTests {
     let clock = TestClock()
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      )
+      projectList: ProjectListModel.fixture()
     )
     #expect(controller.allMachines.isEmpty)
     await controller.refreshNavigation(sleep: clock.sleep)
@@ -213,10 +256,7 @@ struct MachineNavigationRefreshTests {
     try store.saveData(JSONEncoder().encode(MachineRegistry(remoteMachines: remotes)), forKey: "machines")
     return MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { machine in machine.id == "healthy" ? remote! : local }
     )
   }

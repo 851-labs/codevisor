@@ -274,10 +274,7 @@ struct MachineNavigationSyncTests {
   }
 
   private func makeProjectList() -> ProjectListModel {
-    ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    ProjectListModel.fixture()
   }
 }
 

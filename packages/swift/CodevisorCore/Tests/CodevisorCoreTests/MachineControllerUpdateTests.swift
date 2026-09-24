@@ -14,10 +14,7 @@ struct MachineControllerUpdateTests {
   func remoteServerUpdate() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -52,10 +49,7 @@ struct MachineControllerUpdateTests {
   func remoteServerUpdateChannel() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -98,10 +92,7 @@ struct MachineControllerUpdateTests {
     )
     let controller = MachineController(
       store: store,
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake }
     )
 
@@ -119,10 +110,7 @@ struct MachineControllerUpdateTests {
       latest: "0.1.97-alpha.55",
       installedVersion: "0.1.97"
     )
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -153,10 +141,7 @@ struct MachineControllerUpdateTests {
       currentBuildNumber: 100,
       targetBuildNumber: 200
     )
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -183,10 +168,7 @@ struct MachineControllerUpdateTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureApplyFailure(message: "Sparkle could not verify the update signature.")
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -216,10 +198,7 @@ struct MachineControllerUpdateTests {
     // The server reports "draining" for far more polls than the base
     // attempt budget: the wait must extend instead of timing out.
     fake.configureDrain(polls: 12)
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -257,10 +236,7 @@ struct MachineControllerUpdateTests {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
     fake.configureBusy(true)
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
+    let projectList = ProjectListModel.fixture()
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
@@ -293,10 +269,7 @@ struct MachineControllerUpdateTests {
     let clock = AdvancingServerUpdateScheduler()
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
       updatePollAttempts: 3,
@@ -329,10 +302,7 @@ struct MachineControllerUpdateTests {
     clock.onSleep = { [weak clock] in clock?.advance(by: .milliseconds(10)) }
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { _ in fake },
       updatePollInterval: .milliseconds(2),
       updatePollAttempts: 5,

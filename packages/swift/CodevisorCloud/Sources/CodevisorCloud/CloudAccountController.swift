@@ -22,8 +22,8 @@ public enum CloudAccountState: Equatable, Sendable {
 public final class CloudAccountController {
   public static let defaultServerURL = URL(string: "https://cloud.codevisor.dev")!
 
-  public private(set) var state: CloudAccountState = .signedOut
-  public private(set) var machines: [CloudMachine] = []
+  public internal(set) var state: CloudAccountState = .signedOut
+  public internal(set) var machines: [CloudMachine] = []
   /// Machines whose presented public key conflicts with the TOFU pin taken
   /// on first sight. Relay channels to them are refused (`relayServerConfig`
   /// and the loopback bridge return nil) until the user explicitly re-trusts
@@ -32,10 +32,15 @@ public final class CloudAccountController {
   /// encryption. UI surfaces these as "machine key changed".
   public private(set) var machinesWithChangedKeys: Set<String> = []
   /// False until the app has checked any persisted account session and, when
-  /// valid, loaded its first machine snapshot. Callers must not interpret an
-  /// empty `machines` array as an authoritative "no machines" result before
-  /// this becomes true.
-  public private(set) var hasCompletedBootstrap = false
+  /// valid, loaded its first machine snapshot — possibly the cached roster,
+  /// see `isRosterVerified`. Callers must not interpret an empty `machines`
+  /// array as an authoritative "no machines" result before this becomes true.
+  public internal(set) var hasCompletedBootstrap = false
+  /// False until a machine list fetched from the network in this process
+  /// succeeds. Launch may publish a cached roster first; anything that would
+  /// delete data for machines missing from `machines` (dead-record pruning)
+  /// must wait for this, because a stale cache is not proof of absence.
+  public internal(set) var isRosterVerified = false
   public var lastError: String?
   public internal(set) var linkedProviders: Set<CloudSignInProvider>?
   var authenticationRevision: UInt64 = 0
@@ -45,7 +50,7 @@ public final class CloudAccountController {
   /// Auth providers the current server advertises (/.well-known/codevisor).
   /// nil until discovery answers — treat unknown as "assume GitHub" so the
   /// hosted instance's button never flickers away on a slow network.
-  public private(set) var authProviders: [String]?
+  public internal(set) var authProviders: [String]?
 
   /// Whether to offer the GitHub sign-in button: true when the server
   /// advertises it, or while its capabilities are still unknown.
@@ -68,9 +73,9 @@ public final class CloudAccountController {
   public typealias ClientFactory = @Sendable (URL) -> any CloudAccountClienting
   public typealias HubConnectionFactory = @MainActor (URL, any CloudCredentialStore) -> CloudHubConnection
 
-  private let clientFactory: ClientFactory
-  private let credentialStore: any CloudCredentialStore
-  private let machineKeyPins: CloudMachineKeyPinCache
+  let clientFactory: ClientFactory
+  let credentialStore: any CloudCredentialStore
+  let machineKeyPins: CloudMachineKeyPinCache
   private let environmentCloud: CodevisorAppVariant.DevelopmentCloud?
   private let hubConnectionFactory: HubConnectionFactory
   /// The account's one relay connection, created lazily while signed in and
@@ -115,6 +120,15 @@ public final class CloudAccountController {
   /// whole fleet) into one REST fetch.
   @ObservationIgnored private let presenceSleep: @Sendable (Duration) async throws -> Void
   @ObservationIgnored var presenceRefreshTask: Task<Void, Never>?
+  /// Session validation runs off the launch path when a cached roster is
+  /// shown. `validationTask` is the attempt in flight; `validationRetryTask`
+  /// is the backoff sleep before the next one, kept separate so a
+  /// foreground retry can skip the wait without cancelling live requests.
+  @ObservationIgnored let retrySleep: @Sendable (Duration) async throws -> Void
+  @ObservationIgnored var validationTask: Task<Void, Never>?
+  @ObservationIgnored var validationRetryTask: Task<Void, Never>?
+  @ObservationIgnored var validationGeneration: UInt64 = 0
+  @ObservationIgnored var validationFailures = 0
 
   public init(
     clientFactory: @escaping ClientFactory = { CloudAccountClient(baseURL: $0) },
@@ -124,9 +138,11 @@ public final class CloudAccountController {
       CloudHubConnection(serverURL: serverURL, credentialStore: store)
     },
     directPaths: CloudDirectPathController? = nil,
-    presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.presenceSleep = presenceSleep
+    self.retrySleep = retrySleep
     self.clientFactory = clientFactory
     self.credentialStore = credentialStore
     self.machineKeyPins = CloudMachineKeyPinCache(store: credentialStore)
@@ -158,40 +174,6 @@ public final class CloudAccountController {
 
   var client: any CloudAccountClienting {
     clientFactory(serverURL)
-  }
-
-  /// Boot: validate whatever token is stored. An invalid token signs out
-  /// and clears it; a network failure keeps the token for the next attempt.
-  /// Development builds sign into the dev cloud exactly as production
-  /// signs into the hosted one — no session ever arrives via environment.
-  public func bootstrap() async {
-    guard !hasCompletedBootstrap else { return }
-    defer {
-      if !Task.isCancelled {
-        hasCompletedBootstrap = true
-      }
-    }
-    await refreshAuthProviders()
-    guard let token = storedToken else {
-      state = .signedOut
-      return
-    }
-    state = .validating
-    do {
-      guard let user = try await client.session(token: token) else {
-        try? credentialStore.removeToken()
-        state = .signedOut
-        return
-      }
-      state = .signedIn(userEmail: user.email)
-      await refreshMachines()
-    } catch {
-      // Unreachable server ≠ revoked session: keep the token so the
-      // next launch (or refresh) can try again.
-      Log.cloud.error("Cloud session validation failed: \(String(describing: error), privacy: .public)")
-      state = .signedOut
-      lastError = error.localizedDescription
-    }
   }
 
   /// Asks the current server which sign-in providers it offers, so the UI
@@ -233,6 +215,10 @@ public final class CloudAccountController {
     state = .validating
     linkedProviders = nil
     lastError = nil
+    // A new session may belong to a different account: whatever roster was
+    // on screen is no longer vouched for until this session's fetch lands.
+    cancelSessionValidation()
+    isRosterVerified = false
     let client = client
     do {
       let token = try await obtainToken()
@@ -243,7 +229,11 @@ public final class CloudAccountController {
       let user = (try? await client.session(token: token)) ?? nil
       guard authenticationRevision == revision, serverURL == server, storedToken == token else { return }
       state = .signedIn(userEmail: user?.email)
-      await refreshMachines()
+      if case let .failed(error) = await performMachineRefresh(), !Self.isSessionRejection(error) {
+        // Signed in but the first fetch hit a transient failure: keep
+        // retrying so the machine list fills in without user action.
+        scheduleSessionValidationRetry()
+      }
     } catch {
       guard authenticationRevision == revision, serverURL == server else { return }
       Log.cloud.error("Cloud sign-in failed: \(String(describing: error), privacy: .public)")
@@ -271,6 +261,9 @@ public final class CloudAccountController {
       Log.cloud.error("Failed to clear cloud token: \(String(describing: error), privacy: .public)")
     }
     machines = []
+    cancelSessionValidation()
+    isRosterVerified = false
+    credentialStore.clearRoster()
     // Pins survive sign-out (continuity knowledge belongs to the device,
     // not the session); only the visible flags reset with the list.
     machinesWithChangedKeys = []
@@ -306,6 +299,7 @@ public final class CloudAccountController {
         }
       }
     }
+    refreshAuthProvidersIfUnknown()
     onSignedOut?()
   }
 
@@ -324,7 +318,15 @@ public final class CloudAccountController {
   }
 
   public func refreshMachines() async {
-    guard state.isSignedIn, let token = storedToken else { return }
+    await performMachineRefresh()
+  }
+
+  /// The one writer of `machines` from the network. Returns how the attempt
+  /// ended so session validation can tell a verified roster from a
+  /// transient failure worth retrying.
+  @discardableResult
+  func performMachineRefresh() async -> MachineRefreshOutcome {
+    guard state.isSignedIn, let token = storedToken else { return .skipped }
     let pinGeneration = machineKeyPins.generation
     do {
       try await machineKeyPins.prepare()
@@ -351,9 +353,12 @@ public final class CloudAccountController {
           }
         }
       }
-      guard state.isSignedIn, machineKeyPins.generation == pinGeneration, !Task.isCancelled else { return }
+      guard state.isSignedIn, machineKeyPins.generation == pinGeneration, !Task.isCancelled else {
+        return .skipped
+      }
       try reconcileMachineKeyPins(refreshedMachines)
       machines = refreshedMachines
+      didVerifyRoster()
       if let hub {
         // Feed the authoritative REST snapshot back into the relay's
         // channel gate. This heals a missed/reordered presence frame
@@ -372,8 +377,9 @@ public final class CloudAccountController {
       reconcileDirectPaths()
       lastError = nil
       onMachinesRefreshed?()
+      return .succeeded
     } catch is CancellationError {
-      return
+      return .skipped
     } catch {
       Log.cloud.error("Cloud machine refresh failed: \(String(describing: error), privacy: .public)")
       lastError = error.localizedDescription
@@ -382,6 +388,7 @@ public final class CloudAccountController {
         // showing a stale signed-in pane forever.
         signOut()
       }
+      return .failed(error)
     }
   }
 
@@ -653,6 +660,8 @@ extension CloudAccountController: CloudMachineProviding {
   public var isCloudSignedIn: Bool { state.isSignedIn }
 
   public var cloudMachines: [CloudMachine] { machines }
+
+  public var isCloudRosterVerified: Bool { isRosterVerified }
 
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     // TOFU: no relay config for a machine whose key conflicts with its

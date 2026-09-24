@@ -8,22 +8,14 @@ extension WorkspaceSyncModel {
   func closePaneLocally(
     id: UUID,
     workspaceId: UUID,
-    repository: any WorkspaceRepository,
-    client: (any CodevisorServerClienting)? = nil
+    repository: any WorkspaceRepository
   ) {
     guard var workspace = repository.workspace(id: workspaceId),
-      let result = workspace.closingPaneLocally(id: id)
+      workspace.closingPaneLocally(id: id) != nil
     else { return }
     repository.save(workspace)
     noteLocalMutation()
-    if let client {
-      deletePane(
-        id: id,
-        workspaceId: workspaceId,
-        optimisticReplacement: result.replacement,
-        client: client
-      )
-    }
+    deletePane(id: id, workspaceId: workspaceId)
   }
 }
 

@@ -36,6 +36,15 @@ extension SessionModel {
     )
   }
 
+  /// Installs the server's fresh page over a cached one shown while the chat
+  /// opened. Items are matched by id, so what is on screen updates in place
+  /// rather than reloading.
+  func loadHistoryReplacingCachedDisplay(preloaded: TranscriptHistoryPage?) async {
+    surfaceHistoryLoadFailure(
+      await loadHistoryOnce(preloaded: preloaded, defersPromptQueue: true, preservingContent: true)
+    )
+  }
+
   /// One non-presenting snapshot attempt for connection recovery. The
   /// recovery loop owns retry timing and decides when a failure becomes
   /// user-visible; ordinary history loads keep their immediate error UI.

@@ -107,7 +107,7 @@ struct ClientLayoutTests {
   @Test("Invalid changes never reach persistence")
   func validation() throws {
     let original = workspace()
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let repository = NavigationFixture().workspaces
     repository.save(original)
     for action: [String: Any] in [
       ["kind": "unsupported"],
@@ -130,7 +130,7 @@ struct ClientLayoutTests {
     let original = workspace()
     let first = original.centerTabs[0].activeLeafId
     let value = try apply(["kind": "split", "leafId": first.uuidString, "edge": "bottom"], to: original)
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
+    let repository = NavigationFixture().workspaces
     repository.save(value)
     let context = NativeClientContext.capture(
       repository: repository, serverId: "machine", workspaceId: value.id, isActive: true)

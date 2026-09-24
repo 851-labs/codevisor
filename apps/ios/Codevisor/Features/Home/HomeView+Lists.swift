@@ -11,50 +11,18 @@ extension HomeView {
   /// each need a real scroll surface rather than a static replacement view.
   @ViewBuilder
   var refreshableNavigationContent: some View {
-    if !sidebarSections.isEmpty {
+    switch launch {
+    case .content:
       sidebarList
-    } else if anyMachineSynced {
-      // At least one machine answered with a real (empty) list: the
-      // honest presentation is "no workspaces"; the toolbar flags sync failures.
+    case .empty, .onboarding:
       refreshableState(allowsStateHitTesting: false) {
         emptyState
       }
-    } else if !failedSyncMachines.isEmpty {
-      // Keep the list blank instead of showing stale cached rows.
-      // The toolbar warning opens machine settings with the failure details.
+    case .loading:
+      // Nothing is cached for any machine yet: the one legitimate spinner.
+      // Every later launch shows the cached list instead.
       refreshableState(allowsStateHitTesting: false) {
-        EmptyView()
-      }
-    } else if initialSyncDeadlineExpired {
-      refreshableState {
-        HomeNavigationSyncView(
-          state: .failed(machineName: failedSyncMachineNames),
-          retry: {
-            initialSyncDeadlineExpired = false
-            retryFailedMachines()
-          }
-        )
-      }
-    } else if initialSyncPending {
-      // Nothing cached yet: the one legitimate spinner — and even it
-      // may not outlive its budget.
-      refreshableState(allowsStateHitTesting: false) {
-        HomeNavigationSyncView(
-          state: .loading(machineName: failedSyncMachineNames)
-        )
-      }
-      // Constant identity: the clock starts when the branch appears
-      // and survives machine-list churn (cloud statuses landing used
-      // to recreate the task and reset the budget forever).
-      .task(id: "initial-sync-deadline") {
-        initialSyncDeadlineExpired = false
-        try? await Task.sleep(for: .seconds(15))
-        guard !Task.isCancelled else { return }
-        initialSyncDeadlineExpired = true
-      }
-    } else {
-      refreshableState(allowsStateHitTesting: false) {
-        emptyState
+        HomeNavigationSyncView(state: .loading(machineName: "your machines"))
       }
     }
   }

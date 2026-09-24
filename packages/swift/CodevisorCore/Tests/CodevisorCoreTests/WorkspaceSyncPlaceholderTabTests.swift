@@ -113,39 +113,33 @@ struct WorkspaceSyncPlaceholderTabTests {
   }
 
   @Test("Observing a workspace record before its first pane yields one tab")
-  func workspaceRecordBeforePaneYieldsSingleTab() throws {
-    let repository = DefaultWorkspaceRepository(store: InMemoryStore())
-    let projectList = ProjectListModel(
-      projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-      sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-    )
-    let sync = WorkspaceSyncModel(repository: repository, projectList: projectList)
+  func workspaceRecordBeforePaneYieldsSingleTab() async throws {
+    let navigation = NavigationFixture()
+    let repository = navigation.workspaces
     let record = WorkspaceSyncModel.serverWorkspace(from: placeholderWorkspace())
     let workspaceId = try #require(UUID(uuidString: record.id))
     let sessionId = UUID()
-    func snapshot(panes: [ServerWorkspacePane]) -> ServerNavigationSnapshot {
-      ServerNavigationSnapshot(
-        eventCursor: 0, projects: [], sessions: [], workspaces: [record], panes: panes)
-    }
 
     // The other client's workspace row lands first...
-    sync.applyNavigationSnapshot(snapshot(panes: []), serverId: serverId)
+    await navigation.store.replace(
+      ServerNavigationSnapshot(eventCursor: 1, projects: [], sessions: [], workspaces: [record], panes: []),
+      machineId: serverId, requestedAt: Date())
     let paneLess = try #require(repository.workspace(id: workspaceId))
     #expect(paneLess.centerTabs.count == 1)
     #expect(!paneLess.hasRealPanes)
 
     // ...then its chat pane.
-    sync.applyNavigationSnapshot(
-      snapshot(panes: [chatRecord(workspaceId: workspaceId, sessionId: sessionId)]), serverId: serverId)
+    let pane = chatRecord(workspaceId: workspaceId, sessionId: sessionId)
+    _ = await navigation.store.apply(.fixture(cursor: 2, panes: [pane]), machineId: serverId)
     let synced = try #require(repository.workspace(id: workspaceId))
     #expect(synced.centerTabs.map(\.id) == paneLess.centerTabs.map(\.id))
     #expect(synced.chatSessionIds == [sessionId])
     #expect(!synced.centerTabs.contains(where: { $0.isPlaceholder }))
     #expect(synced.selectedCenterTabId == synced.centerTabs.first?.id)
+    #expect(navigation.store.layouts.layout(for: workspaceId)?.tabs == synced.centerTabs)
 
-    // A later snapshot with the same pane is a no-op.
-    sync.applyNavigationSnapshot(
-      snapshot(panes: [chatRecord(workspaceId: workspaceId, sessionId: sessionId)]), serverId: serverId)
+    // A later event carrying the same pane is a no-op.
+    _ = await navigation.store.apply(.fixture(cursor: 3, panes: [pane]), machineId: serverId)
     #expect(repository.workspace(id: workspaceId) == synced)
   }
 }

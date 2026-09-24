@@ -1,53 +1,29 @@
 import Foundation
 
 extension WorkspaceSyncModel {
-  /// A failed write must not leave a local name that differs from the server.
+  /// Renames a workspace everywhere. The name shows immediately and reaches
+  /// the workspace's machine through the outbox, including after being
+  /// offline. A draft is renamed on this device until the server has it.
   @discardableResult
   public func renameWorkspace(
     _ renamed: Workspace,
-    client: (any CodevisorServerClienting)?,
+    client: (any CodevisorServerClienting)? = nil,
     errorReporter: ErrorReporter = .shared
   ) -> Task<Void, Never>? {
-    guard repository.workspace(id: renamed.id)?.serverId == renamed.serverId,
-      !renamed.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let name = renamed.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let current = repository.workspace(id: renamed.id), current.serverId == renamed.serverId,
+      !name.isEmpty
     else { return nil }
-    guard let client else {
-      errorReporter.report("Couldn't Rename Workspace", message: "Connect to its machine and try again.")
-      return nil
+    if current.isServerSynced {
+      enqueue(
+        .renameWorkspace(workspaceId: renamed.id, name: name, hasCustomName: renamed.hasCustomName),
+        serverId: renamed.serverId)
+    } else if let store = navigationStore, var draft = store.layouts.draft(id: renamed.id),
+      let layout = store.layouts.layout(for: renamed.id)
+    {
+      draft.name = name
+      store.addDraft(draft, layout: layout)
     }
-    var normalized = renamed
-    normalized.name = renamed.name.trimmingCharacters(in: .whitespacesAndNewlines)
-    pendingWorkspaceRenames[renamed.id] = normalized
-    if let task = workspaceRenameTasks[renamed.id] { return task }
-    let task = Task {
-      defer {
-        workspaceRenameTasks[renamed.id] = nil
-        pendingWorkspaceRenames[renamed.id] = nil
-      }
-      // Serialize writes to one workspace and coalesce intermediate names.
-      var resolvedId = renamed.id
-      while let intent = pendingWorkspaceRenames.removeValue(forKey: renamed.id) {
-        guard let current = repository.workspace(id: resolvedId) ?? repository.workspace(id: intent.id),
-          current.serverId == intent.serverId
-        else { return }
-        let lifetime = projectList.recordLifetimeGeneration(for: intent.serverId)
-        do {
-          // Resolve or publish a legacy native workspace's server identity.
-          guard let targetId = try await publishWorkspaceIfNeeded(current, client: client) else {
-            throw CodevisorServerClientError.invalidResponse
-          }
-          resolvedId = targetId
-          try await client.renameWorkspace(id: targetId, name: intent.name, hasCustomName: intent.hasCustomName)
-        } catch {
-          errorReporter.report("Couldn't Rename Workspace", error: error)
-        }
-        // Read the current server state, including after an ambiguous network
-        // failure. Existing generation guards reject stale snapshots.
-        guard projectList.isCurrentRecordLifetime(lifetime, for: intent.serverId) else { return }
-        await refreshFromServer(serverId: intent.serverId, client: client)
-      }
-    }
-    workspaceRenameTasks[renamed.id] = task
-    return task
+    return nil
   }
 }

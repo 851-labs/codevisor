@@ -5,7 +5,8 @@ import {
   UpdateWorkspacePaneRequest as UpdateWorkspacePaneRequestSchema,
   UpdateWorkspaceRequest as UpdateWorkspaceRequestSchema,
   UpsertWorkspacePaneRequest as UpsertWorkspacePaneRequestSchema,
-  UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema
+  UpsertWorkspaceRequest as UpsertWorkspaceRequestSchema,
+  type Workspace
 } from "@codevisor/api"
 
 import {
@@ -24,6 +25,19 @@ import {
 } from "../server-context.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
+
+/// The workspace with this id, or undefined. Route handlers use it to answer
+/// a retried or stale request with its real outcome -- gone is 404 for an
+/// edit and a completed no-op for a delete -- instead of a 500 from the
+/// database layer. Clients retry requests from an outbox, so every mutation
+/// here has to be safe to receive twice.
+const findWorkspace = async (
+  services: CodevisorServerServices,
+  workspaceId: string
+): Promise<Workspace | undefined> =>
+  (await run(services.db.listWorkspaces)).find(
+    (candidate) => candidate.id.toLowerCase() === workspaceId.toLowerCase()
+  )
 
 /// Pane workspaces are client-authored identity records, so writes are
 /// idempotent PUTs keyed by the client's workspace id. Creates and updates
@@ -119,6 +133,10 @@ export const routeWorkspaces = async (
     (paneRoute !== undefined && request.method === "DELETE")
   ) {
     const route = (closeRoute ?? paneRoute)!
+    if ((await findWorkspace(services, route.workspaceId as string)) === undefined) {
+      writeJson(response, 200, {})
+      return true
+    }
     await run(services.db.deleteWorkspacePane(route.workspaceId as string, route.paneId as string))
     await appendAndPublish(services.db, fanout, "workspace.pane.deleted", route.paneId as string, {
       id: route.paneId,
@@ -136,6 +154,9 @@ export const routeWorkspaces = async (
         `Pane id in the body (${payload.id}) does not match the path (${paneRoute.paneId})`
       )
     }
+    if ((await findWorkspace(services, paneRoute.workspaceId as string)) === undefined) {
+      throw new HttpFailure(404, `Workspace not found: ${paneRoute.workspaceId}`)
+    }
     const pane = await run(
       services.db.upsertWorkspacePane(paneRoute.workspaceId as string, {
         ...payload,
@@ -149,6 +170,16 @@ export const routeWorkspaces = async (
 
   if (paneRoute !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateWorkspacePaneRequestSchema)
+    const panes = await run(services.db.listWorkspacePanes)
+    if (
+      !panes.some(
+        (candidate) =>
+          candidate.id.toLowerCase() === (paneRoute.paneId as string).toLowerCase() &&
+          candidate.workspaceId.toLowerCase() === (paneRoute.workspaceId as string).toLowerCase()
+      )
+    ) {
+      throw new HttpFailure(404, `Workspace pane not found: ${paneRoute.paneId}`)
+    }
     const pane = await run(
       services.db.updateWorkspacePane(
         paneRoute.workspaceId as string,
@@ -192,10 +223,13 @@ export const routeWorkspaces = async (
 
   if (workspaceId !== undefined && request.method === "PATCH") {
     const payload = await readSchema(request, UpdateWorkspaceRequestSchema)
-    const wasArchived = (await run(services.db.listWorkspaces)).some(
-      (candidate) =>
-        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
-    )
+    const existing = await findWorkspace(services, workspaceId)
+    if (existing === undefined) {
+      throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
+    }
+    const wasArchived = existing.isArchived
+    // A sidebarOrder whose expectedRevision is stale is answered with the
+    // current row and no change; the client then shows the server's order.
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
     const settled = await applyWorkspaceArchiveEffects(
       services,
@@ -209,10 +243,12 @@ export const routeWorkspaces = async (
   }
 
   if (workspaceId !== undefined && request.method === "DELETE") {
-    const wasArchived = (await run(services.db.listWorkspaces)).some(
-      (candidate) =>
-        candidate.id.toLowerCase() === workspaceId.toLowerCase() && candidate.isArchived
-    )
+    const existing = await findWorkspace(services, workspaceId)
+    if (existing === undefined) {
+      writeJson(response, 204, undefined)
+      return true
+    }
+    const wasArchived = existing.isArchived
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
     await applyWorkspaceArchiveEffects(services, fanout, config, workspace, wasArchived)
     // `sessions.workspace_id` has no ON DELETE clause and foreign keys are

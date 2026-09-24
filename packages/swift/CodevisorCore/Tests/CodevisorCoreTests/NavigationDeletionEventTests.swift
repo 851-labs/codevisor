@@ -5,128 +5,112 @@ import Testing
 
 @testable import CodevisorCore
 
+/// Deletions arrive as `navigation.changed` deltas and move the cache
+/// forward; nothing older -- a snapshot fetched before them -- can bring the
+/// deleted records back.
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct NavigationDeletionEventTests {
+  /// The deletions the server's journal records for `kind`, cascades included.
+  private func deletions(
+    _ kind: String, fixture: WorkspaceSyncFixture, extra: [Workspace]
+  ) -> [(table: String, id: String)] {
+    switch kind {
+    case "project.deleted":
+      let workspaces = ([fixture.workspace, fixture.otherWorkspace] + extra).filter {
+        $0.projectId == fixture.project.id
+      }
+      return [("projects", fixture.project.id.uuidString), ("sessions", fixture.anchorSessionId.uuidString)]
+        + workspaces.map { ("workspaces", $0.id.uuidString) }
+        + [("workspace_panes", fixture.anchorSessionId.uuidString)]
+    default:
+      return [
+        ("workspaces", fixture.workspace.id.uuidString),
+        ("workspace_panes", fixture.anchorSessionId.uuidString),
+      ]
+    }
+  }
+
   @Test(
     "Workspace and project deletions cannot be resurrected by an older snapshot",
-    arguments: ["workspace.deleted", "project.deleted"], [false, true])
-  func deletionSupersedesWorkspaceSnapshot(kind: String, notHydrated: Bool) async throws {
-    let fixture = WorkspaceEventFixture()
-    let emptyWorkspace = Workspace(
-      name: "Empty", rootDirectory: nil, serverId: fixture.serverId, projectId: fixture.workspace.projectId,
-      centerTabs: [WorkspaceTab(root: .leaf(PaneGroupState()))],
-      createdAt: fixture.workspace.createdAt, isServerSynced: true
-    )
-    let unrelated = Workspace(
-      name: "Unrelated project", rootDirectory: nil, serverId: fixture.serverId, projectId: UUID(),
-      centerTabs: [WorkspaceTab(root: .leaf(PaneGroupState()))],
-      createdAt: fixture.workspace.createdAt, isServerSynced: true
-    )
-    fixture.repository.save(emptyWorkspace)
-    fixture.repository.save(unrelated)
-    let records = [fixture.workspace, emptyWorkspace, unrelated].map(WorkspaceSyncModel.serverWorkspace)
-    fixture.fake.setWorkspaces(records)
-    fixture.controller.connection(for: fixture.serverId).navigationSnapshot?.workspaces = records
-    if notHydrated { fixture.repository.delete(id: fixture.workspace.id) }
-    let snapshot = ServerWorkspaceSnapshot(
-      workspaces: [fixture.workspace, emptyWorkspace, unrelated].map(WorkspaceSyncModel.serverWorkspace), panes: []
-    )
-    let started = TestSignal()
-    let release = TestSignal()
-    fixture.fake.workspaceSnapshotHandler = {
-      started.signal()
-      await release.wait()
-      return snapshot
-    }
-    let refresh = Task {
-      await fixture.sync.refreshFromServer(serverId: fixture.serverId, client: fixture.fake)
-    }
-    defer {
-      release.signal()
-      refresh.cancel()
-      fixture.controller.stopEventSync()
-    }
-    await started.wait()
-    let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
-    fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
-    let subjectId = kind == "project.deleted" ? fixture.workspace.projectId : fixture.workspace.id
-    fixture.fake.emit(kind: kind, subjectId: subjectId.uuidString)
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
-    await handled.wait()
-    release.signal()
-    #expect(await refresh.value == .superseded)
+    arguments: ["workspace.deleted", "project.deleted"])
+  func deletionSupersedesWorkspaceSnapshot(kind: String) async throws {
+    let fixture = await WorkspaceSyncFixture()
+    let unrelatedWorkspace = Workspace(
+      name: "Unrelated project", rootDirectory: nil, serverId: "local", projectId: UUID(),
+      centerTabs: [.placeholder()], createdAt: fixture.workspace.createdAt, isServerSynced: true)
+    var record = WorkspaceSyncModel.serverWorkspace(from: unrelatedWorkspace)
+    record.name = "Unrelated project"
+    fixture.server.commit(workspaces: [record])
+    await fixture.deliver()
+    let stale = fixture.server.current
+    let fetchedAt = Date()
+
+    fixture.server.commit(deleted: deletions(kind, fixture: fixture, extra: [unrelatedWorkspace]))
+    await fixture.deliver()
+    await fixture.store.replace(stale, machineId: fixture.serverId, requestedAt: fetchedAt, resetsStream: false)
 
     #expect(fixture.repository.workspace(id: fixture.workspace.id) == nil)
     if kind == "project.deleted" {
-      #expect(fixture.repository.workspace(id: emptyWorkspace.id) == nil)
-      // The project itself wasn't cached; its cached children must still go.
-      #expect(fixture.sync.projectList.sessions.isEmpty)
+      #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) == nil)
+      #expect(fixture.projectList.sessions.isEmpty)
+      #expect(fixture.projectList.projects.isEmpty)
     } else {
-      #expect(fixture.repository.workspace(id: emptyWorkspace.id) == emptyWorkspace)
+      #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) != nil)
+      // The chat outlives its workspace; its route no longer has anywhere to go.
+      #expect(fixture.projectList.sessions.map(\.id) == [fixture.anchorSessionId])
+      #expect(fixture.sync.routeDisposition(sessionId: fixture.anchorSessionId, serverId: "local") == .dismiss)
     }
-    #expect(fixture.repository.workspace(id: unrelated.id) == unrelated)
-    #expect(fixture.repository.workspace(id: fixture.otherWorkspace.id) == fixture.otherWorkspace)
+    #expect(fixture.repository.workspace(id: unrelatedWorkspace.id)?.name == "Unrelated project")
   }
 
   @Test(
-    "Session deletion removes orphan panes and invalid routes without a server workspace assignment",
+    "Session deletion removes the chat's pane and its route without a refresh",
     arguments: [PaneKind.chat, .browser, .terminal])
-  func sessionDeletionPrunesPanesBeforeRefresh(selectedKind: PaneKind) async throws {
-    let clock = TestClock()
-    let fixture = WorkspaceEventFixture(navigationClock: clock)
-    if selectedKind != .chat {
-      var workspace = fixture.workspace
-      let pane = PaneDescriptorState(id: UUID(), kind: selectedKind, name: "Page", terminalKey: "page")
-      let tab = WorkspaceTab(root: .leaf(PaneGroupState(panes: [pane], selectedPaneId: pane.id)))
+  func sessionDeletionPrunesPanes(selectedKind: PaneKind) async throws {
+    let page = PaneDescriptorState(id: UUID(), kind: selectedKind, name: "Page", terminalKey: "page")
+    let fixture = await WorkspaceSyncFixture { workspace, _ in
+      guard selectedKind != .chat else { return }
+      let tab = WorkspaceTab(root: .leaf(PaneGroupState(panes: [page], selectedPaneId: page.id)))
       workspace.centerTabs.append(tab)
       workspace.selectedCenterTabId = tab.id
-      fixture.repository.save(workspace)
     }
-    defer { fixture.controller.stopEventSync() }
-    fixture.fake.workspaceSnapshotHandler = { throw URLError(.networkConnectionLost) }
-    let handled = TestSignal()
-    fixture.controller.onPluginUpdated = { _, _ in handled.signal() }
-    fixture.controller.startEventSync(serverId: fixture.serverId, client: fixture.fake, since: 0)
-    #expect(fixture.sync.projectList.workspaceAssignments(for: fixture.serverId).isEmpty)
+    #expect(fixture.sync.routeDisposition(sessionId: fixture.anchorSessionId, serverId: "local") == .keep)
 
-    fixture.fake.emit(kind: "session.deleted", subjectId: fixture.anchorSessionId.uuidString)
-    fixture.fake.emit(kind: "plugin.updated", subjectId: "event-barrier")
-    await handled.wait()
+    fixture.server.commit(deleted: [
+      ("sessions", fixture.anchorSessionId.uuidString),
+      ("workspace_panes", fixture.anchorSessionId.uuidString),
+    ])
+    await fixture.deliver()
 
-    let updated = try #require(fixture.repository.workspace(id: fixture.workspace.id))
+    let updated = try #require(fixture.current)
     #expect(updated.pane(containingChat: fixture.anchorSessionId) == nil)
     #expect(!updated.centerTabs.isEmpty)
-    #expect(fixture.sync.projectList.sessions.isEmpty)
-    #expect(fixture.routeDisposition == .dismiss)
-    #expect(fixture.fake.workspaceSnapshotCallCount == 0)
-    #expect(clock.pendingCount == 0)
+    if selectedKind != .chat {
+      #expect(updated.tabId(containingPane: page.id) != nil)
+    }
+    #expect(fixture.projectList.sessions.isEmpty)
+    #expect(fixture.sync.routeDisposition(sessionId: fixture.anchorSessionId, serverId: "local") == .dismiss)
+    #expect(
+      fixture.sync.routeDisposition(
+        workspaceId: fixture.workspace.id, anchorSessionId: fixture.anchorSessionId, serverId: "local",
+        preservingSelectedPane: true) == .dismiss)
   }
 
   @Test(
-    "Live session state and deletions supersede older project/session snapshots",
+    "Live session changes and deletions supersede a snapshot that was already in flight",
     arguments: ["session.updated", "session.deleted", "project.deleted"])
-  func liveEventSupersedesProjectSnapshot(kind: String) async throws {
-    let fixture = WorkspaceEventFixture()
-    let model = fixture.sync.projectList
-    let project = ServerProject(
-      id: fixture.workspace.projectId.uuidString, name: "Shared", origin: .codevisor,
-      createdAt: "2026-06-30T00:00:00.000Z", locations: []
-    )
-    let session = ServerSession(
-      id: fixture.anchorSessionId.uuidString, projectId: project.id, serverId: "local",
-      harnessId: "codex", title: "Chat", origin: .codevisor,
-      workspaceId: fixture.workspace.id.uuidString, createdAt: "2026-06-30T00:00:00.000Z"
-    )
-    let client = FakeServerClient(projects: [project], sessions: [session])
+  func liveEventSupersedesInFlightSnapshot(kind: String) async throws {
+    let fixture = await WorkspaceSyncFixture()
     let started = TestSignal()
     let release = TestSignal()
-    await client.setListDelay {
+    fixture.server.onSnapshot {
       started.signal()
       await release.wait()
     }
-    let refresh = Task { await model.refreshFromServer(serverId: fixture.serverId, client: client) }
+    let refresh = Task {
+      await fixture.projectList.refreshFromServer(serverId: fixture.serverId, client: fixture.server)
+    }
     defer {
       release.signal()
       refresh.cancel()
@@ -134,25 +118,30 @@ struct NavigationDeletionEventTests {
     await started.wait()
 
     switch kind {
-    case "session.deleted": model.removeSessionLocally(id: fixture.anchorSessionId, serverId: fixture.serverId)
-    case "project.deleted": model.removeProjectLocally(id: fixture.workspace.projectId, serverId: fixture.serverId)
+    case "session.updated":
+      var session = serverSession(
+        from: ChatSession(
+          id: fixture.anchorSessionId, projectId: fixture.project.id, serverId: "local", title: "Renamed remotely",
+          createdAt: fixture.workspace.createdAt))
+      session.workspaceId = fixture.workspace.id.uuidString
+      fixture.server.commit(sessions: [session])
+    case "session.deleted":
+      fixture.server.commit(deleted: [
+        ("sessions", fixture.anchorSessionId.uuidString),
+        ("workspace_panes", fixture.anchorSessionId.uuidString),
+      ])
     default:
-      let event = ServerEventEnvelope(
-        id: 1, serverId: "local", kind: kind, subjectId: session.id, createdAt: session.createdAt,
-        payload: .object([
-          "id": .string(session.id), "projectId": .string(project.id), "serverId": .string("local"),
-          "harnessId": .string("codex"), "title": .string("Renamed remotely"),
-          "origin": .string("codevisor"), "createdAt": .string(session.createdAt),
-        ])
-      )
-      _ = await model.applyServerSessionEvent(event, serverId: fixture.serverId)
+      fixture.server.commit(deleted: deletions(kind, fixture: fixture, extra: []))
     }
+    await fixture.deliver()
     release.signal()
-    #expect(await refresh.value == .superseded)
+    _ = await refresh.value
+
     if kind == "session.updated" {
-      #expect(model.sessions.first?.title == "Renamed remotely")
+      #expect(fixture.projectList.sessions.first?.title == "Renamed remotely")
     } else {
-      #expect(model.sessions.isEmpty)
+      #expect(fixture.projectList.sessions.isEmpty)
     }
+    #expect(fixture.store.eventCursor(for: fixture.serverId) == 2)
   }
 }

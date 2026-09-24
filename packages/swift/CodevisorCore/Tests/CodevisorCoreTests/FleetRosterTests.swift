@@ -22,10 +22,7 @@ struct FleetRosterTests {
     remoteFake.configureInfoId("srv-linux")
     let controller = MachineController(
       store: InMemoryStore(),
-      projectList: ProjectListModel(
-        projectRepository: DefaultProjectRepository(store: InMemoryStore()),
-        sessionRepository: DefaultSessionRepository(store: InMemoryStore())
-      ),
+      projectList: ProjectListModel.fixture(),
       clientFactory: { machine in machine.id == "local" ? localFake : remoteFake }
     )
     let sync = ConfigSync(machines: controller, store: InMemoryStore())

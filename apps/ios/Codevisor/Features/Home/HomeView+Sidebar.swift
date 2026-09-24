@@ -6,10 +6,10 @@ import UIKit
 /// Builds the sidebar's workspace sections from the fleet and answers the
 /// rows' requests: opening, closing, renaming, and adding tabs.
 extension HomeView {
-  /// Chats from machines with a current snapshot. Cached chats stay hidden
-  /// until their machine answers.
+  /// Chats from every known machine, cached ones included: they show at
+  /// launch and update in place as each machine catches up.
   var activeSessions: [ChatSession] {
-    projectList.sessions.filter { currentNavigationMachineIDs.contains($0.serverId) }
+    projectList.sessions.filter { knownMachineIDs.contains($0.serverId) }
   }
 
   /// Workspaces enter newest-first; the saved manual order then owns the
@@ -24,7 +24,7 @@ extension HomeView {
       uniquingKeysWith: { first, _ in first }
     )
     let workspaces = environment.workspaces.loadAll()
-      .filter { !$0.isArchived && currentNavigationMachineIDs.contains($0.serverId) }
+      .filter { !$0.isArchived && knownMachineIDs.contains($0.serverId) }
       .sorted(by: WorkspaceSidebarOrder.precedes)
     let sections = workspaces.compactMap { workspace -> HomeSidebarSection? in
       let routedIDs = workspace.chatSessionIds.filter {
