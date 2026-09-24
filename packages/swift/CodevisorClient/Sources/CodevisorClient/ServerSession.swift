@@ -293,40 +293,6 @@ public struct ServerSession: Codable, Equatable, Sendable {
   }
 }
 
-public enum ServerConversationRole: String, Decodable, Equatable, Sendable {
-  case user
-  case assistant
-  case system
-}
-
-public struct ServerConversationItem: Decodable, Equatable, Sendable {
-  public var id: String
-  public var role: ServerConversationRole
-  public var messageId: String?
-  public var text: String
-  public var createdAt: String
-  public var isGenerating: Bool
-  public var attachments: [ServerAttachmentRef]? = nil
-
-  public init(
-    id: String,
-    role: ServerConversationRole,
-    messageId: String? = nil,
-    text: String,
-    createdAt: String,
-    isGenerating: Bool,
-    attachments: [ServerAttachmentRef]? = nil
-  ) {
-    self.id = id
-    self.role = role
-    self.messageId = messageId
-    self.text = text
-    self.createdAt = createdAt
-    self.isGenerating = isGenerating
-    self.attachments = attachments
-  }
-}
-
 /// The update gate holding a session's prompts: the harness mid-update, or the
 /// server itself (`codevisor-server` / "Codevisor") during a restart drain.
 public struct ServerSessionUpdateGate: Decodable, Equatable, Sendable {

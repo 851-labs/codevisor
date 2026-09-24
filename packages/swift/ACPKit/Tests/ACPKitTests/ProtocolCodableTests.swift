@@ -5,8 +5,8 @@ import Testing
 @Suite("Protocol Codable")
 struct ProtocolCodableTests {
   private func roundTrip<T: Codable & Equatable>(_ value: T) throws {
-    let data = try ACPJSON.encoder.encode(value)
-    let decoded = try ACPJSON.decoder.decode(T.self, from: data)
+    let data = try JSONEncoder().encode(value)
+    let decoded = try JSONDecoder().decode(T.self, from: data)
     #expect(decoded == value)
   }
 
@@ -25,7 +25,7 @@ struct ProtocolCodableTests {
   @Test("ContentBlock decodes by type discriminator")
   func contentBlockDiscriminator() throws {
     let data = Data(#"{"type":"text","text":"yo"}"#.utf8)
-    let block = try ACPJSON.decoder.decode(ContentBlock.self, from: data)
+    let block = try JSONDecoder().decode(ContentBlock.self, from: data)
     #expect(block.textValue == "yo")
   }
 
@@ -35,7 +35,7 @@ struct ProtocolCodableTests {
       #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"messageId":"m1","phase":"final"}"#
         .utf8
     )
-    let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: tagged)
+    let update = try JSONDecoder().decode(SessionUpdate.self, from: tagged)
     guard case let .agentMessageChunk(_, _, _, phase) = update else {
       Issue.record("Expected agentMessageChunk")
       return
@@ -47,7 +47,7 @@ struct ProtocolCodableTests {
       #"{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hi"},"phase":"interlude"}"#
         .utf8
     )
-    let lenient = try ACPJSON.decoder.decode(SessionUpdate.self, from: unknown)
+    let lenient = try JSONDecoder().decode(SessionUpdate.self, from: unknown)
     guard case let .agentMessageChunk(_, _, _, lenientPhase) = lenient else {
       Issue.record("Expected agentMessageChunk")
       return
@@ -58,7 +58,7 @@ struct ProtocolCodableTests {
   @Test("Unknown content block type throws")
   func unknownContentBlock() {
     #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(ContentBlock.self, from: Data(#"{"type":"video"}"#.utf8))
+      _ = try JSONDecoder().decode(ContentBlock.self, from: Data(#"{"type":"video"}"#.utf8))
     }
   }
 
@@ -161,7 +161,7 @@ struct ProtocolCodableTests {
       {"sessionUpdate":"goal_update","goal":{"objective":"o","status":"budgetLimited",\
       "tokenBudget":null,"tokensUsed":5,"timeUsedSeconds":9.25,"createdAt":"c","updatedAt":"u"}}
       """.utf8)
-    let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: data)
+    let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
     guard case .goalUpdate(let goal) = update else { Issue.record("expected goal_update"); return }
     #expect(goal.tokenBudget == nil)
     #expect(goal.status == .budgetLimited)
@@ -173,7 +173,7 @@ struct ProtocolCodableTests {
       "tokensUsed":0,"timeUsedSeconds":0,"createdAt":"c","updatedAt":"u"}}
       """.utf8)
     #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(SessionUpdate.self, from: unknownStatus)
+      _ = try JSONDecoder().decode(SessionUpdate.self, from: unknownStatus)
     }
   }
 
@@ -182,7 +182,7 @@ struct ProtocolCodableTests {
     let data = Data(
       #"{"sessionUpdate":"tool_call","toolCallId":"x","title":"Search","kind":"search","status":"in_progress"}"#
         .utf8)
-    let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: data)
+    let update = try JSONDecoder().decode(SessionUpdate.self, from: data)
     guard case .toolCall(let call) = update else { Issue.record("expected tool_call"); return }
     #expect(call.toolCallId == "x")
     #expect(call.kind == .search)
@@ -192,7 +192,7 @@ struct ProtocolCodableTests {
   @Test("Unknown session update throws")
   func unknownUpdate() {
     #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(#"{"sessionUpdate":"???"}"#.utf8))
+      _ = try JSONDecoder().decode(SessionUpdate.self, from: Data(#"{"sessionUpdate":"???"}"#.utf8))
     }
   }
 
@@ -206,15 +206,15 @@ struct ProtocolCodableTests {
   @Test("Unknown tool call content throws")
   func unknownToolCallContent() {
     #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(ToolCallContent.self, from: Data(#"{"type":"zzz"}"#.utf8))
+      _ = try JSONDecoder().decode(ToolCallContent.self, from: Data(#"{"type":"zzz"}"#.utf8))
     }
   }
 
   @Test("ToolKind decodes unknown values as other")
   func toolKindLenient() throws {
-    let kind = try ACPJSON.decoder.decode(ToolKind.self, from: Data("\"telepathy\"".utf8))
+    let kind = try JSONDecoder().decode(ToolKind.self, from: Data("\"telepathy\"".utf8))
     #expect(kind == .other)
-    let known = try ACPJSON.decoder.decode(ToolKind.self, from: Data("\"execute\"".utf8))
+    let known = try JSONDecoder().decode(ToolKind.self, from: Data("\"execute\"".utf8))
     #expect(known == .execute)
   }
 }

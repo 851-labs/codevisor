@@ -62,13 +62,16 @@ extension SessionModelTests {
     let secondID = UUID()
     let fallbackID = UUID()
     let client = FakeSessionServerClient(sessionId: sessionID)
-    client.detailConversation = [
+    let rows = [
       (UUID(), firstID.uuidString), (UUID(), secondID.uuidString), (fallbackID, "legacy-non-uuid"),
-    ].map { rowID, messageID in
-      ServerConversationItem(
-        id: rowID.uuidString, role: .user, messageId: messageID, text: "Again",
-        createdAt: "2026-09-16T20:16:13.000Z", isGenerating: false)
-    }
+    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: rows.enumerated().map { index, row in
+        ServerTranscriptItem(
+          id: row.0.uuidString, sessionId: sessionID.uuidString, sequence: index, role: .user,
+          text: "Again", createdAt: "2026-09-16T20:16:13.000Z", updatedAt: "2026-09-16T20:16:13.000Z",
+          isGenerating: false, hasDetails: false, messageId: row.1, revision: 1)
+      }, hasMore: false, eventCursor: 0)
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionID),
       sessionId: sessionID.uuidString)

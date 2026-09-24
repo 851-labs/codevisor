@@ -59,7 +59,7 @@ struct PluginSettingsSessionTests {
       PluginSettingsSession(machines: machines, machineId: "cloud:dev-1", page: .browse, catalog: catalog()))
     let entry = try #require(try await session.fetchRegistry().entries.first)
 
-    machines.selectMachine("cloud:dev-2")
+    machines.registry.selectedMachineId = "cloud:dev-2"
     session.showInstall(source: entry.repo)
     let discovery = try await session.discover(source: entry.repo)
     try await session.install(source: entry.repo)

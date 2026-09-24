@@ -157,39 +157,6 @@ struct MachineConnectionTests {
     controller.stopEventSync()
   }
 
-  @Test("Switching machines leaves other machines' streams alive")
-  func switchingKeepsBackgroundStreams() async throws {
-    let remoteA = makeRemote("remote-a")
-    let remoteB = makeRemote("remote-b")
-    let fakeB = SyncFakeServerClient(projects: [], sessions: [])
-    let (controller, projectList) = try makeController(
-      fakes: [
-        "local": SyncFakeServerClient(projects: [], sessions: []),
-        remoteA.id: SyncFakeServerClient(projects: [], sessions: []),
-        remoteB.id: fakeB,
-      ],
-      remotes: [remoteA, remoteB]
-    )
-
-    await controller.connectMachine(remoteB.id)
-    try await waitForSync { fakeB.eventStreamSubscriberCount == 1 }
-
-    // Selecting a DIFFERENT machine must not tear down B's stream.
-    controller.selectMachine(remoteA.id)
-    #expect(fakeB.eventStreamSubscriberCount == 1)
-
-    let session = makeSession(id: UUID(), projectId: UUID(), serverId: remoteB.id)
-    fakeB.emit(
-      kind: "session.created",
-      subjectId: session.id,
-      payload: payload(for: session)
-    )
-    try await waitForSync {
-      projectList.sessions.contains { $0.serverId == remoteB.id }
-    }
-    controller.stopEventSync()
-  }
-
   @Test("connectMachine is idempotent while a stream is live")
   func connectIsIdempotent() async throws {
     let remote = makeRemote("remote-a")

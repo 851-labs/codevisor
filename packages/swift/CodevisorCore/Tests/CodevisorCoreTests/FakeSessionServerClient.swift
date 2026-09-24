@@ -58,7 +58,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   // `subscribeEvents` would treat distinct events as already-seen.
   private var _nextEnvelopeId = 1
 
-  var detailConversation: [ServerConversationItem] = []
   var detailCursor = 0
   var initialTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPage: ServerTranscriptPage?
@@ -278,14 +277,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
     if shouldFail { throw URLError(.networkConnectionLost) }
     if before == nil, let initialTranscriptPage { return initialTranscriptPage }
     if before != nil, let olderTranscriptPage { return olderTranscriptPage }
-    return ServerTranscriptPage(
-      items: detailConversation.enumerated().map { index, item in
-        ServerTranscriptItem(
-          id: item.id, sessionId: sessionId.uuidString, sequence: index,
-          role: item.role == .assistant ? .assistant : .user, text: item.text,
-          createdAt: item.createdAt, updatedAt: item.createdAt, isGenerating: item.isGenerating,
-          hasDetails: false, attachments: item.attachments, messageId: item.messageId, revision: 1)
-      }, hasMore: false, eventCursor: detailCursor)
+    return ServerTranscriptPage(items: [], hasMore: false, eventCursor: detailCursor)
   }
 
   func transcriptItemDetails(

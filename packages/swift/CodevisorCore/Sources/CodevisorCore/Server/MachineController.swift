@@ -18,40 +18,19 @@ public enum MachineControllerError: Error, Equatable, Sendable, LocalizedError {
   }
 }
 
+/// Persisted with synthesized `Codable`, which ignores unknown keys: legacy
+/// appearance metadata and the retired `hasExplicitMachineSelection` flag
+/// still decode and disappear the next time the registry is saved.
 public struct MachineRegistry: Sendable, Codable, Equatable {
   public var selectedMachineId: String
-  /// True once the user has explicitly chosen a machine (an actual tap in
-  /// the picker). While false, the controller may auto-select the best
-  /// available real machine so a fresh sign-in doesn't strand the user on
-  /// the local placeholder (which is non-functional on iOS). Auto-selection
-  /// never sets this, so a vanished auto-pick can be replaced next refresh.
-  public var hasExplicitMachineSelection: Bool
   public var remoteMachines: [CodevisorMachine]
 
   public init(
     selectedMachineId: String = CodevisorMachine.local.id,
-    hasExplicitMachineSelection: Bool = false,
     remoteMachines: [CodevisorMachine] = []
   ) {
     self.selectedMachineId = selectedMachineId
-    self.hasExplicitMachineSelection = hasExplicitMachineSelection
     self.remoteMachines = remoteMachines
-  }
-
-  /// Custom decode keeps registries persisted before explicit selection
-  /// existed loadable. Unknown legacy appearance keys are intentionally
-  /// ignored and disappear the next time the registry is saved.
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    selectedMachineId = try container.decode(String.self, forKey: .selectedMachineId)
-    // Registries persisted before this flag existed decode as "no explicit
-    // choice yet", so they benefit from auto-selection like fresh installs.
-    hasExplicitMachineSelection =
-      try container.decodeIfPresent(
-        Bool.self,
-        forKey: .hasExplicitMachineSelection
-      ) ?? false
-    remoteMachines = try container.decode([CodevisorMachine].self, forKey: .remoteMachines)
   }
 }
 
@@ -378,14 +357,6 @@ public final class MachineController {
     }
   }
 
-  public func selectMachine(_ id: String) {
-    guard machine(for: id) != nil else { return }
-    // An explicit tap is a durable choice: record it so auto-selection
-    // stops preferring another machine over the user's decision.
-    registry.hasExplicitMachineSelection = true
-    applySelection(id)
-  }
-
   /// Persists the legacy composer fallback without changing any machine's
   /// connection, request gate, update state, or navigation state. New
   /// composer state lives in ComposerDefaultsStore; this value remains only
@@ -399,7 +370,7 @@ public final class MachineController {
   /// When only the local placeholder is selected on a client-only platform,
   /// adopt the best available real machine. Client-only platforms (no local
   /// server) don't list "Local" at all, so a selection resting on it is
-  /// never a real choice — explicit or not — and stranding the user there
+  /// never a real choice, and stranding the user there
   /// renders an unreachable fleet. macOS supplies a working local server
   /// and keeps it as the default, even when cloud machines are already on
   /// the account. No-op when a real machine is already selected or no
@@ -409,8 +380,6 @@ public final class MachineController {
       selectedMachineId == CodevisorMachine.local.id,
       let candidate = preferredAutoSelectionCandidate()
     else { return }
-    // Deliberately not selectMachine: the auto-pick must stay non-explicit
-    // so it can be re-picked if this machine later disappears.
     applySelection(candidate.id)
   }
 
@@ -441,8 +410,8 @@ public final class MachineController {
     {
       applySelection(selectedId)
     }
-    // A fresh sign-in with machines but no explicit choice: adopt one so
-    // the user isn't left on the local placeholder.
+    // A fresh sign-in with machines: adopt one so the user isn't left on
+    // the local placeholder.
     autoSelectPreferredMachineIfNeeded()
     // Newly arrived cloud machines get their own streams regardless of
     // which target the composer remembers.
@@ -655,7 +624,6 @@ private extension MachineRegistry {
       || selectedMachineId.hasPrefix(CodevisorMachine.cloudIdPrefix)
     return MachineRegistry(
       selectedMachineId: keepsSelection ? selectedMachineId : CodevisorMachine.local.id,
-      hasExplicitMachineSelection: hasExplicitMachineSelection,
       remoteMachines: remotes
     )
   }

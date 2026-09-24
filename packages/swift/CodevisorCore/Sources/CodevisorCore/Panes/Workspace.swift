@@ -244,10 +244,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     selectedCenterTabIndex.map { centerTabs[$0] }
   }
 
-  public func tabId(containingPane paneId: UUID) -> UUID? {
-    centerTabs.first { $0.root.groupId(containingPane: paneId) != nil }?.id
-  }
-
   public func tabId(containingChat sessionId: UUID) -> UUID? {
     centerTabs.first { $0.root.groupId(containingChat: sessionId) != nil }?.id
   }

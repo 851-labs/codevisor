@@ -14,8 +14,8 @@ struct JSONValueTests {
       "array": .array([1, 2, 3]),
       "nested": .object(["a": "b"]),
     ])
-    let data = try ACPJSON.encoder.encode(value)
-    let decoded = try ACPJSON.decoder.decode(JSONValue.self, from: data)
+    let data = try JSONEncoder().encode(value)
+    let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
     #expect(decoded == value)
   }
 

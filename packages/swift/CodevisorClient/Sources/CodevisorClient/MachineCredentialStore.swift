@@ -55,24 +55,3 @@ public final class KeychainMachineCredentialStore: MachineCredentialStore, @unch
     }
   }
 }
-
-public final class InMemoryMachineCredentialStore: MachineCredentialStore, @unchecked Sendable {
-  private let lock = NSLock()
-  private var tokens: [String: String] = [:]
-
-  public init(tokens: [String: String] = [:]) {
-    self.tokens = tokens
-  }
-
-  public func token(forMachineID id: String) throws -> String? {
-    lock.withLock { tokens[id] }
-  }
-
-  public func saveToken(_ token: String, forMachineID id: String) throws {
-    lock.withLock { tokens[id] = token }
-  }
-
-  public func removeToken(forMachineID id: String) throws {
-    lock.withLock { tokens[id] = nil }
-  }
-}

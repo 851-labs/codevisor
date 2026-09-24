@@ -47,8 +47,8 @@ struct ToolCallTests {
   @Test("cancelled status round-trips and is terminal")
   func cancelledStatus() throws {
     let call = ToolCall(toolCallId: "t1", title: "Edit", status: .cancelled, exitCode: 130)
-    let data = try ACPJSON.encoder.encode(call)
-    let decoded = try ACPJSON.decoder.decode(ToolCall.self, from: data)
+    let data = try JSONEncoder().encode(call)
+    let decoded = try JSONDecoder().decode(ToolCall.self, from: data)
     #expect(decoded.status == .cancelled)
     #expect(decoded.exitCode == 130)
     #expect(decoded.isSettled)
@@ -59,7 +59,7 @@ struct ToolCallTests {
   @Test("Unknown status decodes to nil instead of dropping the call")
   func unknownStatusLenient() throws {
     let json = #"{"toolCallId":"x","title":"Run","status":"paused"}"#
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.toolCallId == "x")
     #expect(call.status == nil)
   }
@@ -72,7 +72,7 @@ struct ToolCallTests {
           {"type":"diff","path":"/a.txt","oldText":"1","newText":"2"}
       ]}
       """
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.content?.count == 1)
     guard case .diff(let path, _, _) = call.content?.first else {
       Issue.record("expected the diff to survive")
@@ -84,11 +84,11 @@ struct ToolCallTests {
   @Test("parentToolCallId decodes, round-trips and merges")
   func parentToolCallId() throws {
     let json = #"{"toolCallId":"sub-1","title":"Read","parentToolCallId":"task-1"}"#
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.parentToolCallId == "task-1")
 
-    let data = try ACPJSON.encoder.encode(call)
-    let decoded = try ACPJSON.decoder.decode(ToolCall.self, from: data)
+    let data = try JSONEncoder().encode(call)
+    let decoded = try JSONDecoder().decode(ToolCall.self, from: data)
     #expect(decoded.parentToolCallId == "task-1")
 
     // An update carrying the parent id attaches it; one without preserves it.
@@ -103,11 +103,11 @@ struct ToolCallTests {
   @Test("agent kind decodes; unknown kinds stay lenient")
   func agentKind() throws {
     let json = #"{"toolCallId":"task-1","title":"Agent: explore","kind":"agent"}"#
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.kind == .agent)
 
     let unknown = #"{"toolCallId":"x","title":"t","kind":"hologram"}"#
-    #expect(try ACPJSON.decoder.decode(ToolCall.self, from: Data(unknown.utf8)).kind == .other)
+    #expect(try JSONDecoder().decode(ToolCall.self, from: Data(unknown.utf8)).kind == .other)
   }
 
   @Test("web_search kind and resource_link source content decode from the wire shape")
@@ -118,7 +118,7 @@ struct ToolCallTests {
           {"type":"content","content":{"type":"resource_link","name":"Swift 6.2 Released | Swift.org","title":"Swift 6.2 Released | Swift.org","uri":"https://www.swift.org/blog/swift-6.2-released/"}}
       ]}
       """
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.kind == .webSearch)
     #expect(call.content?.count == 1)
     guard case .content(.resourceLink(let link)) = call.content?.first else {
@@ -132,11 +132,11 @@ struct ToolCallTests {
   @Test("diffStats decode on calls and updates, and merge like other fields")
   func diffStats() throws {
     let json = #"{"toolCallId":"x","title":"Edit","diffStats":[{"path":"/a","added":13,"removed":7}]}"#
-    let call = try ACPJSON.decoder.decode(ToolCall.self, from: Data(json.utf8))
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
     #expect(call.diffStats == [ToolCallDiffStat(path: "/a", added: 13, removed: 7)])
 
     let updateJson = #"{"toolCallId":"x","diffStats":[{"path":"/a","added":14,"removed":7}]}"#
-    let update = try ACPJSON.decoder.decode(ToolCallUpdate.self, from: Data(updateJson.utf8))
+    let update = try JSONDecoder().decode(ToolCallUpdate.self, from: Data(updateJson.utf8))
     let merged = call.applying(update)
     #expect(merged.diffStats?.first?.added == 14)
 
