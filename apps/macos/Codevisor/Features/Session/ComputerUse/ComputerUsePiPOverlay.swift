@@ -179,9 +179,7 @@ struct ComputerUsePiPOverlay: View {
     .frame(width: size.width, height: size.height)
     .background(.black)
     .clipShape(shape)
-    .overlay {
-      shape.strokeBorder(model.tint.opacity(model.isLive ? 0.9 : 0.3), lineWidth: 1.5)
-    }
+    // Like native PiP, no outline: the shadow alone lifts the card.
     .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     .contentShape(shape)
     // Outside the rounded content shape, so the corner handles reach the
