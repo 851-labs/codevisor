@@ -94,6 +94,8 @@ private final class NativeScreenSharingViewerRunner {
   /// The provider the last capabilities reply named; "vnc:" display ids
   /// are routed to the VNC runner even before discovery has run.
   private var provider: String?
+  /// The machine's server arbitrates control of its VNC desktop (851-2338).
+  private var controlLease = false
   private var vncRunners: [String: VNCScreenSharingViewerRunner] = [:]
   /// A target every request names, including capabilities, heartbeat and
   /// stop — a Computer Use live view is addressed by it end to end.
@@ -125,6 +127,7 @@ private final class NativeScreenSharingViewerRunner {
       throw ViewerError(reply.message ?? "Screen Sharing is unavailable on this Mac.")
     }
     provider = reply.provider
+    controlLease = reply.controlLease == true
     return reply.displays
   }
 
@@ -150,6 +153,7 @@ private final class NativeScreenSharingViewerRunner {
     let open = vncOpen
     let runner = VNCScreenSharingViewerRunner(
       displayId: display, open: { try await open(display) },
+      arbitratedByServer: { [weak self] in self?.controlLease ?? false },
       setDesktopScale: { [client, weak self] scale in
         // The machine's server sets its VNC desktop's scale (851-2339); an old server says unsupported.
         guard let request = self?.request(.setScale, viewerId: UUID(), displayId: display) else { return }

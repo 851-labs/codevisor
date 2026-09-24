@@ -11,6 +11,7 @@ struct RFBWebSocketTransportTests {
     private let lock = NSLock()
     private var inbound: [ServerWebSocketMessage]
     private(set) var sent: [Data] = []
+    private(set) var sentText: [String] = []
     private(set) var cancelled: URLSessionWebSocketTask.CloseCode?
     var closeCode: URLSessionWebSocketTask.CloseCode = .invalid
     var failSend = false
@@ -19,8 +20,11 @@ struct RFBWebSocketTransportTests {
 
     func send(_ message: ServerWebSocketMessage) async throws {
       if failSend { throw URLError(.networkConnectionLost) }
-      guard case .data(let data) = message else { return }
-      lock.withLock { sent.append(data) }
+      switch message {
+      case .data(let data): lock.withLock { sent.append(data) }
+      case .string(let text): lock.withLock { sentText.append(text) }
+      @unknown default: break
+      }
     }
 
     func receive() async throws -> ServerWebSocketMessage {
@@ -43,6 +47,24 @@ struct RFBWebSocketTransportTests {
     #expect(try await transport.read(maximum: 1) == [7])
     socket.closeCode = .normalClosure
     #expect(try await transport.read(maximum: 8) == [])
+  }
+
+  /// 851-2338: text frames are the server's control lease, handed to `onControlText`; the
+  /// RFB bytes around them read on untouched, and lease messages go out as text.
+  @Test func textFramesAreTheControlLeaseAndBytesReadOnAroundThem() async throws {
+    let socket = ScriptedSocket(inbound: [
+      .data(Data([1, 2])), .string(#"{"type":"granted"}"#), .data(Data([3])),
+    ])
+    let transport = RFBWebSocketTransport(socket: socket)
+    let received = LockedTexts()
+    transport.onControlText = { received.append($0) }
+    #expect(try await transport.read(maximum: 8) == [1, 2])
+    #expect(try await transport.read(maximum: 8) == [3])
+    #expect(received.values == [#"{"type":"granted"}"#])
+    try await transport.sendControlText(#"{"type":"release"}"#)
+    #expect(socket.sentText == [#"{"type":"release"}"#])
+    transport.close()
+    await #expect(throws: RFBError.connectionClosed) { try await transport.sendControlText("x") }
   }
 
   @Test func writesForwardBinaryFramesAndFailuresBecomeTransportErrors() async throws {
@@ -80,4 +102,11 @@ struct RFBWebSocketTransportTests {
     #expect(received == message)
     #expect(transport.bytesMoved <= message.count, "moved \(transport.bytesMoved) bytes")
   }
+}
+
+private final class LockedTexts: @unchecked Sendable {
+  private let lock = NSLock()
+  private var texts: [String] = []
+  func append(_ text: String) { lock.withLock { texts.append(text) } }
+  var values: [String] { lock.withLock { texts } }
 }

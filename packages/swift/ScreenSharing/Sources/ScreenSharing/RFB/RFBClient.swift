@@ -10,6 +10,8 @@ import Foundation
 public actor RFBClient {
   public nonisolated let framebuffer: RFBFramebuffer
   private let transport: any RFBTransport
+  /// The transport's control-lease side channel, if it has one (the WebSocket, 851-2338).
+  public nonisolated var controlChannel: (any RFBControlChannel)? { transport as? any RFBControlChannel }
   private let stream: RFBInputStream
   private var inflater: RFBZlibInflater?
   private let tight = RFBTightDecoder()
