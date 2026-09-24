@@ -66,11 +66,6 @@ public final class ThemeCatalog {
     Self.systemDescriptors + bundledEntries.map(\.descriptor) + customDescriptors
   }
 
-  /// Selectable themes for one appearance slot.
-  public func themes(ofType type: ThemeDescriptor.SchemeType) -> [ThemeDescriptor] {
-    availableThemes.filter { $0.type == type }
-  }
-
   public func descriptor(for id: String) -> ThemeDescriptor? {
     availableThemes.first { $0.id == id }
   }

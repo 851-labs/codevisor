@@ -1,10 +1,6 @@
 import Foundation
 import SwiftUI
 
-#if canImport(AppKit)
-  import AppKit
-#endif
-
 /// One file identity shared by browser rows, search results, and workspace panes.
 public struct FileIcon: View {
   private let path: String
@@ -33,15 +29,6 @@ public struct FileIcon: View {
     .frame(width: size, height: size)
     .accessibilityHidden(true)
   }
-
-  #if canImport(AppKit)
-    static func nativeImage(for path: String) -> NSImage? {
-      if let name = FileIconCatalog.assetName(for: path), let image = Bundle.module.image(forResource: name) {
-        return image
-      }
-      return NSImage(systemSymbolName: "text.document", accessibilityDescription: nil)
-    }
-  #endif
 }
 
 /// Pure filename matching; never consults the local filesystem for remote paths.

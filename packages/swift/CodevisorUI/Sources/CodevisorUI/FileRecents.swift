@@ -32,14 +32,6 @@ public final class FileRecents {
     save(recent, machineId: machineId, root: root)
   }
 
-  /// Forgets a path that no longer opens (deleted or moved on the machine).
-  public func remove(_ path: String, machineId: String, root: String) {
-    var recent = paths(machineId: machineId, root: root)
-    guard recent.contains(path) else { return }
-    recent.removeAll { $0 == path }
-    save(recent, machineId: machineId, root: root)
-  }
-
   private func save(_ recent: [String], machineId: String, root: String) {
     let scope = Self.scope(machineId: machineId, root: root)
     scopes[scope] = recent

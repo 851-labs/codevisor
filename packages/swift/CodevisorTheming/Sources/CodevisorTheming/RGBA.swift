@@ -113,17 +113,13 @@ public struct RGBA: Equatable, Hashable, Sendable {
     return (encode(sr), encode(sg), encode(sb))
   }
 
-  /// Lowercase `#rrggbb`, or `#rrggbbaa` when `includeAlpha` is true.
-  public func hexString(includeAlpha: Bool = false) -> String {
+  /// Lowercase `#rrggbb`; alpha is dropped.
+  public func hexString() -> String {
     func hex(_ value: Double) -> String {
       let clamped = max(0, min(255, Int(value.rounded())))
       return String(format: "%02x", clamped)
     }
-    var result = "#" + hex(r) + hex(g) + hex(b)
-    if includeAlpha {
-      result += hex(a * 255)
-    }
-    return result
+    return "#" + hex(r) + hex(g) + hex(b)
   }
 
   /// Linear sRGB mix, the native replacement for CSS

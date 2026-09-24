@@ -28,16 +28,6 @@ public enum Typography {
     #endif
   }()
 
-  /// The HIG default body text size for the current platform.
-  /// iOS/iPadOS: 17 pt · macOS: 13 pt.
-  public static let defaultTextSize: CGFloat = {
-    #if os(macOS)
-      return 13
-    #else
-      return 17
-    #endif
-  }()
-
   /// The smallest comfortable interactive target for the current platform.
   /// The visible glyph can remain compact; use `expandedHitTarget` to grow
   /// its hit region without changing surrounding layout.

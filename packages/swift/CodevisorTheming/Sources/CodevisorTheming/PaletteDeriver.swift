@@ -408,8 +408,8 @@ public enum PaletteDeriver {
     return ratio >= ColorMath.minMutedRatio ? composited : nil
   }
 
-  // RGBA port of ColorMath.deriveMutedFg: mixes fg toward bg from 60% up to
-  // 90% until the result clears the muted contrast floor, else keeps fg.
+  // Mixes fg toward bg from 60% up to 90% until the result clears the muted
+  // contrast floor, else keeps fg.
   private static func mutedFg(from fg: RGBA, over bg: RGBA) -> RGBA {
     let bgL = bg.relativeLuminance
     for weight in [0.6, 0.7, 0.8, 0.9] {

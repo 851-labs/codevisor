@@ -39,7 +39,6 @@ struct ThemeCatalogTests {
           let order: [ThemeDescriptor.Group] = [.system, .pierre, .shiki, .custom]
           return order.firstIndex(of: a)! < order.firstIndex(of: b)!
         })
-    #expect(catalog.themes(ofType: .light).allSatisfy { $0.type == .light })
   }
 
   @Test("Every bundled theme loads and derives a legible palette")
@@ -56,7 +55,7 @@ struct ThemeCatalogTests {
           >= ColorMath.minReadableRatio,
         "\(descriptor.id) primary text below 3:1")
       // Muted text clears 4.5:1, or falls back to the primary foreground
-      // on extreme palettes (the documented deriveMutedFg tradeoff).
+      // on extreme palettes (the documented PaletteDeriver.mutedFg tradeoff).
       #expect(
         ColorMath.contrastRatio(bgL, palette.textSecondary.relativeLuminance)
           >= ColorMath.minMutedRatio

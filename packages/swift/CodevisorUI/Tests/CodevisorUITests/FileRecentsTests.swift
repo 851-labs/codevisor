@@ -46,7 +46,5 @@ import Testing
     recents.record("/project/a.swift", machineId: "one", root: "/project")
     #expect(recents.paths(machineId: "two", root: "/project").isEmpty)
     #expect(recents.paths(machineId: "one", root: "/other").isEmpty)
-    recents.remove("/project/a.swift", machineId: "one", root: "/project")
-    #expect(recents.paths(machineId: "one", root: "/project").isEmpty)
   }
 }
