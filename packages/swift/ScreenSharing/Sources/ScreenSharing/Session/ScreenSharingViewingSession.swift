@@ -60,6 +60,10 @@ public protocol ScreenSharingViewingSession: AnyObject {
   var initialDesktopSize: (width: Int, height: Int)? { get }
   /// The measured link rate (851-2331), for choosing 1× or 2× pixels; nil until measured.
   var linkBitsPerSecond: Double? { get }
+  /// Whether the host draws its pointer into the video. Native capture does;
+  /// a VNC server needn't (macOS Screen Sharing neither draws it nor reports a
+  /// shape, 851-2355), so the viewer shows the local arrow when it has no shape.
+  var videoShowsPointer: Bool { get }
 }
 
 extension ScreenSharingViewingSession {
@@ -67,6 +71,7 @@ extension ScreenSharingViewingSession {
   public var resizesDesktop: Bool { false }
   public var initialDesktopSize: (width: Int, height: Int)? { nil }
   public var linkBitsPerSecond: Double? { nil }
+  public var videoShowsPointer: Bool { true }
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

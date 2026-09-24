@@ -109,6 +109,8 @@ struct VNCScreenSharingViewerBackendTests {
     let first = harness.log.endpoints[0]
     expectNoDifference(harness.log.events, [.opened(first)])
     #expect(first.supportsControl && first.supportsClipboard)
+    // A VNC video needn't contain the host's pointer: the local arrow may stand in (851-2355).
+    #expect(harness.surfaces[0].videoShowsPointer == false)
     harness.surfaces[0].present()
     await awaitObserved { harness.log.events.count >= 2 }
     harness.server.closeClient()

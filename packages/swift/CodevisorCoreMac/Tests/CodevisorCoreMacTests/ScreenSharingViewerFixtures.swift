@@ -101,6 +101,10 @@ final class FakeSurface: ScreenSharingViewerSurface {
   private(set) var inputActive = false
   private(set) var presentations = 0
   private(set) var stopped = false
+  /// What the endpoint said about the host's pointer in the video (851-2355).
+  private(set) var videoShowsPointer: Bool?
+
+  func setVideoShowsPointer(_ shows: Bool) { videoShowsPointer = shows }
 
   func beginInput() -> Bool {
     guard beginInputSucceeds else { return false }

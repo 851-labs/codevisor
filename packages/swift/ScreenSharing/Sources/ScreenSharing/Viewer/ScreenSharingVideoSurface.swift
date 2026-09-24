@@ -27,19 +27,28 @@
     public func endInput() { input.end() }
     private var tracking: NSTrackingArea?
     private static let remoteCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
+    /// The video contains the host's pointer (native capture): with no shape, the
+    /// local one is a blank. Otherwise (VNC) it's the arrow (851-2355).
+    private var videoShowsPointer = true
+    public func setVideoShowsPointer(_ shows: Bool) {
+      videoShowsPointer = shows
+      window?.invalidateCursorRects(for: self)
+    }
     private var videoSize = CGSize(width: 1920, height: 1080)
     /// The remote pointer when the backend reports it (VNC Cursor/PointerPos,
     /// 851-2311): its shape is the local cursor while controlling, so the
     /// pointer moves without a network round trip; while viewing, an overlay
-    /// shows it where the host put it. Without a shape the remote draws its own
-    /// pointer into the video and the local one is hidden, as before.
+    /// shows it where the host put it. Without a visible shape, a host that draws
+    /// its pointer into the video gets a blank local cursor; one that doesn't
+    /// (macOS Screen Sharing reports no cursor and draws none, 851-2355) the arrow.
     private var remoteShape: RFBCursorShape?
     private var remoteImage: CGImage?
     private var remotePosition: RFBPoint?
     private var shapedCursor: NSCursor?
     private let cursorOverlay = ScreenSharingCursorOverlay()
-    /// What the pointer looks like over the video while controlling.
-    var controlCursor: NSCursor { shapedCursor ?? Self.remoteCursor }
+    /// What the pointer looks like over the video while controlling: the host's
+    /// shape; else a blank when the video shows the host's pointer, or the arrow.
+    var controlCursor: NSCursor { shapedCursor ?? (videoShowsPointer ? Self.remoteCursor : .arrow) }
     /// Whether the view-mode overlay is showing, and where (for tests).
     var remoteCursorOverlayFrame: CGRect? { cursorOverlay.isHidden ? nil : cursorOverlay.frame }
     /// The fill around the remote display: the letterbox bars an aspect-fit
@@ -116,10 +125,15 @@
       window?.invalidateCursorRects(for: self)
     }
 
+    private static let cursorLog = Logger(subsystem: "com.codevisor.ScreenSharing", category: "RemoteCursor")
+
     public func showRemoteCursor(_ update: ScreenSharingCursorUpdate) {
       switch update {
       case .shape(let shape):
-        remoteShape = shape.isHidden ? nil : shape
+        Self.cursorLog.debug(
+          "shape \(shape.width, privacy: .public)×\(shape.height, privacy: .public), invisible \(shape.isInvisible, privacy: .public)"
+        )
+        remoteShape = shape.isInvisible ? nil : shape
         remoteImage = remoteShape.flatMap(Self.image)
       case .position(let point):
         remotePosition = point
