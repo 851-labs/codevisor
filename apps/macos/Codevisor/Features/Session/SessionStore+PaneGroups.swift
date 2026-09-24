@@ -65,14 +65,6 @@ extension SessionStore {
     )
   }
 
-  /// Persists a divider drag: the workspace's center tree with updated
-  /// fractions (same topology).
-  func saveCenterTree(_ tree: SplitNode, workspaceId: UUID) {
-    guard var workspace = environment.workspaces.workspace(id: workspaceId) else { return }
-    workspace.centerTree = tree
-    environment.workspaces.save(workspace)
-  }
-
   /// A specific center-tree LEAF's group model (split groups beyond the
   /// primary). Cached per (workspace, leaf) so panes survive navigation.
   /// `session` is nil for a workspace that has never hosted a chat: the leaf

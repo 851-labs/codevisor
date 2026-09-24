@@ -36,16 +36,9 @@ import {
 } from "./browser-use-invoke.js"
 import { browserUseTools } from "./browser-use-tools.js"
 
-export { managedBrowserSandboxArguments } from "./browser-chromium.js"
-export type { ManagedBrowserLaunchEnvironment } from "./browser-chromium.js"
 export { browserUseTools } from "./browser-use-tools.js"
 
-export type {
-  BrowserBackend,
-  BrowserExtensionSetupMode,
-  BrowserUseProviderStatus,
-  BrowserUseProvider
-} from "./browser-use-provider-types.js"
+export type { BrowserBackend, BrowserUseProvider } from "./browser-use-provider-types.js"
 import type {
   BrowserBackend,
   BrowserExtensionSetupMode,

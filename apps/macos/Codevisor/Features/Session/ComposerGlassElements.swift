@@ -1,5 +1,4 @@
 import CodevisorUI
-import StreamMarkdown
 
 enum ComposerGlassElements {
   static func visible(
@@ -19,11 +18,5 @@ enum ComposerGlassElements {
     }
     elements.append(.composer)
     return elements
-  }
-}
-
-extension StreamingTextAnimationVisibility {
-  static var initiallyHidden: StreamingTextAnimationVisibility {
-    StreamingTextAnimationVisibility(initiallyVisible: false)
   }
 }

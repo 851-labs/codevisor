@@ -139,10 +139,6 @@ public struct TranscriptPresentationRow: Identifiable, Equatable, Sendable {
       }
     }
 
-    public var isPlanDocument: Bool {
-      if case .plan = self { true } else { false }
-    }
-
     public var isActiveRow: Bool {
       switch self {
       case .active, .activePlanning, .activePlanHeader, .activePlanMarkdown,

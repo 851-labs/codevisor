@@ -310,14 +310,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
     }
   }
 
-  func deleteWorkspacePane(workspaceId _: UUID, paneId: UUID) async throws {
-    lock.withLock {
-      _panes?.removeAll {
-        $0.id.caseInsensitiveCompare(paneId.uuidString) == .orderedSame
-      }
-    }
-  }
-
   func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
     let gate = lock.withLock {
       _paneMutationLog.append("close")

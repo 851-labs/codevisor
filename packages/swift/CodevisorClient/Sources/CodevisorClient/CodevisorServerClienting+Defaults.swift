@@ -202,11 +202,7 @@ public extension CodevisorServerClienting {
     _ pane: ServerWorkspacePane,
     session: ChatSession
   ) async throws -> ServerWorkspacePanePromotion? { nil }
-  func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {}
-  func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? {
-    try await deleteWorkspacePane(workspaceId: workspaceId, paneId: paneId)
-    return nil
-  }
+  func closeWorkspacePane(workspaceId: UUID, paneId: UUID) async throws -> ServerWorkspacePane? { nil }
 
   func shellEventStream() -> AsyncThrowingStream<ServerEventEnvelope, any Error> {
     // Test doubles and old transports preserve their existing behavior.

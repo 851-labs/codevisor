@@ -157,7 +157,7 @@ extension SessionModel {
     if !isReplayingHistory, connectionRecoveryTask != nil, streamSynchronization != .reconnecting {
       stopConnectionRecovery()
     }
-    if !isReplayingHistory, providerActivityPhase(for: event) != nil {
+    if !isReplayingHistory, isProviderActivity(event) {
       noteProviderActivity()
     }
     switch event {
@@ -187,7 +187,7 @@ extension SessionModel {
       if promotedFromQueue {
         onQueuedPromptPromoted?(id.flatMap(UUID.init(uuidString:)))
       }
-    case let .finished(stopReason, stopDetail, stopKind, retryable, _, chatItemId):
+    case let .finished(stopReason, stopDetail, stopKind, retryable, chatItemId):
       let activeTurnContinues = finish(
         stopReason: stopReason,
         outcome: stopReason == .cancelled ? .cancelled : .completed,
@@ -393,39 +393,24 @@ extension SessionModel {
     }
   }
 
-  private func providerActivityPhase(
-    for event: ServerSessionStreamEvent
-  ) -> SessionProviderActivityPhase? {
+  /// Whether an event is live provider output that proves the turn is
+  /// still progressing.
+  private func isProviderActivity(_ event: ServerSessionStreamEvent) -> Bool {
     switch event {
     case let .update(update):
       switch update {
-      case .agentMessagePatch, .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument:
-        return .modelStream
-      case .toolCall:
-        return .toolInputStream
-      case .toolCallUpdate:
-        return .toolExecution
-      case .question:
-        return .waitingForQuestion
-      case .questionResolved:
-        return .toolExecution
-      case .contextCompaction:
-        return .modelStream
+      case .agentMessagePatch, .agentMessageChunk, .agentThoughtChunk, .plan, .planDocument,
+        .toolCall, .toolCallUpdate, .question, .questionResolved, .contextCompaction:
+        return true
       case .userMessageChunk, .availableCommandsUpdate, .currentModeUpdate,
         .configOptionUpdate, .usageUpdate, .goalUpdate, .goalCleared:
-        return nil
+        return false
       }
-    case .retrying:
-      return .retryBackoff
-    case .userMessage:
-      return .modelStream
-    case .assistantItemStarted:
-      return .modelStream
-    case .assistantFinalized:
-      return .modelStream
+    case .retrying, .userMessage, .assistantItemStarted, .assistantFinalized:
+      return true
     case .synchronization, .finished, .failed, .authenticationRequired, .queueUpdated, .updateGate,
       .backgroundTasks, .runtimeState, .planApprovalRequired, .modelFallback:
-      return nil
+      return false
     }
   }
 

@@ -316,8 +316,6 @@ extension ServerSessionTransport {
             stopDetail: event.payload["stopDetail"]?.stringValue,
             stopKind: event.payload["stopKind"]?.stringValue,
             retryable: event.payload["retryable"]?.boolValue == true,
-            initiatedBy: event.payload["initiatedBy"]?.stringValue
-              .flatMap(SessionTurnInitiator.init(rawValue:)) ?? .user,
             chatItemId: event.payload["chatItemId"]?.stringValue
               .flatMap(UUID.init(uuidString:))
           )

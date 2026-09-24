@@ -75,13 +75,8 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
   package var latestEncodedNs: Int64? { lock.withLock { lastEncodedNs } }
   package var latestSubmittedNs: Int64? { lock.withLock { lastSubmittedNs } }
 
-  /// Evaluations performed (each is one wake of the notifier loop).
-  package var evaluationCount: Int { lock.withLock { evaluations } }
-  private var evaluations = 0
-
   package func evaluate(nowNs: Int64) -> Evaluation {
     lock.withLock {
-      evaluations += 1
       guard armed, !stopped, let submittedAt = lastSubmissionAtNs, let submitted = lastSubmittedNs else {
         armed = false
         return .inactive

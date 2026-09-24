@@ -5,13 +5,14 @@ import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
+import { managedBrowserSandboxArguments } from "./browser-chromium.js"
 import {
   browserExtensionInstallation,
   browserExtensionPath,
   CODEVISOR_BROWSER_EXTENSION_ID
 } from "./browser-extension-relay.js"
 import { browserKeyDescription } from "./browser-keyboard.js"
-import { browserUseTools, managedBrowserSandboxArguments } from "./browser-use-provider.js"
+import { browserUseTools } from "./browser-use-provider.js"
 
 const directories: string[] = []
 

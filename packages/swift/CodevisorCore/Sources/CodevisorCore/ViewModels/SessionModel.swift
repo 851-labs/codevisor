@@ -2,15 +2,6 @@ import Foundation
 import Observation
 import ACPKit
 
-public enum SessionProviderActivityPhase: String, Equatable, Sendable {
-  case modelStream
-  case toolInputStream
-  case toolExecution
-  case retryBackoff
-  case waitingForQuestion
-  case cancelling
-}
-
 struct TranscriptDetailsCacheEntry {
   let revision: Int
   let turn: AssistantTurn

@@ -76,14 +76,6 @@ final class ProjectSetupModel {
     clonedProjects.filter { !isSelected($0.folderURL) }
   }
 
-  /// Whether the user has staged anything not yet confirmed. The new-chat
-  /// page keeps the setup panel on screen while this is true — a clone
-  /// registers its project immediately, which would otherwise flip the
-  /// page to the composer instead of showing the clone as a selected row.
-  var hasStagedWork: Bool {
-    !selectedFolders.isEmpty || !customFolders.isEmpty || !clonedProjects.isEmpty
-  }
-
   /// Drops staged selections (used when the selected machine changes —
   /// folders staged for one machine don't apply to another). Suggestions
   /// are cleared too; the caller reloads them for the new machine.
@@ -281,8 +273,7 @@ struct ProjectSetupPanel: View {
   @Environment(AppEnvironment.self) private var environment
 
   /// Owned by the caller so staged work (a completed clone, ticked rows)
-  /// survives the project list changing underneath the page — the caller
-  /// keeps the panel visible while `model.hasStagedWork`.
+  /// survives the project list changing underneath the page.
   let model: ProjectSetupModel
   let onComplete: (Project) -> Void
 

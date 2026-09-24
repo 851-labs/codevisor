@@ -29,11 +29,6 @@ extension SessionContainerView {
     }
   }
 
-  func selectCenterTab(_ tabId: UUID) {
-    let workspace = selectedWorkspace
-    store.selectDestination(.tab(tabId), in: workspace.id)
-  }
-
   /// Focus follows committed navigation. A delayed callback from an earlier
   /// click must never activate its old tab or steal the new pane's focus.
   func focusSelectedCenterPane() {

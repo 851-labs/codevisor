@@ -21,7 +21,7 @@ extension HomeView {
   }
 
   /// Machines whose last completed sync attempt failed, including retries
-  /// in progress, surfaced together in the toolbar and retried together.
+  /// in progress, surfaced together in the toolbar.
   var failedSyncMachines: [CodevisorMachine] {
     machines.allMachines.filter { machine in
       if case .stale = machines.navigationSyncStateByMachineId[machine.id] { return true }
@@ -41,26 +41,6 @@ extension HomeView {
   var launch: NavigationPresentation.Launch { presentation.launch }
 
   var syncIndicator: NavigationPresentation.SyncIndicator { presentation.syncIndicator }
-
-  /// The machines that failed, named — "your machines" while none have.
-  var failedSyncMachineNames: String {
-    let names = failedSyncMachines.map(\.name)
-    return names.isEmpty ? "your machines" : names.joined(separator: ", ")
-  }
-
-  /// Reconnects every machine whose sync failed — retry addresses the
-  /// machines that actually broke, not a "selected" one.
-  func retryFailedMachines() {
-    let failed = failedSyncMachines
-    Task {
-      for machine in failed {
-        // A full re-preparation, not a bare reconnect: a failed
-        // machine's request gate is latched, and only preparation
-        // clears that latch before requests flow again.
-        await machines.prepareMachine(machine.id)
-      }
-    }
-  }
 
   func openFailedMachineSettings() {
     let failed = failedSyncMachines

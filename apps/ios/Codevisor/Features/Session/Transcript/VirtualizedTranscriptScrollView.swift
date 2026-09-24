@@ -400,17 +400,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
   // MARK: - Virtual row mounting
 
-  // MARK: - Measurement
-
-  var isActuallyVisible: Bool {
-    var view: UIView? = self
-    while let current = view {
-      if current.isHidden || current.alpha <= 0.01 { return false }
-      view = current.superview
-    }
-    return true
-  }
-
   // MARK: - Disclosure and send presentation
 
   // MARK: - State and pagination

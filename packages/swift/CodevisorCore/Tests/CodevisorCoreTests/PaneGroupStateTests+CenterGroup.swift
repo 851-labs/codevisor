@@ -20,27 +20,6 @@ extension PaneGroupStateTests {
     #expect(state.panes.isEmpty)
   }
 
-  @Test("insertPane places a transferred pane at a clamped index and selects it")
-  func insertPane() {
-    var state = PaneGroupState.centerInitial(sessionId: sessionId)
-    let transferred = PaneDescriptorState(
-      id: UUID(), kind: .terminal, name: "Terminal 1", terminalKey: "k"
-    )
-    state.insertPane(transferred, at: 99)
-    #expect(state.panes.map(\.name) == ["Chat", "Terminal 1"])
-    #expect(state.selectedPaneId == transferred.id)
-
-    let leading = PaneDescriptorState(
-      id: UUID(), kind: .terminal, name: "Terminal 2", terminalKey: "k2"
-    )
-    state.insertPane(leading, at: -1)
-    #expect(state.panes.first?.id == leading.id)
-
-    // Re-inserting an already-present pane is a no-op.
-    state.insertPane(transferred, at: 0)
-    #expect(state.panes.count == 3)
-  }
-
   @Test("Drafts and established chats close at the group level")
   func chatCloseRules() {
     var state = PaneGroupState.centerInitial(sessionId: sessionId)

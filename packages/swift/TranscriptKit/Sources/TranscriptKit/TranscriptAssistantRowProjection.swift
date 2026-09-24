@@ -348,16 +348,6 @@ enum TranscriptAssistantRowProjection {
 }
 
 extension TranscriptAssistantRowProjection {
-  static func planningID(
-    messageID: UUID,
-    lifecycle: TranscriptBlockLifecycle
-  ) -> TranscriptPresentationRow.ID {
-    switch lifecycle {
-    case .receiving: .activePlanning(messageID)
-    case .settled: .assistantPlanning(messageID)
-    }
-  }
-
   static func resultID(
     messageID: UUID,
     lifecycle: TranscriptBlockLifecycle
