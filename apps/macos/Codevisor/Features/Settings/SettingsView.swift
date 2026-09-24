@@ -52,7 +52,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsPaneRoute: Hashable {
-  case machine(MachinePaneRoute)
   case project(ProjectGroup.ID)
 }
 
@@ -302,8 +301,6 @@ struct SettingsView: View {
           .settingsNavigationToolbar()
           .navigationDestination(for: SettingsPaneRoute.self) { route in
             switch route {
-            case let .machine(machineRoute):
-              machinePage(for: machineRoute)
             case let .project(groupId):
               ProjectSettingsDetailView(groupId: groupId)
                 .navigationBarBackButtonHidden(true)
@@ -416,33 +413,6 @@ private struct SettingsSidebarRow: View {
     .buttonStyle(.plain)
     .sidebarRowHover(isSelected: isSelected)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
-  }
-}
-
-extension SettingsView {
-  /// One machine's page inside a config pane, pushed from the pane's
-  /// machine list. Pinned to its machine via `settingsMachineId` so every
-  /// sheet keeps talking to that machine.
-  @ViewBuilder
-  fileprivate func machinePage(for route: MachinePaneRoute) -> some View {
-    let machine =
-      environment.machines.allMachines.first { $0.id == route.machineId }
-      ?? CodevisorMachine.local
-    Form {
-      switch route.pane {
-      case .mcps:
-        McpMachinePane(machine: machine)
-      case .plugins:
-        PluginMachinePane(machine: machine)
-      case .skills:
-        SkillMachinePane(machine: machine)
-      }
-    }
-    .settingsPaneFormStyle(theme)
-    .navigationTitle(machine.name)
-    .environment(\.settingsMachineId, machine.id)
-    .navigationBarBackButtonHidden(true)
-    .settingsNavigationToolbar()
   }
 }
 

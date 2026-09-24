@@ -216,6 +216,16 @@ export const routePlugins = async (
     return true
   }
 
+  const unlinkId = matchRoute(url.pathname, "/v1/plugins/:pluginId/link")
+  if (unlinkId !== undefined && request.method === "DELETE") {
+    // Same pane cleanup as an uninstall: the plugin stops resolving either
+    // way, so its panes must not be left pointing at nothing.
+    const summary = await manager.get(unlinkId)
+    await deletePluginPanes(services, fanout, summary.id)
+    writeJson(response, 200, await manager.unlink(unlinkId))
+    return true
+  }
+
   const restartId = matchRoute(url.pathname, "/v1/plugins/:pluginId/restart")
   if (restartId !== undefined && request.method === "POST") {
     const restarted = await manager.restart(restartId)

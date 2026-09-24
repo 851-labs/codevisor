@@ -5,21 +5,8 @@ import Foundation
 /// control; machines converge on their own, so a row is a status — never a
 /// place to install or configure.
 public extension HarnessFleet {
-  /// What the list knows about a machine before reading its report.
-  struct FleetMachine: Identifiable, Equatable, Sendable {
-    public var id: String
-    public var name: String
-    /// The key the machine's server writes its readiness under; nil until probed.
-    public var syncKey: String?
-    public var isReachable: Bool
-
-    public init(id: String, name: String, syncKey: String?, isReachable: Bool) {
-      self.id = id
-      self.name = name
-      self.syncKey = syncKey
-      self.isReachable = isReachable
-    }
-  }
+  /// Every plane resolves machines identically; harnesses keep the old name.
+  typealias FleetMachine = FleetMachineInfo
 
   /// One harness on one machine, reduced to the single word the row shows.
   enum MachineStatus: Equatable, Sendable {
@@ -69,6 +56,16 @@ public extension HarnessFleet {
       switch self {
       case .signInRequired, .blocked: true
       default: false
+      }
+    }
+
+    /// The shared row presentation every fleet page renders from.
+    public var rowStatus: FleetRowStatus {
+      switch self {
+      case .ready: .ready()
+      case .blocked(let reason): .attention(label, reason: reason)
+      case .signInRequired: .attention(label)
+      default: isBusy ? .busy(label) : .quiet(label)
       }
     }
   }
@@ -163,12 +160,6 @@ public extension HarnessFleet {
   }
 
   static func fleetMachines(_ machines: MachineController) -> [FleetMachine] {
-    machines.allMachines.map { machine in
-      FleetMachine(
-        id: machine.id,
-        name: machine.name,
-        syncKey: machines.syncKey(forMachineId: machine.id),
-        isReachable: machines.statusByMachineId[machine.id]?.isReachable != false)
-    }
+    FleetMachineInfo.all(machines)
   }
 }

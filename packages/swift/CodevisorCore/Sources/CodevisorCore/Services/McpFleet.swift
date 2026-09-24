@@ -12,7 +12,21 @@ public enum McpFleet {
     public let name: String
     public let state: String
     public let reason: String?
+    /// The raw connection state behind a blocked row, so the client picks
+    /// the action rather than matching on the reason's prose.
+    public let code: String?
+    public let toolCount: Int?
     public var id: String { name }
+
+    public init(
+      name: String, state: String, reason: String?, code: String? = nil, toolCount: Int? = nil
+    ) {
+      self.name = name
+      self.state = state
+      self.reason = reason
+      self.code = code
+      self.toolCount = toolCount
+    }
   }
 
   /// machineId → that machine's readiness rows, parsed from the replica.
@@ -29,7 +43,12 @@ public enum McpFleet {
         else { return nil }
         let reason: String? =
           if case .string(let text) = fields["reason"] ?? .null { text } else { nil }
-        return MachineReadiness(name: name, state: state, reason: reason)
+        let code: String? =
+          if case .string(let text) = fields["code"] ?? .null { text } else { nil }
+        let toolCount: Int? =
+          if case .number(let value) = fields["toolCount"] ?? .null { Int(value) } else { nil }
+        return MachineReadiness(
+          name: name, state: state, reason: reason, code: code, toolCount: toolCount)
       }
     }
     return result

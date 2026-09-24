@@ -71,14 +71,18 @@ describe("mcp readiness mapping", () => {
     expect(mcpReadiness(server("connected"), none)).toEqual({ name: "S", state: "ready" })
     expect(mcpReadiness(server("connecting"), none)).toEqual({ name: "S", state: "connecting" })
     expect(mcpReadiness(server("disconnected"), none)).toEqual({ name: "S", state: "idle" })
+    // A blocked row carries the raw connection state too, so a client can
+    // choose the action (sign in vs read a log) without parsing the prose.
     expect(mcpReadiness(server("needsSetup"), none)).toEqual({
       name: "S",
       state: "blocked",
+      code: "needsSetup",
       reason: "Needs setup on this machine"
     })
     expect(mcpReadiness(server("error", true, "spawn npx ENOENT"), none)).toEqual({
       name: "S",
       state: "blocked",
+      code: "error",
       reason: "spawn npx ENOENT"
     })
     // Unknown states surface verbatim rather than vanishing.
@@ -94,6 +98,27 @@ describe("mcp readiness mapping", () => {
       name: "S",
       state: "disabled",
       reason: "Disabled on this machine"
+    })
+  })
+
+  it("carries the tool count on a ready row so the fleet list can show drift", () => {
+    expect(mcpReadiness({ ...server("connected"), toolCount: 14 }, none)).toEqual({
+      name: "S",
+      state: "ready",
+      toolCount: 14
+    })
+    // Zero is a real answer and must survive; absent stays absent rather
+    // than becoming a misleading 0.
+    expect(mcpReadiness({ ...server("connected"), toolCount: 0 }, none)).toEqual({
+      name: "S",
+      state: "ready",
+      toolCount: 0
+    })
+    expect(mcpReadiness(server("connected"), none)).toEqual({ name: "S", state: "ready" })
+    // Only a connected server has a meaningful count.
+    expect(mcpReadiness({ ...server("connecting"), toolCount: 9 }, none)).toEqual({
+      name: "S",
+      state: "connecting"
     })
   })
 })

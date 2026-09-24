@@ -27,10 +27,8 @@ import {
   reconcileOrphanedSessionTurns,
   reconcileStaleStreamingTurns
 } from "./routes/sessions.js"
-import {
-  makeAuthSyncRefreshScheduler,
-  runBackgroundSyncReconcile
-} from "./routes/sync-reconcilers.js"
+import { makeAuthSyncRefreshScheduler } from "./routes/sync-readiness.js"
+import { runBackgroundSyncReconcile } from "./routes/sync-reconcilers.js"
 import {
   appendAndPublish,
   failureMessage,

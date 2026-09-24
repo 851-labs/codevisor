@@ -19,7 +19,7 @@ import {
   type CodevisorServerServices,
   type EventFanout
 } from "../server-context.js"
-import { refreshMcpReadiness } from "./sync-reconcilers.js"
+import { refreshMcpReadiness } from "./sync-readiness.js"
 
 /// Mirrors the native switch: off suppresses only this machine; on clears
 /// that override and, if necessary, enables the shared definition as well.

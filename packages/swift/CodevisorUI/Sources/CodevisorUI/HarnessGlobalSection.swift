@@ -124,16 +124,18 @@ private struct HarnessFleetRow<Icon: View>: View {
       }
       if let single {
         HarnessMachineActionButton(row: single, harnessName: setting.name, actions: actions)
-        // One machine has nothing to converge with, so a check or a
-        // warning would only restate the button beside it. Progress still
-        // shows while the machine is installing or catching up.
-        if single.status.isBusy {
-          HarnessMachineMark(status: single.status)
+        // One machine has nothing to converge with, so a check would only
+        // restate the button beside it. Progress and failures still show:
+        // the mark is where a failure explains itself.
+        if single.status.isBusy || single.status.needsAttention {
+          HarnessMachineMark(
+            status: single.status,
+            details: HarnessMachineActionButton.details(row: single, harnessName: setting.name))
         }
       }
     } actions: {
       if let onEditCustom, model.customSpecs[setting.id] != nil {
-        Button("Edit…", systemImage: "pencil") { onEditCustom(setting) }
+        Button("Edit…") { onEditCustom(setting) }
       }
       Button("Uninstall…", role: .destructive) { model.uninstall = setting }
     }

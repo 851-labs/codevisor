@@ -165,6 +165,13 @@ export const pluginsStub = (
     }
     return { plugins: [] }
   },
+  unlink: async (pluginId) => {
+    calls.push(["unlink", pluginId])
+    if (pluginId !== "owner.example") {
+      throw new PluginsError("notFound", `Plugin not installed: ${pluginId}`)
+    }
+    return { plugins: [] }
+  },
   get: async (pluginId) => {
     calls.push(["get", pluginId])
     if (pluginId === "owner.conflict") {

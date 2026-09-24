@@ -13,6 +13,7 @@ import {
   MCP_READINESS_NAMESPACE,
   mcpOverlayDisableKey
 } from "./mcp-fleet.js"
+import { SKILL_READINESS_NAMESPACE } from "./skills-fleet.js"
 
 /// App-hosted servers used to identify as the literal "local" in every sync
 /// namespace: their per-machine overlay keys, their single-writer readiness
@@ -30,6 +31,7 @@ const SINGLE_WRITER_NAMESPACES: ReadonlyArray<string> = [
   MCP_READINESS_NAMESPACE,
   HARNESS_READINESS_NAMESPACE,
   PLUGIN_READINESS_NAMESPACE,
+  SKILL_READINESS_NAMESPACE,
   ACCOUNTS_SYNC_NAMESPACE
 ]
 

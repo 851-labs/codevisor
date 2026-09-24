@@ -509,6 +509,15 @@ extension CodevisorServerClient {
     return response.plugins
   }
 
+  public func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary] {
+    let response: PluginListResponse = try await send(
+      "/v1/plugins/\(pathComponent(pluginId))/link",
+      method: "DELETE",
+      body: Optional<EmptyBody>.none
+    )
+    return response.plugins
+  }
+
   public func restartPlugin(pluginId: String) async throws -> ServerPluginSummary {
     try await send(
       "/v1/plugins/\(pathComponent(pluginId))/restart",

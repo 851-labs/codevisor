@@ -26,11 +26,19 @@ public struct PluginSafetyButton: View {
   }
 }
 
-private struct PluginReportSheet: View {
+/// Reporting a plugin, presented either from the row button above or from a
+/// list's row menu. A menu item cannot own a sheet — the menu closes and
+/// takes the anchor with it — so the page presents this directly.
+public struct PluginReportSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
   let pluginId: String
   let name: String
+
+  public init(pluginId: String, name: String) {
+    self.pluginId = pluginId
+    self.name = name
+  }
   @State private var reportId = UUID()
   @State private var reason = "Harmful content"
   @State private var details = ""
@@ -42,7 +50,7 @@ private struct PluginReportSheet: View {
   private var publisher: String { String(pluginId.split(separator: ".").first ?? "") }
   private var isBlocked: Bool { environment.pluginAccess.blockedPublishers.contains(publisher) }
 
-  var body: some View {
+  public var body: some View {
     NavigationStack {
       Form {
         if sent {

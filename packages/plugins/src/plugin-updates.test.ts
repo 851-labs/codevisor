@@ -164,6 +164,7 @@ const installerHarness = (
     },
     recover: async () => undefined,
     remove: async () => undefined,
+    unlink: async () => undefined,
     restore: async () => {
       throw new Error("unused")
     }

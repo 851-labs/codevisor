@@ -169,4 +169,14 @@ describe("manager install pipeline", () => {
     // Linked plugins are refused by remove — they belong to the developer.
     await expect(manager.remove("owner.fresh")).rejects.toThrow(/linked, not managed/)
   })
+
+  it("unlinks a linked plugin without touching its checkout", async () => {
+    const fixture = makeFixture(freshManifest)
+    const { manager, root } = makeManager()
+    await manager.link({ path: fixture })
+    const after = await manager.unlink("owner.fresh")
+    expect(after.plugins.map((plugin) => plugin.id)).not.toContain("owner.fresh")
+    expect(existsSync(join(root, "owner.fresh"))).toBe(false)
+    expect(existsSync(fixture)).toBe(true)
+  })
 })

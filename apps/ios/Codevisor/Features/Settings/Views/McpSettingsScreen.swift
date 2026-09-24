@@ -4,170 +4,172 @@ import SwiftUI
 
 // MARK: - MCPs
 
-/// The MCP screen: a machine list that pushes each machine's MCP servers;
-/// the toggle means "available on this machine" and writes the per-machine
-/// overlay.
+/// The MCP screen: built-in tools and managed servers as the fleet wants
+/// them, each with its machines nested beneath. The same shared sections the
+/// Mac renders. Computer Use's permission rows have no iOS counterpart — the
+/// grants belong to the Codevisor app on the machine itself — so a machine
+/// row here reports them and says where to go.
 struct McpSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @State private var model = McpGlobalModel()
+  @State private var pendingRemoval: McpFleetEntry?
+  @State private var editing: McpEditorTarget?
+  @State private var actionError: String?
+
+  /// Adding, or editing an existing server. Both use the same shared form.
+  ///
+  /// Editing carries the whole entry, not just its representative record: a
+  /// server's id differs per machine, so the id and the client it is sent to
+  /// have to be resolved from the same machine or the update lands on a
+  /// stranger's id.
+  private struct McpEditorTarget: Identifiable {
+    let entry: McpFleetEntry?
+    var server: ServerMcpServer? { entry?.representative }
+    var id: String { entry?.name ?? "new" }
+  }
+
+  /// Definitions replicate by name, so any machine that has the server can
+  /// author the change; the local one is preferred so it lands nearest.
+  private var authoringMachineId: String {
+    environment.machines.selectedMachineId
+  }
+  @Environment(\.openURL) private var openURL
 
   var body: some View {
     List {
-      MachineListSection(badge: badge) { machine in
-        McpMachineRows(machine: machine)
+      Section("Built-in Tools") {
+        fleetSection(builtIn: true)
+      }
+      Section("MCP Servers") {
+        fleetSection(builtIn: false)
       }
     }
     .navigationTitle("MCPs")
     .navigationBarTitleDisplayMode(.inline)
-  }
-
-  private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
-    if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
-      return .attention("Unreachable")
-    }
-    guard let key = environment.machines.syncKey(forMachineId: machine.id),
-      let rows = McpFleet.readiness(environment.configSync)[key]
-    else { return .syncing }
-    if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
-    if rows.contains(where: { $0.state == "connecting" }) { return .syncing }
-    return .synced
-  }
-}
-
-/// One machine's MCP servers with machine-effective enable state.
-private struct McpMachineRows: View {
-  @Environment(AppEnvironment.self) private var environment
-  let machine: CodevisorMachine
-  @State private var servers: [ServerMcpServer] = []
-  /// Optimistic enable state by server id while a toggle is in flight.
-  @State private var pendingEnabled: [String: Bool] = [:]
-  @State private var refreshTask: Task<Void, Never>?
-  @State private var isLoading = true
-  @State private var errorMessage: String?
-
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: machine.id)
-  }
-
-  var body: some View {
-    // Overlay flips re-derive every row's effective state immediately.
-    let _ = environment.configSync.revisionsByNamespace["mcp-overlays"]
-    Group {
-      if isLoading, servers.isEmpty {
-        HStack {
-          Spacer(); ProgressView(); Spacer()
-        }
-      } else if let errorMessage {
-        Text(errorMessage).foregroundStyle(.red)
-      } else if servers.isEmpty {
-        Text("No MCP servers added yet.")
-          .foregroundStyle(.secondary)
-      } else {
-        ForEach(servers, id: \.id) { server in
-          serverRow(server)
-        }
-      }
-    }
-    .task(id: machine.id) {
-      isLoading = true
-      await load()
-    }
-    .onChange(of: environment.mcpStateRevision(for: machine.id)) { _, _ in
-      // The machine reported a state change: refetch, coalescing a burst.
-      refreshTask?.cancel()
-      refreshTask = Task {
-        try? await Task.sleep(for: .milliseconds(150))
-        guard !Task.isCancelled else { return }
-        await load()
-      }
-    }
-  }
-
-  private func machineDisabled(_ server: ServerMcpServer) -> Bool {
-    guard let key = environment.machines.syncKey(forMachineId: machine.id) else { return false }
-    return McpFleet.isDisabled(environment.configSync, machineId: key, name: server.name)
-  }
-
-  private func serverRow(_ server: ServerMcpServer) -> some View {
-    let effectiveEnabled = pendingEnabled[server.id] ?? (server.enabled && !machineDisabled(server))
-    return HStack {
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 6) {
-          Text(server.name)
-          if server.isBuiltIn {
-            Text("Built-in")
-              .font(.caption2)
-              .padding(.horizontal, 5)
-              .padding(.vertical, 1)
-              .background(Color.secondary.opacity(0.15), in: Capsule())
-          }
-        }
-        Text(effectiveEnabled ? server.connectionState : "Disabled on this machine")
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Toggle(
-        "Enable \(server.name)",
-        isOn: Binding(
-          get: { effectiveEnabled },
-          set: { enabled in Task { await setEnabled(server, enabled: enabled) } }
-        )
-      )
-      .labelsHidden()
-    }
-    .contextMenu {
-      if server.canRemove != false {
-        Button(role: .destructive) {
-          Task {
-            try? await client.removeMcpServer(id: server.id)
-            await load()
-          }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          editing = McpEditorTarget(entry: nil)
         } label: {
-          Label("Remove…", systemImage: "trash")
+          Label("Add MCP Server", systemImage: "plus")
         }
       }
     }
+    .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
+    .onChange(of: mcpStateRevisions) { _, _ in model.scheduleReload(in: environment) }
+    .sheet(item: $editing) { target in
+      McpServerEditor(
+        initialServer: target.server, machineId: editorMachineId(for: target.entry)
+      ) { values in
+        try await save(values, for: target.entry)
+      }
+      .environment(environment)
+    }
+    .alert(
+      "Remove \(pendingRemoval?.name ?? "MCP server")?",
+      isPresented: Binding(
+        get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } })
+    ) {
+      Button("Remove", role: .destructive) {
+        guard let entry = pendingRemoval else { return }
+        Task { await remove(entry) }
+      }
+      Button("Cancel", role: .cancel) { pendingRemoval = nil }
+    }
+    .alert(
+      "Couldn’t update MCP servers",
+      isPresented: Binding(
+        get: { (actionError ?? model.actionError) != nil },
+        set: {
+          if !$0 {
+            actionError = nil
+            model.actionError = nil
+          }
+        })
+    ) {
+      Button("OK", role: .cancel) {
+        actionError = nil
+        model.actionError = nil
+      }
+    } message: {
+      Text(actionError ?? model.actionError ?? "")
+    }
   }
 
-  /// The toggle's one meaning: available on THIS machine. Off writes the
-  /// per-machine overlay only. On clears the overlay — and if the fleet
-  /// definition itself was off, re-enables it for the fleet. The switch
-  /// flips at once either way; only a refused fleet re-enable rolls it back.
-  private func setEnabled(_ server: ServerMcpServer, enabled: Bool) async {
-    guard let key = environment.machines.syncKey(forMachineId: machine.id) else {
-      errorMessage = "This machine hasn't reported its identity yet."
-      return
-    }
-    pendingEnabled[server.id] = enabled
-    defer { pendingEnabled[server.id] = nil }
-    let hadOverlay = machineDisabled(server)
-    McpFleet.setDisabled(
-      environment.configSync,
-      machineId: key,
-      name: server.name,
-      disabled: !enabled
-    )
-    guard enabled, !server.enabled else { return }
+  private func fleetSection(builtIn: Bool) -> some View {
+    McpFleetSection(
+      model: model,
+      builtIn: builtIn,
+      // Details stay on the Mac, where the tool list and connection
+      // diagnostics live.
+      onDetails: { _ in },
+      onEdit: { entry in editing = McpEditorTarget(entry: entry) },
+      onRemove: { pendingRemoval = $0 },
+      onConnect: { entry, machineId in
+        Task { await beginOAuth(entry: entry, machineId: machineId) }
+      },
+      icon: { entry in McpEntryIcon(entry: entry) },
+      machineExtras: { _, _ in EmptyView() })
+  }
+
+  private var mcpStateRevisions: [UInt64] {
+    environment.machines.allMachines.map { environment.mcpStateRevision(for: $0.id) }
+  }
+
+  private func beginOAuth(entry: McpFleetEntry, machineId: String) async {
+    guard let serverId = entry.idByMachine[machineId] else { return }
+    await beginOAuth(serverId: serverId, machineId: machineId)
+  }
+
+  private func beginOAuth(serverId: String, machineId: String) async {
     do {
-      let updated = try await client.setMcpServerEnabled(id: server.id, enabled: true)
-      if let index = servers.firstIndex(where: { $0.id == server.id }) {
-        servers[index] = updated
-      }
+      let flow = try await environment.machines.client(for: machineId).startMcpOAuth(id: serverId)
+      if let url = URL(string: flow.authorizationUrl) { openURL(url) }
+      actionError = nil
     } catch {
-      if hadOverlay {
-        McpFleet.setDisabled(environment.configSync, machineId: key, name: server.name, disabled: true)
-      }
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
+      actionError = ErrorReporter.userFacingMessage(for: error)
     }
   }
 
-  private func load() async {
-    do {
-      servers = try await client.listMcpServers()
-      errorMessage = nil
-    } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
+  /// Probing for auth runs against a machine that actually holds the server.
+  private func editorMachineId(for entry: McpFleetEntry?) -> String {
+    entry?.machineId(preferring: authoringMachineId) ?? authoringMachineId
+  }
+
+  /// Saving, then handing straight to the browser when the server wants
+  /// OAuth — the Mac does this, and leaving the phone to go hunt for
+  /// "Connect…" afterwards is the same work with an extra step.
+  private func save(_ values: McpFormValues, for entry: McpFleetEntry?) async throws {
+    if let entry {
+      guard let machineId = entry.machineId(preferring: authoringMachineId),
+        let serverId = entry.idByMachine[machineId]
+      else { return }
+      let updated = try await environment.machines.client(for: machineId)
+        .updateMcpServer(id: serverId, request: values.updateBody)
+      await model.load(in: environment)
+      if updated.authType == "oauth" && updated.connectionState == "needsAuthorization" {
+        await beginOAuth(serverId: serverId, machineId: machineId)
+      }
+    } else {
+      let created = try await environment.machines.client(for: authoringMachineId)
+        .createMcpServer(values.createBody)
+      await model.load(in: environment)
+      if created.authType == "oauth" {
+        await beginOAuth(serverId: created.id, machineId: authoringMachineId)
+      }
     }
-    isLoading = false
+  }
+
+  private func remove(_ entry: McpFleetEntry) async {
+    pendingRemoval = nil
+    guard let machineId = entry.machineId(preferring: environment.machines.selectedMachineId),
+      let serverId = entry.idByMachine[machineId]
+    else { return }
+    do {
+      try await environment.machines.client(for: machineId).removeMcpServer(id: serverId)
+      await model.load(in: environment)
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
   }
 }

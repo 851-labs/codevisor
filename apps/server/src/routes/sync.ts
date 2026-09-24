@@ -15,6 +15,7 @@ import { ACCOUNTS_SYNC_NAMESPACE, publishAccountsRoster } from "../infra/config-
 import type { HarnessSyncStatus } from "../infra/harness-sync.js"
 import { MCP_OVERLAYS_NAMESPACE } from "../infra/mcp-fleet.js"
 import { verifySkillArchive } from "../infra/skills-sync.js"
+import type { SkillsSyncStatus } from "../infra/skills-sync.js"
 import {
   appendAndPublish,
   HttpFailure,
@@ -27,13 +28,16 @@ import {
   type EventFanout
 } from "../server-context.js"
 import {
+  refreshHarnessReadiness,
+  refreshMcpReadiness,
+  refreshPluginReadiness,
+  refreshSkillReadiness
+} from "./sync-readiness.js"
+import {
   PARTICIPATION_NAMESPACE,
   publishSyncChanged,
   readParticipation,
   reconcileForNamespace,
-  refreshHarnessReadiness,
-  refreshMcpReadiness,
-  refreshPluginReadiness,
   type SyncReconcileNamespace
 } from "./sync-reconcilers.js"
 
@@ -150,6 +154,14 @@ export const routeSync = async (
         (result.status as HarnessSyncStatus).blocked
       )
     }
+    if (reconcilePlane === "skills") {
+      await refreshSkillReadiness(
+        services,
+        config,
+        fanout,
+        (result.status as SkillsSyncStatus).missingBlobs
+      )
+    }
     if (reconcilePlane === "plugins") {
       await refreshPluginReadiness(
         services,
@@ -176,6 +188,12 @@ export const routeSync = async (
 
   if (url.pathname === "/v1/sync/plugin-readiness/publish" && request.method === "POST") {
     await refreshPluginReadiness(services, config, fanout)
+    writeJson(response, 200, { published: true })
+    return true
+  }
+
+  if (url.pathname === "/v1/sync/skill-readiness/publish" && request.method === "POST") {
+    await refreshSkillReadiness(services, config, fanout)
     writeJson(response, 200, { published: true })
     return true
   }

@@ -6,507 +6,251 @@ import os
 
 // MARK: - Plugins
 
-/// Open the only machine's plugins directly, or offer a machine list.
-/// Every plugin action stays scoped to the displayed machine.
+/// The Plugins screen: one row per plugin as the fleet wants it, with each
+/// machine's condition nested beneath — the same shared section the Mac
+/// renders, and the same actions.
 struct PluginsSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @State private var model = PluginGlobalModel()
+  @State private var pendingRemoval: PluginFleetEntry?
+  @State private var pendingUnlink: PluginUnlinkRequest?
+  @State private var reporting: PluginFleetEntry?
+  @State private var pendingRestore: PluginFleetEntry?
+  @State private var activeSheet: PluginsSheet?
+  @State private var actionError: String?
+
+  /// One sheet slot for every flow, so "Install" inside the browse sheet
+  /// can swap straight into the install sheet's consent stages.
+  private enum PluginsSheet: Identifiable {
+    case session(PluginSettingsSession)
+    /// An update plan is prepared on one machine and must be applied there.
+    case update(ServerPluginUpdatePlan, machineId: String)
+    var id: String {
+      switch self {
+      case .session(let session): "session:\(session.id)"
+      case .update(let plan, _): "update:\(plan.planId)"
+      }
+    }
+  }
+
+  /// Removing a link names the machine as well as the plugin: the same
+  /// plugin id can be linked on more than one machine.
+  private struct PluginUnlinkRequest: Identifiable {
+    let entry: PluginFleetEntry
+    let machineId: String
+    var id: String { "\(machineId)|\(entry.id)" }
+  }
 
   private var availableMachines: [CodevisorMachine] {
     PluginSettingsSession.availableMachines(in: environment.machines)
   }
 
   var body: some View {
-    let machines = environment.machines.allMachines
-    Group {
-      if machines.count == 1, let only = machines.first {
-        PluginMachineScreen(machine: only, title: "Plugins")
-          .id(only.id)
-      } else {
-        machineList
-      }
-    }
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        NavigationLink {
-          PluginBlockedPublishersView()
-        } label: {
-          Label("Blocked Publishers", systemImage: "hand.raised")
-        }
-      }
-    }
-  }
-
-  private var machineList: some View {
     List {
-      Section {
-        ForEach(environment.machines.allMachines) { machine in
-          NavigationLink {
-            PluginMachineScreen(machine: machine, title: machine.name)
-          } label: {
-            HStack {
-              Text(machine.name)
-              Spacer(minLength: 12)
-              badge(machine).view
-                .font(.footnote)
-            }
-          }
-        }
-      }
       if availableMachines.isEmpty {
         ContentUnavailableView {
           Label("No Connected Machines", systemImage: "desktopcomputer")
         } description: {
           Text("Connect a machine to browse and install plugins.")
         }
+      } else {
+        PluginFleetSection(
+          model: model,
+          actions: PluginFleetActions(
+            update: { entry in Task { await prepareUpdate(entry) } },
+            restore: { pendingRestore = $0 },
+            uninstall: { pendingRemoval = $0 },
+            unlink: { entry, machineId in
+              pendingUnlink = PluginUnlinkRequest(entry: entry, machineId: machineId)
+            },
+            report: { reporting = $0 }))
+      }
+      Section {
+        NavigationLink("Blocked Publishers") { PluginBlockedPublishersView() }
       }
     }
     .navigationTitle("Plugins")
     .navigationBarTitleDisplayMode(.inline)
-  }
-
-  private func badge(_ machine: CodevisorMachine) -> MachineSyncBadge {
-    if environment.machines.statusByMachineId[machine.id]?.isReachable == false {
-      return .attention("Unreachable")
-    }
-    guard let key = environment.machines.syncKey(forMachineId: machine.id),
-      let rows = PluginFleet.readiness(environment.configSync)[key]
-    else { return .syncing }
-    if rows.contains(where: { $0.state == "blocked" }) { return .attention("Needs attention") }
-    if rows.contains(where: { $0.state == "notInstalled" }) { return .syncing }
-    return .synced
-  }
-}
-
-/// One machine's plugins: runtime-state chips, update/restore/uninstall,
-/// and the browse/install sheets — all scoped to that machine.
-private struct PluginMachineScreen: View {
-  @Environment(AppEnvironment.self) private var environment
-  let machine: CodevisorMachine
-  let title: String
-
-  private var client: any CodevisorServerClienting {
-    environment.machines.client(for: machine.id)
-  }
-
-  private var serverId: String { machine.id }
-
-  private var isMachineAvailable: Bool {
-    PluginSettingsSession.availableMachines(in: environment.machines).contains { $0.id == machine.id }
-  }
-
-  @State private var plugins: [ServerPluginSummary]?
-  @State private var updates: [String: ServerPluginUpdateStatus] = [:]
-  @State private var isLoading = true
-  @State private var errorMessage: String?
-  @State private var actionError: String?
-  @State private var activeSheet: PluginsSheet?
-  @State private var pluginPendingRestore: ServerPluginSummary?
-  @State private var isMutating = false
-
-  /// One sheet slot for both flows, so "Install" inside the browse sheet
-  /// can swap straight into the install sheet's discover→consent stages.
-  private enum PluginsSheet: Identifiable {
-    case session(PluginSettingsSession)
-    case update(ServerPluginUpdatePlan)
-    var id: String {
-      switch self {
-      case .session(let session): "session:\(session.id)"
-      case .update(let plan): "update:\(plan.planId)"
-      }
-    }
-  }
-
-  var body: some View {
-    List {
-      if let actionError {
-        Label(actionError, systemImage: "exclamationmark.triangle")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-      }
-      if isLoading, plugins == nil {
-        HStack {
-          Spacer(); ProgressView(); Spacer()
-        }
-      } else if let errorMessage, plugins == nil {
-        Text(errorMessage).foregroundStyle(.red)
-      } else {
-        if (plugins ?? []).isEmpty {
-          Text("No plugins installed on this machine.")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(plugins ?? []) { plugin in
-            pluginRow(plugin)
-              // Anchored to the row so an iPad popover points at it.
-              .confirmationDialog(
-                "Restore " + (pluginPendingRestore?.name ?? "plugin") + "?",
-                isPresented: Binding(
-                  get: { pluginPendingRestore?.id == plugin.id },
-                  set: { if !$0 { pluginPendingRestore = nil } }
-                ),
-                titleVisibility: .visible
-              ) {
-                Button("Restore Previous Version") {
-                  Task {
-                    _ = try? await mutate {
-                      try await environment.pluginAccess.requireEligible(
-                        pluginId: plugin.id, ageRating: plugin.ageRating)
-                      _ = try await client.restorePlugin(pluginId: plugin.id)
-                    }
-                    pluginPendingRestore = nil
-                    await reload()
-                  }
-                }
-                Button("Cancel", role: .cancel) { pluginPendingRestore = nil }
-              } message: {
-                Text(
-                  "This restores the verified pre-update code and data. The current version becomes the next restore point."
-                )
-              }
-          }
-        }
-      }
-    }
-    .navigationTitle(title)
-    .navigationBarTitleDisplayMode(.inline)
+    .task(id: environment.machines.allMachines.map(\.id)) { await model.load(in: environment) }
+    .onChange(of: pluginStateRevisions) { _, _ in model.scheduleReload(in: environment) }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button("Browse Plugins", systemImage: "magnifyingglass") {
-          open(.browse)
+        Menu {
+          Button("Browse Plugins", systemImage: "magnifyingglass") { open(.browse) }
+          Button("Add from Repository", systemImage: "link") {
+            open(.install(initialSource: nil))
+          }
+        } label: {
+          Label("Add Plugin", systemImage: "plus")
         }
-        .disabled(isMutating || !isMachineAvailable)
-      }
-      ToolbarItem(placement: .topBarTrailing) {
-        Button("Add Plugin", systemImage: "plus") {
-          open(.install(initialSource: nil))
-        }
-        .disabled(isMutating || !isMachineAvailable)
+        .disabled(installMachineId == nil)
       }
     }
-    .disabled(isMutating)
-    .task(id: serverId) { await reload() }
-    // plugin.state.updated events (start, crash, restart, and list
-    // changes) bump the revision; refetch the light list.
-    .onChange(of: environment.pluginStateRevision(for: serverId)) { _, _ in
-      Task { await refreshList() }
+    .alert(
+      "Uninstall \(pendingRemoval?.name ?? "plugin")?",
+      isPresented: Binding(
+        get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } })
+    ) {
+      Button("Uninstall", role: .destructive) {
+        guard let entry = pendingRemoval else { return }
+        Task { await uninstall(entry) }
+      }
+      Button("Cancel", role: .cancel) { pendingRemoval = nil }
+    } message: {
+      Text(uninstallMessage)
     }
     .sheet(item: $activeSheet) { sheet in
-      switch sheet {
-      case .session(let session):
-        switch session.page {
-        case .install(let initialSource):
-          PluginInstallSheet(
-            initialSource: initialSource,
-            discover: { try await session.discover(source: $0) },
-            onInstall: { source in
-              try await mutate {
-                try await session.install(source: source)
-              }
-              await reload()
-            }
-          )
-        case .browse:
-          PluginRegistryBrowseSheet(
-            fetchRegistry: { try await session.fetchRegistry() },
-            installedPlugins: session.installedPlugins,
-            onInstall: { session.showInstall(source: $0.repo) }
-          )
-        }
-      case .update(let plan):
-        PluginUpdateSheet(
-          plan: plan,
-          onApply: {
-            try await environment.pluginAccess.requireEligible(
-              pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
-            _ = try await mutate {
-              try await client.applyPluginUpdate(
-                pluginId: plan.pluginId,
-                planId: plan.planId
-              )
-            }
-            await reload()
-          }
-        )
-      }
+      sheetContent(sheet)
     }
+    .confirmationDialog(
+      "Restore \(pendingRestore?.name ?? "plugin")?",
+      isPresented: Binding(
+        get: { pendingRestore != nil }, set: { if !$0 { pendingRestore = nil } }),
+      titleVisibility: .visible
+    ) {
+      Button("Restore Previous Version") {
+        guard let entry = pendingRestore else { return }
+        Task { await restore(entry) }
+      }
+      Button("Cancel", role: .cancel) { pendingRestore = nil }
+    }
+    .sheet(item: $reporting) { entry in
+      PluginReportSheet(pluginId: entry.id, name: entry.name)
+        .environment(environment)
+    }
+    .alert(
+      "Remove the link to \(pendingUnlink?.entry.name ?? "plugin")?",
+      isPresented: Binding(
+        get: { pendingUnlink != nil }, set: { if !$0 { pendingUnlink = nil } })
+    ) {
+      Button("Remove Link", role: .destructive) {
+        guard let request = pendingUnlink else { return }
+        Task { await unlink(request) }
+      }
+      Button("Cancel", role: .cancel) { pendingUnlink = nil }
+    } message: {
+      Text("Your checkout isn't deleted.")
+    }
+    .alert(
+      "Couldn’t update plugins",
+      isPresented: Binding(
+        get: { (actionError ?? model.actionError) != nil },
+        set: {
+          if !$0 {
+            actionError = nil
+            model.actionError = nil
+          }
+        })
+    ) {
+      Button("OK", role: .cancel) {
+        actionError = nil
+        model.actionError = nil
+      }
+    } message: {
+      Text(actionError ?? model.actionError ?? "")
+    }
+  }
+
+  private var uninstallMessage: String {
+    let machines = environment.machines.allMachines.count
+    return machines > 1
+      ? "Removes it from all \(machines) machines."
+      : "Removes it from this machine."
+  }
+
+  private var pluginStateRevisions: [UInt64] {
+    environment.machines.allMachines.map { environment.pluginStateRevision(for: $0.id) }
+  }
+
+  /// Installs land on the machine this device is pointed at when it can take
+  /// them, else any reachable one; the fleet entry carries it everywhere.
+  private var installMachineId: String? {
+    let available = availableMachines.map(\.id)
+    let selected = environment.machines.selectedMachineId
+    return available.contains(selected) ? selected : available.first
   }
 
   private func open(_ page: PluginSettingsSession.Page) {
-    guard
+    guard let machineId = installMachineId,
       let session = PluginSettingsSession(
-        machines: environment.machines, machineId: machine.id, page: page, catalog: environment.pluginAccess.catalog)
+        machines: environment.machines, machineId: machineId, page: page,
+        catalog: environment.pluginAccess.catalog)
     else { return }
     activeSheet = .session(session)
   }
 
-  private func pluginRow(_ plugin: ServerPluginSummary) -> some View {
-    NavigationLink {
-      PluginDetailScreen(plugin: plugin)
-    } label: {
-      pluginLabel(plugin)
-    }
-    .contextMenu {
-      pluginActions(plugin)
-    }
-    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-      if updates[plugin.id]?.state == .available {
-        Button {
-          prepareUpdate(plugin)
-        } label: {
-          Label("Update", systemImage: "arrow.down.circle")
-        }
-        .tint(.blue)
-      }
-      // Only managed installs may be uninstalled — a linked dev
-      // plugin's directory belongs to its author.
-      if plugin.source == "managed" {
-        Button(role: .destructive) {
-          uninstall(plugin)
-        } label: {
-          Label("Uninstall", systemImage: "trash")
-        }
-      }
-      if plugin.isEnabled {
-        Button {
-          restart(plugin)
-        } label: {
-          Label("Restart", systemImage: "arrow.clockwise")
-        }
-      }
-    }
-  }
-
-  private func pluginLabel(_ plugin: ServerPluginSummary) -> some View {
-    HStack(spacing: 12) {
-      PluginIconView(
-        pluginId: plugin.id,
-        iconPath: plugin.iconPath,
-        client: client,
-        cacheNamespace: serverId,
-        fallbackSystemName: "puzzlepiece"
-      )
-      .foregroundStyle(.secondary)
-      .frame(width: 24, height: 24)
-      .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(spacing: 6) {
-          Text(plugin.name)
-          Text(plugin.version)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          stateChip(pluginRuntimeState(plugin))
-          if let update = updates[plugin.id] {
-            updateChip(update)
-          }
-        }
-        Text(sourceText(plugin))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        if let description = plugin.description, !description.isEmpty {
-          Text(description)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
-      }
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(accessibilityLabel(for: plugin))
-    .padding(.trailing, 32)
-    .overlay(alignment: .trailing) {
-      PluginSafetyButton(pluginId: plugin.id, name: plugin.name)
-    }
-  }
-
-  /// Runtime actions remain available from the row’s context menu.
   @ViewBuilder
-  private func pluginActions(_ plugin: ServerPluginSummary) -> some View {
-    if updates[plugin.id]?.state == .available {
-      Button {
-        prepareUpdate(plugin)
-      } label: {
-        Label("Update…", systemImage: "arrow.down.circle")
+  private func sheetContent(_ sheet: PluginsSheet) -> some View {
+    switch sheet {
+    case .session(let session):
+      switch session.page {
+      case .install(let initialSource):
+        PluginInstallSheet(
+          initialSource: initialSource,
+          discover: { try await session.discover(source: $0) },
+          onInstall: { source in
+            try await session.install(source: source)
+            await model.load(in: environment)
+          })
+      case .browse:
+        PluginRegistryBrowseSheet(
+          fetchRegistry: { try await session.fetchRegistry() },
+          installedPlugins: session.installedPlugins,
+          onInstall: { session.showInstall(source: $0.repo) })
       }
-    }
-    if updates[plugin.id]?.state == .sourceUnknown {
-      Button {
-        open(.install(initialSource: nil))
-      } label: {
-        Label("Reinstall to Enable Updates…", systemImage: "arrow.clockwise.circle")
-      }
-    }
-    if plugin.canRestore == true {
-      Button {
-        pluginPendingRestore = plugin
-      } label: {
-        Label("Restore Previous Version…", systemImage: "clock.arrow.circlepath")
-      }
-    }
-    Button {
-      setEnabled(plugin, enabled: !plugin.isEnabled)
-    } label: {
-      Label(
-        plugin.isEnabled ? "Disable" : "Enable", systemImage: plugin.isEnabled ? "pause.circle" : "play.circle")
-    }
-    if plugin.isEnabled {
-      Button {
-        restart(plugin)
-      } label: {
-        Label("Restart", systemImage: "arrow.clockwise")
-      }
-    }
-    // Only managed installs may be uninstalled — a linked dev plugin's
-    // directory belongs to its author.
-    if plugin.source == "managed" {
-      Button(role: .destructive) {
-        uninstall(plugin)
-      } label: {
-        Label("Uninstall", systemImage: "trash")
-      }
+    case .update(let plan, let machineId):
+      PluginUpdateSheet(
+        plan: plan,
+        onApply: {
+          try await environment.pluginAccess.requireEligible(
+            pluginId: plan.pluginId, ageRating: plan.candidate.ageRating)
+          _ = try await environment.machines.client(for: machineId)
+            .applyPluginUpdate(pluginId: plan.pluginId, planId: plan.planId)
+          await model.load(in: environment)
+        })
     }
   }
 
-  private func restart(_ plugin: ServerPluginSummary) {
-    Task {
-      _ = try? await mutate {
-        try await client.restartPlugin(pluginId: plugin.id)
-      }
-      await refreshList()
-    }
-  }
-
-  private func setEnabled(_ plugin: ServerPluginSummary, enabled: Bool) {
-    Task {
-      _ = try? await mutate {
-        try await client.setPluginEnabled(pluginId: plugin.id, enabled: enabled)
-      }
-      await refreshList()
-    }
-  }
-
-  /// Uninstalls immediately — the destructive swipe/menu styling is the
-  /// signal; failures still surface in the action banner.
-  private func uninstall(_ plugin: ServerPluginSummary) {
-    Task {
-      if let refreshed = try? await mutate({
-        try await client.removePlugin(pluginId: plugin.id)
-      }) {
-        plugins = refreshed
-      }
-    }
-  }
-
-  /// One line, one concept: who owns the directory, and where it is.
-  private func sourceText(_ plugin: ServerPluginSummary) -> String {
-    let ownership = plugin.source == "managed" ? "Managed" : "Linked"
-    return "\(ownership) · \(plugin.id)"
-  }
-
-  private func stateChip(_ state: String) -> some View {
-    Text(state)
-      .font(.caption2.weight(.medium))
-      .padding(.horizontal, 5)
-      .padding(.vertical, 1)
-      .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
-      .foregroundStyle(stateStyle(state))
-  }
-
-  private func stateStyle(_ state: String) -> AnyShapeStyle {
-    switch state {
-    case "running": AnyShapeStyle(.green)
-    case "failed": AnyShapeStyle(.red)
-    case "starting", "stopping": AnyShapeStyle(.orange)
-    default: AnyShapeStyle(.secondary)
-    }
-  }
-
-  private func updateChip(_ update: ServerPluginUpdateStatus) -> some View {
-    Text(updateTitle(update))
-      .font(.caption2.weight(.medium))
-      .padding(.horizontal, 5)
-      .padding(.vertical, 1)
-      .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
-      .foregroundStyle(updateStyle(update.state))
-  }
-
-  private func updateTitle(_ update: ServerPluginUpdateStatus) -> String {
-    switch update.state {
-    case .current: "Current"
-    case .available: "Update \(update.registryVersion ?? "available")"
-    case .pinned: "Pinned"
-    case .incompatible: "Incompatible"
-    case .sourceUnknown: "Source unknown"
-    case .checkFailed: "Check failed"
-    }
-  }
-
-  private func updateStyle(_ state: ServerPluginUpdateState) -> AnyShapeStyle {
-    switch state {
-    case .current: AnyShapeStyle(.green)
-    case .available: AnyShapeStyle(.blue)
-    case .incompatible, .checkFailed: AnyShapeStyle(.orange)
-    case .pinned, .sourceUnknown: AnyShapeStyle(.secondary)
-    }
-  }
-
-  private func accessibilityLabel(for plugin: ServerPluginSummary) -> String {
-    guard let update = updates[plugin.id] else {
-      return "\(plugin.name), \(pluginRuntimeState(plugin)), \(sourceText(plugin))"
-    }
-    return "\(plugin.name), \(pluginRuntimeState(plugin)), \(updateTitle(update)), \(sourceText(plugin))"
-  }
-
-  private func prepareUpdate(_ plugin: ServerPluginSummary) {
-    Task {
-      if let plan = try? await mutate({
-        try await client.preparePluginUpdate(pluginId: plugin.id)
-      }) {
-        activeSheet = .update(plan)
-      }
-    }
-  }
-
-  private func reload() async {
-    isLoading = true
-    defer { isLoading = false }
-    await refreshList()
-  }
-
-  /// Fetches the plugin list; failures keep the current list and surface in
-  /// the unavailable state only when nothing has loaded yet.
-  private func refreshList() async {
+  private func prepareUpdate(_ entry: PluginFleetEntry) async {
+    guard let machineId = entry.sourceMachineId else { return }
     do {
-      plugins = try await client.listPlugins()
-      errorMessage = nil
-      do {
-        let statuses = try await client.listPluginUpdates()
-        updates = Dictionary(uniqueKeysWithValues: statuses.map { ($0.pluginId, $0) })
-      } catch {
-        // Keep installed plugins usable against older servers and
-        // through transient registry outages.
-        updates = [:]
-      }
-    } catch {
-      errorMessage = ErrorReporter.userFacingMessage(for: error)
-    }
-  }
-
-  /// Run one plugin mutation. Failures surface in the action banner and
-  /// rethrow so the install sheet can stay open.
-  private func mutate<Value>(_ operation: () async throws -> Value) async throws -> Value {
-    isMutating = true
-    defer { isMutating = false }
-    do {
-      let value = try await operation()
-      actionError = nil
-      return value
+      let plan = try await environment.machines.client(for: machineId)
+        .preparePluginUpdate(pluginId: entry.id)
+      activeSheet = .update(plan, machineId: machineId)
     } catch {
       actionError = ErrorReporter.userFacingMessage(for: error)
-      throw error
     }
   }
-}
 
-private func pluginRuntimeState(_ plugin: ServerPluginSummary) -> String {
-  plugin.isEnabled ? plugin.state : "disabled"
+  private func restore(_ entry: PluginFleetEntry) async {
+    pendingRestore = nil
+    guard let machineId = entry.sourceMachineId else { return }
+    do {
+      try await environment.pluginAccess.requireEligible(
+        pluginId: entry.id, ageRating: entry.ageRating)
+      _ = try await environment.machines.client(for: machineId).restorePlugin(pluginId: entry.id)
+      await model.load(in: environment)
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
+  }
+
+  private func unlink(_ request: PluginUnlinkRequest) async {
+    pendingUnlink = nil
+    do {
+      _ = try await environment.machines.client(for: request.machineId)
+        .unlinkPlugin(pluginId: request.entry.id)
+      await model.load(in: environment)
+    } catch {
+      actionError = ErrorReporter.userFacingMessage(for: error)
+    }
+  }
+
+  /// Uninstall is only ever offered for a shared plugin; a machine-bound
+  /// one is removed by Remove Link instead.
+  private func uninstall(_ entry: PluginFleetEntry) async {
+    pendingRemoval = nil
+    PluginFleet.remove(entry.id, in: environment.configSync)
+    await model.load(in: environment)
+  }
 }

@@ -113,6 +113,9 @@ export interface PluginsManager {
   /// Managed-marker-gated uninstall (stops the process first); linked
   /// plugins are refused. Resolves the updated list.
   readonly remove: (pluginId: string) => Promise<PluginListResponse>
+  /// Removes a development link (and only the link). Refuses a managed
+  /// install, which `remove` owns. Resolves the updated list.
+  readonly unlink: (pluginId: string) => Promise<PluginListResponse>
   /// Observes runtime state transitions; returns an unsubscribe. Wired into
   /// the server's event fanout as `plugin.state.updated`.
   readonly subscribe: (listener: (event: PluginStateEvent) => void) => () => void

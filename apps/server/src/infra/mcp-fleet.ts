@@ -61,6 +61,15 @@ export interface McpReadinessEntry {
   readonly name: string
   readonly state: McpReadinessState
   readonly reason?: string | undefined
+  /// The raw connection state behind a `blocked` row. `reason` is prose for
+  /// a details popover; this is what a client switches on to choose the one
+  /// action the row offers — "Connect…" for an expired authorization is not
+  /// the same affordance as "Details…" for a missing binary.
+  readonly code?: string | undefined
+  /// Tools this server actually exposes here. A server that connects
+  /// everywhere but advertises fewer tools on one machine is drift the
+  /// fleet list should be able to show without opening a machine page.
+  readonly toolCount?: number | undefined
 }
 
 const BLOCKED_REASONS: Readonly<Record<string, string>> = {
@@ -80,6 +89,7 @@ export const mcpReadiness = (
     readonly enabled: boolean
     readonly connectionState: string
     readonly detail?: string | undefined
+    readonly toolCount?: number | undefined
   },
   overlays: McpOverlays
 ): McpReadinessEntry => {
@@ -89,12 +99,19 @@ export const mcpReadiness = (
   if (!server.enabled) {
     return { name: server.name, state: "disabled", reason: "Disabled for the whole fleet" }
   }
-  if (server.connectionState === "connected") return { name: server.name, state: "ready" }
+  if (server.connectionState === "connected") {
+    return {
+      name: server.name,
+      state: "ready",
+      ...(server.toolCount === undefined ? {} : { toolCount: server.toolCount })
+    }
+  }
   if (server.connectionState === "connecting") return { name: server.name, state: "connecting" }
   if (server.connectionState === "disconnected") return { name: server.name, state: "idle" }
   return {
     name: server.name,
     state: "blocked",
+    code: server.connectionState,
     reason: server.detail ?? BLOCKED_REASONS[server.connectionState] ?? server.connectionState
   }
 }

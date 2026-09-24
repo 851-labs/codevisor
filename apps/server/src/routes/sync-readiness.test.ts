@@ -2,8 +2,17 @@ import type { Harness } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 
-import type { CodevisorServerServices } from "../server-context.js"
-import { jsonRequest, makeServices, pluginsStub, run, startWithApp } from "../test-support.js"
+import { makeEventFanout, type CodevisorServerServices } from "../server-context.js"
+import {
+  jsonRequest,
+  makeServices,
+  pluginsStub,
+  pluginSummary,
+  run,
+  skillsStub,
+  startWithApp
+} from "../test-support.js"
+import { refreshSkillReadiness } from "./sync-readiness.js"
 
 /// Phase 17: the mcp-readiness surface over HTTP — the on-demand publish
 /// endpoint plus the reconcile pass keeping the machine's entry fresh.
@@ -253,5 +262,110 @@ describe("/v1/sync/plugin-readiness", () => {
     expect(document.entries[0]?.value.plugins).toEqual([
       { id: "owner.example", state: "machineOnly" }
     ])
+  })
+
+  it("reports an enabled plugin whose process died as blocked", async () => {
+    const { services } = await makeServices("server-plr-failed")
+    const plugins = {
+      ...pluginsStub([]),
+      list: async () => ({
+        plugins: [
+          { ...pluginSummary, state: "failed" as const },
+          // A disabled plugin in the failed state is not a live failure.
+          { ...pluginSummary, id: "owner.off", enabled: false, state: "failed" as const }
+        ]
+      })
+    } as unknown as NonNullable<CodevisorServerServices["plugins"]>
+    const server = await startWithApp({ ...services, plugins }, undefined, {
+      id: "server-plr-failed"
+    })
+
+    await jsonRequest(server, "/v1/sync/plugin-readiness/publish", { method: "POST" })
+    const entries = await run(services.db.getSyncEntries("plugin-readiness"))
+    expect(entries[0]?.value).toEqual({
+      plugins: [
+        {
+          id: "owner.example",
+          state: "blocked",
+          reason: "The plugin stopped running on this machine. Restart it to try again."
+        },
+        { id: "owner.off", state: "machineOnly" }
+      ]
+    })
+  })
+})
+
+/// The skill-readiness surface — the reported half of the skills plane.
+describe("/v1/sync/skill-readiness", () => {
+  it("publishes this machine's skill readiness on demand and announces the change", async () => {
+    const { services } = await makeServices("server-skr")
+    await run(
+      services.db.mergeSyncEntries("skills", [
+        {
+          key: "vnc-change",
+          value: { hash: "b", name: "vnc-change" },
+          timestamp: { wallMs: 1, counter: 0, deviceId: "elsewhere" }
+        }
+      ])
+    )
+    const fanout = await run(makeEventFanout)
+    const announced = Promise.withResolvers<unknown>()
+    const unsubscribe = fanout.subscribe((event) => {
+      if (event.kind === "sync.changed" && event.subjectId === "skill-readiness") {
+        announced.resolve(event.payload)
+      }
+    })
+    const server = await startWithApp(
+      {
+        ...services,
+        skills: skillsStub([]) as unknown as NonNullable<CodevisorServerServices["skills"]>
+      },
+      fanout,
+      { id: "server-skr" }
+    )
+
+    const published = await jsonRequest(server, "/v1/sync/skill-readiness/publish", {
+      method: "POST"
+    })
+    expect(published.status).toBe(200)
+    expect(published.body).toEqual({ published: true })
+
+    // The local skill was never published to the fleet; the fleet skill
+    // has not arrived and, with no pass to explain it, carries no reason.
+    const expected = {
+      skills: [
+        { directoryName: "deploy", state: "machineOnly" },
+        { directoryName: "vnc-change", state: "awaitingContent" }
+      ]
+    }
+    const entries = await run(services.db.getSyncEntries("skill-readiness"))
+    expect(entries.map((entry) => entry.key)).toEqual(["server-skr"])
+    expect(entries[0]?.value).toEqual(expected)
+    expect(await announced.promise).toMatchObject({
+      namespace: "skill-readiness",
+      entries: [{ key: "server-skr", value: expected }]
+    })
+    unsubscribe()
+  })
+})
+
+describe("refreshSkillReadiness", () => {
+  it("skips machines without a skills manager and swallows scan failures", async () => {
+    const fanout = await run(makeEventFanout)
+    const { services } = await makeServices("server-skr-edge")
+    const config = { id: "server-skr-edge" } as Parameters<typeof refreshSkillReadiness>[1]
+
+    // The test host has no skills manager: nothing to derive or publish.
+    expect("skills" in services).toBe(false)
+    await refreshSkillReadiness(services, config, fanout)
+    expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
+
+    // A failing scan never breaks the pass that triggered the refresh.
+    const poisoned = {
+      ...services,
+      skills: { list: () => Promise.reject(new Error("boom")) }
+    } as unknown as CodevisorServerServices
+    await expect(refreshSkillReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+    expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
   })
 })

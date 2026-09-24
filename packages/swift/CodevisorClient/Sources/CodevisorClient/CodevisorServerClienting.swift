@@ -244,6 +244,9 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Uninstall a managed plugin and return the updated list
   /// (`DELETE /v1/plugins/:pluginId`).
   func removePlugin(pluginId: String) async throws -> [ServerPluginSummary]
+  /// Remove a development link — the link only, never the checkout it
+  /// points at (`DELETE /v1/plugins/:pluginId/link`).
+  func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary]
   /// Stop and immediately relaunch the plugin, clearing its crash state
   /// (`POST /v1/plugins/:pluginId/restart`).
   func restartPlugin(pluginId: String) async throws -> ServerPluginSummary

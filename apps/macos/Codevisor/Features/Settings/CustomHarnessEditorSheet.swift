@@ -76,7 +76,7 @@ struct CustomHarnessEditorSheet: View {
             TextField("Arguments", text: $argsText, prompt: Text("acp"))
               .font(.system(.body, design: .monospaced))
             TextField(
-              "Environment",
+              "Environment Variables",
               text: $envText,
               prompt: Text("KEY=value, one per line"),
               axis: .vertical

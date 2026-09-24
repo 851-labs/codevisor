@@ -293,6 +293,14 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
       const manifest = await installer.link(request)
       return summarizeInstalled(manifest.id)
     },
+    unlink: async (pluginId) => {
+      // Same refresh contract as remove: once the link is gone the plugin
+      // no longer resolves on disk, so the list response is the signal.
+      await installer.unlink(pluginId)
+      await persist(pluginId, true)
+      notifyInstalled()
+      return { plugins: scan().plugins.map(summarize) }
+    },
     remove: async (pluginId) => {
       // The supervisor stop inside the installer emits any final state
       // transition while the plugin still resolves on disk; after deletion

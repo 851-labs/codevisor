@@ -194,6 +194,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary] {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func restartPlugin(pluginId: String) async throws -> ServerPluginSummary {
     throw CodevisorServerClientError.invalidResponse
   }

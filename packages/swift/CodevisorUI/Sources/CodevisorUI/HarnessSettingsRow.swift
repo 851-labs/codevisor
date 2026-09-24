@@ -1,19 +1,13 @@
 import CodevisorCore
 import SwiftUI
 
-/// The same row in onboarding and the shared list; the accessory slot
-/// carries whatever sits between the status and the controls (an attention
-/// indicator, a single machine's action).
+/// The same row in onboarding and the shared list. The chrome is
+/// `FleetEntryRow`, shared with the MCP, skills, and plugin pages; the
+/// "Sign In…" button and the status caption are what a harness adds to it.
 public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: View {
-  /// The trailing column every row ends in: the harness row's menu button,
-  /// a machine row's status mark. One width so marks sit exactly under the
-  /// menu button they follow.
-  public static var trailingControlWidth: CGFloat { 22 }
-  /// Rows are one height whether they carry a toggle, a bordered button, or
-  /// a bare mark, so nested machine rows read as an indented continuation.
-  public static var minContentHeight: CGFloat { 24 }
-  /// The space the icon column takes; machine rows indent by it.
-  public static var iconColumnWidth: CGFloat { 32 }
+  public static var trailingControlWidth: CGFloat { FleetRowMetrics.trailingControlWidth }
+  public static var minContentHeight: CGFloat { FleetRowMetrics.minContentHeight }
+  public static var iconColumnWidth: CGFloat { FleetRowMetrics.iconColumnWidth }
 
   @Environment(\.theme) private var theme
   private let name: String
@@ -28,7 +22,8 @@ public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: Vi
   public init(
     name: String, state: HarnessRowState, isEnabled: Binding<Bool>, isChanging: Bool = false,
     signIn: @escaping () -> Void,
-    @ViewBuilder icon: () -> Icon, @ViewBuilder accessory: () -> Accessory, @ViewBuilder actions: () -> Actions
+    @ViewBuilder icon: () -> Icon, @ViewBuilder accessory: () -> Accessory,
+    @ViewBuilder actions: () -> Actions
   ) {
     self.name = name
     self.state = state
@@ -41,54 +36,21 @@ public struct HarnessSettingsRow<Icon: View, Accessory: View, Actions: View>: Vi
   }
 
   public var body: some View {
-    HStack(spacing: 10) {
-      icon.frame(width: 22).foregroundStyle(.primary).accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(name)
-          .lineLimit(1)
-        if let status = state.status {
-          Text(status).font(.caption).foregroundStyle(theme.textSecondary).lineLimit(2)
+    FleetEntryRow(
+      name: name,
+      caption: state.status,
+      isBusy: state.isBusy,
+      isChanging: isChanging,
+      isEnabled: $isEnabled,
+      icon: { icon },
+      accessory: {
+        accessory
+        if isEnabled && state.needsSignIn && !state.isBusy {
+          Button("Sign In…", action: signIn)
+            .fleetRowButton(theme)
         }
-      }
-      // The name is the row's identity: it keeps its width and the
-      // controls after it take what remains, not the other way round.
-      .layoutPriority(1)
-      Spacer(minLength: 8)
-      accessory
-      if state.isBusy {
-        ProgressView().controlSize(.small)
-      }
-      if isEnabled && state.needsSignIn && !state.isBusy {
-        Button("Sign In…", action: signIn)
-          .harnessRowButton(theme)
-      }
-      Toggle("Enable \(name)", isOn: $isEnabled)
-        .labelsHidden().toggleStyle(.switch)
-        .disabled(isChanging || state.isBusy)
-        #if os(macOS)
-          .controlSize(.small)
-        #endif
-      #if os(macOS)
-        Menu {
-          actions
-        } label: {
-          Label("\(name) options", systemImage: "ellipsis.circle")
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .frame(width: Self.trailingControlWidth)
-      #endif
-    }
-    .frame(minHeight: Self.minContentHeight)
-    .padding(.vertical, 4)
-    #if os(iOS)
-      // A phone row can't fit a name, a button, a switch, and a menu. The
-      // rare actions (edit, uninstall) go where iOS lists keep them.
-      .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-        actions
-      }
-    #endif
+      },
+      actions: { actions })
   }
 }
 
@@ -105,17 +67,10 @@ extension HarnessSettingsRow where Accessory == EmptyView {
 }
 
 extension View {
-  /// A row's bordered action. Regular on the Mac; small on the phone, where
-  /// the same row also has to fit a toggle and a menu beside the name.
+  /// Retained spelling of the shared row button so harness call sites (and
+  /// the auth sheets that match them) keep reading in harness terms.
   @ViewBuilder
   func harnessRowButton(_ theme: Theme) -> some View {
-    let styled = buttonStyle(.bordered)
-      .tint(theme.isSystem ? nil : theme.textPrimary)
-      .fixedSize()
-    #if os(iOS)
-      styled.controlSize(.small)
-    #else
-      styled
-    #endif
+    fleetRowButton(theme)
   }
 }

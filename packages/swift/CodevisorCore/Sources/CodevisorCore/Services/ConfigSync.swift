@@ -16,7 +16,7 @@ public final class ConfigSync {
   public static let namespaces = [
     "settings", "skills", "mcps", "harness-accounts", "machines", "harnesses", "plugins",
     "mcp-readiness", "mcp-overlays", "harness-credentials", "harness-shared-accounts", "harness-readiness",
-    "plugin-readiness",
+    "plugin-readiness", "skill-readiness",
   ]
 
   private let machines: MachineController

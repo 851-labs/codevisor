@@ -1,32 +1,23 @@
 import CodevisorCore
 import SwiftUI
 
-/// One machine under a harness: its name, then — when there is exactly one
-/// thing to do about its status — that action as a button, and a mark only
-/// when something is wrong. Marks trail so they line up down the list
-/// whether or not a row has a button; the mark's tooltip says what.
+/// One machine under a harness. The chrome is `FleetMachineRow`, shared with
+/// the MCP, skills, and plugin pages; only the action a harness offers is
+/// specific to this plane. A failure opens from the row's mark, not from a
+/// button of its own.
 struct HarnessMachineRow: View {
   let row: HarnessFleet.MachineRow
   let harnessName: String
   let actions: HarnessMachineActions
 
   var body: some View {
-    HStack(spacing: 10) {
-      Text(row.name)
-        .lineLimit(1)
-        .layoutPriority(1)
-      Spacer(minLength: 8)
+    FleetMachineRow(
+      name: row.name,
+      status: row.status.rowStatus,
+      details: HarnessMachineActionButton.details(row: row, harnessName: harnessName)
+    ) {
       HarnessMachineActionButton(row: row, harnessName: harnessName, actions: actions)
-      #if os(macOS)
-        HarnessMachineMark(status: row.status)
-          .frame(width: HarnessSettingsRow<EmptyView, EmptyView, EmptyView>.trailingControlWidth)
-      #else
-        HarnessMachineMark(status: row.status)
-      #endif
     }
-    .frame(minHeight: HarnessSettingsRow<EmptyView, EmptyView, EmptyView>.minContentHeight)
-    .padding(.vertical, 4)
-    .padding(.leading, HarnessSettingsRow<EmptyView, EmptyView, EmptyView>.iconColumnWidth)
   }
 }
 
@@ -38,40 +29,38 @@ struct HarnessMachineActions {
   var accounts: ((_ machineId: String) -> Void)?
 }
 
-/// A check once a machine is in sync; a spinner while it catches up with
-/// the fleet; a mark when it needs the user. Hover explains any of them.
+/// A check once a machine is in sync; a spinner while it catches up; a mark
+/// when it needs the user. Kept as a harness-shaped alias over the shared
+/// mark so the harness row's accessory slot reads the same as before.
 struct HarnessMachineMark: View {
-  @Environment(\.theme) private var theme
   let status: HarnessFleet.MachineStatus
+  var details: FleetBlockedMachine?
 
   var body: some View {
-    if status == .ready {
-      Image(systemName: "checkmark.circle.fill")
-        .foregroundStyle(theme.statusOK)
-        .help(status.label)
-        .accessibilityLabel(status.label)
-    } else if status.isBusy {
-      ProgressView().controlSize(.small)
-        .help(status.label)
-    } else if status.needsAttention {
-      Image(systemName: "exclamationmark.circle.fill")
-        .foregroundStyle(theme.statusWarn)
-        .help(status.label)
-        .accessibilityLabel(status.label)
-    }
+    FleetStatusMark(status: status.rowStatus, details: details)
   }
 }
 
 /// The one action a machine's status calls for, as a plain button: a menu
 /// with a single item hid it behind a click. Nothing renders while the
-/// machine is converging or has nothing to offer. The same button sits in
-/// the harness row when the fleet is one machine.
+/// machine is converging, has nothing to offer, or only needs explaining —
+/// that last case belongs to the mark. The same button sits in the harness
+/// row when the fleet is one machine.
 struct HarnessMachineActionButton: View {
   @Environment(\.theme) private var theme
   let row: HarnessFleet.MachineRow
   let harnessName: String
   let actions: HarnessMachineActions
-  @State private var blocked: HarnessBlockedMachine?
+
+  /// The failure this row's mark opens, if it has one.
+  static func details(
+    row: HarnessFleet.MachineRow, harnessName: String
+  ) -> FleetBlockedMachine? {
+    guard case .blocked(let reason) = row.status else { return nil }
+    return FleetBlockedMachine(
+      plane: .harnesses, machineId: row.machineId, machineName: row.name,
+      entryName: harnessName, reason: reason)
+  }
 
   var body: some View {
     Group {
@@ -84,16 +73,10 @@ struct HarnessMachineActionButton: View {
         if let accounts = actions.accounts {
           Button("Accounts…") { accounts(row.machineId) }
         }
-      case .blocked(let reason):
-        // The popover carries the reason and the retry.
-        Button("Details…") {
-          blocked = .init(machineId: row.machineId, machineName: row.name, harnessName: harnessName, reason: reason)
-        }
       default:
         EmptyView()
       }
     }
-    .harnessRowButton(theme)
-    .harnessBlockedDetails(item: $blocked)
+    .fleetRowButton(theme)
   }
 }

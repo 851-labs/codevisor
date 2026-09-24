@@ -1,6 +1,6 @@
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, symlink } from "node:fs/promises"
+import { lstat, mkdtemp, readFile, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, isAbsolute, join, normalize, resolve, sep } from "node:path"
+import { basename, join, normalize, resolve, sep } from "node:path"
 
 import type {
   DiscoverRemotePluginRequest,
@@ -18,6 +18,7 @@ import type {
   PreparePluginUpdateRequest,
   StagedPlugin
 } from "./plugin-install-types.js"
+import { linkPlugin, unlinkPlugin, type PluginLinkDeps } from "./plugin-link.js"
 import { parsePluginManifest, PLUGIN_MANIFEST_FILENAME } from "./plugin-manifest.js"
 import { readPluginInstallReceipt, type PluginInstallSourceReceipt } from "./plugin-receipt.js"
 import { assertGitAvailable, type FindExecutable } from "./plugin-requirements.js"
@@ -96,6 +97,10 @@ export interface PluginInstaller extends PluginRestore {
   readonly remove: (pluginId: string) => Promise<void>
   /// Dev mode: symlink a local plugin directory into the plugins root.
   readonly link: (request: LinkPluginRequest) => Promise<PluginManifest>
+  /// Removes a link Codevisor created, and only the link. The developer's
+  /// checkout — whatever the link points at — is never touched, so this
+  /// stays inside the same iron rule that makes `remove` refuse links.
+  readonly unlink: (pluginId: string) => Promise<void>
 }
 
 /// Same containment rule as skills-store's isPathSafe: the candidate must be
@@ -307,6 +312,15 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
     })
   }
 
+  const linkDeps: PluginLinkDeps = {
+    pluginsRoot: deps.pluginsRoot,
+    stop: deps.stop,
+    installedWithId,
+    managedDirectory,
+    withLock: transactions.withLock,
+    recoverPlugin: transactions.recoverPlugin
+  }
+
   return {
     ...restore,
     discoverRemote: async (request) => {
@@ -412,50 +426,8 @@ export const makePluginInstaller = (deps: PluginInstallerDeps): PluginInstaller 
       // restart, so abandoned staged bytes are removed during recovery.
       await rm(updatePlansRoot, { force: true, recursive: true })
     },
-    link: async (request) => {
-      if (!isAbsolute(request.path)) {
-        throw new PluginsError("invalid", `Plugin link path must be absolute: ${request.path}`)
-      }
-      const target = resolve(request.path)
-      let targetStats
-      try {
-        targetStats = await stat(target)
-      } catch {
-        throw new PluginsError("invalid", `Not a directory: ${request.path}`)
-      }
-      if (!targetStats.isDirectory()) {
-        throw new PluginsError("invalid", `Not a directory: ${request.path}`)
-      }
-      let raw: string
-      try {
-        raw = await readFile(join(target, PLUGIN_MANIFEST_FILENAME), "utf8")
-      } catch {
-        throw new PluginsError("invalid", `No ${PLUGIN_MANIFEST_FILENAME} found in ${request.path}`)
-      }
-      const manifest = parsePluginManifest(raw)
-      return transactions.withLock(manifest.id, async () => {
-        await transactions.recoverPlugin(manifest.id)
-        if (installedWithId(manifest.id) !== undefined) {
-          throw new PluginsError("conflict", `Plugin ${manifest.id} is already installed`)
-        }
-        const destination = managedDirectory(manifest.id)
-        try {
-          await lstat(destination)
-          throw new PluginsError(
-            "conflict",
-            `${destination} already exists — remove it before linking`
-          )
-        } catch (cause) {
-          if (cause instanceof PluginsError) {
-            throw cause
-          }
-          // ENOENT: the link path is free.
-        }
-        await mkdir(deps.pluginsRoot, { recursive: true })
-        await symlink(target, destination)
-        return manifest
-      })
-    },
+    link: (request) => linkPlugin(linkDeps, request),
+    unlink: (pluginId) => unlinkPlugin(linkDeps, pluginId),
     remove: async (pluginId) => {
       await transactions.withLock(pluginId, async () => {
         await transactions.recoverPlugin(pluginId)

@@ -3,6 +3,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { writePluginInstallReceipt } from "@codevisor/plugins"
+import { makeSkillsManager } from "@codevisor/skills"
+import { makeBlobStore } from "@codevisor/sync"
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -10,15 +12,24 @@ import {
   type CodevisorServerConfig,
   type CodevisorServerServices
 } from "../server-context.js"
-import { jsonRequest, makeServices, run, startWithApp } from "../test-support.js"
 import {
-  configMutationNamespace,
+  jsonRequest,
+  makeAgents,
+  makeServices,
+  run,
+  startWithApp,
+  tempDirs
+} from "../test-support.js"
+import {
   makeAuthSyncRefreshScheduler,
   refreshHarnessReadiness,
   refreshMcpReadiness,
   refreshPluginReadiness,
+  republishAccountsRoster
+} from "./sync-readiness.js"
+import {
+  configMutationNamespace,
   reconcileForNamespace,
-  republishAccountsRoster,
   runBackgroundSyncReconcile
 } from "./sync-reconcilers.js"
 
@@ -109,6 +120,46 @@ describe("runBackgroundSyncReconcile", () => {
     await expect(
       runBackgroundSyncReconcile(throwing, config, fanout, "mcps")
     ).resolves.toBeUndefined()
+  })
+
+  it("refreshes skill readiness after a skills pass, explaining stranded skills", async () => {
+    const { services } = await makeServices("server-bg-skills")
+    const fanout = await run(makeEventFanout)
+    const home = await mkdtemp(join(tmpdir(), "skills-home-"))
+    const blobDir = await mkdtemp(join(tmpdir(), "sync-blobs-"))
+    tempDirs.push(home, blobDir)
+    const skills = makeSkillsManager({ agents: makeAgents(), homedir: home, env: {} })
+    await skills.create({ name: "Deploy", description: "ship it" })
+    // A fleet skill whose content no machine has ferried here yet.
+    await run(
+      services.db.mergeSyncEntries("skills", [
+        {
+          key: "stranded",
+          value: { hash: "0".repeat(64), name: "stranded" },
+          timestamp: { wallMs: 1, counter: 0, deviceId: "elsewhere" }
+        }
+      ])
+    )
+
+    await runBackgroundSyncReconcile(
+      { ...services, skills, syncBlobs: makeBlobStore(blobDir) },
+      config,
+      fanout,
+      "skills"
+    )
+
+    const readiness = await run(services.db.getSyncEntries("skill-readiness"))
+    expect(readiness.map((entry) => entry.key)).toEqual([config.id])
+    expect(readiness[0]?.value).toEqual({
+      skills: [
+        { directoryName: "deploy", state: "ready" },
+        {
+          directoryName: "stranded",
+          state: "awaitingContent",
+          reason: "Waiting for another machine to send this skill’s content."
+        }
+      ]
+    })
   })
 
   it("fires end to end from a config mutation over HTTP", async () => {
