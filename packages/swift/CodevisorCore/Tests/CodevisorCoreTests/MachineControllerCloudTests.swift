@@ -311,20 +311,14 @@ extension MachineControllerCloudTests {
     #expect(projectList.projects.contains { $0.serverId == liveId })
   }
 
-  @Test("Selecting a cloud machine persists and yields a relay-backed client")
-  func cloudSelection() async throws {
-    let store = InMemoryStore()
-    let (controller, projectList, provider) = makeController(store: store)
+  @Test("A cloud machine yields a relay-backed client and status")
+  func cloudRelayClient() async throws {
+    let (controller, _, provider) = makeController()
     provider.cloudMachines = [makeCloudMachine()]
     provider.requestTransport.responsesByPath["/v1/info"] = """
       {"id":"m1","name":"Cloud Mac","kind":"remote","version":"2.0.0",
        "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
       """
-
-    controller.selectMachine("cloud:dev-1")
-    #expect(controller.selectedMachineId == "cloud:dev-1")
-    #expect(controller.selectedMachine.isCloud)
-    #expect(projectList.selectedServerId == "local")
 
     // The client is a real CodevisorServerClient tunneling through the
     // provider's relay transports.
@@ -337,13 +331,6 @@ extension MachineControllerCloudTests {
     await controller.refreshStatus(for: "cloud:dev-1")
     #expect(controller.statusByMachineId["cloud:dev-1"]?.isReachable == true)
     #expect(controller.statusByMachineId["cloud:dev-1"]?.cloudDeviceId == "dev-1")
-
-    // The selection persists (the id is stable across launches).
-    let persisted = try JSONDecoder().decode(
-      MachineRegistry.self,
-      from: #require(store.loadData(forKey: "machines"))
-    )
-    #expect(persisted.selectedMachineId == "cloud:dev-1")
   }
 
   @Test("A cloud id with no relay yields a failing client, never the local machine's")
@@ -410,22 +397,11 @@ extension MachineControllerCloudTests {
     #expect(controller.serverConfig(for: "cloud:dev-1").requestTransport != nil)
   }
 
-  @Test("Registries persisted before explicit selection decode")
-  func registryDecodeCompatibility() throws {
-    let legacy = """
-      {"selectedMachineId":"local","remoteMachines":[]}
-      """
-    let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
-    #expect(registry.selectedMachineId == "local")
-    #expect(!registry.hasExplicitMachineSelection)
-  }
-
   @Test("Sign-out with a cloud machine selected falls back to local")
   func signOutFallsBackToLocal() {
     let (controller, projectList, provider) = makeController()
     provider.cloudMachines = [makeCloudMachine()]
-    controller.selectMachine("cloud:dev-1")
-    #expect(controller.selectedMachineId == "cloud:dev-1")
+    controller.registry.selectedMachineId = "cloud:dev-1"
 
     provider.isCloudSignedIn = false
     controller.handleCloudAccountSignedOut()
@@ -434,17 +410,16 @@ extension MachineControllerCloudTests {
     #expect(projectList.selectedServerId == "local")
   }
 
-  @Test("A cloud machine arriving with no explicit selection is auto-selected")
-  func autoSelectsCloudMachineWhenNoExplicitChoice() async throws {
+  @Test("A cloud machine arriving on a client-only platform is auto-selected")
+  func autoSelectsCloudMachine() async throws {
     let store = InMemoryStore()
     let (controller, projectList, provider) = makeController(store: store, localServer: nil)
     provider.requestTransport.responsesByPath["/v1/info"] = """
       {"id":"m1","name":"Dev Remote","kind":"remote","version":"2.0.0",
        "platform":"darwin","bindHost":"127.0.0.1","cloudDeviceId":"dev-1"}
       """
-    // Fresh registry: local placeholder selected, no explicit choice.
+    // Fresh registry: local placeholder selected.
     #expect(controller.selectedMachineId == "local")
-    #expect(controller.registry.hasExplicitMachineSelection == false)
 
     provider.cloudMachines = [makeCloudMachine()]
     controller.reconcileCloudSelection()
@@ -452,8 +427,6 @@ extension MachineControllerCloudTests {
     #expect(controller.selectedMachine.isCloud)
     #expect(controller.selectedMachineId == "cloud:dev-1")
     #expect(projectList.selectedServerId == "local")
-    // Auto-selection must NOT masquerade as an explicit choice.
-    #expect(controller.registry.hasExplicitMachineSelection == false)
     // Explicit preparation connects through the relay client.
     await controller.prepareMachine(controller.selectedMachineId)
     #expect(provider.configRequests.contains("dev-1"))
@@ -465,35 +438,6 @@ extension MachineControllerCloudTests {
       from: #require(store.loadData(forKey: "machines"))
     )
     #expect(persisted.selectedMachineId == "cloud:dev-1")
-    #expect(persisted.hasExplicitMachineSelection == false)
-  }
-
-  @Test("A client-only platform never strands even an explicit local selection")
-  func strandedLocalSelectionIsRescued() throws {
-    // Legacy persisted state: "local" was explicitly selected back when
-    // this platform still listed it. Client-only platforms have no
-    // "Local" machine, so the choice cannot bind — an arriving real
-    // machine is adopted instead of stranding the user on an unreachable
-    // fleet.
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(
-        MachineRegistry(
-          selectedMachineId: "local",
-          hasExplicitMachineSelection: true,
-          remoteMachines: []
-        )
-      ),
-      forKey: "machines"
-    )
-    let (controller, projectList, provider) = makeController(store: store, localServer: nil)
-    #expect(controller.registry.hasExplicitMachineSelection)
-
-    provider.cloudMachines = [makeCloudMachine()]
-    controller.reconcileCloudSelection()
-
-    #expect(controller.selectedMachineId == "cloud:dev-1")
-    #expect(projectList.selectedServerId == "local")
   }
 
   @Test("A working local server remains the default when cloud machines arrive")
@@ -501,14 +445,12 @@ extension MachineControllerCloudTests {
     let (controller, projectList, provider) = makeController(
       localServer: StubLocalServer()
     )
-    #expect(controller.registry.hasExplicitMachineSelection == false)
 
     provider.cloudMachines = [makeCloudMachine()]
     controller.reconcileCloudSelection()
 
     #expect(controller.selectedMachineId == "local")
     #expect(projectList.selectedServerId == "local")
-    #expect(controller.registry.hasExplicitMachineSelection == false)
   }
 
   @Test("Auto-selection prefers an online machine over list order")
@@ -546,30 +488,30 @@ extension MachineControllerCloudTests {
 
     #expect(controller.selectedMachineId == "local")
     #expect(projectList.selectedServerId == "local")
-    #expect(controller.registry.hasExplicitMachineSelection == false)
   }
 
   @Test("A persisted cloud selection resolves to local until the account arrives")
-  func persistedCloudSelectionFallsBackWhileSignedOut() {
+  func persistedCloudSelectionFallsBackWhileSignedOut() throws {
     let store = InMemoryStore()
-    let first = makeController(store: store)
-    first.provider.cloudMachines = [makeCloudMachine()]
-    first.controller.selectMachine("cloud:dev-1")
+    try store.saveData(
+      JSONEncoder().encode(MachineRegistry(selectedMachineId: "cloud:dev-1")),
+      forKey: "machines"
+    )
 
-    // Relaunch without a provider: selection stays persisted, but the
+    // Launch without a provider: selection stays persisted, but the
     // resolved machine is local.
     let projectList = ProjectListModel.fixture()
-    let second = MachineController(store: store, projectList: projectList)
-    #expect(second.selectedMachineId == "cloud:dev-1")
-    #expect(second.selectedMachine == .local)
+    let controller = MachineController(store: store, projectList: projectList)
+    #expect(controller.selectedMachineId == "cloud:dev-1")
+    #expect(controller.selectedMachine == .local)
 
     // Once the account's machines arrive, reconciliation rewires the
     // selection to the now-available cloud machine.
     let provider = FakeCloudProvider()
     provider.cloudMachines = [makeCloudMachine()]
-    second.cloudProvider = provider
-    second.reconcileCloudSelection()
-    #expect(second.selectedMachine.isCloud)
+    controller.cloudProvider = provider
+    controller.reconcileCloudSelection()
+    #expect(controller.selectedMachine.isCloud)
     #expect(projectList.selectedServerId == "local")
   }
 

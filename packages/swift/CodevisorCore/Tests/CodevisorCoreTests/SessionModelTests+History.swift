@@ -460,22 +460,30 @@ extension SessionModelTests {
   func snapshotCarriesAttachments() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
-    client.detailConversation = [
-      ServerConversationItem(
-        id: UUID().uuidString,
-        role: .user,
-        messageId: nil,
-        text: "with file",
-        createdAt: "2026-06-30T00:00:00.000Z",
-        isGenerating: false,
-        attachments: [
-          ServerAttachmentRef(
-            fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf",
-            sizeBytes: 9, kind: .file
-          )
-        ]
-      )
-    ]
+    client.initialTranscriptPage = ServerTranscriptPage(
+      items: [
+        ServerTranscriptItem(
+          id: UUID().uuidString,
+          sessionId: sessionId.uuidString,
+          sequence: 0,
+          role: .user,
+          text: "with file",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z",
+          isGenerating: false,
+          hasDetails: false,
+          attachments: [
+            ServerAttachmentRef(
+              fileId: "file-3", name: "doc.pdf", mimeType: "application/pdf",
+              sizeBytes: 9, kind: .file
+            )
+          ],
+          revision: 1
+        )
+      ],
+      hasMore: false,
+      eventCursor: 0
+    )
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
@@ -489,14 +497,8 @@ extension SessionModelTests {
       ])
   }
 
-  @Test("Attachment refs decode when present and stay nil for older servers")
-  func attachmentDecodeBackwardCompat() throws {
-    let legacy = try JSONDecoder().decode(
-      ServerConversationItem.self,
-      from: Data(#"{"id":"a","role":"user","text":"hi","createdAt":"t","isGenerating":false}"#.utf8)
-    )
-    #expect(legacy.attachments == nil)
-
+  @Test("Queued prompt attachment refs decode")
+  func queuedPromptAttachmentsDecode() throws {
     let modern = try JSONDecoder().decode(
       ServerPromptQueueItem.self,
       from: Data(

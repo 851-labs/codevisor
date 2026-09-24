@@ -15,7 +15,7 @@ struct MachineControllerTests {
     #expect(projectList.selectedServerId == "local")
   }
 
-  @Test("Adding and selecting remotes persists the registry")
+  @Test("Adding a remote selects it and persists the registry")
   func addSelectAndPersistRemote() throws {
     let store = InMemoryStore()
     let first = makeController(store: store)
@@ -27,12 +27,9 @@ struct MachineControllerTests {
     // Composer defaults never re-route the project model.
     #expect(first.projectList.selectedServerId == "local")
 
-    first.controller.selectMachine("local")
-    #expect(first.projectList.selectedServerId == "local")
-
     let second = makeController(store: store)
     #expect(second.controller.machines.contains(remote))
-    #expect(second.controller.selectedMachine == .local)
+    #expect(second.controller.selectedMachine == remote)
     #expect(second.projectList.selectedServerId == "local")
 
     let duplicate = try second.controller.addRemote(host: "http://mac-mini.tailnet.ts.net:49361")
@@ -126,11 +123,12 @@ struct MachineControllerTests {
     #expect(second.controller.machine(for: remote.id)?.name == "Build box")
   }
 
-  @Test("Legacy machine icon metadata is ignored and stripped on the next save")
+  @Test("Legacy registry keys are ignored and stripped on the next save")
   func legacyAppearanceMetadataIsRemoved() throws {
     let legacyRegistry = """
       {
         "selectedMachineId": "remote-studio-49361",
+        "hasExplicitMachineSelection": true,
         "localAppearance": {"symbolName": "laptopcomputer"},
         "cloudAppearances": {"cloud:dev-1": {"symbolName": "server.rack"}},
         "remoteMachines": [{
@@ -152,6 +150,7 @@ struct MachineControllerTests {
     let persisted = try #require(
       JSONSerialization.jsonObject(with: persistedData) as? [String: Any]
     )
+    #expect(persisted["hasExplicitMachineSelection"] == nil)
     #expect(persisted["localAppearance"] == nil)
     #expect(persisted["cloudAppearances"] == nil)
     let remotes = try #require(persisted["remoteMachines"] as? [[String: Any]])
