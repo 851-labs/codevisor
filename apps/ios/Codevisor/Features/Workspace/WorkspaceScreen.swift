@@ -38,6 +38,11 @@ struct WorkspaceScreen: View {
   var preferredPaneId: UUID? = nil
   /// The split leaf holding that pane, activated on a regular-width layout.
   var preferredLeafId: UUID? = nil
+  /// Reports the pane this screen actually shows whenever it changes, so a
+  /// split layout's route can follow the workspace's own moves — New Tab, a
+  /// conversion, a close, an agent navigating — instead of keeping the pane
+  /// a sidebar tap last asked for.
+  var onSelectedPaneChanged: ((WorkspacePaneSelection) -> Void)? = nil
   /// Existing workspaces receive their cached-or-new controller from Home
   /// during destination construction, so the transcript shell is available
   /// on the first frame instead of waiting for this view's async task.
@@ -388,6 +393,12 @@ struct WorkspaceScreen: View {
     // selection in place — including when it names a chat instead of a pane.
     .onChange(of: preferredRoute) { _, _ in
       applyPreferredRoute()
+    }
+    // ...and the answer goes back, so the route never names a pane this
+    // screen has since moved off and a later tap on that row still lands.
+    .onChange(of: reportedPaneSelection) { _, selection in
+      guard let selection else { return }
+      onSelectedPaneChanged?(selection)
     }
     .iosNavigationDiagnostics(navigationDiagnosticState)
   }

@@ -93,6 +93,70 @@ struct HomeNavigationStateTests {
     #expect(HomeNavigationState().selectedPaneId { _ in chatPane } == nil)
   }
 
+  @Test("Following the workspace's own pane selection canonicalizes the route")
+  func followPaneSelectionCanonicalizes() {
+    // A chat opened from the sidebar routes by chat, not by pane.
+    var state = HomeNavigationState(path: [workspaceRoute(anchor: sessionId, chat: sessionId)])
+    let chatPane = UUID()
+
+    let followed = state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
+    #expect(followed)
+    #expect(state.selection == workspaceRoute(anchor: sessionId, pane: chatPane))
+    // The anchor survives: it owns the detail's identity and its controller.
+    #expect(state.presentedWorkspace?.anchorSessionId == sessionId)
+
+    // Already canonical: no write, so the detail is not re-rendered.
+    let again = state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
+    #expect(!again)
+  }
+
+  @Test("A New Tab the workspace opened itself leaves the chat row tappable")
+  func followPaneSelectionKeepsSidebarTapsLive() {
+    let chatPane = UUID()
+    let terminalPane = UUID()
+    var state = HomeNavigationState(path: [workspaceRoute(anchor: sessionId, chat: sessionId)])
+    state.followPaneSelection(workspaceId: workspaceId, paneId: chatPane)
+
+    // New Tab moves the workspace's selection without touching the route.
+    // Following it is what keeps the route honest.
+    let followed = state.followPaneSelection(workspaceId: workspaceId, paneId: terminalPane)
+    #expect(followed)
+    #expect(state.selection == workspaceRoute(anchor: sessionId, pane: terminalPane))
+
+    // Tapping the chat row again must now be a real change, or the detail —
+    // which switches panes only when the route changes — would ignore it.
+    #expect(state.selection != workspaceRoute(anchor: sessionId, chat: sessionId))
+  }
+
+  @Test("A selection from another workspace or page never moves the route")
+  func followPaneSelectionIgnoresForeignSelections() {
+    let route = workspaceRoute(anchor: sessionId, pane: paneId)
+    var state = HomeNavigationState(path: [route])
+    let foreign = state.followPaneSelection(workspaceId: UUID(), paneId: UUID())
+    #expect(!foreign)
+    #expect(state.selection == route)
+
+    var draft = HomeNavigationState(path: [.newChat(serverId: "m")])
+    let onDraft = draft.followPaneSelection(workspaceId: workspaceId, paneId: paneId)
+    #expect(!onDraft)
+    #expect(draft.selection == .newChat(serverId: "m"))
+
+    var empty = HomeNavigationState()
+    let onEmpty = empty.followPaneSelection(workspaceId: workspaceId, paneId: paneId)
+    #expect(!onEmpty)
+    #expect(empty.path.isEmpty)
+  }
+
+  @Test("Following the selection replaces the top rather than deepening a stack")
+  func followPaneSelectionKeepsDepth() {
+    var state = HomeNavigationState(path: [.newChat(serverId: "m"), workspaceRoute(anchor: sessionId)])
+    let followed = state.followPaneSelection(workspaceId: workspaceId, paneId: paneId)
+    #expect(followed)
+    #expect(state.path.count == 2)
+    #expect(state.path.first == .newChat(serverId: "m"))
+    #expect(state.selection == workspaceRoute(anchor: sessionId, pane: paneId))
+  }
+
   @Test("Unfolding with a composing sheet continues the draft as the page")
   func stackToSplitWithSheet() {
     let transition = HomeNavigationState.layoutTransition(

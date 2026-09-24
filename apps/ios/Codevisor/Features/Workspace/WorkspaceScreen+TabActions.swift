@@ -10,6 +10,13 @@ struct WorkspacePreferredRoute: Equatable {
   var paneId: UUID?
 }
 
+/// What a mounted workspace screen is actually showing, reported back so a
+/// split layout's route can follow it instead of going stale.
+struct WorkspacePaneSelection: Equatable {
+  var workspaceId: UUID
+  var paneId: UUID
+}
+
 // MARK: - Tab actions
 
 /// The workspace's few tab operations. Switching tabs happens from the
@@ -17,6 +24,16 @@ struct WorkspacePreferredRoute: Equatable {
 extension WorkspaceScreen {
   var preferredRoute: WorkspacePreferredRoute {
     WorkspacePreferredRoute(chatSessionId: preferredChatSessionId, paneId: preferredPaneId)
+  }
+
+  /// The pane this screen has decided to show, or nil while it has none of
+  /// its own. Before `paneState` exists, `panes` is a repository read or a
+  /// draft placeholder — the workspace's last selection, not this screen's,
+  /// and reporting it would overwrite a route whose pane is still pending.
+  /// A draft has no routed workspace to report against either.
+  var reportedPaneSelection: WorkspacePaneSelection? {
+    guard paneState != nil, let workspaceId, let paneId = panes.selectedPaneId else { return nil }
+    return WorkspacePaneSelection(workspaceId: workspaceId, paneId: paneId)
   }
 
   /// Applies the route's preferred chat/pane to the mounted pane state,

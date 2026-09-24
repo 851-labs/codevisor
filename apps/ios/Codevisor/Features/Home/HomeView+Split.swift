@@ -121,6 +121,7 @@ extension HomeView {
       preferredChatSessionId: parameters.preferredChatSessionId,
       preferredPaneId: parameters.preferredPaneId,
       preferredLeafId: parameters.preferredLeafId,
+      onSelectedPaneChanged: followWorkspacePaneSelection,
       initialController: parameters.initialController,
       initialComposerFocusRequest: parameters.isDraft ? detailComposerFocusRequest : nil,
       onInitialComposerFocusRequestFulfilled: consumeDetailFocusRequest,
@@ -128,6 +129,24 @@ extension HomeView {
       onWorkspaceReady: markPromotedWorkspaceReady,
       transcriptPresentationRole: .foreground,
       onSendAnimationCompleted: { _ in commitPendingDraftPromotion(reason: "sendAnimation") }
+    )
+  }
+
+  /// Keeps the route naming the pane the detail actually shows. The detail
+  /// switches panes on a route *change*, so a route left on the pane a
+  /// sidebar tap last asked for would swallow the next tap on that same row
+  /// — the case where New Tab moves the workspace to a terminal and tapping
+  /// the chat again does nothing until some other row is tapped first.
+  ///
+  /// Compact is exempt: it pushes a fresh screen per visit, so its route is
+  /// never stale, and rewriting the top of that stack would remount it.
+  func followWorkspacePaneSelection(_ selection: WorkspacePaneSelection) {
+    guard layoutMode == .split,
+      navigation.followPaneSelection(workspaceId: selection.workspaceId, paneId: selection.paneId)
+    else { return }
+    IOSNavigationDiagnostics.record(
+      "home.followPaneSelection",
+      "workspace=\(shortID(selection.workspaceId)) pane=\(shortID(selection.paneId))"
     )
   }
 

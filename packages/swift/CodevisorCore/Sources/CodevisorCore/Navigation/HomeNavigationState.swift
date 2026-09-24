@@ -105,6 +105,37 @@ public struct HomeNavigationState: Equatable, Sendable {
     path.removeAll()
   }
 
+  /// Mirrors a mounted workspace's own pane selection back into the route.
+  ///
+  /// The route's preferred chat/pane is a request to show something, not a
+  /// record of what is shown — the workspace's persisted selection is that.
+  /// New Tab, a pane conversion, a close, and agent client-control all move
+  /// that selection without going through Home. On a split layout the detail
+  /// screen is re-targeted rather than remounted, so it only switches panes
+  /// when the route *changes*; a route still naming the pane a sidebar tap
+  /// last asked for therefore makes re-selecting that row a silent no-op, and
+  /// makes a later remount reopen a pane the workspace has moved off.
+  ///
+  /// Following the selection keeps the route canonical — one preferred pane,
+  /// no preferred chat — so the next tap on any other row is a real change.
+  /// Returns whether the route moved, so callers can skip redundant writes.
+  @discardableResult
+  public mutating func followPaneSelection(workspaceId: UUID, paneId: UUID) -> Bool {
+    guard case let .workspace(serverId, routeWorkspaceId, anchorSessionId, _, _, _) = selection,
+      routeWorkspaceId == workspaceId
+    else { return false }
+    let canonical = HomeRoute.workspace(
+      serverId: serverId,
+      workspaceId: routeWorkspaceId,
+      anchorSessionId: anchorSessionId,
+      preferredChatSessionId: nil,
+      preferredPaneId: paneId
+    )
+    guard canonical != selection else { return false }
+    replaceTop(with: canonical)
+    return true
+  }
+
   // MARK: Split detail
 
   /// The route the detail column renders. An empty selection is New Chat.
