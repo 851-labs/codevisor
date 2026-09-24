@@ -30,10 +30,6 @@ export interface PluginsManagerConfig extends Omit<
   readonly pluginsRoot?: string
   /// process.platform override for tests.
   readonly platform?: string
-  /// Proxy request timeout before a 504 is returned.
-  readonly proxyTimeoutMs?: number
-  /// Tool invocation timeout before the call fails as unavailable.
-  readonly toolTimeoutMs?: number
   /// Loopback exemption for relayed WebSocket upgrades (the relay cannot
   /// carry cookies on WS channel params); defaults to matching the server's
   /// own loopback auth exemption.

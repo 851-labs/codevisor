@@ -72,22 +72,15 @@ export interface PluginSupervisorConfig {
   /// Login-shell environment for spawns; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   readonly log?: (message: string) => void
-  /// How long a plugin gets from spawn to accepting connections.
-  readonly readyTimeoutMs?: number
+  /// Clock for readiness deadlines and crash backoff; defaults to Date.now.
   readonly now?: () => number
+  /// Waits between readiness probes and automatic restart attempts; defaults
+  /// to a real timer.
   readonly sleep?: (ms: number) => Promise<void>
   /// Crash/restart circuit breaker: after this many consecutive failures
   /// without a successful request or stable runtime in between, the plugin
   /// is refused until an explicit stop/restart. Default 5.
   readonly maxConsecutiveFailures?: number
-  /// First restart-backoff window after a crash; doubles per consecutive
-  /// failure. Default 500ms.
-  readonly backoffBaseMs?: number
-  /// Backoff ceiling. Default 30s.
-  readonly backoffCapMs?: number
-  /// A process that stays up this long is no longer part of the previous
-  /// crash sequence. Default 30s.
-  readonly stableRuntimeMs?: number
   /// Observes every runtime state transition (fed into the server's event
   /// fanout as plugin.state.updated).
   readonly onStateChange?: (pluginId: string, state: PluginRuntimeState) => void
@@ -284,6 +277,16 @@ const httpProbe = (port: number, path: string): Promise<boolean> =>
     probe.end()
   })
 
+/// How long a plugin gets from spawn to accepting connections.
+const READY_TIMEOUT_MS = 15_000
+/// First restart-backoff window after a crash; doubles per consecutive
+/// failure up to BACKOFF_CAP_MS.
+const BACKOFF_BASE_MS = 500
+const BACKOFF_CAP_MS = 30_000
+/// A process that stays up this long is no longer part of the previous
+/// crash sequence.
+const STABLE_RUNTIME_MS = 30_000
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const clearProcess = (current: RunningPlugin): void => {
@@ -295,15 +298,11 @@ const clearProcess = (current: RunningPlugin): void => {
 export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupervisor => {
   const runtimes = new Map<string, RunningPlugin>()
   const log = config.log ?? (() => undefined)
-  const readyTimeoutMs = config.readyTimeoutMs ?? 15_000
   const now = config.now ?? Date.now
   const sleep = config.sleep ?? delay
   const spawnShell = config.spawnShell ?? defaultSpawnShell
   const spawnArgv = config.spawnArgv ?? defaultSpawnArgv
   const maxConsecutiveFailures = config.maxConsecutiveFailures ?? 5
-  const backoffBaseMs = config.backoffBaseMs ?? 500
-  const backoffCapMs = config.backoffCapMs ?? 30_000
-  const stableRuntimeMs = config.stableRuntimeMs ?? 30_000
 
   const runtime = (pluginId: string): RunningPlugin => {
     const existing = runtimes.get(pluginId)
@@ -331,11 +330,12 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
   /// the next state — `failed` once the circuit breaker trips, `stopped`
   /// while restarts are still allowed.
   const registerFailure = (current: RunningPlugin): PluginRuntimeState => {
-    if (current.runningSince !== undefined && now() - current.runningSince >= stableRuntimeMs) {
+    if (current.runningSince !== undefined && now() - current.runningSince >= STABLE_RUNTIME_MS) {
       current.failures = 0
     }
     current.failures += 1
-    current.notBefore = now() + Math.min(backoffBaseMs * 2 ** (current.failures - 1), backoffCapMs)
+    current.notBefore =
+      now() + Math.min(BACKOFF_BASE_MS * 2 ** (current.failures - 1), BACKOFF_CAP_MS)
     clearProcess(current)
     return current.failures >= maxConsecutiveFailures ? "failed" : "stopped"
   }
@@ -383,7 +383,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
       }
     })
     current.process = child
-    const deadline = now() + readyTimeoutMs
+    const deadline = now() + READY_TIMEOUT_MS
     while (now() < deadline) {
       if (exitMessage !== undefined) {
         throw new PluginsError("invalid", `Plugin ${plugin.id} ${exitMessage}`)
@@ -405,7 +405,7 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     child.kill()
     throw new PluginsError(
       "invalid",
-      `Plugin ${plugin.id} did not start listening on $PORT within ${readyTimeoutMs}ms`
+      `Plugin ${plugin.id} did not start listening on $PORT within ${READY_TIMEOUT_MS}ms`
     )
   }
 

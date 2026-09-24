@@ -47,11 +47,15 @@ const localhostAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"])
 const defaultIsLocalhost = (address: string | undefined): boolean =>
   localhostAddresses.has(String(address))
 
+/// Proxy request and tool invocation timeouts before the call fails.
+const PROXY_TIMEOUT_MS = 30_000
+const TOOL_TIMEOUT_MS = 30_000
+
 export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager => {
   const pluginsRoot = config.pluginsRoot ?? defaultPluginsRoot()
   const platform = config.platform ?? process.platform
-  const proxyTimeoutMs = config.proxyTimeoutMs ?? 30_000
-  const toolTimeoutMs = config.toolTimeoutMs ?? 30_000
+  const sleep =
+    config.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const isLoopback = config.isLocalhost ?? defaultIsLocalhost
   const pluginDataRoot = `${config.dataDir}/plugin-data`
   const { assertEnabled, isEnabled, persist } = makePluginEnabledState(pluginDataRoot)
@@ -220,7 +224,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
           if (supervisor.state(pluginId) === "failed") {
             return
           }
-          await new Promise((resolve) => setTimeout(resolve, 500))
+          await sleep(500)
         }
       }
     } finally {
@@ -268,7 +272,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         paneType,
         plugin,
         signedContextHeaders: signedContextHeaders(plugin.id),
-        timeoutMs: proxyTimeoutMs
+        timeoutMs: PROXY_TIMEOUT_MS
       })
     },
     importRemote: async (request) => {
@@ -340,7 +344,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         request,
         response,
         targetPath: query.length === 0 ? subPath : `${subPath}?${query}`,
-        timeoutMs: proxyTimeoutMs,
+        timeoutMs: PROXY_TIMEOUT_MS,
         ...(authenticated.viaQueryToken
           ? {
               setCookie: paneCookieHeader(
@@ -441,7 +445,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         noteSuccess: () => supervisor.noteSuccess(plugin.id),
         plugin,
         signedContextHeaders: signedContextHeaders(plugin.id),
-        timeoutMs: toolTimeoutMs,
+        timeoutMs: TOOL_TIMEOUT_MS,
         toolName
       })
     },

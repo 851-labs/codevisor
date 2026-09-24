@@ -19,8 +19,9 @@ describe("crash backoff and circuit breaker", () => {
     await supervisor.ensureRunning(target)
     spawn.simulateExit("exited with code 1")
     expect(supervisor.state("owner.example")).toBe("stopped")
-    await expect(supervisor.ensureRunning(target)).rejects.toThrow(/recently crashed; retry in/)
-    now += 1_000
+    now += 499
+    await expect(supervisor.ensureRunning(target)).rejects.toThrow(/recently crashed; retry in 1ms/)
+    now += 1
     await supervisor.ensureRunning(target)
     expect(supervisor.state("owner.example")).toBe("running")
     expect(spawn.spawnCount()).toBe(2)
@@ -28,17 +29,19 @@ describe("crash backoff and circuit breaker", () => {
   })
 
   it("trips the circuit breaker after consecutive crashes until restarted", async () => {
+    let now = 0
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
-      backoffBaseMs: 0,
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 2,
+      now: () => now,
       spawnShell: spawn.spawnShell
     })
     const target = plugin()
     await supervisor.ensureRunning(target)
     spawn.simulateExit("exited with code 1")
     expect(supervisor.state("owner.example")).toBe("stopped")
+    now += 500
     await supervisor.ensureRunning(target)
     spawn.simulateExit("exited with code 1")
     expect(supervisor.state("owner.example")).toBe("failed")
@@ -53,21 +56,24 @@ describe("crash backoff and circuit breaker", () => {
   })
 
   it("clears the crash accounting after a successful request", async () => {
+    let now = 0
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
-      backoffBaseMs: 0,
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 2,
+      now: () => now,
       spawnShell: spawn.spawnShell
     })
     const target = plugin()
     await supervisor.ensureRunning(target)
     spawn.simulateExit("exited with code 1")
+    now += 500
     await supervisor.ensureRunning(target)
     supervisor.noteSuccess("owner.example")
     spawn.simulateExit("exited with code 1")
     // Without the reset this second crash would have tripped the breaker.
     expect(supervisor.state("owner.example")).toBe("stopped")
+    now += 500
     await supervisor.ensureRunning(target)
     expect(supervisor.state("owner.example")).toBe("running")
     supervisor.closeAll()
@@ -77,38 +83,40 @@ describe("crash backoff and circuit breaker", () => {
     let now = 0
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
-      backoffBaseMs: 0,
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 2,
       now: () => now,
-      spawnShell: spawn.spawnShell,
-      stableRuntimeMs: 100
+      spawnShell: spawn.spawnShell
     })
     const target = plugin()
     await supervisor.ensureRunning(target)
     spawn.simulateExit("exited with code 1")
+    now += 500
     await supervisor.ensureRunning(target)
-    now = 100
+    now += 30_000
     spawn.simulateExit("exited with code 1")
     // The stable second run resets the earlier failure before this crash is
     // counted, so the process remains eligible for automatic recovery.
     expect(supervisor.state("owner.example")).toBe("stopped")
+    now += 500
     await supervisor.ensureRunning(target)
     expect(supervisor.state("owner.example")).toBe("running")
     supervisor.closeAll()
   })
 
   it("treats markUnreachable as a crash of the live process only", async () => {
+    let now = 0
     const spawn = fakeSpawn()
     const supervisor = makePluginSupervisor({
-      backoffBaseMs: 0,
       dataDir: makeDataDir(),
+      now: () => now,
       spawnShell: spawn.spawnShell
     })
     const target = plugin()
     await supervisor.ensureRunning(target)
     supervisor.markUnreachable("owner.example")
     expect(supervisor.state("owner.example")).toBe("stopped")
+    now += 500
     await supervisor.ensureRunning(target)
     expect(spawn.spawnCount()).toBe(2)
     supervisor.stop("owner.example")
@@ -154,7 +162,6 @@ describe("state change notifications", () => {
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
       onStateChange: (_pluginId, state) => transitions.push(state),
-      readyTimeoutMs: 300,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })

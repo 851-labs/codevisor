@@ -4,13 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 
 import { makePluginsManager } from "./plugins-manager.js"
-import { nextRunningState } from "./test-support.js"
 import {
+  advancingClock,
   cleanups,
   exampleManifest,
   makeDir,
   makeManager,
   makeOuterServer,
+  nextRunningState,
   verifyPluginContext,
   writePlugin
 } from "./test-support.js"
@@ -30,7 +31,7 @@ describe("plugin listing", () => {
 
   it("fetches plugin and pane artwork through the supervised process", async () => {
     const { fake, manager } = makeManager(
-      { backoffBaseMs: 0 },
+      {},
       {
         ...exampleManifest,
         iconPath: "/assets/icon.svg",
@@ -237,7 +238,7 @@ describe("pane proxy", () => {
   })
 
   it("kicks the supervisor on 502 so automatic recovery relaunches the plugin", async () => {
-    const { fake, manager } = makeManager({ backoffBaseMs: 0 })
+    const { fake, manager } = makeManager({ ...advancingClock() })
     const outer = await makeOuterServer(manager)
     const issued = await manager.issuePaneToken("owner.example", "pane-1", { paneType: "main" })
     expect((await fetch(`${outer.origin}${issued.path}`)).status).toBe(200)
@@ -257,16 +258,18 @@ describe("pane proxy", () => {
   })
 
   it("times out hung plugin requests with a 504", async () => {
-    const { manager } = makeManager({ proxyTimeoutMs: 300 })
+    const { manager } = makeManager()
     const outer = await makeOuterServer(manager)
     const issued = await manager.issuePaneToken("owner.example", "pane-1", { paneType: "main" })
     const token = new URL(`http://x${issued.path}`).searchParams.get("codevisorPaneToken")
     const armed = Promise.withResolvers<() => void>()
+    const armedTimeouts: Array<number> = []
     vi.spyOn(ClientRequest.prototype, "setTimeout").mockImplementation(function (
       this: ClientRequest,
-      _milliseconds,
+      milliseconds,
       callback
     ) {
+      armedTimeouts.push(milliseconds)
       armed.resolve(() => callback?.())
       return this
     })
@@ -274,6 +277,7 @@ describe("pane proxy", () => {
       `${outer.origin}/v1/plugins/owner.example/app/panes/main/never?codevisorPaneToken=${token}`
     )
     const fireTimeout = await armed.promise
+    expect(armedTimeouts).toEqual([30_000])
     fireTimeout()
     expect((await response).status).toBe(504)
   })

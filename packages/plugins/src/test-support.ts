@@ -351,7 +351,6 @@ export const makeManager = (
     log: () => undefined,
     now: Date.now,
     pluginsRoot: root,
-    readyTimeoutMs: 5_000,
     resolveEnv: async () => ({}),
     spawnShell: fake.spawnShell,
     ...overrides
@@ -360,7 +359,8 @@ export const makeManager = (
   return { fake, manager, root }
 }
 
-/// Advances readiness/backoff time only after each completed probe.
+/// Advances readiness/backoff time only when the code under test sleeps
+/// (after each completed probe, and between automatic restart attempts).
 export const advancingClock = () => {
   let now = 0
   return {

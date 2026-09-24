@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { PluginsError } from "./plugins-error.js"
 import {
+  advancingClock,
   exampleManifest,
   makeDir,
   makeManager,
+  nextRunningState,
   toolManifest,
   verifyPluginContext,
   writePlugin
@@ -137,38 +139,41 @@ describe("plugin tool invocation", () => {
       armed.resolve()
       return deadline.signal
     })
-    const { fake, manager } = makeManager({ toolTimeoutMs: 100 }, toolManifest)
+    const { fake, manager } = makeManager({}, toolManifest)
     const timedOut = invalid(
       manager.invokeTool("owner.notes", "notes_slow", {}),
       "unavailable",
-      /did not respond within 100ms/
+      /did not respond within 30000ms/
     )
     await armed.promise
     deadline.abort(new DOMException("deadline reached", "TimeoutError"))
     await timedOut
-    // Keep the next request's deadline controlled too: its real HTTP response
-    // must not race a 100 ms wall-clock timer under suite load.
+    // Keep the next request's deadline controlled too, so its real HTTP
+    // response never races a wall-clock timer.
     timeout.mockReturnValue(new AbortController().signal)
     // The process is alive but was hung — the same instance keeps serving.
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({
       ok: true
     })
     expect(timeout).toHaveBeenCalledTimes(2)
-    expect(timeout).toHaveBeenLastCalledWith(100)
+    expect(timeout).toHaveBeenLastCalledWith(30_000)
     expect(fake.spawnCount()).toBe(1)
   })
 
   it("kicks the runtime when the port is dead so the next call relaunches", async () => {
-    const { fake, manager } = makeManager({ backoffBaseMs: 0 }, toolManifest)
+    const { fake, manager } = makeManager({ ...advancingClock() }, toolManifest)
     await manager.invokeTool("owner.notes", "notes_add", {})
+    const relaunched = nextRunningState(manager)
     fake.stop()
     await invalid(
       manager.invokeTool("owner.notes", "notes_add", {}),
       "unavailable",
       /request failed/
     )
-    // markUnreachable registered the failure; with no backoff the next
-    // invocation relaunches the plugin and succeeds.
+    // markUnreachable registered the failure; once the crash backoff elapses
+    // the plugin is relaunched and the next invocation succeeds.
+    await relaunched
+    expect(fake.spawnCount()).toBe(2)
     await expect(manager.invokeTool("owner.notes", "notes_add", {})).resolves.toMatchObject({
       ok: true
     })
