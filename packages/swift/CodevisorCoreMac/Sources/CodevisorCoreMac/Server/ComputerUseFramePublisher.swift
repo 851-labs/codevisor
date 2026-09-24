@@ -1,4 +1,5 @@
 import CoreMedia
+import CoreVideo
 import Foundation
 import QuartzCore
 import ScreenCaptureKit
@@ -95,19 +96,40 @@ final class ComputerUseMailboxSink: ComputerUseFrameSink, @unchecked Sendable {
   let mailbox: ScreenSharingFrameMailbox
   private let lock = NSLock()
   private var displayDimension: CGFloat = 0
+  private var cornerRadius = ComputerUseCornerRadiusTracker()
+  /// Called from the capture queue when the window's measured placement
+  /// in the frame changes.
+  private let onWindowContent: (@Sendable (ComputerUseWindowContent) -> Void)?
 
   var requestedDimension: CGFloat {
     get { lock.withLock { displayDimension } }
     set { lock.withLock { displayDimension = newValue } }
   }
 
-  init(mailbox: ScreenSharingFrameMailbox) {
+  init(
+    mailbox: ScreenSharingFrameMailbox,
+    onWindowContent: (@Sendable (ComputerUseWindowContent) -> Void)? = nil
+  ) {
     self.mailbox = mailbox
+    self.onWindowContent = onWindowContent
   }
 
   @MainActor func prepare(size: CGSize) {}
 
   func push(_ frame: ScreenSharingVideoFrame) {
+    if let onWindowContent, let changed = measureWindowContent(frame) {
+      onWindowContent(changed)
+    }
     mailbox.put(frame)
+  }
+
+  /// Re-measures on size changes and periodically; cheap either way (a few
+  /// dozen pixels read along six short lines).
+  private func measureWindowContent(_ frame: ScreenSharingVideoFrame) -> ComputerUseWindowContent? {
+    let buffer = frame.pixelBuffer
+    let size = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+    guard lock.withLock({ cornerRadius.shouldMeasure(size: size) }) else { return nil }
+    let measured = computerUseWindowContent(pixelBuffer: buffer)
+    return lock.withLock { cornerRadius.record(measured) }
   }
 }
