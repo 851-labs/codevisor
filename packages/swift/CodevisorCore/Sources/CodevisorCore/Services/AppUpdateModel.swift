@@ -37,10 +37,9 @@ public final class AppUpdateModel {
   public let currentBuildNumber: Int?
   public private(set) var allowsAlphaUpdates: Bool
 
-  /// Installed by the app target's Sparkle coordinator. The boolean is true
-  /// for a user-initiated check and false for a quiet background check;
-  /// both report through this model — Sparkle never shows its own UI.
-  public var checkHandler: (@MainActor (_ userInitiated: Bool) async -> Void)?
+  /// Installed by the app target's Sparkle coordinator. Checks report
+  /// through this model — Sparkle never shows its own UI.
+  public var checkHandler: (@MainActor () async -> Void)?
   /// Installs the release behind the banner headlessly: download, drain the
   /// local server's chats, install, relaunch — progress lands in this model.
   public var installHandler: (@MainActor (AppUpdateRelease) async -> Void)?
@@ -111,18 +110,13 @@ public final class AppUpdateModel {
     guard !isUpdating, let checkHandler else { return }
     reportProgress(nil)
     phase = .checking
-    await checkHandler(true)
+    await checkHandler()
   }
 
   public func resetFailure() {
     guard case let .failed(release, _) = phase else { return }
     phase = release.map(Phase.available) ?? .idle
     reportProgress(nil)
-  }
-
-  public func checkForUpdatesInBackground() async {
-    guard let checkHandler else { return }
-    await checkHandler(false)
   }
 
   public func installUpdate() async {
@@ -170,11 +164,6 @@ public final class AppUpdateModel {
 
   public func reportFailure(_ message: String) {
     phase = .failed(release: availableRelease, message: message)
-    reportProgress(nil)
-  }
-
-  public func reportIdle() {
-    phase = .idle
     reportProgress(nil)
   }
 

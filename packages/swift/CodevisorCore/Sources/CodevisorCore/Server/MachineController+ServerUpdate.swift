@@ -15,27 +15,6 @@ extension MachineController {
     connectionsById.values.contains { $0.updatePhase == .updating }
   }
 
-  /// Refreshes one explicit remote machine's release state.
-  public func refreshServerUpdate(for machineId: String) async {
-    guard let machine = machine(for: machineId), !machine.isLocal,
-      connection(for: machineId).updatePhase != .updating
-    else { return }
-    let client = client(for: machineId)
-    do {
-      let update = try await client.updateInfo(
-        refresh: true,
-        channel: serverUpdateChannel
-      )
-      connection(for: machineId).updateInfo = update
-    } catch {
-      // A transient background failure should not erase a banner we
-      // already know about. The next five-minute pass will retry.
-      Log.machines.debug(
-        "Periodic update probe for \(machineId, privacy: .public) failed: \(String(describing: error), privacy: .public)"
-      )
-    }
-  }
-
   /// Sweeps release state for every reachable machine. Machines mid-update are
   /// skipped; `updateServer`'s own polling drives their state. `force`
   /// bypasses each server's check cache and belongs to the user's explicit

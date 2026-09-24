@@ -116,28 +116,6 @@ struct AppEnvironmentTests {
     #expect(environment.pluginStateRevision(for: "local") == 0)
   }
 
-  @Test("Harness operation response closes the lifecycle handoff gap")
-  func harnessLifecycleHandoff() async {
-    let environment = AppEnvironment.preview()
-    await environment.refreshHarnessLifecycle(for: "local")
-    let lifecycle = ServerHarnessLifecycleState(
-      phase: "updating",
-      targetVersion: "2.0.0",
-      terminalId: "terminal-1"
-    )
-
-    environment.setHarnessLifecycle(
-      lifecycle,
-      harnessId: "claude-code",
-      onServer: "local"
-    )
-
-    #expect(
-      environment.harnessLifecycle(for: "local")
-        .first(where: { $0.id == "claude-code" })?.lifecycle == lifecycle
-    )
-  }
-
   @Test("Onboarding with a project folder adds the project without importing old chats")
   func onboardingImportsProjectSessions() async {
     let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)

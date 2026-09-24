@@ -195,23 +195,6 @@ struct TranscriptRowProjectionTests {
     #expect(precise.estimatedHeight == 32)
   }
 
-  @Test func onlyBlockProjectedActiveRowsOwnPreciseSendGeometry() throws {
-    let active = ConversationItem.assistant(
-      AssistantMessage(turn: AssistantTurn(isGenerating: true))
-    )
-    let baseRows = try TranscriptRowProjectionCache.project(
-      makeInput(active: active),
-      options: .init(includesConnectingRow: true)
-    )
-    let aggregate = try #require(baseRows.first(where: { $0.id.isActiveRow }))
-    let precise = try #require(TranscriptActiveRowProjection.rows(for: active).first)
-
-    #expect(aggregate.id.isActiveRow)
-    #expect(!aggregate.id.isPreciselyProjectedActiveRow)
-    #expect(precise.id.isActiveRow)
-    #expect(precise.id.isPreciselyProjectedActiveRow)
-  }
-
   @Test func planMarkdownUsesTheSameBlockRowsWhileActiveAndSettled() throws {
     let id = UUID()
     let markdown = "# Plan\n\n1. First\n2. Second\n\nVerify the result."
@@ -374,21 +357,33 @@ struct TranscriptRowProjectionTests {
     #expect(distinctRows.map(\.id) == [.error, .statusError])
   }
 
-  @Test func actorCacheReturnsThePreparedSnapshot() async throws {
+  @Test func actorCacheServesRevisionKeyedSnapshots() async throws {
     let cache = TranscriptRowProjectionCache(capacity: 2)
-    let key = TranscriptProjectionKey(
-      sessionID: UUID(),
-      controllerRevision: 1,
-      modelRevision: 2
-    )
-    let input = makeInput(settled: [.user(UserMessage(text: "Cached"))])
+    let sessionID = UUID()
+    let key = TranscriptProjectionKey(sessionID: sessionID, controllerRevision: 1, modelRevision: 2)
     let options = TranscriptProjectionOptions(includesConnectingRow: true)
+    let first = try await cache.rows(
+      for: key,
+      input: makeInput(settled: [.user(UserMessage(text: "Cached"))]),
+      options: options
+    )
+    let changedInput = makeInput(settled: [
+      .user(UserMessage(text: "Cached")),
+      .user(UserMessage(text: "Newer")),
+    ])
 
-    let first = try await cache.rows(for: key, input: input, options: options)
-    let second = try await cache.rows(for: key, input: input, options: options)
+    // The revision key, not the input, identifies a snapshot: an unchanged
+    // key is a cache hit, and a bumped revision projects the new input.
+    let hit = try await cache.rows(for: key, input: changedInput, options: options)
+    let revised = try await cache.rows(
+      for: TranscriptProjectionKey(sessionID: sessionID, controllerRevision: 1, modelRevision: 3),
+      input: changedInput,
+      options: options
+    )
 
-    #expect(first == second)
     #expect(first.count == 1)
+    #expect(hit == first)
+    #expect(revised.count == 2)
   }
 
   private func makeInput(

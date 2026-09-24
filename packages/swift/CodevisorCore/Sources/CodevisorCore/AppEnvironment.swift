@@ -74,7 +74,6 @@ public final class AppEnvironment {
   /// token and re-run the full token→load flow when it moves. Accessors
   /// live in AppEnvironment+Plugins.swift.
   var pluginUpdateRevisions: [String: UInt64] = [:]
-  var harnessLifecycleByServer: [String: [ServerHarness]] = [:]
   private let clientDataResetter: (any ClientDataResetting)?
 
   public init(

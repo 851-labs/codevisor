@@ -79,9 +79,8 @@ struct ClientDatabaseTests {
     let store = SQLitePersistenceStore(database: database)
 
     let session = ChatSession(projectId: UUID(), title: "SQLite")
-    let sessions = CodableRepository<ChatSession>(store: store, key: "sessions")
-    sessions.save([session])
-    #expect(sessions.load() == [session])
+    try store.saveData(JSONEncoder().encode([session]), forKey: "sessions")
+    #expect(try decoded([ChatSession].self, from: store, key: "sessions") == [session])
 
     try store.saveData(Data("not json".utf8), forKey: DeviceLayoutStore.storageKey)
     #expect(DeviceLayoutStore(store: store).drafts.isEmpty)
@@ -217,8 +216,8 @@ struct ClientDatabaseTests {
       renamedLegacyDirectory: renamedLegacyDirectory
     )
 
-    #expect(CodableRepository<Project>(store: storage.store, key: "projects").load() == [project])
-    #expect(CodableRepository<ChatSession>(store: storage.store, key: "sessions").load() == [legacySession])
+    #expect(try decoded([Project].self, from: storage.store, key: "projects") == [project])
+    #expect(try decoded([ChatSession].self, from: storage.store, key: "sessions") == [legacySession])
     #expect(
       storage.store.loadData(
         forKey: "composer-draft-attachment-test.bin"
@@ -381,7 +380,7 @@ struct ClientDatabaseTests {
       migrateRenamedApplicationSupport: false
     )
 
-    #expect(CodableRepository<Project>(store: reopened.store, key: "projects").load() == [project])
+    #expect(try decoded([Project].self, from: reopened.store, key: "projects") == [project])
     #expect(!FileManager.default.fileExists(atPath: source.path))
     #expect(
       try reopened.database.cleanupMigrationState(
@@ -402,5 +401,14 @@ struct ClientDatabaseTests {
   ) -> Value? {
     guard let data = try? database.preference(forKey: key) else { return nil }
     return try? JSONDecoder().decode(Value.self, from: data)
+  }
+
+  private func decoded<Value: Decodable>(
+    _ type: Value.Type,
+    from store: any PersistenceStore,
+    key: String
+  ) throws -> Value? {
+    guard let data = store.loadData(forKey: key) else { return nil }
+    return try JSONDecoder().decode(Value.self, from: data)
   }
 }

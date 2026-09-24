@@ -114,7 +114,7 @@ struct UpdateCenterTests {
       remotes: [remote]
     )
     let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
-    appUpdate.checkHandler = { _ in }
+    appUpdate.checkHandler = {}
     var appInstalledAfterOperations: Int?
     appUpdate.installHandler = { _ in
       appInstalledAfterOperations = fake.operationLog.count
@@ -152,7 +152,7 @@ struct UpdateCenterTests {
       currentBuildNumber: 42,
       allowsAlphaUpdates: true
     )
-    appUpdate.checkHandler = { _ in }
+    appUpdate.checkHandler = {}
     let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
 
     #expect(center.components.first?.installedVersion == "1.2.3-alpha.42")
@@ -238,7 +238,7 @@ struct UpdateCenterTests {
     )
     let store = InMemoryStore()
     let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
-    appUpdate.checkHandler = { _ in }
+    appUpdate.checkHandler = {}
     appUpdate.installHandler = { _ in }
     appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
     let center = UpdateCenter(machines: controller, appUpdate: appUpdate, store: store)
@@ -330,7 +330,7 @@ struct UpdateCenterTests {
     )
     let store = InMemoryStore()
     let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
-    appUpdate.checkHandler = { _ in }
+    appUpdate.checkHandler = {}
     var appInstalls = 0
     appUpdate.installHandler = { _ in appInstalls += 1 }
     appUpdate.reportAvailable(version: "2.0.0", releasePageURL: nil)
@@ -389,7 +389,7 @@ extension UpdateCenterTests {
       remotes: [remote]
     )
     let appUpdate = AppUpdateModel(currentVersion: "1.0.0")
-    appUpdate.checkHandler = { _ in }
+    appUpdate.checkHandler = {}
     let center = UpdateCenter(machines: controller, appUpdate: appUpdate)
 
     await controller.refreshStatus(for: remote.id)

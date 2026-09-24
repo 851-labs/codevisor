@@ -294,7 +294,6 @@ struct TranscriptReducerTests {
     ])
     #expect(turn.finalText == .text(id: "t1", markdown: "Here is the answer."))
     #expect(turn.workedEntries.map(\.id) == ["text:t0", "tool:a"])
-    #expect(turn.hasWorkedContent)
     #expect(turn.toolCalls.count == 1)
   }
 

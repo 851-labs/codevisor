@@ -279,7 +279,7 @@ private struct UpdateFailureDetails: View {
 
 #Preview("Updates — failed with long output") {
   let environment = AppEnvironment.preview()
-  environment.appUpdate.checkHandler = { _ in }
+  environment.appUpdate.checkHandler = {}
   environment.appUpdate.reportAvailable(version: "0.2.0", releasePageURL: nil)
   environment.appUpdate.reportFailure(
     (1...40).map { "line \($0): ld: symbol(s) not found for architecture arm64" }

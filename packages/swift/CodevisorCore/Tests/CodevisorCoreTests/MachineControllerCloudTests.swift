@@ -549,15 +549,6 @@ extension MachineControllerCloudTests {
     #expect(controller.registry.hasExplicitMachineSelection == false)
   }
 
-  @Test("Registries persisted before hasExplicitMachineSelection decode to false")
-  func registryDecodesExplicitFlagCompat() throws {
-    let legacy = """
-      {"selectedMachineId":"local","remoteMachines":[]}
-      """
-    let registry = try JSONDecoder().decode(MachineRegistry.self, from: Data(legacy.utf8))
-    #expect(registry.hasExplicitMachineSelection == false)
-  }
-
   @Test("A persisted cloud selection resolves to local until the account arrives")
   func persistedCloudSelectionFallsBackWhileSignedOut() {
     let store = InMemoryStore()

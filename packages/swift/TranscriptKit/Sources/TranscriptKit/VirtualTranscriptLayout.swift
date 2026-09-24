@@ -47,13 +47,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
       return top
     }
   }
-  public var bottomOffsets: [CGFloat] {
-    var top: CGFloat = 0
-    return heightIndex.allRows().map { row in
-      defer { top += row.extent }
-      return totalHeight - top - row.height
-    }
-  }
   var updatedHeightNodeCount: Int { heightIndex.updatedNodeCount }
 
   public init(

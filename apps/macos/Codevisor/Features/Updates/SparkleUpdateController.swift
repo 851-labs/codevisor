@@ -75,7 +75,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     if let feedURL = feedURLString(for: updater) {
       AppUpdateHandoff.writeFeedURL(feedURL)
     }
-    model.checkHandler = { [weak self] _ in
+    model.checkHandler = { [weak self] in
       guard let self, !self.updater.sessionInProgress else { return }
       self.updater.checkForUpdateInformation()
     }

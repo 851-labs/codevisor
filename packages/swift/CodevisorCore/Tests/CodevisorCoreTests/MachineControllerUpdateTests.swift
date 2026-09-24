@@ -85,35 +85,6 @@ struct MachineControllerUpdateTests {
     controller.stopEventSync()
   }
 
-  @Test("Periodic selected-server refresh force-checks a remote machine")
-  func periodicRemoteServerUpdateRefresh() async throws {
-    let fake = SyncFakeServerClient(projects: [], sessions: [])
-    fake.configureUpdate(current: "0.1.0", latest: "0.2.0")
-    let remote = CodevisorMachine(
-      id: "remote-test",
-      name: "Remote",
-      baseURL: URL(string: "http://remote.test:49361")!,
-      kind: "remote"
-    )
-    let store = InMemoryStore()
-    try store.saveData(
-      JSONEncoder().encode(
-        MachineRegistry(selectedMachineId: remote.id, remoteMachines: [remote])
-      ),
-      forKey: "machines"
-    )
-    let controller = MachineController(
-      store: store,
-      projectList: ProjectListModel.fixture(),
-      clientFactory: { _ in fake }
-    )
-
-    await controller.refreshServerUpdate(for: remote.id)
-
-    #expect(fake.updateInfoRefreshes == [true])
-    #expect(controller.serverUpdateInfo(for: remote.id)?.updateAvailable == true)
-  }
-
   @Test("Remote update accepts a channel-current runtime whose version string differs")
   func remoteServerUpdateVersionMismatch() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])

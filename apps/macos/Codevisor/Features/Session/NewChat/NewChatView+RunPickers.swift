@@ -250,7 +250,6 @@ extension NewChatView {
           to: .runTargetPlaceholder(serverId: machine.id),
           serverClient: environment.machines.client(for: machine.id)
         )
-        await environment.refreshHarnessLifecycle(for: machine.id)
       }
       return
     }
@@ -312,7 +311,6 @@ extension NewChatView {
           to: project,
           serverClient: environment.machines.client(for: project.serverId)
         )
-        await environment.refreshHarnessLifecycle(for: project.serverId)
       } else {
         await controller.selectProject(project)
       }

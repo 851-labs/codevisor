@@ -5,16 +5,15 @@ import Testing
 @MainActor
 @Suite("App update model")
 struct AppUpdateModelTests {
-  @Test("User and background checks use the correct presentation mode")
-  func checkModes() async {
+  @Test("A user check runs the installed handler and shows checking")
+  func checkForUpdates() async {
     let model = AppUpdateModel(currentVersion: "1.2.3", currentBuildNumber: 42)
-    var modes: [Bool] = []
-    model.checkHandler = { modes.append($0) }
+    var checks = 0
+    model.checkHandler = { checks += 1 }
 
-    await model.checkForUpdatesInBackground()
     await model.checkForUpdates()
 
-    #expect(modes == [false, true])
+    #expect(checks == 1)
     #expect(model.phase == .checking)
     #expect(model.currentBuildNumber == 42)
   }
@@ -107,7 +106,5 @@ struct AppUpdateModelTests {
     let model = AppUpdateModel(currentVersion: "1.2.3")
     model.reportUpToDate()
     #expect(model.phase == .upToDate)
-    model.reportIdle()
-    #expect(model.phase == .idle)
   }
 }

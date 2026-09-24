@@ -283,13 +283,6 @@ struct NewChatView: View {
         forServer: controller.project.serverId
       )
     }
-    // Update knowledge is fetched separately from the picker's plain
-    // list so the composer stays snappy; the update banner reads this.
-    .task(id: harnessCatalogRevision) {
-      await environment.refreshHarnessLifecycle(
-        for: composerServerId
-      )
-    }
     .focusedSceneValue(
       \.newChatComposerFocus,
       NewChatComposerFocus(

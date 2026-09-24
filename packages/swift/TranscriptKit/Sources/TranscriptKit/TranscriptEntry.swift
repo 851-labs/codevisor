@@ -18,11 +18,6 @@ public enum TranscriptEntry: Identifiable, Sendable, Equatable {
     }
   }
 
-  public var isText: Bool {
-    if case .text = self { return true }
-    return false
-  }
-
   /// A text span carrying nothing a reader can see — empty, or whitespace
   /// only. Harnesses legitimately stream these (Claude retro-tags a preamble
   /// with a zero-length chunk, and a message can open with a bare newline),
@@ -217,8 +212,6 @@ extension AssistantTurn {
       return entry
     }
   }
-
-  public var hasWorkedContent: Bool { !workedEntries.isEmpty }
 
   /// The tool calls within this turn, in order.
   public var toolCalls: [ToolCall] {

@@ -53,7 +53,6 @@ struct VirtualTranscriptLayoutTests {
 
     #expect(layout.heights == [100, 250, 300, 400])
     #expect(layout.topOffsets == [0, 110, 370, 680])
-    #expect(layout.bottomOffsets == [980, 720, 410, 0])
     #expect(layout.totalHeight == 1_080)
     #expect(layout.viewportTop(distanceFromBottom: 0, viewportHeight: 500) == 580)
   }

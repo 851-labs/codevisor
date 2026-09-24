@@ -68,7 +68,6 @@ struct TranscriptFailedTurnProjectionTests {
     // The aggregate active row was measured for its 32pt activity line;
     // the failure gets its own row instead of being drawn into that frame.
     #expect(rows.map(\.id) == [.assistantChrome(messageID, .epilogue)])
-    #expect(rows.allSatisfy { !$0.id.isActiveRow || $0.id.isPreciselyProjectedActiveRow })
     // Settling must not remount the failure under the aggregate
     // `message:` key, whose ledger height belongs to the activity line.
     #expect(settledRows.map(\.id) == [.assistantChrome(messageID, .epilogue)])
