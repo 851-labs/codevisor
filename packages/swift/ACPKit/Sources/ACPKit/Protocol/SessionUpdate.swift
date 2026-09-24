@@ -518,31 +518,3 @@ public extension SessionUpdate {
     .userMessageChunk(content, messageId: nil)
   }
 }
-
-/// The params of a `session/update` notification.
-public struct SessionNotification: Sendable, Codable, Equatable {
-  public var sessionId: String
-  public var update: SessionUpdate
-
-  private enum Keys: String, CodingKey {
-    case sessionId, update
-  }
-
-  public init(sessionId: String, update: SessionUpdate) {
-    self.sessionId = sessionId
-    self.update = update
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: Keys.self)
-    sessionId = try container.decode(String.self, forKey: .sessionId)
-    // The update fields are nested under `update`.
-    update = try container.decode(SessionUpdate.self, forKey: .update)
-  }
-
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.container(keyedBy: Keys.self)
-    try container.encode(sessionId, forKey: .sessionId)
-    try container.encode(update, forKey: .update)
-  }
-}

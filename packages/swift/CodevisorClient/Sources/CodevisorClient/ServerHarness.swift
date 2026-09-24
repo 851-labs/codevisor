@@ -363,13 +363,6 @@ public extension ServerHarness {
   /// The user's effective machine preference. Older servers only return the
   /// effective value, so preserve that as a compatibility fallback.
   var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
-
-  /// True only when this harness declares authentication and that
-  /// requirement has not yet been satisfied.
-  var requiresAuthentication: Bool {
-    guard let auth else { return false }
-    return !auth.isSatisfied
-  }
 }
 
 public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
@@ -381,10 +374,6 @@ public struct ServerHarnessAuthFlow: Codable, Equatable, Sendable {
   public var userCode: String?
   public var terminalId: String?
   public var terminalKey: String?
-
-  /// The session key used by the terminal proxy. Older servers only sent
-  /// `terminalId`, so keep that as a compatibility fallback.
-  public var terminalAttachKey: String? { terminalKey ?? terminalId }
 }
 
 public struct ServerPiAuthProvider: Codable, Equatable, Identifiable, Sendable {

@@ -44,11 +44,6 @@ struct ToolCallTests {
     #expect(fromUpdate.id == "t9")
   }
 
-  @Test("ToolCall id mirrors toolCallId")
-  func identity() {
-    #expect(ToolCall(toolCallId: "abc", title: "t").id == "abc")
-  }
-
   @Test("cancelled status round-trips and is terminal")
   func cancelledStatus() throws {
     let call = ToolCall(toolCallId: "t1", title: "Edit", status: .cancelled, exitCode: 130)

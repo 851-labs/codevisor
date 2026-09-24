@@ -28,23 +28,6 @@ struct ModelTests {
     #expect(current.sessionPlan?.entries.first?.status == .inProgress)
   }
 
-  @Test("Harness auth terminal prefers its attach key and supports older servers")
-  func harnessAuthTerminalAttachKey() throws {
-    let current = try JSONDecoder().decode(
-      ServerHarnessAuthFlow.self,
-      from: Data(
-        #"{"id":"flow-1","accountId":"account-1","kind":"terminal","terminalId":"terminal-1","terminalKey":"auth:flow-1"}"#
-          .utf8)
-    )
-    let legacy = try JSONDecoder().decode(
-      ServerHarnessAuthFlow.self,
-      from: Data(#"{"id":"flow-1","accountId":"account-1","kind":"terminal","terminalId":"terminal-1"}"#.utf8)
-    )
-
-    #expect(current.terminalAttachKey == "auth:flow-1")
-    #expect(legacy.terminalAttachKey == "terminal-1")
-  }
-
   @Test("Project derives its name from the folder")
   func projectFromFolder() {
     let project = Project.fromFolder(URL(fileURLWithPath: "/Users/x/Projects/Codevisor"))

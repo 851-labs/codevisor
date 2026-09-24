@@ -38,7 +38,6 @@ struct CloudAccountControllerRosterTests {
     #expect(controller.state == .signedIn(userEmail: "cached@example.com"))
     #expect(controller.machines.map(\.deviceId) == ["m1"])
     #expect(controller.hasCompletedBootstrap)
-    #expect(!controller.isRestoringPersistedSession)
     #expect(!controller.isRosterVerified)
     // Discovery only serves the sign-in screen; token launches skip it.
     #expect(client.discoverCount == 0)

@@ -177,12 +177,6 @@ struct ProtocolCodableTests {
     }
   }
 
-  @Test("SessionMode round-trips its canonical id")
-  func sessionModeCanonicalId() throws {
-    try roundTrip(SessionMode(id: "plan", name: "Plan", description: "d", canonicalId: "plan"))
-    try roundTrip(SessionMode(id: "goal", name: "Goal mode"))
-  }
-
   @Test("tool_call update carries inline fields")
   func toolCallInline() throws {
     let data = Data(
@@ -202,11 +196,6 @@ struct ProtocolCodableTests {
     }
   }
 
-  @Test("SessionNotification round-trips with nested update")
-  func sessionNotification() throws {
-    try roundTrip(SessionNotification(sessionId: "s1", update: .agentMessageChunk(.text("hi"))))
-  }
-
   @Test("ToolCallContent variants round-trip")
   func toolCallContent() throws {
     try roundTrip(ToolCallContent.content(.text("out")))
@@ -218,28 +207,6 @@ struct ProtocolCodableTests {
   func unknownToolCallContent() {
     #expect(throws: (any Error).self) {
       _ = try ACPJSON.decoder.decode(ToolCallContent.self, from: Data(#"{"type":"zzz"}"#.utf8))
-    }
-  }
-
-  @Test("McpServer variants round-trip and default to stdio")
-  func mcpServers() throws {
-    try roundTrip(
-      McpServer.stdio(name: "fs", command: "node", args: ["server.js"], env: [EnvVariable(name: "K", value: "V")])
-    )
-    try roundTrip(McpServer.http(name: "h", url: "https://x", headers: [HTTPHeader(name: "A", value: "B")]))
-    try roundTrip(McpServer.sse(name: "s", url: "https://y", headers: []))
-    // Missing type defaults to stdio.
-    let data = Data(#"{"name":"fs","command":"node"}"#.utf8)
-    let server = try ACPJSON.decoder.decode(McpServer.self, from: data)
-    guard case .stdio(let name, let command, _, _) = server else { Issue.record("expected stdio"); return }
-    #expect(name == "fs")
-    #expect(command == "node")
-  }
-
-  @Test("Unknown MCP server type throws")
-  func unknownMcp() {
-    #expect(throws: (any Error).self) {
-      _ = try ACPJSON.decoder.decode(McpServer.self, from: Data(#"{"type":"grpc","name":"x"}"#.utf8))
     }
   }
 

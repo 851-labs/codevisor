@@ -168,13 +168,6 @@ public final class CloudAccountController {
     (try? credentialStore.token()) ?? nil
   }
 
-  /// Whether launch still needs the network-backed account restoration path.
-  /// Signed-out installs have no cloud machines to recover and can render
-  /// their locally persisted machine state immediately.
-  public var isRestoringPersistedSession: Bool {
-    !hasCompletedBootstrap && storedToken != nil
-  }
-
   var client: any CloudAccountClienting {
     clientFactory(serverURL)
   }

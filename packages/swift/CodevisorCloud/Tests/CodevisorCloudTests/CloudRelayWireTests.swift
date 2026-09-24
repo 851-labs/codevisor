@@ -28,7 +28,8 @@ struct CloudRelayWireTests {
     ])
     let padded = Data([0xFF, 0xFF]) + message
     let slice = padded.dropFirst(2)
-    let decoded = try CloudRelayWire.decode(Data(slice))
+    #expect(slice.startIndex == 2)
+    let decoded = try CloudRelayWire.decode(slice)
     #expect(decoded.count == 1)
     #expect(decoded[0].payload == Data([9]))
   }

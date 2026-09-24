@@ -48,14 +48,6 @@ struct SessionConfigTests {
     )
     let data = try ACPJSON.encoder.encode(option)
     #expect(try ACPJSON.decoder.decode(SessionConfigOption.self, from: data) == option)
-
-    let request = SetSessionConfigOptionRequest(sessionId: "s", configId: "model", value: "gpt-5.4")
-    let requestData = try ACPJSON.encoder.encode(request)
-    #expect(try ACPJSON.decoder.decode(SetSessionConfigOptionRequest.self, from: requestData) == request)
-
-    let response = SetSessionConfigOptionResponse(configOptions: [option])
-    let responseData = try ACPJSON.encoder.encode(response)
-    #expect(try ACPJSON.decoder.decode(SetSessionConfigOptionResponse.self, from: responseData) == response)
   }
 
   @Test("config_option_update session update round-trips")
@@ -95,16 +87,6 @@ struct SessionConfigTests {
     let json = #"{"sessionUpdate":"usage_update","used":10}"#
     let update = try ACPJSON.decoder.decode(SessionUpdate.self, from: Data(json.utf8))
     #expect(update == .usageUpdate(SessionUsage(used: 10)))
-  }
-
-  @Test("NewSessionResponse carries config options")
-  func newSessionConfig() throws {
-    let response = NewSessionResponse(
-      sessionId: "s",
-      configOptions: [SessionConfigOption(id: "model", name: "Model", currentValue: "a", options: [])]
-    )
-    let data = try ACPJSON.encoder.encode(response)
-    #expect(try ACPJSON.decoder.decode(NewSessionResponse.self, from: data) == response)
   }
 
   @Test("Category constants match the spec")

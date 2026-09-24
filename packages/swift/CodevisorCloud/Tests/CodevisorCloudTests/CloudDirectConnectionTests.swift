@@ -141,7 +141,7 @@ struct CloudDirectConnectionTests {
 
     // The scripted machine completed the responder key agreement from
     // the open envelope — the sealed round trip the prober relies on.
-    try await channel.sendJSON(["kind": "end"])
+    try await channel.send(plaintext: JSONEncoder().encode(["kind": "end"]))
     #expect(
       await waitUntil {
         scripted.machine.channel(channel.id)?.messages.isEmpty == false
