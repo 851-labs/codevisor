@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -168,6 +168,7 @@ describe("terminal persistence", () => {
     expect(existsSync(`${snapshotPath}.tmp`)).toBe(false)
     const parsed = JSON.parse(readFileSync(snapshotPath, "utf8")) as { version: number }
     expect(parsed.version).toBe(1)
+    expect(statSync(snapshotPath).mode & 0o777).toBe(0o600)
   })
 
   it("flushes through the exit hook and exits with conventional signal codes", () => {
