@@ -56,6 +56,16 @@ const fixture = async (
   return { lifecycle, state, ...spawn, ...terminal }
 }
 
+/// Starts an uninstall and returns the command it ran, then fails the fake
+/// package manager so no operation outlives the test.
+const uninstallCommand = async (world: Awaited<ReturnType<typeof fixture>>, id = "fake-cli") => {
+  const settled = waitForLifecycleSettle(world.lifecycle)
+  await world.lifecycle.beginUninstall(id)
+  world.processes[0]!.emitExit(1)
+  await settled
+  return world.spawns[0]!.command
+}
+
 describe("harness uninstall", () => {
   it("removes only Codex standalone packages and installer-owned launchers", async () => {
     for (const companion of ["owned", "other", "absent"]) {
@@ -76,13 +86,12 @@ describe("harness uninstall", () => {
           pathExists: (path) => companion !== "absent" && path.endsWith("codex-code-mode-host")
         }
       )
-      const info = await world.lifecycle.uninstallInfo("codex")
-      expect(info.available).toBe(true)
-      expect(info.command).toContain("'/test-home/.codex/packages/standalone'")
-      expect(info.command?.includes("'/test-home/.local/bin/codex-code-mode-host'")).toBe(
+      const command = await uninstallCommand(world, "codex")
+      expect(command).toContain("'/test-home/.codex/packages/standalone'")
+      expect(command.includes("'/test-home/.local/bin/codex-code-mode-host'")).toBe(
         companion === "owned"
       )
-      expect(info.command).not.toContain("-- '/test-home/.codex'")
+      expect(command).not.toContain("-- '/test-home/.codex'")
     }
     const root = "/custom/codex/packages/standalone"
     const world = await fixture(
@@ -99,7 +108,7 @@ describe("harness uninstall", () => {
         pathExists: undefined
       }
     )
-    expect(await world.lifecycle.uninstallInfo("codex")).toMatchObject({ available: true })
+    expect(await uninstallCommand(world, "codex")).toContain("'/custom/codex/packages/standalone'")
   })
 
   it("refuses standalone lookalikes and redirected package directories", async () => {
@@ -114,7 +123,7 @@ describe("harness uninstall", () => {
           realpath: (path) => (path.endsWith("/bin/codex") ? target : "/elsewhere/packages")
         }
       )
-      expect(await world.lifecycle.uninstallInfo("codex")).toMatchObject({ available: false })
+      await expect(world.lifecycle.beginUninstall("codex")).rejects.toThrow("original installer")
     }
   })
 
@@ -139,13 +148,7 @@ describe("harness uninstall", () => {
 
   it("matches the exact Homebrew cask channel", async () => {
     const world = await fixture("/opt/homebrew/Caskroom/fake-cli@latest/1.0/bin/fake-cli")
-    expect(await world.lifecycle.uninstallInfo("fake-cli")).toMatchObject({ available: true })
-    await world.lifecycle.beginUninstall("fake-cli")
-    expect(world.spawns[0]?.command).toContain("'uninstall' '--cask' 'fake-cli@latest'")
-    const settled = waitForLifecycleSettle(world.lifecycle)
-    world.state.installed = false
-    world.processes[0]!.emitExit(0)
-    await settled
+    expect(await uninstallCommand(world)).toContain("'uninstall' '--cask' 'fake-cli@latest'")
   })
 
   it("refuses active chats without starting removal", async () => {
@@ -164,7 +167,6 @@ describe("harness uninstall", () => {
     "/project/node_modules/fake-cli/bin/cli.js"
   ])("refuses an unverified installation: %s", async (path) => {
     const world = await fixture(path)
-    expect((await world.lifecycle.uninstallInfo("fake-cli")).available).toBe(false)
     await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow()
     expect(world.spawns).toEqual([])
     expect(world.lifecycle.isGated("fake-cli")).toBe(false)
@@ -201,15 +203,11 @@ describe("harness uninstall", () => {
   it("reports absent installations and missing package managers", async () => {
     const absent = await fixture()
     absent.state.installed = false
-    expect(await absent.lifecycle.uninstallInfo("fake-cli")).toEqual({
-      available: false,
-      detail: "Not installed"
-    })
+    await expect(absent.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("Not installed")
     const missing = await fixture(undefined, undefined, { resolveEnv: async () => ({ PATH: "" }) })
-    expect(await missing.lifecycle.uninstallInfo("fake-cli")).toEqual({
-      available: false,
-      detail: "npm is required to uninstall this installation"
-    })
+    await expect(missing.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(
+      "npm is required to uninstall this installation"
+    )
     await expect(missing.lifecycle.beginUninstall("unknown")).rejects.toThrow("Unknown harness")
   })
 
@@ -219,21 +217,20 @@ describe("harness uninstall", () => {
         throw new Error("Gone")
       }
     })
-    expect(await gone.lifecycle.uninstallInfo("fake-cli")).toEqual({
-      available: false,
-      detail: "Installation not found"
-    })
+    await expect(gone.lifecycle.beginUninstall("fake-cli")).rejects.toThrow(
+      "Installation not found"
+    )
     const manual = await fixture("/tools/manual", { ...installableDefinition, installMethods: [] })
-    expect((await manual.lifecycle.uninstallInfo("fake-cli")).available).toBe(false)
+    await expect(manual.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
   })
 
   it("uses a verified formula and refuses removal during an install", async () => {
     const world = await fixture("/opt/homebrew/Cellar/fake-cli/1/bin/fake-cli")
-    expect((await world.lifecycle.uninstallInfo("fake-cli")).command).not.toContain("--cask")
+    expect(await uninstallCommand(world)).not.toContain("--cask")
     await world.lifecycle.beginInstall("fake-cli")
     await expect(world.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("Another operation")
     const settled = waitForLifecycleSettle(world.lifecycle)
-    world.processes[0]!.emitExit(1)
+    world.processes[1]!.emitExit(1)
     await settled
   })
 
@@ -261,15 +258,15 @@ describe("harness uninstall", () => {
     const world = await fixture(path, definition, {
       realpath: (value) => (value === path ? root + "/versions/1.0" : value)
     })
-    expect(await world.lifecycle.uninstallInfo("claude-code")).toEqual({
-      available: true,
-      command:
-        "/bin/rm -f -- '/test-home/.local/bin/claude' && /bin/rm -rf -- '/test-home/.local/share/claude'"
-    })
+    expect(await uninstallCommand(world, "claude-code")).toBe(
+      "/bin/rm -f -- '/test-home/.local/bin/claude' && /bin/rm -rf -- '/test-home/.local/share/claude'"
+    )
     const redirected = await fixture(path, definition, {
       realpath: (value) => (value === path ? root + "/versions/1.0" : "/elsewhere")
     })
-    expect((await redirected.lifecycle.uninstallInfo("claude-code")).available).toBe(false)
+    await expect(redirected.lifecycle.beginUninstall("claude-code")).rejects.toThrow(
+      "original installer"
+    )
   })
 
   it("verifies removal against the real filesystem and notifies held sessions", async () => {
@@ -295,12 +292,12 @@ describe("harness uninstall", () => {
   it("keeps custom commands and unrelated uv environments intact", async () => {
     const { installMethods: _methods, ...manualDefinition } = installableDefinition
     const manual = await fixture("/tools/manual", manualDefinition)
-    expect((await manual.lifecycle.uninstallInfo("fake-cli")).available).toBe(false)
+    await expect(manual.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
     const uv = await fixture("/somewhere/fake-cli", {
       ...installableDefinition,
       installMethods: [{ kind: "uv", packageName: "fake-cli" }]
     })
-    expect((await uv.lifecycle.uninstallInfo("fake-cli")).available).toBe(false)
+    await expect(uv.lifecycle.beginUninstall("fake-cli")).rejects.toThrow("original installer")
   })
 
   it("releases reservations when process startup throws a non-Error", async () => {

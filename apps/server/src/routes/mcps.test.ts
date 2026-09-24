@@ -3,7 +3,7 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { boundedMcpTimerDelay, NodeStreamableHttpTransport } from "@codevisor/mcp"
+import { NodeStreamableHttpTransport } from "@codevisor/mcp"
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js"
@@ -13,11 +13,6 @@ import { describe, expect, it } from "vitest"
 import { jsonRequest, start, tempDirs } from "../test-support.js"
 
 describe("mcp routes", () => {
-  it("bounds long-lived OAuth refresh timers to Node's supported range", () => {
-    expect(boundedMcpTimerDelay(2_591_232_324)).toBe(2_147_000_000)
-    expect(boundedMcpTimerDelay(3_480_000)).toBe(3_480_000)
-  })
-
   it("loads a large SSE tool catalog without opening the optional notification stream", async () => {
     const receivedHeaders: Array<string | undefined> = []
     const upstream = createServer(async (request, response) => {

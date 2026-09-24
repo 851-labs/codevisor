@@ -2,7 +2,6 @@ import { realpathSync, existsSync } from "node:fs"
 import { join, dirname } from "node:path"
 
 import { locateExecutableOnPath } from "@codevisor/agent-runtime"
-import type { HarnessUninstallInfo } from "@codevisor/api"
 import { detectBrewPackage } from "@codevisor/updater"
 
 import type { HarnessLifecycleCore } from "./harness-lifecycle-core.js"
@@ -131,10 +130,6 @@ export const makeHarnessUninstall = (
     for (const listener of core.gateListeners) listener(id)
   }
   return {
-    uninstallInfo: async (id: string): Promise<HarnessUninstallInfo> => {
-      const plan = await resolvePlan(id)
-      return plan.available ? { available: true, command: plan.command } : plan
-    },
     beginUninstall: async (id: string) => {
       if ((core.busyCounts.get(id) ?? 0) > 0)
         throw new Error("Finish or stop active chats before uninstalling")

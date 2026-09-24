@@ -153,13 +153,6 @@ export const HarnessSettings = Schema.Struct({
   override: Schema.optional(HarnessPreference)
 })
 export type HarnessSettings = typeof HarnessSettings.Type
-export const HarnessUninstallInfo = Schema.Struct({
-  available: Schema.Boolean,
-  detail: Schema.optional(Schema.String),
-  command: Schema.optional(Schema.String)
-})
-export type HarnessUninstallInfo = typeof HarnessUninstallInfo.Type
-
 export const Harness = Schema.Struct({
   id: Schema.String,
   name: Schema.String,

@@ -2,7 +2,11 @@ import type { Harness } from "@codevisor/api"
 import type { HarnessAuthManager } from "@codevisor/harness-manager"
 import { describe, expect, it } from "vitest"
 
-import { makeEventFanout, type CodevisorServerServices } from "../server-context.js"
+import {
+  makeEventFanout,
+  type CodevisorServerConfig,
+  type CodevisorServerServices
+} from "../server-context.js"
 import {
   jsonRequest,
   makeServices,
@@ -12,20 +16,23 @@ import {
   skillsStub,
   startWithApp
 } from "../test-support.js"
-import { refreshSkillReadiness } from "./sync-readiness.js"
+import {
+  refreshHarnessReadiness,
+  refreshMcpReadiness,
+  refreshPluginReadiness,
+  refreshSkillReadiness
+} from "./sync-readiness.js"
 
-/// Phase 17: the mcp-readiness surface over HTTP — the on-demand publish
-/// endpoint plus the reconcile pass keeping the machine's entry fresh.
+const machine = (id: string) => ({ id }) as CodevisorServerConfig
+
+/// Phase 17: the mcp-readiness surface over HTTP — the machine's published
+/// entry plus the reconcile pass keeping it fresh.
 describe("/v1/sync/mcp-readiness", () => {
-  it("publishes this machine's MCP readiness on demand and after mcps reconciles", async () => {
+  it("publishes this machine's MCP readiness and refreshes it after mcps reconciles", async () => {
     const { services } = await makeServices("server-readiness")
     const server = await startWithApp(services, undefined, { id: "server-readiness" })
 
-    const published = await jsonRequest(server, "/v1/sync/mcp-readiness/publish", {
-      method: "POST"
-    })
-    expect(published.status).toBe(200)
-    expect(published.body).toEqual({ published: true })
+    await refreshMcpReadiness(services, machine("server-readiness"), await run(makeEventFanout))
     const document = (await jsonRequest(server, "/v1/sync/mcp-readiness")).body as {
       entries: Array<{ key: string; value: { servers: Array<{ name: string; state: string }> } }>
     }
@@ -57,7 +64,7 @@ describe("/v1/sync/mcp-readiness", () => {
   it("enforces a per-machine disable overlay in the same request cycle", async () => {
     const { services } = await makeServices("server-overlay")
     const server = await startWithApp(services, undefined, { id: "server-overlay" })
-    await jsonRequest(server, "/v1/sync/mcp-readiness/publish", { method: "POST" })
+    await refreshMcpReadiness(services, machine("server-overlay"), await run(makeEventFanout))
 
     // Disable a built-in on this machine via the generic overlay surface.
     const put = await jsonRequest(server, "/v1/sync/mcp-overlays", {
@@ -89,17 +96,14 @@ describe("/v1/sync/mcp-readiness", () => {
 })
 
 /// Phase 24: the harness-readiness surface — the reported half of the
-/// desired-vs-reported matrix, published on demand and after harness passes.
+/// desired-vs-reported matrix, published on auth changes and after harness
+/// passes.
 describe("/v1/sync/harness-readiness", () => {
-  it("publishes this machine's harness readiness on demand", async () => {
+  it("publishes this machine's harness readiness", async () => {
     const { services } = await makeServices("server-hr")
     const server = await startWithApp(services, undefined, { id: "server-hr" })
 
-    const published = await jsonRequest(server, "/v1/sync/harness-readiness/publish", {
-      method: "POST"
-    })
-    expect(published.status).toBe(200)
-    expect(published.body).toEqual({ published: true })
+    await refreshHarnessReadiness(services, machine("server-hr"), await run(makeEventFanout))
 
     const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
       entries: Array<{ key: string; value: { harnesses: Array<{ id: string; state: string }> } }>
@@ -165,7 +169,11 @@ describe("/v1/sync/harness-readiness", () => {
     const server = await startWithApp({ ...services, lifecycle }, undefined, {
       id: "operation-report"
     })
-    await jsonRequest(server, "/v1/sync/harness-readiness/publish", { method: "POST" })
+    await refreshHarnessReadiness(
+      { ...services, lifecycle },
+      machine("operation-report"),
+      await run(makeEventFanout)
+    )
     const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
       entries: Array<{
         value: { harnesses: Array<{ id: string; state: string; reason?: string }> }
@@ -224,7 +232,11 @@ describe("/v1/sync/harness-readiness", () => {
     } as unknown as HarnessAuthManager
     const server = await startWithApp({ ...services, auth }, undefined, { id: "server-hr2" })
 
-    await jsonRequest(server, "/v1/sync/harness-readiness/publish", { method: "POST" })
+    await refreshHarnessReadiness(
+      { ...services, auth },
+      machine("server-hr2"),
+      await run(makeEventFanout)
+    )
     const document = (await jsonRequest(server, "/v1/sync/harness-readiness")).body as {
       entries: Array<{ value: { harnesses: Array<{ id: string; state: string }> } }>
     }
@@ -241,17 +253,12 @@ describe("/v1/sync/harness-readiness", () => {
 
 /// Phase 24: the plugin-readiness surface — third readiness plane.
 describe("/v1/sync/plugin-readiness", () => {
-  it("publishes this machine's plugin readiness on demand", async () => {
+  it("publishes this machine's plugin readiness", async () => {
     const { services } = await makeServices("server-plr")
-    const server = await startWithApp({ ...services, plugins: pluginsStub([]) }, undefined, {
-      id: "server-plr"
-    })
+    const withPlugins = { ...services, plugins: pluginsStub([]) }
+    const server = await startWithApp(withPlugins, undefined, { id: "server-plr" })
 
-    const published = await jsonRequest(server, "/v1/sync/plugin-readiness/publish", {
-      method: "POST"
-    })
-    expect(published.status).toBe(200)
-    expect(published.body).toEqual({ published: true })
+    await refreshPluginReadiness(withPlugins, machine("server-plr"), await run(makeEventFanout), [])
 
     const document = (await jsonRequest(server, "/v1/sync/plugin-readiness")).body as {
       entries: Array<{ key: string; value: { plugins: Array<{ id: string; state: string }> } }>
@@ -276,11 +283,12 @@ describe("/v1/sync/plugin-readiness", () => {
         ]
       })
     } as unknown as NonNullable<CodevisorServerServices["plugins"]>
-    const server = await startWithApp({ ...services, plugins }, undefined, {
-      id: "server-plr-failed"
-    })
-
-    await jsonRequest(server, "/v1/sync/plugin-readiness/publish", { method: "POST" })
+    await refreshPluginReadiness(
+      { ...services, plugins },
+      machine("server-plr-failed"),
+      await run(makeEventFanout),
+      []
+    )
     const entries = await run(services.db.getSyncEntries("plugin-readiness"))
     expect(entries[0]?.value).toEqual({
       plugins: [
@@ -297,7 +305,7 @@ describe("/v1/sync/plugin-readiness", () => {
 
 /// The skill-readiness surface — the reported half of the skills plane.
 describe("/v1/sync/skill-readiness", () => {
-  it("publishes this machine's skill readiness on demand and announces the change", async () => {
+  it("publishes this machine's skill readiness and announces the change", async () => {
     const { services } = await makeServices("server-skr")
     await run(
       services.db.mergeSyncEntries("skills", [
@@ -315,20 +323,15 @@ describe("/v1/sync/skill-readiness", () => {
         announced.resolve(event.payload)
       }
     })
-    const server = await startWithApp(
+    await refreshSkillReadiness(
       {
         ...services,
         skills: skillsStub([]) as unknown as NonNullable<CodevisorServerServices["skills"]>
       },
+      machine("server-skr"),
       fanout,
-      { id: "server-skr" }
+      []
     )
-
-    const published = await jsonRequest(server, "/v1/sync/skill-readiness/publish", {
-      method: "POST"
-    })
-    expect(published.status).toBe(200)
-    expect(published.body).toEqual({ published: true })
 
     // The local skill was never published to the fleet; the fleet skill
     // has not arrived and, with no pass to explain it, carries no reason.
@@ -353,11 +356,11 @@ describe("refreshSkillReadiness", () => {
   it("skips machines without a skills manager and swallows scan failures", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-skr-edge")
-    const config = { id: "server-skr-edge" } as Parameters<typeof refreshSkillReadiness>[1]
+    const config = machine("server-skr-edge")
 
     // The test host has no skills manager: nothing to derive or publish.
     expect("skills" in services).toBe(false)
-    await refreshSkillReadiness(services, config, fanout)
+    await refreshSkillReadiness(services, config, fanout, [])
     expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
 
     // A failing scan never breaks the pass that triggered the refresh.
@@ -365,7 +368,7 @@ describe("refreshSkillReadiness", () => {
       ...services,
       skills: { list: () => Promise.reject(new Error("boom")) }
     } as unknown as CodevisorServerServices
-    await expect(refreshSkillReadiness(poisoned, config, fanout)).resolves.toBeUndefined()
+    await expect(refreshSkillReadiness(poisoned, config, fanout, [])).resolves.toBeUndefined()
     expect(await run(services.db.getSyncEntries("skill-readiness"))).toEqual([])
   })
 })

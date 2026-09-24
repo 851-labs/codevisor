@@ -44,10 +44,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     },
     setExtraHarnesses: (definitions) => {
       state.extraHarnesses = withoutBuiltinCollisions(definitions)
-      state.catalog =
-        state.extraHarnesses.length === 0
-          ? harnessCatalog
-          : [...harnessCatalog, ...state.extraHarnesses]
+      state.catalog = [...harnessCatalog, ...state.extraHarnesses]
     },
     discoverHarnesses: Effect.sync(() =>
       state.catalog.map((definition) => {
