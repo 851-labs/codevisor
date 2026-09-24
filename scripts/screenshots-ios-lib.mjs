@@ -1,5 +1,4 @@
 import { parseCaptureOptions } from "./screenshots-lib.mjs"
-export { scenes, gallery, pngDimensions, screenshotAttachments } from "./screenshots-lib.mjs"
 
 export const devices = {
   iphone: {

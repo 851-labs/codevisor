@@ -57,7 +57,6 @@ describe("browser cursor presentation", () => {
 
   it("assigns stable palette slots that avoid concurrently active colors", () => {
     const hash = fnv1a("extension:session-a")
-    expect(hash).toBe(fnv1a("extension:session-a"))
     const first = cursorColorIndex("extension:session-a", new Set())
     expect(first).toBe(hash % BROWSER_CURSOR_PALETTE_COUNT)
     expect(cursorColorIndex("extension:session-a", new Set([first]))).toBe(

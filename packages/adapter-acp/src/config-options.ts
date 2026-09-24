@@ -14,11 +14,6 @@ import type {
   SessionModeState
 } from "@codevisor/api"
 
-export const acpConfigSelection = (
-  configId: string,
-  value: string
-): { readonly configId: string; readonly value: string } => ({ configId, value })
-
 export interface AcpSessionMetadataResponse {
   readonly configOptions?: ReadonlyArray<AcpSessionConfigOption> | null
   readonly modes?: AcpSessionModeState | null

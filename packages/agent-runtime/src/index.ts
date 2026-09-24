@@ -1,6 +1,6 @@
 import type { Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { Cause, Context, Effect, Layer } from "effect"
+import { Cause, Effect } from "effect"
 
 import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-core.js"
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
@@ -19,20 +19,9 @@ export * from "./model-selection.js"
 export * from "./agent-runtime-types.js"
 export { harnessCatalog } from "./harness-catalog.js"
 export { locateExecutableOnPath } from "./executable-locator.js"
-export { makeVersionProber, parseVersionOutput } from "./version-probe.js"
+export { makeVersionProber } from "./version-probe.js"
 export type { VersionProber, VersionProberOptions } from "./version-probe.js"
-export {
-  clampFailureDetail,
-  maxFailureDetailLength,
-  summarizeProcessFailure
-} from "./process-failure.js"
-
-export class AgentRuntime extends Context.Service<AgentRuntime, AgentRuntimeService>()(
-  "@codevisor/agent-runtime/AgentRuntime"
-) {
-  static readonly layer = (config: AgentRuntimeConfig = {}): Layer.Layer<AgentRuntime> =>
-    Layer.succeed(AgentRuntime, AgentRuntime.of(makeAgentRuntime(config)))
-}
+export { clampFailureDetail, summarizeProcessFailure } from "./process-failure.js"
 
 export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeService => {
   const core = makeAgentRuntimeCore(config)

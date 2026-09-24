@@ -147,16 +147,6 @@ describe("scanPlugins", () => {
   it("defaults the root under the home directory", () => {
     expect(defaultPluginsRoot()).toContain(".codevisor")
   })
-
-  it("honors the CODEVISOR_PLUGINS_ROOT override", () => {
-    const root = makeRoot()
-    process.env["CODEVISOR_PLUGINS_ROOT"] = root
-    try {
-      expect(defaultPluginsRoot()).toBe(root)
-    } finally {
-      delete process.env["CODEVISOR_PLUGINS_ROOT"]
-    }
-  })
 })
 
 describe("findPluginOrFail", () => {

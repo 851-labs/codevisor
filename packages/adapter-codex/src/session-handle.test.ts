@@ -1,4 +1,3 @@
-import type { RuntimeEvent } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { run, setup } from "./test-support.js"
@@ -145,8 +144,6 @@ describe("CodexProvider", () => {
 
   it("applies model/effort overrides as sticky turn/start params", async () => {
     const { client, created } = await setup()
-    const events: Array<RuntimeEvent> = []
-    void events
     await run(created!.handle.setConfigOption("effort", "high"))
     const promptPromise = run(created!.handle.prompt("go"))
     await Promise.resolve()

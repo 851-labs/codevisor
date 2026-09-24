@@ -35,7 +35,6 @@ export {
   type PluginTransactionPaths,
   type PluginTransactionPhase
 } from "./plugin-transaction.js"
-export { isPluginEnabled, setPluginEnabledState } from "./plugin-enabled-state.js"
 export { clonePluginSource, parsePluginSource, type ParsedPluginSource } from "./plugin-source.js"
 export {
   makePluginInstaller,

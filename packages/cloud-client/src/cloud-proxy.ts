@@ -203,9 +203,6 @@ export interface WsWireFrame {
   readonly data: string
 }
 
-export const encodeWsFrame = (data: string | Uint8Array): WsWireFrame =>
-  typeof data === "string" ? { kind: "text", data } : { kind: "binary", data: toBase64Url(data) }
-
 /// Encodes one outbound WS message as one frame, or — above `cap` raw bytes —
 /// as `part` frames closed by a typed end frame. Splitting works on UTF-8
 /// bytes; parts may cut mid code point, which is safe because the receiver
@@ -213,7 +210,9 @@ export const encodeWsFrame = (data: string | Uint8Array): WsWireFrame =>
 export const encodeWsFrames = (data: string | Uint8Array, cap = MAX_CHUNK_BYTES): WsWireFrame[] => {
   const isText = typeof data === "string"
   const bytes = isText ? new TextEncoder().encode(data) : data
-  if (bytes.byteLength <= cap) return [encodeWsFrame(data)]
+  if (bytes.byteLength <= cap) {
+    return [isText ? { kind: "text", data } : { kind: "binary", data: toBase64Url(bytes) }]
+  }
   const frames: WsWireFrame[] = []
   for (let offset = 0; offset < bytes.byteLength; offset += cap) {
     const piece = toBase64Url(bytes.subarray(offset, offset + cap))

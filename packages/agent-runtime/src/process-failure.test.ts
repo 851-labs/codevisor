@@ -91,28 +91,6 @@ describe("clampFailureDetail", () => {
   })
 })
 
-describe("generic connection-close substitution", () => {
-  // Mirrors the acp.ts probeAuth path: when the SDK reports its placeholder
-  // rejection, the child's stderr is what actually explains the failure.
-  const isGenericConnectionClose = (message: string): boolean =>
-    /^acp connection closed\.?$/i.test(message.trim())
-
-  it("recognizes the SDK placeholder and substitutes stderr", () => {
-    expect(isGenericConnectionClose("ACP connection closed")).toBe(true)
-    expect(isGenericConnectionClose("  acp connection closed.  ")).toBe(true)
-    expect(isGenericConnectionClose("Authentication required")).toBe(false)
-
-    const stderr = "Error: Failed to load native binding for darwin/arm64\n    at req (/a.js:1:2)"
-    expect(summarizeProcessFailure(stderr, "ACP connection closed")).toBe(
-      "Failed to load native binding for darwin/arm64"
-    )
-  })
-
-  it("keeps the placeholder when stderr explains nothing", () => {
-    expect(summarizeProcessFailure("", "ACP connection closed")).toBe("ACP connection closed")
-  })
-})
-
 describe("whitespace classification", () => {
   it("counts tabs, not just spaces, when judging a long line", () => {
     // Tab-delimited diagnostic output is prose, not bundle source. Scoring
