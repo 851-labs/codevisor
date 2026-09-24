@@ -55,9 +55,10 @@ public enum FrameClock {
     case unreadable
   }
 
-  /// Reads a strip from each cell's average channels (0…255): on from 165, off up to 145.
-  /// Wide enough for a window drawn in Display P3, where sRGB green (0, 255, 0) reads
-  /// (117, 251, 76); narrow enough to reject a blurred edge between two cells.
+  /// Reads a strip from each cell's average channels (0…255): on from 180, off up to 170.
+  /// Colour conversion moves "off" channels well up: sRGB green (0, 255, 0) has been
+  /// captured as (117, 251, 76) and (154, 247, 95), red as (214, 75, 48). "On" stays
+  /// above 210. The checksum rejects a cell misread in the narrow band between.
   /// A strip that can't be read, or fails the checksum, is never taken for a frame.
   public static func read(_ averages: [(red: Double, green: Double, blue: Double)]) -> Reading {
     guard averages.count == cellCount else { return .unreadable }
@@ -65,9 +66,9 @@ public enum FrameClock {
     for cell in averages {
       var value = 0
       for (shift, channel) in [(2, cell.red), (1, cell.green), (0, cell.blue)] {
-        if channel >= 165 {
+        if channel >= 180 {
           value |= 1 << shift
-        } else if channel > 145 {
+        } else if channel > 170 {
           return .unreadable
         }
       }

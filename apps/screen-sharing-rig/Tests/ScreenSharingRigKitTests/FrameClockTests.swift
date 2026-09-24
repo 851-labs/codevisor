@@ -32,11 +32,11 @@ struct FrameClockTests {
     }
     #expect(Double(caught) / Double(splits) > 0.95, "\(caught) of \(splits) torn strips caught")
     var blurred = Self.averages(FrameClock.cells(for: 100))
-    blurred[2].green = 155
+    blurred[2].green = 175
     #expect(FrameClock.read(blurred) == .unreadable)
     // Lossy but decisive values still read.
     let lossy: Averages = Self.averages(FrameClock.cells(for: 100)).map {
-      (red: $0.red == 255 ? 200.0 : 40.0, green: $0.green == 255 ? 170.0 : 90.0, blue: $0.blue == 255 ? 230.0 : 10.0)
+      (red: $0.red == 255 ? 200.0 : 40.0, green: $0.green == 255 ? 190.0 : 90.0, blue: $0.blue == 255 ? 230.0 : 10.0)
     }
     #expect(FrameClock.read(lossy) == .frame(100))
     // The rig's window as captured on a P3 display: the sRGB primaries, converted.
@@ -48,6 +48,15 @@ struct FrameClockTests {
       p3[($0.red ? 4 : 0) | ($0.green ? 2 : 0) | ($0.blue ? 1 : 0)]!
     }
     #expect(FrameClock.read(converted) == .frame(76_543))
+    // Another capture of the rig's window: green (154, 247, 95), red (214, 75, 48).
+    let shifted: [Int: (red: Double, green: Double, blue: Double)] = [
+      0: (0, 0, 0), 1: (23, 0, 238), 2: (154, 247, 95), 3: (154, 247, 250), 4: (214, 75, 48), 5: (214, 75, 238),
+      6: (255, 255, 95), 7: (255, 255, 255),
+    ]
+    let recoloured: Averages = FrameClock.cells(for: 12_345).map {
+      shifted[($0.red ? 4 : 0) | ($0.green ? 2 : 0) | ($0.blue ? 1 : 0)]!
+    }
+    #expect(FrameClock.read(recoloured) == .frame(12_345))
     #expect(FrameClock.read(Array(lossy.prefix(7))) == .unreadable)
   }
 
