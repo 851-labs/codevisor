@@ -176,6 +176,18 @@ public final class ComputerUseLivePreview {
     onChange.removeValue(forKey: token)
   }
 
+  /// Swaps `viewer` for a fresh one from `make`, to recover a frozen or
+  /// blank preview. The old viewer detaches first, so its sink leaves the
+  /// stream before the new one subscribes and the stream reconfigures for
+  /// the new viewer rather than serving two.
+  public static func replace(
+    _ viewer: ComputerUseLivePreviewViewer?,
+    with make: () -> ComputerUseLivePreviewViewer?
+  ) -> ComputerUseLivePreviewViewer? {
+    viewer?.detach()
+    return make()
+  }
+
   /// A viewer of the window the chat's agent controls on this Mac, or nil
   /// when there is no activity or Metal is unavailable. Call `detach()`.
   public func makeLocalViewer(chatSession id: UUID) -> ComputerUseLivePreviewViewer? {

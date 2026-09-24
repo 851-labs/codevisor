@@ -134,6 +134,20 @@ final class ComputerUsePiPModel {
 
   var canActivateTarget: Bool { activity != nil }
 
+  /// Refresh applies to a preview that is showing, or trying to show, live
+  /// frames: not once it has stopped.
+  var canReload: Bool {
+    guard let viewer else { return false }
+    if isRemote {
+      if case .stopped = viewer.phase { return false }
+      return true
+    }
+    return activity?.state == .active
+  }
+
+  /// Whether the user has resized the card away from the default fit.
+  var hasCustomSize: Bool { area != nil }
+
   // MARK: Lifecycle
 
   /// Reconciles the viewer with the current state. Call on appear and
@@ -141,13 +155,23 @@ final class ComputerUsePiPModel {
   func sync() {
     switch source {
     case .local: syncLocal()
-    case .remote(let client, let pane):
+    case .remote:
       guard !isDismissed, viewer == nil else { return }
-      let viewer = preview.makeRemoteViewer(
-        chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId)
-      viewer.prefersFastPolling = prefersFastPolling
-      self.viewer = viewer
+      viewer = makeViewer()
     }
+  }
+
+  /// Recovers a frozen or blank preview without closing the card: a fresh
+  /// viewer re-attaches to the stream, which reconfigures for it.
+  func reload() {
+    guard canReload else { return }
+    viewer = ComputerUseLivePreview.replace(viewer) { makeViewer() }
+  }
+
+  /// Back to the default fit, here and for chats that open later.
+  func resetSize() {
+    area = nil
+    Self.lastArea = nil
   }
 
   /// The chat's turn started or finished. A new turn brings a dismissed
@@ -191,7 +215,7 @@ final class ComputerUsePiPModel {
       hideTask = nil
       isLingering = false
       guard !isDismissed, viewer == nil, activity.state == .active else { return }
-      viewer = preview.makeLocalViewer(chatSession: chatSessionID)
+      viewer = makeViewer()
     case .stopped:
       // A later activity is a new request for attention.
       if isDismissed {
@@ -207,6 +231,18 @@ final class ComputerUsePiPModel {
         self.releaseViewer()
         self.hideTask = nil
       }
+    }
+  }
+
+  private func makeViewer() -> ComputerUseLivePreviewViewer? {
+    switch source {
+    case .local:
+      return preview.makeLocalViewer(chatSession: chatSessionID)
+    case .remote(let client, let pane):
+      let viewer = preview.makeRemoteViewer(
+        chatSession: chatSessionID, client: client, workspaceId: pane.workspaceId, paneId: pane.paneId)
+      viewer.prefersFastPolling = prefersFastPolling
+      return viewer
     }
   }
 

@@ -44,6 +44,8 @@ struct ComputerUsePiPOverlay: View {
           let origin = ComputerUseLivePreviewLayout.origin(
             corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
           card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
+            // A refreshed viewer is a new surface: rebuild the card around it.
+            .id(ObjectIdentifier(viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
             .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
             .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
@@ -145,11 +147,45 @@ struct ComputerUsePiPOverlay: View {
         )
         let corner = ComputerUseLivePreviewLayout.corner(
           projectedCenter: projectedCenter, container: container, insets: insets)
-        withAnimation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)) {
+        withAnimation(snapAnimation) {
           model.corner = corner
           dragOffset = .zero
         }
       }
+  }
+
+  /// How the card settles into a corner, after a drag or from the menu.
+  private var snapAnimation: Animation? {
+    reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)
+  }
+
+  /// Right-click and control-click. Controls the card only; stopping the
+  /// agent stays in the menu bar.
+  @ViewBuilder
+  private var contextMenu: some View {
+    if !model.isRemote {
+      Button("Show \(model.title)") { model.activateTarget() }
+        .disabled(!model.canActivateTarget)
+    }
+    Button("Refresh") { model.reload() }
+      .disabled(!model.canReload)
+    Divider()
+    Picker(
+      "Move to",
+      selection: Binding(
+        get: { model.corner },
+        set: { corner in withAnimation(snapAnimation) { model.corner = corner } }
+      )
+    ) {
+      ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
+        Text(corner.title).tag(corner)
+      }
+    }
+    .pickerStyle(.menu)
+    Button("Reset Size") { withAnimation(snapAnimation) { model.resetSize() } }
+      .disabled(!model.hasCustomSize)
+    Divider()
+    Button("Close") { model.dismiss() }
   }
 
   /// The on-screen pointer scaled by the card's zoom of the window.
@@ -218,6 +254,7 @@ struct ComputerUsePiPOverlay: View {
     }
     .onHover { isHovering = $0 }
     .onTapGesture { model.activateTarget() }
+    .contextMenu { contextMenu }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
     .help(model.canActivateTarget ? "Show \(model.title)" : model.title)
     .accessibilityElement(children: .contain)
@@ -253,6 +290,15 @@ private struct ComputerUsePiPSurface: NSViewRepresentable {
 }
 
 extension ComputerUseLivePreviewCorner {
+  fileprivate var title: String {
+    switch self {
+    case .topLeading: "Top Left"
+    case .topTrailing: "Top Right"
+    case .bottomLeading: "Bottom Left"
+    case .bottomTrailing: "Bottom Right"
+    }
+  }
+
   /// The card grows out of, and shrinks into, its own corner.
   fileprivate var unitPoint: UnitPoint {
     switch self {
