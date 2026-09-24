@@ -181,7 +181,7 @@ extension CloudAccountController {
   }
 
   /// Schedules the next attempt with capped exponential backoff
-  /// (1s, 2s, 4s, … 60s) on the injected sleeper.
+  /// (1s, 2s, 4s, … 60s) on the injected clock.
   func scheduleSessionValidationRetry() {
     guard state.isSignedIn else { return }
     validationRetryTask?.cancel()
@@ -189,10 +189,10 @@ extension CloudAccountController {
     let exponent = min(validationFailures - 1, 6)
     let delay = min(Self.maxValidationRetryDelay, .seconds(1 << exponent))
     let revision = authenticationRevision
-    let sleep = retrySleep
+    let clock = retryClock
     validationRetryTask = Task { [weak self] in
       do {
-        try await sleep(delay)
+        try await clock.sleep(for: delay)
       } catch {
         return
       }

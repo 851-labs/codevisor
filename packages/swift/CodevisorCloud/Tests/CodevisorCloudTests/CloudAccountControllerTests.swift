@@ -265,7 +265,7 @@ struct CloudAccountControllerTests {
       clientFactory: { _ in OfflineCloudClient() },
       credentialStore: store,
       environmentCloud: nil,
-      retrySleep: clock.sleep
+      retryClock: clock
     )
 
     await controller.bootstrap()

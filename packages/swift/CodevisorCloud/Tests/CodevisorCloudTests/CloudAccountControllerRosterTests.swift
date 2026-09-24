@@ -61,7 +61,7 @@ struct CloudAccountControllerRosterTests {
     client.machinesResult = .success([testMachine("m1"), testMachine("m2")])
     let store = InMemoryCloudCredentialStore(token: "t", roster: cachedRoster())
     let clock = TestClock()
-    let (controller, _, _) = makeController(client: client, store: store, retrySleep: clock.sleep)
+    let (controller, _, _) = makeController(client: client, store: store, retryClock: clock)
 
     await controller.bootstrap()
     await controller.validationTask?.value
@@ -112,7 +112,7 @@ struct CloudAccountControllerRosterTests {
     let (controller, _, _) = makeController(
       client: client,
       store: InMemoryCloudCredentialStore(token: "t", roster: cachedRoster()),
-      retrySleep: clock.sleep
+      retryClock: clock
     )
     await controller.bootstrap()
     await controller.validationTask?.value
@@ -210,7 +210,7 @@ struct CloudAccountControllerRosterTests {
     let (controller, _, store) = makeController(
       client: client,
       store: InMemoryCloudCredentialStore(token: "t", roster: cachedRoster()),
-      retrySleep: clock.sleep
+      retryClock: clock
     )
     await controller.bootstrap()
     await controller.validationTask?.value

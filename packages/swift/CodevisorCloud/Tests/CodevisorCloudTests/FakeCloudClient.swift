@@ -263,7 +263,7 @@ func makeController(
   store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
   environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil,
   presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
-  retrySleep: @escaping @Sendable (Duration) async throws -> Void = TestClock().sleep
+  retryClock: any Clock<Duration> = TestClock()
 ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
   let controller = CloudAccountController(
     clientFactory: { _ in client },
@@ -276,7 +276,7 @@ func makeController(
       prober: { _, _, _ in nil }
     ),
     presenceSleep: presenceSleep,
-    retrySleep: retrySleep
+    retryClock: retryClock
   )
   return (controller, client, store)
 }

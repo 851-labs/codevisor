@@ -124,7 +124,10 @@ public final class CloudAccountController {
   /// shown. `validationTask` is the attempt in flight; `validationRetryTask`
   /// is the backoff sleep before the next one, kept separate so a
   /// foreground retry can skip the wait without cancelling live requests.
-  @ObservationIgnored let retrySleep: @Sendable (Duration) async throws -> Void
+  /// A `Clock`, not a sleep closure: a captured async sleep closure called
+  /// from a Task corrupts the task allocator in SwiftPM's test runner (it
+  /// aborted the Intel CI run in `swift_task_dealloc`).
+  @ObservationIgnored let retryClock: any Clock<Duration>
   @ObservationIgnored var validationTask: Task<Void, Never>?
   @ObservationIgnored var validationRetryTask: Task<Void, Never>?
   @ObservationIgnored var validationGeneration: UInt64 = 0
@@ -139,10 +142,10 @@ public final class CloudAccountController {
     },
     directPaths: CloudDirectPathController? = nil,
     presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-    retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    retryClock: any Clock<Duration> = ContinuousClock()
   ) {
     self.presenceSleep = presenceSleep
-    self.retrySleep = retrySleep
+    self.retryClock = retryClock
     self.clientFactory = clientFactory
     self.credentialStore = credentialStore
     self.machineKeyPins = CloudMachineKeyPinCache(store: credentialStore)
