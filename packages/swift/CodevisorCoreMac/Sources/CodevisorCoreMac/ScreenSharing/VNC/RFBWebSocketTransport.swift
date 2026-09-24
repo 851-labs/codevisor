@@ -6,7 +6,8 @@ import ScreenSharing
 /// run of bytes from the machine's loopback VNC server, in order. A read hands
 /// out at most `maximum` bytes and keeps the rest of the message for the next
 /// one; the peer's close surfaces as an empty read.
-public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
+/// Text frames are codevisor-server's control lease (851-2338), handed to `onControlText`.
+public final class RFBWebSocketTransport: RFBTransport, RFBControlChannel, @unchecked Sendable {
   public var name: String { "WebSocket" }
   private let socket: any ServerWebSocketConnecting
   private let lock = NSLock()
@@ -16,6 +17,11 @@ public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
   /// Bytes moved by compaction, for the operation-count test.
   private(set) var bytesMoved = 0
   private var closed = false
+  private var controlHandler: (@Sendable (String) -> Void)?
+  public var onControlText: (@Sendable (String) -> Void)? {
+    get { lock.withLock { controlHandler } }
+    set { lock.withLock { controlHandler = newValue } }
+  }
 
   public init(socket: any ServerWebSocketConnecting) {
     self.socket = socket
@@ -35,7 +41,7 @@ public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
       }
       switch message {
       case .data(let data): append([UInt8](data))
-      case .string: throw RFBError.transport("The VNC socket sent text instead of RFB bytes.")
+      case .string(let text): onControlText?(text)
       }
     }
   }
@@ -47,6 +53,11 @@ public final class RFBWebSocketTransport: RFBTransport, @unchecked Sendable {
     } catch {
       throw isClosed ? RFBError.connectionClosed : RFBError.transport(error.localizedDescription)
     }
+  }
+
+  public func sendControlText(_ text: String) async throws {
+    if isClosed { throw RFBError.connectionClosed }
+    try await socket.send(.string(text))
   }
 
   public func close() {

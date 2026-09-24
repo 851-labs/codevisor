@@ -52,6 +52,8 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   /// "vnc" when the machine streams over the VNC socket route; absent or
   /// "native" for WebRTC from the native helper.
   public var provider: String?
+  /// The VNC socket arbitrates control, one viewer at a time (851-2338).
+  public var controlLease: Bool?
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,

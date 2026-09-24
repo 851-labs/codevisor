@@ -52,6 +52,7 @@
     public init(
       client: RFBClient, parameters: RFBServerParameters, metrics: ScreenSharingMetrics = ScreenSharingMetrics(),
       keys: VNCKeyTranslator = VNCKeyTranslator(),
+      leaseChannel: (any RFBControlChannel)? = nil,
       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
       self.client = client
@@ -70,7 +71,8 @@
           guard (try? await client.send(message)) != nil else { break }
         }
       }
-      emulator = VNCHostEmulator(translator: translator) { continuation.yield($0) }
+      // `leaseChannel`: codevisor-server arbitrates control (851-2338); nil grants it locally.
+      emulator = VNCHostEmulator(translator: translator, leaseChannel: leaseChannel) { continuation.yield($0) }
       metrics.label("decoder", "RFB")
       metrics.label("videoSize", "\(parameters.width) × \(parameters.height)")
       metrics.label("serverName", parameters.name)

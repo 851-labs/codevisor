@@ -4,10 +4,12 @@ import { connect, type Socket } from "node:net"
 import { join } from "node:path"
 
 import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
-import { createWebSocketStream, type WebSocketServer } from "ws"
+import { WebSocket, type WebSocketServer } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
+import { type RFBClientMessageKind, RFBClientStreamFilter } from "./rfb-client-filter.js"
 import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
+import { type VNCControlArbiter, vncControlArbiter } from "./vnc-control.js"
 
 /// `~/.codevisor/data/screen-sharing.json`, written by whoever set the
 /// machine up (scripts/vnc-desktop.sh), never by a client:
@@ -79,6 +81,8 @@ export const vncScreenSharing =
         version: 1,
         status: "available",
         provider: "vnc",
+        // Viewers may take control through the socket's lease messages (851-2338).
+        controlLease: true,
         displays: [
           {
             id: vncDisplayId(config),
@@ -125,7 +129,10 @@ export const spliceVNCSocket = (
   socket: Socket,
   head: Buffer,
   webSocketServer: WebSocketServer,
-  dial: (port: number) => Socket = (port) => connect({ host: "127.0.0.1", port })
+  dial: (port: number) => Socket = (port) => connect({ host: "127.0.0.1", port }),
+  arbiter: VNCControlArbiter = vncControlArbiter(config.port),
+  /// Bytes queued on the WebSocket before the loopback read pauses.
+  highWater = 4 * 1024 * 1024
 ): void => {
   // Websites cannot use loopback trust, as with the signaling route.
   if (request.headers.origin !== undefined || request.headers["sec-fetch-site"] !== undefined) {
@@ -138,14 +145,41 @@ export const spliceVNCSocket = (
   }
   webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
     const upstream = dial(config.port)
-    const stream = createWebSocketStream(webSocket)
-    // Closing the WebSocket first keeps the reason; the stream's own close
-    // then tears down the (already failed) loopback socket.
+    // One controller at a time (851-2338): text frames are the lease's messages, binary
+    // frames the viewer's RFB bytes, filtered so only who may control reaches the desktop.
+    // A lease message to a socket that is closing is dropped (the callback takes the error).
+    const id = arbiter.join((text) => webSocket.send(text, () => undefined))
+    const filter = new RFBClientStreamFilter()
+    const allow = (kind: RFBClientMessageKind) =>
+      kind === "input" || kind === "clipboard"
+        ? arbiter.mayControl(id)
+        : kind === "resize"
+          ? arbiter.mayResize(id)
+          : true
+    webSocket.on("message", (bytes: Buffer, isBinary) => {
+      if (!isBinary) {
+        arbiter.receive(id, bytes.toString("utf8"))
+        return
+      }
+      const forward = filter.push(bytes, allow)
+      if (forward.length > 0) upstream.write(forward)
+    })
+    // The desktop's bytes go out as they come; a slow WebSocket pauses the loopback read.
+    upstream.on("data", (chunk: Buffer) => {
+      webSocket.send(chunk, { binary: true }, () => {
+        if (upstream.isPaused() && webSocket.bufferedAmount < highWater) upstream.resume()
+      })
+      if (webSocket.bufferedAmount >= highWater) upstream.pause()
+    })
+    // Closing the WebSocket first keeps the reason; its close then tears down the loopback socket.
     upstream.once("error", () => webSocket.close(1011, "VNC server unavailable"))
-    upstream.once("close", () => stream.end())
-    stream.once("error", () => upstream.destroy())
-    stream.once("close", () => upstream.destroy())
-    stream.pipe(upstream)
-    upstream.pipe(stream)
+    upstream.once("close", () => {
+      if (webSocket.readyState === WebSocket.OPEN) webSocket.close()
+    })
+    webSocket.once("error", () => upstream.destroy())
+    webSocket.once("close", () => {
+      arbiter.leave(id)
+      upstream.destroy()
+    })
   })
 }

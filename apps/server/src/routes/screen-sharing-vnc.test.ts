@@ -1,20 +1,23 @@
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, writeFileSync } from "node:fs"
+import { createServer as createHttpServer } from "node:http"
 import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
-import { WebSocket } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
+  spliceVNCSocket,
   vncDisplayId,
   vncScreenSharing
 } from "./screen-sharing-vnc.js"
+import { VNCControlArbiter } from "./vnc-control.js"
 
 describe("VNC screen sharing configuration", () => {
   it("reads the operator's file and names the desktop by default", () => {
@@ -128,6 +131,7 @@ describe("VNC screen sharing provider", () => {
         version: 1,
         status: "available",
         provider: "vnc",
+        controlLease: true,
         displays: [{ id: "vnc:5901", name: "Studio", width: 0, height: 0 }]
       }
     })
@@ -147,6 +151,119 @@ describe("VNC screen sharing provider", () => {
     await closed(socket)
     await new Promise<void>((resolve) => vnc.connections[0]!.once("close", () => resolve()))
     expect(vnc.connections).toHaveLength(1)
+  })
+
+  it("gives control to one viewer at a time, last one wins (851-2338)", async ({
+    onTestFinished
+  }) => {
+    const vnc = await fakeVNC()
+    onTestFinished(async () => {
+      for (const connection of vnc.connections) connection.destroy()
+      await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
+    })
+    const config = { port: vnc.port, name: "Desktop" }
+    const { socketUrl } = await start(config)
+    const handshake = Buffer.concat([Buffer.from("RFB 003.008\n", "latin1"), Buffer.from([1, 1])])
+    const key = Buffer.from([4, 1, 0, 0, 0, 0, 0, 0x61])
+    const request = Buffer.from([3, 1, 0, 0, 0, 0, 0, 64, 0, 48])
+    const open = async () => {
+      const socket = new WebSocket(socketUrl(vncDisplayId(config)))
+      onTestFinished(async () => {
+        if (socket.readyState === WebSocket.CLOSED) return
+        const closing = closed(socket)
+        socket.terminate()
+        await closing
+      })
+      await nextMessage(socket) // the server's greeting
+      const echoed = nextMessage(socket)
+      socket.send(handshake)
+      expect(await echoed).toEqual(handshake)
+      return socket
+    }
+    const a = await open()
+    const b = await open()
+    const granted = nextMessage(a)
+    a.send(JSON.stringify({ type: "request", name: "Studio" }))
+    expect(JSON.parse((await granted).toString())).toEqual({ type: "granted" })
+    const revoked = nextMessage(a)
+    const grantedB = nextMessage(b)
+    b.send(JSON.stringify({ type: "request", name: "Laptop" }))
+    expect(JSON.parse((await revoked).toString())).toEqual({ type: "revoked", by: "Laptop" })
+    expect(JSON.parse((await grantedB).toString())).toEqual({ type: "granted" })
+    // A's key is dropped; the update request after it passes, so it is the first thing echoed.
+    const echoedA = nextMessage(a)
+    a.send(key)
+    a.send(request)
+    expect(await echoedA).toEqual(request)
+    const echoedB = nextMessage(b)
+    b.send(key)
+    expect(await echoedB).toEqual(key)
+    // The desktop's size follows the controller: B's resize passes, A's doesn't.
+    const resize = Buffer.concat([Buffer.from([251, 0, 4, 0, 3, 0, 1, 0]), Buffer.alloc(16, 5)])
+    const resizedB = nextMessage(b)
+    b.send(resize)
+    expect(await resizedB).toEqual(resize)
+    const afterResizeA = nextMessage(a)
+    a.send(resize)
+    a.send(request)
+    expect(await afterResizeA).toEqual(request)
+    // Close both here, as the echo test does: the server's own teardown waits for open sockets.
+    for (const socket of [a, b]) {
+      const done = closed(socket)
+      socket.close()
+      await done
+    }
+  })
+
+  it("pauses the loopback read while the WebSocket is backed up, and resumes", async ({
+    onTestFinished
+  }) => {
+    const vnc = await fakeVNC()
+    const webSocketServer = new WebSocketServer({ noServer: true })
+    const config = { port: vnc.port, name: "Desktop" }
+    const http = createHttpServer()
+    http.on("upgrade", (request, socket, head) =>
+      spliceVNCSocket(
+        config,
+        new URL(request.url ?? "/", "http://localhost"),
+        request,
+        socket as Socket,
+        head,
+        webSocketServer,
+        undefined,
+        new VNCControlArbiter(),
+        1
+      )
+    )
+    await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve))
+    onTestFinished(async () => {
+      for (const connection of vnc.connections) connection.destroy()
+      await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
+      await new Promise<void>((resolve) => http.close(() => resolve()))
+    })
+    const address = http.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/?displayId=${vncDisplayId(config)}`)
+    onTestFinished(async () => {
+      if (socket.readyState === WebSocket.CLOSED) return
+      const closing = closed(socket)
+      socket.terminate()
+      await closing
+    })
+    expect((await nextMessage(socket)).toString()).toBe("RFB 003.008\n")
+    // 8 MiB echoed back backs the WebSocket up past a 1-byte high-water mark: the loopback
+    // read pauses, and each flushed send resumes it, until every byte has come back.
+    const payload = Buffer.alloc(8 * 1024 * 1024, 0x2a)
+    let received = 0
+    const all = new Promise<void>((resolve) =>
+      socket.on("message", (data: Buffer) => {
+        received += data.length
+        if (received >= payload.length) resolve()
+      })
+    )
+    socket.send(payload)
+    await all
+    expect(received).toBe(payload.length)
   })
 
   it("reports that stop signaling is unsupported by the VNC provider", async () => {

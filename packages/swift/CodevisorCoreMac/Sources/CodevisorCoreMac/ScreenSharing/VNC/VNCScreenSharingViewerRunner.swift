@@ -31,17 +31,21 @@ final class VNCScreenSharingViewerRunner {
   private let open: ScreenSharingViewerBackend.VNCOpen
   /// Sets the desktop's UI scale through the machine's server (Dynamic Resolution, 851-2340).
   private let setDesktopScale: (@MainActor (Int) async -> Void)?
+  /// Whether the machine's server holds the control lease (851-2338); else control is local.
+  private let arbitratedByServer: @MainActor () -> Bool
   private let makeSurface: @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   private var previous: Task<Void, Never>?
 
   init(
     displayId: String, open: @escaping ScreenSharingViewerBackend.VNCOpen,
+    arbitratedByServer: @escaping @MainActor () -> Bool = { false },
     setDesktopScale: (@MainActor (Int) async -> Void)? = nil,
     makeSurface: @escaping @MainActor (any ScreenSharingViewingSession) throws -> any ScreenSharingViewerSurface
   ) {
     self.displayId = displayId
     self.open = open
     self.setDesktopScale = setDesktopScale
+    self.arbitratedByServer = arbitratedByServer
     self.makeSurface = makeSurface
   }
 
@@ -99,7 +103,9 @@ final class VNCScreenSharingViewerRunner {
     } catch {
       return Task.isCancelled ? .cancelled : .ended(error.localizedDescription)
     }
-    let session = VNCScreenSharingSession(client: client, parameters: outcome.parameters)
+    let session = VNCScreenSharingSession(
+      client: client, parameters: outcome.parameters,
+      leaseChannel: arbitratedByServer() ? client.controlChannel : nil)
     let endpoint: ScreenSharingViewerEndpoint
     do {
       endpoint = ScreenSharingViewerEndpoint(
