@@ -73,21 +73,34 @@ struct ScreenSharingRemoteCursorTests {
     #expect(frame.minY == 438)
   }
 
-  @Test func aShapeBecomesTheControlCursorAndHidingRestoresTheBlankOne() throws {
+  /// While controlling, the pointer is the host's shape. Without one: a blank
+  /// when the video shows the host's pointer (native capture), else the arrow —
+  /// macOS Screen Sharing reports no cursor and draws none into the video, and
+  /// a blank left no pointer at all (tuftlord, 851-2355).
+  @Test func theControlCursorIsTheHostsShapeElseTheArrowUnlessTheVideoShowsThePointer() throws {
     let surface = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics())
     defer { surface.stop() }
     surface.frame = NSRect(x: 0, y: 0, width: 960, height: 540)
     surface.layoutSubtreeIfNeeded()
-    let blank = surface.controlCursor
-    #expect(blank.image.size == NSSize(width: 1, height: 1))
+    #expect(surface.controlCursor.image.size == NSSize(width: 1, height: 1), "Native: the video has the pointer.")
+    surface.showRemoteCursor(.shape(.hidden))
+    #expect(surface.controlCursor.image.size == NSSize(width: 1, height: 1))
+    surface.setVideoShowsPointer(false)
+    #expect(surface.controlCursor === NSCursor.arrow, "VNC, no cursor reported (macOS): the arrow.")
     surface.showRemoteCursor(.shape(RFBCursorTestShapes.corner))
-    #expect(surface.controlCursor !== blank)
+    #expect(surface.controlCursor !== NSCursor.arrow)
     #expect(surface.controlCursor.image.size == NSSize(width: 2, height: 2), "2 px, not shrunk below 1 pt/px")
     #expect(surface.controlCursor.hotSpot == NSPoint(x: 1, y: 0))
     surface.showRemoteCursor(.shape(.hidden))
-    #expect(surface.controlCursor === blank)
+    #expect(surface.controlCursor === NSCursor.arrow, "A hidden host cursor: the arrow.")
     surface.showRemoteCursor(.position(RFBPoint(x: 1, y: 1)))
     #expect(surface.remoteCursorOverlayFrame == nil, "A hidden pointer draws nothing while viewing.")
+    let transparent = RFBCursorShape(
+      width: 2, height: 2, hotspotX: 0, hotspotY: 0, pixels: [UInt8](repeating: 0, count: 16))
+    #expect(transparent.isInvisible && !transparent.isHidden && !RFBCursorTestShapes.corner.isInvisible)
+    surface.showRemoteCursor(.shape(transparent))
+    #expect(surface.controlCursor === NSCursor.arrow, "A fully transparent shape is as invisible.")
+    #expect(surface.remoteCursorOverlayFrame == nil)
   }
 }
 

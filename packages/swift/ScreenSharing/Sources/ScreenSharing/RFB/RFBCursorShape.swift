@@ -15,6 +15,8 @@ public struct RFBCursorShape: Sendable, Equatable {
   public var pixels: [UInt8]
 
   public var isHidden: Bool { width == 0 || height == 0 }
+  /// Nothing to draw: hidden, or every pixel transparent.
+  public var isInvisible: Bool { isHidden || !stride(from: 3, to: pixels.count, by: 4).contains { pixels[$0] != 0 } }
 
   public init(width: Int, height: Int, hotspotX: Int, hotspotY: Int, pixels: [UInt8]) {
     self.width = width

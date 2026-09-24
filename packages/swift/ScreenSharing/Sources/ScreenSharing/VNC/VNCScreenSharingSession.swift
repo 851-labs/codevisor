@@ -20,6 +20,8 @@
     public var onConnectionChanged: ((String) -> Void)?
     /// The server's cursor shape (Cursor pseudo-encoding) and host-side pointer moves (PointerPos).
     public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)?
+    /// A VNC server may draw no pointer into the video (macOS Screen Sharing, 851-2355).
+    public var videoShowsPointer: Bool { false }
     let client: RFBClient
     private let translator: VNCInputTranslator
     private let emulator: VNCHostEmulator
