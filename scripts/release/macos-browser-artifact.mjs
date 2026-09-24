@@ -22,7 +22,7 @@ export async function embeddedLibraries(app) {
   return (await readdir(frameworks, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".dylib"))
     .map((entry) => join(frameworks, entry.name))
-    .sort()
+    .toSorted()
 }
 
 export async function signEmbeddedLibraries(app, identity, run = execute) {

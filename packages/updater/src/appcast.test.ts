@@ -49,7 +49,7 @@ describe("appcast", () => {
     const items = parseAppcast(fixture)
     expect(selectLatestAppcastItem(items)?.shortVersion).toBe("26.715.52143")
     // Order independence: reversed feed picks the same item.
-    expect(selectLatestAppcastItem([...items].reverse())?.shortVersion).toBe("26.715.52143")
+    expect(selectLatestAppcastItem([...items].toReversed())?.shortVersion).toBe("26.715.52143")
   })
 
   it("parses items with only an enclosure URL, omitting absent fields", () => {

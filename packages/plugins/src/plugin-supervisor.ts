@@ -283,6 +283,12 @@ const httpProbe = (port: number, path: string): Promise<boolean> =>
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+const clearProcess = (current: RunningPlugin): void => {
+  delete current.port
+  delete current.process
+  delete current.runningSince
+}
+
 export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupervisor => {
   const runtimes = new Map<string, RunningPlugin>()
   const log = config.log ?? (() => undefined)
@@ -316,12 +322,6 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     }
     current.state = state
     config.onStateChange?.(pluginId, state)
-  }
-
-  const clearProcess = (current: RunningPlugin): void => {
-    delete current.port
-    delete current.process
-    delete current.runningSince
   }
 
   /// One crash or failed start: arm the exponential-backoff window and pick

@@ -1,8 +1,9 @@
 import { sign } from "node:crypto"
 import { setTimeout } from "node:timers/promises"
 
+const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url")
+
 export function appStoreToken({ privateKey, keyId, issuerId }, now = Date.now()) {
-  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url")
   const issued = Math.floor(now / 1000)
   const header = encode({ alg: "ES256", kid: keyId, typ: "JWT" })
   const payload = encode({

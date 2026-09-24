@@ -67,8 +67,7 @@ describe("session resume", () => {
     // The channel keeps flowing with continuous seqs.
     channel.send({ output: "after-resume" })
     expect(
-      revived.sentRelay.filter((envelope) => envelope.header.frame.t === "data").at(-1)!.header
-        .frame.seq
+      revived.sentRelay.findLast((envelope) => envelope.header.frame.t === "data")!.header.frame.seq
     ).toEqual(2)
     // Observability: both welcomes reported, with the resume attributed.
     expect(h.welcomes).toEqual([

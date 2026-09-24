@@ -30,6 +30,8 @@ export interface PointerReply {
 
 /* v8 ignore start -- this function only ever runs inside the page via Runtime.evaluate; the
  * headless Chromium test in browser-use-provider.test.ts exercises it end to end. */
+/* oxlint-disable unicorn/consistent-function-scoping -- the overlay is serialized with
+ * toString() and evaluated in the page, so its helpers must stay inside it. */
 const pointerOverlay = (command: PointerCommand): PointerReply => {
   const LAYER_ID = "codevisor-pointer-layer"
   const VERSION = 1
@@ -260,8 +262,8 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
     layer.tick = () => {
       const time = now()
       let active = false
-      for (const cursor of [...layer.cursors.values()])
-        active = render(layer, cursor, time) || active
+      // Render may delete the current cursor, which Map iteration tolerates.
+      for (const cursor of layer.cursors.values()) active = render(layer, cursor, time) || active
       layer.frame = active ? requestAnimationFrame(layer.tick) : 0
     }
     created.__codevisorPointer = layer
@@ -463,6 +465,7 @@ const pointerOverlay = (command: PointerCommand): PointerReply => {
   return { duration: Math.round(duration), visible }
 }
 
+/* oxlint-enable unicorn/consistent-function-scoping */
 /* v8 ignore stop */
 
 /** Source of the page-side overlay, evaluated as `(source)(command)`. */

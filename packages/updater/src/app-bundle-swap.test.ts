@@ -200,7 +200,7 @@ describe("applyAppBundleSwap", () => {
     await expect(
       applyAppBundleSwap({ appcastXml: appcast(goodSignature), bundlePath, ops })
     ).rejects.toThrow("rename blocked")
-    expect(calls.filter((call) => call.startsWith("rename")).at(-1)).toBe(
+    expect(calls.findLast((call) => call.startsWith("rename"))).toBe(
       `rename ${bundlePath}.codevisor-old -> ${bundlePath}`
     )
   })

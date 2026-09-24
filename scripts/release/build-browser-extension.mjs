@@ -126,7 +126,7 @@ try {
     }
   }
 
-  const files = collectFiles(stageDir).sort((left, right) =>
+  const files = collectFiles(stageDir).toSorted((left, right) =>
     relative(stageDir, left).localeCompare(relative(stageDir, right))
   )
   for (const file of files.filter((path) => path.endsWith(".js"))) {

@@ -264,7 +264,7 @@ export const makeAcpTerminalHost = (config: AcpTerminalHostConfig): AcpTerminalH
     closeAll: async () => {
       closing = true
       const pending: Array<Promise<void>> = []
-      for (const entry of [...terminals.values()]) {
+      for (const entry of Array.from(terminals.values())) {
         if (entry.child.stop !== undefined) pending.push(entry.child.stop())
         else if (entry.exitStatus === undefined) {
           entry.child.kill()

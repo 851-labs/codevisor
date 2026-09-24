@@ -6,11 +6,9 @@ export const serializedBrowserOperation = async <T>(
   active: BrowserRuntime,
   operation: () => Promise<T>
 ): Promise<T> => {
-  let release = (): void => undefined
+  const { promise, resolve: release } = Promise.withResolvers<void>()
   const previous = active.queue
-  active.queue = new Promise<void>((resolve) => {
-    release = resolve
-  })
+  active.queue = promise
   await previous
   try {
     return await operation()

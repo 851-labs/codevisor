@@ -53,6 +53,11 @@ export interface CodexProviderConfig {
   readonly killCommandProcesses?: CodexCommandKiller
 }
 
+const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
+  ...definition.detectBinaries,
+  ...(definition.fallbackPaths ?? [])
+]
+
 export const makeCodexProvider = (
   environment: ProviderEnvironment,
   config: CodexProviderConfig = {}
@@ -65,11 +70,6 @@ export const makeCodexProvider = (
   // PATH first, then fallbackPaths. When both the user CLI and Codex.app
   // bundle are present, compare resolved binary versions and run the newer
   // app-server so Codevisor sees the newest Codex model catalog.
-  const codexCandidates = (definition: HarnessDefinition): ReadonlyArray<string> => [
-    ...definition.detectBinaries,
-    ...(definition.fallbackPaths ?? [])
-  ]
-
   const locateCodex = (definition: HarnessDefinition): string => {
     const locatedCandidates: Array<{ command: string; version: string | undefined }> = []
     const seen = new Set<string>()

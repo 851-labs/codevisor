@@ -28,7 +28,7 @@ export const readProviderDocument = async (path: string): Promise<Record<string,
     return value as Record<string, unknown>
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === "ENOENT") return {}
-    throw new Error("Saved provider credentials could not be read")
+    throw new Error("Saved provider credentials could not be read", { cause })
   }
 }
 
@@ -42,6 +42,7 @@ interface ManifestProvider {
   endpoint?: string
   access: string
 }
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 const script = async (path: string, content: string) => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   await writeFile(path, content, { mode: 0o600 })
@@ -224,13 +225,12 @@ export const makeSharedProviderRuntime = (options: {
         curlConfig,
         `url = ${JSON.stringify(url)}\nheader = ${JSON.stringify(`Authorization: Bearer ${managed.capability}`)}\nheader = "Content-Type: application/json"\nrequest = "POST"\nsilent\nshow-error\nfail\nmax-time = 6\n`
       )
-      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
       const command = join(root, "token.sh")
       await script(
         command,
-        `#!/bin/sh\nif [ "\${GROK_AUTH_EXPIRED:-0}" = "1" ]; then\n  exec curl --config ${quote(curlConfig)} --data '{"force":true}'\nfi\nexec curl --config ${quote(curlConfig)} --data '{}'\n`
+        `#!/bin/sh\nif [ "\${GROK_AUTH_EXPIRED:-0}" = "1" ]; then\n  exec curl --config ${shellQuote(curlConfig)} --data '{"force":true}'\nfi\nexec curl --config ${shellQuote(curlConfig)} --data '{}'\n`
       )
-      runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = `/bin/sh ${quote(command)}`
+      runtimeEnv.GROK_AUTH_PROVIDER_COMMAND = `/bin/sh ${shellQuote(command)}`
       runtimeEnv.GROK_AUTH_PROVIDER_LABEL = "Codevisor"
     }
     return { ...base, env: runtimeEnv, ...(unsetEnv === undefined ? {} : { unsetEnv }) }

@@ -28,7 +28,7 @@ const jsonFile = async (path: string): Promise<Record<string, unknown> | undefin
     return object(JSON.parse(await readFile(path, "utf8")))
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
-    throw new Error("Saved sign-in could not be read")
+    throw new Error("Saved sign-in could not be read", { cause })
   }
 }
 

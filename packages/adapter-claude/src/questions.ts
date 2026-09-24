@@ -223,7 +223,7 @@ export const holdClaudePlanApproval = (
 /// drop the picker.
 export const cancelClaudePendingQuestions = (session: ClaudeSession): Promise<void> => {
   const emissions: Array<Promise<void>> = []
-  for (const [questionId, pending] of [...session.pendingQuestions]) {
+  for (const [questionId, pending] of Array.from(session.pendingQuestions)) {
     session.pendingQuestions.delete(questionId)
     pending.resolve(pending.respond({ outcome: "cancelled" }))
     emissions.push(

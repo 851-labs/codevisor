@@ -29,6 +29,10 @@ const fetchStub =
     return body === undefined ? jsonResponse({ error: "not found" }, 404) : jsonResponse(body)
   }
 
+const failingFetch: FetchLike = async () => {
+  throw new Error("offline")
+}
+
 describe("isNewerVersion", () => {
   it("compares dotted numeric cores and tolerates prefixes/suffixes", () => {
     expect(isNewerVersion("0.145.0", "0.144.5")).toBe(true)
@@ -127,9 +131,6 @@ describe("latest-version checkers", () => {
   })
 
   it("stays silent when the network itself fails", async () => {
-    const failingFetch: FetchLike = async () => {
-      throw new Error("offline")
-    }
     await expect(checkNpmLatest("@openai/codex", "latest", failingFetch)).resolves.toEqual({})
     await expect(checkGithubLatest("block/goose", failingFetch)).resolves.toEqual({})
     await expect(checkBrewLatest("codex", failingFetch)).resolves.toEqual({})

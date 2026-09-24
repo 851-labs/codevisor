@@ -43,6 +43,16 @@ export interface CodexLoginEntry {
   readonly loginId?: string
 }
 
+const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
+  const {
+    profileKey: _profileKey,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
+    ...account
+  } = record
+  return account
+}
+
 /// The state and account-scoped helpers every auth module shares: the
 /// listener fanout, in-flight probe/refresh/login registries, the login-shell
 /// environment, and the managed-profile paths plus the env each account runs
@@ -76,16 +86,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
       environmentPromise = undefined
     })
     return environmentPromise
-  }
-
-  const publicAccount = (record: HarnessAccountRecord): HarnessAccount => {
-    const {
-      profileKey: _profileKey,
-      createdAt: _createdAt,
-      updatedAt: _updatedAt,
-      ...account
-    } = record
-    return account
   }
 
   const definition = (harnessId: string) => {

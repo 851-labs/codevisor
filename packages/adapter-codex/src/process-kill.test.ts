@@ -20,7 +20,7 @@ describe("codex process-tree kill", () => {
       // Unrelated codex child.
       entry(300, 100, "/bin/bash -c git status")
     ]
-    expect(commandSubtreePids(table, 100, "npm run dev").sort()).toEqual([200, 201, 202])
+    expect(commandSubtreePids(table, 100, "npm run dev").toSorted()).toEqual([200, 201, 202])
     // No descendants match → nothing to kill.
     expect(commandSubtreePids(table, 100, "cargo build")).toEqual([])
     // Empty command never matches everything.

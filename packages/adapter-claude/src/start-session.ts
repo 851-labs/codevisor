@@ -372,23 +372,24 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         // Only the pump for the *current* query owns the session's stream
         // state; a superseded query ending late must not disturb its
         // successor.
-        if (created.q !== query) return
-        created.streamEnded = true
-        // The SDK stream ended (query closed, aborted, or threw) with a turn
-        // still in flight and no final `result` to close it. Resume the turn
-        // where possible — the user sees output pause and continue, nothing
-        // else. Otherwise end the turn defensively so state can't get wedged
-        // and the awaited prompt settles.
-        if (created.turnActive) {
-          if (created.interruptRequested) {
-            await finishActiveTurn(created, "cancelled")
-          } else if (!(await resumeAfterStreamDeath())) {
-            await finishActiveTurn(
-              created,
-              "end_turn",
-              streamFailure ?? "The Claude connection ended unexpectedly.",
-              true
-            )
+        if (created.q === query) {
+          created.streamEnded = true
+          // The SDK stream ended (query closed, aborted, or threw) with a turn
+          // still in flight and no final `result` to close it. Resume the turn
+          // where possible — the user sees output pause and continue, nothing
+          // else. Otherwise end the turn defensively so state can't get wedged
+          // and the awaited prompt settles.
+          if (created.turnActive) {
+            if (created.interruptRequested) {
+              await finishActiveTurn(created, "cancelled")
+            } else if (!(await resumeAfterStreamDeath())) {
+              await finishActiveTurn(
+                created,
+                "end_turn",
+                streamFailure ?? "The Claude connection ended unexpectedly.",
+                true
+              )
+            }
           }
         }
       }

@@ -29,6 +29,16 @@ const makeBlobs = () => {
   return makeBlobStore(directory)
 }
 
+const tarHeader = (name: string, size: number): Buffer => {
+  const block = Buffer.alloc(512)
+  block.write(name, 0, "utf8")
+  block.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii")
+  block.write("0", 156, "ascii")
+  return block
+}
+
+const elsewhereAt = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
+
 describe("skills sync", () => {
   it("publishes, ferries, applies, edits, and deletes across two machines", async () => {
     const { services: machineA } = await makeServices("server-a")
@@ -44,7 +54,7 @@ describe("skills sync", () => {
     await skillsA.create({ name: "Deploy", description: "ship it" })
     const firstA = await reconcileSkills(a)
     expect(firstA.status.published).toEqual(["deploy"])
-    const hash = (firstA.changedEntries[0]?.value as { hash: string }).hash
+    const hash = (firstA.changedEntries[0]!.value as { hash: string }).hash
     expect(blobsA.has(hash)).toBe(true)
 
     // Idempotent: a second pass changes nothing.
@@ -75,7 +85,7 @@ describe("skills sync", () => {
     writeFileSync(join(skillPathA, "extra.md"), "more\n")
     const editedA = await reconcileSkills(a)
     expect(editedA.status.published).toEqual(["deploy"])
-    const editedHash = (editedA.changedEntries[0]?.value as { hash: string }).hash
+    const editedHash = (editedA.changedEntries[0]!.value as { hash: string }).hash
     expect(editedHash).not.toBe(hash)
 
     // B deletes the skill; the tombstone removes it from A.
@@ -162,18 +172,11 @@ describe("skills sync", () => {
     // A synthetic tar with an AppleDouble companion — the shape macOS bsdtar
     // used to produce and then HIDE from its own listings, while Linux
     // extracted it as a real file and rejected the hash forever.
-    const header = (name: string, size: number): Buffer => {
-      const block = Buffer.alloc(512)
-      block.write(name, 0, "utf8")
-      block.write(size.toString(8).padStart(11, "0") + "\0", 124, "ascii")
-      block.write("0", 156, "ascii")
-      return block
-    }
     const body = Buffer.from("junk")
     const tar = Buffer.concat([
-      header("./SKILL.md", body.length),
+      tarHeader("./SKILL.md", body.length),
       Buffer.concat([body], 512),
-      header("./._SKILL.md", body.length),
+      tarHeader("./._SKILL.md", body.length),
       Buffer.concat([body], 512),
       Buffer.alloc(1024)
     ])
@@ -265,13 +268,24 @@ describe("skills sync", () => {
     const scan = await skills.list()
     const deploy2Path = scan.global.find((s) => s.directoryName === "deploy-2")?.path ?? ""
     const sameHash = await skillTreeHash(deploy2Path)
-    const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
     await run(
       services.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, [
-        { key: "deploy", value: { hash: "a".repeat(64), name: "Deploy" }, timestamp: at(10) },
-        { key: "deploy-2", value: { hash: sameHash, name: "Deploy 2" }, timestamp: at(11) },
-        { key: "deploy-3", value: { hash: "b".repeat(64), name: "Deploy 3" }, timestamp: at(12) },
-        { key: "ghost", value: null, deleted: true, timestamp: at(13) }
+        {
+          key: "deploy",
+          value: { hash: "a".repeat(64), name: "Deploy" },
+          timestamp: elsewhereAt(10)
+        },
+        {
+          key: "deploy-2",
+          value: { hash: sameHash, name: "Deploy 2" },
+          timestamp: elsewhereAt(11)
+        },
+        {
+          key: "deploy-3",
+          value: { hash: "b".repeat(64), name: "Deploy 3" },
+          timestamp: elsewhereAt(12)
+        },
+        { key: "ghost", value: null, deleted: true, timestamp: elsewhereAt(13) }
       ])
     )
 
@@ -281,19 +295,19 @@ describe("skills sync", () => {
     // taken in the replica, so deploy-4), the identical one was adopted in
     // place, and the tombstoned name republished as a plain creation.
     expect(result.status.renamed).toEqual([{ from: "deploy", to: "deploy-4" }])
-    expect([...result.status.published].sort()).toEqual(["deploy-4", "ghost"])
+    expect([...result.status.published].toSorted()).toEqual(["deploy-4", "ghost"])
     expect(result.status.applied).toEqual([])
-    expect([...result.status.missingBlobs].map((b) => b.directoryName).sort()).toEqual([
+    expect([...result.status.missingBlobs].map((b) => b.directoryName).toSorted()).toEqual([
       "deploy",
       "deploy-3"
     ])
-    const names = (await skills.list()).global.map((s) => s.directoryName).sort()
+    const names = (await skills.list()).global.map((s) => s.directoryName).toSorted()
     expect(names).toEqual(["deploy-2", "deploy-4", "ghost"])
     // The renamed content survived intact and republished under its new
     // name with the original tree hash.
     const republished = result.changedEntries.find((e) => e.key === "deploy-4")
     expect(await skillTreeHash(join(scan.canonicalDir, "deploy-4"))).toBe(
-      (republished?.value as { hash: string }).hash
+      (republished!.value as { hash: string }).hash
     )
   })
 })

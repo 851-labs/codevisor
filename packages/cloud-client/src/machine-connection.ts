@@ -172,6 +172,7 @@ export class CloudMachineConnection {
       this.#cancelWelcomeTimeout = undefined
       this.#forceReconnect(socket, { kind: "welcome-timeout" })
     }, this.options.welcomeTimeoutMs ?? 15_000)
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onopen = () => {
       if (this.#socket !== socket) return
       const device = {
@@ -197,7 +198,9 @@ export class CloudMachineConnection {
         this.#forceReconnect(socket, { kind: "send-failed", phase: "hello" })
       }
     }
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onmessage = (data) => this.#onMessage(socket, data)
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onclose = (code) => this.#onSocketClosed(socket, code)
     socket.onrejected = (status) => this.#onUpgradeRejected(socket, status)
   }

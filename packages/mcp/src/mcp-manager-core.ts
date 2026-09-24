@@ -40,6 +40,23 @@ export interface McpManagerState {
 
 const DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:49361"
 
+/// The fields a change listener cares about: what a settings row renders.
+const visibleSignature = (server: McpServerRecord): string =>
+  JSON.stringify([
+    server.name,
+    server.kind,
+    server.transport,
+    server.url,
+    server.command,
+    server.args,
+    server.enabled,
+    server.authType,
+    server.oauthScope,
+    server.connectionState,
+    server.toolCount,
+    server.detail
+  ])
+
 /// Everything the operation modules share: the encryption key, connection
 /// and gateway registries, the built-in automation providers, and the
 /// record helpers that keep persisted connection state consistent.
@@ -60,14 +77,14 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
   const rotationListeners = new Set<(id: string) => void>()
   /* v8 ignore next 3 -- rotation events fire from the live OAuth refresh timer. */
   const emitCredentialsRotated = (id: string): void => {
-    for (const listener of [...rotationListeners]) listener(id)
+    for (const listener of Array.from(rotationListeners)) listener(id)
   }
   // Observers of a server record's visible state (the server publishes
   // these as mcp.updated events so settings views follow connection
   // transitions live instead of polling).
   const changeListeners = new Set<(id: string) => void>()
   const emitServerChanged = (id: string): void => {
-    for (const listener of [...changeListeners]) listener(id)
+    for (const listener of Array.from(changeListeners)) listener(id)
   }
   const gateways = new Map<string, GatewayRuntime>()
   const sessionGatewayIds = new Map<string, string>()
@@ -222,31 +239,14 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     const stored = secrets(server)
     return {
       ...visible,
-      headerNames: Object.keys(stored.headers ?? {}).sort((left, right) =>
+      headerNames: Object.keys(stored.headers ?? {}).toSorted((left, right) =>
         left.localeCompare(right)
       ),
-      environmentNames: Object.keys(stored.env ?? {}).sort((left, right) =>
+      environmentNames: Object.keys(stored.env ?? {}).toSorted((left, right) =>
         left.localeCompare(right)
       )
     }
   }
-
-  /// The fields a change listener cares about: what a settings row renders.
-  const visibleSignature = (server: McpServerRecord): string =>
-    JSON.stringify([
-      server.name,
-      server.kind,
-      server.transport,
-      server.url,
-      server.command,
-      server.args,
-      server.enabled,
-      server.authType,
-      server.oauthScope,
-      server.connectionState,
-      server.toolCount,
-      server.detail
-    ])
 
   const saveRecord = async (
     server: McpServerRecord,

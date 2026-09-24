@@ -49,7 +49,7 @@ export const parseTailnetPeers = (json: string): TailnetPeer[] | undefined => {
       }
     ]
   })
-  return peers.sort((left, right) =>
+  return peers.toSorted((left, right) =>
     left.hostName.localeCompare(right.hostName, undefined, { sensitivity: "base" })
   )
 }

@@ -166,7 +166,6 @@ export async function signDiagnosticApp({
     await run("/usr/bin/codesign", args)
   }
   // Sequential on purpose: nested code must be sealed before the outer bundle.
-  // oxlint-disable-next-line no-await-in-loop
   for (const framework of frameworks) await sign(framework)
   await sign(app)
   return commands

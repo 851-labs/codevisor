@@ -21,6 +21,11 @@ type EntryRow = {
   bytes: number
 }
 
+const encodePageCursor = (entry: { position: number; key: string }, reverse = false): string =>
+  Buffer.from(JSON.stringify({ position: entry.position, key: entry.key, reverse })).toString(
+    "base64url"
+  )
+
 export const readTranscriptStatePage = (
   db: Database.Database,
   sessionId: string,
@@ -109,10 +114,6 @@ export const readTranscriptStatePage = (
     if (reverse) entries.reverse()
     const first = entries[0]
     const end = entries.at(-1)
-    const encode = (entry: { position: number; key: string }, reverse = false): string =>
-      Buffer.from(JSON.stringify({ position: entry.position, key: entry.key, reverse })).toString(
-        "base64url"
-      )
     const hasPrevious =
       first !== undefined &&
       db
@@ -175,7 +176,7 @@ export const readTranscriptStatePage = (
       revision: item.revision,
       eventCursor: item.cursor,
       entries: [...context, ...entries],
-      ...(hasPrevious ? { previousBefore: encode(first!, true) } : {}),
-      ...(hasNext ? { nextAfter: encode(end!) } : {})
+      ...(hasPrevious ? { previousBefore: encodePageCursor(first!, true) } : {}),
+      ...(hasNext ? { nextAfter: encodePageCursor(end!) } : {})
     }
   })()

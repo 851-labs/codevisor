@@ -33,6 +33,8 @@ const allExcept =
   (kind: RFBClientMessageKind) =>
     !denied.includes(kind)
 
+const deny = () => false
+
 describe("RFB client stream filter (851-2338)", () => {
   it("drops exactly the refused messages, keeping every other byte in order", () => {
     const filter = new RFBClientStreamFilter()
@@ -82,7 +84,6 @@ describe("RFB client stream filter (851-2338)", () => {
   })
 
   it("passes everything through what it can't follow", () => {
-    const deny = () => false
     const oldVersion = new RFBClientStreamFilter()
     const old = Buffer.concat([Buffer.from("RFB 003.003\n", "latin1"), messages.key])
     expect(oldVersion.push(old, deny)).toEqual(old)

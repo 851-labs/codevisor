@@ -1,4 +1,4 @@
-import WebSocket, { type RawData } from "ws"
+import { type RawData, WebSocket } from "ws"
 
 interface PendingCommand {
   readonly resolve: (value: unknown) => void

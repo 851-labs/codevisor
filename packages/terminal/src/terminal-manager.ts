@@ -275,7 +275,7 @@ export const makeTerminalManager = (config: TerminalManagerConfig = {}): Termina
       terminalPromise("closeTerminalsForSessionPrefix", async () => {
         let closed = 0
         const pending: Array<Promise<void>> = []
-        for (const [sessionId, terminalId] of [...terminalsBySession]) {
+        for (const [sessionId, terminalId] of Array.from(terminalsBySession)) {
           if (!sessionId.toLowerCase().startsWith(prefix.toLowerCase())) continue
           const terminal = terminals.get(terminalId)
           /* v8 ignore next -- defensive: every code path that removes a terminal also clears its session mapping. */

@@ -88,6 +88,7 @@ export class DirectChannelHost {
       socket.close(DIRECT_CLOSE_HELLO_TIMEOUT, "hello timeout")
     }, options.helloTimeoutMs ?? 10_000)
 
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onmessage = (data) => {
       if (typeof data === "string") {
         this.#onControl(socket, data, hello, (accepted) => {
@@ -125,6 +126,7 @@ export class DirectChannelHost {
         )
       }
     }
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onclose = () => {
       cancelHelloTimeout?.()
       cancelHelloTimeout = undefined

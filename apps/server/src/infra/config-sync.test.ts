@@ -11,6 +11,17 @@ import {
   reconcileMcps
 } from "./config-sync.js"
 
+const mcpValue = (name: string, url: string) => ({
+  name,
+  transport: "http",
+  url,
+  args: [],
+  enabled: false,
+  authType: "none"
+})
+
+const elsewhereAt = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
+
 describe("config sync", () => {
   it(
     "replicates MCP definitions across machines without secrets",
@@ -55,7 +66,7 @@ describe("config sync", () => {
         url: "https://oauth.example.com/mcp"
       })
       const firstA = await reconcileMcps(a)
-      expect([...firstA.status.published].sort()).toEqual(["GitHub", "Local Tool", "Scoped"])
+      expect([...firstA.status.published].toSorted()).toEqual(["GitHub", "Local Tool", "Scoped"])
       // Static secrets travel with the definition (same-owner fleet trust);
       // OAuth material never does.
       expect(JSON.stringify(firstA.changedEntries)).toContain("secret-token")
@@ -70,7 +81,7 @@ describe("config sync", () => {
       // B adopts the definitions.
       await run(machineB.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, firstA.changedEntries))
       const appliedB = await reconcileMcps(b)
-      expect([...appliedB.status.applied].sort()).toEqual(["GitHub", "Local Tool", "Scoped"])
+      expect([...appliedB.status.applied].toSorted()).toEqual(["GitHub", "Local Tool", "Scoped"])
       const listB = await mcpB.list()
       const githubB = listB.find((server) => server.name === "GitHub")
       expect(githubB).toMatchObject({ url: "https://api.example.com/mcp", authType: "bearer" })
@@ -103,10 +114,10 @@ describe("config sync", () => {
         removeEnv: ["TOKEN"]
       })
       const editedB = await reconcileMcps(b)
-      expect([...editedB.status.published].sort()).toEqual(["GitHub", "Local Tool"])
+      expect([...editedB.status.published].toSorted()).toEqual(["GitHub", "Local Tool"])
       await run(machineA.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, editedB.changedEntries))
       const appliedA = await reconcileMcps(a)
-      expect([...appliedA.status.applied].sort()).toEqual(["GitHub", "Local Tool"])
+      expect([...appliedA.status.applied].toSorted()).toEqual(["GitHub", "Local Tool"])
       expect((await mcpA.list()).find((server) => server.name === "GitHub")?.enabled).toBe(false)
       expect((await mcpA.list()).find((server) => server.name === "Local Tool")?.args).toEqual([
         "-y",
@@ -153,7 +164,7 @@ describe("config sync", () => {
       const oauthA = await reconcileMcps(a)
       expect(oauthA.status.published).toEqual(["Scoped"])
       const envelope = (
-        oauthA.changedEntries.find((entry) => entry.key === "Scoped")?.value as {
+        oauthA.changedEntries.find((entry) => entry.key === "Scoped")!.value as {
           oauth?: { owner: string }
         }
       ).oauth
@@ -308,29 +319,24 @@ describe("config sync", () => {
       await services.mcp.create({ ...base, name: "GitHub-3", url: "https://decoy.example/mcp" })
       await services.mcp.create({ ...base, name: "Same", url: "https://same.example/mcp" })
       await services.mcp.create({ ...base, name: "Ghost", url: "https://ghost.example/mcp" })
-      const value = (name: string, url: string) => ({
-        name,
-        transport: "http",
-        url,
-        args: [],
-        enabled: false,
-        authType: "none"
-      })
-      const at = (wallMs: number) => ({ wallMs, counter: 0, deviceId: "elsewhere" })
       await run(
         services.db.mergeSyncEntries(MCPS_SYNC_NAMESPACE, [
           {
             key: "GitHub",
-            value: value("GitHub", "https://fleet.example/mcp"),
-            timestamp: at(10)
+            value: mcpValue("GitHub", "https://fleet.example/mcp"),
+            timestamp: elsewhereAt(10)
           },
           {
             key: "GitHub-2",
-            value: value("GitHub-2", "https://fleet2.example/mcp"),
-            timestamp: at(11)
+            value: mcpValue("GitHub-2", "https://fleet2.example/mcp"),
+            timestamp: elsewhereAt(11)
           },
-          { key: "Same", value: value("Same", "https://same.example/mcp"), timestamp: at(12) },
-          { key: "Ghost", value: null, deleted: true, timestamp: at(13) }
+          {
+            key: "Same",
+            value: mcpValue("Same", "https://same.example/mcp"),
+            timestamp: elsewhereAt(12)
+          },
+          { key: "Ghost", value: null, deleted: true, timestamp: elsewhereAt(13) }
         ])
       )
 
@@ -340,8 +346,8 @@ describe("config sync", () => {
       // local copy became GitHub-4; Same was adopted in place; Ghost
       // republished over the stale tombstone.
       expect(result.status.renamed).toEqual([{ from: "GitHub", to: "GitHub-4" }])
-      expect([...result.status.published].sort()).toEqual(["Ghost", "GitHub-3", "GitHub-4"])
-      expect([...result.status.applied].sort()).toEqual(["GitHub", "GitHub-2"])
+      expect([...result.status.published].toSorted()).toEqual(["Ghost", "GitHub-3", "GitHub-4"])
+      expect([...result.status.applied].toSorted()).toEqual(["GitHub", "GitHub-2"])
       const list = await services.mcp.list()
       expect(list.find((s) => s.name === "GitHub-4")?.url).toBe("https://local.example/mcp")
       expect(list.find((s) => s.name === "GitHub")?.url).toBe("https://fleet.example/mcp")

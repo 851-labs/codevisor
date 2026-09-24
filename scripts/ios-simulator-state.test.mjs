@@ -58,13 +58,14 @@ test("device/runtime options select a supported installed runtime", () => {
   assert.notEqual(simulatorName("/repo/a"), simulatorName("/another/a"))
 })
 
+const runtime = (platform, version, deviceType) => ({
+  identifier: `com.apple.CoreSimulator.SimRuntime.${platform}-${version.replaceAll(".", "-")}`,
+  version,
+  isAvailable: true,
+  supportedDeviceTypes: [{ identifier: deviceType }]
+})
+
 test("selects an older compatible iOS runtime when the latest cannot run the device", () => {
-  const runtime = (platform, version, deviceType) => ({
-    identifier: `com.apple.CoreSimulator.SimRuntime.${platform}-${version.replaceAll(".", "-")}`,
-    version,
-    isAvailable: true,
-    supportedDeviceTypes: [{ identifier: deviceType }]
-  })
   const result = selectSimulatorConfiguration(
     { device: "iPhone 17 Pro" },
     [{ name: "iPhone 17 Pro", identifier: "phone" }],

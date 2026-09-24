@@ -2,26 +2,26 @@ import { describe, expect, it } from "vitest"
 
 import { jsonRequest, makeServices, runningServers, startWithApp } from "../test-support.js"
 
-describe("custom harness routes", () => {
-  const makeStore = () => {
-    const replaced: Array<ReadonlyArray<unknown>> = []
-    const tested: Array<unknown> = []
-    return {
-      replaced,
-      tested,
-      store: {
-        list: async () => [{ command: "my-agent", id: "mine", name: "Mine" }],
-        replace: async (specs: ReadonlyArray<unknown>) => {
-          replaced.push(specs)
-        },
-        test: async (spec: unknown) => {
-          tested.push(spec)
-          return { agentName: "Mine", ok: true, protocolVersion: 1 }
-        }
+const makeStore = () => {
+  const replaced: Array<ReadonlyArray<unknown>> = []
+  const tested: Array<unknown> = []
+  return {
+    replaced,
+    tested,
+    store: {
+      list: async () => [{ command: "my-agent", id: "mine", name: "Mine" }],
+      replace: async (specs: ReadonlyArray<unknown>) => {
+        replaced.push(specs)
+      },
+      test: async (spec: unknown) => {
+        tested.push(spec)
+        return { agentName: "Mine", ok: true, protocolVersion: 1 }
       }
     }
   }
+}
 
+describe("custom harness routes", () => {
   it("lists custom harnesses", async () => {
     const { services } = await makeServices("server-a")
     const { store } = makeStore()

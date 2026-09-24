@@ -439,6 +439,7 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         runtime.connections.set(mcpSessionId, connection)
       }
     })
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
     transport.onclose = () => {
       /* v8 ignore next -- transports without a completed initialize never register. */
       if (transport.sessionId !== undefined) runtime.connections.delete(transport.sessionId)

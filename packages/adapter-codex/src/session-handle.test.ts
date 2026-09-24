@@ -37,7 +37,7 @@ describe("CodexProvider", () => {
       turn: { id: "t-agent", status: "completed" }
     })
     await secondPrompt
-    const secondStart = client.requests.filter((request) => request.method === "turn/start").at(-1)
+    const secondStart = client.requests.findLast((request) => request.method === "turn/start")
     expect(secondStart?.params).toMatchObject({
       collaborationMode: {
         mode: "default",
@@ -95,7 +95,7 @@ describe("CodexProvider", () => {
       await promptPromise
     }
     const lastTurnStart = (): Record<string, unknown> =>
-      client.requests.filter((request) => request.method === "turn/start").at(-1)?.params as Record<
+      client.requests.findLast((request) => request.method === "turn/start")?.params as Record<
         string,
         unknown
       >

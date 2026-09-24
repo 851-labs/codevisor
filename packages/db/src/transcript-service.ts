@@ -187,7 +187,7 @@ export const makeTranscriptService = (
             pageRows.push(row)
             characters += rowCharacters
           }
-          const ordered = forward ? pageRows : [...pageRows].reverse()
+          const ordered = forward ? pageRows : [...pageRows].toReversed()
           const items = ordered.map((row) => {
             const item = transcriptFromChatRow(row)
             if (row.role !== "assistant") {

@@ -9,15 +9,15 @@ export function parseCaptureOptions(args, root, platform) {
     appearance: "all",
     ...(platform === "ios" ? { device: "iphone", runtime: undefined } : {})
   }
-  const flags = [
+  const flags = new Set([
     "--output",
     "--appearance",
     ...(platform === "ios" ? ["--device", "--runtime"] : [])
-  ]
+  ])
   for (let index = 0; index < args.length; index++) {
     const flag = args[index]
     if (flag === "--help") return { help: true }
-    if (!flags.includes(flag)) throw new Error(`Unknown option: ${flag}`)
+    if (!flags.has(flag)) throw new Error(`Unknown option: ${flag}`)
     const value = args[++index]
     if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`)
     options[flag.slice(2)] = flag === "--output" ? resolve(root, value) : value

@@ -145,7 +145,7 @@ const serializeJson = (value: unknown, label: string): string | undefined => {
   try {
     return JSON.stringify(value)
   } catch (cause) {
-    throw new Error(`${label} is not JSON serializable: ${toError(cause).message}`)
+    throw new Error(`${label} is not JSON serializable: ${toError(cause).message}`, { cause })
   }
 }
 

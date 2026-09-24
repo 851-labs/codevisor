@@ -28,7 +28,7 @@ for (const file of files) {
   }
 }
 
-const sorted = [...files].sort()
+const sorted = [...files].toSorted()
 const unsorted = files.some((file, index) => file !== sorted[index])
 
 if (stale.length > 0 || unsorted) {

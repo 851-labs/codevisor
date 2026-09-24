@@ -35,6 +35,65 @@ export const harnesses: ReadonlyArray<Harness> = [
   }
 ]
 
+const dependencyConfigOptions = (
+  model = "model-default",
+  reasoning = "low",
+  speed = "standard"
+): ReadonlyArray<SessionConfigOption> => [
+  {
+    category: "model",
+    currentValue: model,
+    id: "model",
+    name: "Model",
+    options: [
+      { name: "Default model", value: "model-default" },
+      { name: "Saved model", value: "model-saved" }
+    ]
+  },
+  {
+    category: "thought_level",
+    currentValue: reasoning,
+    id: "reasoning",
+    name: "Reasoning",
+    options:
+      model === "model-saved"
+        ? [
+            { name: "Low", value: "low" },
+            { name: "High", value: "high" }
+          ]
+        : [{ name: "Low", value: "low" }]
+  },
+  {
+    category: "speed",
+    currentValue: speed,
+    id: "speed",
+    name: "Speed",
+    options:
+      model === "model-saved"
+        ? [
+            { name: "Standard", value: "standard" },
+            { name: "Fast", value: "fast" }
+          ]
+        : [{ name: "Standard", value: "standard" }]
+  },
+  {
+    category: "tone",
+    currentValue: "brief",
+    id: "tone",
+    name: "Tone",
+    options: [
+      {
+        group: "response-style",
+        name: "Response style",
+        options: [
+          { name: "Brief", value: "brief" },
+          { name: "Detailed", value: "detailed" }
+        ]
+      }
+    ]
+  }
+]
+
 export const makeAgents = (): AgentRuntimeService & {
   readonly loads: Array<readonly [string, string, string]>
   readonly prompts: Array<readonly [string, string | PromptInput]>
@@ -73,64 +132,6 @@ export const makeAgents = (): AgentRuntimeService & {
   const sinks = new Map<string, RuntimeEventSink>()
   const configOptionsBySession = new Map<string, ReadonlyArray<SessionConfigOption>>()
   const dependencyConfigSessions = new Set<string>()
-  const dependencyConfigOptions = (
-    model = "model-default",
-    reasoning = "low",
-    speed = "standard"
-  ): ReadonlyArray<SessionConfigOption> => [
-    {
-      category: "model",
-      currentValue: model,
-      id: "model",
-      name: "Model",
-      options: [
-        { name: "Default model", value: "model-default" },
-        { name: "Saved model", value: "model-saved" }
-      ]
-    },
-    {
-      category: "thought_level",
-      currentValue: reasoning,
-      id: "reasoning",
-      name: "Reasoning",
-      options:
-        model === "model-saved"
-          ? [
-              { name: "Low", value: "low" },
-              { name: "High", value: "high" }
-            ]
-          : [{ name: "Low", value: "low" }]
-    },
-    {
-      category: "speed",
-      currentValue: speed,
-      id: "speed",
-      name: "Speed",
-      options:
-        model === "model-saved"
-          ? [
-              { name: "Standard", value: "standard" },
-              { name: "Fast", value: "fast" }
-            ]
-          : [{ name: "Standard", value: "standard" }]
-    },
-    {
-      category: "tone",
-      currentValue: "brief",
-      id: "tone",
-      name: "Tone",
-      options: [
-        {
-          group: "response-style",
-          name: "Response style",
-          options: [
-            { name: "Brief", value: "brief" },
-            { name: "Detailed", value: "detailed" }
-          ]
-        }
-      ]
-    }
-  ]
   const emit = async (sessionId: string, event: RuntimeEvent): Promise<void> => {
     await sinks.get(sessionId)?.(event)
   }

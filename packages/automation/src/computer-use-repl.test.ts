@@ -11,6 +11,7 @@ const text = (result: CallToolResult) =>
     .filter((c) => c.type === "text")
     .map((c) => c.text)
     .join("\n")
+const emptyInvoke = async () => ({ content: [] })
 const pools: ReturnType<typeof makeComputerUseRepls>[] = []
 const pool = () => {
   const value = makeComputerUseRepls()
@@ -308,12 +309,11 @@ describe("Computer Use REPL", () => {
   it("rejects recursive and unrelated bridge calls, and handles empty observations", async () => {
     const repl = pool()
     await repl.reset("unused")
-    const invoke = async () => ({ content: [] })
     for (const path of ["browser.click", "computer.js", "computer.reset"]) {
       const result = await repl.execute(
         "a",
         `await globalThis.__codevisor_invokeTool(${JSON.stringify(path)})`,
-        invoke
+        emptyInvoke
       )
       expect(result.isError).toBe(true)
       expect(text(result)).toContain("Only Computer Use")
@@ -321,12 +321,13 @@ describe("Computer Use REPL", () => {
     const empty = await repl.execute(
       "a",
       "await globalThis.__codevisor_invokeTool('computer.list_apps')",
-      invoke
+      emptyInvoke
     )
     expect(empty).toEqual({ content: [] })
     // Unsupported output entries must not leak into the MCP content stream.
     expect(
-      (await repl.execute("a", "globalThis.__codevisor_outputs.push(null, {});", invoke)).content
+      (await repl.execute("a", "globalThis.__codevisor_outputs.push(null, {});", emptyInvoke))
+        .content
     ).toEqual([{ type: "text", text: "2" }])
   })
 })

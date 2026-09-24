@@ -69,16 +69,21 @@ export const openCodeAuthPath = (env: NodeJS.ProcessEnv): string => {
   return join(dataHome, "opencode", "auth.json")
 }
 
+const finish = (flow: InternalFlow, value: OpenCodeAuthFlow): void => {
+  flow.value = value
+  void flow.server
+    .stop()
+    .catch(() => undefined)
+    .finally(flow.release)
+}
+
 export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): OpenCodeAuthManager => {
   const flows = new Map<string, InternalFlow>()
   const accountLocks = new Map<string, Promise<void>>()
 
   const acquire = async (accountId: string): Promise<() => void> => {
     const previous = accountLocks.get(accountId) ?? Promise.resolve()
-    let unlock = (): void => undefined
-    const current = new Promise<void>((resolve) => {
-      unlock = resolve
-    })
+    const { promise: current, resolve: unlock } = Promise.withResolvers<void>()
     accountLocks.set(accountId, current)
     await previous
     let released = false
@@ -88,14 +93,6 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
       unlock()
       if (accountLocks.get(accountId) === current) accountLocks.delete(accountId)
     }
-  }
-
-  const finish = (flow: InternalFlow, value: OpenCodeAuthFlow): void => {
-    flow.value = value
-    void flow.server
-      .stop()
-      .catch(() => undefined)
-      .finally(flow.release)
   }
 
   const fail = (flow: InternalFlow, cause: unknown): void => {
@@ -164,7 +161,7 @@ export const makeOpenCodeAuthManager = (config: OpenCodeAuthManagerConfig): Open
               ? {}
               : { credentialType: credentials[provider.id] })
           }))
-          .sort((left, right) => left.name.localeCompare(right.name))
+          .toSorted((left, right) => left.name.localeCompare(right.name))
       } finally {
         if (server !== undefined) await server.stop()
         release()

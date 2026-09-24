@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest"
 
 import { run, setup } from "./test-support.js"
 
+const goalSnapshot = (overrides: Record<string, unknown>) => ({
+  createdAt: 1_700_000_000,
+  objective: "long haul",
+  status: "active",
+  threadId: "thread-new",
+  timeUsedSeconds: 1,
+  tokenBudget: 10_000,
+  tokensUsed: 100,
+  updatedAt: 1_700_000_001,
+  ...overrides
+})
+
 describe("CodexProvider", () => {
   it("advertises goal support and sets goals with double-option budget semantics", async () => {
     const { client, created, events } = await setup()
@@ -50,26 +62,18 @@ describe("CodexProvider", () => {
 
   it("emits out-of-band goal snapshots immediately and throttles accounting ticks", async () => {
     const { client, events } = await setup()
-    const snapshot = (overrides: Record<string, unknown>) => ({
-      createdAt: 1_700_000_000,
-      objective: "long haul",
-      status: "active",
-      threadId: "thread-new",
-      timeUsedSeconds: 1,
-      tokenBudget: 10_000,
-      tokensUsed: 100,
-      updatedAt: 1_700_000_001,
-      ...overrides
-    })
-
     // Out-of-band snapshot (turnId null — e.g. resume) always emits.
-    client.emit("thread/goal/updated", { goal: snapshot({}), threadId: "thread-new", turnId: null })
+    client.emit("thread/goal/updated", {
+      goal: goalSnapshot({}),
+      threadId: "thread-new",
+      turnId: null
+    })
     expect(events.at(-1)?.payload).toMatchObject({ goal: { objective: "long haul" } })
     const countAfterSnapshot = events.length
 
     // Accounting-only tick inside a turn within the rate window is held back.
     client.emit("thread/goal/updated", {
-      goal: snapshot({ tokensUsed: 200 }),
+      goal: goalSnapshot({ tokensUsed: 200 }),
       threadId: "thread-new",
       turnId: "turn-1"
     })
@@ -77,7 +81,7 @@ describe("CodexProvider", () => {
 
     // A material change (status flip) bypasses the throttle.
     client.emit("thread/goal/updated", {
-      goal: snapshot({ status: "budgetLimited", tokensUsed: 10_000 }),
+      goal: goalSnapshot({ status: "budgetLimited", tokensUsed: 10_000 }),
       threadId: "thread-new",
       turnId: "turn-1"
     })
@@ -87,7 +91,7 @@ describe("CodexProvider", () => {
 
     // Malformed goals are skipped, not thrown.
     client.emit("thread/goal/updated", {
-      goal: snapshot({ status: "later" }),
+      goal: goalSnapshot({ status: "later" }),
       threadId: "thread-new",
       turnId: "turn-1"
     })

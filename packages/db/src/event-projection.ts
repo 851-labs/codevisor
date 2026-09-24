@@ -21,6 +21,9 @@ import { parseAttachments, serializeAttachments } from "./row-mappers.js"
 import type { SessionEventRow } from "./rows.js"
 import { projectTranscriptState } from "./transcript-state.js"
 
+const finite = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null
+
 export const projectChatEvent = (
   sqlite: Database.Database,
   event: SessionEventRow
@@ -245,8 +248,6 @@ export const projectChatEvent = (
     update === "usage_update"
   ) {
     const cost = jsonRecord(payload.cost)
-    const finite = (value: unknown): number | null =>
-      typeof value === "number" && Number.isFinite(value) ? value : null
     const costKind = cost?.kind === "reported" || cost?.kind === "estimated" ? cost.kind : null
     sqlite
       .prepare(

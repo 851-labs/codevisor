@@ -162,7 +162,7 @@ export const reconcileSkills = async (deps: SkillsSyncDeps): Promise<SkillsSyncR
   // this machine never applied, an identical copy is adopted in place and
   // a different one moves aside — a join never silently overwrites either
   // side (the fleet version applies under the original name below).
-  for (const [directoryName, skill] of [...localSkills]) {
+  for (const [directoryName, skill] of Array.from(localSkills)) {
     const localHash = localHashes.get(directoryName) as string
     // Repack when the cached archive is absent or no longer verifies —
     // archives packed before COPYFILE_DISABLE carry AppleDouble junk under
@@ -298,6 +298,7 @@ export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
       header
         .subarray(0, 100)
         .toString("utf8")
+        // oxlint-disable-next-line no-control-regex -- tar names are NUL-padded; drop the padding
         .replace(/\0[^]*$/, "")
     )
     const size = Number.parseInt(
@@ -310,7 +311,7 @@ export const archiveEntryNames = (bytes: Buffer): ReadonlyArray<string> => {
 }
 
 const isMacMetadataJunk = (name: string): boolean => {
-  const base = name.split("/").filter(Boolean).at(-1) ?? ""
+  const base = name.split("/").findLast(Boolean) ?? ""
   return base.startsWith("._") || base === ".DS_Store"
 }
 

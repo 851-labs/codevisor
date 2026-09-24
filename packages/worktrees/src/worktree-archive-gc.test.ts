@@ -29,7 +29,10 @@ describe("worktree archive garbage collection", () => {
 
     // Keyed by worktree id, never by name: archiving frees the name, so only
     // the id can still identify a snapshot.
-    expect([...(await listSnapshotRefWorktreeIds(repo))].sort()).toEqual(["wt-ramen", "wt-sushi"])
+    expect([...(await listSnapshotRefWorktreeIds(repo))].toSorted()).toEqual([
+      "wt-ramen",
+      "wt-sushi"
+    ])
 
     // A path that is not a repository is not something to prune.
     expect(await listSnapshotRefWorktreeIds(testTempDir(join(root, "not-a-repo-")))).toEqual([])

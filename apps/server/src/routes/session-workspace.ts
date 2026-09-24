@@ -389,7 +389,7 @@ const restoreSessionConfigSelections = async (
   const saved = await run(services.db.getSessionConfigSelections(sessionId))
   let configOptions = metadata.configOptions
   let restoreFailed = false
-  const ordered = Object.entries(saved).sort(([leftId], [rightId]) => {
+  const ordered = Object.entries(saved).toSorted(([leftId], [rightId]) => {
     const left = configOptions.find((option) => option.id === leftId)
     const right = configOptions.find((option) => option.id === rightId)
     const difference = configRestorePriority(left) - configRestorePriority(right)

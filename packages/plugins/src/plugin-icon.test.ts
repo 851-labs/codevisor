@@ -68,7 +68,7 @@ describe("fetchPluginIcon", () => {
       "http://127.0.0.1:4242/assets/pane.svg"
     ])
     expect(pluginAsset.contentType).toBe("image/png")
-    expect([...pluginAsset.data.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+    expect(Array.from(pluginAsset.data.subarray(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
     expect(paneAsset.data.byteLength).toBeGreaterThan(0)
     expect(fixture.noteSuccess).toHaveBeenCalledTimes(2)
     expect(fixture.signedContextHeaders).toHaveBeenLastCalledWith({

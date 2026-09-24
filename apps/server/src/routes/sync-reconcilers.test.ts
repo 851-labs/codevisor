@@ -252,16 +252,13 @@ describe("auth-derived sync refresh", () => {
   it("coalesces event bursts into one active refresh and one trailing refresh", async () => {
     const fanout = await run(makeEventFanout)
     const { services } = await makeServices("server-auth-coalescing")
-    let releaseFirstRefresh: () => void = () => undefined
-    const firstRefreshGate = new Promise<void>((resolve) => {
-      releaseFirstRefresh = resolve
-    })
+    const firstRefreshGate = Promise.withResolvers<void>()
     const firstStarted = Promise.withResolvers<void>()
     const trailingStarted = Promise.withResolvers<void>()
     const decorateHarnessesFromStoredState = vi.fn(async (harnesses) => {
       if (decorateHarnessesFromStoredState.mock.calls.length === 1) {
         firstStarted.resolve()
-        await firstRefreshGate
+        await firstRefreshGate.promise
       } else trailingStarted.resolve()
       return harnesses
     })
@@ -279,7 +276,7 @@ describe("auth-derived sync refresh", () => {
     expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(1)
 
     for (let index = 0; index < 64; index += 1) scheduler.request()
-    releaseFirstRefresh()
+    firstRefreshGate.resolve()
     await trailingStarted.promise
     expect(decorateHarnessesFromStoredState).toHaveBeenCalledTimes(2)
 
@@ -467,7 +464,7 @@ describe("credentials plane", () => {
     )
     const result = await reconcileForNamespace(withFerry, config, "credentials")
     expect(result).toBeDefined()
-    expect((result?.status as { applied: string[] }).applied.toSorted()).toEqual([
+    expect((result!.status as { applied: string[] }).applied.toSorted()).toEqual([
       "mystery-source",
       "opencode-profile:work",
       "pi-auth"

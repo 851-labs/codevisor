@@ -454,7 +454,7 @@ const dismissPendingQuestion = (pending: PendingCodexQuestion, reason: string): 
 /// still-pending questions: dismiss them at the source and emit the
 /// resolution so clients drop the picker instead of hanging on it.
 export const cancelPendingQuestions = (session: CodexSession): void => {
-  for (const [questionId, pending] of [...session.pendingQuestions]) {
+  for (const [questionId, pending] of Array.from(session.pendingQuestions)) {
     session.pendingQuestions.delete(questionId)
     if (pending.timer !== undefined) clearTimeout(pending.timer)
     dismissPendingQuestion(pending, "Question cancelled with the turn")

@@ -79,7 +79,7 @@ export const materializeNavigationDelta = (
   const events = [
     ...batch.events.filter((event) => event.kind !== "navigation.changed"),
     delta
-  ].sort((a, b) => a.id - b.id)
+  ].toSorted((a, b) => a.id - b.id)
   if (Buffer.byteLength(JSON.stringify(events)) > 512 * 1024)
     return { events: [], cursor: batch.cursor, requiresSnapshot: true }
   return { ...batch, events }

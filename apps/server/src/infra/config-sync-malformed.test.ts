@@ -155,7 +155,7 @@ describe("config sync malformed values", () => {
       mcp: services.mcp,
       serverId: "server-c"
     })
-    expect([...mixed.status.applied].sort()).toEqual([
+    expect([...mixed.status.applied].toSorted()).toEqual([
       "Mixed Args",
       "Mixed Env",
       "No Args",

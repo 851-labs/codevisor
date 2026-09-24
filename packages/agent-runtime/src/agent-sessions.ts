@@ -145,7 +145,7 @@ const newestFirst = (
   candidates: ReadonlyArray<SessionFileCandidate>,
   limit: number
 ): ReadonlyArray<SessionFileCandidate> =>
-  [...candidates].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit)
+  [...candidates].toSorted((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit)
 
 /// Claude Code: `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
 /// The cwd comes from the entries themselves (the encoded directory name is

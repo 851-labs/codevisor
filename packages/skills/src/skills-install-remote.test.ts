@@ -46,7 +46,7 @@ describe("importRemote", () => {
     })
     const scan = await skills.importRemote({ source: "vercel-labs/skills#main" })
     expect(calls).toEqual([["https://github.com/vercel-labs/skills.git", "main"]])
-    expect(scan.global.map((skill) => skill.directoryName).sort()).toEqual(["deploy", "review"])
+    expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
   })
 
   it("scopes discovery to the requested subpath", async () => {
@@ -92,7 +92,7 @@ describe("importRemote", () => {
       writeSkill(join(destination, "review"), { name: "Review" })
     }
     const scan = await managerWithClone(home, clone).importRemote({ source: "o/r" })
-    expect(scan.global.map((skill) => skill.directoryName).sort()).toEqual(["deploy", "review"])
+    expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual(["deploy", "review"])
     // Second run: everything conflicts now.
     await expect(
       managerWithClone(home, clone).importRemote({ source: "o/r" })
@@ -120,30 +120,30 @@ describe("importRemote", () => {
   })
 })
 
-describe("well-known skill sources", () => {
-  const startSkillSite = async (
-    handler: (path: string) => { status: number; body: Buffer | string } | undefined
-  ) => {
-    const { createServer } = await import("node:http")
-    const server = createServer((request, response) => {
-      const result = handler(request.url ?? "/")
-      if (result === undefined) {
-        response.writeHead(404)
-        response.end()
-        return
-      }
-      response.writeHead(result.status)
-      response.end(result.body)
-    })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    const address = server.address()
-    if (address === null || typeof address === "string") throw new Error("missing port")
-    return {
-      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-      url: `http://127.0.0.1:${address.port}`
+const startSkillSite = async (
+  handler: (path: string) => { status: number; body: Buffer | string } | undefined
+) => {
+  const { createServer } = await import("node:http")
+  const server = createServer((request, response) => {
+    const result = handler(request.url ?? "/")
+    if (result === undefined) {
+      response.writeHead(404)
+      response.end()
+      return
     }
+    response.writeHead(result.status)
+    response.end(result.body)
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("missing port")
+  return {
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    url: `http://127.0.0.1:${address.port}`
   }
+}
 
+describe("well-known skill sources", () => {
   it("imports legacy file-list skills from the well-known index", async () => {
     const home = makeHome()
     const site = await startSkillSite((path) => {
@@ -246,7 +246,10 @@ describe("well-known skill sources", () => {
     })
     try {
       const scan = await manager(home).importRemote({ source: site.url })
-      expect(scan.global.map((skill) => skill.directoryName).sort()).toEqual(["archived", "single"])
+      expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual([
+        "archived",
+        "single"
+      ])
       expect(globalSkill(scan, "archived").description).toBe("From archive")
     } finally {
       await site.close()
@@ -357,7 +360,7 @@ describe("well-known skill sources", () => {
     })
     try {
       const scan = await manager(home).importRemote({ source: `${site.url}/docs` })
-      expect(scan.global.map((skill) => skill.directoryName).sort()).toEqual([
+      expect(scan.global.map((skill) => skill.directoryName).toSorted()).toEqual([
         "no-digest",
         "odd-files",
         "zipped"

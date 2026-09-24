@@ -203,14 +203,14 @@ describe("listClaudeAgentSessions", () => {
   })
 })
 
+const metaLine = (id: string, cwd: string): string =>
+  JSON.stringify({ type: "session_meta", payload: { id, cwd, timestamp: "t" } })
+const userLine = (message: string): string =>
+  JSON.stringify({ type: "event_msg", payload: { type: "user_message", message } })
+
 describe("listCodexAgentSessions", () => {
   const home = "/home/tester"
   const root = `${home}/.codex/sessions`
-
-  const metaLine = (id: string, cwd: string): string =>
-    JSON.stringify({ type: "session_meta", payload: { id, cwd, timestamp: "t" } })
-  const userLine = (message: string): string =>
-    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message } })
 
   it("lists rollouts with meta id/cwd and first user-message title", async () => {
     const fs = makeFakeFs(

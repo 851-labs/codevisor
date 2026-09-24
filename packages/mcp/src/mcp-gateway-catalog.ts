@@ -43,7 +43,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
       .filter((server) => server.enabled && !isSuppressed(server.name))
       .map((server) => server.name.trim())
       .filter((name) => name.length > 0)
-      .sort((left, right) => left.localeCompare(right))
+      .toSorted((left, right) => left.localeCompare(right))
     const pluginTools = await listPluginTools()
     const lines =
       names.length === 0
@@ -123,7 +123,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
         }
       })
       .filter((item) => normalized.length === 0 || item.score > 0)
-      .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+      .toSorted((left, right) => right.score - left.score || left.path.localeCompare(right.path))
     return {
       items: ranked.slice(0, Math.max(1, Math.min(limit, 50))),
       total: ranked.length,

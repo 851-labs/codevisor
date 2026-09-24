@@ -39,10 +39,12 @@ const parseTextMatcher = (value: unknown, label: string): BrowserTextMatcher => 
     throw new Error(`${label} must contain regex and optional flags strings`)
   }
   try {
+    // oxlint-disable-next-line no-new -- constructing the RegExp is how the pattern and flags are validated
     new RegExp(input.regex, input.flags)
   } catch (cause) {
     throw new Error(
-      `${label} is invalid: ${cause instanceof Error ? cause.message : String(cause)}`
+      `${label} is invalid: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause }
     )
   }
   return {

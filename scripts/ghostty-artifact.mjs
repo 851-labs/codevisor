@@ -126,7 +126,8 @@ async function downloadFramework({ artifactsRoot, cachedFramework, environment, 
     const reason = cause instanceof Error ? cause.message : String(cause)
     throw new Error(
       `GhosttyKit ${stamp} is unavailable (${reason}). ` +
-        "Run `bun run ghostty:build` only when intentionally rebuilding the shared artifact."
+        "Run `bun run ghostty:build` only when intentionally rebuilding the shared artifact.",
+      { cause }
     )
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true })

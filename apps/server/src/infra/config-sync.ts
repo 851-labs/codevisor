@@ -82,7 +82,7 @@ const sortedRecord = (
   value: Readonly<Record<string, string>> | undefined
 ): Record<string, string> | undefined => {
   if (value === undefined || Object.keys(value).length === 0) return undefined
-  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+  return Object.fromEntries(Object.entries(value).toSorted(([a], [b]) => a.localeCompare(b)))
 }
 
 const stringRecord = (value: unknown): Record<string, string> | undefined => {
@@ -214,7 +214,7 @@ export const reconcileMcps = async (deps: McpSyncDeps): Promise<McpSyncResult> =
   // identical definition is adopted in place and a different one is
   // renamed aside — a join never silently overwrites either side (the
   // fleet definition applies under the original name below).
-  for (const [name, server] of [...localByName]) {
+  for (const [name, server] of Array.from(localByName)) {
     const existing = replicaByKey.get(name)
     const wanted = existing?.deleted === true ? undefined : parseSyncedValue(existing?.value)
     // OAuth material: only the refresh owner publishes its own envelope;

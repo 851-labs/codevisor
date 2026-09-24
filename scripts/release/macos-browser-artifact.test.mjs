@@ -156,7 +156,7 @@ test(
       compile(mainSource, "-Wl,-needed_library," + library, "-o", binary)
     }
     await signEmbeddedLibraries(app, "-")
-    for (const binary of [...binaries].reverse()) {
+    for (const binary of [...binaries].toReversed()) {
       execFileSync("codesign", ["--force", "--sign", "-", "--options", "runtime", binary], {
         stdio: "pipe"
       })

@@ -87,7 +87,9 @@ describe("MCP manager", () => {
     )
     const messages: unknown[] = []
     let closed = false
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
     transport.onmessage = (message) => messages.push(message)
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callback properties, not addEventListener
     transport.onclose = () => {
       closed = true
     }

@@ -68,7 +68,7 @@ export const makeSkillsScanner = (deps: SkillsScannerDeps) => {
         path
       })
     }
-    return skills.sort((a, b) => a.directoryName.localeCompare(b.directoryName))
+    return skills.toSorted((a, b) => a.directoryName.localeCompare(b.directoryName))
   }
 
   /// Classify every entry in one harness skills directory. Never throws:
@@ -125,7 +125,7 @@ export const makeSkillsScanner = (deps: SkillsScannerDeps) => {
         path
       })
     }
-    return results.sort((a, b) => a.directoryName.localeCompare(b.directoryName))
+    return results.toSorted((a, b) => a.directoryName.localeCompare(b.directoryName))
   }
 
   const list = async (): Promise<SkillsScan> => {

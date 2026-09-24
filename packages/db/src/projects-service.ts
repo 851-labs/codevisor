@@ -194,4 +194,4 @@ export const makeProjectsService = (
   }
 }
 
-const basename = (path: string): string => path.split("/").filter(Boolean).at(-1) ?? path
+const basename = (path: string): string => path.split("/").findLast(Boolean) ?? path

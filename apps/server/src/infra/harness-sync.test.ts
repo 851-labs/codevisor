@@ -172,7 +172,7 @@ describe("harness sync", () => {
     const first = await reconcileHarnesses(world.deps)
     expect(first.status.published).toEqual([])
     expect(world.calls.enabled).toEqual([["claude", false]])
-    expect([...first.status.installing].sort()).toEqual(["claude", "codex"])
+    expect([...first.status.installing].toSorted()).toEqual(["claude", "codex"])
     expect(first.status.applied).toEqual(["claude", "custom:mybot"])
     expect(world.calls.replaced.at(-1)?.map((spec) => spec.id)).toEqual(["mybot"])
 
@@ -184,7 +184,7 @@ describe("harness sync", () => {
     }
     const second = await reconcileHarnesses(world.deps)
     expect(second.status.installing).toEqual([])
-    expect([...second.status.blocked].map((item) => item.reason).sort()).toEqual([
+    expect([...second.status.blocked].map((item) => item.reason).toSorted()).toEqual([
       "install already running",
       "no runnable method"
     ])

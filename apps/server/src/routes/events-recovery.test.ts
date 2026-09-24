@@ -5,20 +5,21 @@ import { makeEventFanout } from "../server.js"
 import { run } from "../test-support.js"
 import { attachEventSocket } from "./events.js"
 
+const outputEvent = (revision: number): import("@codevisor/api").EventEnvelope => ({
+  id: revision,
+  subjectRevision: revision,
+  subjectId: "chat",
+  serverId: "server",
+  kind: "session.output",
+  payload: {},
+  createdAt: "2026-09-10T00:00:00.000Z"
+})
+
 describe("durable session checkpoints", () => {
   afterEach(() => vi.useRealTimers())
 
   it("serializes live events with replay, suppresses overlapping replays, and closes on a failed read", async () => {
     const fanout = await run(makeEventFanout)
-    const event = (revision: number): import("@codevisor/api").EventEnvelope => ({
-      id: revision,
-      subjectRevision: revision,
-      subjectId: "chat",
-      serverId: "server",
-      kind: "session.output",
-      payload: {},
-      createdAt: "2026-09-10T00:00:00.000Z"
-    })
     let resolveReplay!: (events: Array<import("@codevisor/api").EventEnvelope>) => void
     let failReplay!: (error: Error) => void
     let reads = 0
@@ -29,7 +30,7 @@ describe("durable session checkpoints", () => {
           if (reads === 1)
             return Promise.resolve({ events: [], cursor: since, requiresSnapshot: false })
           if (reads === 3)
-            return Promise.resolve({ events: [event(3)], cursor: 3, requiresSnapshot: false })
+            return Promise.resolve({ events: [outputEvent(3)], cursor: 3, requiresSnapshot: false })
           return new Promise<Array<import("@codevisor/api").EventEnvelope>>((resolve, reject) => {
             resolveReplay = resolve
             failReplay = reject
@@ -69,11 +70,11 @@ describe("durable session checkpoints", () => {
         true
       )
       await vi.advanceTimersByTimeAsync(25_000)
-      await run(fanout.publish(event(3)))
+      await run(fanout.publish(outputEvent(3)))
       await vi.advanceTimersByTimeAsync(25_000)
       expect(reads).toBe(2)
       expect(sent.map((frame) => frame.id)).toEqual([1])
-      resolveReplay([event(2)])
+      resolveReplay([outputEvent(2)])
       await delivered.promise
       expect(sent.map(({ id, kind }) => [id, kind])).toEqual([
         [1, "keepalive"],

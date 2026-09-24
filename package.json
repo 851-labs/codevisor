@@ -20,7 +20,7 @@
     "dev:scripts:test": "node --test scripts/*.test.mjs",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --report-unused-disable-directives-severity=error .",
+    "lint": "oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings --report-unused-disable-directives-severity=error .",
     "format": "oxfmt -c .oxfmtrc.json --disable-nested-config --write .",
     "format:check": "oxfmt -c .oxfmtrc.json --disable-nested-config --check .",
     "test": "turbo run test --concurrency=4",

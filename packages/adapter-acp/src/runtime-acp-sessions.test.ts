@@ -4,6 +4,47 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { makeAcpAgentRuntime, makeConnector, run } from "./test-support.js"
 
+const sink = (): void => undefined
+
+const modelDependentOptions = (model = "default", reasoning = "low", speed = "standard") => [
+  {
+    category: "model",
+    currentValue: model,
+    id: "model",
+    name: "Model",
+    options: [
+      { name: "Default", value: "default" },
+      { name: "Pro", value: "pro" }
+    ]
+  },
+  {
+    category: "thought_level",
+    currentValue: reasoning,
+    id: "reasoning",
+    name: "Reasoning",
+    options:
+      model === "pro"
+        ? [
+            { name: "Low", value: "low" },
+            { name: "High", value: "high" }
+          ]
+        : [{ name: "Low", value: "low" }]
+  },
+  {
+    category: "speed",
+    currentValue: speed,
+    id: "speed",
+    name: "Speed",
+    options:
+      model === "pro"
+        ? [
+            { name: "Standard", value: "standard" },
+            { name: "Fast", value: "fast" }
+          ]
+        : [{ name: "Standard", value: "standard" }]
+  }
+]
+
 describe("@codevisor/agent-runtime", () => {
   afterEach(() => vi.useRealTimers())
   it("creates and loads agent sessions through the connector", async () => {
@@ -14,7 +55,6 @@ describe("@codevisor/agent-runtime", () => {
       executableExists: (name) => name === "gemini",
       locateExecutable: (name) => `/bin/${name}`
     })
-    const sink = (): void => undefined
 
     const created = await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
     const inspected = await run(runtime.inspectHarness("gemini", "/tmp/project"))
@@ -101,45 +141,7 @@ describe("@codevisor/agent-runtime", () => {
   it("resolves model-dependent settings inside an inspection session", async () => {
     let closeCount = 0
     const applied: Array<readonly [string, string]> = []
-    const options = (model = "default", reasoning = "low", speed = "standard") => [
-      {
-        category: "model",
-        currentValue: model,
-        id: "model",
-        name: "Model",
-        options: [
-          { name: "Default", value: "default" },
-          { name: "Pro", value: "pro" }
-        ]
-      },
-      {
-        category: "thought_level",
-        currentValue: reasoning,
-        id: "reasoning",
-        name: "Reasoning",
-        options:
-          model === "pro"
-            ? [
-                { name: "Low", value: "low" },
-                { name: "High", value: "high" }
-              ]
-            : [{ name: "Low", value: "low" }]
-      },
-      {
-        category: "speed",
-        currentValue: speed,
-        id: "speed",
-        name: "Speed",
-        options:
-          model === "pro"
-            ? [
-                { name: "Standard", value: "standard" },
-                { name: "Fast", value: "fast" }
-              ]
-            : [{ name: "Standard", value: "standard" }]
-      }
-    ]
-    let current = options()
+    let current = modelDependentOptions()
     const handle = {
       cancel: Effect.succeed({ runtimeState: "reusable" as const }),
       close: Effect.sync(() => {
@@ -149,9 +151,9 @@ describe("@codevisor/agent-runtime", () => {
       setConfigOption: (configId: string, value: string) =>
         Effect.sync(() => {
           applied.push([configId, value])
-          if (configId === "model") current = options(value)
-          else if (configId === "reasoning") current = options("pro", value)
-          else if (configId === "speed") current = options("pro", "high", value)
+          if (configId === "model") current = modelDependentOptions(value)
+          else if (configId === "reasoning") current = modelDependentOptions("pro", value)
+          else if (configId === "speed") current = modelDependentOptions("pro", "high", value)
           return current
         }),
       setMode: () => Effect.void
@@ -271,7 +273,6 @@ describe("@codevisor/agent-runtime", () => {
       executableExists: (name) => ["gemini", "opencode"].includes(name),
       locateExecutable: () => undefined
     })
-    const sink = (): void => undefined
 
     await run(runtime.createAgentSession("gemini", "/tmp/project", sink))
     await run(runtime.createAgentSession("opencode", "/tmp/project", sink))

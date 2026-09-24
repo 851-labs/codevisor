@@ -21,7 +21,7 @@ export const treeHash = async (
     // Default string sort is UTF-16 code-unit order — deterministic on every
     // machine, unlike localeCompare, whose collation varies by locale and
     // would make the "identity" hash platform-dependent.
-    for (const name of [...byName.keys()].sort()) {
+    for (const name of [...byName.keys()].toSorted()) {
       /* v8 ignore next -- names derive from entries; the map always hits. */
       const entry = byName.get(name)!
       const relative = prefix === "" ? name : `${prefix}/${name}`

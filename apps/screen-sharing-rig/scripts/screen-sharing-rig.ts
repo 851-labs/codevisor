@@ -338,7 +338,6 @@ async function status(): Promise<void> {
     ["host", host]
   ] as const) {
     try {
-      // oxlint-disable-next-line no-await-in-loop -- sequential output is the point
       process.stdout.write(`${summarize(await http<RigStatus>("GET", `${base}/status`, token))}\n`)
     } catch (error) {
       process.stdout.write(`${label.padEnd(6)} unreachable at ${base}: ${errorMessage(error)}\n`)

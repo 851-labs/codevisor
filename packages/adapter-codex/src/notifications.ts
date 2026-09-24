@@ -20,6 +20,9 @@ export const codexThreadTitle = (thread: Record<string, unknown>): string | unde
   return undefined
 }
 
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined
+
 const emitCodexSessionTitle = async (
   session: CodexSession,
   title: string | undefined
@@ -85,31 +88,31 @@ export const handleNotification = (
       const tokenUsage = isRecord(payload.tokenUsage) ? payload.tokenUsage : {}
       const total = isRecord(tokenUsage.total) ? tokenUsage.total : {}
       const last = isRecord(tokenUsage.last) ? tokenUsage.last : {}
-      const number = (value: unknown): number | undefined =>
-        typeof value === "number" && Number.isFinite(value) ? value : undefined
       void session.emit({
         kind: "session.updated",
         payload: {
           sessionUpdate: "usage_update",
-          ...(number(last.totalTokens) === undefined ? {} : { used: number(last.totalTokens) }),
-          ...(number(tokenUsage.modelContextWindow) === undefined
+          ...(finiteNumber(last.totalTokens) === undefined
             ? {}
-            : { size: number(tokenUsage.modelContextWindow) }),
-          ...(number(total.inputTokens) === undefined
+            : { used: finiteNumber(last.totalTokens) }),
+          ...(finiteNumber(tokenUsage.modelContextWindow) === undefined
             ? {}
-            : { inputTokens: number(total.inputTokens) }),
-          ...(number(total.cachedInputTokens) === undefined
+            : { size: finiteNumber(tokenUsage.modelContextWindow) }),
+          ...(finiteNumber(total.inputTokens) === undefined
             ? {}
-            : { cachedInputTokens: number(total.cachedInputTokens) }),
-          ...(number(total.outputTokens) === undefined
+            : { inputTokens: finiteNumber(total.inputTokens) }),
+          ...(finiteNumber(total.cachedInputTokens) === undefined
             ? {}
-            : { outputTokens: number(total.outputTokens) }),
-          ...(number(total.reasoningOutputTokens) === undefined
+            : { cachedInputTokens: finiteNumber(total.cachedInputTokens) }),
+          ...(finiteNumber(total.outputTokens) === undefined
             ? {}
-            : { reasoningOutputTokens: number(total.reasoningOutputTokens) }),
-          ...(number(total.totalTokens) === undefined
+            : { outputTokens: finiteNumber(total.outputTokens) }),
+          ...(finiteNumber(total.reasoningOutputTokens) === undefined
             ? {}
-            : { totalTokens: number(total.totalTokens) })
+            : { reasoningOutputTokens: finiteNumber(total.reasoningOutputTokens) }),
+          ...(finiteNumber(total.totalTokens) === undefined
+            ? {}
+            : { totalTokens: finiteNumber(total.totalTokens) })
         },
         subjectId: session.key
       })
