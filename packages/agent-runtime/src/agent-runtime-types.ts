@@ -38,7 +38,6 @@ export interface AgentRuntimeConfig {
   readonly env?: NodeJS.ProcessEnv
   readonly executableExists?: (name: string, env: NodeJS.ProcessEnv) => boolean
   readonly locateExecutable?: (name: string, env: NodeJS.ProcessEnv) => string | undefined
-  readonly harnessInspectionTimeoutMs?: number
   /// Server-owned terminals for agent background processes; providers surface
   /// long-running agent commands through it as attachable terminal tabs.
   /// Absent (tests, embedded runtimes), providers keep the plain behavior.

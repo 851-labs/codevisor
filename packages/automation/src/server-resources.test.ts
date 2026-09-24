@@ -40,24 +40,6 @@ describe("server resources", () => {
     ).toBe(helper)
   })
 
-  it("prefers an explicit resource directory over layout compatibility fallbacks", () => {
-    const root = temporaryDirectory()
-    const explicit = join(root, "explicit")
-    const fallback = join(root, "runtime", "packages", "automation", "resources")
-    mkdirSync(explicit, { recursive: true })
-    mkdirSync(fallback, { recursive: true })
-    writeFileSync(join(explicit, "asset.txt"), "explicit")
-    writeFileSync(join(fallback, "asset.txt"), "fallback")
-
-    expect(
-      findServerResource("asset.txt", {
-        resourceDirectory: explicit,
-        moduleDirectory: join(root, "runtime", "dist"),
-        workingDirectory: join(root, "runtime")
-      })
-    ).toBe(join(explicit, "asset.txt"))
-  })
-
   it("honors the production resource-root override and reports missing required assets", () => {
     const root = temporaryDirectory()
     vi.stubEnv("CODEVISOR_SERVER_RESOURCES", root)

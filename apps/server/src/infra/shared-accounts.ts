@@ -435,7 +435,6 @@ export const makeSharedAccounts = (options: {
         return {
           id: account.id,
           profileKind: "managed",
-          profilePath: path,
           env:
             account.harnessId === "codex"
               ? { CODEX_HOME: path, OPENAI_API_KEY: bundle.accessToken }
@@ -445,7 +444,6 @@ export const makeSharedAccounts = (options: {
         return {
           id: account.id,
           profileKind: "managed",
-          profilePath: path,
           env: { CODEX_HOME: path },
           oauth: {
             token: async (rejected) => {
@@ -462,7 +460,6 @@ export const makeSharedAccounts = (options: {
       return {
         id: account.id,
         profileKind: "managed",
-        profilePath: path,
         env: {
           CLAUDE_CONFIG_DIR: path,
           CLAUDE_CODE_OAUTH_TOKEN: bundle.accessToken,

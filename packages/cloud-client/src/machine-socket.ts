@@ -60,6 +60,9 @@ export const reconnectDelayMs = (
 /// used for the flush-early threshold.
 const ENVELOPE_OVERHEAD_BYTES = 128
 
+/// Flush immediately once this much payload is buffered.
+const MAX_BUFFERED_BYTES = 256 * 1024
+
 export interface RelayOutboxOptions {
   /// Delivers one encoded binary relay message (may contain many envelopes).
   send: (message: Uint8Array) => void
@@ -70,8 +73,6 @@ export interface RelayOutboxOptions {
   /// few messages instead of hundreds, which is what the hub bills and what
   /// wakes radios; the added latency is far below network RTT.
   coalesceMs: number
-  /// Flush immediately once this much payload is buffered (default 256 KiB).
-  maxBufferedBytes?: number
 }
 
 /// Order-preserving buffer of outgoing relay envelopes for one socket. All
@@ -92,7 +93,7 @@ export class RelayOutbox {
     }
     this.#pending.push({ header, payload })
     this.#pendingBytes += payload.byteLength + ENVELOPE_OVERHEAD_BYTES
-    if (this.#pendingBytes >= (this.options.maxBufferedBytes ?? 256 * 1024)) {
+    if (this.#pendingBytes >= MAX_BUFFERED_BYTES) {
       this.flush()
       return
     }

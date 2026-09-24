@@ -13,8 +13,6 @@ import { makeCursorExtension } from "./extension.js"
 
 export interface CursorProviderConfig {
   readonly connector?: AcpConnector
-  readonly authProbeTimeoutMs?: number
-  readonly connectTimeoutMs?: number
   readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
@@ -28,16 +26,10 @@ export const makeCursorProvider = (
       extension: makeCursorExtension,
       ...(config.backgroundTerminals === undefined
         ? {}
-        : { backgroundTerminals: config.backgroundTerminals }),
-      ...(config.connectTimeoutMs === undefined
-        ? {}
-        : { connectTimeoutMs: config.connectTimeoutMs })
+        : { backgroundTerminals: config.backgroundTerminals })
     })
   return makeAcpProvider(environment, {
     connector,
-    providerId: "cursor",
-    ...(config.authProbeTimeoutMs === undefined
-      ? {}
-      : { authProbeTimeoutMs: config.authProbeTimeoutMs })
+    providerId: "cursor"
   })
 }

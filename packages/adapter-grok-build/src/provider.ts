@@ -13,8 +13,6 @@ import { makeGrokBuildExtension } from "./extension.js"
 
 export interface GrokBuildProviderConfig {
   readonly connector?: AcpConnector
-  readonly authProbeTimeoutMs?: number
-  readonly connectTimeoutMs?: number
   readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
@@ -29,16 +27,10 @@ export const makeGrokBuildProvider = (
       terminalCommandMode: "shell",
       ...(config.backgroundTerminals === undefined
         ? {}
-        : { backgroundTerminals: config.backgroundTerminals }),
-      ...(config.connectTimeoutMs === undefined
-        ? {}
-        : { connectTimeoutMs: config.connectTimeoutMs })
+        : { backgroundTerminals: config.backgroundTerminals })
     })
   return makeAcpProvider(environment, {
     connector,
-    providerId: "grok-build",
-    ...(config.authProbeTimeoutMs === undefined
-      ? {}
-      : { authProbeTimeoutMs: config.authProbeTimeoutMs })
+    providerId: "grok-build"
   })
 }

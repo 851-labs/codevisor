@@ -105,25 +105,22 @@ export interface AcpProviderConfig {
   /// keeps `acp`; packages that compose its transport register their own id.
   readonly providerId?: ProviderId
   readonly connector?: AcpConnector
-  /// Bounds the authentication-only ACP session used during discovery. Some
-  /// agents accept initialize but never answer session/new; discovery must
-  /// still settle and tear down their process.
-  readonly authProbeTimeoutMs?: number
-  /// Bounds the ACP initialize handshake for stdio agents.
-  readonly connectTimeoutMs?: number
   /// When set, the client advertises the ACP `terminal` capability and backs
   /// `terminal/*` with server-owned processes (surfaced as terminal tabs once
   /// they outlive the promotion delay).
   readonly backgroundTerminals?: BackgroundTerminalIntegration
 }
 
+/// Bounds the authentication-only ACP session used during discovery. Some
+/// agents accept initialize but never answer session/new; discovery must
+/// still settle and tear down their process.
+const authProbeTimeoutMs = 10_000
+
 export const makeAcpProvider = (
   environment: ProviderEnvironment,
   config: AcpProviderConfig = {}
 ): AgentProvider => {
-  const authProbeTimeoutMs = config.authProbeTimeoutMs ?? 10_000
-  const connector =
-    config.connector ?? makeStdioAcpConnector(config.backgroundTerminals, config.connectTimeoutMs)
+  const connector = config.connector ?? makeStdioAcpConnector(config.backgroundTerminals)
 
   const connect = (
     definition: HarnessDefinition,

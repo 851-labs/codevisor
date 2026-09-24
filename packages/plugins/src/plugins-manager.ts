@@ -109,12 +109,10 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     listInstalled: () => scanPlugins(pluginsRoot).plugins,
     platform,
     ...(config.codevisorVersion === undefined ? {} : { codevisorVersion: config.codevisorVersion }),
-    ...(config.createUpdatePlanId === undefined ? {} : { createPlanId: config.createUpdatePlanId }),
     ...(config.fetchPluginRegistry === undefined
       ? {}
       : { fetchRegistry: config.fetchPluginRegistry }),
-    ...(config.now === undefined ? {} : { now: config.now }),
-    ...(config.updatePlanTtlMs === undefined ? {} : { planTtlMs: config.updatePlanTtlMs })
+    ...(config.now === undefined ? {} : { now: config.now })
   })
 
   const summarize = (plugin: InstalledPlugin): PluginSummary =>

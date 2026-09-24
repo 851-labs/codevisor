@@ -123,17 +123,16 @@ describe("@codevisor/agent-runtime", () => {
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
-      harnessInspectionTimeoutMs: 10,
       locateExecutable: (name) => `/bin/${name}`
     })
 
     const timedOut = expect(
       run(runtime.inspectHarness("gemini", "/tmp/hang-inspection"))
     ).rejects.toMatchObject({
-      message: "Harness inspection timed out after 10ms",
+      message: "Harness inspection timed out after 15000ms",
       operation: "inspectHarness"
     })
-    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(15_000)
     await timedOut
     expect(connector.connections[0]?.closeCount).toBe(1)
   })

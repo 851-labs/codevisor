@@ -167,7 +167,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     inspectHarness: (harnessId, cwd, account, configSelections) =>
       Effect.gen(function* () {
         const { definition, provider } = yield* definitionFor(harnessId)
-        const timeoutMs = config.harnessInspectionTimeoutMs ?? 15_000
+        const timeoutMs = 15_000
         const created = yield* provider
           .createSession(
             definition,

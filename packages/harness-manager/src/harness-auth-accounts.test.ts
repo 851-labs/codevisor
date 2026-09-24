@@ -85,7 +85,7 @@ describe("Claude account selection", () => {
     })
     await expect(manager.accountContext(selected.id)).resolves.toMatchObject({
       id: selected.id,
-      profilePath: selectedProfile
+      env: { CLAUDE_CONFIG_DIR: selectedProfile }
     })
     const sharedProjects = realpathSync(join(directory, ".claude", "projects"))
     expect(realpathSync(join(exhaustedProfile, "projects"))).toBe(sharedProjects)
