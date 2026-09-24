@@ -16,15 +16,6 @@ export interface ProcessTableEntry {
   readonly command: string
 }
 
-/// Parses `ps -axo pid=,ppid=,command=` output (two right-aligned numeric
-/// columns, then the full argv).
-export const parseProcessTable = (psOutput: string): Array<ProcessTableEntry> =>
-  psOutput.split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line)
-    if (match === null) return []
-    return [{ command: match[3]!, pid: Number(match[1]), ppid: Number(match[2]) }]
-  })
-
 /// Pids to SIGTERM for one command: every descendant of `rootPid` whose argv
 /// contains the command string (falling back to its first line for very long
 /// scripts that ps may truncate), plus each match's own descendants so a

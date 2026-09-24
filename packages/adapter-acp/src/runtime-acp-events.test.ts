@@ -1,5 +1,4 @@
 import {
-  toEventEnvelope,
   type QuestionAnswer,
   type RuntimeEmit,
   type RuntimeEvent,
@@ -438,20 +437,7 @@ describe("@codevisor/agent-runtime", () => {
     ])
   })
 
-  it("materializes runtime events as envelopes", () => {
-    expect(
-      toEventEnvelope("server", 7, {
-        kind: "session.output",
-        subjectId: "session-1",
-        payload: { text: "chunk" }
-      })
-    ).toMatchObject({
-      id: 7,
-      serverId: "server",
-      kind: "session.output",
-      subjectId: "session-1",
-      payload: { text: "chunk" }
-    })
+  it("speaks ACP protocol version 1", () => {
     expect(acpProtocolVersion).toBe(1)
   })
 })

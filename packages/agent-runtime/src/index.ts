@@ -1,4 +1,4 @@
-import type { EventEnvelope, Harness } from "@codevisor/api"
+import type { Harness } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
 import { Cause, Context, Effect, Layer } from "effect"
 
@@ -6,7 +6,7 @@ import { makeAgentRuntimeCore, withoutBuiltinCollisions } from "./agent-runtime-
 import { makeAgentSessionOperations } from "./agent-runtime-sessions.js"
 import type { AgentRuntimeConfig, AgentRuntimeService } from "./agent-runtime-types.js"
 import { harnessCatalog } from "./harness-catalog.js"
-import { adapterPromise, runtimeError, type RuntimeEvent } from "./types.js"
+import { adapterPromise, runtimeError } from "./types.js"
 
 export * from "./types.js"
 export * from "./attachments.js"
@@ -281,16 +281,3 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
     ...makeAgentSessionOperations(core)
   }
 }
-
-export const toEventEnvelope = (
-  serverId: string,
-  id: number,
-  event: RuntimeEvent
-): EventEnvelope => ({
-  id,
-  serverId,
-  kind: event.kind,
-  subjectId: event.subjectId,
-  createdAt: isoTimestamp(),
-  payload: event.payload
-})

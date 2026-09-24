@@ -15,7 +15,7 @@ import type { PluginRegistryClient, PluginsManager } from "@codevisor/plugins"
 import type { SkillsManager } from "@codevisor/skills"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import type { ServerUpdateChannel } from "@codevisor/updater"
-import { Context, Effect, Layer, PubSub, Schema } from "effect"
+import { Effect, PubSub, Schema } from "effect"
 
 import type { SessionActivityController } from "./infra/active-work-sleep-inhibitor.js"
 import type { BrowserProxy } from "./infra/browser-proxy.js"
@@ -211,13 +211,6 @@ export interface RouteState {
   /// The last published release-state fingerprint, so repeated update
   /// checks with an unchanged outcome emit no update.changed event.
   readonly updateSignature: { value?: string }
-}
-
-export class CodevisorServer extends Context.Service<CodevisorServer, CodevisorServerServices>()(
-  "@codevisor/server/CodevisorServer"
-) {
-  static readonly layer = (services: CodevisorServerServices): Layer.Layer<CodevisorServer> =>
-    Layer.succeed(CodevisorServer, CodevisorServer.of(services))
 }
 
 export class EventFanout {
