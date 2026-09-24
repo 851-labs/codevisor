@@ -314,6 +314,24 @@ public struct VNCBenchOptions: Sendable, Equatable {
   }
 }
 
+/// The `vnc-server` process a bench case runs against.
+public enum VNCBenchServer {
+  /// Arguments for one case. `pace` 0 plays a scene frame per incremental
+  /// request (851-2336): that only works if the client keeps requesting, so
+  /// the server offers no continuous updates (`--requested-only`). Otherwise
+  /// the client switches to pushed updates, stops requesting, and the run
+  /// waits forever.
+  public static func arguments(
+    scene: String, echo: Bool, seed: UInt64, pace: Int, width: Int, height: Int
+  ) -> [String] {
+    [
+      "vnc-server", "--port", "0", "--no-password", "--size", "\(width)x\(height)", "--scene", scene, "--seed",
+      "\(seed)",
+    ]
+      + (echo ? ["--echo"] : []) + (pace > 0 ? ["--scene-fps", "\(pace)"] : ["--requested-only"])
+  }
+}
+
 public struct VNCBenchError: LocalizedError {
   public let errorDescription: String?
   public init(_ message: String) { errorDescription = message }

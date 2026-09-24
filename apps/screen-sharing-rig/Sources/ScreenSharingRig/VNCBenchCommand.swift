@@ -19,7 +19,8 @@
                                           [--out DIR] [--baseline FILE] [--build HASH]
       Scenes: \(VNCBenchOptions.sceneNames.joined(separator: ", ")) ("input" measures pointer echo latency).
       Profiles: \(VNCBenchOptions.profileNames.joined(separator: ", ")).
-      --pace: scene frames per second, like a real app (default 60); 0 plays a frame per request.
+      --pace: scene frames per second, like a real app (default 60); 0 plays a frame per request
+      (the server then offers no continuous updates, so the client keeps requesting).
       --out writes bench.json and bench.md; --baseline compares and exits 1 on a regression
       beyond the noise band. Prefer `bun run vnc:bench`, which builds in release mode.
       """
@@ -92,7 +93,9 @@
         group.addTask { try await work() }
         group.addTask {
           try await Task.sleep(for: limit)
-          throw VNCBenchError("\(name) took longer than \(limit); stopping")
+          throw VNCBenchError(
+            "\(name) took longer than \(limit); stopping. If no update arrived at all, the scene may be waiting "
+              + "for requests the client isn't sending (see 851-2336), or the server never started.")
         }
         defer { group.cancelAll() }
         return try await group.next()!
@@ -249,11 +252,8 @@
       ) async throws -> ServerProcess {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: Bundle.main.executablePath ?? CommandLine.arguments[0])
-        process.arguments =
-          [
-            "vnc-server", "--port", "0", "--no-password", "--size", "\(width)x\(height)", "--scene", scene, "--seed",
-            "\(seed)",
-          ] + (echo ? ["--echo"] : []) + (pace > 0 ? ["--scene-fps", "\(pace)"] : [])
+        process.arguments = VNCBenchServer.arguments(
+          scene: scene, echo: echo, seed: seed, pace: pace, width: width, height: height)
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.standardError
