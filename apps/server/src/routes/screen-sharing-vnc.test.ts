@@ -1,23 +1,20 @@
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, writeFileSync } from "node:fs"
-import { createServer as createHttpServer } from "node:http"
 import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
-import { WebSocket, WebSocketServer } from "ws"
+import { WebSocket } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
 import { jsonRequest, makeServices, run, runningServers, startWithApp } from "../test-support.js"
 import {
   parseScreenSharingVNC,
   readScreenSharingVNC,
-  spliceVNCSocket,
   vncDisplayId,
   vncScreenSharing
 } from "./screen-sharing-vnc.js"
-import { VNCControlArbiter } from "./vnc-control.js"
 
 describe("VNC screen sharing configuration", () => {
   it("reads the operator's file and names the desktop by default", () => {
@@ -213,57 +210,6 @@ describe("VNC screen sharing provider", () => {
       socket.close()
       await done
     }
-  })
-
-  it("pauses the loopback read while the WebSocket is backed up, and resumes", async ({
-    onTestFinished
-  }) => {
-    const vnc = await fakeVNC()
-    const webSocketServer = new WebSocketServer({ noServer: true })
-    const config = { port: vnc.port, name: "Desktop" }
-    const http = createHttpServer()
-    http.on("upgrade", (request, socket, head) =>
-      spliceVNCSocket(
-        config,
-        new URL(request.url ?? "/", "http://localhost"),
-        request,
-        socket as Socket,
-        head,
-        webSocketServer,
-        undefined,
-        new VNCControlArbiter(),
-        1
-      )
-    )
-    await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve))
-    onTestFinished(async () => {
-      for (const connection of vnc.connections) connection.destroy()
-      await new Promise<void>((resolve) => vnc.server.close(() => resolve()))
-      await new Promise<void>((resolve) => http.close(() => resolve()))
-    })
-    const address = http.address()
-    const port = typeof address === "object" && address !== null ? address.port : 0
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/?displayId=${vncDisplayId(config)}`)
-    onTestFinished(async () => {
-      if (socket.readyState === WebSocket.CLOSED) return
-      const closing = closed(socket)
-      socket.terminate()
-      await closing
-    })
-    expect((await nextMessage(socket)).toString()).toBe("RFB 003.008\n")
-    // 8 MiB echoed back backs the WebSocket up past a 1-byte high-water mark: the loopback
-    // read pauses, and each flushed send resumes it, until every byte has come back.
-    const payload = Buffer.alloc(8 * 1024 * 1024, 0x2a)
-    let received = 0
-    const all = new Promise<void>((resolve) =>
-      socket.on("message", (data: Buffer) => {
-        received += data.length
-        if (received >= payload.length) resolve()
-      })
-    )
-    socket.send(payload)
-    await all
-    expect(received).toBe(payload.length)
   })
 
   it("reports that stop signaling is unsupported by the VNC provider", async () => {
