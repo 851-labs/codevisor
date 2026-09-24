@@ -1,0 +1,10 @@
+{
+  "name": "@codevisor/screen-sharing-rig",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p scripts/tsconfig.json --pretty false",
+    "test": "node --test scripts/*.test.ts",
+    "test:coverage": "node --test --experimental-test-coverage scripts/*.test.ts"
+  }
+}

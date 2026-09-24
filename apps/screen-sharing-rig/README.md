@@ -10,7 +10,7 @@ A two-Mac development loop for the native screen-sharing engine: one resident ho
 | `ScreenSharingRig`         | `Sources/ScreenSharingRig`                                 | The executable: `RigRunner` (state, telemetry tick), `RigRunner+Host`, `RigRunner+Viewer`, `RigHUDView`; `Shell/` is the window: a sidebar of Machines (`RigMachine.catalog`, plus the loopback server while it runs) over a Debug section (Loopback VNC server, Native session). |
 | `ScreenSharingDiagnostics` | `apps/screen-sharing-rig/Sources/ScreenSharingDiagnostics` | Workload window, painter and synthetic source shared with the probe.                                                                                                                                                                                                              |
 
-The bundle is `~/Applications/CodevisorRig/ScreenSharingRig.app` (`com.codevisor.ScreenSharingRig`), built and signed by `apps/screen-sharing-rig/scripts/screen-sharing-rig.mjs` with the login keychain's Apple Development identity so Screen Recording, Accessibility and Local Network grants survive rebuilds.
+The bundle is `~/Applications/CodevisorRig/ScreenSharingRig.app` (`com.codevisor.ScreenSharingRig`), built and signed by `apps/screen-sharing-rig/scripts/screen-sharing-rig.ts` with the login keychain's Apple Development identity so Screen Recording, Accessibility and Local Network grants survive rebuilds.
 
 ## Commands
 
@@ -36,7 +36,7 @@ The Loopback VNC server tab runs `RFBLoopbackServer`, the reference server VNC c
 The probe, the single-process capture → encode → WebRTC → decode → render diagnostic, is command-line only: `--loopback` (default) or `--send`/`--receive` across two Macs with offer/answer files, ending in a JSON report.
 
 ```sh
-bun apps/screen-sharing-rig/scripts/screen-sharing-probe.mjs --help
+bun apps/screen-sharing-rig/scripts/screen-sharing-probe.ts --help
 swift run --package-path apps/screen-sharing-rig screen-sharing-rig probe --loopback --duration 10 --report /tmp/probe.json
 ```
 

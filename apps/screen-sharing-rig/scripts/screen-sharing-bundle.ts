@@ -10,14 +10,28 @@ export const rigIdentity = Object.freeze({
 
 export const signingIdentityVariable = "CODEVISOR_RIG_SIGN_IDENTITY"
 
+export interface CodesigningIdentity {
+  hash: string
+  name: string
+  valid: boolean
+}
+
+export interface SigningChoice {
+  identity: string
+  adHoc: boolean
+  source?: "environment" | "keychain"
+  warning?: string
+}
+
 /// Parse `security find-identity -v -p codesigning` output. Lines that carry a
 /// trailing status such as `(CSSMERR_TP_CERT_REVOKED)` are not usable.
-export function parseCodesigningIdentities(text) {
-  const identities = []
+export function parseCodesigningIdentities(text: string): CodesigningIdentity[] {
+  const identities: CodesigningIdentity[] = []
   for (const line of text.split("\n")) {
     const match = /^\s*\d+\)\s+([0-9A-F]{40})\s+"([^"]+)"(?:\s+\((\w+)\))?\s*$/.exec(line)
     if (!match) continue
-    identities.push({ hash: match[1], name: match[2], valid: match[3] === undefined })
+    const [, hash = "", name = "", status] = match
+    identities.push({ hash, name, valid: status === undefined })
   }
   return identities
 }
@@ -27,7 +41,13 @@ export function parseCodesigningIdentities(text) {
 /// Ad-hoc signing pins TCC grants to the code hash, which is the churn the rig
 /// exists to remove, so it is never silent. Developer ID is deliberately not
 /// selected automatically: the rig must not look like a shipping artifact.
-export function resolveSigningIdentity({ env = {}, identities = [] }) {
+export function resolveSigningIdentity({
+  env = {},
+  identities = []
+}: {
+  env?: Record<string, string | undefined>
+  identities?: CodesigningIdentity[]
+}): SigningChoice {
   const override = env[signingIdentityVariable]?.trim()
   if (override) {
     if (override === "-") {
@@ -54,13 +74,18 @@ export function resolveSigningIdentity({ env = {}, identities = [] }) {
   }
 }
 
-function adHocWarning(reason) {
+function adHocWarning(reason: string): string {
   return `WARNING: signing ad hoc (${reason}). Screen Recording and Accessibility grants will be tied to this build's code hash and lost on the next rebuild. Set ${signingIdentityVariable} or add an Apple Development certificate to the login keychain.`
 }
 
-const xmlEscapes = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
-function escapeXML(value) {
-  return String(value).replace(/[&<>"]/g, (character) => xmlEscapes[character])
+const xmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }
+function escapeXML(value: string): string {
+  return value.replace(/[&<>"]/g, (character) => xmlEscapes[character] ?? character)
+}
+
+export type PlistValue = string | boolean | PlistDictionary
+export interface PlistDictionary {
+  [key: string]: PlistValue
 }
 
 /// Info.plist for a diagnostic bundle. Keys are emitted sorted so two builds of
@@ -71,8 +96,14 @@ export function diagnosticInfoPlist({
   executableName,
   configuration,
   extra = {}
-}) {
-  const entries = {
+}: {
+  bundleIdentifier: string
+  displayName: string
+  executableName: string
+  configuration: string
+  extra?: PlistDictionary
+}): string {
+  const entries: PlistDictionary = {
     CFBundleIdentifier: bundleIdentifier,
     CFBundleName: displayName,
     CFBundleDisplayName: displayName,
@@ -96,27 +127,40 @@ export function diagnosticInfoPlist({
 `
 }
 
-function plistValue(value) {
+function plistValue(value: PlistValue): string {
   if (typeof value === "boolean") return value ? "<true/>" : "<false/>"
-  if (value !== null && typeof value === "object") return plistDict(value)
+  if (typeof value === "object") return plistDict(value)
   return `<string>${escapeXML(value)}</string>`
 }
 
 /// Keys sorted, nested dictionaries rendered the same way.
-function plistDict(entries) {
-  const body = Object.keys(entries)
-    .toSorted()
-    .map((key) => `<key>${escapeXML(key)}</key>${plistValue(entries[key])}`)
+function plistDict(entries: PlistDictionary): string {
+  const body = Object.entries(entries)
+    .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `<key>${escapeXML(key)}</key>${plistValue(value)}`)
     .join("\n")
   return `<dict>\n${body}\n</dict>`
 }
 
+export type CommandRunner = (command: string, args: string[]) => unknown
+export type CommandCapture = (command: string, args: string[]) => string | Promise<string>
+
 /// Sign nested code before the app, inside out, with one identity and no
 /// timestamp server. Returns the commands issued so callers can log them.
-export async function signDiagnosticApp({ app, frameworks, identity, run }) {
+export async function signDiagnosticApp({
+  app,
+  frameworks,
+  identity,
+  run
+}: {
+  app: string
+  frameworks: string[]
+  identity: string
+  run: CommandRunner
+}): Promise<string[][]> {
   if (!identity) throw new Error("A signing identity is required (use - for ad hoc).")
-  const commands = []
-  const sign = async (path) => {
+  const commands: string[][] = []
+  const sign = async (path: string) => {
     const args = ["--force", "--sign", identity, "--timestamp=none", path]
     commands.push(["/usr/bin/codesign", ...args])
     await run("/usr/bin/codesign", args)
@@ -130,7 +174,13 @@ export async function signDiagnosticApp({ app, frameworks, identity, run }) {
 
 /// The designated requirement is what TCC pins a grant to. Read it back so a
 /// build can prove it did not change from the previous build.
-export async function designatedRequirement({ app, capture }) {
+export async function designatedRequirement({
+  app,
+  capture
+}: {
+  app: string
+  capture: CommandCapture
+}): Promise<string> {
   const output = await capture("/usr/bin/codesign", ["-d", "-r-", app])
   const line = output
     .split("\n")

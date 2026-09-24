@@ -23,12 +23,22 @@ import {
   resolveSigningIdentity,
   rigIdentity,
   signDiagnosticApp
-} from "./screen-sharing-bundle.mjs"
-import { endpointsFor, http, summarize } from "./screen-sharing-rig-client.mjs"
+} from "./screen-sharing-bundle.ts"
+import {
+  endpointsFor,
+  http,
+  summarize,
+  type ControlCheckResult,
+  type HudResult,
+  type RigStatus,
+  type SampleResult,
+  type SourceResult
+} from "./screen-sharing-rig-client.ts"
 import {
   bootstrapPlan,
   buildInfoExtras,
   deployPlan,
+  errorMessage,
   launchAgentPlist,
   parseRigArguments,
   quote,
@@ -36,9 +46,15 @@ import {
   rigInstallDirectory,
   parseTuningArgument,
   rigLaunchAgentLabel,
+  rigUsage as usage,
   stopPlan,
-  withTuning
-} from "./screen-sharing-rig-lib.mjs"
+  stringOption,
+  withTuning,
+  type DeployRecord,
+  type Plan,
+  type RigCommand,
+  type RigConfiguration
+} from "./screen-sharing-rig-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const packagePath = join(root, "apps/screen-sharing-rig")
@@ -51,29 +67,11 @@ const plistPath = join(home, "Library/LaunchAgents", `${rigLaunchAgentLabel}.pli
 const logDirectory = join(home, "Library/Logs/CodevisorRig")
 const buildApp = join(root, "tmp/screen-sharing", rigIdentity.appName)
 
-const usage = `Usage: bun run screen-sharing:rig <command> [options]
-
-  build   [--debug] [--build-only]      Build + sign tmp/screen-sharing/${rigIdentity.appName}; install locally unless --build-only
-  install --host USER@SSHHOST --host-address IP [--capture SRC] [--token T] [--port N] [--control-port N] [--no-hud] [--debug]
-                                        Configure this Mac as the viewer and SSHHOST as the host, build, deploy both, start both agents
-  deploy  [--debug]                     Build, push to both Macs, restart both agents (the everyday loop)
-  status                                Show both ends' connection, session and build
-  stop    [--all]                       Unload the local agent (and the host's with --all)
-  sample  --seconds N [--report PATH]   Ask the viewer for an N-second telemetry sample (HUD off during it)
-  hud     on|off [--host]               Toggle the viewer (or host) overlay
-  tune    JSON|paced15-worker|default   Write engine tuning (and codec/bitrate) into both configs; restarts both agents
-  control-check [--clicks N] [--keys M] Ask for control, click the host's workload N times (default 5) and press space M times, release; verifies delivery
-  source  SPEC                          Switch the host's capture source live (synthetic, workload:WxH@fps, virtual:WxH@fps, virtual-desktop:WxH@fps, app:BUNDLE, window:ID, display:ID)
-  logs                                  Tail both rig logs
-
-Capture sources: synthetic (default), workload:WxH@fps (own window, no permission), virtual:WxH@fps (private CGVirtualDisplay with the workload window on it; needs Screen Recording), display:ID (needs Screen Recording).
-`
-
 const { command, options, positional } = (() => {
   try {
     return parseRigArguments(process.argv.slice(2))
   } catch (error) {
-    process.stderr.write(`${error.message}\n\n${usage}`)
+    process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
     process.exit(2)
   }
 })()
@@ -83,11 +81,25 @@ if (options.help || options.h) {
 }
 if (process.platform !== "darwin") throw new Error("The Screen Sharing rig requires macOS.")
 
-function run(commandName, args, { capture = false, input, allowFailure = false } = {}) {
+function localUid(): number {
+  const uid = process.getuid?.()
+  if (uid === undefined) throw new Error("Cannot read this Mac's uid.")
+  return uid
+}
+
+function run(
+  commandName: string,
+  args: readonly string[],
+  {
+    capture = false,
+    input,
+    allowFailure = false
+  }: { capture?: boolean; input?: string; allowFailure?: boolean } = {}
+): string {
   const result = spawnSync(commandName, args, {
     cwd: root,
     stdio: [input === undefined ? "inherit" : "pipe", capture ? "pipe" : "inherit", "inherit"],
-    input,
+    ...(input === undefined ? {} : { input }),
     encoding: "utf8"
   })
   if (result.error) throw result.error
@@ -96,28 +108,30 @@ function run(commandName, args, { capture = false, input, allowFailure = false }
   }
   return result.stdout?.trim()
 }
-const runPlan = (plan) => plan.forEach(([commandName, ...args]) => run(commandName, args))
-
-function readJSON(path) {
-  return JSON.parse(readFileSync(path, "utf8"))
+function runPlan(plan: Plan): void {
+  for (const [commandName, ...args] of plan) run(commandName, args)
 }
-function readLocalConfig() {
+
+function readJSON<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T
+}
+function readLocalConfig(): RigConfiguration {
   if (!existsSync(localConfigPath))
     throw new Error(`No rig on this Mac yet: ${localConfigPath}. Run install first.`)
-  return readJSON(localConfigPath)
+  return readJSON<RigConfiguration>(localConfigPath)
 }
-function readDeployRecord() {
+function readDeployRecord(): DeployRecord {
   if (!existsSync(deployRecordPath))
     throw new Error(`No deploy record: ${deployRecordPath}. Run install first.`)
-  return readJSON(deployRecordPath)
+  return readJSON<DeployRecord>(deployRecordPath)
 }
 
 // ---------------------------------------------------------------- build
 
-function build({ debug = false, install = true } = {}) {
+async function build({ debug = false, install = true } = {}): Promise<string> {
   const configuration = debug ? "debug" : "release"
   const identities = parseCodesigningIdentities(
-    run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], { capture: true }) ?? ""
+    run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], { capture: true })
   )
   const signing = resolveSigningIdentity({ env: process.env, identities })
   if (signing.warning) process.stderr.write(`${signing.warning}\n`)
@@ -127,10 +141,10 @@ function build({ debug = false, install = true } = {}) {
   const commit =
     run("git", ["rev-parse", "HEAD"], { capture: true, allowFailure: true }) || "unknown"
   const dirty =
-    (run("git", ["status", "--porcelain", "--untracked-files=no"], {
+    run("git", ["status", "--porcelain", "--untracked-files=no"], {
       capture: true,
       allowFailure: true
-    }) ?? "") !== ""
+    }) !== ""
   run("swift", [
     "build",
     "--package-path",
@@ -173,27 +187,25 @@ function build({ debug = false, install = true } = {}) {
     })
   )
   run("install_name_tool", ["-add_rpath", "@executable_path/../Frameworks", executable])
-  return (async () => {
-    await signDiagnosticApp({
-      app: buildApp,
-      frameworks: [framework],
-      identity: signing.identity,
-      run: (c, a) => run(c, a)
-    })
-    run("/usr/bin/codesign", ["--verify", "--deep", "--strict", buildApp])
-    const requirement = await designatedRequirement({
-      app: buildApp,
-      capture: (c, a) => run(c, a, { capture: true })
-    })
-    process.stdout.write(
-      `Built ${buildApp} (${commit.slice(0, 8)}${dirty ? "*" : ""} ${configuration})\nDesignated requirement: ${requirement}\n`
-    )
-    if (install) installLocally()
-    return buildApp
-  })()
+  await signDiagnosticApp({
+    app: buildApp,
+    frameworks: [framework],
+    identity: signing.identity,
+    run: (c, a) => run(c, a)
+  })
+  run("/usr/bin/codesign", ["--verify", "--deep", "--strict", buildApp])
+  const requirement = await designatedRequirement({
+    app: buildApp,
+    capture: (c, a) => run(c, a, { capture: true })
+  })
+  process.stdout.write(
+    `Built ${buildApp} (${commit.slice(0, 8)}${dirty ? "*" : ""} ${configuration})\nDesignated requirement: ${requirement}\n`
+  )
+  if (install) installLocally()
+  return buildApp
 }
 
-function installLocally() {
+function installLocally(): void {
   mkdirSync(installDirectory, { recursive: true })
   const staging = join(installDirectory, `.staging-${rigIdentity.appName}`)
   const previous = join(installDirectory, `.previous-${rigIdentity.appName}`)
@@ -208,7 +220,7 @@ function installLocally() {
 
 // ---------------------------------------------------------------- install / deploy
 
-function remoteFacts(target) {
+function remoteFacts(target: string): { remoteHome: string; remoteUid: number } {
   const [remoteHome, uid] = run("ssh", ["-o", "BatchMode=yes", target, 'echo "$HOME"; id -u'], {
     capture: true
   }).split("\n")
@@ -216,7 +228,7 @@ function remoteFacts(target) {
   return { remoteHome, remoteUid: Number(uid) }
 }
 
-function writeRemoteFile(target, path, content) {
+function writeRemoteFile(target: string, path: string, content: string): void {
   run(
     "ssh",
     ["-o", "BatchMode=yes", target, `mkdir -p ${quote(dirname(path))} && cat > ${quote(path)}`],
@@ -224,14 +236,16 @@ function writeRemoteFile(target, path, content) {
   )
 }
 
-async function install() {
-  const target = options.host
-  const hostAddress = options["host-address"]
+async function install(): Promise<void> {
+  const target = stringOption(options, "host")
+  const hostAddress = stringOption(options, "host-address")
   if (!target || !hostAddress)
     throw new Error("install needs --host USER@SSHHOST and --host-address IP\n\n" + usage)
-  const token = options.token ?? randomBytes(24).toString("hex")
-  const port = options.port ? Number(options.port) : undefined
-  const controlPort = options["control-port"] ? Number(options["control-port"]) : undefined
+  const token = stringOption(options, "token") ?? randomBytes(24).toString("hex")
+  const portOption = stringOption(options, "port")
+  const port = portOption ? Number(portOption) : undefined
+  const controlPortOption = stringOption(options, "control-port")
+  const controlPort = controlPortOption ? Number(controlPortOption) : undefined
   const hud = !options["no-hud"]
   const viewer = rigConfiguration({
     role: "viewer",
@@ -247,7 +261,7 @@ async function install() {
     port,
     controlPort,
     hud,
-    capture: options.capture ?? "synthetic"
+    capture: stringOption(options, "capture") ?? "synthetic"
   })
   const { remoteHome, remoteUid } = remoteFacts(target)
   const remoteInstall = `${remoteHome}/${rigInstallDirectory}`
@@ -289,19 +303,19 @@ async function install() {
   )
 
   await build({ debug: Boolean(options.debug), install: false })
-  runPlan(deployPlan({ builtApp: buildApp, home, uid: process.getuid() }))
+  runPlan(deployPlan({ builtApp: buildApp, home, uid: localUid() }))
   runPlan(deployPlan({ builtApp: buildApp, home: remoteHome, uid: remoteUid, remote: target }))
   runPlan(bootstrapPlan({ uid: remoteUid, plistPath: remotePlist, remote: target }))
-  runPlan(bootstrapPlan({ uid: process.getuid(), plistPath }))
+  runPlan(bootstrapPlan({ uid: localUid(), plistPath }))
   process.stdout.write(
     `Installed. Token is in ${localConfigPath} and ${target}:${remoteConfig}. Try: bun run screen-sharing:rig status\n`
   )
 }
 
-async function deploy() {
+async function deploy(): Promise<void> {
   const record = readDeployRecord()
   await build({ debug: Boolean(options.debug), install: false })
-  runPlan(deployPlan({ builtApp: buildApp, home, uid: process.getuid() }))
+  runPlan(deployPlan({ builtApp: buildApp, home, uid: localUid() }))
   runPlan(
     deployPlan({
       builtApp: buildApp,
@@ -317,39 +331,40 @@ async function deploy() {
 
 const endpoints = () => endpointsFor(readLocalConfig())
 
-async function status() {
+async function status(): Promise<void> {
   const { token, viewer, host } = endpoints()
   for (const [label, base] of [
     ["viewer", viewer],
     ["host", host]
-  ]) {
+  ] as const) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- sequential output is the point
-      process.stdout.write(`${summarize(await http("GET", `${base}/status`, token))}\n`)
+      process.stdout.write(`${summarize(await http<RigStatus>("GET", `${base}/status`, token))}\n`)
     } catch (error) {
-      process.stdout.write(`${label.padEnd(6)} unreachable at ${base}: ${error.message}\n`)
+      process.stdout.write(`${label.padEnd(6)} unreachable at ${base}: ${errorMessage(error)}\n`)
     }
   }
 }
 
-async function sample() {
-  const seconds = Number(options.seconds)
+async function sample(): Promise<void> {
+  const seconds = Number(stringOption(options, "seconds"))
   if (!Number.isInteger(seconds) || seconds < 1) throw new Error("sample needs --seconds N")
-  const report = options.report
-    ? resolve(options.report)
+  const reportOption = stringOption(options, "report")
+  const report = reportOption
+    ? resolve(reportOption)
     : join(
         root,
         "tmp/screen-sharing/rig-samples",
         `${new Date().toISOString().replace(/[:.]/g, "-")}.json`
       )
   const { token, viewer } = endpoints()
-  const result = await http("POST", `${viewer}/sample`, token, { seconds, report })
+  const result = await http<SampleResult>("POST", `${viewer}/sample`, token, { seconds, report })
   process.stdout.write(
     `${result.samples} samples, mean presented ${result.meanPresentedFramesPerSecond?.toFixed(1) ?? "-"} fps → ${result.report}\n`
   )
 }
 
-function tune() {
+function tune(): void {
   const tuning = parseTuningArgument(positional[0])
   const record = readDeployRecord()
   const local = withTuning(readLocalConfig(), tuning)
@@ -360,7 +375,7 @@ function tune() {
       run("ssh", ["-o", "BatchMode=yes", record.hostSSH, `cat ${quote(remoteConfig)}`], {
         capture: true
       })
-    ),
+    ) as RigConfiguration,
     tuning
   )
   writeRemoteFile(record.hostSSH, remoteConfig, JSON.stringify(remote, null, 2) + "\n")
@@ -370,24 +385,26 @@ function tune() {
     record.hostSSH,
     `launchctl kickstart -k gui/${record.remoteUid}/${rigLaunchAgentLabel}`
   ])
-  run("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${rigLaunchAgentLabel}`])
+  run("launchctl", ["kickstart", "-k", `gui/${localUid()}/${rigLaunchAgentLabel}`])
   process.stdout.write(
     `tuning ${tuning === null ? "removed" : JSON.stringify(tuning)}; both agents restarted.\n`
   )
 }
 
-async function controlCheck() {
-  const clicks = options.clicks === undefined ? 5 : Number(options.clicks)
-  const keys = options.keys === undefined ? 0 : Number(options.keys)
+async function controlCheck(): Promise<void> {
+  const clicksOption = stringOption(options, "clicks")
+  const keysOption = stringOption(options, "keys")
+  const clicks = clicksOption === undefined ? 5 : Number(clicksOption)
+  const keys = keysOption === undefined ? 0 : Number(keysOption)
   for (const [name, value] of [
     ["clicks", clicks],
     ["keys", keys]
-  ]) {
+  ] as const) {
     if (!Number.isInteger(value) || value < 0 || value > 100)
       throw new Error(`control-check needs --${name} 0...100`)
   }
   const { token, viewer } = endpoints()
-  const result = await http("POST", `${viewer}/control-check`, token, {
+  const result = await http<ControlCheckResult>("POST", `${viewer}/control-check`, token, {
     clicks,
     keys,
     x: 0.5,
@@ -395,7 +412,10 @@ async function controlCheck() {
     seconds: 15
   })
   const expected = (result.clicksSent ?? 0) + (result.keysSent ?? 0)
-  const delivered = result.responsesAfter - result.responsesBefore === expected
+  const delivered =
+    result.responsesAfter !== undefined &&
+    result.responsesBefore !== undefined &&
+    result.responsesAfter - result.responsesBefore === expected
   const outcome = result.granted
     ? `granted · ${result.clicksSent} clicks · ${result.keysSent ?? 0} keys · host responses ${result.responsesBefore ?? "?"} → ${result.responsesAfter ?? "?"} · ${delivered ? "DELIVERED" : "NOT delivered"} · released: ${result.revokedReason ?? "no revoke seen"}`
     : `denied: ${result.deniedReason}`
@@ -403,25 +423,27 @@ async function controlCheck() {
   if (!result.granted || !delivered) process.exitCode = 1
 }
 
-async function source() {
+async function source(): Promise<void> {
   const spec = positional[0]
   if (!spec) throw new Error("source needs a capture spec, e.g. source app:com.apple.dt.Xcode")
   const { token, host } = endpoints()
-  const result = await http("POST", `${host}/source`, token, { capture: spec })
+  const result = await http<SourceResult>("POST", `${host}/source`, token, { capture: spec })
   process.stdout.write(
     `host source ${result.previous} → ${result.capture}${result.live ? " (live)" : " (next session)"}\n`
   )
 }
 
-async function hud() {
+async function hud(): Promise<void> {
   const enabled = positional[0] === "on" ? true : positional[0] === "off" ? false : null
   if (enabled === null) throw new Error("hud needs on|off")
   const { token, viewer, host } = endpoints()
-  const result = await http("POST", `${options.host ? host : viewer}/hud`, token, { enabled })
+  const result = await http<HudResult>("POST", `${options.host ? host : viewer}/hud`, token, {
+    enabled
+  })
   process.stdout.write(`${options.host ? "host" : "viewer"} HUD ${result.enabled ? "on" : "off"}\n`)
 }
 
-function logs() {
+function logs(): void {
   const record = readDeployRecord()
   process.stdout.write("--- viewer (this Mac) ---\n")
   run("tail", ["-n", "20", join(logDirectory, "rig.log")], { allowFailure: true })
@@ -440,8 +462,8 @@ function logs() {
   )
 }
 
-function stop() {
-  runPlan(stopPlan({ uid: process.getuid() }))
+function stop(): void {
+  runPlan(stopPlan({ uid: localUid() }))
   process.stdout.write("Local rig agent unloaded.\n")
   if (options.all) {
     const record = readDeployRecord()
@@ -450,7 +472,7 @@ function stop() {
   }
 }
 
-const handlers = {
+const handlers: Record<RigCommand, () => unknown> = {
   build: () =>
     build({
       debug: Boolean(options.debug),
@@ -470,6 +492,6 @@ const handlers = {
 try {
   await handlers[command]()
 } catch (error) {
-  process.stderr.write(`screen-sharing:rig ${command}: ${error.message}\n`)
+  process.stderr.write(`screen-sharing:rig ${command}: ${errorMessage(error)}\n`)
   process.exit(1)
 }

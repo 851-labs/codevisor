@@ -12,8 +12,9 @@ import {
   quote,
   rigConfiguration,
   rigLaunchAgentLabel,
-  stopPlan
-} from "./screen-sharing-rig-lib.mjs"
+  stopPlan,
+  stringOption
+} from "./screen-sharing-rig-lib.ts"
 
 test("launch agent runs the installed rig with its config and restarts only abnormal exits", () => {
   const plist = launchAgentPlist({
@@ -77,6 +78,7 @@ test("rig configuration validates roles, tokens, peers and capture", () => {
     }
   )
   assert.throws(() => rigConfiguration({ role: "viewer", token }), /host address/)
+  // @ts-expect-error -- rig.json and CLI input are untyped at runtime; the role check still guards it.
   assert.throws(() => rigConfiguration({ role: "admin", token }), /role/)
   assert.throws(() => rigConfiguration({ role: "host", token: "short" }), /token/)
   assert.throws(() => rigConfiguration({ role: "host", token, capture: "tab:3" }), /capture/)
@@ -102,21 +104,21 @@ test("deploy plan stages, swaps atomically, verifies and kickstarts, locally or 
       "/Users/x/Applications/CodevisorRig/.staging-ScreenSharingRig.app"
     ]
   ])
-  const swap = local[3]
+  const swap = local[3]!
   assert.equal(swap[0], "sh")
   assert.match(
-    swap[2],
+    swap[2]!,
     /mv '\/Users\/x\/Applications\/CodevisorRig\/\.staging-ScreenSharingRig\.app' '\/Users\/x\/Applications\/CodevisorRig\/ScreenSharingRig\.app'/
   )
-  assert.match(swap[2], /codesign --verify --deep --strict/)
-  assert.match(swap[2], new RegExp(`launchctl kickstart -k gui/501/${rigLaunchAgentLabel}`))
+  assert.match(swap[2]!, /codesign --verify --deep --strict/)
+  assert.match(swap[2]!, new RegExp(`launchctl kickstart -k gui/501/${rigLaunchAgentLabel}`))
   const remote = deployPlan({
     builtApp: "/repo/tmp/ScreenSharingRig.app",
     home: "/Users/tuftlord",
     uid: 501,
     remote: "tuftlord@tuftlords-macbook-pro"
   })
-  assert.equal(remote[0][0], "ssh")
+  assert.equal(remote[0]![0], "ssh")
   assert.deepEqual(remote[1], [
     "rsync",
     "-a",
@@ -124,8 +126,8 @@ test("deploy plan stages, swaps atomically, verifies and kickstarts, locally or 
     "/repo/tmp/ScreenSharingRig.app/",
     "tuftlord@tuftlords-macbook-pro:/Users/tuftlord/Applications/CodevisorRig/.staging-ScreenSharingRig.app/"
   ])
-  assert.equal(remote[2][0], "ssh")
-  assert.match(remote[2][2], /launchctl kickstart -k gui\/501/)
+  assert.equal(remote[2]![0], "ssh")
+  assert.match(remote[2]![2]!, /launchctl kickstart -k gui\/501/)
   assert.doesNotMatch(
     remote.flat().join(" "),
     /open |launchctl asuser/,
@@ -134,7 +136,7 @@ test("deploy plan stages, swaps atomically, verifies and kickstarts, locally or 
 })
 
 test("bootstrap and stop plans use the gui domain", () => {
-  const [[shell, flag, script]] = bootstrapPlan({ uid: 501, plistPath: "/p/x.plist" })
+  const [shell, flag, script = ""] = bootstrapPlan({ uid: 501, plistPath: "/p/x.plist" })[0]!
   assert.equal(`${shell} ${flag}`, "sh -c")
   assert.match(
     script,
@@ -151,8 +153,8 @@ test("bootstrap and stop plans use the gui domain", () => {
   )
   assert.ok(script.indexOf("bootout") < script.indexOf("launchctl print"))
   assert.ok(script.indexOf("launchctl print") < script.indexOf("bootstrap gui"))
-  assert.equal(bootstrapPlan({ uid: 501, plistPath: "/p/x.plist", remote: "u@h" })[0][0], "ssh")
-  assert.match(stopPlan({ uid: 501 })[0][2], /bootout gui\/501/)
+  assert.equal(bootstrapPlan({ uid: 501, plistPath: "/p/x.plist", remote: "u@h" })[0]![0], "ssh")
+  assert.match(stopPlan({ uid: 501 })[0]![2]!, /bootout gui\/501/)
 })
 
 test("argument parser defaults to build and rejects unknown commands", () => {
@@ -184,6 +186,13 @@ test("argument parser defaults to build and rejects unknown commands", () => {
     positional: ["off"]
   })
   assert.throws(() => parseRigArguments(["frobnicate"]), /Unknown command/)
+})
+
+test("value options reject a bare flag instead of passing true along", () => {
+  const { options } = parseRigArguments(["install", "--host", "u@h", "--token", "--debug"])
+  assert.equal(stringOption(options, "host"), "u@h")
+  assert.equal(stringOption(options, "capture"), undefined)
+  assert.throws(() => stringOption(options, "token"), /--token needs a value/)
 })
 
 test("shell quoting and build extras", () => {

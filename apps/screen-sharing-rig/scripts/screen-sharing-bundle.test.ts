@@ -9,7 +9,7 @@ import {
   rigIdentity,
   signDiagnosticApp,
   signingIdentityVariable
-} from "./screen-sharing-bundle.mjs"
+} from "./screen-sharing-bundle.ts"
 
 const findIdentityOutput = `Policy: Code Signing
   Matching identities
@@ -56,8 +56,11 @@ test("falls back to ad hoc with a warning when no development identity exists", 
   const resolved = resolveSigningIdentity({ identities: onlyDeveloperID })
   assert.equal(resolved.identity, "-")
   assert.equal(resolved.adHoc, true)
-  assert.match(resolved.warning, /^WARNING: signing ad hoc \(no Apple Development identity found\)/)
-  assert.match(resolved.warning, new RegExp(signingIdentityVariable))
+  assert.match(
+    resolved.warning!,
+    /^WARNING: signing ad hoc \(no Apple Development identity found\)/
+  )
+  assert.match(resolved.warning!, new RegExp(signingIdentityVariable))
 })
 
 test("environment override wins, may be a hash, and rejects revoked identities", () => {
@@ -93,7 +96,7 @@ test("environment override wins, may be a hash, and rejects revoked identities",
     identities
   })
   assert.equal(explicitAdHoc.adHoc, true)
-  assert.match(explicitAdHoc.warning, /requested through the environment/)
+  assert.match(explicitAdHoc.warning!, /requested through the environment/)
 })
 
 test("rig plist carries the fixed identity and is byte-stable across calls", () => {
@@ -132,7 +135,7 @@ test("plist escapes XML in values and keeps keys sorted", () => {
 })
 
 test("signs frameworks before the app with one identity and no timestamp", async () => {
-  const calls = []
+  const calls: string[][] = []
   const commands = await signDiagnosticApp({
     app: "/tmp/Rig.app",
     frameworks: ["/tmp/Rig.app/Contents/Frameworks/WebRTC.framework"],
