@@ -29,9 +29,13 @@ struct RFBClientLoopbackTests {
     private var eventIterator: AsyncStream<RFBServerEvent>.AsyncIterator
     let run: Task<any Error, Never>
 
-    init(configuration: RFBLoopbackServer.Configuration = .init(), password: String? = "secret") async throws {
+    init(
+      configuration: RFBLoopbackServer.Configuration = .init(), password: String? = "secret",
+      setup: (RFBClient) async -> Void = { _ in }
+    ) async throws {
       server = try await RFBLoopbackServer(configuration: configuration)
       client = try RFBClient(transport: try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port))
+      await setup(client)
       outcome = try await client.connect(password: password)
       let (updates, updateContinuation) = AsyncStream<Snapshot>.makeStream()
       let (events, eventContinuation) = AsyncStream<RFBServerEvent>.makeStream()
@@ -78,6 +82,29 @@ struct RFBClientLoopbackTests {
     #expect(
       harness.server.received.last
         == .framebufferUpdateRequest(incremental: true, RFBRectangle(x: 0, y: 0, width: 64, height: 48)))
+  }
+
+  /// 851-2361: a chosen encoding list is advertised exactly, to see what a server sends for it.
+  @Test func anAdvertisedListReplacesTheClientsEncodings() async throws {
+    let harness = try await Harness(setup: { await $0.advertise([16, -223]) })
+    defer { harness.stop() }
+    _ = await harness.nextUpdate()
+    #expect(harness.server.received.prefix(2) == [.setPixelFormat(.bgra32), .setEncodings([16, -223])])
+  }
+
+  /// 851-2360: without continuous updates, `requestDepth` requests stay outstanding.
+  @Test func pipeliningKeepsSeveralRequestsOutstanding() async throws {
+    let harness = try await Harness(setup: { await $0.setRequestPipelining(depth: 3, beforeApplying: true) })
+    defer { harness.stop() }
+    _ = await harness.nextUpdate()
+    let incremental = RFBClientMessage.framebufferUpdateRequest(
+      incremental: true, RFBRectangle(x: 0, y: 0, width: 64, height: 48))
+    #expect(await awaitPolled { harness.server.received.filter { $0 == incremental }.count == 3 })
+    // One update answers the oldest; the next header tops the queue back up to three.
+    harness.server.enqueue([.raw(RFBRectangle(x: 0, y: 0, width: 8, height: 8))])
+    let next = await harness.nextUpdate()
+    #expect(next?.update.latency != nil)
+    #expect(await awaitPolled { harness.server.received.filter { $0 == incremental }.count == 4 })
   }
 
   @Test func rawCopyRectAndZRLEUpdatesLandInTheFramebuffer() async throws {

@@ -15,6 +15,7 @@
       Usage: screen-sharing-rig vnc-sample --host H --port P [--password P | --keychain MACHINE]
                                            [--seconds 10] [--keys 0] [--key-gap-ms 250]
                                            [--quality 0-9] [--desktop-size WxH] [--trace FILE]
+                                           [--depth 1] [--early true|false] [--encodings N,N,…]
       Prints one JSON line: updates/s, Mbit/s, bytes/update and round-trip p50 over --seconds,
       then echo latency p50/p95 (ms) over --keys keystrokes. Run the desktop's workload
       alongside (e.g. over ssh); keep the desktop otherwise still while typing.
@@ -22,6 +23,10 @@
       holds it for the sample.
       --keychain signs in with the credential the rig stored for MACHINE (e.g. tuftlord), a
       Mac account's user name and password included; nothing is printed or written.
+      --encodings N,N,… advertises exactly that list (851-2361); an encoding the client can't
+      decode ends the sample with its number.
+      --depth keeps that many update requests outstanding when the server has no continuous
+      updates; --early true sends the next one on an update's header, before applying it (851-2360).
       --trace writes one JSON line per update: time, bytes, rectangles per encoding,
       request-to-applied latency, header-to-applied time and the link's share.
       """
@@ -52,7 +57,8 @@
         keyGap: .milliseconds(values["key-gap-ms"].flatMap(Int.init) ?? 250),
         quality: values["quality"].flatMap(Int.init),
         desktopSize: values["desktop-size"].map { $0.split(separator: "x").compactMap { Int($0) } },
-        trace: values["trace"])
+        trace: values["trace"], depth: values["depth"].flatMap(Int.init) ?? 1, early: values["early"] == "true",
+        encodings: values["encodings"].map { $0.split(separator: ",").compactMap { Int32($0) } })
       Task {
         do {
           let result = try await sample(
@@ -75,6 +81,9 @@
       var quality: Int?
       var desktopSize: [Int]?
       var trace: String?
+      var depth = 1
+      var early = false
+      var encodings: [Int32]?
     }
 
     static func sample(
@@ -82,7 +91,9 @@
     ) async throws -> [String: Any] {
       let client = try RFBClient(
         transport: try await RFBNetworkTransport.connect(host: host, port: port), qualityLevel: options.quality)
+      await client.advertise(options.encodings)
       let outcome = try await client.connect(password: password, username: username)
+      await client.setRequestPipelining(depth: options.depth, beforeApplying: options.early)
       let log = SampleLog(
         trace: options.trace.flatMap { path in
           FileManager.default.createFile(atPath: path, contents: nil)
