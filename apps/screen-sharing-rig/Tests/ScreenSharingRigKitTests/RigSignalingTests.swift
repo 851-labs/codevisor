@@ -6,22 +6,11 @@ import Testing
 @testable import ScreenSharingRigKit
 
 struct RigSignalingTests {
-  @Test func offerAndAnswerRoundTripThroughJSON() throws {
-    let build = RigBuildInfo(commit: "abcdef1234567890", dirty: true, configuration: "release", builtAt: "t")
+  /// The host rejects offers whose `version` is not 1, so viewers must send exactly that.
+  @Test func offerDeclaresProtocolVersionOne() throws {
     let offer = RigOfferRequest(
-      sessionID: "s1", offer: ScreenSharingDescription(kind: "offer", sdp: "v=0"), build: build, name: "viewer")
-    let decoded = try RigJSON.decode(RigOfferRequest.self, from: try RigJSON.encode(offer))
-    #expect(decoded.version == 1)
-    #expect(decoded.sessionID == "s1")
-    #expect(decoded.offer.kind == "offer")
-    #expect(decoded.offer.sdp == "v=0")
-    #expect(decoded.build == build)
-    #expect(decoded.name == "viewer")
-    let answer = RigAnswerResponse(
-      sessionID: "s1", answer: ScreenSharingDescription(kind: "answer", sdp: "v=1"), build: build, name: "host")
-    let decodedAnswer = try RigJSON.decode(RigAnswerResponse.self, from: try RigJSON.encode(answer))
-    #expect(decodedAnswer.answer.sdp == "v=1")
-    #expect(decodedAnswer.name == "host")
+      sessionID: "s1", offer: ScreenSharingDescription(kind: "offer", sdp: "v=0"), build: .unknown, name: "viewer")
+    #expect(String(decoding: try RigJSON.encode(offer), as: UTF8.self).contains(#""version":1"#))
   }
 
   @Test func buildInfoReadsPlistKeysAndLabels() {

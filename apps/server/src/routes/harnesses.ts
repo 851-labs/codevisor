@@ -7,6 +7,7 @@ import { parseCustomHarnessDocument } from "@codevisor/harness-manager"
 import { latestSyncTimestamp, nextSyncTimestamp } from "@codevisor/sync"
 
 import {
+  CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE,
   decorateHarnessSettings,
   HARNESSES_SYNC_NAMESPACE,
   setHarnessPreference
@@ -207,7 +208,7 @@ export const routeHarnesses = async (
         throw new HttpFailure(400, parsed.warnings.join("; "))
       }
       const before = await services.customHarnesses.list()
-      const overrides = await run(services.db.getSyncEntries("local.harness-custom-overrides"))
+      const overrides = await run(services.db.getSyncEntries(CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE))
       const changed = [...new Set([...before, ...parsed.specs].map((item) => item.id))].filter(
         (id) =>
           JSON.stringify(before.find((item) => item.id === id)) !==
@@ -216,7 +217,7 @@ export const routeHarnesses = async (
       await services.customHarnesses.replace(parsed.specs)
       await run(
         services.db.mergeSyncEntries(
-          "local.harness-custom-overrides",
+          CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE,
           changed.map((id) => ({
             key: id,
             value: true,

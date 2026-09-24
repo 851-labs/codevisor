@@ -19,7 +19,7 @@ import {
   validFramework
 } from "./ghostty-artifact.mjs"
 
-test("shared Ghostty path is deterministic", () => {
+test("the artifacts root honors CODEVISOR_GHOSTTY_ARTIFACTS_ROOT", () => {
   const root = ghosttyArtifactsRoot({ CODEVISOR_GHOSTTY_ARTIFACTS_ROOT: "/shared/ghostty" })
   assert.equal(root, "/shared/ghostty")
   assert.equal(

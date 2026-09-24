@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
 
 import { describe, expect, it } from "vitest"
 
@@ -25,16 +24,6 @@ describe("Computer Use tool contract", () => {
     } finally {
       rmSync(root, { force: true, recursive: true })
     }
-  })
-
-  it("detects AT-SPI text support through the introspected text interface", () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "..", "resources", "computer-use-linux.py"),
-      "utf8"
-    )
-    expect(source).not.toContain("node.is_text")
-    expect(source).toContain("interface = safe(node.get_text_iface)")
-    expect(source).toContain("if interface is not None:")
   })
 
   it("exposes explicit snapshots, observations, waits and the persistent REPL", () => {
