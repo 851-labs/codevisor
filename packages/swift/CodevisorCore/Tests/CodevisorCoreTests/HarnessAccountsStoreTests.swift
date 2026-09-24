@@ -136,7 +136,6 @@ struct HarnessAccountsStoreTests {
         harnessId: "claude-code", accountId: account.id, flowId: oauth.id, code: "fixture-code"
       ).kind == "complete")
     try await store.cancelHarnessLogin(harnessId: "claude-code", accountId: account.id, flowId: oauth.id)
-    try await store.useSharedHarnessAccount(harnessId: "codex")
     try await store.removeHarnessAccount(harnessId: "codex", accountId: account.id)
     let requests = await transport.requests
     #expect(requests.allSatisfy { $0.hasSuffix("/shared-accounts") })

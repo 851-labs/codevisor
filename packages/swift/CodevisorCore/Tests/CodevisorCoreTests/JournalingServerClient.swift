@@ -19,9 +19,6 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
 
   init(_ base: FakeServerClient) { self.base = base }
 
-  /// Moves the journal past a cursor a test delivered as a live event.
-  func advance(to value: Int) { lock.withLock { cursor = max(cursor, value) } }
-
   private func journaled<T>(_ write: () async throws -> T) async rethrows -> T {
     let result = try await write()
     lock.withLock { cursor += 1 }

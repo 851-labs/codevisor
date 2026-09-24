@@ -23,7 +23,7 @@ struct ScreenSharingPaneMappingTests {
     #expect(try JSONDecoder().decode(PaneDescriptorState.self, from: JSONEncoder().encode(pane)) == pane)
   }
 
-  @Test func unsupportedMetadataDoesNotDiscardSiblingPanes() throws {
+  @Test func unreadableMetadataYieldsNoDescriptorAndNewTabConvertsWithDefaults() throws {
     let id = UUID()
     var record = ServerWorkspacePane(
       id: id.uuidString, workspaceId: UUID().uuidString, providerId: "codevisor",

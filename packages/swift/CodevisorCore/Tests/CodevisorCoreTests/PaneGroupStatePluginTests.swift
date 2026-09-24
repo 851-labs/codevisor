@@ -27,20 +27,10 @@ struct PaneGroupStatePluginTests {
     #expect(decoded.pluginPaneType == "diff")
   }
 
-  @Test("Descriptors persisted before plugin panes decode with no plugin payload")
-  func decodePrePluginDescriptor() throws {
-    let legacy = Data(
-      """
-      {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc"}
-      """.utf8)
-    let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
-    #expect(decoded.pluginId == nil)
-    #expect(decoded.pluginPaneType == nil)
-  }
-
   @Test("An unknown future pane kind drops alone instead of failing the group")
   func lenientPaneArrayDecode() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.selectPane(id: state.panes[0].id)
     var json =
       try JSONSerialization.jsonObject(

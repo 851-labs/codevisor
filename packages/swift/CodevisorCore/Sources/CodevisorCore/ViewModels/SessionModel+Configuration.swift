@@ -7,13 +7,6 @@ extension SessionModel {
     configOptions.filter { $0.category == category }
   }
 
-  /// Replaces the draft composer's options with a freshly inspected harness
-  /// snapshot. Authentication and profile changes can alter the models a
-  /// provider exposes before the first prompt creates a runtime session.
-  public func replaceConfigOptions(_ options: [SessionConfigOption]) {
-    configOptions = options
-  }
-
   /// Applies capability metadata from a runtime connect that finished after
   /// history was already painted. The model is constructed from cached
   /// capabilities so the transcript can render before the agent process is

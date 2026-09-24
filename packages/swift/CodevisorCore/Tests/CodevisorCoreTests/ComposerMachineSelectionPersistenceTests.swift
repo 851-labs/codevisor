@@ -55,9 +55,9 @@ struct ComposerMachineSelectionPersistenceTests {
     #expect(controller.modelOption?.currentValue == "gpt-5.6-sol")
     #expect(controller.thoughtLevelOptions.first?.currentValue == "low")
     #expect(!controller.draftSnapshot().selectionWasAutomaticallyCarried)
-    #expect(defaults.lastHarnessId(forServer: "machine-b") == "codex")
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "codex")
     #expect(
-      defaults.configSelections(forHarness: "codex", onServer: "machine-b") == [
+      defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")) == [
         "model": "gpt-5.6-sol", "reasoning": "low",
       ])
   }
@@ -67,7 +67,7 @@ struct ComposerMachineSelectionPersistenceTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "claude-code",
       configValues: ["model": "fable", "reasoning": "low"]
     )
@@ -88,12 +88,12 @@ struct ComposerMachineSelectionPersistenceTests {
       )
     )
 
-    #expect(defaults.lastHarnessId(forServer: "machine-b") == "claude-code")
+    #expect(defaults.lastHarnessId(for: .newWorkspace(serverId: "machine-b")) == "claude-code")
     #expect(
-      defaults.configSelections(forHarness: "claude-code", onServer: "machine-b") == [
+      defaults.configSelections(forHarness: "claude-code", in: .newWorkspace(serverId: "machine-b")) == [
         "model": "fable", "reasoning": "low",
       ])
-    #expect(defaults.configSelections(forHarness: "codex", onServer: "machine-b").isEmpty)
+    #expect(defaults.configSelections(forHarness: "codex", in: .newWorkspace(serverId: "machine-b")).isEmpty)
   }
 
   @Test("A restored automatic carry still falls back when its model disappeared")
@@ -101,7 +101,7 @@ struct ComposerMachineSelectionPersistenceTests {
     let defaults = ComposerDefaultsStore(store: InMemoryStore())
     defaults.rememberHarnessSelection(serverId: "machine-b", harnessId: "claude-code")
     defaults.rememberConfigSelections(
-      serverId: "machine-b",
+      in: .newWorkspace(serverId: "machine-b"),
       harnessId: "claude-code",
       configValues: ["model": "fable", "reasoning": "low"]
     )

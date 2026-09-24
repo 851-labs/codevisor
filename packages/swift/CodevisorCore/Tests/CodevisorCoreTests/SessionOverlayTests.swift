@@ -145,19 +145,6 @@ struct SessionOverlayTests {
     #expect(!environment.appUpdate.allowsAlphaUpdates)
   }
 
-  @Test("Harness enable/disable persists")
-  func harnessEnablement() {
-    let store = InMemoryStore()
-    let model = AppSettingsModel(store: store)
-    #expect(model.isHarnessEnabled("codex"))  // enabled by default
-    model.setHarness("codex", enabled: false)
-    #expect(!model.isHarnessEnabled("codex"))
-    // Reload from the same store to confirm persistence.
-    #expect(!AppSettingsModel(store: store).isHarnessEnabled("codex"))
-    model.setHarness("codex", enabled: true)
-    #expect(model.isHarnessEnabled("codex"))
-  }
-
   @Test("finishOnboarding with a project folder adds a project")
   func onboardingAddsProject() async {
     let environment = AppEnvironment.preview(seedProjects: [], hasOnboarded: false)

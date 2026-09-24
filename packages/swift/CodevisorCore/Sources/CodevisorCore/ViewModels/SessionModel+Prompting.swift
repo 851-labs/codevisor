@@ -178,18 +178,6 @@ extension SessionModel {
     await reconcileFromServer()
   }
 
-  /// Surfaces a failure that happened while restoring the live harness
-  /// runtime after persisted history has already loaded. Keeping this state
-  /// on the model lets the transcript remain visible while the chat offers
-  /// the appropriate recovery action.
-  public func recordSessionFailure(
-    _ message: String,
-    requiresHarnessAuthentication: Bool = false
-  ) {
-    errorMessage = message
-    harnessAuthenticationErrorMessage = requiresHarnessAuthentication ? message : nil
-  }
-
   /// Foreground/network-recovery backstop: re-verifies an in-flight turn
   /// against durable server history. Cursor replay heals a reconnected
   /// stream on its own; this covers what replay cannot — a reconcile that

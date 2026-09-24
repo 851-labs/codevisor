@@ -210,19 +210,6 @@ public final class ConfigOptionCache {
     persist()
   }
 
-  /// Stores a capability response only if no catalog mutation invalidated
-  /// it while the request was in flight.
-  @discardableResult
-  public func store(
-    _ capabilities: [ServerHarnessCapability],
-    forServer serverId: String,
-    ifRevision expectedRevision: UInt64
-  ) -> Bool {
-    guard capabilityRevision(forServer: serverId) == expectedRevision else { return false }
-    store(capabilities, forServer: serverId)
-    return true
-  }
-
   /// Merges one freshly inspected harness without discarding the cached
   /// catalog for every other harness on the same server.
   public func store(_ capability: ServerHarnessCapability, forServer serverId: String) {
@@ -236,19 +223,6 @@ public final class ConfigOptionCache {
     capabilitiesCache[serverId] = capabilities
     cache[serverId, default: [:]][capability.harness.id] = capability.configOptions
     persist()
-  }
-
-  /// Merges one capability response only while its request generation is
-  /// still current.
-  @discardableResult
-  public func store(
-    _ capability: ServerHarnessCapability,
-    forServer serverId: String,
-    ifRevision expectedRevision: UInt64
-  ) -> Bool {
-    guard capabilityRevision(forServer: serverId) == expectedRevision else { return false }
-    store(capability, forServer: serverId)
-    return true
   }
 
   /// Stores a speculative warm only while this server has no capability

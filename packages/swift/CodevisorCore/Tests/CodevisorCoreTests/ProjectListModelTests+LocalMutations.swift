@@ -91,61 +91,6 @@ extension ProjectListModelTests {
     #expect(fixture.projectList.activeProjects.map(\.name) == ["new", "old"])
   }
 
-  @Test("Active projects are ordered by their most recently created workspace")
-  func workspaceRecencySorting() {
-    let unusedOlder = Project(
-      name: "unused-older",
-      createdAt: Date(timeIntervalSince1970: 1)
-    )
-    let usedEarlier = Project(
-      name: "used-earlier",
-      createdAt: Date(timeIntervalSince1970: 2)
-    )
-    let usedLatest = Project(
-      name: "used-latest",
-      createdAt: Date(timeIntervalSince1970: 3)
-    )
-    let unusedNewer = Project(
-      name: "unused-newer",
-      createdAt: Date(timeIntervalSince1970: 4)
-    )
-    let fixture = NavigationFixture()
-    fixture.seed(projects: [unusedOlder, usedEarlier, usedLatest, unusedNewer])
-    let model = fixture.projectList
-
-    func workspace(
-      projectId: UUID,
-      createdAt: TimeInterval,
-      serverId: String = "local"
-    ) -> Workspace {
-      Workspace(
-        name: "Workspace",
-        rootDirectory: nil,
-        serverId: serverId,
-        projectId: projectId,
-        centerTree: .leaf(PaneGroupState()),
-        createdAt: Date(timeIntervalSince1970: createdAt)
-      )
-    }
-
-    let ordered = model.activeProjectsByWorkspaceRecency([
-      workspace(projectId: usedEarlier.id, createdAt: 10),
-      workspace(projectId: usedLatest.id, createdAt: 20),
-      // The newest workspace per project wins, not the first one.
-      workspace(projectId: usedEarlier.id, createdAt: 15),
-      // Workspace history is scoped to the selected machine.
-      workspace(projectId: unusedNewer.id, createdAt: 30, serverId: "remote"),
-    ])
-
-    #expect(
-      ordered.map(\.name) == [
-        "used-latest",
-        "used-earlier",
-        "unused-newer",
-        "unused-older",
-      ])
-  }
-
   @Test("New sessions are scoped to a project and survive a relaunch")
   func sessions() {
     let persistence = InMemoryStore()
@@ -170,20 +115,6 @@ extension ProjectListModelTests {
 
     model.renameSession(session, to: "Renamed")
     #expect(model.sessions(in: project).first?.title == "Renamed")
-    model.deleteSession(session)
-    #expect(model.sessions(in: project).isEmpty)
-  }
-
-  @Test("A chat stays listed until it is actually deleted")
-  func chatsPersistUntilDeleted() async {
-    let fixture = NavigationFixture()
-    let model = fixture.projectList
-    let project = Project.fromFolder(URL(fileURLWithPath: "/tmp/a"))
-    let session = ChatSession(projectId: project.id, harnessId: "codex")
-    await fixture.install(projects: [project], sessions: [session])
-    // Closing a chat is pane removal on its workspace, so the model keeps
-    // listing the chat: nothing here hides it.
-    #expect(model.sessions(in: project).count == 1)
     model.deleteSession(session)
     #expect(model.sessions(in: project).isEmpty)
   }

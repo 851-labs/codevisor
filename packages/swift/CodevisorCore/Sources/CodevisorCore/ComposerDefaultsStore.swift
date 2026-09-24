@@ -165,11 +165,6 @@ public final class ComposerDefaultsStore {
     }
   }
 
-  /// The harness most recently selected in a composer on this machine.
-  public func lastHarnessId(forServer serverId: String) -> String? {
-    lastHarnessId(for: .newWorkspace(serverId: serverId))
-  }
-
   /// The harness a new composer in this scope should start with.
   public func lastHarnessId(for scope: Scope) -> String? {
     switch scope {
@@ -181,17 +176,6 @@ public final class ComposerDefaultsStore {
       }
       return workspace.lastHarnessId
     }
-  }
-
-  /// The remembered option ids and values for one harness on this machine.
-  public func configSelections(
-    forHarness harnessId: String,
-    onServer serverId: String
-  ) -> [String: String] {
-    configSelections(
-      forHarness: harnessId,
-      in: .newWorkspace(serverId: serverId)
-    )
   }
 
   /// The remembered option ids and values for one harness in this scope.
@@ -279,22 +263,9 @@ public final class ComposerDefaultsStore {
     persist()
   }
 
-  /// Merges the latest known model/reasoning/speed values for one harness.
-  /// Missing ids are retained because some options (notably speed) disappear
+  /// Merges explicit picker changes into the relevant profile. Missing ids
+  /// are retained because some options (notably speed) disappear
   /// temporarily when the selected model does not support them.
-  public func rememberConfigSelections(
-    serverId: String,
-    harnessId: String?,
-    configValues: [String: String]
-  ) {
-    rememberConfigSelections(
-      in: .newWorkspace(serverId: serverId),
-      harnessId: harnessId,
-      configValues: configValues
-    )
-  }
-
-  /// Merges explicit picker changes into the relevant profile.
   public func rememberConfigSelections(
     in scope: Scope,
     harnessId: String?,

@@ -47,6 +47,17 @@ struct ProjectListModelFleetTests {
     #expect(
       ordered.map(\.name) == ["remote-work", "local-work", "remote-idle"]
     )
+
+    // The newest workspace per project wins, not the first or last listed.
+    let reordered = model.fleetActiveProjectsByWorkspaceRecency([
+      workspace(localProject, createdAt: 10),
+      workspace(remoteProject, createdAt: 20),
+      workspace(localProject, createdAt: 25),
+      workspace(localProject, createdAt: 15),
+    ])
+    #expect(
+      reordered.map(\.name) == ["local-work", "remote-work", "remote-idle"]
+    )
   }
 
   @Test("Adding a project on an explicit machine stamps, syncs, and probes")

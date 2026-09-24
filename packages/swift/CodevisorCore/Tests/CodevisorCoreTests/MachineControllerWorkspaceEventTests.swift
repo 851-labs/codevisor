@@ -76,10 +76,10 @@ struct MachineControllerWorkspaceEventTests {
     #expect(updated.centerTabs == fixture.workspace.centerTabs)
   }
 
-  @Test("Workspace deltas materialize unknown workspaces without another request", arguments: [true, false])
-  func workspaceEventMaterializes(unknownWorkspace: Bool) async throws {
-    let fixture = await WorkspaceEventFixture(cachesWorkspace: !unknownWorkspace)
-    #expect((fixture.repository.workspace(id: fixture.workspace.id) == nil) == unknownWorkspace)
+  @Test("Workspace deltas materialize unknown workspaces without another request")
+  func workspaceEventMaterializes() async throws {
+    let fixture = await WorkspaceEventFixture(cachesWorkspace: false)
+    #expect(fixture.repository.workspace(id: fixture.workspace.id) == nil)
     let other = fixture.repository.workspace(id: fixture.otherWorkspace.id)
     let handled = TestSignal()
     fixture.controller.onPluginUpdated = { _, _ in handled.signal() }

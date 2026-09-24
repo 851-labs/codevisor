@@ -48,10 +48,10 @@ extension ProjectListModel {
       .sorted { $0.createdAt > $1.createdAt }
   }
 
-  /// Fleet-wide analog of `activeProjectsByWorkspaceRecency`: every
-  /// machine's active projects, ordered by each project's most recent
-  /// workspace. The composer's project picker lists these — picking a
-  /// project IS picking its machine.
+  /// Every machine's active projects, ordered by each project's most
+  /// recent workspace; projects without workspace history keep their
+  /// newest-project-first order after used ones. The composer's project
+  /// picker lists these — picking a project IS picking its machine.
   public func fleetActiveProjectsByWorkspaceRecency(
     _ workspaces: [Workspace]
   ) -> [Project] {

@@ -58,14 +58,18 @@ struct SessionControllerNoProjectTests {
     #expect(controller.draftSnapshot().projectServerId == scratch.serverId)
   }
 
-  @Test("A real project keeps whatever worktree preference the picker sets")
+  @Test("Switching between real projects keeps the worktree preference")
   func selectingGitProjectKeepsPreference() async {
     let controller = SessionController(
-      project: .runTargetPlaceholder(serverId: "machine-a"),
+      project: gitProject(),
       configCache: ConfigOptionCache(store: InMemoryStore())
     )
-    await controller.selectProject(gitProject())
     controller.wantsNewWorktree = true
+
+    let next = gitProject()
+    await controller.selectProject(next)
+
+    #expect(controller.project.id == next.id)
     #expect(controller.wantsNewWorktree)
   }
 }

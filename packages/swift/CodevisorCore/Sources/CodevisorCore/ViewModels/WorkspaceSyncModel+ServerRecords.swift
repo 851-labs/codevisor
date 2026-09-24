@@ -8,21 +8,6 @@ extension WorkspaceSyncModel {
     var ownerChatSessionId: UUID?
   }
 
-  nonisolated static func serverWorkspace(from workspace: Workspace) -> ServerWorkspace {
-    ServerWorkspace(
-      id: workspace.id.uuidString,
-      serverId: workspace.serverId,
-      projectId: workspace.projectId.uuidString,
-      name: workspace.name,
-      hasCustomName: workspace.hasCustomName,
-      rootDirectory: workspace.rootDirectory,
-      isArchived: workspace.isArchived,
-      createdAt: ServerDateCoding.string(from: workspace.createdAt),
-      sidebarPosition: workspace.sidebarPosition,
-      sidebarOrderRevision: workspace.sidebarOrderRevision > 0 ? workspace.sidebarOrderRevision : nil
-    )
-  }
-
   nonisolated static func serverPane(
     from pane: PaneDescriptorState,
     workspaceId: UUID,

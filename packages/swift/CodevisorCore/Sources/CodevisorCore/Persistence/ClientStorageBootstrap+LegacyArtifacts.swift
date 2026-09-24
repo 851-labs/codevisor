@@ -139,11 +139,6 @@ extension ClientStorageBootstrap {
         guard let value = defaults.data(forKey: key) else { return nil }
         return LegacyPreference(key: key, data: try JSONEncoder().encode(value))
       }
-      if key == "remoteBrowserRecents",
-        let value = defaults.dictionary(forKey: key) as? [String: [String]]
-      {
-        return LegacyPreference(key: key, data: try JSONEncoder().encode(value))
-      }
       return nil
     }
   }
@@ -152,6 +147,7 @@ extension ClientStorageBootstrap {
     defaults.dictionaryRepresentation().keys.filter { key in
       stringPreferenceKeys.contains(key)
         || boolPreferenceKeys.contains(key)
+        // Retired with no reader: listed only so cleanup drops it.
         || key == "remoteBrowserRecents"
         || dynamicStringPreferencePrefixes.contains(where: key.hasPrefix)
         || dynamicDataPreferencePrefixes.contains(where: key.hasPrefix)

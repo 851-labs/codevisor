@@ -41,10 +41,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
   /// (next to ⌘W) tears down every open terminal and agent view at once, so
   /// this defaults on; the alert's "Do not ask me again" turns it off.
   public var confirmBeforeQuitting: Bool
-  /// Harness ids the user has explicitly turned off. A harness is "enabled"
-  /// (shown in the composer picker) when its id is not in this set, so the
-  /// default — an empty set — enables every installed harness.
-  public var disabledHarnessIds: Set<String>
   /// Appearance: force light/dark or follow the OS.
   public var themeMode: ThemeMode
   /// The theme id used when the effective appearance is light/dark. The
@@ -72,7 +68,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     shareCrashReports: Bool = false,
     alphaUpdatesEnabled: Bool = false,
     confirmBeforeQuitting: Bool = true,
-    disabledHarnessIds: Set<String> = [],
     themeMode: ThemeMode = .system,
     lightThemeId: String = ThemeCatalog.systemLightID,
     darkThemeId: String = ThemeCatalog.systemDarkID,
@@ -92,7 +87,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     self.shareCrashReports = shareCrashReports
     self.alphaUpdatesEnabled = alphaUpdatesEnabled
     self.confirmBeforeQuitting = confirmBeforeQuitting
-    self.disabledHarnessIds = disabledHarnessIds
     self.themeMode = themeMode
     self.lightThemeId = lightThemeId
     self.darkThemeId = darkThemeId
@@ -111,7 +105,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     /// Read-only migration key written by the former custom updater.
     case betaUpdatesEnabled
     case confirmBeforeQuitting
-    case disabledHarnessIds
     case themeMode, lightThemeId, darkThemeId
     case notificationsEnabled, systemNotificationsEnabled, notificationSoundsEnabled
     case chatFinishedSoundPath, actionRequiredSoundPath
@@ -143,7 +136,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
       ?? container.decodeIfPresent(Bool.self, forKey: .betaUpdatesEnabled)
       ?? false
     confirmBeforeQuitting = try container.decodeIfPresent(Bool.self, forKey: .confirmBeforeQuitting) ?? true
-    disabledHarnessIds = try container.decodeIfPresent(Set<String>.self, forKey: .disabledHarnessIds) ?? []
     themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .system
     lightThemeId = try container.decodeIfPresent(String.self, forKey: .lightThemeId) ?? ThemeCatalog.systemLightID
     darkThemeId = try container.decodeIfPresent(String.self, forKey: .darkThemeId) ?? ThemeCatalog.systemDarkID
@@ -175,7 +167,6 @@ public struct AppSettings: Sendable, Codable, Equatable {
     try container.encode(shareCrashReports, forKey: .shareCrashReports)
     try container.encode(alphaUpdatesEnabled, forKey: .alphaUpdatesEnabled)
     try container.encode(confirmBeforeQuitting, forKey: .confirmBeforeQuitting)
-    try container.encode(disabledHarnessIds, forKey: .disabledHarnessIds)
     try container.encode(themeMode, forKey: .themeMode)
     try container.encode(lightThemeId, forKey: .lightThemeId)
     try container.encode(darkThemeId, forKey: .darkThemeId)
@@ -231,26 +222,6 @@ public final class AppSettingsModel {
   /// confirmation sheet makes that relaunch silently fail.
   public var shouldConfirmBeforeQuitting: Bool {
     settings.hasCompletedOnboarding && settings.confirmBeforeQuitting
-  }
-
-  /// Whether a harness is enabled (not turned off by the user).
-  public func isHarnessEnabled(_ id: String) -> Bool {
-    !settings.disabledHarnessIds.contains(id)
-  }
-
-  /// Enables or disables a harness, persisting the change.
-  public func setHarness(_ id: String, enabled: Bool) {
-    if enabled {
-      settings.disabledHarnessIds.remove(id)
-    } else {
-      settings.disabledHarnessIds.insert(id)
-    }
-    persist()
-  }
-
-  /// Filters discovered harnesses down to the enabled ones.
-  public func enabledHarnesses(_ harnesses: [String]) -> [String] {
-    harnesses.filter(isHarnessEnabled)
   }
 
   /// Records the result of onboarding.

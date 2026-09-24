@@ -92,30 +92,3 @@ extension NavigationStore {
       machineId: machineId, requestedAt: Date())
   }
 }
-
-extension ServerNavigationDelta {
-  private struct Payload: Encodable {
-    struct Deletion: Encodable {
-      var table: String
-      var id: String
-    }
-    var eventCursor: Int
-    var projects: [ServerProject]
-    var sessions: [ServerSession]
-    var workspaces: [ServerWorkspace] = []
-    var panes: [ServerWorkspacePane] = []
-    var deleted: [Deletion]
-  }
-
-  /// A delta as the server journals it (built through its wire format, the
-  /// only public way to make one).
-  static func fixture(
-    cursor: Int, projects: [ServerProject] = [], sessions: [ServerSession] = [],
-    deleted: [(table: String, id: String)] = []
-  ) -> ServerNavigationDelta {
-    let payload = Payload(
-      eventCursor: cursor, projects: projects, sessions: sessions,
-      deleted: deleted.map { Payload.Deletion(table: $0.table, id: $0.id) })
-    return try! JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(payload))
-  }
-}

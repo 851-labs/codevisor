@@ -7,39 +7,23 @@ extension PaneGroupStateTests {
   func decodeLegacyDescriptor() throws {
     let legacy = Data(
       """
-      {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc"}
+      {"id":"\(UUID().uuidString)","kind":"terminal","name":"Terminal 1","terminalKey":"abc","cwdOverride":"/tmp/x"}
       """.utf8)
+    // Panes persisted with the retired per-pane cwd override still decode.
     let decoded = try JSONDecoder().decode(PaneDescriptorState.self, from: legacy)
+    #expect(decoded.kind == .terminal)
     #expect(decoded.attachOnly == false)
     // Pre-owner-scoping agent tabs decode ownerless (any syncer adopts).
     #expect(decoded.ownerChatSessionId == nil)
-  }
-
-  @Test("New tab conversion to terminal survives persistence")
-  func newTabConversionPersists() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
-    let placeholder = state.addNewTabPane()
-    let converted = state.convertNewTabPane(
-      id: placeholder.id,
-      to: .terminal,
-      sessionId: sessionId
-    )
-    #expect(converted?.kind == .terminal)
-    let decoded = try JSONDecoder().decode(
-      PaneGroupState.self, from: JSONEncoder().encode(state)
-    )
-    #expect(decoded.panes.first { $0.id == converted?.id }?.kind == .terminal)
-    // Panes persisted with the retired per-pane cwd override still decode.
-    let legacy = Data(
-      """
-      {"id":"\(UUID().uuidString)","kind":"terminal","name":"T","terminalKey":"k","cwdOverride":"/tmp/x"}
-      """.utf8)
-    #expect(try JSONDecoder().decode(PaneDescriptorState.self, from: legacy).kind == .terminal)
+    // Pre-plugin descriptors decode with no plugin payload.
+    #expect(decoded.pluginId == nil)
+    #expect(decoded.pluginPaneType == nil)
   }
 
   @Test("Agent terminal panes carry their owning chat and round-trip it")
   func agentTerminalOwner() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     let owner = UUID()
     let pane = PaneDescriptorState.agentTerminal(
       name: "bun run dev",
@@ -55,7 +39,8 @@ extension PaneGroupStateTests {
 
   @Test("Codable round-trip preserves panes and selection")
   func codableRoundTrip() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.addTerminalPane(sessionId: sessionId)
     let decoded = try JSONDecoder().decode(
       PaneGroupState.self,
@@ -66,7 +51,8 @@ extension PaneGroupStateTests {
 
   @Test("Decoding drops a selection that no longer matches a pane")
   func decodeRepairsSelection() throws {
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.selectedPaneId = nil
     let decoded = try JSONDecoder().decode(
       PaneGroupState.self,
@@ -80,25 +66,14 @@ extension PaneGroupStateTests {
     let repo = DefaultPaneGroupRepository(store: InMemoryStore())
     let otherSession = UUID()
     #expect(repo.load(sessionId: sessionId) == nil)
-    var state = PaneGroupState.initial(sessionId: sessionId)
+    var state = PaneGroupState()
+    state.addTerminalPane(sessionId: sessionId)
     state.addTerminalPane(sessionId: sessionId)
     repo.save(state, sessionId: sessionId)
-    repo.save(.initial(sessionId: otherSession), sessionId: otherSession)
+    var other = PaneGroupState()
+    other.addTerminalPane(sessionId: otherSession)
+    repo.save(other, sessionId: otherSession)
     #expect(repo.load(sessionId: sessionId) == state)
     #expect(repo.load(sessionId: otherSession)?.panes.count == 1)
-  }
-
-  @Test("Legacy session panes remain available for migration after active group saves")
-  func repositoryLegacyPanes() throws {
-    let store = InMemoryStore()
-    let legacy = PaneGroupState.initial(sessionId: sessionId)
-    try store.saveData(JSONEncoder().encode([sessionId.uuidString: legacy]), forKey: "paneGroups")
-    let repo = DefaultPaneGroupRepository(store: store)
-    let center = PaneGroupState.centerInitial(sessionId: sessionId)
-    #expect(repo.load(sessionId: sessionId) == nil)
-    #expect(repo.legacyPanes(sessionId: sessionId) == legacy.panes)
-    repo.save(center, sessionId: sessionId)
-    #expect(repo.legacyPanes(sessionId: sessionId) == legacy.panes)
-    #expect(repo.load(sessionId: sessionId) == center)
   }
 }

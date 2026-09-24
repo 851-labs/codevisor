@@ -298,13 +298,6 @@ struct RemoteDirectoryBrowserModelTests {
     #expect(model.chosenPath == nil)
   }
 
-  @Test("Breadcrumb lists the browse root and its ancestors, deepest first")
-  func breadcrumbAncestors() async {
-    let model = makeModel(makeFs())
-    await model.open("/home/user")
-    #expect(model.breadcrumb == ["/home/user", "/home", "/"])
-  }
-
   @Test("Classified errors map to actionable guidance")
   func guidanceMessages() {
     typealias Model = RemoteDirectoryBrowserModel

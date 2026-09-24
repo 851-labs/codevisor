@@ -12,9 +12,6 @@ struct DiagnosticsClientTests {
         "corrupt_persisted_data",
         "data_directory_unavailable",
         "persistence_write_failed",
-        "project_sync_failed",
-        "bulk_sync_failed",
-        "server_delete_failed",
         "terminal_open_failed",
         "app_relaunch_failed",
       ])
@@ -34,8 +31,8 @@ struct DiagnosticsClientTests {
     event.extra = ["prompt": "private prompt"]
     event.modules = ["private-module": "1"]
     event.tags = [
-      "component": "sync",
-      "diagnostic_issue": "bulk_sync_failed",
+      "component": "persistence",
+      "diagnostic_issue": "persistence_write_failed",
       "machine_kind": "remote",
       "sync_event_kind": "session.attention.updated",
       "private_project": "secret",
@@ -77,8 +74,8 @@ struct DiagnosticsClientTests {
     #expect(sanitized.modules == nil)
     #expect(
       sanitized.tags == [
-        "component": "sync",
-        "diagnostic_issue": "bulk_sync_failed",
+        "component": "persistence",
+        "diagnostic_issue": "persistence_write_failed",
         "machine_kind": "remote",
         "sync_event_kind": "session.attention.updated",
       ])

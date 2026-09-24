@@ -117,11 +117,13 @@ struct ComposerDraftStoreTests {
   func clearWipesPaneDrafts() {
     let store = InMemoryStore()
     let drafts = ComposerDraftStore(store: store)
-    drafts.savePaneDraft(.init(projectId: UUID(), composerText: "x"), forPane: UUID())
+    let paneId = UUID()
+    drafts.savePaneDraft(.init(projectId: UUID(), composerText: "x"), forPane: paneId)
     drafts.saveDraft(.init(projectId: UUID(), composerText: "y"), forServer: "local")
     drafts.clear()
     let reloaded = ComposerDraftStore(store: store)
     #expect(reloaded.draft(forServer: "local") == nil)
+    #expect(reloaded.paneDraft(forPane: paneId) == nil)
   }
 
   @Test("Persists the complete unsent draft across instances")

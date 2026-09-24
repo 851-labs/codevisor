@@ -261,6 +261,9 @@ struct ClientDatabaseTests {
       ) == "grid"
     )
     #expect(defaults.object(forKey: "sidebar.collapsed") == nil)
+    // A retired preference is dropped rather than imported.
+    #expect(defaults.object(forKey: "remoteBrowserRecents") == nil)
+    #expect(try storage.database.preference(forKey: "remoteBrowserRecents") == nil)
     #expect(
       !FileManager.default.fileExists(
         atPath: directory.appendingPathComponent("projects.json").path

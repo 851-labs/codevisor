@@ -42,7 +42,6 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
   /// Every request the outbox made, in order (`rename:<name>`, `reorder:<revision>`, ...).
   var requests: [String] { lock.withLock { log } }
   var current: ServerNavigationSnapshot { lock.withLock { state } }
-  var pendingEventCount: Int { lock.withLock { undelivered.count } }
 
   func workspace(_ id: UUID) -> ServerWorkspace? {
     current.workspaces.first { UUID(uuidString: $0.id) == id }
@@ -313,10 +312,6 @@ final class WorkspaceSyncFixture {
     let server = server
     store.executor.clientProvider = { _ in server }
     store.executor.isMachineReady = { _ in true }
-  }
-
-  func disconnect() {
-    store.executor.isMachineReady = { _ in false }
   }
 
   /// Sends every waiting request that can be sent now.

@@ -79,8 +79,4 @@ public extension HarnessAccountsStore {
     }
     if !isShared { try await client.cancelHarnessLogin(harnessId: harnessId, accountId: accountId, flowId: flowId) }
   }
-
-  func useSharedHarnessAccount(harnessId: String) async throws {
-    _ = try await shared(harnessId, .init(action: "inherit"))
-  }
 }

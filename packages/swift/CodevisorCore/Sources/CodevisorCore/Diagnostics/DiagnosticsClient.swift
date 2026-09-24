@@ -8,9 +8,6 @@ public enum DiagnosticIssueName: String, Sendable, CaseIterable {
   case corruptPersistedData = "corrupt_persisted_data"
   case dataDirectoryUnavailable = "data_directory_unavailable"
   case persistenceWriteFailed = "persistence_write_failed"
-  case projectSyncFailed = "project_sync_failed"
-  case bulkSyncFailed = "bulk_sync_failed"
-  case serverDeleteFailed = "server_delete_failed"
   case terminalOpenFailed = "terminal_open_failed"
   case appRelaunchFailed = "app_relaunch_failed"
 
@@ -18,8 +15,6 @@ public enum DiagnosticIssueName: String, Sendable, CaseIterable {
     switch self {
     case .corruptPersistedData, .dataDirectoryUnavailable, .persistenceWriteFailed:
       "persistence"
-    case .projectSyncFailed, .bulkSyncFailed, .serverDeleteFailed:
-      "sync"
     case .terminalOpenFailed:
       "terminal"
     case .appRelaunchFailed:
