@@ -247,6 +247,9 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     isDirectionalLockEnabled = true
     keyboardDismissMode = .interactive
     contentInsetAdjustmentBehavior = .never
+    // The navigation bar floats over the transcript. Fade content under it
+    // with the soft edge effect instead of a hard cutoff and divider.
+    topEdgeEffect.style = .soft
     scrollsToTop = false
     // Keep estimated row frames out of the first visible paint. The
     // hosted rows still mount and measure normally underneath this canvas.
