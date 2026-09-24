@@ -160,7 +160,7 @@ public struct SetSessionModeRequest: Sendable, Codable, Equatable {
 }
 
 /// The reason a prompt turn ended.
-public enum StopReason: String, Sendable, Codable, Equatable, CaseIterable {
+public enum StopReason: String, Sendable, Codable, Equatable {
   case endTurn = "end_turn"
   case maxTokens = "max_tokens"
   case maxTurnRequests = "max_turn_requests"

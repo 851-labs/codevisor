@@ -2,7 +2,7 @@ import Foundation
 
 /// The lifecycle status of a tool call. Terminal states are `completed`,
 /// `failed`, and `cancelled`.
-public enum ToolCallStatus: String, Sendable, Codable, Equatable, CaseIterable {
+public enum ToolCallStatus: String, Sendable, Codable, Equatable {
   case pending
   case inProgress = "in_progress"
   case completed
@@ -11,7 +11,7 @@ public enum ToolCallStatus: String, Sendable, Codable, Equatable, CaseIterable {
 }
 
 /// A categorization of the kind of operation a tool performs.
-public enum ToolKind: String, Sendable, Codable, Equatable, CaseIterable {
+public enum ToolKind: String, Sendable, Codable, Equatable {
   case read
   case edit
   case delete
