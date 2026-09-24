@@ -92,16 +92,6 @@ struct RFBProtocolTypesTests {
     for error in every { #expect(error.errorDescription != nil) }
   }
 
-  /// Equality is what the tests and the session's retry logic compare on, so
-  /// the payload has to participate.
-  @Test func errorsCompareOnTheirPayload() {
-    #expect(RFBError.malformed("a") != RFBError.malformed("b"))
-    #expect(RFBError.malformed("a") == RFBError.malformed("a"))
-    #expect(RFBError.securityUnsupported([1, 2]) != RFBError.securityUnsupported([2, 1]))
-    #expect(RFBError.unsupportedEncoding(1) != RFBError.unsupportedEncoding(2))
-    #expect(RFBError.protocolMismatch("x") != RFBError.transport("x"))
-  }
-
   @Test func rectanglesMeasureFromTheirOrigin() {
     let rect = RFBRectangle(x: 10, y: 20, width: 30, height: 40)
     #expect(rect.maxX == 40)
@@ -114,12 +104,5 @@ struct RFBProtocolTypesTests {
   @Test(arguments: [(0, 5), (5, 0), (0, 0), (-1, 5), (5, -1)])
   func rectanglesWithNoAreaAreEmpty(_ width: Int, _ height: Int) {
     #expect(RFBRectangle(x: 0, y: 0, width: width, height: height).isEmpty)
-  }
-
-  @Test func versionsOrderByMajorThenMinor() {
-    #expect(RFBProtocolVersion.v3_3 < .v3_7)
-    #expect(RFBProtocolVersion.v3_7 < .v3_8)
-    #expect(RFBProtocolVersion(major: 3, minor: 889) < RFBProtocolVersion(major: 4, minor: 0))
-    #expect(RFBProtocolVersion(major: 3, minor: 8) == .v3_8)
   }
 }

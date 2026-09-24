@@ -12,7 +12,6 @@ package final class ScreenSharingFirstDrawGate {
   private var continuation: CheckedContinuation<Void, any Error>?
   public private(set) var isSignalled = false
   public private(set) var failure: Failure?
-  public private(set) var resumeCount = 0
 
   package init() {}
 
@@ -57,7 +56,6 @@ package final class ScreenSharingFirstDrawGate {
   private func resume(_ result: Result<Void, any Error>) {
     guard let pending = continuation else { return }
     continuation = nil
-    resumeCount += 1
     switch result {
     case .success: pending.resume()
     case .failure(let error): pending.resume(throwing: error)

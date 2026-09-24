@@ -62,16 +62,4 @@ struct MarkdownSegmentTests {
   func emptyInput() {
     #expect(MarkdownSegment.segments(from: []).isEmpty)
   }
-
-  @Test("Text-run classification covers every case")
-  func classification() {
-    #expect(MarkdownSegment.isTextRunBlock(.heading(level: 2, text: "h")))
-    #expect(MarkdownSegment.isTextRunBlock(.paragraph("p")))
-    #expect(MarkdownSegment.isTextRunBlock(.bulletList(["i"])))
-    #expect(MarkdownSegment.isTextRunBlock(.orderedList([OrderedListItem(number: 1, text: "i")])))
-    #expect(!MarkdownSegment.isTextRunBlock(.codeBlock(language: nil, code: "c", isComplete: false)))
-    #expect(!MarkdownSegment.isTextRunBlock(.blockQuote([.paragraph("q")])))
-    #expect(!MarkdownSegment.isTextRunBlock(.table(headers: [], alignments: [], rows: [])))
-    #expect(!MarkdownSegment.isTextRunBlock(.thematicBreak))
-  }
 }

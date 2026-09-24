@@ -92,8 +92,6 @@ public struct RFBPixelFormat: Sendable, Equatable {
     bitsPerPixel: 32, depth: 24, bigEndian: false, trueColour: true, redMax: 255, greenMax: 255, blueMax: 255,
     redShift: 16, greenShift: 8, blueShift: 0)
 
-  public var bytesPerPixel: Int { Int(bitsPerPixel) / 8 }
-
   public var encoded: [UInt8] {
     var writer = RFBByteWriter()
     writer.u8(bitsPerPixel); writer.u8(depth); writer.u8(bigEndian ? 1 : 0); writer.u8(trueColour ? 1 : 0)

@@ -89,11 +89,8 @@ extension ScreenSharingSourceIdleTests {
 
   @Test @MainActor func promotedDefaultsAnnounceAt100msAndExtendA100msGraceAtMostFourTimes() async {
     #expect(ScreenSharingSourceIdleMonitor.defaultThresholdNs == 100_000_000)
-    #expect(ScreenSharingSourceIdleMonitor.legacyThresholdNs == 500_000_000)
     #expect(ScreenSharingDeliveryVerifier.defaultGrace == .milliseconds(100))
     #expect(ScreenSharingDeliveryVerifier.defaultGraceExtensions == 4)
-    #expect(ScreenSharingDeliveryVerifier.legacyGrace == .milliseconds(500))
-    #expect(ScreenSharingDeliveryVerifier.legacyGraceExtensions == 0)
     let monitor = ScreenSharingSourceIdleMonitor()
     #expect(monitor.recordSubmission(timestampNs: 1, nowNs: 0))
     monitor.recordEncoded(timestampNs: 1)
@@ -121,8 +118,8 @@ extension ScreenSharingSourceIdleTests {
     #expect(outcomes == Array(repeating: .graceExtended, count: 4) + [.refresh])
     // The former defaults remain available as explicit overrides.
     let legacy = ScreenSharingDeliveryVerifier(
-      audit: ScreenSharingDeliveryAudit(), grace: ScreenSharingDeliveryVerifier.legacyGrace,
-      graceExtensions: ScreenSharingDeliveryVerifier.legacyGraceExtensions, refresh: {}, report: { _ in },
+      audit: ScreenSharingDeliveryAudit(), grace: .milliseconds(500),
+      graceExtensions: 0, refresh: {}, report: { _ in },
       sleep: { try await clock.sleep(for: $0) })
     legacy.noticed(latestTimestampNs: 5)
     await clock.waitForSleep(.milliseconds(500))

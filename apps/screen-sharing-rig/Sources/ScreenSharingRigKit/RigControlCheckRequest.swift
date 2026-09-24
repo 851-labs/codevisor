@@ -16,7 +16,6 @@ public struct RigControlCheckRequest: Codable, Equatable, Sendable {
     self.x = x
     self.y = y
   }
-  public var expectedResponses: Int { clicks + keys }
 
   private enum CodingKeys: String, CodingKey { case clicks, keys, x, y }
 

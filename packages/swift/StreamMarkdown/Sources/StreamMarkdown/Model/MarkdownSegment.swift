@@ -11,7 +11,7 @@ public enum MarkdownSegment: Sendable, Equatable {
   case block(MarkdownBlock)
 
   /// Whether a block can be rendered as part of a merged text run.
-  public static func isTextRunBlock(_ block: MarkdownBlock) -> Bool {
+  private static func isTextRunBlock(_ block: MarkdownBlock) -> Bool {
     switch block {
     case .heading, .paragraph, .bulletList, .orderedList:
       return true

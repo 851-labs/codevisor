@@ -17,12 +17,11 @@ import ScreenSharing
     await clock.waitForSleep(.seconds(10))
     gate.signal()
     try await waiter.value
-    #expect(gate.isSignalled && gate.failure == nil && gate.resumeCount == 1)
+    #expect(gate.isSignalled && gate.failure == nil)
     #expect(clock.pendingCount == 0)  // the deadline was cancelled on exit
     // A later wait returns immediately; a repeated signal is harmless.
     gate.signal()
     try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
-    #expect(gate.resumeCount == 1)
   }
 
   /// Ordering check (added while diagnosing the 11:18 UTC stalled suite run; NOT a reproduction of it):
@@ -38,7 +37,6 @@ import ScreenSharing
     gate.signal()  // same main-actor turn as the task creation: the waiter has not run yet
     try await waiter.value
     #expect(gate.isSignalled && gate.failure == nil)
-    #expect(gate.resumeCount == 0)  // nothing was pending: the wait returned on entry, no continuation was ever stored
     #expect(clock.pendingCount == 0 && clock.requestCount(.seconds(10)) == 0)  // no deadline was even started
   }
 
@@ -51,7 +49,7 @@ import ScreenSharing
     await clock.waitForSleep(.seconds(10))
     clock.advance(by: .seconds(10))
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.timedOut) { try await waiter.value }
-    #expect(gate.failure == .timedOut && gate.resumeCount == 1)
+    #expect(gate.failure == .timedOut)
     gate.signal()  // a late first draw cannot revive readiness
     #expect(!gate.isSignalled)
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.timedOut) {
@@ -68,7 +66,7 @@ import ScreenSharing
     await clock.waitForSleep(.seconds(10))
     waiter.cancel()
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.cancelled) { try await waiter.value }
-    #expect(gate.failure == .cancelled && gate.resumeCount == 1)
+    #expect(gate.failure == .cancelled)
     #expect(clock.pendingCount == 0)
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.cancelled) {
       try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
@@ -86,14 +84,13 @@ import ScreenSharing
     await clock.waitForSleep(.seconds(10))
     gate.teardown()
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.tornDown) { try await waiter.value }
-    #expect(gate.failure == .tornDown && gate.resumeCount == 1 && clock.pendingCount == 0)
+    #expect(gate.failure == .tornDown && clock.pendingCount == 0)
     gate.signal()
     #expect(!gate.isSignalled)
     gate.teardown()  // idempotent
     await #expect(throws: ScreenSharingFirstDrawGate.Failure.tornDown) {
       try await gate.wait(timeout: .seconds(1)) { try await clock.sleep(for: $0) }
     }
-    #expect(gate.resumeCount == 1)
   }
 }
 

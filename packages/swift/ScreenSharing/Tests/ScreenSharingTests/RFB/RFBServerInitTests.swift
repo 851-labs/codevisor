@@ -39,7 +39,6 @@ struct RFBServerInitTests {
     #expect(exotic.encoded == [UInt8](hex: "10 0f 01 00 001f 003f 03ff 0b 05 00 000000"))
     let (parameters, _) = try await serverInit(RFBScript.serverInit(format: exotic))
     #expect(parameters.pixelFormat == exotic)
-    #expect(parameters.pixelFormat.bytesPerPixel == 2)
   }
 
   @Test func theThreeTrailingPaddingBytesAreIgnored() throws {
