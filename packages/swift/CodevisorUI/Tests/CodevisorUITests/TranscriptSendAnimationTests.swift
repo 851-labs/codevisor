@@ -5,25 +5,18 @@ import Testing
 
 @Suite("Transcript send animation")
 struct TranscriptSendAnimationTests {
-  @Test("The row lifts from the editor center without changing its geometry")
-  func usesFinalRowGeometry() throws {
+  @Test("The row lifts from the editor center to the target row's top edge")
+  func translatesFromEditorCenterToTargetTop() throws {
     let sourceFrame = CGRect(x: 24, y: 640, width: 354, height: 30)
-    let compactTarget = CGRect(x: 250, y: 136, width: 124, height: 38)
-    let multilineTarget = CGRect(x: 80, y: 136, width: 294, height: 114)
+    let target = CGRect(x: 250, y: 136, width: 124, height: 38)
 
-    let compactPlan = try #require(
+    let plan = try #require(
       TranscriptSendAnimationContract.plan(
         sourceY: sourceFrame.midY,
-        targetY: compactTarget.minY
-      ))
-    let multilinePlan = try #require(
-      TranscriptSendAnimationContract.plan(
-        sourceY: sourceFrame.midY,
-        targetY: multilineTarget.minY
+        targetY: target.minY
       ))
 
-    #expect(compactPlan.translationY == 519)
-    #expect(multilinePlan == compactPlan)
+    #expect(plan.translationY == 519)
   }
 
   @Test("Every send uses the established timing curve")

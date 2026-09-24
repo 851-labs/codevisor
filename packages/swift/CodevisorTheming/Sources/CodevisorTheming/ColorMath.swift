@@ -120,26 +120,6 @@ public enum ColorMath {
     return best ?? firstDefined
   }
 
-  /// Mixes `primaryFg` toward `bg` until the result clears `minMutedRatio`,
-  /// stepping from a strong-hierarchy 60% blend up to 90%. Falls back to
-  /// `primaryFg` when nothing clears the bar or an input isn't parseable —
-  /// dim but legible chrome beats stylish but unreadable chrome.
-  public static func deriveMutedFg(primaryFg: String, bg: String?) -> String {
-    guard
-      let bg,
-      let fg = RGBA(css: primaryFg),
-      let bgColor = RGBA(css: bg)
-    else { return primaryFg }
-    let bgL = bgColor.relativeLuminance
-    for weight in [0.6, 0.7, 0.8, 0.9] {
-      let mixed = fg.mixed(with: bgColor, weight: weight)
-      if contrastRatio(bgL, mixed.relativeLuminance) >= minMutedRatio {
-        return mixed.hexString()
-      }
-    }
-    return primaryFg
-  }
-
   // Extracts the alpha component from a functional color notation
   // (rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color), supporting both the
   // modern slash syntax (`rgb(0 0 0 / 0)`) and the legacy comma syntax

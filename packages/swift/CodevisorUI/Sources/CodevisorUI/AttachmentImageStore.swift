@@ -365,13 +365,6 @@ private actor AttachmentPreviewDiskCache {
   }
 }
 
-private nonisolated func previewAspectRatio(for size: CGSize) -> CGFloat? {
-  guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
-    return nil
-  }
-  return size.width / size.height
-}
-
 #if canImport(AppKit)
   private nonisolated func pngData(for image: NSImage) -> Data? {
     guard let tiff = image.tiffRepresentation,

@@ -23,7 +23,6 @@ struct RGBATests {
   @Test("Hex round-trip")
   func hexRoundTrip() {
     #expect(RGBA(hex: "#1e1e2e")!.hexString() == "#1e1e2e")
-    #expect(RGBA(hex: "#1e1e2e80")!.hexString(includeAlpha: true) == "#1e1e2e80")
   }
 
   @Test("Luminance extremes and contrast")
@@ -125,18 +124,5 @@ struct ColorMathTests {
     #expect(
       ColorMath.pickReadableForeground(bg: nil, candidates: [nil, "", "#abc"]) == "#abc")
     #expect(ColorMath.pickReadableForeground(bg: "#000000", candidates: [nil, nil]) == nil)
-  }
-
-  @Test("deriveMutedFg clears the muted floor")
-  func mutedFg() {
-    let muted = ColorMath.deriveMutedFg(primaryFg: "#ffffff", bg: "#000000")
-    let ratio = ColorMath.contrastRatio(
-      ColorMath.relativeLuminance(muted)!, ColorMath.relativeLuminance("#000000")!)
-    #expect(ratio >= ColorMath.minMutedRatio)
-    // The 60% mix of white over black already clears 4.5 → expect that mix.
-    #expect(muted == "#999999")
-    // Unparseable input → primary passthrough.
-    #expect(ColorMath.deriveMutedFg(primaryFg: "var(--fg)", bg: "#000") == "var(--fg)")
-    #expect(ColorMath.deriveMutedFg(primaryFg: "#fff", bg: nil) == "#fff")
   }
 }

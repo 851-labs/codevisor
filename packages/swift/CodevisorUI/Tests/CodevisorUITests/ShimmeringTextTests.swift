@@ -22,7 +22,7 @@
       hostingView.layoutSubtreeIfNeeded()
 
       hostingView.rootView = AnyView(
-        ShimmeringText.compactingContext
+        ShimmeringText(text: "Compacting context...")
           .frame(width: 180, height: 24, alignment: .leading)
       )
       hostingView.layoutSubtreeIfNeeded()

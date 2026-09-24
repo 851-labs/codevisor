@@ -15,13 +15,6 @@ public enum GoalPresentation {
     }
   }
 
-  public static func activityText(for activity: GoalActivity) -> String {
-    switch activity {
-    case .planning: "Planning"
-    case .verifying: "Verifying"
-    }
-  }
-
   public static func usageText(for goal: SessionGoal) -> String? {
     let parts = [
       goal.tokensUsed > 0 ? "\(tokens(goal.tokensUsed)) tokens" : nil,

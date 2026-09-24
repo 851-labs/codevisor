@@ -251,29 +251,12 @@ extension ShimmeringText {
   public static var startingAgent: ShimmeringText {
     ShimmeringText(text: "Starting agent...")
   }
-
-  public static var compactingContext: ShimmeringText {
-    ShimmeringText(text: "Compacting context...")
-  }
-
-  /// The turn is over but the agent still owns background work and will
-  /// start a new turn on its own when it settles.
-  public static func waitingOnBackgroundTask(_ description: String) -> ShimmeringText {
-    ShimmeringText(text: "Waiting on \(description)...")
-  }
-
-  /// The user's prompt is held server-side while the harness updates and
-  /// dispatches automatically once the update finishes.
-  public static func waitingOnHarnessUpdate(_ harnessName: String) -> ShimmeringText {
-    ShimmeringText(text: "Waiting for \(harnessName) to finish updating...")
-  }
 }
 
 #Preview {
   VStack(alignment: .leading, spacing: 8) {
     ShimmeringText.thinking
     ShimmeringText.startingAgent
-    ShimmeringText.compactingContext
   }
   .padding()
 }
