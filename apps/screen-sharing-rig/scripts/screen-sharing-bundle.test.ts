@@ -175,6 +175,14 @@ test("reads the designated requirement back from codesign", async () => {
       `Executable=/tmp/Rig.app/Contents/MacOS/screen-sharing-rig\ndesignated => identifier "com.codevisor.ScreenSharingRig" and anchor apple generic\n`
   })
   assert.equal(requirement, 'identifier "com.codevisor.ScreenSharingRig" and anchor apple generic')
+  assert.equal(
+    await designatedRequirement({
+      app: "/tmp/Rig.app",
+      capture: async () => `# designated => cdhash H"4590715ae08947abc6ed6f7e8ac64a3f98f3f35d"\n`
+    }),
+    'cdhash H"4590715ae08947abc6ed6f7e8ac64a3f98f3f35d"',
+    "ad-hoc signatures report their implicit requirement commented out"
+  )
   await assert.rejects(
     designatedRequirement({ app: "/tmp/Rig.app", capture: async () => "Executable=/x\n" }),
     /did not report a designated requirement/

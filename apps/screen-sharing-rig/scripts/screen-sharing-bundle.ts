@@ -173,7 +173,9 @@ export async function signDiagnosticApp({
 }
 
 /// The designated requirement is what TCC pins a grant to. Read it back so a
-/// build can prove it did not change from the previous build.
+/// build can prove it did not change from the previous build. An ad-hoc
+/// signature has only an implicit cdhash requirement, which codesign prints
+/// commented out (`# designated => cdhash H"…"`).
 export async function designatedRequirement({
   app,
   capture
@@ -184,7 +186,7 @@ export async function designatedRequirement({
   const output = await capture("/usr/bin/codesign", ["-d", "-r-", app])
   const line = output
     .split("\n")
-    .map((entry) => entry.trim())
+    .map((entry) => entry.trim().replace(/^#\s*/, ""))
     .find((entry) => entry.startsWith("designated => "))
   if (!line) throw new Error(`codesign did not report a designated requirement for ${app}`)
   return line.slice("designated => ".length)
