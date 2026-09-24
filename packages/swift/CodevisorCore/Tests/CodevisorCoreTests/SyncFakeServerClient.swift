@@ -5,6 +5,13 @@ import Foundation
 
 @testable import CodevisorCore
 
+/// The workspace and pane registry a `SyncFakeServerClient` navigation
+/// snapshot carries.
+struct FakeWorkspaceSnapshot: Sendable {
+  var workspaces: [ServerWorkspace]
+  var panes: [ServerWorkspacePane]
+}
+
 /// A fake server whose event stream and list endpoints are test-driven.
 /// Shared by the MachineController suites (sync, panes, self-updates).
 @Observable
@@ -18,7 +25,9 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   /// default rejects uploads.
   var uploadFileHandler: (@Sendable (String, String, Data) async throws -> ServerFileMetadata)?
   var workspaceOrderHandler: (@Sendable (UUID, String, Int) async throws -> ServerWorkspace)?
-  var workspaceSnapshotHandler: (@Sendable () async throws -> ServerWorkspaceSnapshot?)?
+  /// Overrides the workspace half of `navigationSnapshot`, e.g. to fail it
+  /// or to serve a stale registry.
+  var workspaceSnapshotHandler: (@Sendable () async throws -> FakeWorkspaceSnapshot)?
   var workspaceRenameHandler: (@Sendable (UUID, String, Bool) async throws -> Void)?
   var sessionRenameHandler: (@Sendable (ChatSession) async throws -> Void)?
   private var _workspaceRenameNames: [String] = []
@@ -139,18 +148,16 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   }
 
   func navigationSnapshot() async throws -> ServerNavigationSnapshot {
-    let cursor = lock.withLock { nextEventId - 1 }
-    let snapshot = try await workspaceSnapshot()
-    let workspaces: [ServerWorkspace]
-    let panes: [ServerWorkspacePane]
-    if let snapshot {
-      workspaces = snapshot.workspaces; panes = snapshot.panes
-    } else {
-      workspaces = try await listWorkspaces() ?? []; panes = try await listWorkspacePanes() ?? []
+    let (cursor, handler) = lock.withLock {
+      _workspaceSnapshotCallCount += 1
+      return (nextEventId - 1, workspaceSnapshotHandler)
     }
+    let state =
+      try await handler?()
+      ?? lock.withLock { FakeWorkspaceSnapshot(workspaces: _workspaces, panes: _panes ?? []) }
     return ServerNavigationSnapshot(
       eventCursor: cursor, projects: try await listProjects(), sessions: try await listSessions(),
-      workspaces: workspaces, panes: panes)
+      workspaces: state.workspaces, panes: state.panes)
   }
 
   /// Test mutations emit the same entity delta as the database journal.
@@ -215,26 +222,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       return _sessions
     }
   }
-  func listWorkspaces() async throws -> [ServerWorkspace]? { lock.withLock { _workspaces } }
-  func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? {
-    let handler = lock.withLock {
-      _workspaceSnapshotCallCount += 1
-      return workspaceSnapshotHandler
-    }
-    if let handler { return try await handler() }
-    return lock.withLock {
-      return ServerWorkspaceSnapshot(workspaces: _workspaces, panes: _panes ?? [])
-    }
-  }
-  func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? {
-    lock.withLock {
-      _workspaces.removeAll {
-        $0.id.caseInsensitiveCompare(workspace.id) == .orderedSame
-      }
-      _workspaces.append(workspace)
-      return workspace
-    }
-  }
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
     let handler = lock.withLock { workspaceOrderHandler }
     if let handler { return try await handler(id, position, expectedRevision) }
@@ -277,7 +264,6 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       return _sessions[index]
     }
   }
-  func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { lock.withLock { _panes } }
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? {
     let gate = lock.withLock {
       _paneMutationLog.append("upsert")

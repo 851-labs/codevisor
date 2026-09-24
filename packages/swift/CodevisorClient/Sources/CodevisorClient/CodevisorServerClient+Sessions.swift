@@ -176,16 +176,8 @@ extension CodevisorServerClient {
     try await get("/v1/sessions")
   }
 
-  public func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
-    try await get("/v1/sessions/\(id.uuidString)")
-  }
-
   public func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits {
     try await get("/v1/sessions/\(id.uuidString)/usage-limits")
-  }
-
-  public func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? {
-    try await send("/v1/sessions/\(id.uuidString)/connect", method: "POST", body: Optional<EmptyBody>.none)
   }
 
   public func openSession(
@@ -266,10 +258,6 @@ extension CodevisorServerClient {
     ]
     guard let path = components.string else { throw CodevisorServerClientError.invalidResponse }
     return try await get(path)
-  }
-
-  public func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
-    try await get("/v1/sessions/\(id.uuidString)/events")
   }
 
   public func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem] {

@@ -375,13 +375,11 @@ final class FakeLocalServerClient: CodevisorServerClienting, @unchecked Sendable
   }
   func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func listSessions() async throws -> [ServerSession] { [] }
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func deleteSession(id: UUID) async throws {}

@@ -167,9 +167,6 @@ struct PreviewServerClient: CodevisorServerClienting {
     ServerCapabilities(harnesses: harnessCapabilities)
   }
   func listHarnesses() async throws -> [ServerHarness] { harnessCapabilities.map(\.harness) }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject {
     throw CodevisorServerClientError.invalidResponse
@@ -179,9 +176,6 @@ struct PreviewServerClient: CodevisorServerClienting {
   }
   func deleteProject(id: UUID) async throws {}
   func listSessions() async throws -> [ServerSession] { [] }
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {
     throw CodevisorServerClientError.invalidResponse
   }

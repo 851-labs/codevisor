@@ -29,8 +29,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// `refresh` bypasses the server's update-check cache; `channel` selects
   /// which release feed the server consults (older servers ignore both).
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo
-  /// The machine's config-plane replica for a namespace (@codevisor/sync).
-  func syncDocument(namespace: String) async throws -> ServerSyncDocument
   /// Merges entries into the machine's replica; the response is the merged
   /// document, so one round trip both pushes and pulls.
   func mergeSyncDocument(
@@ -54,9 +52,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// machines.
   func syncBlob(id: String) async throws -> Data
   func putSyncBlob(id: String, bytes: Data) async throws
-  /// Whether the machine participates in the config plane at all —
-  /// server-enforced; every sync surface refuses while this is off.
-  func syncParticipation() async throws -> ServerSyncParticipation
   func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation
   func issuePairingToken() async throws -> ServerPairingToken
   /// The machine's stable connection token (unchanged across restarts and
@@ -87,7 +82,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Codevisor) — the source for onboarding's workspace suggestions and
   /// "import existing chats".
   func listAgentSessions(harnessId: String) async throws -> [SessionInfo]
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness
   /// User-defined custom ACP harnesses (BYO): persisted server-side in a
   /// user-editable file and merged into the harness catalog.
   func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec]
@@ -101,18 +95,12 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Starts a one-click update via the harness's origin-matched flow.
   /// Returns `queued: true` when chats are mid-turn — the update runs when
   /// they finish.
-  func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo
-  func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted
   /// Dual-install: the bundled desktop app's version/update state (nil
   /// when the harness has no bundled app). Computed server-side on demand.
   func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp?
   /// Runs the verified bundle swap for the bundled desktop app.
   func updateBundledApp(harnessId: String) async throws
-  /// "Update Now" on a queued update — skips the idle wait.
-  func applyPendingHarnessUpdate(id: String) async throws
-  /// Disarms a queued update entirely.
-  func cancelPendingHarnessUpdate(id: String) async throws
   /// Forces a latest-version check for all harnesses, returning the
   /// refreshed decorated list.
   func checkHarnessUpdates() async throws -> [ServerHarness]
@@ -159,7 +147,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func createMcpServer(_ request: CreateMcpServerBody) async throws -> ServerMcpServer
   func updateMcpServer(id: String, request: UpdateMcpServerBody) async throws -> ServerMcpServer
   func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer
-  func connectMcpServer(id: String) async throws -> ServerMcpServer
   func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart
   func disconnectMcpOAuth(id: String) async throws -> ServerMcpServer
   func removeMcpServer(id: String) async throws
@@ -173,7 +160,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Remove a server from a harness's own config file (backed up and
   /// parked for undo).
   func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult
-  func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval]
   /// Undo a native removal by reinserting the parked entry.
   func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan
   /// Toggle a harness's own per-server enable flag (only where one exists).
@@ -187,9 +173,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Create a skill in the canonical store — from a template, or from
   /// pasted SKILL.md content.
   func createSkill(name: String, description: String, content: String?) async throws -> ServerSkillsScan
-  /// Import a local skill folder (a path on the server's machine) into the
-  /// canonical store.
-  func importSkill(path: String) async throws -> ServerSkillsScan
   /// List the skills a remote source offers (GitHub/GitLab repos, git
   /// URLs, or sites publishing skills via well-known endpoints).
   func discoverRemoteSkills(source: String) async throws -> [ServerRemoteSkillCandidate]
@@ -198,10 +181,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func importRemoteSkill(source: String, skillNames: [String]?) async throws -> ServerSkillsScan
   /// Delete a canonical skill and sweep its links from every harness.
   func removeSkill(directoryName: String) async throws -> ServerSkillsScan
-  /// Install (symlink) or uninstall a canonical skill for one harness.
-  func setSkillInstalled(directoryName: String, harnessId: String, installed: Bool) async throws -> ServerSkillsScan
-  /// Promote an independent harness-dir skill into the canonical store.
-  func makeSkillGlobal(harnessId: String, directoryName: String) async throws -> ServerSkillsScan
   /// Link the named skills (or all of them) into every harness that needs
   /// a link, bringing harnesses in sync with the shared store.
   func syncSkills(directoryNames: [String]?) async throws -> ServerSkillsScan
@@ -238,12 +217,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// Install (or update a managed install of) the plugin the source
   /// provides (`POST /v1/plugins/import-remote`).
   func importRemotePlugin(source: String) async throws -> ServerPluginSummary
-  /// Dev mode: symlink a local plugin directory on the server's machine
-  /// into the plugins root (`POST /v1/plugins/link`).
-  func linkPlugin(path: String) async throws -> ServerPluginSummary
-  /// Uninstall a managed plugin and return the updated list
-  /// (`DELETE /v1/plugins/:pluginId`).
-  func removePlugin(pluginId: String) async throws -> [ServerPluginSummary]
   /// Remove a development link — the link only, never the checkout it
   /// points at (`DELETE /v1/plugins/:pluginId/link`).
   func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary]
@@ -269,22 +242,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// ~/codevisor/workspaces, and registers a project pointing at it. The
   /// client-supplied id makes creation idempotent per workspace.
   func createScratchProject(id: UUID) async throws -> ServerProject
-  /// Moves a not-yet-started session to another project (and optionally a
-  /// worktree of it). Only valid while the session's agent hasn't started;
-  /// the server re-derives the session cwd from the new project.
-  func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession
-  func listWorktrees(projectId: UUID) async throws -> [ServerWorktree]
-  /// Server-owned workspace metadata. Nil means the connected server
-  /// predates workspace snapshots; callers must preserve their local data.
-  func listWorkspaces() async throws -> [ServerWorkspace]?
-  /// Coherent workspace and pane registry. Nil means the connected server
-  /// predates the combined snapshot endpoint.
-  func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot?
-  /// Creates or updates a server-owned workspace identity. Nil means the
-  /// connected server predates workspace snapshots.
-  func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace?
-  /// Nil means the connected server predates explicit pane identity.
-  func listWorkspacePanes() async throws -> [ServerWorkspacePane]?
   /// Nil means the connected server predates explicit pane mutations.
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane?
   /// Atomically converts this exact pane to a chat and assigns the session.
@@ -320,12 +277,7 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   /// caller follow `project.setup` progress events while the clone runs.
   func createProjectFromGit(id: UUID, url: String, name: String?) async throws -> ServerProject
   func listSessions() async throws -> [ServerSession]
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail
   func sessionUsageLimits(id: UUID) async throws -> ServerHarnessUsageLimits
-  /// Starts or rebinds the existing agent runtime and returns its current,
-  /// session-specific picker metadata. Nil means the server predates this
-  /// endpoint and callers should keep the capability-cache fallback.
-  func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata?
   /// One-round-trip chat open: ensures the project and session records
   /// exist server-side (never overwriting an existing project) and returns
   /// the refreshed session together with its first transcript page. Nil
@@ -366,7 +318,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     id: UUID, itemId: String, key: String, field: String, position: Int
   ) async throws -> ServerTranscriptBodyPage
   func promptQueue(id: UUID) async throws -> [ServerPromptQueueItem]
-  func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope]
   func upsertSession(_ session: ChatSession) async throws -> ServerSession
   func upsertSession(_ session: ChatSession, workspaceId: UUID?) async throws -> ServerSession
   func updateSession(_ session: ChatSession) async throws -> ServerSession

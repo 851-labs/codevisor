@@ -36,11 +36,8 @@ public extension CodevisorServerClienting {
     try await applyServerUpdate(channel: .stable)
   }
 
-  /// Defaults for fakes/older servers without the config plane: an empty
-  /// replica, and a merge that simply echoes what was pushed.
-  func syncDocument(namespace: String) async throws -> ServerSyncDocument {
-    ServerSyncDocument(namespace: namespace, entries: [])
-  }
+  /// Default for fakes/older servers without the config plane: a merge that
+  /// simply echoes what was pushed.
   func mergeSyncDocument(
     namespace: String,
     entries: [ServerSyncEntry]
@@ -113,8 +110,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func connectSession(id: UUID) async throws -> ServerSessionRuntimeMetadata? { nil }
-
   /// Default for fakes/older transports: no combined open — callers use
   /// the discrete calls. The HTTP client overrides with the real endpoint.
   func openSession(
@@ -186,14 +181,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func linkPlugin(path: String) async throws -> ServerPluginSummary {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
-  func removePlugin(pluginId: String) async throws -> [ServerPluginSummary] {
-    throw CodevisorServerClientError.invalidResponse
-  }
-
   func unlinkPlugin(pluginId: String) async throws -> [ServerPluginSummary] {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -210,10 +197,6 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
-  func listWorkspaces() async throws -> [ServerWorkspace]? { nil }
-  func workspaceSnapshot() async throws -> ServerWorkspaceSnapshot? { nil }
-  func upsertWorkspace(_ workspace: ServerWorkspace) async throws -> ServerWorkspace? { nil }
-  func listWorkspacePanes() async throws -> [ServerWorkspacePane]? { nil }
   func upsertWorkspacePane(_ pane: ServerWorkspacePane) async throws -> ServerWorkspacePane? { nil }
   func promoteWorkspacePaneToChat(
     _ pane: ServerWorkspacePane,
@@ -326,19 +309,7 @@ public extension CodevisorServerClienting {
   func installHarness(id: String, methodId: String?) async throws -> ServerHarnessOperationStarted {
     throw CodevisorServerClientError.invalidResponse
   }
-  func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func applyPendingHarnessUpdate(id: String) async throws {
-    throw CodevisorServerClientError.invalidResponse
-  }
-  func cancelPendingHarnessUpdate(id: String) async throws {
     throw CodevisorServerClientError.invalidResponse
   }
   func bundledAppInfo(harnessId: String) async throws -> ServerHarnessBundledApp? { nil }
@@ -428,9 +399,6 @@ public extension CodevisorServerClienting {
   func setMcpServerEnabled(id: String, enabled: Bool) async throws -> ServerMcpServer {
     throw CodevisorServerClientError.invalidResponse
   }
-  func connectMcpServer(id: String) async throws -> ServerMcpServer {
-    throw CodevisorServerClientError.invalidResponse
-  }
   func startMcpOAuth(id: String) async throws -> ServerMcpOAuthStart {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -450,7 +418,6 @@ public extension CodevisorServerClienting {
   func removeNativeMcp(harnessId: String, serverName: String) async throws -> ServerRemoveNativeMcpResult {
     throw CodevisorServerClientError.invalidResponse
   }
-  func listNativeMcpRemovals() async throws -> [ServerNativeMcpRemoval] { [] }
   func restoreNativeMcpRemoval(id: String) async throws -> ServerNativeMcpScan {
     throw CodevisorServerClientError.invalidResponse
   }
@@ -494,10 +461,6 @@ public extension CodevisorServerClienting {
   func fileVersion(sessionId: UUID, path: String) async throws -> String? {
     nil
   }
-
-  /// Default for fakes/older servers: no persisted history, callers fall
-  /// back to the text-only conversation snapshot.
-  func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] { [] }
 
   func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
     throw CodevisorServerClientError.httpStatus(404, "")
@@ -556,10 +519,6 @@ public extension CodevisorServerClienting {
 
   func deleteQueuedPrompt(sessionId: UUID, queueItemId: String) async throws {}
 
-  /// Defaults so fakes and older transports keep compiling; the HTTP client
-  /// overrides these with the real worktree endpoints.
-  func listWorktrees(projectId: UUID) async throws -> [ServerWorktree] { [] }
-
   /// Notes sync is best-effort; fakes/older servers act notes-less.
 
   /// Workspace archive sync is best-effort for the same reason: a fake or a
@@ -607,10 +566,6 @@ public extension CodevisorServerClienting {
   func createScratchProject(id: UUID) async throws -> ServerProject {
     throw CodevisorServerClientError.invalidResponse
   }
-
-  func moveSession(id: UUID, projectId: UUID, worktreeName: String?) async throws -> ServerSession {
-    throw CodevisorServerClientError.invalidResponse
-  }
 }
 
 public extension CodevisorServerClienting {
@@ -624,10 +579,6 @@ public extension CodevisorServerClienting {
 
   func reconcileCredentialsSync() async throws -> JSONValue {
     throw CodevisorServerClientError.invalidResponse
-  }
-
-  func syncParticipation() async throws -> ServerSyncParticipation {
-    ServerSyncParticipation(enabled: true)
   }
 
   func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {

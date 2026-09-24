@@ -143,14 +143,6 @@ struct CodevisorServerClientPluginsTests {
       as: UTF8.self
     )
     #expect(source == #"{"source":"acme\/git-diff#v1"}"# || source == #"{"source":"acme/git-diff#v1"}"#)
-    let link = String(
-      decoding: try JSONEncoder().encode(
-        CodevisorServerClient.PluginLinkBody(path: "/Users/x/dev/plugin")
-      ),
-      as: UTF8.self
-    )
-    #expect(link.contains("path"))
-    #expect(link.contains("plugin"))
 
     let apply = String(
       decoding: try JSONEncoder().encode(

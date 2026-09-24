@@ -53,14 +53,6 @@ extension CodevisorServerClient {
     return try await get("/v1/harnesses/\(encoded)/agent-sessions")
   }
 
-  public func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-    try await send(
-      "/v1/harnesses/\(id)",
-      method: "PATCH",
-      body: UpdateHarnessBody(enabled: enabled)
-    )
-  }
-
   public func listCustomHarnesses() async throws -> [ServerCustomHarnessSpec] {
     let envelope: ServerCustomHarnessListEnvelope = try await get("/v1/harnesses/custom")
     return envelope.harnesses
@@ -88,14 +80,6 @@ extension CodevisorServerClient {
     )
   }
 
-  public func harnessUninstallInfo(id: String) async throws -> ServerHarnessUninstallInfo {
-    try await get("/v1/harnesses/\(id)/uninstall")
-  }
-
-  public func uninstallHarness(id: String) async throws -> ServerHarnessOperationStarted {
-    try await send("/v1/harnesses/\(id)/uninstall", method: "POST", body: Optional<EmptyBody>.none)
-  }
-
   public func updateHarness(id: String) async throws -> ServerHarnessOperationStarted {
     let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
     return try await send(
@@ -121,20 +105,6 @@ extension CodevisorServerClient {
       method: "POST",
       body: Optional<EmptyBody>.none
     )
-  }
-
-  public func applyPendingHarnessUpdate(id: String) async throws {
-    let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-    let _: ServerHarnessOperationStarted = try await send(
-      "/v1/harnesses/\(encoded)/update/pending/apply",
-      method: "POST",
-      body: Optional<EmptyBody>.none
-    )
-  }
-
-  public func cancelPendingHarnessUpdate(id: String) async throws {
-    let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-    try await sendNoResponse("/v1/harnesses/\(encoded)/update/pending", method: "DELETE")
   }
 
   public func checkHarnessUpdates() async throws -> [ServerHarness] {

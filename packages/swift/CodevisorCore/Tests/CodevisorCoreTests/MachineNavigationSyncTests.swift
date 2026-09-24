@@ -391,14 +391,10 @@ private final class NavigationSyncFakeServerClient: CodevisorServerClienting, @u
     ServerCapabilities(harnesses: [])
   }
   func listHarnesses() async throws -> [ServerHarness] { fatalError("unused") }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-    fatalError("unused")
-  }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func upsertSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
   func updateSession(_ session: ChatSession) async throws -> ServerSession { fatalError("unused") }
   func deleteSession(id: UUID) async throws {}
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {

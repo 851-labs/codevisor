@@ -68,10 +68,6 @@ final class JournalingServerClient: CodevisorServerClienting, @unchecked Sendabl
   func issuePairingToken() async throws -> ServerPairingToken { try await base.issuePairingToken() }
   func capabilities(cwd: String) async throws -> ServerCapabilities { try await base.capabilities(cwd: cwd) }
   func listHarnesses() async throws -> [ServerHarness] { try await base.listHarnesses() }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness {
-    try await base.setHarnessEnabled(id: id, enabled: enabled)
-  }
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail { try await base.sessionDetail(id: id) }
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {
     try await base.promptSession(id: id, text: text)
   }

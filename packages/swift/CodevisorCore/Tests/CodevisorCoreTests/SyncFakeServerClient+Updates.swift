@@ -177,12 +177,6 @@ extension SyncFakeServerClient {
     lock.withLock { _syncEntries[namespace] ?? [] }
   }
 
-  func syncDocument(namespace: String) async throws -> ServerSyncDocument {
-    lock.withLock {
-      ServerSyncDocument(namespace: namespace, entries: _syncEntries[namespace] ?? [])
-    }
-  }
-
   func mergeSyncDocument(
     namespace: String,
     entries: [ServerSyncEntry]
@@ -492,11 +486,9 @@ extension SyncFakeServerClient {
       }
     }
   }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail { fatalError("unused") }
   func upsertSession(_ session: ChatSession) async throws -> ServerSession {
     lock.withLock {
       guard

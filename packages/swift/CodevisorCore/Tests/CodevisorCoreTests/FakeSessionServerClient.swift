@@ -60,7 +60,6 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
   var detailConversation: [ServerConversationItem] = []
   var detailCursor = 0
-  var historyEvents: [ServerEventEnvelope] = []
   var initialTranscriptPage: ServerTranscriptPage?
   var olderTranscriptPage: ServerTranscriptPage?
   let transcriptDetailRequests = TestSignal()
@@ -263,30 +262,11 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   }
   func issuePairingToken() async throws -> ServerPairingToken { fatalError("unused") }
   func capabilities(cwd: String) async throws -> ServerCapabilities { ServerCapabilities(harnesses: []) }
-  func setHarnessEnabled(id: String, enabled: Bool) async throws -> ServerHarness { fatalError("unused") }
   func listProjects() async throws -> [ServerProject] { [] }
   func upsertProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func updateProject(_ project: Project) async throws -> ServerProject { fatalError("unused") }
   func deleteProject(id: UUID) async throws {}
   func listSessions() async throws -> [ServerSession] { [] }
-  func sessionDetail(id: UUID) async throws -> ServerSessionDetail {
-    ServerSessionDetail(
-      session: ServerSession(
-        id: sessionId.uuidString,
-        projectId: projectId.uuidString,
-        serverId: "local",
-        harnessId: "codex",
-        agentSessionId: "agent-session",
-        title: "Server session",
-        origin: .codevisor,
-        createdAt: "2026-06-30T00:00:00.000Z",
-        updatedAt: nil,
-        usage: nil
-      ),
-      conversation: detailConversation,
-      eventCursor: detailCursor
-    )
-  }
 
   func transcriptPage(id: UUID, before: String?, limit: Int) async throws -> ServerTranscriptPage {
     let shouldFail = lock.withLock {
@@ -564,10 +544,6 @@ extension FakeSessionServerClient {
     if let gate = lock.withLock({ _questionAnswerGate }) {
       for await _ in gate { break }
     }
-  }
-
-  func sessionEvents(id: UUID) async throws -> [ServerEventEnvelope] {
-    historyEvents
   }
 
   func eventStream(since: Int) -> AsyncThrowingStream<ServerEventEnvelope, any Error> {

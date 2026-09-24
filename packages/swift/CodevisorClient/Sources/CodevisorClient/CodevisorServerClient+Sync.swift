@@ -88,10 +88,6 @@ public struct ServerSkillsSyncStatus: Codable, Equatable, Sendable {
 }
 
 extension CodevisorServerClient {
-  public func syncDocument(namespace: String) async throws -> ServerSyncDocument {
-    try await get("/v1/sync/\(namespace)")
-  }
-
   /// Merges entries into the machine's replica. The response is the merged
   /// document, so one round trip both pushes and pulls.
   public func mergeSyncDocument(
@@ -141,10 +137,6 @@ public struct ServerSyncParticipation: Codable, Equatable, Sendable {
 }
 
 extension CodevisorServerClient {
-  public func syncParticipation() async throws -> ServerSyncParticipation {
-    try await get("/v1/sync-participation")
-  }
-
   public func setSyncParticipation(enabled: Bool) async throws -> ServerSyncParticipation {
     try await send(
       "/v1/sync-participation",

@@ -50,7 +50,7 @@ struct MachineControllerWorkspaceEventTests {
     let release = TestSignal()
     var staleRecord = WorkspaceSyncModel.serverWorkspace(from: fixture.workspace)
     staleRecord.isArchived = !isArchived
-    let staleSnapshot = ServerWorkspaceSnapshot(workspaces: [staleRecord], panes: fixture.fake.workspacePanes ?? [])
+    let staleSnapshot = FakeWorkspaceSnapshot(workspaces: [staleRecord], panes: fixture.fake.workspacePanes ?? [])
     fixture.fake.workspaceSnapshotHandler = {
       started.signal()
       await release.wait()
