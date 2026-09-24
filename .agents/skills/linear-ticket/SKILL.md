@@ -9,10 +9,12 @@ Use the Linear integration (via Codevisor) for every ticket step.
 
 ## Creating tickets
 
-Put tickets in the **codevisor** project and assign them to the person
-driving the chat: pass `assignee: "me"`, which resolves to the Linear
-account the integration is signed in as (`get_user` with `query: "me"`
-shows who that is).
+Every new ticket goes in the **codevisor** project: pass
+`project: "codevisor"` to `save_issue`. Linear doesn't add a project by
+default, so check the created issue's `project` and set it if it's
+missing. Assign each ticket to the person driving the chat: pass
+`assignee: "me"`, which resolves to the Linear account the integration is
+signed in as (`get_user` with `query: "me"` shows who that is).
 Link each one to its parent tracking ticket when one exists. Don't start
 work on a ticket just because you created it.
 
@@ -37,5 +39,7 @@ work on a ticket just because you created it.
    To upload a file: `prepare_attachment_upload`, then `PUT` the bytes
    with the signed headers exactly as returned, then
    `create_attachment_from_upload`.
-6. **Merge only after the user approves.** Squash-merge. The ticket closes
+6. **Move the ticket to In Review** once the PR is open and ready for
+   review (not while it's a draft or still missing its tophat).
+7. **Merge only after the user approves.** Squash-merge. The ticket closes
    through `Fixes`.
