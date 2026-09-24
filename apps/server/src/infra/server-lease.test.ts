@@ -91,7 +91,7 @@ describe("server lease", () => {
     await second.release()
   })
 
-  it("supports bounded replacement waiting and idempotent release", async () => {
+  it("treats a repeated release as a no-op", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codevisor-server-lease-"))
     temporaryDirectories.push(directory)
     const lease = await acquireServerLease(join(directory, "codevisor.sqlite"), {

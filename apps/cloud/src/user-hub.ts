@@ -53,7 +53,6 @@ export const HUB_DEVICE_ID_HEADER = "X-Codevisor-Device-Id"
 export const CLOSE_INVALID_FRAME = 4000
 export const CLOSE_UNSUPPORTED_PROTOCOL = 4200
 export const CLOSE_REVOKED = 4201
-export const CLOSE_HELLO_TIMEOUT = 4002
 /// A newer socket completed hello for the same machine device id. The older
 /// socket is a zombie (half-open, or a superseded process) — routing to it
 /// would black-hole relay traffic. Non-fatal: a legitimately superseded

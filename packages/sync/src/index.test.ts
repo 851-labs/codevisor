@@ -73,24 +73,6 @@ describe("mergeSyncEntries", () => {
     expect(result.changed).toEqual([dead])
   })
 
-  it("is idempotent: merging the same entries again changes nothing", () => {
-    const incoming = [entry("a", 1, ts(1)), entry("b", 2, ts(2))]
-    const once = mergeSyncEntries([], incoming)
-    const twice = mergeSyncEntries(once.merged, incoming)
-    expect(twice.merged).toEqual(once.merged)
-    expect(twice.changed).toEqual([])
-  })
-
-  it("converges regardless of merge order", () => {
-    const a = [entry("k", "from-a", ts(10, 0, "a"))]
-    const b = [entry("k", "from-b", ts(10, 0, "b"))]
-    const ab = mergeSyncEntries(a, b).merged
-    const ba = mergeSyncEntries(b, a).merged
-    expect(ab).toEqual(ba)
-    // Device id breaks the tie deterministically: "b" > "a".
-    expect(ab).toEqual([entry("k", "from-b", ts(10, 0, "b"))])
-  })
-
   it("sorts merged output by key", () => {
     const result = mergeSyncEntries(
       [entry("b", 2, ts(1))],

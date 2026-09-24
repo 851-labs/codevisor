@@ -20,12 +20,13 @@ export interface ClaudeAuthSpawn {
 
 /// The SDK's OAuth control requests exist at runtime (verified against
 /// sdk.mjs 0.3.211 and a live CLI) but are absent from its public Query
-/// type; this structural view is the seam we call them through.
+/// type; this structural view is the seam we call them through. `interrupt`
+/// and `close` are declared on every Query.
 interface ClaudeAuthControl {
   claudeAuthenticate(loginWithClaudeAi: boolean): Promise<unknown>
   claudeOAuthCallback(code: string, state: string): Promise<unknown>
-  interrupt?(): Promise<void>
-  close?(): void
+  interrupt(): Promise<unknown>
+  close(): void
 }
 
 export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient => {
@@ -64,8 +65,8 @@ export const spawnClaudeAuthClient = (spawn: ClaudeAuthSpawn): ClaudeAuthClient 
       await control.claudeOAuthCallback(code, state ?? "")
     },
     close: () => {
-      void control.interrupt?.().catch(() => undefined)
-      control.close?.()
+      void control.interrupt().catch(() => undefined)
+      control.close()
     }
   }
 }
