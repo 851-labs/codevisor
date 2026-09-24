@@ -9,7 +9,7 @@ import { appleOptions, hasAppleAuth, revokeAppleAuthorization } from "./apple-au
 import { nativeAppleAuth } from "./apple-native.js"
 import * as schema from "./db/schema.js"
 import { emailAuthPlugin, hasEmailAuth } from "./email-auth.js"
-import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
+import { isDevAuthEnabled, type CloudEnv } from "./env.js"
 
 /// Client ids accepted by the device-authorization flow. Machines are the only
 /// device-flow consumer today; native apps use email, Apple, or the browser OAuth handoff.
@@ -114,7 +114,3 @@ export const createAuth = (env: CloudEnv) => {
     ]
   })
 }
-
-export type CloudAuth = ReturnType<typeof createAuth>
-
-export const DEV_USER_CREDENTIALS = DEV_USER

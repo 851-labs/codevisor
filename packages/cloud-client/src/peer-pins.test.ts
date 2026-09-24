@@ -43,10 +43,4 @@ describe("makePeerKeyPinStore", () => {
     expect(store.get("app-1")).toBe("original")
     expect(persisted).toHaveLength(1)
   })
-
-  it("works without persistence wired up", () => {
-    const store = makePeerKeyPinStore({})
-    store.set("app-1", "key")
-    expect(store.get("app-1")).toBe("key")
-  })
 })

@@ -101,12 +101,17 @@ describe("spawnClaudeAuthClient", () => {
     await expect(client.submit("   ")).rejects.toThrow("Paste the code")
   })
 
-  it("closes without optional teardown hooks and swallows interrupt failures", async () => {
-    const { client } = makeClient({ interrupt: undefined, close: undefined })
-    client.close()
-    const failing = makeClient({
-      interrupt: () => Promise.reject(new Error("gone"))
+  it("still closes the CLI when the interrupt request rejects", async () => {
+    const interrupted = Promise.withResolvers<void>()
+    const { calls, client } = makeClient({
+      interrupt: () => {
+        interrupted.resolve()
+        return Promise.reject(new Error("gone"))
+      }
     })
-    failing.client.close()
+    client.close()
+    await interrupted.promise
+    // An unswallowed rejection fails the run as an unhandled error.
+    expect(calls).toEqual([["close"]])
   })
 })

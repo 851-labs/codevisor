@@ -26,8 +26,6 @@ import type { PeerKeyPinStore } from "./peer-pins.js"
 /// whatever pipe is available next (LAN reconnects are instant, and the
 /// relay is always the fallback). No resume machinery on this pipe.
 
-export const DIRECT_CHANNEL_PATH = "/v1/direct"
-
 /// Close codes, mirroring the hub's conventions (42xx fatal).
 export const DIRECT_CLOSE_INVALID = 4000
 export const DIRECT_CLOSE_HELLO_TIMEOUT = 4002

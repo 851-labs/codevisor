@@ -48,7 +48,7 @@ export const defaultPluginsRoot = (): string =>
 /// directory (or symlink) into the root IS installation for dev workflows;
 /// no registration step exists on purpose. Invalid entries never abort the
 /// scan — one broken plugin must not hide the rest.
-export const scanPlugins = (root: string = defaultPluginsRoot()): PluginScan => {
+export const scanPlugins = (root: string): PluginScan => {
   const plugins: Array<InstalledPlugin> = []
   const invalid: Array<InvalidPluginEntry> = []
   if (!existsSync(root)) {

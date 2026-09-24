@@ -1,10 +1,5 @@
 import { Schema } from "effect"
 
-/// Latest wire protocol version a plugin manifest may target. Readers keep
-/// v1 support so installed plugins continue to work after v2 becomes the
-/// authoring default.
-export const PLUGINS_PROTOCOL_VERSION = 2
-
 export const SUPPORTED_PLUGIN_PROTOCOL_VERSIONS = [1, 2] as const
 
 export const isSupportedPluginProtocolVersion = (version: number): boolean =>

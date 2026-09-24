@@ -37,8 +37,13 @@ Capturing the cursor first guarantees that changes concurrent with the snapshot 
 
 ## Persisted session history
 
-`GET /v1/sessions/{id}/events` returns the stored history for one session as JSON. Use it to rebuild
-rich transcripts containing tool calls, diffs, plans, and other non-text events.
+`GET /v1/sessions/{id}/transcript` returns a session's stored transcript one page at a time,
+starting from the newest items. Pass the page's `nextBefore` cursor as `before` to load older items. Read the tool calls, diffs,
+plans, and other non-text events behind one item with
+`GET /v1/sessions/{id}/transcript/{itemId}/details`.
+
+Each page includes an `eventCursor`. Pass it as `since` to the session socket to continue with live
+events. `GET /v1/sessions/{id}/events` is no longer a history API; it returns `410 Gone`.
 
 ## Server-Sent Events
 

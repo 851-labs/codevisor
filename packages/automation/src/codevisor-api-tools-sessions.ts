@@ -90,12 +90,6 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "/v1/sessions/:id/transcript/:itemId/details"
   ),
   apiTool(
-    "sessions.events",
-    "Read the persisted event history for a session.",
-    "GET",
-    "/v1/sessions/:id/events"
-  ),
-  apiTool(
     "sessions.queue_list",
     "List queued prompts for a session.",
     "GET",
