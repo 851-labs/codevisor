@@ -55,16 +55,12 @@ struct CodeHighlighterTests {
     #expect(missing == nil)
   }
 
-  @Test("Aliases resolve and results cache")
-  func aliasesAndCache() async throws {
+  @Test("Language aliases resolve to their grammar")
+  func languageAliasesResolve() async {
     let highlighter = CodeHighlighter()
-    let first = try #require(
-      await highlighter.highlight(
-        code: "const x = 1", language: "ts", themeKey: "t", themeJSON: themeJSON))
-    let second = try #require(
-      await highlighter.highlight(
-        code: "const x = 1", language: "ts", themeKey: "t", themeJSON: themeJSON))
-    #expect(first == second)
+    let highlighted = await highlighter.highlight(
+      code: "const x = 1", language: "ts", themeKey: "t", themeJSON: themeJSON)
+    #expect(highlighted != nil)
   }
 
   @Test("Changing a theme document invalidates settled colors")

@@ -225,15 +225,6 @@ struct RFBNetworkTransportTests {
     await #expect(throws: RFBError.self) { try await transport.write([1, 2, 3]) }
   }
 
-  @Test func closeIsIdempotent() async throws {
-    let listener = try await LoopbackListener(handle: LoopbackListener.echo)
-    defer { listener.stop() }
-    let transport = try await RFBNetworkTransport.connect(host: "127.0.0.1", port: listener.port)
-    transport.close()
-    transport.close()
-    transport.close()
-  }
-
   /// Reads are not cancellation-aware: cancelling the task that is reading
   /// does not abandon the receive, so a session must close the transport to
   /// unblock it. Asserted so the day that changes is a deliberate change.

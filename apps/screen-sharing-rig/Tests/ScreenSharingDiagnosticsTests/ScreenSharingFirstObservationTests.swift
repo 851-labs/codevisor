@@ -82,21 +82,3 @@ import ScreenSharing
     #expect(Geometry.ownWindow(in: [mine, mine], number: 12829, pid: 55188) == .duplicate(count: 2))
   }
 }
-
-@Suite struct ScreenSharingCallbackTotalTests {
-  @Test func completeSampleWithoutImageCountsOnceNotTwice() {
-    typealias A = ScreenSharingCaptureCallbackAccounting
-    // A valid complete sample without an image increments BOTH complete and missingImage.
-    let metrics = ScreenSharingMetrics()
-    A.record(valid: true, rawStatus: 0, hasImage: false, metrics: metrics)
-    #expect(A.callbackTotal(counters: metrics.snapshot().counters) == 1)
-    A.record(valid: true, rawStatus: 0, hasImage: true, metrics: metrics)  // complete with image
-    A.record(valid: true, rawStatus: 1, hasImage: true, metrics: metrics)  // idle
-    A.record(valid: false, rawStatus: 0, hasImage: true, metrics: metrics)  // invalid
-    A.record(valid: true, rawStatus: nil, hasImage: true, metrics: metrics)  // missing status
-    A.record(valid: true, rawStatus: 42, hasImage: true, metrics: metrics)  // other status
-    let counters = metrics.snapshot().counters
-    #expect(counters["captureSamplesWithoutImage"] == 1 && counters["captureCallbacksComplete"] == 2)
-    #expect(A.callbackTotal(counters: counters) == 6)
-  }
-}

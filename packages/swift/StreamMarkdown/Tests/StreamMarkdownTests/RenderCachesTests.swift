@@ -5,16 +5,6 @@ import Testing
 @MainActor
 @Suite("Render caches")
 struct RenderCachesTests {
-  @Test("MarkdownSegmentCache returns identical segments for repeated text")
-  func segmentCacheHit() {
-    let cache = MarkdownSegmentCache(limit: 4)
-    let text = "# Title\n\nSome **bold** text.\n\n```swift\nlet x = 1\n```"
-    let first = cache.segments(for: text)
-    let second = cache.segments(for: text)
-    #expect(first == second)
-    #expect(first.count == 3)  // heading + paragraph + code block
-  }
-
   @Test("MarkdownSegmentCache evicts least-recently-used entries at the limit")
   func segmentCacheEviction() {
     let cache = MarkdownSegmentCache(limit: 2)

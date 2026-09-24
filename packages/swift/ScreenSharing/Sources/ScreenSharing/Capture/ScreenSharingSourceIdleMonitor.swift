@@ -19,10 +19,9 @@ package final class ScreenSharingSourceIdleMonitor: @unchecked Sendable {
   }
 
   /// Product default, promoted after the brief-loss measurements: 100 ms of
-  /// capture silence announces idle. The former 500 ms remains an explicit
-  /// diagnostic override.
+  /// capture silence announces idle. Diagnostics can still pass another
+  /// threshold, such as the former 500 ms, explicitly.
   package static let defaultThresholdNs: Int64 = 100_000_000
-  package static let legacyThresholdNs: Int64 = 500_000_000
   package static let maximumQuickResubmissions = 4
   package static let slowResubmissionIntervalNs: Int64 = 2_000_000_000
   package let thresholdNs: Int64
@@ -312,12 +311,11 @@ package final class ScreenSharingDeliveryVerifier {
 
   /// Product defaults, promoted after the brief-loss measurements: a 100 ms
   /// grace extended up to four more windows while newer content keeps
-  /// arriving (at most 500 ms after the notice). The former fixed 500 ms grace
-  /// with no extension remains an explicit diagnostic override.
+  /// arriving (at most 500 ms after the notice). Diagnostics can still pass
+  /// another grace, such as the former fixed 500 ms with no extension,
+  /// explicitly.
   package static let defaultGrace: Duration = .milliseconds(100)
   package static let defaultGraceExtensions = 4
-  package static let legacyGrace: Duration = .milliseconds(500)
-  package static let legacyGraceExtensions = 0
   package static let maximumGraceExtensions = 10
   nonisolated static let initialRetryDelayMs: Int64 = 100
   nonisolated static let maximumRetryDelayMs: Int64 = 5000

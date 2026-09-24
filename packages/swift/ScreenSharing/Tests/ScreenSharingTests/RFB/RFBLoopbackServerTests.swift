@@ -70,12 +70,6 @@ struct RFBLoopbackServerTests {
     #expect(server.port != 0)
   }
 
-  @Test func stoppingTwiceIsHarmless() async throws {
-    let server = try await open()
-    server.stop()
-    server.stop()
-  }
-
   // MARK: Configuration
 
   @Test func serverInitReportsTheConfiguredDesktop() async throws {

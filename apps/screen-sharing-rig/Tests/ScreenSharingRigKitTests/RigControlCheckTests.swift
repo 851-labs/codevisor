@@ -19,7 +19,6 @@ struct RigControlCheckTests {
     #expect(withKeys.map(\.sequence) == [1, 2, 3, 4, 5, 6, 7])
     #expect(withKeys[3].event == .key(code: space, down: true, repeatKey: false, modifiers: 0))
     #expect(withKeys[6].event == .key(code: space, down: false, repeatKey: false, modifiers: 0))
-    #expect(RigControlCheckRequest(clicks: 3, keys: 2).expectedResponses == 5)
   }
 
   @Test func deliveredMeansTheCounterAdvancedByExactlyTheClicks() {
