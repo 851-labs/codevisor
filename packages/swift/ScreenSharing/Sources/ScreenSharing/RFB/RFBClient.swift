@@ -19,7 +19,17 @@ public actor RFBClient {
   public private(set) var qualityLevel: Int?
   private var closed = false
   private let now: @Sendable () -> ContinuousClock.Instant
-  private var requestSentAt: ContinuousClock.Instant?
+  /// When each outstanding update request went out, oldest first (an update answers the oldest).
+  private var requestsSentAt: [ContinuousClock.Instant] = []
+  /// Update requests kept outstanding without continuous updates (851-2360). 1 is the classic
+  /// request → update → request loop.
+  public var requestDepth = 1
+  /// Send the next request when an update's header arrives, before reading and applying it.
+  public var requestsBeforeApplying = false
+  public func setRequestPipelining(depth: Int, beforeApplying: Bool) {
+    requestDepth = max(1, depth)
+    requestsBeforeApplying = beforeApplying
+  }
   /// Pushed updates are on; no requests are sent.
   private var continuous = false
   /// The server confirmed ContinuousUpdates (its first EndOfContinuousUpdates).
@@ -62,8 +72,12 @@ public actor RFBClient {
 
   /// What the client advertises: its encodings, then a Tight quality level when it accepts JPEG.
   private var encodings: [Int32] {
-    RFBEncoding.supported.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
+    advertisedEncodings ?? RFBEncoding.supported.map(\.rawValue) + (qualityLevel.map { [Int32(-32 + $0)] } ?? [])
   }
+  /// Replaces the advertised list, for measuring what a server sends for it (851-2361).
+  /// An encoding the client can't decode ends the session with `unsupportedEncoding`.
+  public var advertisedEncodings: [Int32]?
+  public func advertise(_ encodings: [Int32]?) { advertisedEncodings = encodings }
 
   /// Switches Tight JPEG on (quality 0…9) or off (nil) mid-session.
   public func setQualityLevel(_ level: Int?) async throws {
@@ -95,6 +109,8 @@ public actor RFBClient {
       let start = stream.consumed
       switch try await stream.u8() {
       case 0:
+        let answered = requestsSentAt.isEmpty ? nil : requestsSentAt.removeFirst()
+        if !continuous, requestsBeforeApplying { try await topUpRequests() }
         let started = ContinuousClock.now
         stream.startTiming()
         var update = try await readFramebufferUpdate()
@@ -103,13 +119,10 @@ public actor RFBClient {
         update.linkBytes = link.bytes
         update.linkDuration = link.duration
         update.byteCount = stream.consumed - start
-        if let requestSentAt {
-          update.latency = requestSentAt.duration(to: now())
-          self.requestSentAt = nil
-        }
+        if let answered { update.latency = answered.duration(to: now()) }
         onUpdate(framebuffer, update)
         if !continuous {
-          try await request(incremental: true)
+          if !requestsBeforeApplying { try await topUpRequests() }
         } else if update.resized {
           try await send(.enableContinuousUpdates(enable: true, fullFrame))
         }
@@ -186,8 +199,13 @@ public actor RFBClient {
   }
 
   private func request(incremental: Bool) async throws {
-    requestSentAt = now()
+    requestsSentAt.append(now())
     try await send(.framebufferUpdateRequest(incremental: incremental, fullFrame))
+  }
+
+  /// Incremental requests until `requestDepth` are outstanding.
+  private func topUpRequests() async throws {
+    while requestsSentAt.count < requestDepth { try await request(incremental: true) }
   }
 
   private var fullFrame: RFBRectangle {
