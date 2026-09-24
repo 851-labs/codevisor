@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { hostname } from "node:os"
+import { homedir, hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
 
@@ -22,7 +22,7 @@ import { loadCustomHarnesses } from "@codevisor/harness-manager"
 import type { CustomHarnessLoadResult } from "@codevisor/harness-manager"
 import { makeHarnessLifecycleManager } from "@codevisor/harness-manager"
 import { makeHarnessAuthManager } from "@codevisor/harness-manager"
-import { makeMcpManager, makeNativeMcpManager } from "@codevisor/mcp"
+import { makeMcpManager } from "@codevisor/mcp"
 import {
   makePluginRegistryClient,
   makePluginsManager,
@@ -47,7 +47,11 @@ import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js
 import { migrateLinuxDataLayout } from "./infra/linux-data-migration.js"
 import { acquireServerLease, type ServerLease } from "./infra/server-lease.js"
 import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts.js"
-import { restoreTerminalPersistence, screenSharingProvider } from "./serve-boot.js"
+import {
+  restoreTerminalPersistence,
+  screenSharingProvider,
+  systemNativeMcpManager
+} from "./serve-boot.js"
 import {
   SERVER_PROCESS_TITLE,
   stabilizeServerWorkingDirectory,
@@ -180,6 +184,7 @@ export const runServe = (
       migrateLegacyLayout({
         databasePath,
         worktreesRoot: worktreesRoot(),
+        homeDirectory: homedir(),
         onProgress: reportUpgrade
       })
     )
@@ -318,7 +323,9 @@ export const runServe = (
           (await sharedAccounts?.providers.staticOverrides(harness)) ?? []
       })
     )
-    const skills = initializeOptionalServerFeature("Skills", () => makeSkillsManager({ agents }))
+    const skills = initializeOptionalServerFeature("Skills", () =>
+      makeSkillsManager({ agents, homedir: homedir(), env: process.env })
+    )
     // Content-addressed archives the config plane replicates skills through.
     const syncBlobs = makeBlobStore(join(dirname(databasePath), "sync-blobs"))
     const pluginRegistryClient = initializeOptionalServerFeature("Plugin registry", () =>
@@ -372,12 +379,7 @@ export const runServe = (
       mcp === undefined
         ? undefined
         : initializeOptionalServerFeature("Native MCP discovery", () =>
-            makeNativeMcpManager({
-              agents,
-              dataDir: dirname(databasePath),
-              db,
-              mcp
-            })
+            systemNativeMcpManager({ agents, dataDir: dirname(databasePath), db, mcp })
           )
     const customHarnessStore = makeCustomHarnessStore(agents)
     const lifecycle = initializeOptionalServerFeature("Harness lifecycle", () => {

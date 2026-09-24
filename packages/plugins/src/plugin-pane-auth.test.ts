@@ -52,14 +52,9 @@ describe("makePaneTokenStore", () => {
     let current = 0
     const store = makePaneTokenStore(() => current)
     const issued = store.issue(scope)
-    store.establishSession(issued.token)
+    expect(store.exchange(issued.token, "owner.example")?.paneId).toBe("pane-1")
     current = 6 * 60 * 60_000
     expect(store.verify(issued.token, "owner.example")).toBeDefined()
-  })
-
-  it("ignores establishSession for unknown tokens", () => {
-    const store = makePaneTokenStore()
-    store.establishSession("missing")
   })
 
   it("slides the expiry window on verify", () => {

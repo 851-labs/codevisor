@@ -35,9 +35,9 @@ export interface PaneTokenStore {
   /// Returns the scope when the token is live and belongs to the plugin;
   /// slides the expiry window on every hit so active panes never expire.
   readonly verify: (token: string, pluginId: string) => PaneTokenScope | undefined
-  /// Promotes an initial token to a long-lived cookie session (called when
-  /// the navigation exchange sets the cookie).
-  readonly establishSession: (token: string) => void
+  /// Verifies like `verify`, then promotes the initial token to a long-lived
+  /// cookie session (the navigation exchange that sets the cookie).
+  readonly exchange: (token: string, pluginId: string) => PaneTokenScope | undefined
   /// Signs a serialized context payload so plugins can trust
   /// X-Codevisor-Context came from this server, not another local process.
   readonly signContext: (payload: string) => string
@@ -54,13 +54,20 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
       }
     }
   }
+  const extend = (token: string, pluginId: string, ttlMs: number): PaneTokenScope | undefined => {
+    const record = records.get(token)
+    if (record === undefined || record.scope.pluginId !== pluginId) {
+      return undefined
+    }
+    if (record.expiresAt <= now()) {
+      records.delete(token)
+      return undefined
+    }
+    record.expiresAt = Math.max(record.expiresAt, now() + ttlMs)
+    return record.scope
+  }
   return {
-    establishSession: (token) => {
-      const record = records.get(token)
-      if (record !== undefined) {
-        record.expiresAt = now() + SESSION_TTL_MS
-      }
-    },
+    exchange: (token, pluginId) => extend(token, pluginId, SESSION_TTL_MS),
     issue: (scope) => {
       sweep()
       const token = randomBytes(24).toString("base64url")
@@ -69,18 +76,7 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
       return { expiresAt: new Date(expiresAt).toISOString(), token }
     },
     signContext: (payload) => createHmac("sha256", secret).update(payload).digest("hex"),
-    verify: (token, pluginId) => {
-      const record = records.get(token)
-      if (record === undefined || record.scope.pluginId !== pluginId) {
-        return undefined
-      }
-      if (record.expiresAt <= now()) {
-        records.delete(token)
-        return undefined
-      }
-      record.expiresAt = Math.max(record.expiresAt, now() + INITIAL_TOKEN_TTL_MS)
-      return record.scope
-    }
+    verify: (token, pluginId) => extend(token, pluginId, INITIAL_TOKEN_TTL_MS)
   }
 }
 

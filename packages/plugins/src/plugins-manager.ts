@@ -174,9 +174,8 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   ): { scope: PaneTokenScope; viaQueryToken: boolean } | undefined => {
     const queryToken = url.searchParams.get(PANE_TOKEN_QUERY_PARAM)
     if (queryToken !== null) {
-      const scope = tokens.verify(queryToken, pluginId)
+      const scope = tokens.exchange(queryToken, pluginId)
       if (scope !== undefined) {
-        tokens.establishSession(queryToken)
         return { scope, viaQueryToken: true }
       }
     }

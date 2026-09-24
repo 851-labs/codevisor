@@ -397,12 +397,4 @@ describe("Codevisor legacy file layout migration", () => {
       readFile(join(developmentRoot, "project", "feature", "progress.txt"), "utf8")
     ).rejects.toMatchObject({ code: "ENOENT" })
   })
-
-  it("uses the system home safely when neither path matches a production layout", async () => {
-    const root = await mkdtemp(join(tmpdir(), "codevisor-layout-default-home-"))
-    await migrateLegacyLayout({
-      databasePath: join(root, "herdman-server.sqlite"),
-      worktreesRoot: join(root, "custom-worktrees")
-    })
-  })
 })

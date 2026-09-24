@@ -22,19 +22,6 @@ import {
 afterEach(cleanupNativeMcpTests)
 
 describe("makeNativeMcpManager", () => {
-  it("constructs with default filesystem, home, and env seams", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "codevisor-native-mcp-"))
-    directories.push(directory)
-    const db = await run(
-      makeDatabase({ filename: join(directory, "codevisor.sqlite"), serverId: "test" })
-    )
-    databases.push(db)
-    const { mcp } = fakeMcp(db)
-    expect(
-      makeNativeMcpManager({ agents: makeAgentRuntime({}), dataDir: directory, db, mcp })
-    ).toBeDefined()
-  })
-
   it("reports every cataloged harness with nativeMcp metadata, absent files as exists=false", async () => {
     const { manager } = await testManager({})
     const scan = await manager.scan()
