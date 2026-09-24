@@ -62,7 +62,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     #expect(model.goal?.objective == "ship goal mode")
     #expect(model.goal?.activity == .verifying)
@@ -79,7 +79,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    // No send(), no loadHistory() — setting the goal must be enough to
+    // No send(), no history load — setting the goal must be enough to
     // subscribe to the event stream (goal auto-continuation turns are
     // agent-initiated).
     await model.setGoal(objective: "count to ten")
@@ -142,9 +142,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
-    var goalEdges = 0
-    model.onGoalChanged = { goalEdges += 1 }
+    await model.loadHistoryForInitialDisplay()
 
     client.emit(
       ServerEventEnvelope(
@@ -205,7 +203,6 @@ extension SessionModelTests {
       ))
     await settleUntil { model.goal == nil }
     #expect(model.goal == nil)
-    #expect(goalEdges == 3)
   }
 
   @Test("Agent questions set pending state; answers post and resolution renders a card")
@@ -216,9 +213,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    var actionRequiredCount = 0
-    model.onActionRequired = { actionRequiredCount += 1 }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     client.emit(
       ServerEventEnvelope(
@@ -247,7 +242,6 @@ extension SessionModelTests {
     await settleUntil { model.pendingQuestion != nil }
     #expect(model.pendingQuestion?.questionId == "q-1")
     #expect(model.pendingQuestion?.questions.first?.options.count == 2)
-    #expect(actionRequiredCount == 1)
 
     // Answer posts to the server and clears optimistically.
     await model.answerQuestion(answers: ["approach": QuestionAnswerEntry(answers: ["MVP first"])])
@@ -304,7 +298,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     client.emit(
       ServerEventEnvelope(
@@ -359,7 +353,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     let questionEnvelope: (Int, String) -> ServerEventEnvelope = { id, questionId in
       ServerEventEnvelope(
         id: id,

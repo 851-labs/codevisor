@@ -41,7 +41,6 @@ extension SessionModelTests {
     #expect(client.transcriptPageRequests.count >= 1)
 
     #expect(model.isSending)
-    #expect(model.providerActivityPhase == .modelStream)
     guard case let .assistant(message) = model.conversation.last else {
       Issue.record("expected assistant")
       return
@@ -50,7 +49,6 @@ extension SessionModelTests {
     client.emit(stopEnvelope(id: 10, sessionId: sessionId, stopReason: "end_turn"))
     await settleUntil { !model.isSending }
     #expect(model.isTakingLongerThanExpected == false)
-    #expect(model.providerActivityPhase == nil)
   }
 
   /// The quiet-turn timer measures client-observed silence, which a
@@ -78,7 +76,7 @@ extension SessionModelTests {
       stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.serverEventCursor == 2)
 
     await model.send("keep working while I am away")
@@ -125,7 +123,7 @@ extension SessionModelTests {
       stalledTurnQuietInterval: .seconds(300),
       quietTurnScheduler: scheduler.scheduler
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.serverEventCursor == 2)
 
     await model.send("keep working")
@@ -148,19 +146,18 @@ extension SessionModelTests {
     model.endTurn()
   }
 
-  /// Regression guard for the observable-write guards in
-  /// `noteProviderActivity`. Those two writes are guarded so streaming stops
+  /// Regression guard for the observable-write guard in
+  /// `noteProviderActivity`. That write is guarded so streaming stops
   /// re-rendering the composer on every chunk — but the quiet-turn timer
-  /// underneath them must still be cancelled and re-armed per event. Guarding
-  /// the whole function on a phase change instead (the obvious refactor)
-  /// leaves the task armed by the FIRST chunk of a phase, so a turn that
-  /// streams steadily under one phase reports itself stalled mid-stream.
+  /// underneath it must still be cancelled and re-armed per event. Guarding
+  /// the whole function instead leaves the task armed by the FIRST chunk,
+  /// so a turn that streams steadily reports itself stalled mid-stream.
   ///
   /// A manual sleeper keeps this about timer generations rather than runner
   /// scheduling: every chunk must replace the pending wait, and only the
   /// final generation is allowed to complete.
 
-  @Test("Steady same-phase activity keeps re-arming the quiet-turn timer")
+  @Test("Steady streaming activity keeps re-arming the quiet-turn timer")
   func steadyActivityNeverReportsStalled() async {
     let sessionId = UUID()
     let client = FakeSessionServerClient(sessionId: sessionId)
@@ -186,9 +183,9 @@ extension SessionModelTests {
     await model.send("stream steadily")
     #expect(scheduler.callCount == 1)
 
-    // Apply chunks under the SAME phase. Each one must cancel the current
-    // sleep and arm a new generation even though the observable phase does
-    // not change.
+    // Apply chunks of the same kind. Each one must cancel the current
+    // sleep and arm a new generation even though no observable state
+    // changes.
     for id in 1...16 {
       model.apply(
         .update(
@@ -206,7 +203,6 @@ extension SessionModelTests {
     }
 
     #expect(model.isSending)
-    #expect(model.providerActivityPhase == .modelStream)
 
     // Only the latest timer generation is allowed to declare the turn
     // quiet. No wall-clock duration is involved.

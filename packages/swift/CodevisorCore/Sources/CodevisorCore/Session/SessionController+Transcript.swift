@@ -26,11 +26,6 @@ extension SessionController {
   public var activeItem: ConversationItem? { model?.activeItem }
   public var activeItemRevision: UInt64 { model?.activeItemRevision ?? 0 }
   public var hasActiveItem: Bool { model?.hasActiveItem ?? false }
-  /// The active slot remains mounted after completion for stable rendering.
-  /// Expose its canonical identity only once it represents a finished turn.
-  public var activeFinishedResponseItemId: UUID? {
-    model?.activeFinishedResponseItemId
-  }
   public var transcriptProjectionKey: TranscriptProjectionKey {
     TranscriptProjectionKey(
       // Controller lifetime, rather than the durable chat id: a cache
@@ -278,9 +273,6 @@ extension SessionController {
   public var isTakingLongerThanExpected: Bool {
     model?.isTakingLongerThanExpected ?? false
   }
-  public var providerActivityPhase: SessionProviderActivityPhase? {
-    model?.providerActivityPhase
-  }
   public var connectionRecoveryMessage: String? {
     if model != nil, serverAvailability != .ready { return "Reconnecting…" }
     return model?.connectionRecoveryMessage
@@ -331,9 +323,6 @@ extension SessionController {
   /// True when the turn ended but the agent still owns background work — the
   /// chat isn't stuck; the agent will come back on its own.
   public var isWaitingOnBackgroundTasks: Bool { model?.isWaitingOnBackgroundTasks ?? false }
-  public var isRuntimeIdle: Bool { model?.isRuntimeIdle ?? true }
-  public var lastTurnInitiator: SessionTurnInitiator { model?.lastTurnInitiator ?? .user }
-  public var lastTurnEndedWithError: Bool { model?.lastTurnEndedWithError ?? false }
 
   public func canRetryTurn(_ id: UUID) -> Bool {
     guard !isSending else { return false }

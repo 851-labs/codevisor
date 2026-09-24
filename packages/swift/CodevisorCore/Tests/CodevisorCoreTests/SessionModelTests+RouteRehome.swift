@@ -49,7 +49,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await model.send("describe the repo")
     #expect(model.serverEventCursor == 0)
 
@@ -73,7 +73,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: direct, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await model.send("describe the repo")
     direct.emit(chunkEnvelope(id: 10, sessionId: sessionId, text: "Its main capabilities are:\n"))
     direct.emit(chunkEnvelope(id: 11, sessionId: sessionId, text: "- Run multiple sessions\n"))
@@ -119,7 +119,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await model.send("describe the repo")
     client.emit(chunkEnvelope(id: 10, sessionId: sessionId, text: "Its main capabilities are:\n"))
     client.emit(chunkEnvelope(id: 11, sessionId: sessionId, text: "- Run multiple sessions\n"))

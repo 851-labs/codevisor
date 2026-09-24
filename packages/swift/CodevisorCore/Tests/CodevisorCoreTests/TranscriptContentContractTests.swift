@@ -41,7 +41,7 @@ struct TranscriptContentContractTests {
     let model = SessionModel(
       serverTransport: .init(client: client, sessionId: sessionID), sessionId: sessionID.uuidString)
     defer { model.shutdown(); release.finish() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     let before = model.conversation
     let loading = Task { await model.loadTranscriptDetails(itemId: itemID) }
     await waiting.wait()
@@ -82,7 +82,7 @@ struct TranscriptContentContractTests {
     let model = SessionModel(
       serverTransport: .init(client: client, sessionId: sessionID), sessionId: sessionID.uuidString)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     for id in ids { #expect(await model.loadTranscriptDetails(itemId: id)) }
     for item in model.conversation {
       guard case let .assistant(message) = item else { continue }

@@ -9,17 +9,6 @@ public enum SessionProviderActivityPhase: String, Equatable, Sendable {
   case retryBackoff
   case waitingForQuestion
   case cancelling
-
-  public var label: String {
-    switch self {
-    case .modelStream: "model response"
-    case .toolInputStream: "tool input"
-    case .toolExecution: "tool execution"
-    case .retryBackoff: "provider retry"
-    case .waitingForQuestion: "your answer"
-    case .cancelling: "cancellation"
-    }
-  }
 }
 
 struct TranscriptDetailsCacheEntry {
@@ -42,7 +31,8 @@ public final class SessionModel {
   /// pages as the user approaches the top; the server also enforces a text
   /// budget so neither value can accidentally request megabytes of layout.
   /// Public so the controller can request the same first-page size through
-  /// the combined open call and hand the result to `loadHistory(preloaded:)`.
+  /// the combined open call and hand the result to
+  /// `loadHistoryForInitialDisplay(preloaded:)`.
   public static let initialTranscriptPageSize = 8
   static let olderTranscriptPageSize = 16
   /// Grace for a live terminal event after the cancel request completes.
@@ -111,7 +101,6 @@ public final class SessionModel {
   /// until the user dismisses it or picks a model themselves.
   public internal(set) var modelFallback: SessionModelFallback?
   public internal(set) var isTakingLongerThanExpected = false
-  public internal(set) var providerActivityPhase: SessionProviderActivityPhase?
   /// Delayed, non-blocking transport recovery status for the active turn.
   /// Brief relay handoffs leave this nil so the existing Thinking/Waiting
   /// presentation remains stable instead of flashing connection plumbing.
@@ -217,11 +206,6 @@ public final class SessionModel {
     !isSending && !waitingBackgroundTasks.isEmpty
   }
 
-  /// Claude's main-loop state. It is deliberately separate from background
-  /// tasks: the SDK may be idle while a detached terminal process continues.
-  public internal(set) var runtimeState: SessionRuntimeState = .idle
-  public var isRuntimeIdle: Bool { runtimeState == .idle }
-
   /// Tool-call ids of subagents still running as background tasks, keyed by
   /// the `.agent` tool call that spawned them (the provider stamps the task's
   /// `toolUseId` with the spawning call id). A subagent's turn can end while
@@ -250,27 +234,10 @@ public final class SessionModel {
   /// pinned panel above the composer.
   public internal(set) var sessionPlan: Plan?
 
-  /// Metadata for the most recent live turn-end callback. Sidebar attention
-  /// uses this to fold autonomous follow-ups into the user-created activity
-  /// epoch and to retain an unread failure after the controller is idle.
-  public internal(set) var lastTurnInitiator: SessionTurnInitiator = .user
-  public internal(set) var lastTurnEndedWithError = false
-
   /// Called each time a live turn ends (completed, cancelled, or failed) —
   /// the "chat finished" signal for surfaces outside this screen, like the
   /// sidebar's unread badge. Never fired by history replay.
   public var onTurnEnded: (() -> Void)?
-  /// Fires for every SDK runtime-state edge, including repeated idle barriers.
-  /// Consumers combine idle with the background-task level before declaring
-  /// the overall activity epoch complete.
-  public var onRuntimeStateChanged: (() -> Void)?
-  /// Fires when a live goal snapshot changes. A terminal goal status is an
-  /// attention barrier even when it arrives after the final turn-end event.
-  public var onGoalChanged: (() -> Void)?
-  /// Fired when a live agent question first blocks on the user. This is
-  /// separate from turn end because question tools pause an in-flight turn.
-  /// Never fired while replaying transcript history.
-  public var onActionRequired: (() -> Void)?
   public var onPlanApprovalChanged: ((Bool) -> Void)?
   /// Fires only after the server accepts a new prompt queue item. Carries
   /// counts/state only; prompt and attachment content never leave the model.
@@ -283,10 +250,6 @@ public final class SessionModel {
   /// a user transcript row. The stable server message id distinguishes this
   /// handoff from queue edits/deletions and unrelated remote messages.
   public var onQueuedPromptPromoted: ((UUID?) -> Void)?
-  /// Fires on every prompt-queue snapshot. A non-empty queue means more user
-  /// turns are already committed, so attention consumers hold their epoch
-  /// open until the queue drains (or the user clears it).
-  public var onQueuedPromptsChanged: (() -> Void)?
 
   /// Replaced in place by `adoptTransport` when the machine's route flips;
   /// the conversation and its resume cursor survive the swap.

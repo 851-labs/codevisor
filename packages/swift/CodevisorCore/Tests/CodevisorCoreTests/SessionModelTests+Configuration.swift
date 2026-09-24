@@ -91,7 +91,7 @@ extension SessionModelTests {
     let model = SessionModel(
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId), sessionId: sessionId.uuidString)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.conversation.count == 2)
     #expect(userMessages(model).first?.text == "edit the file")
     #expect(client.transcriptDetailRequestCount == 0)
@@ -145,7 +145,7 @@ extension SessionModelTests {
       configOptions: currentOptions
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
 
     let modelOption = model.configOptions.first { $0.id == "model" }
     #expect(modelOption?.options.map(\.value) == ["gpt-5.6-sol", "gpt-5.5", "gpt-5.6-terra"])

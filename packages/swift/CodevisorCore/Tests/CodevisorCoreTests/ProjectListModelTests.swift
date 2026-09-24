@@ -221,7 +221,7 @@ struct ProjectListModelTests {
       folderURL: URL(fileURLWithPath: "/tmp/pending-project")
     )
     await fixture.refresh(from: fakeServer)
-    #expect(model.activeProjects.contains { $0.id == project.id })
+    #expect(model.fleetActiveProjects.contains { $0.id == project.id })
 
     // Once the upload lands and a snapshot carries the row, the waiting
     // request retires and the server's copy shows without a duplicate.

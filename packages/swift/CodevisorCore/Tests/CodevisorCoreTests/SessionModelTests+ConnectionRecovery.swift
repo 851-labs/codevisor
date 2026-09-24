@@ -16,7 +16,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     let old = ConversationItem.user(UserMessage(text: "Earlier loaded message"))
     model.setConversation([old] + model.conversation)
     client.initialTranscriptPage?.eventCursor = 3
@@ -147,7 +147,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString)
     defer { model.shutdown() }
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     let older = ConversationItem.user(UserMessage(text: "Already loaded older page"))
     guard case let .assistant(cachedMessage)? = model.conversation.last else {
       Issue.record("Expected cached assistant"); return

@@ -38,8 +38,6 @@ extension SessionModelTests {
     #expect(message.turn.stopDetail == "The Claude API was overloaded.")
     #expect(message.turn.retryable)
     #expect(message.turn.isGenerating == false)
-    #expect(model.lastTurnInitiator == .agent)
-    #expect(model.lastTurnEndedWithError)
   }
 
   @Test("A retryable session error stays attached to the failed turn")
@@ -100,7 +98,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString
     )
 
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     client.emit(
       ServerEventEnvelope(
         id: 1,
@@ -185,7 +183,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
     client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "cancelled"))
     await settleAssistant(model) { assistant in
@@ -250,7 +248,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     client.emit(toolCallEnvelope(id: 1, sessionId: sessionId, toolCallId: "edit-1", status: "in_progress"))
     client.emit(stopEnvelope(id: 2, sessionId: sessionId, stopReason: "end_turn"))
     client.emit(
@@ -294,7 +292,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     #expect(model.sessionPlan?.entries.count == 2)
     #expect(model.sessionPlan?.entries.last?.status == .inProgress)
 
@@ -337,7 +335,7 @@ extension SessionModelTests {
       sessionId: sessionId.uuidString,
       now: { Date(timeIntervalSince1970: 100) }
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     guard case let .assistant(assistant) = model.conversation.last else {
       Issue.record("expected assistant")
       return

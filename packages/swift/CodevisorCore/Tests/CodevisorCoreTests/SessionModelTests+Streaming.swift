@@ -19,7 +19,7 @@ extension SessionModelTests {
       serverTransport: ServerSessionTransport(client: client, sessionId: sessionId),
       sessionId: sessionId.uuidString
     )
-    await model.loadHistory()
+    await model.loadHistoryForInitialDisplay()
     await settleUntil { !client.sessionEventSinceValues.isEmpty }
 
     client.emit(
@@ -36,7 +36,6 @@ extension SessionModelTests {
         ])
       ))
     await settleUntil { model.activeItem?.id == assistantItemId }
-    #expect(model.activeFinishedResponseItemId == nil)
 
     client.emit(
       ServerEventEnvelope(
@@ -107,7 +106,6 @@ extension SessionModelTests {
       return
     }
     #expect(assistant.id == assistantItemId)
-    #expect(model.activeFinishedResponseItemId == assistantItemId)
     guard case let .text(_, markdown) = assistant.turn.finalText else {
       Issue.record("expected final text")
       return

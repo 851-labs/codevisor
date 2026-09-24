@@ -39,7 +39,7 @@ extension SessionModel {
     pendingOptimisticUserMessageIDs.insert(message.id)
     startActiveBubble()
     isSending = true
-    noteProviderActivity(.modelStream)
+    noteProviderActivity()
     onLocalUserMessageAppended?(message.id)
 
     // Events are consumed by the long-lived consumer (started here if it
@@ -63,8 +63,6 @@ extension SessionModel {
       let message = serverErrorMessage(error)
       errorMessage = message
       finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
-      lastTurnInitiator = .user
-      lastTurnEndedWithError = true
       endTurn()
     }
   }
@@ -81,7 +79,7 @@ extension SessionModel {
     settleActiveItem()
     startActiveBubble()
     isSending = true
-    noteProviderActivity(.modelStream)
+    noteProviderActivity()
     await startConsumer()
 
     do {
@@ -95,8 +93,6 @@ extension SessionModel {
       let message = serverErrorMessage(error)
       errorMessage = message
       finish(stopReason: nil, outcome: .failed, stopDetail: message, retryable: true)
-      lastTurnInitiator = .user
-      lastTurnEndedWithError = true
       endTurn()
     }
   }
@@ -142,7 +138,7 @@ extension SessionModel {
   public func cancel() async {
     guard isSending, !isCancelling else { return }
     isCancelling = true
-    noteProviderActivity(.cancelling)
+    noteProviderActivity()
     defer { isCancelling = false }
     do {
       try await transport.cancel()
@@ -263,9 +259,6 @@ extension SessionModel {
       stalledTurnSchedule?.cancel()
       stalledTurnSchedule = nil
       isTakingLongerThanExpected = false
-      providerActivityPhase = nil
-      lastTurnInitiator = .user
-      lastTurnEndedWithError = errorMessage != nil
       onTurnEnded?()
     }
     return outcome
@@ -429,7 +422,6 @@ extension SessionModel {
         status: status,
         tokenBudget: tokenBudget
       )
-      onGoalChanged?()
       return true
     } catch {
       errorMessage = serverErrorMessage(error)
@@ -456,7 +448,6 @@ extension SessionModel {
     do {
       try await transport.clearGoal()
       goal = nil
-      onGoalChanged?()
       return true
     } catch {
       errorMessage = serverErrorMessage(error)
