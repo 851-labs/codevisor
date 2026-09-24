@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
@@ -11,9 +12,7 @@ describe("@codevisor/db", () => {
   })
   afterEach(() => vi.useRealTimers())
   it("re-arms and disarms the settle deadline as holds come and go", async () => {
-    const db = await run(
-      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 60_000 })
-    )
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/settle-rearm" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
     const subagentSnapshot = {
@@ -58,9 +57,7 @@ describe("@codevisor/db", () => {
   })
 
   it("settles an expired deadline in-transaction with the next event", async () => {
-    const db = await run(
-      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 0 })
-    )
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/settle-inline" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
@@ -86,10 +83,13 @@ describe("@codevisor/db", () => {
         turnState: "ended"
       })
     )
-    // Hold release arms the (zero) grace; the projection itself converges on
-    // the next inbound event even if the server-side timer never fires.
+    // Hold release arms the grace; the projection itself converges on the
+    // next inbound event even if the server-side timer never fires.
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
-    vi.setSystemTime(Date.now() + 2)
+    vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS - 1)
+    await run(db.appendEvent("session.output", session.id, { role: "assistant", text: "early" }))
+    expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
+    vi.setSystemTime(Date.now() + 1)
     await run(db.appendEvent("session.output", session.id, { role: "assistant", text: "done" }))
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
@@ -114,9 +114,7 @@ describe("@codevisor/db", () => {
   })
 
   it("advances native sidebar ordering only when the visible state changes", async () => {
-    const db = await run(
-      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 0 })
-    )
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/sidebar-state" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "codex" }))
 
@@ -174,6 +172,7 @@ describe("@codevisor/db", () => {
 
     vi.setSystemTime(Date.now() + 2)
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
+    vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)
     await run(db.settleSessionAttention(session.id))
     const unread = await run(db.getSessionSummary(session.id))
     expect(unread.sidebarState).toBe("unread")
@@ -247,9 +246,7 @@ describe("@codevisor/db", () => {
     await run(first.markSessionRead(session.id, 0))
     await Effect.runPromise(first.close)
 
-    const reopened = await run(
-      makeDatabase({ filename, serverId: "local", attentionSettleGraceMs: 0 })
-    )
+    const reopened = await run(makeDatabase({ filename, serverId: "local" }))
     expect(await run(reopened.getSessionSummary(session.id))).toMatchObject({
       actionRequired: true,
       actionRequiredKind: "question",
@@ -263,8 +260,10 @@ describe("@codevisor/db", () => {
       { sessionId: held.id, dueAt: null }
     ])
     // Startup reconciliation clears the stale subagent snapshot, then
-    // recovery settles the stranded finish.
+    // recovery settles the stranded finish once its grace elapses.
     await run(reopened.appendEvent("session.updated", held.id, { backgroundTasks: [] }))
+    expect((await run(reopened.settleSessionAttention(held.id))).settled).toBe(false)
+    vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)
     expect((await run(reopened.settleSessionAttention(held.id))).settled).toBe(true)
     expect(await run(reopened.getSessionSummary(held.id))).toMatchObject({
       latestAttentionSequence: 1,
