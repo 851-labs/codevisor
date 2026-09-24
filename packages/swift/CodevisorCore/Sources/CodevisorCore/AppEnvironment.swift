@@ -196,10 +196,9 @@ public final class AppEnvironment {
     // (no workspace models are cached yet); sessions load synchronously
     // in ProjectListModel.init, so the grouping inputs are complete.
     // In-memory repositories (previews, iOS) no-op via the marker.
-    // A workspace archived before the upload could reach the server hid its
-    // chats on this machine only, with nothing able to reconcile it. Reveal
-    // those before any window renders.
-    ClientOnlyArchiveRepair.runIfNeeded(workspaces: workspaces)
+    // Hide again the local-only workspaces an earlier release resurfaced.
+    // Runs before any window renders so the sidebar never shows them.
+    ClientOnlyArchiveRepairRevert.runIfNeeded(workspaces: workspaces)
     WorkspaceWorktreeSplitMigration.runIfNeeded(
       workspaces: workspaces,
       sessions: projectList.sessions.map {
