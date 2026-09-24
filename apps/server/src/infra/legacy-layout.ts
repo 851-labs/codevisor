@@ -13,7 +13,7 @@ import {
   rm,
   rmdir
 } from "node:fs/promises"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { basename, dirname, join, relative, resolve, sep } from "node:path"
 import { promisify } from "node:util"
 
@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile)
 export interface LegacyLayoutMigrationOptions {
   readonly databasePath: string
   readonly worktreesRoot: string
-  readonly homeDirectory?: string
+  readonly homeDirectory: string
   readonly onProgress?: (progress: DataUpgradeProgress) => void
 }
 
@@ -301,7 +301,7 @@ const report = (
 /// blocking update backfill: the server health endpoint intentionally remains
 /// unavailable until every file and worktree is safely in its new location.
 export const migrateLegacyLayout = async (options: LegacyLayoutMigrationOptions): Promise<void> => {
-  const homeDirectory = options.homeDirectory ?? homedir()
+  const { homeDirectory } = options
   const dataDirectory = dirname(options.databasePath)
   const legacyWorktreesRoot = join(homeDirectory, "herdman")
   const canonicalWorktreesRoot = join(homeDirectory, "codevisor")

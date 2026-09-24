@@ -50,7 +50,7 @@ export const systemScalerCommands: ScalerCommands = {
 /// if it was the 2× theme); xfdesktop restarts when the scale changed, since it
 /// reads the scale at start. Apps already open keep theirs until reopened.
 export const xfceScaler =
-  (display: number, commands: ScalerCommands = systemScalerCommands): VNCDesktopScaler =>
+  (display: number, commands: ScalerCommands): VNCDesktopScaler =>
   async (scale) => {
     const panel = (await commands.run("pgrep", ["-o", "xfce4-panel"], {}).catch(() => "")).trim()
     if (panel === "") throw new Error("The desktop session isn't running")

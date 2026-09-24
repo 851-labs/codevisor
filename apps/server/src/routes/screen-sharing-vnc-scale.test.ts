@@ -1,3 +1,9 @@
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, rmSync } from "node:fs"
+import { readFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { describe, expect, it } from "vitest"
 
 import {
@@ -95,8 +101,30 @@ describe("Xfce desktop scale (851-2339)", () => {
       })
     ).toBe("yes")
     await expect(systemScalerCommands.run("sh", ["-c", "exit 3"], {})).rejects.toThrow()
-    expect(() => systemScalerCommands.spawnDetached("true", [], {})).not.toThrow()
-    expect(() => systemScalerCommands.environ("999999999")).toThrow()
+  })
+
+  it("starts detached commands with the session's environment", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "codevisor-vnc-scale-"))
+    try {
+      // Opening a FIFO for reading blocks until the detached child opens it
+      // for writing, so the read completes exactly when the child has run.
+      const fifo = join(directory, "out")
+      execFileSync("mkfifo", [fifo])
+      systemScalerCommands.spawnDetached(
+        "sh",
+        ["-c", 'printf "%s" "$CODEVISOR_SCALE_TEST" > "$1"', "sh", fifo],
+        { CODEVISOR_SCALE_TEST: "detached" }
+      )
+      expect(await readFile(fifo, "utf8")).toBe("detached")
+    } finally {
+      rmSync(directory, { force: true, recursive: true })
+    }
+  })
+
+  it("reads a session's environment from /proc/<pid>/environ", () => {
+    expect(() => systemScalerCommands.environ("999999999")).toThrow(
+      expect.objectContaining({ code: "ENOENT", path: "/proc/999999999/environ" })
+    )
   })
 
   it("fails clearly when the session isn't running or has no bus", async () => {

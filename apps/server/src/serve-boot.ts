@@ -1,11 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
 import { requestMacScreenSharing } from "@codevisor/automation"
+import {
+  defaultNativeConfigFileSystem,
+  makeNativeMcpManager,
+  type NativeMcpManager,
+  type NativeMcpManagerConfig
+} from "@codevisor/mcp"
 import type { TerminalManagerService } from "@codevisor/terminal"
 
 import {
@@ -15,7 +21,7 @@ import {
 } from "./infra/background-terminal-host.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
-import { xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
+import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
 import { readScreenSharingVNC, vncScreenSharing } from "./routes/screen-sharing-vnc.js"
 import type { ScreenSharingVNCConfig } from "./server-context-types.js"
 import type { StartupReporter } from "./startup-progress.js"
@@ -42,9 +48,20 @@ export const screenSharingProvider = (
   const vnc = readScreenSharingVNC(dataDir)
   if (vnc === undefined) return { screenSharing: undefined, screenSharingVNC: undefined }
   // An Xfce desktop's scale can be set (851-2339); display N listens on 5900 + N.
-  const scaler = vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900) : undefined
+  const scaler =
+    vnc.desktop === "xfce" ? xfceScaler(vnc.port - 5900, systemScalerCommands) : undefined
   return { screenSharing: vncScreenSharing(vnc, scaler), screenSharingVNC: vnc }
 }
+/// Native MCP discovery over this machine's real harness configs.
+export const systemNativeMcpManager = (
+  config: Omit<NativeMcpManagerConfig, "env" | "fs" | "homedir">
+): NativeMcpManager =>
+  makeNativeMcpManager({
+    ...config,
+    env: process.env,
+    fs: defaultNativeConfigFileSystem,
+    homedir: homedir()
+  })
 /// Background cache only: clients checking on the user's behalf pass
 /// `force` (GET /v1/update?refresh=1) and bypass this entirely. Six hours
 /// here made remote machines deny fresh releases for most of a day.

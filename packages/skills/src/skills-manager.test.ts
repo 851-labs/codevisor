@@ -9,10 +9,8 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { makeAgentRuntime } from "@codevisor/agent-runtime"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { makeSkillsManager } from "./skills-manager.js"
 import {
   cleanupSkillsTests,
   directories,
@@ -27,10 +25,6 @@ import {
 afterEach(cleanupSkillsTests)
 
 describe("makeSkillsManager", () => {
-  it("constructs with default home and env seams", () => {
-    expect(makeSkillsManager({ agents: makeAgentRuntime({}) })).toBeDefined()
-  })
-
   it("returns empty state when nothing exists", async () => {
     const home = makeHome()
     const scan = await manager(home).list()

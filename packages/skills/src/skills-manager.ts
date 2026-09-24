@@ -1,5 +1,4 @@
 import { rename, symlink } from "node:fs/promises"
-import { homedir } from "node:os"
 
 import type { AgentRuntimeService } from "@codevisor/agent-runtime"
 import type { SkillsScan } from "@codevisor/api"
@@ -96,9 +95,9 @@ export interface ManagedSkillSpec {
 
 export interface SkillsManagerConfig {
   readonly agents: AgentRuntimeService
-  /// Seams for tests; production uses the real home dir and process env.
-  readonly homedir?: string
-  readonly env?: Readonly<Record<string, string | undefined>>
+  /// Production passes the real home dir and process env.
+  readonly homedir: string
+  readonly env: Readonly<Record<string, string | undefined>>
   /// Failure-injection seams for syscalls that are hard to break for real
   /// (symlink-unsupported filesystems, cross-device renames).
   readonly overrides?: {
@@ -109,8 +108,7 @@ export interface SkillsManagerConfig {
 }
 
 export const makeSkillsManager = (config: SkillsManagerConfig): SkillsManager => {
-  const home = config.homedir ?? homedir()
-  const env = config.env ?? process.env
+  const { homedir: home, env } = config
 
   const canonicalDir = resolveNativeConfigPath(CANONICAL_SKILLS_DIR, { env, home })
 

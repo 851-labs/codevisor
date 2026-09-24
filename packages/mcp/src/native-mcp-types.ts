@@ -62,8 +62,8 @@ export interface NativeMcpManagerConfig {
   /// Where one-time pre-mutation backups of harness configs live
   /// (<dataDir>/native-config-backups/).
   readonly dataDir: string
-  /// Seams for tests; production uses the real home dir, process env, and fs.
-  readonly homedir?: string
-  readonly env?: Readonly<Record<string, string | undefined>>
-  readonly fs?: NativeConfigFileSystem
+  /// Production passes the real home dir, process env, and fs.
+  readonly homedir: string
+  readonly env: Readonly<Record<string, string | undefined>>
+  readonly fs: NativeConfigFileSystem
 }
