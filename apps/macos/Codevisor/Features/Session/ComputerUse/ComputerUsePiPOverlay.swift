@@ -44,6 +44,8 @@ struct ComputerUsePiPOverlay: View {
           let origin = ComputerUseLivePreviewLayout.origin(
             corner: model.corner, cardSize: size, container: geometry.size, insets: insets)
           card(viewer: viewer, size: size, resizeHandles: resizeHandles(size: size, aspect: aspect, viewer: viewer))
+            // A refreshed viewer is a new surface: rebuild the card around it.
+            .id(ObjectIdentifier(viewer))
             .offset(x: origin.x + dragOffset.width, y: origin.y + dragOffset.height)
             .gesture(dragGesture(cardSize: size, origin: origin, container: geometry.size, insets: insets))
             .transition(.scale(scale: 0.92, anchor: model.corner.unitPoint).combined(with: .opacity))
@@ -62,11 +64,14 @@ struct ComputerUsePiPOverlay: View {
     .onDisappear { model.teardown() }
   }
 
-  /// The stream's width ÷ height, or a landscape default before the first
-  /// frame arrives.
+  /// The streamed window's width ÷ height, or a landscape default before
+  /// the first frame arrives. The window, not the frame: the frame pads the
+  /// window by a pixel or two, which the card trims.
   private func aspect(viewer: ComputerUseLivePreviewViewer) -> CGFloat {
     guard let frame = viewer.frameSize, frame.width > 0, frame.height > 0 else { return 16.0 / 10.0 }
-    return frame.width / frame.height
+    let content = viewer.windowContent?.rect.size ?? CGSize(width: 1, height: 1)
+    guard content.width > 0, content.height > 0 else { return frame.width / frame.height }
+    return (frame.width * content.width) / (frame.height * content.height)
   }
 
   private func cardSize(
@@ -142,11 +147,51 @@ struct ComputerUsePiPOverlay: View {
         )
         let corner = ComputerUseLivePreviewLayout.corner(
           projectedCenter: projectedCenter, container: container, insets: insets)
-        withAnimation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)) {
+        withAnimation(snapAnimation) {
           model.corner = corner
           dragOffset = .zero
         }
       }
+  }
+
+  /// How the card settles into a corner, after a drag or from the menu.
+  private var snapAnimation: Animation? {
+    reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.2)
+  }
+
+  /// Right-click and control-click. Controls the card only; stopping the
+  /// agent stays in the menu bar.
+  @ViewBuilder
+  private var contextMenu: some View {
+    if !model.isRemote {
+      Button("Show \(model.title)") { model.activateTarget() }
+        .disabled(!model.canActivateTarget)
+    }
+    Button("Refresh") { model.reload() }
+      .disabled(!model.canReload)
+    Divider()
+    Picker(
+      "Move to",
+      selection: Binding(
+        get: { model.corner },
+        set: { corner in withAnimation(snapAnimation) { model.corner = corner } }
+      )
+    ) {
+      ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
+        Text(corner.title).tag(corner)
+      }
+    }
+    .pickerStyle(.menu)
+    Button("Reset Size") { withAnimation(snapAnimation) { model.resetSize() } }
+      .disabled(!model.hasCustomSize)
+    Divider()
+    Button("Close") { model.dismiss() }
+  }
+
+  /// The on-screen pointer scaled by the card's zoom of the window.
+  private func cursorScale(cardWidth: CGFloat) -> CGFloat {
+    ComputerUseLivePreviewLayout.cursorScale(
+      cardWidth: cardWidth, windowWidth: model.activity?.windowFrame.width ?? 0)
   }
 
   private func card(
@@ -154,12 +199,24 @@ struct ComputerUsePiPOverlay: View {
     size: CGSize,
     resizeHandles: some View
   ) -> some View {
-    let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    // The window's own corners, scaled with the card, so the stream's
+    // rounded corners meet the card's rather than showing black wedges.
+    let shape = RoundedRectangle(
+      cornerRadius: ComputerUseLivePreviewLayout.cardCornerRadius(
+        radiusFraction: viewer.windowContent?.cornerRadiusFraction, cardSize: size),
+      style: .continuous
+    )
+    let surface = ComputerUseLivePreviewLayout.surfaceFrame(
+      frameSize: viewer.frameSize, content: viewer.windowContent?.rect, cardSize: size)
     return ZStack(alignment: .topLeading) {
       ComputerUsePiPSurface(viewer: viewer)
+        .frame(width: surface.width, height: surface.height)
+        .offset(x: surface.minX, y: surface.minY)
+        // Overhangs the card by the padding; keeps the card's own size.
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .opacity(model.isLive ? 1 : 0.55)
       if let cursor = model.cursor {
-        ComputerUsePiPCursor(tint: model.tint)
+        ComputerUseCursorGlyph(tint: model.tint, scale: cursorScale(cardWidth: size.width))
           .position(x: cursor.x * size.width, y: cursor.y * size.height)
           .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: cursor)
           .allowsHitTesting(false)
@@ -179,9 +236,7 @@ struct ComputerUsePiPOverlay: View {
     .frame(width: size.width, height: size.height)
     .background(.black)
     .clipShape(shape)
-    .overlay {
-      shape.strokeBorder(model.tint.opacity(model.isLive ? 0.9 : 0.3), lineWidth: 1.5)
-    }
+    // Like native PiP, no outline: the shadow alone lifts the card.
     .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     .contentShape(shape)
     // Outside the rounded content shape, so the corner handles reach the
@@ -199,6 +254,7 @@ struct ComputerUsePiPOverlay: View {
     }
     .onHover { isHovering = $0 }
     .onTapGesture { model.activateTarget() }
+    .contextMenu { contextMenu }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
     .help(model.canActivateTarget ? "Show \(model.title)" : model.title)
     .accessibilityElement(children: .contain)
@@ -233,37 +289,16 @@ private struct ComputerUsePiPSurface: NSViewRepresentable {
   func updateNSView(_ view: NSView, context: Context) {}
 }
 
-/// The agent's pointer, drawn in its session colour.
-private struct ComputerUsePiPCursor: View {
-  let tint: Color
-
-  var body: some View {
-    ComputerUsePiPArrow()
-      .fill(tint)
-      .overlay(ComputerUsePiPArrow().stroke(.white, lineWidth: 1.2))
-      .frame(width: 12, height: 16)
-      .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
-      // Anchor the arrow's tip, not its centre, at the position.
-      .offset(x: 6, y: 8)
-  }
-}
-
-private struct ComputerUsePiPArrow: Shape {
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-    path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY * 0.85))
-    path.addLine(to: CGPoint(x: rect.width * 0.32, y: rect.height * 0.65))
-    path.addLine(to: CGPoint(x: rect.width * 0.55, y: rect.maxY))
-    path.addLine(to: CGPoint(x: rect.width * 0.72, y: rect.height * 0.92))
-    path.addLine(to: CGPoint(x: rect.width * 0.5, y: rect.height * 0.6))
-    path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.6))
-    path.closeSubpath()
-    return path
-  }
-}
-
 extension ComputerUseLivePreviewCorner {
+  fileprivate var title: String {
+    switch self {
+    case .topLeading: "Top Left"
+    case .topTrailing: "Top Right"
+    case .bottomLeading: "Bottom Left"
+    case .bottomTrailing: "Bottom Right"
+    }
+  }
+
   /// The card grows out of, and shrinks into, its own corner.
   fileprivate var unitPoint: UnitPoint {
     switch self {

@@ -176,6 +176,18 @@ public final class ComputerUseLivePreview {
     onChange.removeValue(forKey: token)
   }
 
+  /// Swaps `viewer` for a fresh one from `make`, to recover a frozen or
+  /// blank preview. The old viewer detaches first, so its sink leaves the
+  /// stream before the new one subscribes and the stream reconfigures for
+  /// the new viewer rather than serving two.
+  public static func replace(
+    _ viewer: ComputerUseLivePreviewViewer?,
+    with make: () -> ComputerUseLivePreviewViewer?
+  ) -> ComputerUseLivePreviewViewer? {
+    viewer?.detach()
+    return make()
+  }
+
   /// A viewer of the window the chat's agent controls on this Mac, or nil
   /// when there is no activity or Metal is unavailable. Call `detach()`.
   public func makeLocalViewer(chatSession id: UUID) -> ComputerUseLivePreviewViewer? {
@@ -191,11 +203,15 @@ public final class ComputerUseLivePreview {
       return nil
     }
     let bridgeSessionID = activity.bridgeSessionID
-    let sink = ComputerUseMailboxSink(mailbox: mailbox)
+    let relay = ComputerUseWindowContentRelay()
+    let sink = ComputerUseMailboxSink(mailbox: mailbox) { content in
+      Task { @MainActor in relay.viewer?.update(windowContent: content) }
+    }
     let token = attachSink(sessionID: bridgeSessionID, sink: sink)
     let viewer = ComputerUseLivePreviewViewer(title: activity.appName, phase: .live) { [weak self] in
       self?.detachSink(sessionID: bridgeSessionID, token: token)
     }
+    relay.viewer = viewer
     viewer.onDisplayDimension = { dimension in
       guard abs(sink.requestedDimension - dimension) >= 1 else { return }
       sink.requestedDimension = dimension
@@ -238,6 +254,9 @@ public final class ComputerUseLivePreviewViewer {
   public private(set) var title: String
   /// The latest frame's pixel size; nil before the first frame.
   public private(set) var frameSize: CGSize?
+  /// Where the window sits in the frame and how round its corners are,
+  /// measured from local frames. Nil until measured, and for remote viewers.
+  public private(set) var windowContent: ComputerUseWindowContent?
   /// Remote viewers look for the agent's activity more often while the
   /// chat's turn is running. Ignored by local viewers.
   @ObservationIgnored public var prefersFastPolling = false
@@ -275,6 +294,10 @@ public final class ComputerUseLivePreviewViewer {
 
   func update(phase: Phase) { self.phase = phase }
   func update(title: String) { self.title = title }
+  func update(windowContent: ComputerUseWindowContent) {
+    guard !isDetached else { return }
+    self.windowContent = windowContent
+  }
 
   /// Local viewers ask the capture for enough pixels to fill this size.
   @ObservationIgnored var onDisplayDimension: ((CGFloat) -> Void)?
@@ -346,4 +369,11 @@ final class ComputerUseLivePreviewSurface: NSView, ScreenSharingViewerSurface {
     metal.clearColor = MTLClearColorMake(
       rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent)
   }
+}
+
+/// Lets the capture-queue sink reach a viewer created after it, without
+/// keeping the viewer alive.
+@MainActor
+private final class ComputerUseWindowContentRelay: Sendable {
+  weak var viewer: ComputerUseLivePreviewViewer?
 }
