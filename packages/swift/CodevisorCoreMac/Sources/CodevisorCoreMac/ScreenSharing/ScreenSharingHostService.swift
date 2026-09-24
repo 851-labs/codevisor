@@ -109,6 +109,9 @@ final class ScreenSharingHostService {
     guard !isShutdown else { return .init(status: "stopped") }
     if let attempt, Task.isCancelled || pendingStarts[attempt] == nil { return .init(status: "stopped") }
     switch request.operation {
+    case .setScale:
+      // A VNC desktop's operation (851-2339); a Mac's display scale isn't the viewer's to set.
+      return .init(status: "unsupported", message: "This Mac's display scale can't be set remotely.")
     case .stop:
       stopGeneration += 1
       let owner = ScreenSharingHostLease.Owner(request)

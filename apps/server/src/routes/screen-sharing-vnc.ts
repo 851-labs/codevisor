@@ -7,6 +7,7 @@ import type { ScreenSharingReply, ScreenSharingRequest } from "@codevisor/api"
 import { createWebSocketStream, type WebSocketServer } from "ws"
 
 import type { ScreenSharingVNCConfig } from "../server-context-types.js"
+import type { VNCDesktopScaler } from "./screen-sharing-vnc-scale.js"
 
 /// `~/.codevisor/data/screen-sharing.json`, written by whoever set the
 /// machine up (scripts/vnc-desktop.sh), never by a client:
@@ -39,34 +40,74 @@ export const parseScreenSharingVNC = (text: string): ScreenSharingVNCConfig | un
   if (typeof parsed !== "object" || parsed === null) return undefined
   const vnc = (parsed as { vnc?: unknown }).vnc
   if (typeof vnc !== "object" || vnc === null) return undefined
-  const { port, name } = vnc as { port?: unknown; name?: unknown }
+  const { port, name, desktop, defaultSize } = vnc as {
+    port?: unknown
+    name?: unknown
+    desktop?: unknown
+    defaultSize?: unknown
+  }
   if (typeof port !== "number" || !Number.isSafeInteger(port) || port < 1 || port > 65_535)
     return undefined
-  return { port, name: typeof name === "string" && name.trim() !== "" ? name.trim() : "Desktop" }
+  const size =
+    typeof defaultSize === "string" ? /^(\d{2,5})x(\d{2,5})$/.exec(defaultSize.trim()) : null
+  return {
+    port,
+    name: typeof name === "string" && name.trim() !== "" ? name.trim() : "Desktop",
+    ...(desktop === "xfce" ? { desktop } : {}),
+    ...(size ? { defaultWidth: Number(size[1]), defaultHeight: Number(size[2]) } : {})
+  }
 }
 
 export const vncDisplayId = (config: ScreenSharingVNCConfig): string => `vnc:${config.port}`
 
-/// The signaling helper for a VNC-backed machine. Only `capabilities` has an
-/// answer: video does not go over WebRTC here but over the socket route, and
-/// the viewer measures the desktop itself during the RFB handshake.
+/// The signaling helper for a VNC-backed machine. `capabilities` describes the
+/// desktop; video does not go over WebRTC here but over the socket route, and
+/// the viewer measures the desktop itself during the RFB handshake. With a
+/// `scaler` (an Xfce desktop, 851-2339) `setScale` sets the desktop's UI scale.
 export const vncScreenSharing =
-  (config: ScreenSharingVNCConfig) =>
-  async (request: ScreenSharingRequest): Promise<ScreenSharingReply> =>
-    request.operation === "capabilities"
-      ? {
-          version: 1,
-          status: "available",
-          provider: "vnc",
-          displays: [{ id: vncDisplayId(config), name: config.name, width: 0, height: 0 }]
-        }
-      : {
-          version: 1,
-          status: "unsupported",
-          provider: "vnc",
-          message: "This machine streams its display over the VNC socket",
-          displays: []
-        }
+  (config: ScreenSharingVNCConfig, scaler?: VNCDesktopScaler) =>
+  async (request: ScreenSharingRequest): Promise<ScreenSharingReply> => {
+    const reply = (status: string, message?: string): ScreenSharingReply => ({
+      version: 1,
+      status,
+      provider: "vnc",
+      ...(message === undefined ? {} : { message }),
+      displays: []
+    })
+    if (request.operation === "capabilities")
+      return {
+        version: 1,
+        status: "available",
+        provider: "vnc",
+        displays: [
+          {
+            id: vncDisplayId(config),
+            name: config.name,
+            width: 0,
+            height: 0,
+            ...(scaler === undefined ? {} : { scales: [1, 2] }),
+            ...(config.defaultWidth === undefined || config.defaultHeight === undefined
+              ? {}
+              : { defaultWidth: config.defaultWidth, defaultHeight: config.defaultHeight })
+          }
+        ]
+      }
+    if (request.operation === "setScale") {
+      if (scaler === undefined) return reply("unsupported", "This desktop's scale can't be set")
+      if (request.displayId !== vncDisplayId(config)) return reply("error", "Unknown display")
+      if (request.scale === undefined) return reply("error", "No scale")
+      try {
+        await scaler(request.scale)
+      } catch (error) {
+        return reply(
+          "error",
+          error instanceof Error ? error.message : "The desktop's scale couldn't be set"
+        )
+      }
+      return reply("ok")
+    }
+    return reply("unsupported", "This machine streams its display over the VNC socket")
+  }
 
 const refuse = (socket: Socket, status: string): void => {
   socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`)

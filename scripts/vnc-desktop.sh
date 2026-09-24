@@ -106,7 +106,9 @@ fi
 ss -ltn | grep -q "127.0.0.1:$port " || { echo "Xvnc is not listening on localhost:$port" >&2; exit 1; }
 data_dir="${CODEVISOR_DATA_DIR:-$HOME/.codevisor/data}"
 mkdir -p "$data_dir"
-config=$(printf '{ "vnc": { "port": %s, "name": "%s" } }' "$port" "$DISPLAY_NAME")
+# desktop + defaultSize let codevisor-server set the desktop's scale and report its size (851-2339).
+config=$(printf '{ "vnc": { "port": %s, "name": "%s", "desktop": "xfce", "defaultSize": "%s" } }' \
+  "$port" "$DISPLAY_NAME" "$GEOMETRY")
 if [[ "$(cat "$data_dir/screen-sharing.json" 2>/dev/null)" != "$config" ]]; then
   printf '%s\n' "$config" > "$data_dir/screen-sharing.json"
   if systemctl list-unit-files codevisor-server.service >/dev/null 2>&1; then

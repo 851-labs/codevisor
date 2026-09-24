@@ -5,14 +5,23 @@ public struct ServerScreenSharingDisplay: Codable, Sendable, Equatable, Identifi
   public let name: String
   public let width: Int
   public let height: Int
-  public init(id: String, name: String, width: Int, height: Int) {
+  /// UI scales `setScale` accepts (a VNC desktop the server can scale, 851-2339); nil when it can't.
+  public var scales: [Int]?
+  /// The size the desktop was provisioned at, for a viewer that stops resizing it.
+  public var defaultWidth: Int?
+  public var defaultHeight: Int?
+  public init(
+    id: String, name: String, width: Int, height: Int, scales: [Int]? = nil, defaultWidth: Int? = nil,
+    defaultHeight: Int? = nil
+  ) {
     self.id = id; self.name = name; self.width = width; self.height = height
+    self.scales = scales; self.defaultWidth = defaultWidth; self.defaultHeight = defaultHeight
   }
 }
 
 /// Ephemeral signaling only. Never persist this request or SDP in pane metadata.
 public struct ServerScreenSharingRequest: Codable, Sendable {
-  public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop }
+  public enum Operation: String, Codable, Sendable { case capabilities, start, restart, heartbeat, stop, setScale }
   public let version: Int
   public let operation: Operation
   public let workspaceId: UUID
@@ -20,13 +29,16 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public let viewerId: UUID
   public var displayId: String?
   public var offer: String?
+  /// `setScale`: the desktop's UI scale, 1 or 2 (851-2339).
+  public var scale: Int?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
-    displayId: String? = nil, offer: String? = nil
+    displayId: String? = nil, offer: String? = nil, scale: Int? = nil
   ) {
     version = 1; self.operation = operation; self.workspaceId = workspaceId
     self.paneId = paneId; self.viewerId = viewerId; self.displayId = displayId; self.offer = offer
+    self.scale = scale
   }
 }
 

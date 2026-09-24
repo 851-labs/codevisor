@@ -101,6 +101,11 @@ export interface CodevisorServerConfig {
 export interface ScreenSharingVNCConfig {
   readonly port: number
   readonly name: string
+  /// The desktop scripts/vnc-desktop.sh installed; "xfce" lets the server set its scale (851-2339).
+  readonly desktop?: "xfce"
+  /// The size the desktop was provisioned at (its `-geometry`).
+  readonly defaultWidth?: number
+  readonly defaultHeight?: number
 }
 
 export interface CloudServerControl {

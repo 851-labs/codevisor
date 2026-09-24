@@ -201,6 +201,8 @@ final class ComputerUseLivePreviewHost {
     case .stop:
       if let session = sessions[owner] { end(owner: owner, session: session) }
       return .init(status: "stopped")
+    case .setScale:
+      return .init(status: "unsupported", message: "A live view's scale can't be set.")
     case .heartbeat:
       guard let session = sessions[owner], session.sessionID == sessionID else {
         return .init(status: "stopped", message: "The live view ended on the host Mac.")
