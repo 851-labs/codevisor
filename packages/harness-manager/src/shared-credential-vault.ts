@@ -260,6 +260,20 @@ export const makeSharedCredentialVault = (config: SharedCredentialVaultConfig) =
       const confirmed = held(reference)
       if (confirmed !== undefined && !isNewer(confirmed)) return
       const state = await config.coordinate(reference.id, { action: "read" })
+      if (state.status === "missing") {
+        // The coordinator lost the grant (a cloud store reset, or a seed that
+        // never landed) while the synced reference survived. Every read then
+        // fails with "sign in again" even though the CLI login this mirrors is
+        // live. The mirror has no refresh token to fork, so re-seed it under
+        // the same reference. Seeding never overwrites a revoked record, so a
+        // deliberate sign-out stays signed out.
+        const seeded = await config.coordinate(reference.id, {
+          action: "seed",
+          sealed: sealSharedCredential(reference, bundle)
+        })
+        remember(reference, seeded.credential)
+        return
+      }
       const previous = remember(reference, state.credential)
       if (
         previous.ownership !== "external" ||
