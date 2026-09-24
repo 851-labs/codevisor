@@ -67,7 +67,7 @@ it.each(["configured", "home", "fallback", "managed"])(
     if (mode === "managed") {
       await Effect.runPromise(m.db.deleteSession(session.id))
       await Effect.runPromise(m.db.removeHarnessAccount(account.id))
-      expect((await m.shared.context(account.id))?.profilePath).toContain(
+      expect((await m.shared.context(account.id))?.env?.CODEX_HOME).toContain(
         "harness-profiles/codex/shared-"
       )
     }

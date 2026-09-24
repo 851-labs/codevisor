@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url"
 export interface ServerResourceOptions {
   readonly moduleDirectory?: string
   readonly workingDirectory?: string
-  readonly resourceDirectory?: string
 }
 
 const unique = (values: ReadonlyArray<string | undefined>): ReadonlyArray<string> => [
@@ -22,7 +21,6 @@ export const serverResourceDirectories = (
   const moduleDirectory = options.moduleDirectory ?? dirname(fileURLToPath(import.meta.url))
   const workingDirectory = options.workingDirectory ?? process.cwd()
   return unique([
-    options.resourceDirectory,
     process.env.CODEVISOR_SERVER_RESOURCES,
     // Package layout, source and release alike: this module compiles to
     // packages/automation/{src,dist}/*.js next to packages/automation/resources,

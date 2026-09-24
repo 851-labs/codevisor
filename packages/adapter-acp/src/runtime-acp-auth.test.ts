@@ -56,7 +56,6 @@ describe("@codevisor/agent-runtime", () => {
     vi.useFakeTimers()
     const connector = makeConnector()
     const runtime = makeAcpAgentRuntime({
-      acpAuthProbeTimeoutMs: 10,
       connector,
       env: { PATH: "/bin" },
       executableExists: (name) => name === "gemini",
@@ -72,10 +71,10 @@ describe("@codevisor/agent-runtime", () => {
         })
       )
     ).rejects.toMatchObject({
-      message: "ACP authentication probe timed out after 10ms",
+      message: "ACP authentication probe timed out after 10000ms",
       operation: "probeAuth"
     })
-    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(10_000)
     await timedOut
     expect(connector.connections[0]?.closeCount).toBe(1)
   })

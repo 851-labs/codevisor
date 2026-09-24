@@ -164,7 +164,6 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
     const context: HarnessAccountContext = {
       id: account.id,
       profileKind: account.profileKind,
-      ...(path === undefined ? {} : { profilePath: path }),
       ...(Object.keys(env).length === 0 ? {} : { env })
     }
     return shared

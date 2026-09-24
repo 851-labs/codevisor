@@ -50,8 +50,6 @@ export interface PluginsManagerConfig extends Omit<
   readonly codevisorVersion?: string
   /// Registry fetch used for update checks and exact prepared plans.
   readonly fetchPluginRegistry?: () => Promise<PluginRegistryIndex>
-  readonly createUpdatePlanId?: () => string
-  readonly updatePlanTtlMs?: number
 }
 
 /// Runtime state transition for one plugin, shaped for the server's event

@@ -309,7 +309,6 @@ describe("OpenCode profile authentication", () => {
     expect(context).toMatchObject({
       id: account.id,
       profileKind: "managed",
-      profilePath: profile,
       env: {
         XDG_DATA_HOME: join(profile, "data"),
         XDG_CONFIG_HOME: join(profile, "config"),
@@ -319,7 +318,7 @@ describe("OpenCode profile authentication", () => {
     })
     expect(probeHarnessAuth).toHaveBeenCalledWith(
       "opencode",
-      expect.objectContaining({ id: account.id, profilePath: profile })
+      expect.objectContaining({ id: account.id, env: context.env })
     )
   })
 })

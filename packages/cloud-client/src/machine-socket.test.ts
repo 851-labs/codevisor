@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import { RelayOutbox } from "./machine-socket.js"
 
-const makeOutbox = (coalesceMs: number, maxBufferedBytes?: number) => {
+const makeOutbox = (coalesceMs: number) => {
   const messages: { header: unknown; payload: Uint8Array }[][] = []
   const timers: { callback: () => void; delayMs: number; cancelled: boolean }[] = []
   const outbox = new RelayOutbox({
@@ -21,8 +21,7 @@ const makeOutbox = (coalesceMs: number, maxBufferedBytes?: number) => {
         timer.cancelled = true
       }
     },
-    coalesceMs,
-    ...(maxBufferedBytes === undefined ? {} : { maxBufferedBytes })
+    coalesceMs
   })
   return { outbox, messages, timers }
 }
@@ -59,11 +58,11 @@ describe("RelayOutbox", () => {
     expect(timers).toHaveLength(2)
   })
 
-  it("flushes early when the buffered bytes cross the threshold", () => {
-    const { outbox, messages, timers } = makeOutbox(5, 1024)
-    outbox.push(header(0), new Uint8Array(512))
+  it("flushes early when the buffered bytes cross the 256 KiB threshold", () => {
+    const { outbox, messages, timers } = makeOutbox(5)
+    outbox.push(header(0), new Uint8Array(128 * 1024))
     expect(messages).toHaveLength(0)
-    outbox.push(header(1), new Uint8Array(512))
+    outbox.push(header(1), new Uint8Array(128 * 1024))
     expect(messages).toHaveLength(1)
     expect(messages[0]).toHaveLength(2)
     expect(timers[0]!.cancelled).toBe(true)

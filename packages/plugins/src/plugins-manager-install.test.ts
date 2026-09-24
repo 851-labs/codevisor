@@ -83,7 +83,6 @@ describe("manager install pipeline", () => {
         await cp(fixture, destination, { recursive: true })
         return { resolvedCommit: ref ?? "a".repeat(40) }
       },
-      createUpdatePlanId: () => "manager-plan",
       fetchPluginRegistry: async () => ({
         entries: [
           {
@@ -100,8 +99,7 @@ describe("manager install pipeline", () => {
         ],
         generatedAt: "2026-08-23T00:00:00.000Z",
         rejected: []
-      }),
-      updatePlanTtlMs: 60_000
+      })
     })
     await manager.importRemote({ source: "owner/fresh" })
     writeFileSync(
@@ -113,7 +111,7 @@ describe("manager install pipeline", () => {
       (await manager.listUpdates()).updates.find((item) => item.pluginId === "owner.fresh")
     ).toMatchObject({ pluginId: "owner.fresh", state: "available" })
     const plan = await manager.prepareUpdate("owner.fresh")
-    expect(plan).toMatchObject({ planId: "manager-plan", resolvedCommit: commit })
+    expect(plan).toMatchObject({ resolvedCommit: commit })
     await expect(manager.applyUpdate("owner.fresh", plan.planId)).resolves.toMatchObject({
       id: "owner.fresh",
       version: "2.0.0"

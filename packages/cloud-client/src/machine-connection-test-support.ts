@@ -140,7 +140,6 @@ export const harness = (
     relayCoalesceMs?: number
     compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
     decompressPayload?: (bytes: Uint8Array) => Uint8Array
-    now?: () => number
   } = {}
 ): Harness => {
   const sockets: FakeSocket[] = []
@@ -179,7 +178,6 @@ export const harness = (
     onStateChange: (state) => states.push(state),
     onDisconnect: (reason) => disconnects.push(reason),
     onWelcome: (info) => welcomes.push(info),
-    ...(overrides.now === undefined ? {} : { now: overrides.now }),
     scheduleReconnect: (callback, delayMs) => reconnects.push({ callback, delayMs }),
     scheduleTimeout: (callback, delayMs) => {
       const timeout: ScheduledTimeout = {

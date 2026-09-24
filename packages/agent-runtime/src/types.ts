@@ -274,7 +274,6 @@ export const withoutEnv = <T extends Readonly<Record<string, string | undefined>
 export interface HarnessAccountContext {
   readonly id: string
   readonly profileKind: "default" | "managed"
-  readonly profilePath?: string
   readonly env?: Readonly<Record<string, string>>
   /// Inherited variables the harness process must NOT see (a user's own
   /// `GROK_AUTH`, say). Adapters drop these from the parent environment before

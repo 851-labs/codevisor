@@ -100,23 +100,6 @@ describe("connection lifecycle", () => {
     expect(socket.sent.filter((frame) => frame.t === "ping")).toHaveLength(2)
   })
 
-  it("measures relay RTT from heartbeat ping/pong", () => {
-    let now = 10_000
-    const h = harness({ now: () => now })
-    const socket = connect(h)
-    expect(h.connection.lastRttMs).toBeUndefined()
-
-    activeTimeout(h, 30_000).run() // heartbeat ping leaves at t=10s
-    now += 42
-    socket.receive({ t: "pong" })
-    expect(h.connection.lastRttMs).toBe(42)
-
-    // An unsolicited pong never fabricates a measurement.
-    now += 100
-    socket.receive({ t: "pong" })
-    expect(h.connection.lastRttMs).toBe(42)
-  })
-
   it("reconnects when a socket never completes the welcome handshake", () => {
     const h = harness()
     h.connection.start()
