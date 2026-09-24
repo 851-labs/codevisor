@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import type { Socket } from "node:net"
@@ -149,8 +150,28 @@ export interface RecordedRequest {
   readonly headers: IncomingMessage["headers"]
 }
 
+/// What a plugin does with a request, exactly as the plugins docs describe:
+/// HMAC-SHA256 over the raw X-Codevisor-Context header value, keyed by the
+/// CODEVISOR_PLUGIN_CONTEXT_SECRET string from its spawn environment, hex
+/// encoded, compared in constant time.
+export const verifyPluginContext = (
+  secret: string | undefined,
+  headers: IncomingMessage["headers"]
+): boolean => {
+  const context = headers["x-codevisor-context"]
+  const signature = headers["x-codevisor-context-signature"]
+  if (secret === undefined || typeof context !== "string" || typeof signature !== "string") {
+    return false
+  }
+  const expected = Buffer.from(createHmac("sha256", secret).update(context).digest("hex"))
+  const actual = Buffer.from(signature)
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
 export interface FakePlugin {
   readonly requests: Array<RecordedRequest>
+  /// Environment the most recent spawn received.
+  readonly env: () => NodeJS.ProcessEnv
   readonly spawnCount: () => number
   readonly simulateExit: (message: string) => void
   readonly spawnShell: (
@@ -170,10 +191,12 @@ export interface FakePlugin {
 export const makeFakePlugin = (): FakePlugin => {
   let server: Server | undefined
   let spawns = 0
+  let spawnEnv: NodeJS.ProcessEnv = {}
   let exitListeners: Array<(message: string) => void> = []
   const requests: Array<RecordedRequest> = []
   cleanups.push(() => server?.close())
   return {
+    env: () => spawnEnv,
     requests,
     spawnCount: () => spawns,
     simulateExit: (message) => {
@@ -184,6 +207,7 @@ export const makeFakePlugin = (): FakePlugin => {
     },
     spawnShell: (_command, options) => {
       spawns += 1
+      spawnEnv = options.env
       exitListeners = []
       server = createServer((request, response) => {
         const chunks: Array<Buffer> = []

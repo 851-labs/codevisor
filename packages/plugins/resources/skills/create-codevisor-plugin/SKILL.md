@@ -114,6 +114,12 @@ http
   on light and dark backgrounds; it is not tinted like a system symbol.
 - Read per-pane context (cwd, workspaceId, paneId, themeMode) from the
   `X-Codevisor-Context` header: base64 JSON, present on every proxied request.
+  Any local process can call your port, so before trusting the context (for
+  example, reading files under `cwd`), check `X-Codevisor-Context-Signature`.
+  It is the hex HMAC-SHA256 of the raw header value, keyed with the
+  `CODEVISOR_PLUGIN_CONTEXT_SECRET` env string. Compare it with
+  `crypto.timingSafeEqual`:
+  `createHmac("sha256", process.env.CODEVISOR_PLUGIN_CONTEXT_SECRET).update(header).digest("hex")`.
 - Style with the injected `--codevisor-*` CSS variables so panes match the
   app theme (full reference under "Styling panes"); every `var()` needs a
   fallback: `var(--codevisor-bg, Canvas)`.

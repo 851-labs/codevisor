@@ -88,11 +88,12 @@ Optional fields include:
 
 Codevisor runs `run.command` in the plugin directory with these environment variables:
 
-| Variable                    | Meaning                                     |
-| --------------------------- | ------------------------------------------- |
-| `PORT`                      | Assigned loopback port                      |
-| `CODEVISOR_PLUGIN_ID`       | Manifest plugin ID                          |
-| `CODEVISOR_PLUGIN_DATA_DIR` | Persistent directory for plugin-owned state |
+| Variable                          | Meaning                                           |
+| --------------------------------- | ------------------------------------------------- |
+| `PORT`                            | Assigned loopback port                            |
+| `CODEVISOR_PLUGIN_ID`             | Manifest plugin ID                                |
+| `CODEVISOR_PLUGIN_DATA_DIR`       | Persistent directory for plugin-owned state       |
+| `CODEVISOR_PLUGIN_CONTEXT_SECRET` | Key for verifying `X-Codevisor-Context-Signature` |
 
 Bind only to `127.0.0.1:$PORT`. Write persistent data under `CODEVISOR_PLUGIN_DATA_DIR`; do not rely
 on browser storage when state must follow a workspace across devices.
@@ -100,6 +101,34 @@ on browser storage when state must follow a workspace across devices.
 Every proxied pane request includes `X-Codevisor-Context`, a base64-encoded JSON object with the
 available `cwd`, `workspaceId`, `paneId`, and `themeMode`. Treat every field as optional and validate
 it before using it.
+
+### Verify the context
+
+Any local process can reach `127.0.0.1:$PORT` and send its own `X-Codevisor-Context`. Codevisor signs
+the header so a plugin can reject context it did not send. `X-Codevisor-Context-Signature` is the
+lowercase hex HMAC-SHA256 of the exact `X-Codevisor-Context` header value (the base64 text, before
+decoding), keyed with the `CODEVISOR_PLUGIN_CONTEXT_SECRET` string. Each plugin gets its own secret, so
+one plugin cannot sign context for another. The secret stays the same across plugin restarts. It
+changes when the Codevisor server restarts, so read it from the environment and don't store it.
+Compare signatures in constant time:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto"
+
+const verifyContext = (headers) => {
+  const secret = process.env.CODEVISOR_PLUGIN_CONTEXT_SECRET
+  const context = headers["x-codevisor-context"]
+  const signature = headers["x-codevisor-context-signature"]
+  if (!secret || typeof context !== "string" || typeof signature !== "string") return false
+  const expected = Buffer.from(createHmac("sha256", secret).update(context).digest("hex"))
+  const actual = Buffer.from(signature)
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+```
+
+Verification is optional. It matters when the context grants access, for example when a plugin
+reads or writes files under `cwd`. Older Codevisor servers do not set the variable, and
+a WebSocket upgrade accepted through the loopback exemption carries no context headers.
 
 Pane documents must use relative URLs for scripts, styles, requests, and WebSockets. This keeps all
 traffic under the authenticated plugin proxy without HTML rewriting.
@@ -230,7 +259,8 @@ For each tool, Codevisor sends the JSON arguments directly to the manifest `path
 ```
 
 The signed `X-Codevisor-Context` and `X-Codevisor-Context-Signature` headers carry `pluginId`,
-`toolName`, and the available `workspaceId` and `cwd`. Return JSON or plain text with a 2xx status;
+`toolName`, and the available `workspaceId` and `cwd`. Verify them as described in
+[Verify the context](#verify-the-context). Return JSON or plain text with a 2xx status;
 return a non-2xx response for failures. The agent-facing tool name is
 `plugin.acme.notes.notes_add`. A client invoking the management API wraps the arguments as
 `{ "args": { ... }, "workspaceId": "...", "cwd": "..." }`; Codevisor unwraps `args` before it

@@ -5,7 +5,14 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { PluginsError } from "./plugins-error.js"
-import { exampleManifest, makeDir, makeManager, toolManifest, writePlugin } from "./test-support.js"
+import {
+  exampleManifest,
+  makeDir,
+  makeManager,
+  toolManifest,
+  verifyPluginContext,
+  writePlugin
+} from "./test-support.js"
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -63,7 +70,9 @@ describe("plugin tool invocation", () => {
     expect(seen?.path).toBe("/tools/add")
     expect(seen?.body).toBe(JSON.stringify({ text: "hi" }))
     expect(seen?.headers["content-type"]).toBe("application/json")
-    expect(seen?.headers["x-codevisor-context-signature"]).toBeDefined()
+    expect(verifyPluginContext(fake.env()["CODEVISOR_PLUGIN_CONTEXT_SECRET"], seen!.headers)).toBe(
+      true
+    )
     const context = JSON.parse(
       Buffer.from(String(seen?.headers["x-codevisor-context"]), "base64").toString("utf8")
     ) as Record<string, unknown>

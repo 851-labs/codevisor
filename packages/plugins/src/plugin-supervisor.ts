@@ -66,6 +66,9 @@ export interface PluginSupervisorConfig {
     argv: ReadonlyArray<string>,
     options: PluginSpawnOptions
   ) => PluginProcessHandle
+  /// Per-plugin key for verifying X-Codevisor-Context, passed to the process
+  /// as CODEVISOR_PLUGIN_CONTEXT_SECRET. The manager owns the signer.
+  readonly contextSecret?: (pluginId: string) => string
   /// Login-shell environment for spawns; defaults to process.env.
   readonly resolveEnv?: () => Promise<NodeJS.ProcessEnv>
   readonly log?: (message: string) => void
@@ -343,6 +346,9 @@ export const makePluginSupervisor = (config: PluginSupervisorConfig): PluginSupe
     mkdirSync(dataDir, { recursive: true })
     const env: NodeJS.ProcessEnv = {
       ...(await (config.resolveEnv?.() ?? Promise.resolve(process.env))),
+      ...(config.contextSecret === undefined
+        ? {}
+        : { CODEVISOR_PLUGIN_CONTEXT_SECRET: config.contextSecret(plugin.id) }),
       CODEVISOR_PLUGIN_DATA_DIR: dataDir,
       CODEVISOR_PLUGIN_ID: plugin.id,
       PORT: String(port)

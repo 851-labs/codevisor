@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto"
+
 import { describe, expect, it } from "vitest"
 
 import {
@@ -67,10 +69,14 @@ describe("makePaneTokenStore", () => {
     expect(store.verify(issued.token, "owner.example")).toBeDefined()
   })
 
-  it("signs context payloads deterministically per store", () => {
+  it("signs context with a per-plugin key that other plugins cannot verify", () => {
     const store = makePaneTokenStore()
-    expect(store.signContext("payload")).toBe(store.signContext("payload"))
-    expect(store.signContext("payload")).not.toBe(store.signContext("other"))
+    const signature = store.signContext("owner.example", "payload")
+    const sign = (secret: string) => createHmac("sha256", secret).update("payload").digest("hex")
+    expect(sign(store.contextSecret("owner.example"))).toBe(signature)
+    expect(sign(store.contextSecret("owner.other"))).not.toBe(signature)
+    // Restarted plugin processes get the same key from the same server.
+    expect(store.contextSecret("owner.example")).toBe(store.contextSecret("owner.example"))
   })
 })
 
