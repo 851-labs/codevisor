@@ -62,11 +62,14 @@ struct ComputerUsePiPOverlay: View {
     .onDisappear { model.teardown() }
   }
 
-  /// The stream's width ÷ height, or a landscape default before the first
-  /// frame arrives.
+  /// The streamed window's width ÷ height, or a landscape default before
+  /// the first frame arrives. The window, not the frame: the frame pads the
+  /// window by a pixel or two, which the card trims.
   private func aspect(viewer: ComputerUseLivePreviewViewer) -> CGFloat {
     guard let frame = viewer.frameSize, frame.width > 0, frame.height > 0 else { return 16.0 / 10.0 }
-    return frame.width / frame.height
+    let content = viewer.windowContent?.rect.size ?? CGSize(width: 1, height: 1)
+    guard content.width > 0, content.height > 0 else { return frame.width / frame.height }
+    return (frame.width * content.width) / (frame.height * content.height)
   }
 
   private func cardSize(
@@ -154,9 +157,21 @@ struct ComputerUsePiPOverlay: View {
     size: CGSize,
     resizeHandles: some View
   ) -> some View {
-    let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    // The window's own corners, scaled with the card, so the stream's
+    // rounded corners meet the card's rather than showing black wedges.
+    let shape = RoundedRectangle(
+      cornerRadius: ComputerUseLivePreviewLayout.cardCornerRadius(
+        radiusFraction: viewer.windowContent?.cornerRadiusFraction, cardSize: size),
+      style: .continuous
+    )
+    let surface = ComputerUseLivePreviewLayout.surfaceFrame(
+      frameSize: viewer.frameSize, content: viewer.windowContent?.rect, cardSize: size)
     return ZStack(alignment: .topLeading) {
       ComputerUsePiPSurface(viewer: viewer)
+        .frame(width: surface.width, height: surface.height)
+        .offset(x: surface.minX, y: surface.minY)
+        // Overhangs the card by the padding; keeps the card's own size.
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .opacity(model.isLive ? 1 : 0.55)
       if let cursor = model.cursor {
         ComputerUsePiPCursor(tint: model.tint)

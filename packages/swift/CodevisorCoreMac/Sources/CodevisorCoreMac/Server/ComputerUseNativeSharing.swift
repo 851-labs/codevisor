@@ -1,5 +1,6 @@
 import CodevisorCore
 import CoreMedia
+import CoreVideo
 import Foundation
 import ScreenCaptureKit
 
@@ -176,7 +177,7 @@ final class ComputerUseNativeSharing: NSObject,
       )
       let stream = SCStream(
         filter: filter,
-        configuration: previewConfiguration(settings),
+        configuration: computerUseNativePreviewConfiguration(settings),
         delegate: self
       )
       let publisher = ComputerUseFramePublisher()
@@ -219,24 +220,6 @@ final class ComputerUseNativeSharing: NSObject,
     }
   }
 
-  private func previewConfiguration(
-    _ settings: ComputerUseNativePreviewSettings
-  ) -> SCStreamConfiguration {
-    let configuration = SCStreamConfiguration()
-    configuration.width = Int(settings.size.width)
-    configuration.height = Int(settings.size.height)
-    configuration.minimumFrameInterval = CMTime(
-      value: 1,
-      timescale: settings.framesPerSecond
-    )
-    configuration.queueDepth = ComputerUseNativePreviewMetrics.queueDepth
-    configuration.showsCursor = false
-    configuration.capturesAudio = false
-    configuration.scalesToFit = true
-    configuration.ignoreShadowsSingleWindow = true
-    return configuration
-  }
-
   private func refreshPreviewConfiguration(windowID: CGWindowID, windowFrame: CGRect) {
     guard var entry = entriesByWindowID[windowID] else { return }
     entry.windowFrame = windowFrame
@@ -261,7 +244,7 @@ final class ComputerUseNativeSharing: NSObject,
     entry.settings = desired
     entriesByWindowID[windowID] = entry
     let stream = entry.stream
-    let configuration = previewConfiguration(desired)
+    let configuration = computerUseNativePreviewConfiguration(desired)
     Task { @MainActor [weak self] in
       do {
         try await stream.updateConfiguration(configuration)
@@ -290,7 +273,7 @@ final class ComputerUseNativeSharing: NSObject,
     let latest = entry.settings
     Task { @MainActor in
       do {
-        try await stream.updateConfiguration(previewConfiguration(latest))
+        try await stream.updateConfiguration(computerUseNativePreviewConfiguration(latest))
       } catch {
         Log.computerUse.error(
           "Unable to reconcile native sharing preview for window \(windowID, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -555,4 +538,26 @@ final class ComputerUseRevocations: @unchecked Sendable {
       transient.removeAll()
     }
   }
+}
+
+/// The preview stream's capture settings.
+func computerUseNativePreviewConfiguration(
+  _ settings: ComputerUseNativePreviewSettings
+) -> SCStreamConfiguration {
+  let configuration = SCStreamConfiguration()
+  configuration.width = Int(settings.size.width)
+  configuration.height = Int(settings.size.height)
+  configuration.minimumFrameInterval = CMTime(
+    value: 1,
+    timescale: settings.framesPerSecond
+  )
+  configuration.queueDepth = ComputerUseNativePreviewMetrics.queueDepth
+  configuration.showsCursor = false
+  configuration.capturesAudio = false
+  configuration.scalesToFit = true
+  configuration.ignoreShadowsSingleWindow = true
+  // BGRA, not SCK's 4:2:0 default: UI text stays crisp, and the alpha
+  // channel tells the PiP where the window's padding and corners are.
+  configuration.pixelFormat = kCVPixelFormatType_32BGRA
+  return configuration
 }
