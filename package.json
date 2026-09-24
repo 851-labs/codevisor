@@ -39,6 +39,7 @@
     "screen-sharing:probe": "bun apps/screen-sharing-rig/scripts/screen-sharing-probe.ts",
     "screen-sharing:rig": "bun apps/screen-sharing-rig/scripts/screen-sharing-rig.ts",
     "vnc:bench": "bun apps/screen-sharing-rig/scripts/vnc-bench.ts",
+    "vnc:frame-clock": "bun apps/screen-sharing-rig/scripts/vnc-frame-clock.ts",
     "vnc:interop": "bun apps/screen-sharing-rig/scripts/vnc-interop.ts",
     "vnc:tophat": "bun apps/screen-sharing-rig/scripts/vnc-tophat.ts",
     "vnc:validate": "bun apps/screen-sharing-rig/scripts/vnc-validate.ts",
