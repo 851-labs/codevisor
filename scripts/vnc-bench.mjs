@@ -133,6 +133,8 @@ if (options.againstMain) {
   )
   if (reference.status !== 0) {
     process.stderr.write("vnc:bench: the origin/main run failed; no A/B comparison\n")
+    // Still name the directory: its main/bench-error.txt says why (851-2337).
+    process.stdout.write(`\nReport: ${join(output, "bench.md")}\n`)
     process.exit(1)
   }
   const index = args.indexOf("--baseline")

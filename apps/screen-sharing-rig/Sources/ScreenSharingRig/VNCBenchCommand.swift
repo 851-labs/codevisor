@@ -38,11 +38,25 @@
       }
       Task {
         do { exit(try await run(options)) } catch {
-          FileHandle.standardError.write(Data("vnc-bench: \(error.localizedDescription)\n".utf8))
+          // Always leave the reason behind (851-2337): a one-off failure must be diagnosable afterwards.
+          let record = failureRecord(error, serverOutput: ServerOutput.latest.tail)
+          FileHandle.standardError.write(Data("vnc-bench: \(record)\n".utf8))
+          if let output = options.output {
+            let directory = URL(fileURLWithPath: output, isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? Data(record.utf8).write(to: directory.appendingPathComponent("bench-error.txt"))
+          }
           exit(EXIT_FAILURE)
         }
       }
       dispatchMain()
+    }
+
+    /// The error, and what the last vnc-server printed (a crash or refusal shows up there).
+    static func failureRecord(_ error: any Error, serverOutput: [String]) -> String {
+      var lines = [error.localizedDescription]
+      if !serverOutput.isEmpty { lines += ["", "vnc-server's last output:"] + serverOutput.map { "  \($0)" } }
+      return lines.joined(separator: "\n")
     }
 
     static func run(_ options: VNCBenchOptions) async throws -> Int32 {
@@ -52,8 +66,16 @@
           guard let profile = RFBNetworkProfile.named(name) else { throw VNCBenchError("unknown profile \(name)") }
           var runs: [[VNCBenchMetric: Double]] = []
           for index in 0..<options.runs {
-            let measured = try await withWatchdog("\(scene)/\(name) run \(index + 1)") {
-              try await measure(scene: scene, profile: profile, options: options)
+            let label = "\(scene)/\(name) run \(index + 1)"
+            let measured: [VNCBenchMetric: Double]
+            do {
+              measured = try await withWatchdog(label) {
+                try await measure(scene: scene, profile: profile, options: options)
+              }
+            } catch let error as VNCBenchError where error.localizedDescription.hasPrefix(label) {
+              throw error
+            } catch {
+              throw VNCBenchError("\(label): \(error.localizedDescription)")
             }
             print("  \(scene)/\(name) run \(index + 1)/\(options.runs): \(summary(measured))")
             runs.append(measured)
@@ -256,7 +278,19 @@
           scene: scene, echo: echo, seed: seed, pace: pace, width: width, height: height)
         let output = Pipe()
         process.standardOutput = output
-        process.standardError = FileHandle.standardError
+        // Its errors still reach this process's stderr, and the last lines are kept for bench-error.txt.
+        let errors = Pipe()
+        process.standardError = errors
+        let log = ServerOutput.begin()
+        errors.fileHandleForReading.readabilityHandler = { handle in
+          let data = handle.availableData
+          guard !data.isEmpty else {
+            handle.readabilityHandler = nil
+            return
+          }
+          FileHandle.standardError.write(data)
+          log.append(data)
+        }
         // Never `waitUntilExit` from a concurrency thread: it waits on a run loop those threads don't
         // service and can hang after the process is gone (seen in 851-2328's first validation).
         let (termination, finished) = AsyncStream<Void>.makeStream()
@@ -290,6 +324,34 @@
       func stop() {
         if process.isRunning { process.terminate() }
       }
+    }
+
+    /// The current vnc-server's stderr, last lines only.
+    final class ServerOutput: @unchecked Sendable {
+      private static let lock = NSLock()
+      nonisolated(unsafe) private static var current = ServerOutput()
+      static var latest: ServerOutput { lock.withLock { current } }
+      static func begin() -> ServerOutput {
+        let log = ServerOutput()
+        lock.withLock { current = log }
+        return log
+      }
+
+      private let lock = NSLock()
+      private var lines: [String] = []
+      private var partial = ""
+      static let keep = 20
+
+      func append(_ data: Data) {
+        lock.withLock {
+          let text = partial + String(decoding: data, as: UTF8.self)
+          var split = text.components(separatedBy: "\n")
+          partial = split.removeLast()
+          lines = Array((lines + split.filter { !$0.isEmpty }).suffix(Self.keep))
+        }
+      }
+
+      var tail: [String] { lock.withLock { lines + (partial.isEmpty ? [] : [partial]) } }
     }
 
     // MARK: Environment

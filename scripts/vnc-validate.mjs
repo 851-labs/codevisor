@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url"
 
 import { mainSerialExecutorFilter } from "./test-swift.mjs"
 import {
+  benchFailure,
   lastLine,
   layers,
   parseValidateArguments,
@@ -120,13 +121,15 @@ await layer("bench", async () => {
       : ""
   const comparison = read("comparison.md")
   const bench = read("bench.md")
+  // Why a failed run stopped (851-2337): this build's run, or origin/main's.
+  const failure = benchFailure(read("bench-error.txt"), read(join("main", "bench-error.txt")))
   return {
     ok: run.status === 0,
     seconds: run.seconds,
     summary:
       lastLine(run.output, /^vnc-bench: /) ||
       (run.status === 0 ? "no baseline to compare" : "failed"),
-    detail: [bench.replace(/^# vnc-bench\n/, ""), comparison].filter(Boolean).join("\n")
+    detail: [failure, bench.replace(/^# vnc-bench\n/, ""), comparison].filter(Boolean).join("\n")
   }
 })
 

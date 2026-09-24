@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  benchFailure,
   lastLine,
   parseValidateArguments,
   renderReport,
@@ -85,4 +86,17 @@ test("test counts add up every binary a swift test run printed", () => {
     false
   )
   assert.deepEqual(testCount("nothing"), { ran: 0, passed: false })
+})
+
+test("a failed bench's reasons appear in the report, fenced", () => {
+  assert.equal(benchFailure("", ""), "")
+  const text = benchFailure(
+    "photo/lan run 1: took longer than 180 s\n\nvnc-server's last output:\n  boom",
+    ""
+  )
+  assert.match(text, /\*\*vnc-bench failed \(this build\)\*\*/)
+  assert.match(text, /```text\nphoto\/lan run 1: took longer than 180 s/)
+  assert.match(text, /  boom\n```/)
+  assert.doesNotMatch(text, /origin\/main/)
+  assert.match(benchFailure("", "x"), /origin\/main/)
 })
