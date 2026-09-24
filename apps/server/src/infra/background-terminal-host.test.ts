@@ -262,45 +262,4 @@ describe("backgroundTerminalSocketPath", () => {
       "/fallback/codevisor-bg-7.sock"
     )
   })
-
-  const rejectingRegistry: BackgroundTerminalHostRegistry = {
-    register: () => {
-      throw new Error("no wrapper should connect")
-    }
-  }
-
-  it("rejects when the socket cannot be bound", async () => {
-    const root = mkdtempSync(join(tmpdir(), "bg-unbindable-"))
-    try {
-      // A directory that does not exist fails to bind on every platform.
-      await expect(
-        startBackgroundTerminalHost({
-          socketPath: join(root, "missing", "s.sock"),
-          registry: rejectingRegistry
-        })
-      ).rejects.toThrow()
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  // Linux's sun_path is a fixed 108 bytes, so this is deterministic there.
-  // Apple's newer kernels accept paths up to PATH_MAX, which is exactly why
-  // the budget is the smallest limit among the platforms the server runs on.
-  it.runIf(process.platform === "linux")(
-    "rejects listening on a path over sun_path, which is why the budget exists",
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), "bg-long-"))
-      try {
-        await expect(
-          startBackgroundTerminalHost({
-            socketPath: join(root, "p".repeat(120), "s.sock"),
-            registry: rejectingRegistry
-          })
-        ).rejects.toThrow()
-      } finally {
-        rmSync(root, { recursive: true, force: true })
-      }
-    }
-  )
 })

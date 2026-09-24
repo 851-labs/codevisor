@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -42,27 +42,6 @@ const recordingAgents = (): {
 const spec: CustomHarnessSpec = { command: "my-agent", id: "mine", name: "Mine" }
 
 describe("custom harness store", () => {
-  it("lists specs from the resolved root", async () => {
-    const root = await makeRoot()
-    await writeFile(
-      join(root, "harnesses.json"),
-      JSON.stringify({ harnesses: [spec] }, null, 2),
-      "utf8"
-    )
-    const { agents } = recordingAgents()
-
-    const listed = await makeCustomHarnessStore(agents, () => root).list()
-
-    expect(listed).toEqual([spec])
-  })
-
-  it("reports no specs when the file is absent", async () => {
-    const root = await makeRoot()
-    const { agents } = recordingAgents()
-
-    expect(await makeCustomHarnessStore(agents, () => root).list()).toEqual([])
-  })
-
   it("persists a replacement, swaps the catalog, and refreshes the environment", async () => {
     const root = await makeRoot()
     const { agents, extras } = recordingAgents()

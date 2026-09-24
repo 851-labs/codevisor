@@ -39,8 +39,7 @@ export interface SkillReadinessDeps {
   readonly serverId: string
   /// Tree hashes the last reconcile could not apply because no machine has
   /// ferried their blob here yet. Keyed by directory name.
-  readonly missingBlobs?: ReadonlyArray<string>
-  readonly now?: () => number
+  readonly missingBlobs: ReadonlyArray<string>
 }
 
 /// One skill's condition on this machine. Skills have no enabled flag, so
@@ -95,7 +94,7 @@ export const publishSkillReadiness = async (
     desired.filter((entry) => entry.deleted !== true).map((entry) => entry.key)
   )
   const localNames = new Set(scan.global.map((skill) => skill.directoryName))
-  const awaiting = new Set(deps.missingBlobs ?? [])
+  const awaiting = new Set(deps.missingBlobs)
 
   const rows: Array<SkillReadinessRow> = scan.global.map((skill) =>
     skillReadiness(skill, fleetNames)
@@ -118,7 +117,6 @@ export const publishSkillReadiness = async (
     db: deps.db,
     namespace: SKILL_READINESS_NAMESPACE,
     serverId: deps.serverId,
-    value: { skills: rows.toSorted((a, b) => a.directoryName.localeCompare(b.directoryName)) },
-    ...(deps.now === undefined ? {} : { now: deps.now })
+    value: { skills: rows.toSorted((a, b) => a.directoryName.localeCompare(b.directoryName)) }
   })
 }
