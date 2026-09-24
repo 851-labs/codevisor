@@ -376,7 +376,9 @@ extension CodevisorServerClient {
     }
   }
 
-  public func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {
+  /// The pre-close-route fallback: servers without `POST .../close` only
+  /// understand a plain DELETE.
+  private func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws {
     do {
       try await sendNoResponse(
         "/v1/workspaces/\(workspaceId.uuidString)/panes/\(paneId.uuidString)",

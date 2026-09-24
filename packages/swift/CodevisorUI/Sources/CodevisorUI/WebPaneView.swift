@@ -176,8 +176,6 @@ public final class WebPaneController: NSObject {
   public let webView: WKWebView
   /// The plugin called `codevisor.setTitle` — rename the pane's tab.
   public var onSetTitle: ((String) -> Void)?
-  /// Off-origin/external navigation. Nil falls back to the system browser.
-  public var onOpenExternalURL: ((URL) -> Void)?
   /// A main-frame load failed; the message is user-presentable. The owner
   /// must render a native error state — never a blank webview.
   public var onNavigationFailed: ((String) -> Void)?
@@ -374,10 +372,6 @@ public final class WebPaneController: NSObject {
   }
 
   private func openExternally(_ url: URL) {
-    if let onOpenExternalURL {
-      onOpenExternalURL(url)
-      return
-    }
     #if canImport(AppKit)
       NSWorkspace.shared.open(url)
     #else

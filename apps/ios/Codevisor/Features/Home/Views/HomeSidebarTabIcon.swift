@@ -72,21 +72,6 @@ struct HomeSidebarTabIcon: View {
   }
 }
 
-extension HomeSidebarTabRow.Icon {
-  /// A short kind name for layouts that caption their tabs.
-  var kindLabel: String {
-    switch self {
-    case .chat: "Chat"
-    case let .terminal(isAgentOwned): isAgentOwned ? "Agent terminal" : "Terminal"
-    case .browser: "Browser"
-    case .plugin: "Plugin"
-    case .screenSharing: "Screen Sharing"
-    case .document: "File"
-    case .newTab: "New Tab"
-    }
-  }
-}
-
 extension HomeSessionStatus {
   /// A one-word caption for status pills and inbox buckets.
   var caption: String {

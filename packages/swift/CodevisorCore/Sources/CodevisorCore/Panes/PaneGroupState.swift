@@ -381,14 +381,6 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     panes.contains { $0.id == id }
   }
 
-  /// Inserts an existing pane (a cross-group transfer) at `index` (clamped),
-  /// and selects it.
-  public mutating func insertPane(_ pane: PaneDescriptorState, at index: Int) {
-    guard !panes.contains(where: { $0.id == pane.id }) else { return }
-    panes.insert(pane, at: min(max(index, 0), panes.count))
-    selectedPaneId = pane.id
-  }
-
   /// Removes a pane (no-op when `canClosePane` forbids it). If it was
   /// selected, selection moves to its right neighbor (or the new last
   /// pane). Closing the last pane clears selection.
@@ -398,10 +390,8 @@ public struct PaneGroupState: Codable, Sendable, Equatable {
     return removePane(id: id)
   }
 
-  /// Removes a pane WITHOUT consulting the close rules — the extraction
-  /// half of a cross-group MOVE (a move isn't a close: a lone New Tab
-  /// placeholder may not close, but it may leave for another group).
-  /// Selection moves like closePane's.
+  /// Removes a pane WITHOUT consulting the close rules. Selection moves
+  /// like closePane's.
   @discardableResult
   public mutating func removePane(id: UUID) -> PaneDescriptorState? {
     guard let index = panes.firstIndex(where: { $0.id == id }) else { return nil }

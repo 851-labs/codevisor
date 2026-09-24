@@ -250,7 +250,6 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     _ pane: ServerWorkspacePane,
     session: ChatSession
   ) async throws -> ServerWorkspacePanePromotion?
-  func deleteWorkspacePane(workspaceId: UUID, paneId: UUID) async throws
   /// Closes (deletes) a pane. Current servers return nothing: a workspace
   /// may be left with no panes and each client shows its own New Tab page.
   /// A server that predates that returns the final pane converted in place.

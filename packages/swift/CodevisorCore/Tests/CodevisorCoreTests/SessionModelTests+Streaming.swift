@@ -307,7 +307,7 @@ extension SessionModelTests {
     // The agent turn's terminal event routes to its (now settled) bubble
     // by identity instead of closing whatever happens to be active.
     model.apply(
-      .finished(.endTurn, stopDetail: nil, initiatedBy: .agent, chatItemId: agentItemId))
+      .finished(.endTurn, stopDetail: nil, chatItemId: agentItemId))
 
     let settledAgent = model.conversation.first { item in
       if case let .assistant(message) = item { return message.id == agentItemId }

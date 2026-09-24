@@ -218,12 +218,10 @@ struct ComputerUseLivePreviewTests {
 final class RecordingSink: ComputerUseFrameSink, @unchecked Sendable {
   private let lock = NSLock()
   private var received: [Int64] = []
-  private var prepared: [CGSize] = []
 
   var timestamps: [Int64] { lock.withLock { received } }
-  var preparedSizes: [CGSize] { lock.withLock { prepared } }
 
-  @MainActor func prepare(size: CGSize) { lock.withLock { prepared.append(size) } }
+  @MainActor func prepare(size: CGSize) {}
   func push(_ frame: ScreenSharingVideoFrame) { lock.withLock { received.append(frame.timestampNs) } }
 }
 

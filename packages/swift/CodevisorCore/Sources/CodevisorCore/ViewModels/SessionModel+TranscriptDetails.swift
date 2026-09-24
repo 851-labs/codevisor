@@ -67,7 +67,7 @@ extension SessionModel {
           attachments: attachments,
           to: &turn
         )
-      case let .finished(reason, detail, stopKind, retryable, _, _):
+      case let .finished(reason, detail, stopKind, retryable, _):
         turn.stopReason = reason
         turn.stopDetail = detail
         turn.stopKind = stopKind

@@ -34,11 +34,6 @@ public struct TranscriptHistoryPage: Equatable, Sendable {
   public var updateGateHarnessName: String? = nil
 }
 
-public enum SessionTurnInitiator: String, Equatable, Sendable {
-  case user
-  case agent
-}
-
 public enum SessionRuntimeState: String, Equatable, Sendable {
   case running
   case idle
@@ -70,7 +65,6 @@ public enum ServerSessionStreamEvent: Equatable, Sendable {
     stopDetail: String?,
     stopKind: String? = nil,
     retryable: Bool = false,
-    initiatedBy: SessionTurnInitiator = .user,
     chatItemId: UUID? = nil
   )
   /// A transient failure is being retried; the turn stays alive. Drives the

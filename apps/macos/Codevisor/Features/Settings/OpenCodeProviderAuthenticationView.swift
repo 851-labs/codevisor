@@ -300,11 +300,6 @@ struct OpenCodeProviderAuthenticationView: View {
     return isLoadingProviders || providerAccountId != selectedAccountId
   }
 
-  private var selectedConfiguredProvider: ServerOpenCodeAuthProvider? {
-    guard let provider = selectedProvider, provider.credentialType != nil else { return nil }
-    return provider
-  }
-
   var selectedMethod: ServerOpenCodeAuthMethod? {
     selectedProvider?.methods.first { $0.id == selectedMethodId }
   }

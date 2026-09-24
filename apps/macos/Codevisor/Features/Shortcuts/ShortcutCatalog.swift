@@ -262,9 +262,4 @@ enum ShortcutCatalog {
       return shortcuts.isEmpty ? nil : (category, shortcuts)
     }
   }
-
-  /// The ⌘1–⌘9 hint shown on the nth workspace tab.
-  static func tabSelectionHint(index: Int) -> String {
-    "⌘\(index + 1)"
-  }
 }

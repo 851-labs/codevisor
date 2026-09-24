@@ -47,7 +47,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
       return top
     }
   }
-  var updatedHeightNodeCount: Int { heightIndex.updatedNodeCount }
 
   public init(
     items: [Item],

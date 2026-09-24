@@ -124,8 +124,6 @@ public actor CodeHighlighter {
     }
   }
 
-  public func releaseSession(_ id: String) { sessions.removeValue(forKey: id) }
-
   private static func tokens(code: String, spans: [CodeHighlightDocument.Span]) -> [[Token]] {
     let source = code as NSString
     var lines: [[Token]] = [[]]

@@ -1,6 +1,5 @@
 import CodevisorCore
 import CodevisorUI
-import QuartzCore
 import StreamMarkdown
 import SwiftUI
 import UIKit
@@ -18,16 +17,6 @@ enum TranscriptSendAnimationMetrics {
       targetY: targetY,
       reduceMotion: reduceMotion
     )
-  }
-
-  /// Creates a fresh Core Animation group from the shared motion plan.
-  /// Ordinary rows and the cross-sheet snapshot both call this factory, so
-  /// their position, fade, duration, and easing cannot drift apart.
-  static func layerAnimation(
-    plan: TranscriptSendAnimationPlan,
-    fadesIn: Bool
-  ) -> CAAnimationGroup {
-    TranscriptSendAnimationLayerAnimations.flight(plan: plan, fadesIn: fadesIn)
   }
 
   static var propertyTimingParameters: UICubicTimingParameters {

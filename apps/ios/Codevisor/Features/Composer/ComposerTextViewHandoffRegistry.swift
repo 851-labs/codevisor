@@ -262,12 +262,6 @@ enum ComposerTextViewHandoffRegistry {
     return entry.editor.isFirstResponder
   }
 
-  static func promotedEditor(id: UUID) -> UIView? {
-    entries[id]?.ownerRole == .promotionDestination
-      ? entries[id]?.editor
-      : nil
-  }
-
   /// Change only logical owner, bindings, and window-space frame. The
   /// concrete UITextView stays in the same UIWindow and remains the same
   /// first responder, so UIKit has no reason to end the keyboard session.
