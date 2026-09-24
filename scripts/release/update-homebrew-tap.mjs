@@ -18,17 +18,13 @@ if (version === undefined || version.length === 0) {
 }
 
 const files = readdirSync(artifactDir)
-const appZip = files.find((file) => file === "Codevisor-macOS.zip")
-const armZip = files.find((file) => file === "Codevisor-macOS-arm64.zip")
-const intelZip = files.find((file) => file === "Codevisor-macOS-x64.zip")
+const appZip = files.find((file) => file === "Codevisor-macOS-arm64.zip")
 const serverArchives = files
   .filter((file) => /^codevisor-server-.+\.tar\.gz$/.test(file))
   .toSorted()
 
-if (appZip === undefined && (armZip === undefined || intelZip === undefined)) {
-  throw new Error(
-    `Neither Codevisor-macOS.zip nor both architecture-specific app zips found in ${artifactDir}`
-  )
+if (appZip === undefined) {
+  throw new Error(`Codevisor-macOS-arm64.zip not found in ${artifactDir}`)
 }
 if (serverArchives.length === 0) {
   throw new Error(`No codevisor-server archives found in ${artifactDir}`)
@@ -46,32 +42,20 @@ const updateRenameFile = (filename, oldName, newName) => {
   writeFileSync(path, `${JSON.stringify(renames, null, 2)}\n`)
 }
 
-// Split releases publish per-architecture app zips; the cask then selects by
-// CPU via Homebrew's arch stanza. Pre-split releases keep the single
-// universal artifact form. The arch stanza is emitted unconditionally: the
-// binary stanzas below need it to pick the bundle's per-CPU runtime even when
-// the app artifact itself is universal.
-const caskArtifactStanza =
-  armZip !== undefined && intelZip !== undefined
-    ? `version "${version}"
-  sha256 arm:   "${sha256(armZip)}",
-         intel: "${sha256(intelZip)}"
-
-  url "${releaseUrl("Codevisor-macOS-#{arch}.zip")}"`
-    : `version "${version}"
-  sha256 "${sha256(appZip)}"
-
-  url "${releaseUrl(appZip)}"`
-
 writeFileSync(
   join(tapDir, "Casks", "codevisor.rb"),
   `cask "codevisor" do
-  arch arm: "arm64", intel: "x64"
+  version "${version}"
+  sha256 "${sha256(appZip)}"
 
-  ${caskArtifactStanza}
+  url "${releaseUrl(appZip)}"
   name "Codevisor"
   desc "ACP chat client and local Codevisor server"
   homepage "https://github.com/${repository}"
+
+  # The app ships for Apple silicon only. Intel Macs can still run the
+  # standalone server: brew install 851-labs/tap/codevisor-server
+  depends_on arch: :arm64
 
   # The app also updates itself in place, so only explicit \`brew upgrade\`
   # (or --greedy) should touch it.
@@ -84,9 +68,9 @@ writeFileSync(
   # install. The launchers resolve symlinks before locating the runtime root,
   # so linking straight into the installed bundle is safe, and in-place app
   # updates keep the links valid.
-  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor"
-  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor-server"
-  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-#{arch}/bin/codevisor-terminal-proxy"
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-arm64/bin/codevisor"
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-arm64/bin/codevisor-server"
+  binary "#{appdir}/Codevisor.app/Contents/Resources/server/darwin-arm64/bin/codevisor-terminal-proxy"
 
   # The codevisor-server formula links the same launcher names; installing
   # both would collide in $HOMEBREW_PREFIX/bin.

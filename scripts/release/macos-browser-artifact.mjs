@@ -85,8 +85,8 @@ export async function verifyBrowserDistribution(app, architectures, run = execut
   const requirement = `=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "${team}"`
   for (const binary of [...executables, ...(await embeddedLibraries(app))]) {
     run("codesign", ["--verify", "--strict", "--all-architectures", "-R", requirement, binary])
-    // A universal dylib remains universal in the split apps. Check every slice,
-    // including those not used by this app variant: Apple scans them all.
+    // A vendored dylib may still be universal. Check every slice, including
+    // those the arm64 app never loads: Apple's notary service scans them all.
     for (const arch of architecturesOf(binary, run)) {
       const details = run("codesign", ["-d", "--verbose=4", "--arch", arch, binary])
       if (!/^Timestamp=.+$/m.test(details) || !/flags=.*\bruntime\b/.test(details)) {

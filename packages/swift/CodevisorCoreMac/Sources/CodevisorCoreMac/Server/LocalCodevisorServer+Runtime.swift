@@ -124,13 +124,8 @@ extension LocalCodevisorServer {
     }
   }
 
-  nonisolated private static var bundledServerTarget: String {
-    #if arch(x86_64)
-      "darwin-x64"
-    #else
-      "darwin-arm64"
-    #endif
-  }
+  /// The app ships for Apple silicon only, so it bundles one server runtime.
+  nonisolated private static let bundledServerTarget = "darwin-arm64"
 
   nonisolated private static func bundledNodeExecutable(
     fileManager: FileManager = .default

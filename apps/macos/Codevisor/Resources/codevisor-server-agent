@@ -2,13 +2,8 @@
 set -euo pipefail
 
 resources_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-case "$(uname -m)" in
-  arm64) target="darwin-arm64" ;;
-  x86_64) target="darwin-x64" ;;
-  *) exit 78 ;;
-esac
-
-runtime_dir="$resources_dir/server/$target"
+# The app bundles only the Apple silicon runtime.
+runtime_dir="$resources_dir/server/darwin-arm64"
 node_bin="$runtime_dir/bin/node"
 entrypoint="$runtime_dir/main.js"
 data_dir="$HOME/.codevisor/data"

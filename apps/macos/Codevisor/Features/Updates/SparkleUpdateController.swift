@@ -193,11 +193,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     if let developmentFeedURL = CodevisorAppVariant.developmentSparkleFeedURL {
       return developmentFeedURL
     }
-    #if arch(x86_64)
-      return "https://updates.codevisor.dev/appcast-x64.xml"
-    #else
-      return "https://updates.codevisor.dev/appcast-arm64.xml"
-    #endif
+    return "https://updates.codevisor.dev/appcast-arm64.xml"
   }
 
   func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {

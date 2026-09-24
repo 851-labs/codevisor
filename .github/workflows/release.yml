@@ -123,9 +123,7 @@ jobs:
           ghostty_asset="GhosttyKit-$ghostty_stamp.tar.gz"
           expected_assets='[
             "Codevisor-macOS-arm64.zip",
-            "Codevisor-macOS-x64.zip",
             "Codevisor-arm64.dmg",
-            "Codevisor-x64.dmg",
             "codevisor-server-darwin-arm64.tar.gz",
             "codevisor-server-darwin-x64.tar.gz",
             "codevisor-server-linux-arm64.tar.gz",
@@ -141,7 +139,7 @@ jobs:
             echo "Published Alpha release $alpha_tag is incomplete." >&2
             exit 1
           }
-          for arch in arm64 x64; do
+          for arch in arm64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"
@@ -279,7 +277,7 @@ jobs:
           curl --fail --silent --show-error \
             "https://updates.codevisor.dev/dev-artifacts/ghostty/$GHOSTTY_STAMP/GhosttyKit.xcframework.tar.gz.sha256" \
             >/dev/null
-          for arch in arm64 x64; do
+          for arch in arm64; do
             feed="$RUNNER_TEMP/appcast-$arch.xml"
             curl --fail --silent --show-error \
               "https://updates.codevisor.dev/appcast-$arch.xml" --output "$feed"

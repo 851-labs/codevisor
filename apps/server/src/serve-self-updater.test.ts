@@ -8,7 +8,7 @@ import {
   APP_UPDATE_FEED_FILE,
   DEFAULT_ALPHA_SERVER_MANIFEST_URL,
   DEFAULT_STABLE_SERVER_MANIFEST_URL,
-  defaultSparkleFeedURL
+  DEFAULT_SPARKLE_FEED_URL
 } from "@codevisor/updater"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -68,7 +68,7 @@ describe("makeSelfUpdater release resolution", () => {
       if (url === DEFAULT_ALPHA_SERVER_MANIFEST_URL)
         return new Response(manifest("0.1.102-alpha.661", 661))
       if (url === DEFAULT_STABLE_SERVER_MANIFEST_URL) return new Response(manifest("0.1.101", 644))
-      if (url === customFeedURL || url === defaultSparkleFeedURL()) {
+      if (url === customFeedURL || url === DEFAULT_SPARKLE_FEED_URL) {
         return new Response(feed, { status: feedStatus })
       }
       throw new Error(`unexpected fetch ${url}`)
@@ -134,7 +134,7 @@ describe("makeSelfUpdater release resolution", () => {
     const info = await updater().check({ channel: "alpha" })
 
     expect(info.latestBuildNumber).toBe(660)
-    expect(requestedURLs()).toEqual([defaultSparkleFeedURL()])
+    expect(requestedURLs()).toEqual([DEFAULT_SPARKLE_FEED_URL])
   })
 
   it("app-hosted: falls back to the manifests when the feed is unavailable", async () => {

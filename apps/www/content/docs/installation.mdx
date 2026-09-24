@@ -24,7 +24,7 @@ On Linux, the installer downloads the matching `linux-x64` or `linux-arm64` arch
 SHA-256 checksum when `sha256sum` is available, and links `codevisor`, `codevisor-server`, and
 `codevisor-terminal-proxy` into a bin directory.
 
-On macOS, the installer copies the Codevisor app into `/Applications` and links the same CLI
+On an Apple silicon Mac, the installer copies the Codevisor app into `/Applications` and links the same CLI
 commands from the bundled server runtime into `~/.local/bin` (override with `CODEVISOR_BIN_DIR`).
 The Homebrew cask links them into Homebrew's bin directory, and the app also repairs the
 `~/.local/bin` links on launch — so a plain DMG drag-install gets the CLI the first time the app
@@ -34,15 +34,24 @@ opens. If `~/.local/bin` is not on your `PATH`, add it in your shell profile:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-| Variable                 | Purpose                        | Default                                          |
-| ------------------------ | ------------------------------ | ------------------------------------------------ |
-| `CODEVISOR_VERSION`      | Install a specific release     | Latest stable                                    |
-| `CODEVISOR_INSTALL_DIR`  | Runtime installation directory | `~/.codevisor/server` or `/opt/codevisor`        |
-| `CODEVISOR_BIN_DIR`      | Command symlink directory      | `~/.local/bin` (`/usr/local/bin` as root, Linux) |
-| `CODEVISOR_PORT`         | Listening port                 | `49361`                                          |
-| `CODEVISOR_DATA_DIR`     | Linux database and data dir    | `~/.codevisor/data`                              |
-| `CODEVISOR_NO_SERVICE=1` | Skip systemd setup             | systemd enabled when available                   |
-| `CODEVISOR_NO_SETUP=1`   | Skip interactive onboarding    | setup runs when a terminal is available          |
+The Codevisor app is not available for Intel Macs. On an Intel Mac, the installer explains this and
+asks whether to install the standalone `darwin-x64` server instead. When you confirm, it installs
+and links the server the same way as on Linux, then runs `codevisor setup`. macOS has no systemd, so
+the server runs as a background process that you start with `codevisor start`, including after a
+reboot. Connect to it from the Codevisor app on another machine. Set `CODEVISOR_INSTALL_SERVER=1`
+to skip the confirmation, for example when no terminal is attached. Homebrew users can instead run
+`brew install 851-labs/tap/codevisor-server`.
+
+| Variable                     | Purpose                                           | Default                                          |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `CODEVISOR_VERSION`          | Install a specific release                        | Latest stable                                    |
+| `CODEVISOR_INSTALL_DIR`      | Runtime installation directory                    | `~/.codevisor/server` or `/opt/codevisor`        |
+| `CODEVISOR_BIN_DIR`          | Command symlink directory                         | `~/.local/bin` (`/usr/local/bin` as root, Linux) |
+| `CODEVISOR_PORT`             | Listening port                                    | `49361`                                          |
+| `CODEVISOR_DATA_DIR`         | Server database and data dir                      | `~/.codevisor/data`                              |
+| `CODEVISOR_NO_SERVICE=1`     | Skip systemd setup                                | systemd enabled when available                   |
+| `CODEVISOR_NO_SETUP=1`       | Skip interactive onboarding                       | setup runs when a terminal is available          |
+| `CODEVISOR_INSTALL_SERVER=1` | Install the server on an Intel Mac without asking | asks for confirmation                            |
 
 ## Without systemd
 

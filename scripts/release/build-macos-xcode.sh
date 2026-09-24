@@ -5,7 +5,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/release/build-macos-xcode.sh <derived-data-dir>
 
-Builds the unsigned universal Codevisor.app into the supplied DerivedData
+Builds the unsigned Apple silicon (arm64) Codevisor.app into the supplied DerivedData
 directory. Existing DerivedData is intentionally preserved so CI can restore
 incremental Xcode and Swift package build products. Stable placeholder bundle
 versions keep warmed and release builds identical; build-macos-app.sh stamps
@@ -46,7 +46,9 @@ xcode_args=(
   MARKETING_VERSION="$placeholder_version"
   CURRENT_PROJECT_VERSION="$placeholder_build_number"
   CODE_SIGNING_ALLOWED=NO
-  ARCHS="arm64 x86_64"
+  # The app ships for Apple silicon only; Intel Macs run the standalone
+  # codevisor-server-darwin-x64 archive instead.
+  ARCHS=arm64
   ONLY_ACTIVE_ARCH=NO
 )
 
@@ -57,7 +59,7 @@ library_has_arch() {
 }
 while IFS= read -r candidate; do
   lipo -info "$candidate" || true
-  if library_has_arch "$candidate" arm64 && library_has_arch "$candidate" x86_64; then
+  if library_has_arch "$candidate" arm64; then
     ghostty_library="$candidate"
     break
   fi
@@ -67,7 +69,7 @@ ghostty_slice_dir="$(dirname "$ghostty_library")"
 ghostty_headers="$ghostty_slice_dir/Headers/ghostty.h"
 ghostty_resources="$repo_root/apps/macos/Codevisor/Resources/ghostty-resources.tar.gz"
 if [[ -z "$ghostty_library" || ! -f "$ghostty_library" ]]; then
-  echo "error: GhosttyKit must include a universal macOS static library with arm64 and x86_64 slices." >&2
+  echo "error: GhosttyKit must include a macOS static library with an arm64 slice." >&2
   exit 1
 fi
 if [[ ! -f "$ghostty_headers" ]]; then
@@ -80,7 +82,7 @@ if [[ ! -f "$ghostty_resources" ]]; then
 fi
 echo "Building with GhosttyKit from $ghostty_library"
 
-node "$repo_root/scripts/chromium-artifact.mjs" arm64 x86_64
+node "$repo_root/scripts/chromium-artifact.mjs" arm64
 
 # Keep the project's linker settings, including startup-loaded browser storage.
 # Only the resolved Ghostty archive differs between local and release builds.
@@ -106,4 +108,4 @@ if /usr/bin/nm -u "$app_executable" | grep -F "$libcpp_hash_memory_symbol" >/dev
   exit 1
 fi
 
-node "$script_dir/macos-browser-artifact.mjs" linkage "$app_path" arm64 x86_64
+node "$script_dir/macos-browser-artifact.mjs" linkage "$app_path" arm64

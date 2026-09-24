@@ -12,9 +12,9 @@ export const chromiumVersion = "152.0.5+gb129680+chromium-152.0.7977.54"
 export const chromiumHelperName = (productName) =>
   productName.replace(/^Codevisor/, "Codevisor Browser Helper")
 export const chromiumHelperSuffixes = ["", " (Alerts)", " (GPU)", " (Plugin)", " (Renderer)"]
+// The macOS app ships for Apple silicon only.
 const artifacts = {
-  arm64: { platform: "macosarm64", sha1: "38b1b9d7f68c4e9c7dbd253b8f4129bea50a8c33" },
-  x86_64: { platform: "macosx64", sha1: "52098375a0b18afeafcbbcb7d0be0f0a588afee1" }
+  arm64: { platform: "macosarm64", sha1: "38b1b9d7f68c4e9c7dbd253b8f4129bea50a8c33" }
 }
 export async function run(command, args, cwd, env = process.env) {
   const child = spawn(command, args, { cwd, env, stdio: "inherit" })
@@ -120,7 +120,7 @@ async function ensureSdkAndWrapper(cache, cmake, arch, repoRoot, environment) {
 export async function ensureChromium(
   repoRoot,
   environment = process.env,
-  architectures = [process.arch === "arm64" ? "arm64" : "x86_64"]
+  architectures = ["arm64"]
 ) {
   const cache = chromiumArtifactsRoot(environment)
   const output = join(repoRoot, "apps/macos/Frameworks/Chromium")

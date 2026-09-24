@@ -32,7 +32,7 @@ const baseArguments = [
   `CODEVISOR_DEV_BUNDLE_IDENTIFIER=${bundle}`,
   "CODE_SIGN_IDENTITY=-",
   "CODE_SIGNING_ALLOWED=YES",
-  `ARCHS=${process.arch === "arm64" ? "arm64" : "x86_64"}`,
+  "ARCHS=arm64",
   "-destination",
   "platform=macOS",
   "-parallel-testing-enabled",

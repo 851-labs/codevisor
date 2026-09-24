@@ -46,10 +46,10 @@ test("the release build passes the selected Ghostty archive without overriding p
   const args = (await readFile(captured, "utf8")).trim().split("\n")
   assert.ok(args.includes(`CODEVISOR_GHOSTTY_LIBRARY=${library}`))
   assert.ok(args.includes(`SWIFT_INCLUDE_PATHS=${slice}/Headers`))
-  assert.ok(args.includes("ARCHS=arm64 x86_64"))
+  assert.ok(args.includes("ARCHS=arm64"))
   assert.ok(!args.some((arg) => arg.startsWith("OTHER_LDFLAGS=")))
   assert.match(
     await readFile(nodeArgs, "utf8"),
-    /macos-browser-artifact\.mjs\nlinkage\n[^\n]+\narm64\nx86_64/
+    /macos-browser-artifact\.mjs\nlinkage\n[^\n]+\narm64\n$/
   )
 })

@@ -106,7 +106,7 @@ function TextFeatures() {
     },
     {
       title: "Native",
-      body: "Purpose-built downloads for Apple Silicon and Intel Macs — no fat binaries."
+      body: "A native app built for Apple silicon, with a lean download and no fat binaries."
     },
     {
       title: "Self-updating",

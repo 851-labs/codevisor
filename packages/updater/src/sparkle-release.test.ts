@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest"
 
 import { parseAppcast } from "./appcast.js"
 import {
-  defaultSparkleFeedURL,
   fetchLatestSparkleRelease,
   selectSparkleRelease,
   serverReleaseFromAppcastItem
@@ -156,13 +155,5 @@ describe("fetchLatestSparkleRelease with the global fetch", () => {
     } finally {
       vi.unstubAllGlobals()
     }
-  })
-})
-
-describe("defaultSparkleFeedURL", () => {
-  it("mirrors the app's per-architecture production feeds", () => {
-    expect(defaultSparkleFeedURL("x64")).toBe("https://updates.codevisor.dev/appcast-x64.xml")
-    expect(defaultSparkleFeedURL("arm64")).toBe("https://updates.codevisor.dev/appcast-arm64.xml")
-    expect(defaultSparkleFeedURL()).toBe(defaultSparkleFeedURL(process.arch))
   })
 })

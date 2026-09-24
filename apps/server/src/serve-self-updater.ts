@@ -11,7 +11,7 @@ import {
   channelFromSyncedValue,
   DEFAULT_GITHUB_REPOSITORY,
   DEFAULT_LEGACY_RELEASE_BASE_URL,
-  defaultSparkleFeedURL,
+  DEFAULT_SPARKLE_FEED_URL,
   fetchLatestServerRelease,
   fetchLatestSparkleRelease,
   isNewerRelease,
@@ -143,7 +143,7 @@ export const makeSelfUpdater = (options: {
     if (target === undefined) return undefined
     if (appHosted()) {
       const release = await fetchLatestSparkleRelease({
-        feedURL: readMachineUpdateFeedURL(options.dataDir) ?? defaultSparkleFeedURL(),
+        feedURL: readMachineUpdateFeedURL(options.dataDir) ?? DEFAULT_SPARKLE_FEED_URL,
         channel,
         fetch: options.fetch
       }).catch(() => undefined)

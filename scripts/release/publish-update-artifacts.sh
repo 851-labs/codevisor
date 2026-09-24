@@ -39,7 +39,9 @@ aws s3 cp "$release_notes" "s3://$bucket/$prefix/$notes_name" \
   --content-type text/markdown \
   --cache-control "public, max-age=31536000, immutable"
 
-for arch in arm64 x64; do
+# The macOS app ships for Apple silicon only; appcast-x64.xml is frozen at the
+# last Intel build.
+for arch in arm64; do
   archive="$artifact_dir/Codevisor-macOS-$arch.zip"
   [[ -f "$archive" ]] || { echo "Missing $archive" >&2; exit 1; }
   signature="$(node scripts/release/sign-sparkle-update.mjs "$archive" "$sparkle_public_key")"

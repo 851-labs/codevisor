@@ -25,7 +25,8 @@ const install = (t, options = {}) => {
   writeFileSync(join(runtime, "old-runtime"), "existing installation")
   const version = options.expectedVersion ?? "0.1.99"
   const architecture = options.architecture ?? "x86_64"
-  const target = architecture === "aarch64" ? "linux-arm64" : "linux-x64"
+  const os = options.platform === "Darwin" ? "darwin" : "linux"
+  const target = `${os}-${architecture === "x86_64" ? "x64" : "arm64"}`
   for (const name of ["codevisor", "codevisor-server", "codevisor-terminal-proxy"]) {
     writeFileSync(join(archiveRoot, "bin", name), `#!/bin/sh\nprintf 'codevisor ${version}\\n'\n`, {
       mode: 0o755
@@ -57,6 +58,9 @@ const install = (t, options = {}) => {
       'case "$1" in -s) printf "%s\\n" "$TEST_PLATFORM";; -m) printf "%s\\n" "$TEST_ARCH";; *) exit 1;; esac',
     id: 'printf "%s\\n" "$TEST_UID"',
     systemctl: 'printf "%s\\n" "$*" >> "$TEST_SERVICES"',
+    launchctl: 'printf "launchctl %s\\n" "$*" >> "$TEST_SERVICES"',
+    osascript: "exit 0",
+    sysctl: 'printf "%s\\n" "${TEST_HW_ARM64:-}"',
     // Stop the macOS path before it can touch /Applications or a running app.
     hdiutil: "exit 71",
     sha256sum: `exec '${process.execPath.replaceAll("'", "'\\''")}' "$TEST_ROOT/sha256.mjs" "$@"`
@@ -90,6 +94,9 @@ else writeFileSync(args[output + 1], body);
   const result = spawnSync("/bin/sh", [], {
     input: installer,
     encoding: "utf8",
+    // A new session has no controlling terminal, so /dev/tty prompts fail
+    // fast instead of waiting on the developer's terminal.
+    detached: true,
     env: {
       PATH: `${bin}:/usr/bin:/bin`,
       HOME: root,
@@ -213,12 +220,58 @@ for (const [name, env, expectedVersion] of [
   })
 }
 
-test("macOS uses the current stable version for its architecture-specific app download", (t) => {
-  const result = install(t, { platform: "Darwin", architecture: "arm64" })
-  assert.equal(result.status, 71, result.stderr)
-  assert.match(result.stdout, /Installing Codevisor 0\.1\.99 for macOS/)
+for (const [name, env] of [
+  ["a native shell", {}],
+  ["a Rosetta shell", { TEST_HW_ARM64: "1" }]
+]) {
+  test(`Apple silicon under ${name} installs the arm64 app`, (t) => {
+    const architecture = env.TEST_HW_ARM64 === undefined ? "arm64" : "x86_64"
+    const result = install(t, { platform: "Darwin", architecture, env })
+    assert.equal(result.status, 71, result.stderr)
+    assert.doesNotMatch(result.stdout, /not supported on Intel/)
+    assert.deepEqual(
+      result.requests.map(({ url }) => url),
+      [stableURL, `${downloadBase}/v0.1.99/Codevisor-arm64.dmg`]
+    )
+  })
+}
+
+test("Intel Mac installs the standalone darwin-x64 server once confirmed", (t) => {
+  const result = install(t, {
+    platform: "Darwin",
+    architecture: "x86_64",
+    env: { CODEVISOR_INSTALL_SERVER: "1" }
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
+  assert.match(result.stdout, /Installing codevisor-server 0\.1\.99 \(darwin-x64\)/)
+  assert.match(result.stdout, /Checksum verified/)
+  assert.match(result.stdout, /codevisor start/)
   assert.deepEqual(
     result.requests.map(({ url }) => url),
-    [stableURL, `${downloadBase}/v0.1.99/Codevisor-arm64.dmg`]
+    [
+      stableURL,
+      `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz`,
+      `${downloadBase}/v0.1.99/codevisor-server-darwin-x64.tar.gz.sha256`
+    ]
   )
+  assert.equal(
+    execFileSync(join(result.root, "bin", "codevisor"), { encoding: "utf8" }),
+    "codevisor 0.1.99\n"
+  )
+  assert.doesNotMatch(result.services, /codevisor-server\.service/)
 })
+
+for (const [name, env, message] of [
+  ["without a terminal to confirm", {}, /CODEVISOR_INSTALL_SERVER=1/],
+  ["when declined", { CODEVISOR_INSTALL_SERVER: "0" }, /not installing codevisor-server/]
+]) {
+  test(`Intel Mac installs nothing ${name}`, (t) => {
+    const result = install(t, { platform: "Darwin", architecture: "x86_64", env })
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /Codevisor app is not supported on Intel Macs/)
+    assert.match(result.stderr, message)
+    assert.deepEqual(result.requests, [])
+    assert.equal(existsSync(join(result.runtime, "old-runtime")), true)
+  })
+}

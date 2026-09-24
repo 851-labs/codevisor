@@ -8,11 +8,11 @@ import type { ServerRelease, ServerUpdateChannel } from "./release-source.js"
 /// making the server's "latest" come from the appcast means the check and
 /// the install can no longer disagree about what "newer" means.
 
-/// The production feed for this architecture — the mirror of the app's
-/// `SparkleUpdateController.feedURLString(for:)`. Used when the host app
-/// has not written its feed URL (an app predating the handoff file).
-export const defaultSparkleFeedURL = (arch: string = process.arch): string =>
-  `https://updates.codevisor.dev/appcast-${arch === "x64" ? "x64" : "arm64"}.xml`
+/// The production feed — the mirror of the app's
+/// `SparkleUpdateController.feedURLString(for:)`. The app ships for Apple
+/// silicon only. Used when the host app has not written its feed URL (an app
+/// predating the handoff file).
+export const DEFAULT_SPARKLE_FEED_URL = "https://updates.codevisor.dev/appcast-arm64.xml"
 
 const buildNumber = (item: AppcastItem): number | undefined => {
   if (item.build === undefined || !/^\d+$/.test(item.build)) return undefined

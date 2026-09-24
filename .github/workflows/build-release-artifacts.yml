@@ -176,58 +176,14 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Build Intel macOS server runtime
-        shell: bash
-        run: |
-          runtime_dir="dist/release/work/app-server-runtime-darwin-x64"
-          scripts/release/build-server-runtime.sh "${{ inputs.version }}" "$runtime_dir" darwin-x64
-          tar -C "$runtime_dir" -czf dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz .
-      - name: Upload Intel macOS app runtime
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: codevisor-macos-x64-runtime
-          path: dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz
-          if-no-files-found: error
-          retention-days: ${{ inputs.artifact_retention_days }}
+      # The macOS app is Apple silicon only; this native Intel runner exists
+      # solely for the standalone darwin-x64 server archive.
       - name: Build Intel macOS server archive
-        run: scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 dist/release/work/app-server-runtime-darwin-x64
-      - name: Run Swift package tests on Intel
-        id: swift-tests
-        timeout-minutes: 30
-        run: bun run swift:test
-      - name: Collect recent Swift test crash reports
-        if: failure() && steps.swift-tests.conclusion == 'failure'
         shell: bash
         run: |
-          python3 - <<'PY'
-          import os
-          import shutil
-          from pathlib import Path
-
-          source = Path.home() / "Library/Logs/DiagnosticReports"
-          destination = Path(os.environ["RUNNER_TEMP"]) / "intel-swift-diagnostics"
-          destination.mkdir(parents=True, exist_ok=True)
-          reports = sorted(
-              [*source.glob("swiftpm*.ips"), *source.glob("CodevisorKitPackageTests*.ips")],
-              key=lambda path: path.stat().st_mtime,
-              reverse=True,
-          )[:3]
-          for report in reports:
-              shutil.copy2(report, destination / report.name)
-          summary = "\n".join(report.name for report in reports) or "No Swift test crash reports found."
-          (destination / "reports.txt").write_text(summary + "\n")
-          print(summary)
-          PY
-      - name: Upload Swift test diagnostics
-        if: failure() && steps.swift-tests.conclusion == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: intel-swift-diagnostics
-          path: ${{ runner.temp }}/intel-swift-diagnostics
-          if-no-files-found: error
-          retention-days: 3
-      - name: Run native transcript regression tests on Intel
-        run: bun run swift:test:macos-transcript
+          runtime_dir="dist/release/work/server-runtime-darwin-x64"
+          scripts/release/build-server-runtime.sh "${{ inputs.version }}" "$runtime_dir" darwin-x64
+          scripts/release/build-server-archive.sh "${{ inputs.version }}" dist/release darwin-x64 "$runtime_dir"
       - name: Upload Intel macOS server archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -394,35 +350,15 @@ jobs:
       - name: Build and notarize macOS app artifacts
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          CODEVISOR_RUNTIME_ARCHIVE_WAIT_SECONDS: "900"
-          CODEVISOR_REQUIRE_UNIVERSAL_MACOS_APP: "1"
           CODEVISOR_UNSIGNED_APP_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-unsigned-app.zip
           CODEVISOR_DARWIN_ARM64_RUNTIME_ARCHIVE_OUTPUT: dist/release/build-inputs/codevisor-app-server-runtime-darwin-arm64.tar.gz
         run: |
-          runtime_archive="dist/release/codevisor-app-server-runtime-darwin-x64.tar.gz"
-          runtime_download_dir="$(mktemp -d "$RUNNER_TEMP/codevisor-x64-runtime.XXXXXX")"
-          failure_marker="$RUNNER_TEMP/codevisor-x64-runtime-download-failed"
-          rm -f "$failure_marker" "$runtime_archive.part"
-          mkdir -p "$(dirname "$runtime_archive")"
-          download_intel_runtime() {
-            scripts/release/download-github-artifact.sh \
-              "$GITHUB_RUN_ID" \
-              codevisor-macos-x64-runtime \
-              "$runtime_download_dir" \
-              900
-            cp "$runtime_download_dir/codevisor-app-server-runtime-darwin-x64.tar.gz" "$runtime_archive.part"
-            mv "$runtime_archive.part" "$runtime_archive"
-          }
-          (download_intel_runtime || { touch "$failure_marker"; exit 1; }) &
-          download_pid=$!
-          trap 'kill "$download_pid" 2>/dev/null || true' EXIT
           # Postinstall scripts download binaries (ffmpeg-static); a network timeout
           # there failed a whole Alpha build. Bounded retries, then fail.
           for attempt in 1 2 3; do
@@ -431,11 +367,7 @@ jobs:
             echo "bun install failed (attempt $attempt); retrying in 20s" >&2
             sleep 20
           done
-          CODEVISOR_DARWIN_X64_RUNTIME_ARCHIVE="$runtime_archive" \
-          CODEVISOR_RUNTIME_ARCHIVE_FAILURE_MARKER="$failure_marker" \
-            scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
-          wait "$download_pid"
-          trap - EXIT
+          scripts/release/build-macos-app.sh "${{ inputs.version }}" dist/release
       - name: Upload macOS debug symbols to Sentry
         shell: bash
         env:

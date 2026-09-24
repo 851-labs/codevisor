@@ -3,18 +3,24 @@
 #
 #   curl -fsSL https://www.codevisor.dev/install.sh | sh
 #
-# macOS  : installs the Codevisor app into /Applications and links the bundled
-#          codevisor CLI onto your PATH.
-# Linux  : installs codevisor-server and sets it up as a systemd service so the
-#          Codevisor app on your Mac can connect to this machine.
+# macOS (Apple silicon) : installs the Codevisor app into /Applications and
+#                         links the bundled codevisor CLI onto your PATH.
+# macOS (Intel)         : the app is not available; after confirmation, installs
+#                         the standalone codevisor-server instead so the
+#                         Codevisor app on another machine can connect to it.
+# Linux                 : installs codevisor-server and sets it up as a systemd
+#                         service so the Codevisor app on your Mac can connect
+#                         to this machine.
 #
 # Options (environment variables):
-#   CODEVISOR_VERSION      install a specific version instead of the latest stable
-#   CODEVISOR_INSTALL_DIR  Linux server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
-#   CODEVISOR_BIN_DIR      CLI symlink dir            (default: ~/.local/bin; /usr/local/bin as root on Linux)
-#   CODEVISOR_PORT         Linux server port          (default: 49361)
-#   CODEVISOR_DATA_DIR     Linux server data dir      (default: ~/.codevisor/data)
-#   CODEVISOR_NO_SERVICE   set to 1 to skip systemd setup on Linux
+#   CODEVISOR_VERSION        install a specific version instead of the latest stable
+#   CODEVISOR_INSTALL_DIR    server install dir   (default: ~/.codevisor/server, /opt/codevisor as root)
+#   CODEVISOR_BIN_DIR        CLI symlink dir      (default: ~/.local/bin; /usr/local/bin as root on Linux)
+#   CODEVISOR_PORT           server port          (default: 49361)
+#   CODEVISOR_DATA_DIR       server data dir      (default: ~/.codevisor/data)
+#   CODEVISOR_NO_SERVICE     set to 1 to skip systemd setup on Linux
+#   CODEVISOR_INSTALL_SERVER set to 1 to install the server on an Intel Mac
+#                            without the confirmation prompt
 #
 # The former HERDMAN_* option names remain accepted for upgrade compatibility.
 
@@ -62,27 +68,21 @@ tmp_dir=$(mktemp -d)
 cleanup() { rm -rf "$tmp_dir"; }
 trap cleanup EXIT
 
+APP_PATH="/Applications/Codevisor.app"
+
 install_macos() {
   version="$1"
-  app_dest="/Applications/Codevisor.app"
+  app_dest="$APP_PATH"
   legacy_app_dest="/Applications/HerdMan.app"
 
   say "Installing Codevisor $version for macOS"
 
-  # Prefer the architecture-specific disk image (published by split releases;
-  # half the download), then the universal image, then the zip that predates
-  # the DMG.
-  case "$(uname -m)" in
-    arm64) app_arch="arm64" ;;
-    x86_64) app_arch="x64" ;;
-    *) app_arch="" ;;
-  esac
-
+  # Prefer the Apple silicon disk image, then the universal image and the zip
+  # that older pinned versions (CODEVISOR_VERSION) published instead.
   archive="$tmp_dir/Codevisor.dmg"
   kind="dmg"
-  if [ -n "$app_arch" ] \
-    && curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-$app_arch.dmg"; then
-    archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-$app_arch.dmg"
+  if curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-arm64.dmg"; then
+    archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor-arm64.dmg"
   elif curl -fsSL -o "$archive" "$RELEASE_DOWNLOAD_BASE/v$version/Codevisor.dmg"; then
     archive_url="$RELEASE_DOWNLOAD_BASE/v$version/Codevisor.dmg"
   else
@@ -125,13 +125,8 @@ install_macos() {
   # bundle is safe, and the app updates itself in place so the links stay
   # valid across updates.
   bin_dir="${CODEVISOR_BIN_DIR:-${HERDMAN_BIN_DIR:-$HOME/.local/bin}}"
-  runtime_bin=""
-  for runtime_target in "darwin-$app_arch" darwin-arm64 darwin-x64; do
-    [ -x "$app_dest/Contents/Resources/server/$runtime_target/bin/codevisor" ] || continue
-    runtime_bin="$app_dest/Contents/Resources/server/$runtime_target/bin"
-    break
-  done
-  if [ -n "$runtime_bin" ]; then
+  runtime_bin="$app_dest/Contents/Resources/server/darwin-arm64/bin"
+  if [ -x "$runtime_bin/codevisor" ]; then
     mkdir -p "$bin_dir"
     ln -sf "$runtime_bin/codevisor" "$bin_dir/codevisor"
     ln -sf "$runtime_bin/codevisor-server" "$bin_dir/codevisor-server"
@@ -154,8 +149,11 @@ systemd_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g'
 }
 
-install_linux() {
+# Standalone codevisor-server for Linux and Intel Macs. `os` is the release
+# target prefix: linux or darwin.
+install_server() {
   version="$1"
+  os="$2"
 
   command -v tar >/dev/null 2>&1 || fail "tar is required"
 
@@ -176,7 +174,7 @@ install_linux() {
   logs_dir="${CODEVISOR_LOGS_DIR:-$HOME/.codevisor/logs}"
   port="${CODEVISOR_PORT:-${HERDMAN_PORT:-49361}}"
 
-  target="linux-$arch"
+  target="$os-$arch"
   archive_url="$RELEASE_DOWNLOAD_BASE/v$version/codevisor-server-$target.tar.gz"
   archive="$tmp_dir/codevisor-server.tar.gz"
 
@@ -184,10 +182,17 @@ install_linux() {
   say "Downloading $archive_url"
   download "$archive_url" "$archive"
 
+  # Linux ships sha256sum; macOS ships shasum.
+  sha256_tool=""
   if command -v sha256sum >/dev/null 2>&1; then
+    sha256_tool="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then
+    sha256_tool="shasum -a 256"
+  fi
+  if [ -n "$sha256_tool" ]; then
     expected=$(fetch "$archive_url.sha256" 2>/dev/null | awk '{print $1}') || expected=""
     if [ -n "$expected" ]; then
-      actual=$(sha256sum "$archive" | awk '{print $1}')
+      actual=$($sha256_tool "$archive" | awk '{print $1}')
       [ "$actual" = "$expected" ] || fail "checksum mismatch: expected $expected, got $actual"
       say "Checksum verified"
     fi
@@ -219,7 +224,14 @@ install_linux() {
   fi
 
   no_service="${CODEVISOR_NO_SERVICE:-${HERDMAN_NO_SERVICE:-0}}"
-  if [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
+  if [ "$os" = "darwin" ]; then
+    # macOS has no systemd; `codevisor start` runs a detached background
+    # process that does not survive a reboot.
+    say "codevisor-server $version installed"
+    note "Start it with:"
+    note "  codevisor start"
+    note "Run it again after a reboot; it does not start automatically on macOS."
+  elif [ "$no_service" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
     say "codevisor-server $version installed"
     note "Start it with:"
     note "  codevisor start"
@@ -290,11 +302,69 @@ UNIT
   fi
 }
 
+# `uname -m` reports x86_64 for a shell running under Rosetta, so ask the
+# hardware directly before treating this Mac as Intel.
+is_apple_silicon() {
+  [ "$(uname -m)" = "arm64" ] || [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = "1" ]
+}
+
+# The app is Apple silicon only. Explain, then get consent before installing
+# the standalone server in its place. `curl | sh` leaves stdin as the script,
+# so the prompt reads /dev/tty.
+confirm_intel_mac_server() {
+  printf '\033[1;33m==>\033[0m %s\n' "The Codevisor app is not supported on Intel Macs"
+  note "The macOS app requires Apple silicon. You can still run codevisor-server on this"
+  note "Mac and connect to it from the Codevisor app on another machine."
+  if [ -d "$APP_PATH" ]; then
+    note "The Codevisor app already in /Applications no longer receives updates on this"
+    note "Mac; installing the server stops its bundled server, which uses the same port."
+  fi
+  case "${CODEVISOR_INSTALL_SERVER:-}" in
+    1) return 0 ;;
+    0) fail "not installing codevisor-server (CODEVISOR_INSTALL_SERVER=0)" ;;
+  esac
+  if ! (exec </dev/tty) 2>/dev/null; then
+    fail "no terminal to confirm with; rerun with CODEVISOR_INSTALL_SERVER=1 to install codevisor-server"
+  fi
+  printf 'Install codevisor-server instead? [y/N] ' >/dev/tty
+  answer=""
+  read -r answer </dev/tty || answer=""
+  case "$answer" in
+    y | Y | yes | Yes | YES) ;;
+    *)
+      say "Nothing installed"
+      exit 0
+      ;;
+  esac
+}
+
+# Frees port 49361 for the standalone server: the app's LaunchAgent keeps its
+# bundled server alive, and the app re-registers it on launch.
+stop_unsupported_mac_app() {
+  [ -d "$APP_PATH" ] || return 0
+  say "Stopping the Codevisor app and its bundled server"
+  osascript -e 'if application id "com.851labs.HerdMan" is running then tell application id "com.851labs.HerdMan" to quit' >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)/com.851labs.Codevisor.ServerAgent" >/dev/null 2>&1 || true
+  note "Move $APP_PATH to the Trash so it does not start its server again."
+}
+
 main() {
-  version=$(resolve_version)
   case "$(uname -s)" in
-    Darwin) install_macos "$version" ;;
-    Linux) install_linux "$version" ;;
+    Darwin)
+      if is_apple_silicon; then
+        version=$(resolve_version)
+        install_macos "$version"
+      else
+        confirm_intel_mac_server
+        version=$(resolve_version)
+        stop_unsupported_mac_app
+        install_server "$version" darwin
+      fi
+      ;;
+    Linux)
+      version=$(resolve_version)
+      install_server "$version" linux
+      ;;
     *) fail "unsupported platform: $(uname -s) (Codevisor supports macOS and Linux)" ;;
   esac
 }
