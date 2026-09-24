@@ -9,20 +9,16 @@ export const settleCleanup = async (operations: ReadonlyArray<Promise<unknown>>)
 
 /// User-created terminals can exist without a chat. Their persisted pane
 /// resourceId is the terminal session key; it is not an agent session id.
-export const closeWorkspaceTerminals = async (
+export const workspaceTerminalKeys = async (
   services: CodevisorServerServices,
   workspaceIds: ReadonlyArray<string>
-): Promise<void> => {
+): Promise<ReadonlyArray<string>> => {
   const ids = new Set(workspaceIds.map((id) => id.toLowerCase()))
-  const panes = await run(services.db.listWorkspacePanes)
-  await settleCleanup(
-    panes
-      .filter(
-        (pane) =>
-          ids.has(pane.workspaceId.toLowerCase()) &&
-          pane.paneType === "terminal" &&
-          pane.resourceId !== undefined
-      )
-      .map((pane) => run(services.terminal.closeTerminalForSession(pane.resourceId!)))
+  return (await run(services.db.listWorkspacePanes)).flatMap((pane) =>
+    ids.has(pane.workspaceId.toLowerCase()) &&
+    pane.paneType === "terminal" &&
+    pane.resourceId !== undefined
+      ? [pane.resourceId]
+      : []
   )
 }

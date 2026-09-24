@@ -5,6 +5,8 @@ import { join, resolve } from "node:path"
 
 import type { BranchDiffTotals } from "@codevisor/api"
 
+import { type CommandPriority, withPriority } from "./low-priority.js"
+
 export class GitError extends Error {
   constructor(
     readonly operation: string,
@@ -15,17 +17,28 @@ export class GitError extends Error {
   }
 }
 
+export interface GitRunOptions {
+  /// Throttles heavy commands (snapshots, removals) so they do not starve the
+  /// rest of the machine. Omitted means normal priority.
+  readonly priority?: CommandPriority | undefined
+  /// Node's 1MB default truncates listings of large checkouts.
+  readonly maxBuffer?: number
+}
+
 const git = (
   operation: string,
   args: ReadonlyArray<string>,
   cwd: string,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  options: GitRunOptions = {}
 ): Promise<string> =>
   new Promise((resolve, reject) => {
+    const command = withPriority("git", args, options.priority)
     execFile(
-      "git",
-      args,
-      { cwd, ...(env === undefined ? {} : { env }) },
+      command.command,
+      command.args,
+      // 1MB is Node's own default.
+      { cwd, maxBuffer: options.maxBuffer ?? 1024 * 1024, ...(env === undefined ? {} : { env }) },
       (error, stdout, stderr) => {
         if (error !== null) {
           reject(new GitError(operation, stderr.trim().length > 0 ? stderr.trim() : error.message))
@@ -64,8 +77,9 @@ export const runGit = (
   operation: string,
   args: ReadonlyArray<string>,
   cwd: string,
-  env?: NodeJS.ProcessEnv
-): Promise<string> => git(operation, args, cwd, env)
+  env?: NodeJS.ProcessEnv,
+  options?: GitRunOptions
+): Promise<string> => git(operation, args, cwd, env, options)
 
 export const isGitWorkTree = async (dir: string): Promise<boolean> => {
   try {
@@ -434,8 +448,10 @@ export const cloneRepository = (
 export const removeWorktree = (
   repoDir: string,
   path: string,
-  env?: NodeJS.ProcessEnv
-): Promise<string> => git("worktree", ["worktree", "remove", path, "--force"], repoDir, env)
+  env?: NodeJS.ProcessEnv,
+  priority?: CommandPriority
+): Promise<string> =>
+  git("worktree", ["worktree", "remove", path, "--force"], repoDir, env, { priority })
 
 /// Rolls back a `git worktree add -b` that failed after Git had already
 /// registered the checkout (checkout hooks run at exactly that point). The

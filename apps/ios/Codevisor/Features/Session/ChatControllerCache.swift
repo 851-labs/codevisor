@@ -17,7 +17,13 @@ final class ChatControllerCache {
     let id: UUID
   }
 
-  private var controllers: [Key: SessionController] = [:]
+  /// Not observed as a whole: a view reads one chat's slot, so caching or
+  /// evicting another chat's controller re-renders nothing that shows this
+  /// one.
+  @ObservationIgnored private var controllers: [Key: SessionController] = [:]
+  /// One observable holder per chat a view has asked about, mirroring
+  /// `controllers`.
+  @ObservationIgnored private var slots: [Key: ChatControllerSlot] = [:]
   /// The retained new-chat draft controller per machine — the iOS
   /// counterpart of the macOS store's `draftsByServer`. Unsent composer
   /// state survives leaving the page and relaunches; the first send
@@ -79,7 +85,7 @@ final class ChatControllerCache {
       )
     }
     bindRetainedSessionState(controller, to: key)
-    controllers[key] = controller
+    setController(controller, for: key)
     evictIfNeeded()
     return controller
   }
@@ -172,7 +178,7 @@ final class ChatControllerCache {
   ) {
     let key = Key(serverId: session.serverId, id: session.id)
     noteAccess(key)
-    controllers[key] = controller
+    setController(controller, for: key)
     bindRetainedSessionState(controller, to: key)
     // A retargeted draft's slot key (its home machine) can differ from
     // its session's machine — release whichever slot holds it.
@@ -192,7 +198,7 @@ final class ChatControllerCache {
   /// flash a spinner while its async connect bound the very controller the
   /// cache already held.
   func existingController(sessionId: UUID, serverId: String) -> SessionController? {
-    controllers[Key(serverId: serverId, id: sessionId)]
+    slot(Key(serverId: serverId, id: sessionId)).controller
   }
 
   /// Whether the chat's agent is actively working — the same classification
@@ -200,8 +206,9 @@ final class ChatControllerCache {
   /// background subagents; deliberately not `isConnecting`, which is client
   /// plumbing, not agent work). A cached live controller is freshest; rows
   /// without one use the server-projected sidebar state.
+  /// Observes only this chat's controller, never the rest of the cache.
   func isInProgress(_ session: ChatSession) -> Bool {
-    guard let controller = controllers[Key(serverId: session.serverId, id: session.id)] else {
+    guard let controller = slot(Key(serverId: session.serverId, id: session.id)).controller else {
       return session.sidebarState == .inProgress
     }
     return controller.pendingUserMessage != nil
@@ -240,6 +247,18 @@ final class ChatControllerCache {
     }
   }
 
+  private func slot(_ key: Key) -> ChatControllerSlot {
+    if let existing = slots[key] { return existing }
+    let created = ChatControllerSlot(controller: controllers[key])
+    slots[key] = created
+    return created
+  }
+
+  private func setController(_ controller: SessionController?, for key: Key) {
+    controllers[key] = controller
+    if let slot = slots[key], slot.controller !== controller { slot.controller = controller }
+  }
+
   private func noteAccess(_ key: Key) {
     accessOrder.removeAll { $0 == key }
     accessOrder.append(key)
@@ -272,11 +291,24 @@ final class ChatControllerCache {
     }
     while idle.count > Self.maxIdleControllers {
       let key = idle.removeFirst()
-      let controller = controllers.removeValue(forKey: key)
+      let controller = controllers[key]
+      setController(nil, for: key)
       controller?.onScrollStateChange = nil
       controller?.model?.shutdown()
       scrollStates[key] = nil
       accessOrder.removeAll { $0 == key }
     }
+  }
+}
+
+/// One chat's cached controller, observable on its own so a sidebar row or
+/// screen re-renders only when its chat's controller comes or goes.
+@MainActor
+@Observable
+private final class ChatControllerSlot {
+  var controller: SessionController?
+
+  init(controller: SessionController?) {
+    self.controller = controller
   }
 }

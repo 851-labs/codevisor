@@ -21,13 +21,18 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
     self.layouts = store.layouts
   }
 
-  func install(_ projection: NavigationProjection) {
+  @MainActor
+  func install(_ projection: NavigationProjection, changed: Set<UUID>, removed: Set<UUID>) {
     lock.withLock {
       workspacesById = projection.workspacesById
       ordered = projection.workspaces
       sessionIndex = projection.sessionIndex
     }
-    WorkspaceOrderClock.shared.observe(projection.workspaces.map(\.effectiveSidebarPosition).min())
+    // The clock keeps a running minimum, so only positions that changed can
+    // move it.
+    WorkspaceOrderClock.shared.observe(
+      changed.compactMap { projection.workspacesById[$0]?.effectiveSidebarPosition }.min())
+    store?.workspaceEntries.apply(projection, changed: changed, removed: removed)
   }
 
   public func loadAll() -> [Workspace] {
@@ -58,6 +63,11 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
       }
     }
     layouts.setLayout(DeviceLayout(updated), for: updated.id)
+    // The views showing this workspace update in the same transaction as the
+    // click that changed its layout.
+    onMain { [weak self] store in
+      store.workspaceEntries.update(updated) { self?.workspaceId(forSession: $0) }
+    }
   }
 
   /// Automatic names follow the workspace's context (a new worktree), so the
@@ -88,7 +98,10 @@ public final class ProjectedWorkspaceRepository: WorkspaceRepository, @unchecked
       ordered.removeAll { $0.id == id }
       sessionIndex = sessionIndex.filter { $0.value != id }
     }
-    onMain { $0.discardDraft(id: id) }
+    onMain { store in
+      store.workspaceEntries.remove(id)
+      store.discardDraft(id: id)
+    }
   }
 
   public func removeAll() {

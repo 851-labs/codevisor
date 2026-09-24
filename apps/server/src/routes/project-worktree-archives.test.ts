@@ -8,6 +8,7 @@ import { runGit, snapshotRefFor } from "@codevisor/worktrees"
 import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
+import { archiveJobs } from "../archive-jobs.js"
 import { jsonRequest, run, start, tempDirs } from "../test-support.js"
 
 const execFileAsync = promisify(execFile)
@@ -118,11 +119,16 @@ describe("project worktree archive routes", () => {
         }
         return { worktree, sessions }
       }
-      const setArchived = (id: string, isArchived: boolean) =>
-        jsonRequest(server, `/v1/workspaces/${id}`, {
+      // The archive answers before its teardown runs; wait for the teardown
+      // so each step below sees the files it describes.
+      const setArchived = async (id: string, isArchived: boolean) => {
+        const response = await jsonRequest(server, `/v1/workspaces/${id}`, {
           body: JSON.stringify({ isArchived }),
           method: "PATCH"
         })
+        await archiveJobs(services).idle()
+        return response
+      }
 
       const { worktree: solo, sessions: soloChats } = await makeWorkspace("solo-ws", "solo work", 2)
       expect(existsSync(solo.path)).toBe(true)

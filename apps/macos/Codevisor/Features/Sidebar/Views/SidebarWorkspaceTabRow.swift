@@ -27,6 +27,9 @@ struct SidebarWorkspaceTabRow: View {
   let onClose: () -> Void
   /// Nil for non-chat pane rows, which have no title of their own to pin.
   var onRename: (() -> Void)? = nil
+  /// Latches one activation per press; resets when the gesture ends or is
+  /// cancelled.
+  @GestureState private var isPressed = false
 
   var body: some View {
     HoverableRow(
@@ -48,7 +51,12 @@ struct SidebarWorkspaceTabRow: View {
         // a sibling, so pressing it cannot select the row first.
         .gesture(
           DragGesture(minimumDistance: 0)
-            .onChanged { _ in onActivate() }
+            .updating($isPressed) { _, isPressed, _ in
+              // Activate on pointer-down only, not on every drag delta.
+              guard !isPressed else { return }
+              isPressed = true
+              onActivate()
+            }
         )
         if isHovered {
           Button(action: onClose) {

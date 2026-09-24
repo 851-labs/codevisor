@@ -4,6 +4,7 @@ import { once } from "node:events"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import {
+  createProcessSampler,
   parseProcessTable,
   processIdentity,
   processTree,
@@ -181,6 +182,72 @@ describe("owned process shutdown", () => {
       throw Object.assign(new Error("gone"), { code: "ESRCH" })
     }
     await stopProcesses([entry(30)], { system: fake.system, graceMs: 0, forceMs: 0 })
+  })
+
+  it("reads the process table once per signalling pass and backs off between polls", async () => {
+    const fake = fakeSystem([entry(30), entry(31), entry(32)])
+    let reads = 0
+    const list = fake.system.list
+    fake.system.list = async () => {
+      reads++
+      return list()
+    }
+    // Processes ignore SIGTERM until the force deadline.
+    fake.system.signal = (pid, signal) => {
+      fake.signals.push([pid, signal])
+      if (signal === "SIGKILL") fake.set([])
+    }
+    const sleeps: number[] = []
+    const sleep = fake.system.sleep
+    fake.system.sleep = async (ms) => {
+      sleeps.push(ms)
+      await sleep(ms)
+    }
+    await stopProcesses([entry(30), entry(31), entry(32)], { system: fake.system, graceMs: 1_000 })
+    expect(sleeps).toEqual([50, 100, 200, 400, 400, 400])
+    expect(fake.signals.filter(([, signal]) => signal === "SIGTERM")).toHaveLength(3)
+    expect(fake.signals.filter(([, signal]) => signal === "SIGKILL")).toHaveLength(3)
+    // Seven polls, plus one identity recheck for each of the two signalling passes.
+    expect(reads).toBe(9)
+  })
+
+  it("shares an in-flight process listing only with callers that asked before it started", async () => {
+    let clock = 0
+    const pending: Array<(table: number) => void> = []
+    const read = vi.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          pending.push(resolve)
+        })
+    )
+    const sampler = createProcessSampler({ read, now: () => clock })
+    const first = sampler.list()
+    const joined = sampler.list({ notBefore: 0 })
+    expect(read).toHaveBeenCalledTimes(1)
+    clock = 1
+    // This caller asked after the in-flight read began, so it needs a fresh one.
+    const fresh = sampler.list()
+    expect(read).toHaveBeenCalledTimes(2)
+    pending[0]!(10)
+    pending[1]!(20)
+    expect(await first).toBe(10)
+    expect(await joined).toBe(10)
+    expect(await fresh).toBe(20)
+    // A settled read is never reused.
+    const later = sampler.list({ notBefore: 0 })
+    expect(read).toHaveBeenCalledTimes(3)
+    pending[2]!(30)
+    expect(await later).toBe(30)
+  })
+
+  it("lets callers retry after a shared process listing fails", async () => {
+    const read = vi
+      .fn<() => Promise<number>>()
+      .mockRejectedValueOnce(new Error("ps failed"))
+      .mockResolvedValue(1)
+    const sampler = createProcessSampler({ read, now: () => 0 })
+    await expect(sampler.list()).rejects.toThrow("ps failed")
+    expect(await sampler.list()).toBe(1)
   })
 
   it.each(["tree", "child-first"])("shuts down a real shell tree (%s)", async (order) => {

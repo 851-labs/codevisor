@@ -19,6 +19,20 @@ struct HomeSidebarSection: Identifiable, Equatable {
   let rows: [HomeSidebarTabRow]
 
   var displayName: String { name.isEmpty ? "Workspace" : name }
+
+  /// What the section's actions need: which workspace and how to route it.
+  var workspace: HomeSidebarWorkspaceRef {
+    HomeSidebarWorkspaceRef(id: id, serverId: serverId, anchorSessionId: anchorSessionId)
+  }
+}
+
+/// A sidebar workspace as its row and header actions address it. Rows carry
+/// this instead of their whole section, so a change to one tab doesn't
+/// re-render the section's other rows.
+struct HomeSidebarWorkspaceRef: Equatable {
+  let id: UUID
+  let serverId: String
+  let anchorSessionId: UUID?
 }
 
 /// One tab of a workspace as a sidebar row. Mirrors the macOS sidebar's

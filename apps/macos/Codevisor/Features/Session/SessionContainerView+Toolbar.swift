@@ -18,7 +18,6 @@ extension SessionContainerView {
   /// Resolve within the selected tab, even during the frame between a tab
   /// change and its focus callback. A stale split must never own pane controls.
   private var activeToolbarGroup: PaneGroupModel? {
-    let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
     let workspace = selectedWorkspace
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else { return nil }
     return configuredCenterModel(leafId: leafId)

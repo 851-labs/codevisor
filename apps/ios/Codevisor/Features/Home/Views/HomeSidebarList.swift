@@ -5,16 +5,31 @@ import SwiftUI
 /// What the sidebar asks its owner to do. Rows only request changes; the
 /// owner routes chats, edits layouts, and archives.
 struct HomeSidebarActions {
-  var open: (HomeSidebarTabRow, HomeSidebarSection) -> Void = { _, _ in }
-  var close: (HomeSidebarTabRow, HomeSidebarSection) -> Void = { _, _ in }
-  var rename: (HomeSidebarTabRow, HomeSidebarSection) -> Void = { _, _ in }
-  var newTab: (HomeSidebarSection) -> Void = { _ in }
-  var renameWorkspace: (HomeSidebarSection) -> Void = { _ in }
-  var archiveWorkspace: (HomeSidebarSection) -> Void = { _ in }
+  var open: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
+  var close: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
+  var rename: (HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void = { _, _ in }
+  var newTab: (HomeSidebarWorkspaceRef) -> Void = { _ in }
+  var renameWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
+  var archiveWorkspace: (HomeSidebarWorkspaceRef) -> Void = { _ in }
   /// The workspace ids in their new order after a drag-to-reorder drop.
   var reorder: (UUID, [UUID]) -> Void = { _, _ in }
   /// Nil where the device shows one window at a time (iPhone).
-  var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarSection) -> Void)?
+  var openInNewWindow: ((HomeSidebarTabRow, HomeSidebarWorkspaceRef) -> Void)?
+  /// A split-layout selection landed; an overlay sidebar gets out of the way.
+  var didSelectInSplit: () -> Void = {}
+  var refresh: () async -> Void = {}
+}
+
+/// The sidebar's actions behind a stable reference. Rows compare it by
+/// identity, so a parent re-render that only rebuilt the closures leaves
+/// unchanged rows alone.
+@MainActor
+final class HomeSidebarActionHandler {
+  var actions: HomeSidebarActions
+
+  init(_ actions: HomeSidebarActions) {
+    self.actions = actions
+  }
 }
 
 /// The sidebar: one always-expanded section per workspace listing its tabs.
@@ -31,8 +46,7 @@ struct HomeSidebarActions {
 /// past, and the hole slides under the finger.
 struct HomeSidebarList: View {
   let sections: [HomeSidebarSection]
-  let actions: HomeSidebarActions
-  let refresh: () async -> Void
+  let actions: HomeSidebarActionHandler
   /// The split layout's selection, by pane id. Present, the list is a
   /// native `.sidebar` selection list; absent, it is the phone's grouped
   /// list of buttons that push.
@@ -79,16 +93,15 @@ struct HomeSidebarList: View {
     ForEach(displayedSections) { section in
       Section {
         if drag == nil {
+          let workspace = section.workspace
           ForEach(section.rows) { row in
             HomeSidebarTabRowView(
               row: row,
-              serverId: section.serverId,
-              onOpen: { actions.open(row, section) },
-              onClose: { actions.close(row, section) },
-              onRename: row.renamableTabId == nil ? nil : { actions.rename(row, section) },
-              onOpenInNewWindow: actions.openInNewWindow.map { open in { open(row, section) } },
+              workspace: workspace,
+              actions: actions,
               isSelectionRow: isSelectionList
             )
+            .equatable()
             .tag(row.id)
           }
           if section.rows.isEmpty {
@@ -143,7 +156,7 @@ struct HomeSidebarList: View {
       .sensoryFeedback(.impact(weight: .medium), trigger: liftFeedback)
       .sensoryFeedback(.selection, trigger: drag?.order)
       .refreshable {
-        await refresh()
+        await actions.actions.refresh()
       }
   }
 
@@ -160,9 +173,9 @@ struct HomeSidebarList: View {
       HomeSidebarSectionHeader(
         section: section,
         isReordering: drag != nil,
-        onNewTab: { actions.newTab(section) },
-        onRename: { actions.renameWorkspace(section) },
-        onArchive: { actions.archiveWorkspace(section) }
+        onNewTab: { actions.actions.newTab(section.workspace) },
+        onRename: { actions.actions.renameWorkspace(section.workspace) },
+        onArchive: { actions.actions.archiveWorkspace(section.workspace) }
       )
       // The lifted header's own slot is an invisible placeholder; the
       // floating copy is what the user sees moving.
@@ -263,7 +276,7 @@ struct HomeSidebarList: View {
   private func endDrag() {
     guard var current = drag, !current.isSettling else { return }
     if current.order != sections.map(\.id) {
-      actions.reorder(current.id, current.order)
+      actions.actions.reorder(current.id, current.order)
     }
     current.isSettling = true
     current.fingerY = nil

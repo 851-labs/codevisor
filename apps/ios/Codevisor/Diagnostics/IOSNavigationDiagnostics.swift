@@ -50,9 +50,12 @@ enum IOSNavigationDiagnostics {
     private static var sequence: UInt64 = 0
   #endif
 
-  static func record(_ event: String, _ details: String = "") {
+  /// `details` is only built in diagnostics builds; release builds never
+  /// pay for formatting the message.
+  static func record(_ event: String, _ details: @autoclosure @MainActor () -> String = "") {
     #if DEBUG || NAVIGATION_DIAGNOSTICS
       sequence &+= 1
+      let details = details()
       let suffix = details.isEmpty ? "" : " \(details)"
       let message = "NAVDBG #\(sequence) \(event)\(suffix)"
       logger.notice("\(message, privacy: .public)")
@@ -62,9 +65,10 @@ enum IOSNavigationDiagnostics {
 
 extension View {
   @ViewBuilder
-  func iosNavigationDiagnostics(_ state: IOSNavigationDiagnosticState) -> some View {
+  func iosNavigationDiagnostics(_ state: @autoclosure @MainActor () -> IOSNavigationDiagnosticState) -> some View {
+    // Release builds never evaluate the state, which reads half the screen.
     #if DEBUG || NAVIGATION_DIAGNOSTICS
-      modifier(IOSNavigationDiagnosticsModifier(state: state))
+      modifier(IOSNavigationDiagnosticsModifier(state: state()))
     #else
       self
     #endif

@@ -50,11 +50,8 @@ extension HomeView {
     let tab = selected.selectedCenterTab
     let pane = tab.flatMap { $0.root.group(id: $0.activeLeafId)?.selectedPane }
     let candidates = [pane?.chatSessionId].compactMap { $0 } + workspace.chatSessionIds
-    let anchor = candidates.first(where: { id in
-      projectList.sessions.contains { $0.serverId == serverId && $0.id == id }
-    })
+    let anchor = candidates.first { projectList.session($0, serverId: serverId) != nil }
     environment.workspaces.save(selected)
-    environment.workspaceSync.noteLocalMutation()
     navigation.select(
       .workspace(
         serverId: serverId, workspaceId: workspace.id, anchorSessionId: anchor,
@@ -75,8 +72,6 @@ extension HomeView {
       }
       let updated = try request.applying(to: workspace, compact: clientLayoutIsCompact)
       environment.workspaces.save(updated)
-      environment.workspaceSync.noteLocalMutation()
-      workspaceRevision += 1
       let oldIds = Set(workspace.centerTabs.flatMap { $0.root.allGroups.flatMap { $0.state.panes.map(\.id) } })
       for pane in updated.centerTabs.flatMap({ $0.root.allGroups.flatMap(\.state.panes) })
       where !oldIds.contains(pane.id) {

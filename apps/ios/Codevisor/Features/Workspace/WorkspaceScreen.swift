@@ -133,18 +133,27 @@ struct WorkspaceScreen: View {
     serverId ?? draftController?.project.serverId ?? environment.defaultComposerServerId
   }
 
+  /// This screen's workspace, observed on its own: the screen re-renders
+  /// when this workspace changes, not on every navigation event. The route's
+  /// workspace wins; a draft that has started finds its chat's workspace
+  /// through the O(1) session index.
+  var workspaceEntry: WorkspaceEntry? {
+    let entries = environment.navigationStore.workspaceEntries
+    if let workspaceId {
+      let entry = entries.entry(workspaceId)
+      if entry.workspace?.serverId == resolvedServerId { return entry }
+    }
+    guard let activeSessionId, let indexed = environment.workspaces.workspaceId(forSession: activeSessionId)
+    else { return nil }
+    let entry = entries.entry(indexed)
+    guard let workspace = entry.workspace, workspace.serverId == resolvedServerId,
+      workspace.chatSessionIds.contains(activeSessionId)
+    else { return nil }
+    return entry
+  }
+
   var resolvedWorkspace: Workspace? {
-    if let workspaceId,
-      let workspace = environment.workspaces.loadAll().first(where: {
-        $0.serverId == resolvedServerId && $0.id == workspaceId
-      })
-    {
-      return workspace
-    }
-    guard let activeSessionId else { return nil }
-    return environment.workspaces.loadAll().first {
-      $0.serverId == resolvedServerId && $0.chatSessionIds.contains(activeSessionId)
-    }
+    workspaceEntry?.workspace
   }
 
   var panes: PaneGroupState {
@@ -169,9 +178,7 @@ struct WorkspaceScreen: View {
   }
 
   func session(for id: UUID) -> ChatSession? {
-    environment.projectList.sessions.first {
-      $0.serverId == resolvedServerId && $0.id == id
-    }
+    environment.projectList.session(id, serverId: resolvedServerId)
   }
 
   var rootSession: ChatSession? { activeSessionId.flatMap(session(for:)) }
@@ -360,10 +367,12 @@ struct WorkspaceScreen: View {
         "old=\(old.map(Self.diagnosticID) ?? "nil") new=\(new.map(Self.diagnosticID) ?? "nil")"
       )
     }
-    .onChange(of: environment.projectList.projects.map(\.id)) { _, _ in
+    // Only a draft sets itself up from the project and machine lists; a
+    // workspace screen neither maps nor observes them.
+    .onChange(of: isDraft ? environment.projectList.projects.map(\.id) : []) { _, _ in
       setUpDraftIfNeeded()
     }
-    .onChange(of: environment.machines.allMachines.map(\.id)) { _, _ in
+    .onChange(of: isDraft ? environment.machines.allMachines.map(\.id) : []) { _, _ in
       setUpDraftIfNeeded()
       guard isDraft, let controller = draftController,
         let canonical = environment.machines.canonicalComposerMachineId(for: controller.project.serverId),
@@ -385,7 +394,8 @@ struct WorkspaceScreen: View {
       draftController.invalidateHarnessCapabilities()
       Task { await draftController.refreshHarnessCapabilities() }
     }
-    .onChange(of: environment.workspaceSync.revision) { _, _ in
+    // Only this workspace's changes -- local saves included -- land here.
+    .onChange(of: workspaceVersion) { _, _ in
       synchronizePaneStateFromWorkspace()
     }
     // The split layout re-targets this screen rather than mounting a new

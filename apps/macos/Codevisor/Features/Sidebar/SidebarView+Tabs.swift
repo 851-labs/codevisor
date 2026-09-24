@@ -10,14 +10,13 @@ import SwiftUI
 /// the detail column. The routing chat supplies context; only visible chat
 /// panes load transcripts.
 extension SidebarView {
-  /// Every tab row's identity in sidebar order, driving reflow animations.
-  var workspaceTabRowIDs: [UUID] {
-    workspaceItems.flatMap { item in
-      item.workspace.centerTabs.flatMap { tab -> [UUID] in
-        let groups = sidebarGroups(tab, in: item.workspace)
-        guard !groups.isEmpty else { return [] }
-        return tab.root.allGroups.count > 1 ? groups.map(\.id) : [tab.id]
-      }
+  /// One workspace's tab row identities in order, driving its reflow
+  /// animation.
+  func tabRowIDs(in workspace: Workspace) -> [UUID] {
+    workspace.centerTabs.flatMap { tab -> [UUID] in
+      let groups = sidebarGroups(tab, in: workspace)
+      guard !groups.isEmpty else { return [] }
+      return tab.root.allGroups.count > 1 ? groups.map(\.id) : [tab.id]
     }
   }
 
@@ -73,7 +72,7 @@ extension SidebarView {
       title: paneTitle(descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
       isAgentOwned: descriptor?.attachOnly ?? false,
-      browserFavicon: descriptor.flatMap { store?.localBrowserModel(paneId: $0.id)?.favicon },
+      browserFavicon: browserFavicon(descriptor),
       pluginId: descriptor?.pluginId,
       pluginPaneType: descriptor?.pluginPaneType,
       pluginIconClient: environment.machines.client(for: workspace.serverId),
@@ -109,7 +108,7 @@ extension SidebarView {
       title: tabTitle(tab, descriptor: descriptor, chatSession: chatSession),
       kind: descriptor?.kind ?? .newTab,
       isAgentOwned: descriptor?.attachOnly ?? false,
-      browserFavicon: descriptor.flatMap { store?.localBrowserModel(paneId: $0.id)?.favicon },
+      browserFavicon: browserFavicon(descriptor),
       pluginId: descriptor?.pluginId,
       pluginPaneType: descriptor?.pluginPaneType,
       pluginIconClient: environment.machines.client(for: workspace.serverId),
@@ -146,6 +145,12 @@ extension SidebarView {
     return store?.centerLeafGroups[liveKey]?.state.selectedPane ?? persisted?.selectedPane
   }
 
+  /// Only browser rows look up a live page.
+  private func browserFavicon(_ descriptor: PaneDescriptorState?) -> NSImage? {
+    guard let descriptor, descriptor.kind == .browser else { return nil }
+    return store?.localBrowserModel(paneId: descriptor.id)?.favicon
+  }
+
   private func paneTitle(_ descriptor: PaneDescriptorState?, chatSession: ChatSession?) -> String {
     guard let descriptor else { return "New Tab" }
     if descriptor.kind == .chat { return chatSession?.title ?? descriptor.name }
@@ -168,7 +173,7 @@ extension SidebarView {
 
   private func sessionForPane(_ descriptor: PaneDescriptorState, serverId: String) -> ChatSession? {
     guard descriptor.kind == .chat, let id = descriptor.chatSessionId else { return nil }
-    return list.sessions.first { $0.serverId == serverId && $0.id == id }
+    return list.session(id, serverId: serverId)
   }
 
   /// The live chat a tab can route through: its selected pane's chat first,
@@ -177,11 +182,7 @@ extension SidebarView {
     let selected = tab.root.group(id: tab.activeLeafId)?.selectedPane.map { [$0] } ?? []
     let panes = selected + tab.root.allGroups.flatMap(\.state.panes)
     for pane in panes where pane.kind == .chat {
-      guard let id = pane.chatSessionId,
-        let session = list.sessions.first(where: {
-          $0.serverId == serverId && $0.id == id
-        })
-      else { continue }
+      guard let id = pane.chatSessionId, let session = list.session(id, serverId: serverId) else { continue }
       return session
     }
     return nil
@@ -244,7 +245,6 @@ extension SidebarView {
       switch action {
       case .close, .closeLeaf:
         store?.closeBackgroundTab(action, in: workspace, routingSession: item.routingSession)
-        workspaceRevision += 1
         return
       default:
         break
@@ -274,9 +274,10 @@ extension SidebarView {
   }
 
   /// The flat list exactly as the sidebar renders it, across workspaces.
+  /// Resolved on demand when a key steps, never while rendering.
   private var tabEntries: [SidebarTabEntry] {
     [.newChat]
-      + workspaceItems.flatMap { item in
+      + listedWorkspaceItems.flatMap { item in
         item.workspace.centerTabs.flatMap { tab -> [SidebarTabEntry] in
           let groups = sidebarGroups(tab, in: item.workspace)
           guard !groups.isEmpty else { return [] }

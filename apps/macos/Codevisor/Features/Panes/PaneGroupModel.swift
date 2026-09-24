@@ -29,7 +29,13 @@ final class PaneGroupModel: Identifiable {
   /// where observable mutation would be illegal).
   @ObservationIgnored var chatContent: ((PaneDescriptorState) -> AnyView)?
 
-  @ObservationIgnored var live: [UUID: any Pane] = [:]
+  @ObservationIgnored var live: [UUID: any Pane] = [:] {
+    didSet { browserIndex?.update(owner: ObjectIdentifier(self), previous: oldValue, current: live) }
+  }
+  /// The owning store's page index, kept in step with `live`.
+  @ObservationIgnored weak var browserIndex: BrowserPaneIndex?
+  /// Which container's hooks are attached, so they are wired once.
+  @ObservationIgnored var wiring: PaneGroupWiring?
   @ObservationIgnored private let repository: any PaneGroupRepository
   /// Rebuilt by `adoptSession` so panes created after a chat appears get the
   /// chat-anchored context instead of the workspace-only one.

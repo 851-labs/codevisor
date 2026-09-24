@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    // Git runs at normal priority under test; see `withPriority`.
+    env: { CODEVISOR_COMMAND_PRIORITY: "normal" },
     // Each worker launches Git processes alongside other package test suites.
     maxWorkers: 2,
     coverage: {

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { makeGitRepo, testTempDir } from "./git-test-support.js"
-import { addWorktree, removeWorktree, runGit } from "./git.js"
+import { addWorktree, runGit } from "./git.js"
 import {
   listSnapshotRefWorktreeIds,
   pruneWorktreeRegistrations,
@@ -69,7 +69,10 @@ describe("worktree archive garbage collection", () => {
     const path = join(root, "curry")
     await addWorktree(repo, path, "codevisor/curry")
     await snapshotWorktree(repo, path, "wt-curry")
-    await removeArchivedWorktreeFiles(repo, path, "codevisor/curry", removeWorktree)
+    await removeArchivedWorktreeFiles(repo, path, "codevisor/curry", {
+      trashRoot: join(root, ".trash"),
+      worktreeId: "wt-curry"
+    })
 
     expect(existsSync(path)).toBe(false)
     expect(await listSnapshotRefWorktreeIds(repo)).toEqual(["wt-curry"])

@@ -1,4 +1,4 @@
-import { processTree, readProcessTable, sameProcess, stopProcesses } from "./index.mjs"
+import { listProcessIdentities, processTree, sameProcess, stopProcesses } from "./index.mjs"
 
 /** Drop argv and detach strings, including for injected process readers.
  * @param {import('./index.mjs').ProcessIdentity} entry
@@ -42,7 +42,8 @@ const initialState = (pid, table, detached) => {
  * @param {{detached?: boolean, list?: () => Promise<import('./index.mjs').ProcessIdentity[]>, stop?: typeof stopProcesses}} [options]
  */
 export async function trackProcessTree(pid, options = {}) {
-  const list = options.list ?? (() => readProcessTable({ includeCommand: false }))
+  // Every running chat and terminal polls; share each listing between them.
+  const list = options.list ?? listProcessIdentities
   const stop = options.stop ?? stopProcesses
   const { owner, known, group } = initialState(pid, await list(), options.detached ?? false)
   let trackGroup = group

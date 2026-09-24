@@ -6,7 +6,8 @@ import CodevisorUI
 
 extension SessionContainerView {
   /// A center leaf's model with the container's lifecycle hooks attached
-  /// (idempotent — models are cached).
+  /// (idempotent — models are cached). The hooks are wired once per model
+  /// for this container and mount; later calls are a cache lookup.
   func configuredCenterModel(leafId: UUID) -> PaneGroupModel {
     let model = store.centerGroup(
       leafId: leafId,
@@ -14,12 +15,28 @@ extension SessionContainerView {
       session: session,
       project: project
     )
+    // The models are cached across containers, and these closures capture
+    // THIS container's focus controller — a stale capture makes every chat
+    // pane register its composer with a dead controller, orphaning the new
+    // container's focus intents. So a different container, mount or
+    // project rewires; the same one never does.
+    let wiring = PaneGroupWiring(sourceId: focusSourceId, mountId: mountIdentity, project: project)
+    guard model.wiring != wiring else { return model }
+    model.wiring = wiring
+    wire(model, leafId: leafId)
+    return model
+  }
+
+  /// Attaches this container's lifecycle hooks. Every hook reads the live
+  /// workspace when it runs, so wiring once stays current.
+  private func wire(_ model: PaneGroupModel, leafId: UUID) {
     // Acting in a group makes it the ACTIVE one: keyboard tab commands
     // follow the user (routed via the focus controller's centerGroup).
     model.onActivated = { [weak model] in
+      let workspace = selectedWorkspace
       guard isVisible,
-        store.navigationWorkspaceId == selectedWorkspace.id,
-        selectedWorkspace.centerTree.group(id: leafId) != nil
+        store.navigationWorkspaceId == workspace.id,
+        workspace.centerTree.group(id: leafId) != nil
       else { return }
       activateLeaf(leafId)
       if let model {
@@ -55,9 +72,7 @@ extension SessionContainerView {
           // Closing an established chat's tab ARCHIVES its
           // session (recoverable from the archived list); the
           // session itself always survives.
-          if let closed = environment.projectList.sessions.first(where: {
-            $0.serverId == selectedWorkspace.serverId && $0.id == closedSessionId
-          }) {
+          if let closed = environment.projectList.session(closedSessionId, serverId: selectedWorkspace.serverId) {
             environment.closeSession(closed)
           }
         } else {
@@ -74,12 +89,8 @@ extension SessionContainerView {
     model.canDissolve = { true }
     // Any center group can host chats (established or draft) and the
     // New Tab placeholder. Weak model: the closure is held BY the model.
-    // Re-wired UNCONDITIONALLY (safe: @ObservationIgnored): the models
-    // are cached across containers, and this closure captures THIS
-    // container's focus controller — a stale capture makes every chat
-    // pane register its composer with a dead controller, orphaning the
-    // new container's focus intents.
     model.chatContent = { [weak model] descriptor in
+      let workspace = selectedWorkspace
       if descriptor.kind == .newTab {
         return AnyView(
           NewTabPageView(
@@ -88,9 +99,9 @@ extension SessionContainerView {
             onNewChat: { [weak model] in
               createChat(convertingPlaceholder: descriptor.id, in: model)
             },
-            client: environment.machines.client(for: selectedWorkspace.serverId),
-            iconCacheNamespace: selectedWorkspace.serverId,
-            machineId: selectedWorkspace.serverId
+            client: environment.machines.client(for: workspace.serverId),
+            iconCacheNamespace: workspace.serverId,
+            machineId: workspace.serverId
           ))
       }
       return AnyView(
@@ -99,21 +110,20 @@ extension SessionContainerView {
           group: model,
           focus: sessionFocus,
           session: session,
-          hostWorkspace: selectedWorkspace,
+          hostWorkspace: workspace,
           project: project,
           store: store,
           environment: environment
         ))
     }
-    return model
   }
 
   /// The chat pane facing the user: the selected pane of the active split
   /// leaf, when it is a chat. Reads the live group model so pane selection
   /// changes re-evaluate the publisher above.
   var focusedChatCandidate: UUID? {
-    guard isVisible, store.navigationWorkspaceId == selectedWorkspace.id else { return nil }
     let workspace = selectedWorkspace
+    guard isVisible, store.navigationWorkspaceId == workspace.id else { return nil }
     guard let leafId = workspace.selectedCenterTab?.resolvedActiveLeafId(preferred: activeLeafId) else {
       return nil
     }
@@ -166,7 +176,6 @@ extension SessionContainerView {
     workspace.pruneClosedCenterTab(workspace.centerTabs[tabIndex].id)
     environment.workspaces.save(workspace)
     store.evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
-    workspaceRevision += 1
     liveCenterTree = workspace.centerTree
     if previousActiveLeaf != workspace.selectedCenterTab?.activeLeafId {
       activateLeaf(workspace.selectedCenterTab?.activeLeafId)
@@ -205,11 +214,7 @@ extension SessionContainerView {
   }
 
   func rememberWorkspaceDefaults(from chatId: UUID) {
-    guard
-      let chat = environment.projectList.sessions.first(where: {
-        $0.serverId == selectedWorkspace.serverId && $0.id == chatId
-      })
-    else { return }
+    guard let chat = environment.projectList.session(chatId, serverId: selectedWorkspace.serverId) else { return }
     if let live = store.activeController(for: chat) {
       if let chatProject = environment.projectList.projects.first(where: {
         $0.serverId == chat.serverId && $0.id == chat.projectId
@@ -232,9 +237,7 @@ extension SessionContainerView {
 
   func chatPaneTitle(_ descriptor: PaneDescriptorState) -> String {
     guard let id = descriptor.chatSessionId else { return descriptor.name }
-    return environment.projectList.sessions.first {
-      $0.serverId == selectedWorkspace.serverId && $0.id == id
-    }?.title ?? descriptor.name
+    return environment.projectList.session(id, serverId: selectedWorkspace.serverId)?.title ?? descriptor.name
   }
 
   /// Every chat in the workspace with a live cached controller, routed
@@ -243,11 +246,10 @@ extension SessionContainerView {
   /// persisted tabs survive untouched until it reconnects.
   var workspaceChatControllers: [(chatId: UUID, controller: SessionController)] {
     let workspace = selectedWorkspace
+    let list = environment.projectList
     return workspace.chatSessionIds.compactMap { chatId in
-      guard
-        let chat = environment.projectList.sessions.first(where: {
-          $0.serverId == selectedWorkspace.serverId && $0.id == chatId
-        }), let controller = store.activeController(for: chat)
+      guard let chat = list.session(chatId, serverId: workspace.serverId),
+        let controller = store.activeController(for: chat)
       else { return nil }
       return (chatId, controller)
     }
@@ -265,7 +267,8 @@ extension SessionContainerView {
   }
 
   func syncWorkspaceBackgroundTerminals() {
-    var workspace = selectedWorkspace
+    let oldWorkspace = selectedWorkspace
+    var workspace = oldWorkspace
     var updated: [PaneDescriptorState] = []
     var removed: [PaneDescriptorState] = []
     for (chatId, controller) in workspaceChatControllers {
@@ -282,7 +285,6 @@ extension SessionContainerView {
     guard !updated.isEmpty || !removed.isEmpty else { return }
     // Resolve cleanup against the old layout before its leaves disappear.
     // Constructing a TerminalPane is lazy and does not attach a surface.
-    let oldWorkspace = selectedWorkspace
     let closing = removed.compactMap { pane -> (any Pane)? in
       guard
         let leaf = oldWorkspace.centerTabs.lazy.compactMap({
@@ -294,9 +296,7 @@ extension SessionContainerView {
       ).pane(for: pane)
     }
     environment.workspaces.save(workspace)
-    environment.workspaceSync.noteLocalMutation()
     store.reconcileMountedPaneGroups(in: workspace)
-    workspaceRevision += 1
     let client = environment.machines.client(for: workspace.serverId)
     for pane in updated {
       environment.workspaceSync.publishPane(pane, workspaceId: workspace.id, client: client)
@@ -308,4 +308,13 @@ extension SessionContainerView {
       for pane in closing { await pane.willDelete() }
     }
   }
+}
+
+/// Identifies the container a group's hooks were wired by: the mounted
+/// container instance, what it is mounted on, and the project its chat
+/// panes are built with.
+struct PaneGroupWiring: Equatable {
+  let sourceId: UUID
+  let mountId: UUID
+  let project: Project
 }

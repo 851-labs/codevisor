@@ -22,7 +22,6 @@ extension SidebarView {
       workspace.isArchived
     {
       environment.unarchiveWorkspace(workspace)
-      workspaceRevision += 1
     }
     let target = SidebarSelection.session(serverId: session.serverId, id: session.id)
     store?.selectChat(session)

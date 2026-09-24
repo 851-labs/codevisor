@@ -3,201 +3,60 @@ import CodevisorUI
 import SwiftUI
 import UIKit
 
-/// Builds the sidebar's workspace sections from the fleet and answers the
-/// rows' requests: opening, closing, renaming, and adding tabs.
+/// Answers the sidebar rows' requests: opening, closing, renaming, and
+/// adding tabs. The sections themselves are built by `HomeSidebarLiveList`
+/// from Core's precomputed sidebar.
 extension HomeView {
-  /// Chats from every known machine, cached ones included: they show at
-  /// launch and update in place as each machine catches up.
-  var activeSessions: [ChatSession] {
-    projectList.sessions.filter { knownMachineIDs.contains($0.serverId) }
-  }
-
-  /// Workspaces enter newest-first; the saved manual order then owns the
-  /// list, so adding or closing tabs never changes a workspace's rank.
-  var sidebarSections: [HomeSidebarSection] {
-    // Repository writes are not observable; local and remote layout
-    // writes invalidate these tokens so the sidebar re-reads the tabs.
-    _ = workspaceRevision
-    _ = environment.workspaceSync.revision
-    let sessionsByKey = Dictionary(
-      projectList.sessions.map { (Self.sessionKey($0.serverId, $0.id), $0) },
-      uniquingKeysWith: { first, _ in first }
-    )
-    let workspaces = environment.workspaces.loadAll()
-      .filter { !$0.isArchived && knownMachineIDs.contains($0.serverId) }
-      .sorted(by: WorkspaceSidebarOrder.precedes)
-    let sections = workspaces.compactMap { workspace -> HomeSidebarSection? in
-      let routedIDs = workspace.chatSessionIds.filter {
-        environment.workspaces.workspaceId(forSession: $0) == workspace.id
-      }
-      // Suppress superseded automatic workspaces whose chats all moved
-      // elsewhere. Empty workspaces have no chat ids and remain visible.
-      guard workspace.chatSessionIds.isEmpty || !routedIDs.isEmpty else { return nil }
-      // A terminal-only workspace still mounts through a closed chat
-      // retained in the session index after its chat tab went away.
-      let anchor =
-        routedIDs.lazy
-        .compactMap { sessionsByKey[Self.sessionKey(workspace.serverId, $0)] }
-        .first
-        ?? projectList.sessions.first {
-          $0.serverId == workspace.serverId
-            && environment.workspaces.workspaceId(forSession: $0.id) == workspace.id
-        }
-      let rows = sidebarRows(for: workspace, sessionsByKey: sessionsByKey)
-      return HomeSidebarSection(
-        id: workspace.id,
-        serverId: workspace.serverId,
-        name: workspace.name,
-        machineName: machines.fleetMachineName(for: workspace.serverId),
-        anchorSessionId: anchor?.id,
-        status: rows.map(\.status).min() ?? .idle,
-        rows: rows
-      )
-    }
-    return sections
-  }
-
-  static func sessionKey(_ serverId: String, _ id: UUID) -> String {
-    "\(serverId)|\(id.uuidString)"
-  }
-
-  /// Navigable panes in the same order as the workspace's tab grid.
-  private func sidebarRows(
-    for workspace: Workspace,
-    sessionsByKey: [String: ChatSession]
-  ) -> [HomeSidebarTabRow] {
-    var seen: Set<UUID> = []
-    var rows: [HomeSidebarTabRow] = []
-    let visibility = PaneNavigationVisibility()
-    func append(_ pane: PaneDescriptorState, in tab: WorkspaceTab?) {
-      guard visibility.includes(pane) else { return }
-      guard seen.insert(pane.id).inserted else { return }
-      let chat =
-        pane.kind == .chat
-        ? pane.chatSessionId.flatMap { sessionsByKey[Self.sessionKey(workspace.serverId, $0)] }
-        : nil
-      rows.append(
-        HomeSidebarTabRow(
-          id: pane.id,
-          title: tab?.displayTitle(for: pane, chatTitle: chat?.title) ?? paneTitle(pane, chat: chat),
-          icon: paneIcon(pane, chat: chat),
-          status: chat.map(status(for:)) ?? .idle,
-          chatSessionId: chat?.id,
-          renamableTabId: tab?.id
-        )
-      )
-    }
-    for tab in workspace.centerTabs {
-      let groups = tab.root.allGroups
-      let isSinglePane = groups.count == 1 && groups[0].state.panes.count == 1
-      for group in groups {
-        for pane in group.state.panes {
-          append(pane, in: isSinglePane ? tab : nil)
-        }
-      }
-    }
-    return rows
-  }
-
-  private func paneTitle(_ pane: PaneDescriptorState, chat: ChatSession?) -> String {
-    switch pane.kind {
-    case .chat:
-      let title = chat?.title ?? pane.name
-      return title.isEmpty ? "New Chat" : title
-    case .newTab:
-      return "New Tab"
-    case .browser:
-      return BrowserPaneCache.shared.localTitle(paneId: pane.id) ?? pane.name
-    case .terminal, .plugin, .document, .screenSharing:
-      return pane.name
-    }
-  }
-
-  private func paneIcon(_ pane: PaneDescriptorState, chat: ChatSession?) -> HomeSidebarTabRow.Icon {
-    switch pane.kind {
-    case .chat:
-      .chat(
-        harnessId: chat?.harnessId ?? "",
-        fallbackSymbolName: chat.map(harnessSymbol(for:)) ?? "text.bubble"
-      )
-    case .terminal:
-      .terminal(isAgentOwned: pane.attachOnly)
-    case .browser:
-      .browser(favicon: BrowserPaneCache.shared.favicon(paneId: pane.id))
-    case .plugin:
-      .plugin(pluginId: pane.pluginId ?? "", paneType: pane.pluginPaneType)
-    case .document:
-      .document
-    case .screenSharing:
-      .screenSharing
-    case .newTab:
-      .newTab
-    }
-  }
-
-  /// Classification follows the status-icon precedence (error → attention
-  /// → in progress → unread), the same order the macOS sidebar uses.
-  func status(for session: ChatSession) -> HomeSessionStatus {
-    if session.hasUnreadError { return .error }
-    if session.actionRequired || session.pendingPlanApproval { return .actionRequired }
-    if ChatControllerCache.shared.isInProgress(session) { return .inProgress }
-    if session.unreadCount > 0 { return .unread }
-    return .idle
-  }
-
   // MARK: - Actions
 
   var sidebarActions: HomeSidebarActions {
     HomeSidebarActions(
-      open: { row, section in openSidebarRow(row, in: section) },
-      close: { row, section in closeSidebarRow(row, in: section) },
-      rename: { row, section in
+      open: { row, workspace in openSidebarRow(row, in: workspace) },
+      close: { row, workspace in closeSidebarRow(row, in: workspace) },
+      rename: { row, workspace in
         guard let tabId = row.renamableTabId else { return }
         tabRenameTitle = row.title
-        renamingTab = HomeTabRenameRequest(workspaceId: section.id, tabId: tabId, chatSessionId: row.chatSessionId)
+        renamingTab = HomeTabRenameRequest(workspaceId: workspace.id, tabId: tabId, chatSessionId: row.chatSessionId)
       },
-      newTab: { section in addSidebarTab(in: section) },
-      renameWorkspace: { section in
-        guard let workspace = environment.workspaces.workspace(id: section.id) else { return }
+      newTab: { workspace in addSidebarTab(in: workspace) },
+      renameWorkspace: { ref in
+        guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
         workspaceRenameTitle = workspace.name
         renamingWorkspace = workspace
       },
-      archiveWorkspace: { section in
-        guard let workspace = environment.workspaces.workspace(id: section.id) else { return }
-        environment.archiveWorkspace(workspace)
-        bumpWorkspaceRevision()
+      archiveWorkspace: { ref in
+        guard let workspace = environment.workspaces.workspace(id: ref.id) else { return }
+        withSidebarReflow { environment.archiveWorkspace(workspace) }
       },
       reorder: { id, ids in commitWorkspaceOrder(id, visibleIDs: ids) },
       openInNewWindow: UIApplication.shared.supportsMultipleScenes
-        ? { row, section in
+        ? { row, workspace in
           openWindow(
             value: WorkspaceWindowRoute(
-              serverId: section.serverId, workspaceId: section.id, anchorSessionId: section.anchorSessionId,
+              serverId: workspace.serverId, workspaceId: workspace.id, anchorSessionId: workspace.anchorSessionId,
               chatSessionId: row.chatSessionId, paneId: row.id))
-        } : nil
+        } : nil,
+      didSelectInSplit: { dismissOverlaySidebarAfterSelection() },
+      refresh: { await refreshNavigation() }
     )
   }
 
   /// Chat rows open their chat like any chat route; other tabs mount the
   /// workspace through its anchor chat and name the pane to show.
-  private func openSidebarRow(_ row: HomeSidebarTabRow, in section: HomeSidebarSection) {
-    if let chatId = row.chatSessionId,
-      let session = projectList.sessions.first(where: {
-        $0.serverId == section.serverId && $0.id == chatId
-      })
-    {
+  private func openSidebarRow(_ row: HomeSidebarTabRow, in workspace: HomeSidebarWorkspaceRef) {
+    if let chatId = row.chatSessionId, let session = projectList.session(chatId, serverId: workspace.serverId) {
       openChat(session)
       return
     }
     IOSNavigationDiagnostics.record(
       "home.openPane",
-      "workspace=\(shortID(section.id)) pane=\(shortID(row.id)) pathBefore=\(navigationPathSummary(path))"
+      "workspace=\(shortID(workspace.id)) pane=\(shortID(row.id)) pathBefore=\(navigationPathSummary(path))"
     )
     openRoute(
       .workspace(
-        serverId: section.serverId,
-        workspaceId: section.id,
-        anchorSessionId: section.anchorSessionId,
+        serverId: workspace.serverId,
+        workspaceId: workspace.id,
+        anchorSessionId: workspace.anchorSessionId,
         preferredChatSessionId: nil,
         preferredPaneId: row.id
       )
@@ -207,61 +66,60 @@ extension HomeView {
   /// A background close, without mounting the workspace. Chats archive
   /// (which closes their pane locally and on the server); other panes take
   /// the same last-pane-becomes-New-Tab path the workspace screen uses.
-  private func closeSidebarRow(_ row: HomeSidebarTabRow, in section: HomeSidebarSection) {
-    if let chatId = row.chatSessionId,
-      let session = projectList.sessions.first(where: {
-        $0.serverId == section.serverId && $0.id == chatId
-      })
-    {
-      environment.closeSession(session)
-    } else if let workspace = environment.workspaces.workspace(id: section.id) {
-      var state = WorkspaceScreen.compactPaneState(from: workspace)
-      if let closed = state.panes.first(where: { $0.id == row.id }), closed.kind == .terminal {
-        TerminalSessionCache.shared.remove(terminalKey: closed.terminalKey)
+  private func closeSidebarRow(_ row: HomeSidebarTabRow, in ref: HomeSidebarWorkspaceRef) {
+    withSidebarReflow {
+      if let chatId = row.chatSessionId, let session = projectList.session(chatId, serverId: ref.serverId) {
+        environment.closeSession(session)
+      } else if let workspace = environment.workspaces.workspace(id: ref.id) {
+        closePane(row.id, in: workspace)
       }
-      let replacement: PaneDescriptorState?
-      if state.panes.count == 1 {
-        replacement = state.replacePaneWithNewTab(id: row.id)
-        guard replacement != nil else { return }
-      } else {
-        replacement = nil
-        guard state.closePane(id: row.id) != nil else { return }
-      }
-      var updated = workspace
-      WorkspaceScreen.applyCompactPaneState(state, to: &updated)
-      environment.workspaces.save(updated)
-      environment.workspaceSync.noteLocalMutation()
-      environment.workspaceSync.deletePane(
-        id: row.id,
-        workspaceId: workspace.id,
-        optimisticReplacement: replacement,
-        client: environment.machines.client(for: section.serverId)
-      )
+      if case .plugin = row.icon { PluginPaneCache.shared.remove(paneId: row.id) }
+      if case .browser = row.icon { BrowserPaneCache.shared.remove(paneId: row.id) }
     }
-    if case .plugin = row.icon { PluginPaneCache.shared.remove(paneId: row.id) }
-    if case .browser = row.icon { BrowserPaneCache.shared.remove(paneId: row.id) }
-    bumpWorkspaceRevision()
+  }
+
+  private func closePane(_ paneId: UUID, in workspace: Workspace) {
+    var state = WorkspaceScreen.compactPaneState(from: workspace)
+    if let closed = state.panes.first(where: { $0.id == paneId }), closed.kind == .terminal {
+      TerminalSessionCache.shared.remove(terminalKey: closed.terminalKey)
+    }
+    let replacement: PaneDescriptorState?
+    if state.panes.count == 1 {
+      replacement = state.replacePaneWithNewTab(id: paneId)
+      guard replacement != nil else { return }
+    } else {
+      replacement = nil
+      guard state.closePane(id: paneId) != nil else { return }
+    }
+    var updated = workspace
+    WorkspaceScreen.applyCompactPaneState(state, to: &updated)
+    // Saving updates the workspace's entry, which re-renders its section.
+    environment.workspaces.save(updated)
+    environment.workspaceSync.deletePane(
+      id: paneId,
+      workspaceId: workspace.id,
+      optimisticReplacement: replacement,
+      client: environment.machines.client(for: workspace.serverId)
+    )
   }
 
   /// Adds a New Tab page to the workspace and opens it there.
-  private func addSidebarTab(in section: HomeSidebarSection) {
-    guard var workspace = environment.workspaces.workspace(id: section.id) else { return }
+  private func addSidebarTab(in ref: HomeSidebarWorkspaceRef) {
+    guard var workspace = environment.workspaces.workspace(id: ref.id) else { return }
     var state = WorkspaceScreen.compactPaneState(from: workspace)
     let pane = state.addNewTabPane()
     WorkspaceScreen.applyCompactPaneState(state, to: &workspace)
-    environment.workspaces.save(workspace)
-    environment.workspaceSync.noteLocalMutation()
+    withSidebarReflow { environment.workspaces.save(workspace) }
     environment.workspaceSync.publishPane(
       pane,
       workspaceId: workspace.id,
-      client: environment.machines.client(for: section.serverId)
+      client: environment.machines.client(for: ref.serverId)
     )
-    bumpWorkspaceRevision()
     openRoute(
       .workspace(
-        serverId: section.serverId,
-        workspaceId: section.id,
-        anchorSessionId: section.anchorSessionId,
+        serverId: ref.serverId,
+        workspaceId: ref.id,
+        anchorSessionId: ref.anchorSessionId,
         preferredChatSessionId: nil,
         preferredPaneId: pane.id
       )
@@ -276,18 +134,17 @@ extension HomeView {
   }
 
   func renameWorkspace(_ renamed: Workspace) {
-    environment.workspaceSync.renameWorkspace(
-      renamed, client: environment.machines.client(for: renamed.serverId)
-    )
-    bumpWorkspaceRevision()
+    withSidebarReflow {
+      environment.workspaceSync.renameWorkspace(
+        renamed, client: environment.machines.client(for: renamed.serverId)
+      )
+    }
   }
 
-  /// Re-reads the non-observable repository, animating the resulting
-  /// row reflow.
-  func bumpWorkspaceRevision() {
-    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-      workspaceRevision += 1
-    }
+  /// A local sidebar edit: the entries it touches update synchronously, so
+  /// the resulting row reflow animates with it.
+  func withSidebarReflow(_ change: () -> Void) {
+    withAnimation(Motion.listReflow(reduceMotion: reduceMotion), change)
   }
 
   /// Only the dragged workspace receives a new shared position.

@@ -8,8 +8,7 @@ import ACPKit
 
 extension SessionStore {
   func localBrowserModel(paneId: UUID) -> ChromiumBrowserModel? {
-    let groups = Array(centerLeafGroups.values)
-    return groups.lazy.compactMap { ($0.live[paneId] as? BrowserPane)?.model }.first
+    browserPanes.model(paneId: paneId)
   }
 
   func localBrowserTitle(paneId: UUID) -> String? {
@@ -44,7 +43,7 @@ extension SessionStore {
       projectId: project.id,
       rootDirectory: session.cwd ?? project.folderURL.path,
       worktreeName: session.worktreeName,
-      assignedWorkspaceId: environment.projectList.workspaceAssignments(for: session.serverId)[session.id]
+      assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
     )
     // A chat that is no longer active and has NO persisted workspace must
     // not mint one: archiving a scratch chat deletes its workspace (index
@@ -53,9 +52,7 @@ extension SessionStore {
     // just-deleted workspace as a zombie sidebar row. Hand such screens a
     // stable ephemeral stand-in instead.
     if environment.workspaces.workspaceId(forSession: session.id) == nil,
-      !environment.projectList.sessions.contains(where: {
-        $0.serverId == session.serverId && $0.id == session.id
-      })
+      environment.projectList.session(session.id, serverId: session.serverId) == nil
     {
       if let cached = ephemeralWorkspaces[session.id] { return cached }
       let ephemeral = environment.workspaces.ephemeralWorkspace(for: seed)
@@ -188,22 +185,17 @@ extension SessionStore {
         session: session, project: project, machine: machine, client: client, serverId: serverId,
         workspaceId: workspaceIdForPanes, workspaceRootDirectory: workspaceRootDirectory)
     )
+    model.browserIndex = browserPanes
     // Browser links and automation are chat-rooted: they open next to a real
     // session. A workspace without one leaves both hooks nil, which is also
     // what makes `canHostBrowserAutomation` decline for its panes.
     if let session {
       installBrowserHooks(on: model, session: session, project: project)
     }
-    model.onPaneChanged = { [weak self, weak environment] pane in
+    model.onPaneChanged = { [weak environment] pane in
       // A pane changing IN PLACE — a New Tab becoming Screen Sharing, a rename,
-      // a draft binding its chat — is a local layout write just like adding or
-      // closing a tab, and the descriptor is already persisted by the time this
-      // runs. Bump the same token those structural writes use so the sidebar
-      // re-reads the repository now; otherwise its row keeps the previous name
-      // until an unrelated sync revision happens to arrive, because
-      // `centerLeafGroups` is deliberately not observable and a row rendered
-      // before this leaf's model existed holds no dependency on it.
-      self?.workspaceLayoutRevision += 1
+      // a draft binding its chat — is already persisted by the time this runs,
+      // which updated the workspace's entry the sidebar row observes.
       guard let environment else { return }
       environment.workspaceSync.publishPane(
         pane,
@@ -255,9 +247,7 @@ extension SessionStore {
       // yet. Resolve the live session at pane-creation time so terminals open in
       // the worktree, not the project folder.
       let liveSession = session.map { session in
-        projectList?.sessions.first {
-          $0.serverId == session.serverId && $0.id == session.id
-        } ?? session
+        projectList?.session(session.id, serverId: session.serverId) ?? session
       }
       return PaneContext(
         paneId: descriptor.id,
@@ -343,7 +333,6 @@ extension SessionStore {
       descriptor, workspaceId: workspace.id,
       client: environment.machines.client(for: session.serverId)
     )
-    workspaceLayoutRevision += 1
     return browser.model
   }
 

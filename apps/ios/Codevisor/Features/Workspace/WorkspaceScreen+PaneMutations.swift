@@ -71,12 +71,15 @@ extension WorkspaceScreen {
 
   /// iOS's flat tab order is the device-local layout projection of the
   /// shared pane registry. The Workspace repository is its persistence
-  /// root; `paneState` is only the mounted view's writable cache.
+  /// root; `paneState` is only the mounted view's writable cache. A state
+  /// the workspace already holds is not saved again: the save would change
+  /// nothing but still re-render every view of this workspace.
   func persistCompactPaneState(_ state: PaneGroupState) {
-    guard var workspace = resolvedWorkspace else { return }
+    guard let current = resolvedWorkspace else { return }
+    var workspace = current
     Self.applyCompactPaneState(state, to: &workspace)
+    guard workspace != current else { return }
     environment.workspaces.save(workspace)
-    environment.workspaceSync.noteLocalMutation()
   }
 
   func publishPane(_ pane: PaneDescriptorState) {
@@ -102,11 +105,9 @@ extension WorkspaceScreen {
   /// layout without importing macOS tab order or split placement.
   func synchronizePaneStateFromWorkspace() {
     guard let workspace = resolvedWorkspace else { return }
-    let shared =
-      workspace.centerTabs.flatMap { tab in
-        tab.root.allGroups.flatMap(\.state.panes)
-      }
-    guard !shared.isEmpty else {
+    // One flatten: every pane across the tabs, and the active selection.
+    let shared = Self.compactPaneState(from: workspace)
+    guard !shared.panes.isEmpty else {
       guard !panes.panes.isEmpty else { return }
       let empty = PaneGroupState()
       paneState = empty
@@ -117,18 +118,17 @@ extension WorkspaceScreen {
     var state = panes
     // The repository owns this device's order and selection. Client-control
     // writes must reach an already mounted screen just like sidebar changes.
-    let reconciled = shared
-    for candidate in shared {
-      if let local = state.panes.first(where: { $0.id == candidate.id || Self.sameResource(candidate, $0) }),
-        candidate.id != local.id
-      {
-        paneViewIdentities[candidate.id] = paneViewIdentities[local.id] ?? local.id
-      }
+    // A pane arriving under a new id for a resource already mounted keeps
+    // that mount's identity; panes whose id is unchanged need no lookup.
+    let localIds = Set(state.panes.map(\.id))
+    for candidate in shared.panes where !localIds.contains(candidate.id) {
+      guard let local = state.panes.first(where: { Self.sameResource(candidate, $0) }) else { continue }
+      let identity = paneViewIdentities[local.id] ?? local.id
+      if paneViewIdentities[candidate.id] != identity { paneViewIdentities[candidate.id] = identity }
     }
-    let selected = Self.compactPaneState(from: workspace).selectedPaneId
-    guard reconciled != state.panes || selected != state.selectedPaneId else { return }
-    state.panes = reconciled
-    state.selectedPaneId = selected
+    guard shared.panes != state.panes || shared.selectedPaneId != state.selectedPaneId else { return }
+    state.panes = shared.panes
+    state.selectedPaneId = shared.selectedPaneId
     paneState = state
     persistCompactPaneState(state)
   }

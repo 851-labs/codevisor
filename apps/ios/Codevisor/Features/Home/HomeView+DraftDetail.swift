@@ -32,7 +32,6 @@ extension HomeView {
       anchorSessionId: sessionId,
       preferredChatSessionId: sessionId
     )
-    bumpWorkspaceRevision()
     IOSNavigationDiagnostics.record(
       "home.draftDetail.started",
       "session=\(shortID(sessionId)) workspace=\(shortID(workspaceId)) mode=\(layoutMode)"

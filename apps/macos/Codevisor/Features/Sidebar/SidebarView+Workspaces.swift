@@ -30,15 +30,15 @@ extension SidebarView {
 
   /// Where the workspace lives. Nil when its machine is unknown — an
   /// unresolved server isn't necessarily this one, so it stays unlabeled.
-  func machineName(for item: SidebarWorkspaceListItem) -> String? {
-    let machine = environment.machines.machine(for: item.workspace.serverId)
+  func machineName(forServer serverId: String) -> String? {
+    let machine = environment.machines.machine(for: serverId)
     return machine.map { $0.isLocal ? "This Mac" : $0.name }
   }
 
   private func workspaceHeader(_ item: SidebarWorkspaceListItem) -> some View {
     SidebarWorkspaceHeader(
       name: item.workspace.name,
-      machineName: machineName(for: item),
+      machineName: machineName(forServer: item.workspace.serverId),
       isReordering: isReordering,
       onArchive: { archiveWorkspace(item.workspace) },
       onRename: {
@@ -85,7 +85,6 @@ extension SidebarView {
       // falls through to creating a fresh scratch workspace.
       selectNextChat(serverId: workspace.serverId)
     }
-    workspaceRevision += 1
   }
 
 }

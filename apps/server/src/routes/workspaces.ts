@@ -12,6 +12,8 @@ import {
 import {
   appendAndPublish,
   applyWorkspaceArchiveEffects,
+  captureWorkspaceRuntime,
+  enqueueWorkspaceArchive,
   HttpFailure,
   matchRoute,
   matchRouteParams,
@@ -250,12 +252,16 @@ export const routeWorkspaces = async (
       writeJson(response, 204, undefined)
       return true
     }
-    const wasArchived = existing.isArchived
     const workspace = await run(services.db.updateWorkspace(workspaceId, { isArchived: true }))
-    await applyWorkspaceArchiveEffects(services, fanout, config, routeState, workspace, wasArchived)
+    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
+    // Read what the workspace runs before its chats and panes let go of it;
+    // the teardown itself is queued once the workspace is gone. A workspace
+    // that was already archived is torn down again, which is a no-op after a
+    // finished archive and a retry after a failed one.
+    const runtime = await captureWorkspaceRuntime(services, routeState, workspace)
     // `sessions.workspace_id` has no ON DELETE clause and foreign keys are
     // enforced, so the chats must let go of the workspace before it can be
-    // dropped -- otherwise this raises after the worktree is already gone.
+    // dropped.
     for (const session of await run(services.db.listSessions)) {
       if (session.workspaceId?.toLowerCase() !== workspaceId.toLowerCase()) continue
       await run(services.db.setSessionWorkspace(session.id, null))
@@ -264,6 +270,7 @@ export const routeWorkspaces = async (
     await appendAndPublish(services.db, fanout, "workspace.deleted", workspaceId, {
       id: workspaceId
     })
+    void enqueueWorkspaceArchive(services, fanout, config, workspace, runtime)
     writeJson(response, 204, undefined)
     return true
   }

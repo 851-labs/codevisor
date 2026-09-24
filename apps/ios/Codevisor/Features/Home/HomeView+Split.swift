@@ -43,11 +43,6 @@ extension HomeView {
       }
     }
     .navigationSplitViewStyle(.balanced)
-    // The workspace recorded the tap as its selection; the pending value
-    // has done its job.
-    .onChange(of: splitSelectedRowID) { _, _ in
-      pendingSidebarSelection = nil
-    }
     .onGeometryChange(for: CGFloat.self) { proxy in
       proxy.size.width
     } action: { width in
@@ -75,23 +70,6 @@ extension HomeView {
     sidebarAutoCollapsed = false
     sidebarColumnVisibility = .doubleColumn
     IOSNavigationDiagnostics.record("home.sidebar.restored", "width=\(Int(width))")
-  }
-
-  /// The sidebar list's selection. Reading follows what the detail shows;
-  /// writing opens the tab through the same path a phone row takes.
-  var splitSelection: Binding<UUID?> {
-    Binding(
-      get: { pendingSidebarSelection ?? splitSelectedRowID },
-      set: { id in
-        guard let id,
-          let section = sidebarSections.first(where: { $0.rows.contains { $0.id == id } }),
-          let row = section.rows.first(where: { $0.id == id })
-        else { return }
-        pendingSidebarSelection = id
-        sidebarActions.open(row, section)
-        dismissOverlaySidebarAfterSelection()
-      }
-    )
   }
 
   @ViewBuilder
@@ -161,28 +139,6 @@ extension HomeView {
     detailPath = NavigationPath()
     navigation.select(route)
   }
-
-  /// The pane row highlighted as the split selection. The presented
-  /// workspace's persisted selection is what the detail actually shows, so
-  /// it wins: a New Tab, a conversion, a close, or an agent navigating the
-  /// workspace all move it without changing Home's route. The route only
-  /// stands in before the workspace has recorded a selection.
-  var splitSelectedRowID: UUID? {
-    guard layoutMode == .split else { return nil }
-    // Repository reads are not observable; these tokens re-read on writes.
-    _ = workspaceRevision
-    _ = environment.workspaceSync.revision
-    if let presented = navigation.presentedWorkspace,
-      let workspace = environment.workspaces.workspace(id: presented.workspaceId),
-      let tab = workspace.selectedCenterTab,
-      let paneId = tab.root.group(id: tab.activeLeafId)?.selectedPaneId
-    {
-      return paneId
-    }
-    return navigation.selectedPaneId { chatId in
-      sidebarSections.lazy.flatMap(\.rows).first { $0.chatSessionId == chatId }?.id
-    }
-  }
 }
 
 /// The `WorkspaceScreen` inputs for a detail route, resolved without side
@@ -210,11 +166,10 @@ struct HomeDetailParameters {
       self.preferredChatSessionId = preferredChatSessionId
       self.preferredPaneId = preferredPaneId
       self.preferredLeafId = preferredLeafId
-      initialController = projectList.sessions.first(where: {
-        $0.serverId == serverId && $0.id == anchorSessionId
-      }).flatMap { session in
-        ChatControllerCache.shared.existingController(sessionId: session.id, serverId: serverId)
-      }
+      initialController = anchorSessionId.flatMap { projectList.session($0, serverId: serverId) }
+        .flatMap { session in
+          ChatControllerCache.shared.existingController(sessionId: session.id, serverId: serverId)
+        }
       isDraft = false
     }
   }

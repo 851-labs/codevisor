@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
+import { archiveJobs } from "../archive-jobs.js"
 import { makeEventFanout, type RouteState } from "../server.js"
 import { jsonRequest, run, start, tempDirs, idleRestartCoordinator } from "../test-support.js"
 import { drainPromptQueue } from "./prompt-queue.js"
@@ -185,9 +186,10 @@ describe("workspace process cleanup", () => {
         })
       ).status
     ).toBe(200)
+    await archiveJobs(services).idle()
     expect(kill).toHaveBeenCalledOnce()
   })
-  it("publishes archive immediately and waits for a manual terminal without a chat", async () => {
+  it("answers an archive before a manual terminal without a chat has stopped", async () => {
     const { server, services, folder } = await setup()
     await jsonRequest(server, "/v1/workspaces/work", {
       method: "PUT",
@@ -218,22 +220,18 @@ describe("workspace process cleanup", () => {
       { sessionId: "another-worktree" },
       { stop: unrelated, kill: vi.fn(), write: vi.fn(), resize: vi.fn() }
     )
-    let finished = false
-    const archived = jsonRequest(server, "/v1/workspaces/work", {
-      method: "PATCH",
-      body: JSON.stringify({ isArchived: true })
-    }).then((result) => {
-      finished = true
-      return result
-    })
     try {
-      await Promise.race([
-        started.promise,
-        archived.then((result) => {
-          throw new Error(`Archive ended before cleanup started: ${JSON.stringify(result)}`)
-        })
-      ])
-      expect(finished).toBe(false)
+      // Clients send one request at a time, so the archive must not hold the
+      // connection while a process takes its time to exit.
+      expect(
+        (
+          await jsonRequest(server, "/v1/workspaces/work", {
+            method: "PATCH",
+            body: JSON.stringify({ isArchived: true })
+          })
+        ).status
+      ).toBe(200)
+      await started.promise
       expect(
         (await run(services.db.listEvents(0))).some(
           (event) =>
@@ -252,7 +250,7 @@ describe("workspace process cleanup", () => {
     } finally {
       cleanup.resolve()
     }
-    expect((await archived).status).toBe(200)
+    await archiveJobs(services).idle()
     expect(stop).toHaveBeenCalledOnce()
     expect(unrelated).not.toHaveBeenCalled()
   })
@@ -331,24 +329,17 @@ describe("workspace process cleanup", () => {
         }
       })
     )
-    const archive = jsonRequest(server, "/v1/workspaces/work", {
-      method: "PATCH",
-      body: JSON.stringify({ isArchived: true })
-    })
-    let duplicate: ReturnType<typeof jsonRequest> | undefined
-    try {
-      await Promise.race([
-        started.promise,
-        archive.then((result) => {
-          throw new Error(`Archive ended before cleanup started: ${JSON.stringify(result)}`)
-        })
-      ])
-      // A second archive of the same workspace lands while the first is still
-      // tearing down: the retry must be a no-op, not a second snapshot.
-      duplicate = jsonRequest(server, "/v1/workspaces/work", {
+    const archive = () =>
+      jsonRequest(server, "/v1/workspaces/work", {
         method: "PATCH",
         body: JSON.stringify({ isArchived: true })
       })
+    try {
+      expect((await archive()).status).toBe(200)
+      await started.promise
+      // A second archive of the same workspace lands while the first is still
+      // tearing down: the retry must be a no-op, not a second snapshot.
+      expect((await archive()).status).toBe(200)
       expect(existsSync(join(worktree.path, "changes.txt"))).toBe(true)
       expect(
         (await run(services.db.listWorkspaces)).every((workspace) => workspace.isArchived)
@@ -364,8 +355,8 @@ describe("workspace process cleanup", () => {
     } finally {
       cleanup.resolve()
     }
-    expect((await archive).status).toBe(200)
-    expect((await duplicate)?.status).toBe(200)
+    await archiveJobs(services).idle()
     expect(existsSync(worktree.path)).toBe(false)
+    expect(await run(services.db.listArchivedWorktrees("git-project"))).toHaveLength(1)
   })
 })

@@ -30,7 +30,6 @@ extension SessionContainerView {
       workspace.centerTabs[index].activeLeafId = first
     }
     environment.workspaces.save(workspace)
-    workspaceRevision += 1
   }
 
   func handleWorkspaceCommand(_ command: PaneGroupCommand) -> Bool {
@@ -102,7 +101,6 @@ extension SessionContainerView {
     store.selectDestination(.leaf(newLeafId), in: workspace.id)
     withAnimation(Motion.split(reduceMotion: reduceMotion)) {
       openingSplit = opening
-      workspaceRevision += 1
       liveCenterTree = workspace.centerTabs[tabIndex].root
     }
     publishPane(pane, workspaceId: workspace.id)
@@ -142,7 +140,6 @@ extension SessionContainerView {
     workspace.centerTabs[tabIndex].root = moved
     workspace.centerTabs[tabIndex].activeLeafId = sourceLeafId
     environment.workspaces.save(workspace)
-    workspaceRevision += 1
     liveCenterTree = moved
     activateLeaf(sourceLeafId)
 
@@ -207,9 +204,7 @@ extension SessionContainerView {
     guard let descriptor = model.state.selectedPane else { return }
     if descriptor.kind == .chat,
       let chatId = descriptor.chatSessionId,
-      let chat = environment.projectList.sessions.first(where: {
-        $0.serverId == selectedWorkspace.serverId && $0.id == chatId
-      })
+      let chat = environment.projectList.session(chatId, serverId: selectedWorkspace.serverId)
     {
       environment.projectList.renameSession(chat, to: trimmed)
     } else {

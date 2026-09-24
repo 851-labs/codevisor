@@ -13,13 +13,23 @@ import Observation
 @MainActor
 @Observable
 public final class NavigationStore {
-  public private(set) var projection = NavigationProjection.empty
-  /// Advances on every rebuild; views that read workspaces observe it.
+  /// Not observed: views read the narrow per-workspace entries and the row
+  /// lists instead, so a change to one workspace re-renders only its views.
+  @ObservationIgnored public private(set) var projection = NavigationProjection.empty
+  /// Which machines have a cache, and whether it is empty. What the launch
+  /// screen and sync indicator depend on -- it changes only when a cache
+  /// appears, disappears, or becomes empty or not, never on ordinary events.
+  public private(set) var cacheSummary: [String: Bool] = [:]
+  /// Advances on every rebuild. A wake-up signal for code that waits for the
+  /// store to settle; views must not read it -- it changes on every event.
   public private(set) var revision: UInt64 = 0
 
+  /// One observable entry per workspace; views observe these, not the store.
+  @ObservationIgnored public let workspaceEntries = NavigationWorkspaces()
   @ObservationIgnored let layouts: DeviceLayoutStore
   @ObservationIgnored let executor: NavigationOutboxExecutor
   @ObservationIgnored private let caches: NavigationCacheStore
+  @ObservationIgnored private let projector = NavigationProjector()
   @ObservationIgnored private let outbox: NavigationOutbox
   @ObservationIgnored private weak var projectList: ProjectListModel?
   @ObservationIgnored private weak var repository: ProjectedWorkspaceRepository?
@@ -46,14 +56,20 @@ public final class NavigationStore {
   func attach(projectList: ProjectListModel, repository: ProjectedWorkspaceRepository) {
     self.projectList = projectList
     self.repository = repository
+    workspaceEntries.lookup = { [weak repository] in repository?.workspace(id: $0) }
     rebuild()
   }
 
   // MARK: - Server state
 
-  public func hasCache(for machineId: String) -> Bool { caches.caches[machineId] != nil }
+  public func hasCache(for machineId: String) -> Bool { cacheSummary[machineId] != nil }
 
-  public func isCacheEmpty(for machineId: String) -> Bool { caches.caches[machineId]?.isEmpty ?? true }
+  public func isCacheEmpty(for machineId: String) -> Bool { cacheSummary[machineId] ?? true }
+
+  private func refreshCacheSummary() {
+    let next = caches.caches.mapValues(\.isEmpty)
+    if next != cacheSummary { cacheSummary = next }
+  }
 
   public var cachedMachineIds: Set<String> { Set(caches.caches.keys) }
 
@@ -147,23 +163,23 @@ public final class NavigationStore {
     outbox.retireExpectedSessions(machineId: machineId, listed: Set(cache.sessions.map(\.id)))
   }
 
-  /// Recomputes everything navigation shows from the three stores.
+  /// Brings what navigation shows up to date with the three stores,
+  /// recomputing only the machines and workspaces that changed.
   func rebuild(origin: SessionAttentionTransition.Origin = .snapshot) {
     let machineIds = Set(caches.caches.keys).union(outbox.entries.map(\.machineId))
-    let records = machineIds.sorted().map { machineId in
-      var records = NavigationRecords(caches.caches[machineId])
-      NavigationOverlay.apply(outbox.entries(for: machineId), to: &records)
-      return (machineId: machineId, records: records)
-    }
-    let result = NavigationProjectionBuilder.build(records: records, layouts: layouts)
-    for (id, layout) in result.reconciledLayouts { layouts.setLayout(layout, for: id) }
+      .union(layouts.drafts.map(\.serverId)).sorted()
+    let result = projector.project(
+      machineIds: machineIds, cache: { self.caches.caches[$0] }, cacheGeneration: { self.caches.generations[$0] },
+      entries: { self.outbox.entries(for: $0) }, layouts: layouts)
     var promotedMachineIds = Set<String>()
     for draft in layouts.drafts where result.projection.workspacesById[draft.id]?.isServerSynced == true {
       layouts.promoteDraft(id: draft.id)
       promotedMachineIds.insert(draft.serverId)
     }
     projection = result.projection
-    repository?.install(result.projection)
+    refreshCacheSummary()
+    repository?.install(
+      result.projection, changed: result.changedWorkspaceIds, removed: result.removedWorkspaceIds)
     projectList?.applyProjection(
       projects: result.projection.projects, sessions: result.projection.sessions, origin: origin)
     revision &+= 1

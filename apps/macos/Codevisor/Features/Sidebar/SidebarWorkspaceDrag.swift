@@ -95,7 +95,7 @@ extension SidebarView {
 
   private func moveDraggedWorkspace() {
     guard let drag = workspaceDrag, !drag.isSettling else { return }
-    let order = workspaceItems.map(\.workspace.id)
+    let order = visibleSidebarItems.map(\.id)
     let sections = workspaceGeometry.frames.compactMapValues {
       $0.section == .zero ? nil : $0.section
     }
@@ -123,12 +123,12 @@ extension SidebarView {
   @ViewBuilder
   var workspaceReorderGhost: some View {
     if let drag = workspaceDrag,
-      let item = workspaceItems.first(where: { $0.workspace.id == drag.workspaceID })
+      let workspace = environment.navigationStore.workspaceEntries.entry(drag.workspaceID).workspace
     {
       let frame = drag.ghostFrame
       SidebarWorkspaceDragGhost(
-        name: item.workspace.name,
-        machineName: machineName(for: item)
+        name: workspace.name,
+        machineName: machineName(forServer: workspace.serverId)
       )
       .frame(width: frame.width, height: frame.height)
       .position(x: frame.midX, y: frame.midY)

@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
 import { makeGitRepo } from "./git-test-support.js"
-import { addWorktree, listCodevisorWorktreeBranchNames, removeWorktree, runGit } from "./git.js"
+import { addWorktree, listCodevisorWorktreeBranchNames, runGit } from "./git.js"
 import {
   chooseRestoreName,
   deleteSnapshot,
@@ -24,7 +24,11 @@ import {
 /// covered by the server's own reconciler tests.
 const archive = async (repo: string, path: string, id: string, name: string) => {
   const snapshot = await snapshotWorktree(repo, path, id)
-  await removeArchivedWorktreeFiles(repo, path, `codevisor/${name}`, removeWorktree)
+  const trashed = await removeArchivedWorktreeFiles(repo, path, `codevisor/${name}`, {
+    trashRoot: join(dirname(path), ".trash"),
+    worktreeId: id
+  })
+  await trashed.purged
   return snapshot
 }
 

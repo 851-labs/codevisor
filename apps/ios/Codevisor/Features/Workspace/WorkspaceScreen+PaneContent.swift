@@ -12,7 +12,8 @@ extension WorkspaceScreen {
     Binding(
       get: { panes },
       set: { newValue in
-        paneState = newValue
+        // Unchanged writes neither invalidate the screen nor save.
+        if paneState != newValue { paneState = newValue }
         persistCompactPaneState(newValue)
       }
     )

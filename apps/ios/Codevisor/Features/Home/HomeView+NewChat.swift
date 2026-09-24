@@ -221,9 +221,7 @@ extension HomeView {
     preferredPaneId: UUID? = nil,
     preferredLeafId: UUID? = nil
   ) -> some View {
-    let controller = projectList.sessions.first(where: {
-      $0.serverId == serverId && $0.id == anchorSessionId
-    }).flatMap { session in
+    let controller = anchorSessionId.flatMap { projectList.session($0, serverId: serverId) }.flatMap { session in
       ChatControllerCache.shared.existingController(
         sessionId: session.id,
         serverId: serverId

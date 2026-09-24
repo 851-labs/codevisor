@@ -11,7 +11,26 @@ import Observation
 @Observable
 public final class ProjectListModel {
   public internal(set) var projects: [Project] = []
-  public internal(set) var sessions: [ChatSession] = []
+  public internal(set) var sessions: [ChatSession] = [] {
+    didSet { sessionPositions = Self.positions(of: sessions) }
+  }
+  /// Where each chat sits in `sessions`, so looking one up is O(1) instead
+  /// of a scan -- lookups run inside view bodies and per-row loops.
+  @ObservationIgnored private var sessionPositions: [SessionKey: Int] = [:]
+
+  struct SessionKey: Hashable {
+    let serverId: String
+    let id: UUID
+  }
+
+  private static func positions(of sessions: [ChatSession]) -> [SessionKey: Int] {
+    var positions: [SessionKey: Int] = [:]
+    positions.reserveCapacity(sessions.count)
+    for (index, session) in sessions.enumerated() {
+      positions[SessionKey(serverId: session.serverId, id: session.id)] = index
+    }
+    return positions
+  }
   public private(set) var selectedServerId: String
   /// Fires whenever a session's attention state changes, from every path
   /// that can change it (live events, snapshots, local mutations).
@@ -33,8 +52,8 @@ public final class ProjectListModel {
     navigationStore?.enqueue(intent, machineId: serverId, origin: origin)
   }
 
-  func session(_ id: UUID, serverId: String) -> ChatSession? {
-    sessions.first { $0.serverId == serverId && $0.id == id }
+  public func session(_ id: UUID, serverId: String) -> ChatSession? {
+    sessionPositions[SessionKey(serverId: serverId, id: id)].map { sessions[$0] }
   }
 
   /// The chat as it will look once waiting changes land: a chat that is

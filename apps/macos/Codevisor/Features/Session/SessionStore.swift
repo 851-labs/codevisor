@@ -73,6 +73,8 @@ final class SessionStore {
     let groupId: UUID
   }
   @ObservationIgnored var centerLeafGroups: [CenterLeafKey: PaneGroupModel] = [:]
+  /// The groups' live browser pages by pane id.
+  @ObservationIgnored let browserPanes = BrowserPaneIndex()
   /// One live unsent new-chat draft per machine, mirrored to disk by
   /// `ComposerDraftStore`. A controller permanently owns the server client
   /// it was created with, so reusing a draft after a machine switch can send
@@ -99,14 +101,12 @@ final class SessionStore {
   /// Whether this store's window is key. A selected chat behind Settings or
   /// another Codevisor window is not the focused chat.
   var isWindowFocused = false
-  /// Bumped by a mounted workspace container after it writes workspace
-  /// LAYOUT (tabs added/closed/moved/selected). The repository is not
-  /// observable; this tells the sidebar to re-read its tab rows.
-  var workspaceLayoutRevision = 0
   /// Window-local navigation ownership, updated before panes mount or unmount.
   var navigationWorkspaceId: UUID? {
     get { attentionFocus.workspaceId }
     set {
+      // Re-committing the same destination must not rewrite observed focus.
+      guard newValue != attentionFocus.workspaceId else { return }
       attentionFocus.selectWorkspace(newValue)
       publishFocus()
     }
@@ -140,11 +140,9 @@ final class SessionStore {
   /// Session ids in access order, most recent last — drives controller
   /// eviction so browsing many sessions doesn't accumulate every transcript
   /// ever opened (conversations retain full tool outputs and diffs).
-  /// OBSERVATION-IGNORED, deliberately: `controller(for:)` bumps this
-  /// during view bodies (each chat pane resolves its controller there), and
-  /// an observed write per body evaluation makes two chat panes invalidate
-  /// each other forever — a main-thread render loop (beachball). No view
-  /// reads it; it's pure LRU bookkeeping.
+  /// OBSERVATION-IGNORED, deliberately: chat views bump this as they
+  /// appear, and an observed write would invalidate every view showing a
+  /// chat. No view reads it; it's pure LRU bookkeeping.
   @ObservationIgnored var accessOrder: [SessionKey] = []
   /// How many idle (not open, not working, no background tasks/goal)
   /// controllers stay cached before the least-recently-used are evicted.
@@ -188,7 +186,9 @@ final class SessionStore {
   }
 
   /// Returns the cached controller for a session, creating + configuring it
-  /// (resume id, harness, persistence callback) if needed.
+  /// (resume id, harness, persistence callback) if needed. Views call this
+  /// while rendering, so it never touches recency or evicts: the view that
+  /// shows the chat records the access afterwards with `noteAccess`.
   func controller(for session: ChatSession, project: Project) -> SessionController {
     let key = SessionKey(session)
     // Registration is the durable draft -> live boundary. A first send
@@ -198,7 +198,6 @@ final class SessionStore {
     // second empty controller and its optimistic row appears only when the
     // agent id later forces lookup back through this cache.
     if let existing = controllers[key] {
-      noteAccess(key)
       // Cached lookup runs during view construction and must remain a
       // pure identity read. Observed controller state is reconciled by
       // explicit post-render lifecycle callbacks below.
@@ -223,7 +222,6 @@ final class SessionStore {
       )
     }
 
-    noteAccess(key)
     let workspaceId = environment.workspaces.workspaceId(forSession: session.id)
     let controller = SessionController(
       project: project,

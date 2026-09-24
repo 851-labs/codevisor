@@ -29,23 +29,18 @@ extension HomeView {
     }
   }
 
-  /// Machines this device knows about. Their cached workspaces show
-  /// immediately at launch; records from a machine that has since been
-  /// removed do not.
-  var knownMachineIDs: Set<String> {
-    Set(machines.allMachines.map(\.id))
-  }
-
   /// What Home shows, from what the device already knows: cached content
   /// right away, a spinner only when nothing is cached anywhere, and
-  /// "No Workspaces" only once every machine has said so.
-  var launch: NavigationPresentation.Launch {
-    environment.navigationLaunch(hasVisibleContent: !sidebarSections.isEmpty)
+  /// "No Workspaces" only once every machine has said so. Precomputed by
+  /// `HomeNavigationPresentationObserver`; only the very first body, before
+  /// its first value lands, derives it here.
+  private var presentation: HomeNavigationPresentation {
+    navigationPresentation ?? .current(in: environment)
   }
 
-  var syncIndicator: NavigationPresentation.SyncIndicator {
-    environment.navigationSyncIndicator
-  }
+  var launch: NavigationPresentation.Launch { presentation.launch }
+
+  var syncIndicator: NavigationPresentation.SyncIndicator { presentation.syncIndicator }
 
   /// The machines that failed, named — "your machines" while none have.
   var failedSyncMachineNames: String {

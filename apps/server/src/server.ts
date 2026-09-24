@@ -5,6 +5,7 @@ import type { AddressInfo, Socket } from "node:net"
 import { Effect } from "effect"
 import { WebSocketServer } from "ws"
 
+import { archiveJobs } from "./archive-jobs.js"
 import type { BootListener } from "./boot-listener.js"
 import { makeAttentionSettleScheduler } from "./infra/attention-settle.js"
 import { BrowserProxy } from "./infra/browser-proxy.js"
@@ -310,6 +311,10 @@ export const makeCodevisorServerApp = (
       // Every listener above is detached synchronously, so no new background
       // work can start; awaiting the last reconcile drains what is in flight.
       await sharedAccountReconcile
+      // Archive teardown outlives the request that started it. Finish it
+      // before the database closes so a half-done archive is not left for
+      // the next boot.
+      await archiveJobs(services).jobsFinished()
     })
   }
   return app
@@ -417,7 +422,7 @@ export const startCodevisorServer = (
             // archives, drop worktree rows whose files are gone, and prune
             // snapshot refs nothing can restore. Off the boot path and
             // best-effort — housekeeping must never keep the server down.
-            void reconcileWorktreeArchives(services, config).catch(swallowError)
+            void reconcileWorktreeArchives(services, fanout, config).catch(swallowError)
             resolve({
               host: config.host,
               port,

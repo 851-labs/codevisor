@@ -14,7 +14,6 @@ extension WorkspaceSyncModel {
       workspace.closingPaneLocally(id: id) != nil
     else { return }
     repository.save(workspace)
-    noteLocalMutation()
     deletePane(id: id, workspaceId: workspaceId)
   }
 }

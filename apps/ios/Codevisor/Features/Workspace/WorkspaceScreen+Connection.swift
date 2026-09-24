@@ -47,6 +47,8 @@ extension WorkspaceScreen {
         state.selectPane(id: preferredPaneId)
       }
       paneState = state
+      // A no-op when the route asked for the pane the workspace already
+      // shows, so the push animation isn't racing a save.
       persistCompactPaneState(state)
       if let explicitlyOpenedPane {
         publishPane(explicitlyOpenedPane)
@@ -156,7 +158,7 @@ extension WorkspaceScreen {
         projectId: project.id,
         rootDirectory: session.cwd ?? project.folderURL.path,
         worktreeName: session.worktreeName,
-        assignedWorkspaceId: environment.projectList.workspaceAssignments(for: session.serverId)[session.id]
+        assignedWorkspaceId: environment.projectList.workspaceId(forSession: session.id)
       ),
       legacyGroups: environment.paneGroups
     )
@@ -186,7 +188,6 @@ extension WorkspaceScreen {
     var paneWorkspace = workspace
     Self.applyCompactPaneState(state, to: &paneWorkspace)
     environment.workspaces.save(paneWorkspace)
-    environment.workspaceSync.noteLocalMutation()
     if isNewChatPresentation {
       // Home drives the live sheet's chrome with its promotion phase.
       // Preserve this pane identity until the canonical route takes over

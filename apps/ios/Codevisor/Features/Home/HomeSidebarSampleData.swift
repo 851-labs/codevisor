@@ -21,11 +21,11 @@
       var body: some View {
         HomeSidebarList(
           sections: sections,
-          actions: HomeSidebarActions(reorder: { _, ids in
-            let byID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
-            sections = ids.compactMap { byID[$0] }
-          }),
-          refresh: {}
+          actions: HomeSidebarActionHandler(
+            HomeSidebarActions(reorder: { _, ids in
+              let byID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
+              sections = ids.compactMap { byID[$0] }
+            }))
         )
         .accessibilityIdentifier("sample-sidebar")
         .accessibilityValue(sections.map(\.name).joined(separator: ","))

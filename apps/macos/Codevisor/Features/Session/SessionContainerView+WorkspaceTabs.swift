@@ -10,10 +10,7 @@ extension SessionContainerView {
   /// that content identity instead of leaving their creation-time snapshot
   /// in front of repository truth.
   func synchronizeMountedPaneGroups() {
-    let workspace = selectedWorkspace
-    if store.reconcileMountedPaneGroups(in: workspace) {
-      workspaceRevision += 1
-    }
+    store.reconcileMountedPaneGroups(in: selectedWorkspace)
   }
 
   func activeCenterModel(in workspace: Workspace) -> PaneGroupModel {
@@ -98,7 +95,6 @@ extension SessionContainerView {
       store.evictCenterLeaf(workspaceId: workspace.id, leafId: leaf.id)
     }
     environment.workspaces.save(workspace)
-    workspaceRevision += 1
     liveCenterTree = workspace.centerTree
     if closesSelectedTab {
       activateLeaf(workspace.selectedCenterTab?.activeLeafId)

@@ -29,7 +29,6 @@ extension SessionStore {
     }
     environment.workspaceSync.publishPane(
       pane, workspaceId: workspace.id, client: environment.machines.client(for: session.serverId))
-    workspaceLayoutRevision += 1
     switch destination {
     case .backgroundTab: break
     case .foregroundTab, .split:

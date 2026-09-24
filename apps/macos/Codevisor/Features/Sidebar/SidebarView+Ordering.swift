@@ -6,7 +6,7 @@ extension SidebarView {
   /// Applies a live reorder while a header is dragged. Each call persists
   /// optimistically; the sync model coalesces the server writes.
   func moveWorkspace(_ sourceID: UUID, toIndex index: Int) {
-    let ids = workspaceItems.map(\.workspace.id)
+    let ids = visibleSidebarItems.map(\.id)
     let reordered = ListReorder.moving(sourceID, to: index, in: ids)
     guard reordered != ids,
       let workspace = environment.workspaces.workspace(id: sourceID)

@@ -58,32 +58,15 @@ extension HomeView {
         projectId: session.projectId,
         rootDirectory: session.cwd ?? project?.folderURL.path,
         worktreeName: session.worktreeName,
-        assignedWorkspaceId: projectList.workspaceAssignments(for: session.serverId)[session.id]
+        assignedWorkspaceId: projectList.workspaceId(forSession: session.id)
       ),
       legacyGroups: environment.paneGroups
     )
   }
 
-  /// Shared Core policy decides whether the current route remains valid,
-  /// moves to a surviving sibling chat, or leaves the workspace entirely.
-  var presentedWorkspaceDisposition: WorkspaceRouteDisposition {
-    _ = environment.workspaceSync.revision
-    guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = path.last else {
-      return .keep
-    }
-    guard let anchorSessionId else {
-      guard let workspace = environment.workspaces.workspace(id: workspaceId),
-        workspace.serverId == serverId, !workspace.isArchived
-      else { return .dismiss }
-      return .keep
-    }
-    return environment.workspaceSync.routeDisposition(
-      workspaceId: workspaceId,
-      anchorSessionId: anchorSessionId,
-      serverId: serverId
-    )
-  }
-
+  /// Applies the shared Core route policy, which
+  /// `HomePresentedWorkspaceObserver` evaluates whenever the presented
+  /// workspace or its anchor chat changes.
   func applyPresentedWorkspaceDisposition(_ disposition: WorkspaceRouteDisposition) {
     guard case let .workspace(serverId, workspaceId, anchorSessionId, _, _, _)? = path.last else {
       return
@@ -128,14 +111,6 @@ extension HomeView {
       !project.isScratch
     else { return nil }
     return project.name
-  }
-
-  /// Fallback SF symbol from the machine's cached capabilities, for
-  /// harnesses without a bundled brand icon.
-  func harnessSymbol(for session: ChatSession) -> String {
-    environment.configCache.capabilities(forServer: session.serverId)
-      .first { $0.harness.id == session.harnessId }?
-      .harness.symbolName ?? "cpu"
   }
 
   /// No machine paired (all machines removed): everything routes back

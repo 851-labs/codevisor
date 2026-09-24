@@ -292,12 +292,6 @@ struct RootView: View {
         store.clearOpenSession()
       }
     }
-    // A server refresh can invalidate the route from another device.
-    // Apply the shared sibling-or-dismiss policy even though the archived
-    // session remains in the local model for the archive section.
-    .onChange(of: selectedSessionDisposition, initial: true) { _, disposition in
-      applySelectedSessionDisposition(disposition)
-    }
     .onChange(of: controlActiveState, initial: true) { _, state in
       store?.setWindowFocused(state == .key)
     }
@@ -388,27 +382,14 @@ struct RootView: View {
   }
 
   private func openNotificationSession(_ sessionId: UUID, serverId: String) {
-    guard
-      let session = environment.projectList.sessions.first(where: {
-        $0.serverId == serverId && $0.id == sessionId
-      })
-    else { return }
+    guard let session = environment.projectList.session(sessionId, serverId: serverId) else { return }
     store?.selectChat(session)
     selection = .session(serverId: serverId, id: sessionId)
   }
 
   /// Shared Core policy keeps both native navigation surfaces aligned when
-  /// an event archives, unarchives, moves, or removes the current chat.
-  private var selectedSessionDisposition: WorkspaceRouteDisposition {
-    guard case let .session(serverId, sessionId) = selection else { return .keep }
-    _ = environment.workspaceSync.revision
-    return environment.workspaceSync.routeDisposition(
-      sessionId: sessionId,
-      serverId: serverId,
-      preservingSelectedPane: true
-    )
-  }
-
+  /// an event archives, unarchives, moves, or removes the current chat. The
+  /// chat route computes it when its chat or workspace changes.
   private func applySelectedSessionDisposition(_ disposition: WorkspaceRouteDisposition) {
     guard case let .session(serverId, sessionId) = selection else { return }
     switch disposition {
@@ -416,9 +397,7 @@ struct RootView: View {
       break
     case let .selectSession(replacementId):
       guard replacementId != sessionId else { return }
-      if let replacement = environment.projectList.sessions.first(where: {
-        $0.serverId == serverId && $0.id == replacementId
-      }) {
+      if let replacement = environment.projectList.session(replacementId, serverId: serverId) {
         store?.selectChat(replacement)
       }
       selection = .session(serverId: serverId, id: replacementId)
@@ -498,80 +477,40 @@ struct RootView: View {
     }
   }
 
-  @ViewBuilder
   private func sessionDetail(
     _ store: SessionStore,
     serverId: String,
     sessionId: UUID
   ) -> some View {
-    if let session = environment.projectList.sessions.first(where: {
-      $0.serverId == serverId && $0.id == sessionId
-    }),
-      let project = environment.projectList.projects.first(where: {
-        $0.serverId == serverId && $0.id == session.projectId
-      })
-    {
-      let controller = store.controller(for: session, project: project)
-      SessionContainerView(
-        mount: .chat(session, controller),
-        project: project,
-        store: store,
-        onFocusedChatChanged: { chatId in
-          self.selection = .session(serverId: serverId, id: chatId)
-        }
-      )
-      .id(
-        "\(session.serverId):\((environment.workspaces.workspaceId(forSession: session.id) ?? session.id).uuidString)"
-      )
-      .onChange(of: session, initial: true) { _, updatedSession in
-        store.reconcile(controller, for: updatedSession, project: project)
+    SessionRouteView(
+      store: store,
+      serverId: serverId,
+      sessionId: sessionId,
+      onFocusedChatChanged: { chatId in
+        self.selection = .session(serverId: serverId, id: chatId)
+      },
+      onDisposition: { disposition in
+        // The route reports for the chat it shows; a stale report from a
+        // route being replaced must not act on the new selection.
+        guard selection == .session(serverId: serverId, id: sessionId) else { return }
+        applySelectedSessionDisposition(disposition)
       }
-      .onChange(of: project) { _, updatedProject in
-        store.reconcile(controller, for: session, project: updatedProject)
-      }
-    } else {
-      ContentUnavailableView(
-        "Chat Unavailable",
-        systemImage: "bubble.left.and.exclamationmark.bubble.right",
-        description: Text("This chat is no longer available on its machine.")
-      )
-    }
+    )
   }
 
-  /// A workspace shown without a chat: the same container, mounted on the
-  /// workspace itself. Its panes, splits, toolbar and New Tab page are the
-  /// shared ones; nothing here creates a session, a worktree or an agent.
-  @ViewBuilder
   private func workspaceDetail(
     _ store: SessionStore,
     serverId: String,
     workspaceId: UUID
   ) -> some View {
-    if let workspace = environment.workspaces.workspace(id: workspaceId),
-      workspace.serverId == serverId,
-      let project = environment.projectList.projects.first(where: {
-        $0.serverId == serverId && $0.id == workspace.projectId
-      })
-    {
-      SessionContainerView(
-        mount: .workspace(workspace),
-        project: project,
-        store: store,
-        // The moment a chat exists in this workspace (New Tab → New Chat), the
-        // selection moves to it: the container remounts as `.chat`, which is
-        // what upgrades the cached leaf group and restores chat affordances.
-        onFocusedChatChanged: { chatId in
-          self.selection = .session(serverId: serverId, id: chatId)
-        }
-      )
-      .id("\(serverId):\(workspaceId.uuidString)")
-    } else {
-      ContentUnavailableView(
-        "Workspace Unavailable",
-        systemImage: "rectangle.on.rectangle.slash",
-        description: Text("This workspace is no longer available on its machine.")
-      )
-    }
+    WorkspaceRouteView(
+      store: store,
+      serverId: serverId,
+      workspaceId: workspaceId,
+      onFocusedChatChanged: { chatId in
+        self.selection = .session(serverId: serverId, id: chatId)
+      }
+    )
   }
 
   /// The standalone new-chat page. Creates NOTHING until the first message

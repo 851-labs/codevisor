@@ -15,6 +15,11 @@ extension ProjectListModel {
 
   /// The server's workspace assignment for every chat on a machine, with
   /// waiting changes applied. Empty is valid for unassigned chats.
+  /// The workspace a chat belongs to, in O(1).
+  public func workspaceId(forSession sessionId: UUID) -> UUID? {
+    navigationStore?.projection.sessionIndex[sessionId]
+  }
+
   public func workspaceAssignments(for serverId: String) -> [UUID: UUID] {
     guard let projection = navigationStore?.projection else { return [:] }
     var assignments: [UUID: UUID] = [:]

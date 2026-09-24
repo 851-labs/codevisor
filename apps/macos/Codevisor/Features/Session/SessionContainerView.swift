@@ -12,9 +12,11 @@ struct SessionContainerView: View {
   /// call site has to invent a session to show a workspace.
   enum Mount {
     /// Resolved synchronously with the navigation selection so the destination
-    /// shell never waits for this view's asynchronous setup task to run.
-    case chat(ChatSession, SessionController)
-    /// The mount-time snapshot; the live record is re-read from the repository.
+    /// shell never waits for this view's asynchronous setup task to run. The
+    /// workspace is the one the route chose for the chat (created there for
+    /// a brand-new chat), as a snapshot like `.workspace`.
+    case chat(ChatSession, SessionController, Workspace)
+    /// The mount-time snapshot; the live record is the workspace's entry.
     case workspace(Workspace)
   }
 
@@ -25,11 +27,11 @@ struct SessionContainerView: View {
   /// The anchor chat, when there is one. Chat focus, read and open reporting,
   /// and anything keyed by a session identity, all go through this.
   var session: ChatSession? {
-    if case let .chat(session, _) = mount { return session }
+    if case let .chat(session, _, _) = mount { return session }
     return nil
   }
   var controller: SessionController? {
-    if case let .chat(_, controller) = mount { return controller }
+    if case let .chat(_, controller, _) = mount { return controller }
     return nil
   }
   /// Fired when the user's focus lands in a DIFFERENT chat of this
@@ -64,29 +66,34 @@ struct SessionContainerView: View {
   /// Re-runs the container's setup task when the mounted thing changes.
   var mountIdentity: UUID {
     switch mount {
-    case let .chat(session, _): return session.id
+    case let .chat(session, _, _): return session.id
     case let .workspace(snapshot): return snapshot.id
     }
   }
 
-  var selectedWorkspace: Workspace {
-    let _ = (workspaceRevision, store.workspaceLayoutRevision, environment.workspaceSync.revision)
+  /// The workspace as the route chose it. Its id never changes for this
+  /// container (the route remounts on a different workspace).
+  var mountedWorkspace: Workspace {
     switch mount {
-    case let .chat(session, _):
-      return store.workspace(for: session, project: project)
-    case let .workspace(snapshot):
-      // The repository owns the live record; the snapshot covers the window
-      // between a remote deletion and the selection moving away.
-      return environment.workspaces.workspace(id: snapshot.id) ?? snapshot
+    case let .chat(_, _, workspace), let .workspace(workspace): workspace
     }
+  }
+
+  /// This workspace's observable entry: reading it re-renders the container
+  /// when -- and only when -- this workspace changes.
+  var workspaceEntry: WorkspaceEntry {
+    environment.navigationStore.workspaceEntries.entry(mountedWorkspace.id)
+  }
+
+  /// The live record, an O(1) read. The snapshot covers the window between
+  /// a remote deletion and the selection moving away.
+  var selectedWorkspace: Workspace {
+    workspaceEntry.workspace ?? mountedWorkspace
   }
 
   var activeLeafId: UUID? {
     selectedWorkspace.selectedCenterTab?.resolvedActiveLeafId(preferred: nil)
   }
-  /// Repository writes are intentionally non-observable. Structural tab
-  /// changes bump this token so the sidebar and selected tree re-read truth.
-  @State var workspaceRevision = 0
   /// Suppresses per-leaf dissolve while a whole top tab is closing.
   @State var closingCenterTabId: UUID?
   /// Presentation-only state for a locally inserted split. Its destination
@@ -97,6 +104,11 @@ struct SessionContainerView: View {
   @State var isVisible = false
 
   var body: some View {
+    mounted(in: selectedWorkspace)
+  }
+
+  /// The container around one read of the workspace.
+  private func mounted(in workspace: Workspace) -> some View {
     titledContentColumn
       .navigationSubtitle(activePaneSubtitle)
       .toolbar(removing: paneControlsReplaceTitle ? .title : nil)
@@ -115,7 +127,7 @@ struct SessionContainerView: View {
       .focusedSceneValue(
         \.workspaceLayoutActions,
         WorkspaceLayoutActions(
-          workspaceId: selectedWorkspace.id,
+          workspaceId: workspace.id,
           newTab: addCenterTab,
           closeSplit: closeActiveLeaf,
           closeTab: {
@@ -137,19 +149,16 @@ struct SessionContainerView: View {
       .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
         syncWorkspaceBackgroundTerminals()
       }
-      .onChange(of: environment.workspaceSync.revision, initial: true) { _, _ in
+      // Any change to this workspace -- local or from another device --
+      // reaches mounted pane models that hold live views and focus.
+      .onChange(of: workspaceEntry.generation, initial: true) { _, _ in
         synchronizeMountedPaneGroups()
-      }
-      // Every structural tab write bumps the local token; mirror it to the
-      // store so the sidebar re-reads the repository.
-      .onChange(of: workspaceRevision) { _, _ in
-        store.workspaceLayoutRevision += 1
       }
       // Structural commands may arrive as this workspace is mounting.
       // Navigation itself has already committed before view construction.
       .onChange(of: store.centerTabRequest, initial: true) { _, request in
         guard let request, store.centerTabRequest == request,
-          request.workspaceId == selectedWorkspace.id
+          request.workspaceId == workspace.id
         else { return }
         store.centerTabRequest = nil
         performCenterTabRequest(request)
@@ -157,7 +166,7 @@ struct SessionContainerView: View {
       .onChange(of: activePaneDescriptor?.id, initial: true) { _, _ in
         focusSelectedCenterPane()
       }
-      .onChange(of: selectedWorkspace.selectedCenterTabId) { _, _ in
+      .onChange(of: workspace.selectedCenterTabId) { _, _ in
         openingSplit = nil
       }
       .onChange(of: activeLeafId) { _, leafId in
@@ -178,9 +187,10 @@ struct SessionContainerView: View {
       // combines it with window-key state and feeds the app-wide
       // attention coordinator, which marks the focused chat read.
       .onChange(of: focusedChatCandidate, initial: true) { _, candidate in
+        let workspace = selectedWorkspace
         store.setFocusedChat(
-          candidate, serverId: selectedWorkspace.serverId, sourceId: focusSourceId,
-          workspaceId: selectedWorkspace.id, isVisible: isVisible
+          candidate, serverId: workspace.serverId, sourceId: focusSourceId,
+          workspaceId: workspace.id, isVisible: isVisible
         )
       }
       // The incoming container can publish before this one disappears.
@@ -209,13 +219,12 @@ struct SessionContainerView: View {
         // their surface responder callbacks) — and the sidebar's chat
         // selection follows the focused chat.
         sessionFocus.onChatComposerFocused = { chatId in
+          let workspace = selectedWorkspace
           guard isVisible,
-            store.navigationWorkspaceId == selectedWorkspace.id,
-            selectedWorkspace.centerTree.groupId(containingChat: chatId) != nil
+            store.navigationWorkspaceId == workspace.id,
+            let leaf = workspace.centerTree.groupId(containingChat: chatId)
           else { return }
-          if let leaf = selectedWorkspace.centerTree.groupId(containingChat: chatId),
-            leaf != activeLeafId
-          {
+          if leaf != activeLeafId {
             activateLeaf(leaf)
           }
           rememberWorkspaceDefaults(from: chatId)
@@ -234,9 +243,8 @@ struct SessionContainerView: View {
   /// System themes reveal the native window backdrop. Custom themes paint
   /// one explicit page color behind every workspace pane.
   var contentColumn: some View {
-    // WorkspaceRepository is intentionally non-observable. Server pane
-    // reconciliation bumps this shared token so a tab created on another
-    // device materializes in the mounted workspace immediately.
+    // Observes this workspace's entry, so a tab created on another device
+    // materializes in the mounted workspace immediately.
     let workspace = selectedWorkspace
     return VStack(spacing: 0) {
       SessionScreen(

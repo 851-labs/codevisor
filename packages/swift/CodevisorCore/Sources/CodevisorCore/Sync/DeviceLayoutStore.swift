@@ -68,6 +68,12 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   private let lock = NSLock()
   private let persistenceOwner = UUID()
   private var payload: Payload
+  /// Change counters, so a rebuild can tell what changed without comparing
+  /// layouts. Every mutation bumps the workspaces and machines it touched;
+  /// `removeAll` bumps everything at once.
+  private var allGeneration: UInt64 = 0
+  private var machineGenerations: [String: UInt64] = [:]
+  private var workspaceGenerations: [UUID: UInt64] = [:]
 
   public init(store: any PersistenceStore) {
     self.store = store
@@ -95,10 +101,26 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     lock.withLock { payload.drafts[id] }
   }
 
+  func machineGeneration(_ serverId: String) -> UInt64 {
+    lock.withLock { machineGenerations[serverId, default: 0] &+ allGeneration }
+  }
+
+  func workspaceGeneration(_ workspaceId: UUID) -> UInt64 {
+    lock.withLock { workspaceGenerations[workspaceId, default: 0] &+ allGeneration }
+  }
+
+  /// Records a change; callers hold the lock.
+  private func noteChange(workspaceId: UUID, serverIds: [String?]) {
+    workspaceGenerations[workspaceId, default: 0] &+= 1
+    for case let serverId? in serverIds { machineGenerations[serverId, default: 0] &+= 1 }
+  }
+
   public func setLayout(_ layout: DeviceLayout, for workspaceId: UUID) {
     let changed = lock.withLock {
-      guard payload.layouts[workspaceId] != layout else { return false }
+      let old = payload.layouts[workspaceId]
+      guard old != layout else { return false }
       payload.layouts[workspaceId] = layout
+      noteChange(workspaceId: workspaceId, serverIds: [layout.serverId, old?.serverId])
       return true
     }
     if changed { persist() }
@@ -108,21 +130,28 @@ public final class DeviceLayoutStore: @unchecked Sendable {
     lock.withLock {
       payload.drafts[draft.id] = draft
       payload.layouts[draft.id] = layout
+      noteChange(workspaceId: draft.id, serverIds: [draft.serverId, layout.serverId])
     }
     persist()
   }
 
   /// The server now has this workspace; its layout stays, the draft goes.
   public func promoteDraft(id: UUID) {
-    let changed = lock.withLock { payload.drafts.removeValue(forKey: id) != nil }
+    let changed = lock.withLock {
+      guard let draft = payload.drafts.removeValue(forKey: id) else { return false }
+      noteChange(workspaceId: id, serverIds: [draft.serverId])
+      return true
+    }
     if changed { persist() }
   }
 
   public func remove(workspaceId: UUID) {
     let changed = lock.withLock {
-      let removedLayout = payload.layouts.removeValue(forKey: workspaceId) != nil
-      let removedDraft = payload.drafts.removeValue(forKey: workspaceId) != nil
-      return removedLayout || removedDraft
+      let layout = payload.layouts.removeValue(forKey: workspaceId)
+      let draft = payload.drafts.removeValue(forKey: workspaceId)
+      guard layout != nil || draft != nil else { return false }
+      noteChange(workspaceId: workspaceId, serverIds: [layout?.serverId, draft?.serverId])
+      return true
     }
     if changed { persist() }
   }
@@ -132,17 +161,23 @@ public final class DeviceLayoutStore: @unchecked Sendable {
   /// merely offline never loses its arrangements. Drafts are kept.
   public func prune(serverId: String, keeping workspaceIds: Set<UUID>) {
     let changed = lock.withLock {
-      let before = payload.layouts.count
-      payload.layouts = payload.layouts.filter { id, layout in
-        layout.serverId != serverId || workspaceIds.contains(id) || payload.drafts[id] != nil
+      let gone = payload.layouts.filter { id, layout in
+        layout.serverId == serverId && !workspaceIds.contains(id) && payload.drafts[id] == nil
       }
-      return payload.layouts.count != before
+      for id in gone.keys {
+        payload.layouts.removeValue(forKey: id)
+        noteChange(workspaceId: id, serverIds: [serverId])
+      }
+      return !gone.isEmpty
     }
     if changed { persist() }
   }
 
   public func removeAll() {
-    lock.withLock { payload = Payload() }
+    lock.withLock {
+      payload = Payload()
+      allGeneration &+= 1
+    }
     persist()
   }
 

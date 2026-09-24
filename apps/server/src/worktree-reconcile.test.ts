@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -9,6 +9,8 @@ import Database from "better-sqlite3"
 import { describe, expect, it } from "vitest"
 
 import { defaultServerConfig } from "./server-config.js"
+import { sweepTrashedWorktrees, worktreeTrashRoot } from "./server-workspace-effects.js"
+import { makeEventFanout } from "./server.js"
 import { jsonRequest, run, start, tempDirs } from "./test-support.js"
 import { discardProjectWorktrees, reconcileWorktreeArchives } from "./worktree-reconcile.js"
 
@@ -54,13 +56,14 @@ const setUpProject = async () => {
       })
     ).body as { readonly id: string; readonly name: string; readonly path: string }
   const config = defaultServerConfig({ id: "server-a", port: 0 })
-  return { server, services, repoFolder, makeWorktree, config, serverDatabasePath }
+  const fanout = await run(makeEventFanout)
+  return { server, services, repoFolder, makeWorktree, config, fanout, serverDatabasePath }
 }
 
 describe("worktree archive reconciliation", () => {
   it("finishes an interrupted archive and completes its record", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config } = await setUpProject()
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("sushi")
 
       // Exactly the state a crash between recording the archive and deleting
@@ -81,7 +84,7 @@ describe("worktree archive reconciliation", () => {
       )
       expect(existsSync(worktree.path)).toBe(true)
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       expect(existsSync(worktree.path)).toBe(false)
       expect(
@@ -94,13 +97,23 @@ describe("worktree archive reconciliation", () => {
     })
   })
 
+  it("clears worktree files an earlier run left in the trash", async () => {
+    await withWorktreesRoot(async () => {
+      const leftover = join(worktreeTrashRoot(), "wt-1-abc")
+      mkdirSync(leftover, { recursive: true })
+      writeFileSync(join(leftover, "file.txt"), "x")
+      await sweepTrashedWorktrees()
+      expect(existsSync(leftover)).toBe(false)
+    })
+  })
+
   it("drops worktree rows whose directory vanished", async () => {
     await withWorktreesRoot(async () => {
-      const { services, makeWorktree, config } = await setUpProject()
+      const { services, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("ramen")
       rmSync(worktree.path, { recursive: true, force: true })
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       // A stale row keeps its (finite) name reserved and makes restore claim
       // success for files that are not there.
@@ -110,7 +123,7 @@ describe("worktree archive reconciliation", () => {
 
   it("prunes snapshot refs nothing can restore and keeps the ones that can", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config } = await setUpProject()
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const kept = await makeWorktree("tacos")
       const parentSha = (await git(["rev-parse", "HEAD"], repoFolder)).stdout.trim()
       await git(["update-ref", snapshotRefFor(kept.id), parentSha], repoFolder)
@@ -131,7 +144,7 @@ describe("worktree archive reconciliation", () => {
       // no row names, unreachable by restore and immune to `git gc`.
       await git(["update-ref", snapshotRefFor("orphan-worktree"), parentSha], repoFolder)
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       expect([...(await listSnapshotRefWorktreeIds(repoFolder))]).toEqual([kept.id])
     })
@@ -139,7 +152,7 @@ describe("worktree archive reconciliation", () => {
 
   it("skips archives owned by another server and projects it cannot resolve", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config } = await setUpProject()
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("curry")
       const parentSha = (await git(["rev-parse", "HEAD"], repoFolder)).stdout.trim()
       await run(
@@ -156,7 +169,7 @@ describe("worktree archive reconciliation", () => {
         })
       )
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       // Another machine owns those files; this server must not touch them.
       expect(existsSync(worktree.path)).toBe(true)
@@ -208,7 +221,7 @@ describe("worktree archive reconciliation", () => {
 
   it("leaves a project whose folder this server cannot resolve alone", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config, serverDatabasePath } =
+      const { services, repoFolder, makeWorktree, config, fanout, serverDatabasePath } =
         await setUpProject()
       const worktree = await makeWorktree("gnocchi")
       const parentSha = (await git(["rev-parse", "HEAD"], repoFolder)).stdout.trim()
@@ -233,7 +246,7 @@ describe("worktree archive reconciliation", () => {
       sqlite.prepare("update project_locations set server_id = 'server-elsewhere'").run()
       sqlite.close()
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       expect(existsSync(worktree.path)).toBe(true)
       // The orphan ref survives too: a repository this server cannot locate is
@@ -244,7 +257,7 @@ describe("worktree archive reconciliation", () => {
 
   it("completes a pending archive whose files and row are already gone", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config } = await setUpProject()
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("polenta")
       const parentSha = (await git(["rev-parse", "HEAD"], repoFolder)).stdout.trim()
       await run(
@@ -265,19 +278,57 @@ describe("worktree archive reconciliation", () => {
       rmSync(worktree.path, { recursive: true, force: true })
       await run(services.db.deleteWorktree(worktree.id))
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       expect(
         (await run(services.db.listArchivedWorktrees("git-project"))).find(
           (archived) => archived.id === worktree.id
         )?.state
       ).toBe("complete")
+      // The branch is released too, or the name would stay taken forever.
+      const branches = (
+        await git(["for-each-ref", "--format=%(refname)", "refs/heads/"], repoFolder)
+      ).stdout
+      expect(branches).not.toContain(`codevisor/${worktree.name}`)
+    })
+  })
+
+  it("archives a workspace whose teardown never ran", async () => {
+    await withWorktreesRoot(async () => {
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
+      const worktree = await makeWorktree("farro")
+      // The archive request answered and the server stopped before its job
+      // ran: the workspace is archived but its worktree is untouched.
+      const workspace = await run(
+        services.db.upsertWorkspace({
+          projectId: "git-project",
+          name: "farro",
+          hasCustomName: false,
+          rootDirectory: worktree.path
+        })
+      )
+      await run(services.db.updateWorkspace(workspace.id, { isArchived: true }))
+
+      await reconcileWorktreeArchives(services, fanout, config)
+
+      expect(existsSync(worktree.path)).toBe(false)
+      expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([worktree.id])
+      expect(await run(services.db.listWorktrees("git-project"))).toEqual([])
+
+      // The next boot finds nothing left to do for it.
+      await reconcileWorktreeArchives(services, fanout, config)
+      expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([worktree.id])
+      expect(
+        (await run(services.db.listArchivedWorktrees("git-project"))).map(
+          (archived) => archived.state
+        )
+      ).toEqual(["complete"])
     })
   })
 
   it("never touches rows another machine owns, and survives a stubborn worktree", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config, serverDatabasePath } =
+      const { services, repoFolder, makeWorktree, config, fanout, serverDatabasePath } =
         await setUpProject()
       const foreign = await makeWorktree("linguine")
       const stubborn = await makeWorktree("rigatoni")
@@ -310,27 +361,30 @@ describe("worktree archive reconciliation", () => {
       sqlite.close()
       rmSync(foreign.path, { recursive: true, force: true })
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       // The foreign row survives even though its directory is gone.
       expect(
         (await run(services.db.listWorktrees("git-project"))).map((worktree) => worktree.id)
       ).toContain(foreign.id)
 
-      // A worktree whose directory vanished makes `git worktree remove` fail;
+      // A worktree that can be neither moved to the trash (something else
+      // occupies its path) nor removed by git (git no longer knows it) fails;
       // the sweep must keep going and still clear the rest.
-      rmSync(stubborn.path, { recursive: true, force: true })
+      writeFileSync(join(process.env["CODEVISOR_WORKTREES_ROOT"]!, ".trash"), "")
+      rmSync(join(repoFolder, ".git", "worktrees", stubborn.name), { recursive: true, force: true })
       const project = (await run(services.db.listProjects)).find(
         (candidate) => candidate.id === "git-project"
       )!
       await discardProjectWorktrees(services, config.id, project)
+      expect(existsSync(stubborn.path)).toBe(true)
       expect(await listSnapshotRefWorktreeIds(repoFolder)).toEqual([foreign.id])
     })
   })
 
   it("leaves an archive in flight alone while its files are still being removed", async () => {
     await withWorktreesRoot(async () => {
-      const { services, repoFolder, makeWorktree, config } = await setUpProject()
+      const { services, repoFolder, makeWorktree, config, fanout } = await setUpProject()
       const worktree = await makeWorktree("bucatini")
       const parentSha = (await git(["rev-parse", "HEAD"], repoFolder)).stdout.trim()
       await run(
@@ -350,7 +404,7 @@ describe("worktree archive reconciliation", () => {
       // pass owns this row, so the vanished-directory sweep must not race it.
       rmSync(worktree.path, { recursive: true, force: true })
 
-      await reconcileWorktreeArchives(services, config)
+      await reconcileWorktreeArchives(services, fanout, config)
 
       expect(
         (await run(services.db.listWorktrees("git-project"))).map((candidate) => candidate.id)

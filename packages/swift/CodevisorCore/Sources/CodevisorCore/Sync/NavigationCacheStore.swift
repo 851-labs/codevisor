@@ -11,6 +11,9 @@ final class NavigationCacheStore {
   nonisolated static let indexKey = "navigation-cache-v1-index"
 
   private(set) var caches: [String: MachineNavigationCache] = [:]
+  /// Advances whenever a machine's cache is replaced or removed, so a
+  /// rebuild can tell which machines changed without comparing snapshots.
+  private(set) var generations: [String: UInt64] = [:]
   private let store: any PersistenceStore
   private let persistenceOwner = UUID()
 
@@ -36,6 +39,7 @@ final class NavigationCacheStore {
   func set(_ cache: MachineNavigationCache) {
     let isNew = caches[cache.machineId] == nil
     caches[cache.machineId] = cache
+    generations[cache.machineId, default: 0] &+= 1
     let store = store
     let snapshot = cache.snapshot
     let key = Self.keyPrefix + cache.machineId
@@ -51,6 +55,7 @@ final class NavigationCacheStore {
 
   func remove(machineId: String) {
     guard caches.removeValue(forKey: machineId) != nil else { return }
+    generations[machineId, default: 0] &+= 1
     let store = store
     let key = Self.keyPrefix + machineId
     PersistenceEncoding.enqueueLatest(owner: persistenceOwner, key: key, delay: 0) {

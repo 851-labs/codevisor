@@ -3,8 +3,9 @@ import Foundation
 
 extension SessionStore {
   /// Navigation commits layout without constructing panes or connecting a
-  /// routing chat. The mounted container observes the same revision as the
-  /// sidebar, including when the selected session itself does not change.
+  /// routing chat. The save updates the workspace's entry, which the mounted
+  /// container and the sidebar section both observe. Re-selecting what is
+  /// already selected writes nothing.
   @discardableResult
   func selectDestination(_ destination: WorkspaceDestination, in workspaceId: UUID) -> Bool {
     guard var workspace = environment.workspaces.workspace(id: workspaceId) else { return false }
@@ -39,7 +40,6 @@ extension SessionStore {
       {
         model.state.selectedPaneId = state.selectedPaneId
       }
-      workspaceLayoutRevision += 1
     }
     return true
   }

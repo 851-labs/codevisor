@@ -5,9 +5,6 @@ extension AppEnvironment {
   /// rules see it. The local machine counts only where this app runs one;
   /// on iOS it is a placeholder, not a machine with workspaces.
   public var navigationPresentationMachines: [NavigationPresentation.Machine] {
-    // The store's revision moves whenever a cache is replaced or updated,
-    // which is what `hasCache`/`isCacheEmpty` read.
-    _ = navigationStore.revision
     let states = machines.navigationSyncStateByMachineId
     return machines.allMachines
       .filter { !$0.isLocal || localServer != nil }

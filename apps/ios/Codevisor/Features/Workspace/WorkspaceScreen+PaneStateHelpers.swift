@@ -22,13 +22,25 @@ extension WorkspaceScreen {
     PaneLayoutProjection.flatten(workspace)
   }
 
-  static func diagnosticID(_ id: UUID) -> String {
+  nonisolated static func diagnosticID(_ id: UUID) -> String {
     String(id.uuidString.prefix(8))
   }
 }
 
+/// Which workspace a screen shows and how many times it has changed: a cheap
+/// `onChange` value that moves only when that one workspace does.
+struct WorkspaceScreenWorkspaceVersion: Equatable {
+  let id: UUID?
+  let generation: UInt64
+}
+
 // MARK: - Pane storage identity (moved from WorkspaceScreen.swift for the size ratchet)
 extension WorkspaceScreen {
+  var workspaceVersion: WorkspaceScreenWorkspaceVersion {
+    let entry = workspaceEntry
+    return WorkspaceScreenWorkspaceVersion(id: entry?.id, generation: entry?.generation ?? 0)
+  }
+
   var paneStorageId: UUID? {
     resolvedWorkspace?.id ?? activeSessionId
   }

@@ -1,23 +1,30 @@
+import { join } from "node:path"
+
 import type { SessionSummary, Workspace } from "@codevisor/api"
 import { isoTimestamp } from "@codevisor/api"
-import { worktreePath } from "@codevisor/db"
+import { worktreePath, worktreesRoot } from "@codevisor/db"
 import {
   deleteSnapshot,
   removeArchivedWorktreeFiles,
-  removeWorktree,
   restoreWorktree,
-  snapshotWorktree
+  snapshotWorktree,
+  sweepWorktreeTrash
 } from "@codevisor/worktrees"
 
-import { EventFanout } from "./server-context-types.js"
-import type {
-  CodevisorServerConfig,
-  CodevisorServerServices,
-  RouteState
-} from "./server-context-types.js"
-import { appendAndPublish, getProjectOrFail, localLocationOrFail, run } from "./server-http.js"
-import { closeWorkspaceTerminals, settleCleanup } from "./workspace-runtime.js"
+import type { CodevisorServerServices, RouteState } from "./server-context-types.js"
+import { getProjectOrFail, localLocationOrFail, run } from "./server-http.js"
+import { settleCleanup, workspaceTerminalKeys } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
+
+/// Removed worktrees are renamed into this folder and deleted in the
+/// background. It sits beside the worktrees so the rename never crosses a
+/// volume.
+export const worktreeTrashRoot = (): string => join(worktreesRoot(), ".trash")
+
+/// Finishes deleting worktree files a previous run moved to the trash but
+/// didn't get to delete. Runs at background priority, so boot never waits on
+/// it and it never competes with the user's work.
+export const sweepTrashedWorktrees = (): Promise<void> => sweepWorktreeTrash(worktreeTrashRoot())
 
 /// Workspace archive side effects: retiring runtimes and reclaiming the
 /// worktree the workspace owns.
@@ -88,20 +95,38 @@ export const forgetRetiredSessionTurn = (turns: RetiredTurnState, sessionId: str
   turns.turnHeldSessions.delete(sessionId)
 }
 
-/// Stops every process a workspace owns: its chats' agents and terminals, plus
-/// terminals opened in the workspace without a chat.
-export const retireWorkspaceRuntime = async (
+/// Everything running on a workspace's behalf, read while the workspace and
+/// its panes still exist. Retirement runs later, after a delete may already
+/// have detached the chats and dropped the panes.
+export interface WorkspaceRuntime {
+  readonly sessions: ReadonlyArray<SessionSummary>
+  readonly terminalKeys: ReadonlyArray<string>
+}
+
+/// Its chats' turns end here, when the archive is recorded, rather than when
+/// the queued teardown gets to them: updates must not wait behind a turn whose
+/// runtime is already on its way out.
+export const captureWorkspaceRuntime = async (
   services: CodevisorServerServices,
   turns: RetiredTurnState,
   workspace: Workspace
-): Promise<void> => {
+): Promise<WorkspaceRuntime> => {
   const sessions = (await run(services.db.listSessions)).filter(
     (session) => session.workspaceId?.toLowerCase() === workspace.id.toLowerCase()
   )
   for (const session of sessions) forgetRetiredSessionTurn(turns, session.id)
+  return { sessions, terminalKeys: await workspaceTerminalKeys(services, [workspace.id]) }
+}
+
+/// Stops every process a workspace owns: its chats' agents and terminals, plus
+/// terminals opened in the workspace without a chat.
+export const retireWorkspaceRuntime = async (
+  services: CodevisorServerServices,
+  runtime: WorkspaceRuntime
+): Promise<void> => {
   await settleCleanup([
-    closeWorkspaceTerminals(services, [workspace.id]),
-    ...sessions.map((session) => retireSessionRuntime(services, session))
+    ...runtime.terminalKeys.map((key) => run(services.terminal.closeTerminalForSession(key))),
+    ...runtime.sessions.map((session) => retireSessionRuntime(services, session))
   ])
 }
 
@@ -120,6 +145,13 @@ const directoryStillInUse = async (
       !candidate.isArchived
   )
 
+export interface ArchivedWorkspaceWorktree {
+  readonly ignoredPaths: ReadonlyArray<string>
+  readonly purged: Promise<void>
+}
+
+const nothingArchived: ArchivedWorkspaceWorktree = { ignoredPaths: [], purged: Promise.resolve() }
+
 /// Retires an archived workspace's git worktree.
 ///
 /// The files are captured as a snapshot commit first, so archiving is lossless:
@@ -129,72 +161,73 @@ const directoryStillInUse = async (
 /// a snapshot nothing references and a `worktrees` row pointing at a directory
 /// that is already gone.
 ///
-/// Returns the gitignored paths that were deliberately not snapshotted.
+/// The caller must hold the worktree lifecycle lock for the workspace.
+///
+/// Returns the gitignored paths that were deliberately not snapshotted, and a
+/// promise that settles once the removed files are deleted from the trash.
 export const archiveWorkspaceWorktree = async (
   services: CodevisorServerServices,
   serverId: string,
   workspace: Workspace
-): Promise<ReadonlyArray<string>> =>
-  withWorktreeLifecycle(services, workspace.rootDirectory ?? workspace.id, async () => {
-    const rootDirectory = workspace.rootDirectory
-    if (rootDirectory === undefined) return []
-    if (await directoryStillInUse(services, workspace)) return []
-    const worktree = (await run(services.db.listWorktrees(workspace.projectId))).find(
-      (candidate) => candidate.serverId === serverId && candidate.path === rootDirectory
-    )
-    // No `worktrees` row means this is the user's own project folder, which we
-    // must never touch.
-    if (worktree === undefined) return []
+): Promise<ArchivedWorkspaceWorktree> => {
+  const rootDirectory = workspace.rootDirectory
+  if (rootDirectory === undefined) return nothingArchived
+  if (await directoryStillInUse(services, workspace)) return nothingArchived
+  const worktree = (await run(services.db.listWorktrees(workspace.projectId))).find(
+    (candidate) => candidate.serverId === serverId && candidate.path === rootDirectory
+  )
+  // No `worktrees` row means this is the user's own project folder, which we
+  // must never touch.
+  if (worktree === undefined) return nothingArchived
 
-    const project = await getProjectOrFail(services.db, workspace.projectId)
-    const location = localLocationOrFail(serverId, project)
-    const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
+  const project = await getProjectOrFail(services.db, workspace.projectId)
+  const location = localLocationOrFail(serverId, project)
+  const environment = await (services.resolveGitEnvironment?.() ?? Promise.resolve(process.env))
 
-    const snapshot = await snapshotWorktree(
-      location.folderPath,
-      worktree.path,
-      worktree.id,
-      environment
-    )
-    const archivedAt = isoTimestamp()
-    await run(
-      services.db.createArchivedWorktree({
-        id: worktree.id,
-        projectId: worktree.projectId,
-        serverId: worktree.serverId,
-        originalName: worktree.name,
-        branch: worktree.branch,
-        parentSha: snapshot.parentSha,
-        snapshotRef: snapshot.snapshotRef,
-        createdAt: archivedAt,
-        state: "pending"
-      })
-    )
-    await removeArchivedWorktreeFiles(
-      location.folderPath,
-      worktree.path,
-      worktree.branch,
-      removeWorktree,
-      environment
-    )
-    // Same record, now that the files really are gone. `createArchivedWorktree`
-    // upserts on id, so this is the completion write.
-    await run(
-      services.db.createArchivedWorktree({
-        id: worktree.id,
-        projectId: worktree.projectId,
-        serverId: worktree.serverId,
-        originalName: worktree.name,
-        branch: worktree.branch,
-        parentSha: snapshot.parentSha,
-        snapshotRef: snapshot.snapshotRef,
-        createdAt: archivedAt,
-        state: "complete"
-      })
-    )
-    await run(services.db.deleteWorktree(worktree.id))
-    return snapshot.ignoredPaths
-  })
+  const snapshot = await snapshotWorktree(
+    location.folderPath,
+    worktree.path,
+    worktree.id,
+    environment
+  )
+  const archivedAt = isoTimestamp()
+  await run(
+    services.db.createArchivedWorktree({
+      id: worktree.id,
+      projectId: worktree.projectId,
+      serverId: worktree.serverId,
+      originalName: worktree.name,
+      branch: worktree.branch,
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      createdAt: archivedAt,
+      state: "pending"
+    })
+  )
+  const trashed = await removeArchivedWorktreeFiles(
+    location.folderPath,
+    worktree.path,
+    worktree.branch,
+    { trashRoot: worktreeTrashRoot(), worktreeId: worktree.id, env: environment }
+  )
+  // Same record, now that the files really are gone. `createArchivedWorktree`
+  // upserts on id, so this is the completion write.
+  await run(
+    services.db.createArchivedWorktree({
+      id: worktree.id,
+      projectId: worktree.projectId,
+      serverId: worktree.serverId,
+      originalName: worktree.name,
+      branch: worktree.branch,
+      parentSha: snapshot.parentSha,
+      snapshotRef: snapshot.snapshotRef,
+      createdAt: archivedAt,
+      state: "complete"
+    })
+  )
+  await run(services.db.deleteWorktree(worktree.id))
+  return { ignoredPaths: snapshot.ignoredPaths, purged: trashed.purged }
+}
 
 /// Rebuilds an unarchived workspace's worktree from its snapshot.
 ///
@@ -277,59 +310,4 @@ const archivedNameFor = (projectId: string, rootDirectory: string): string | und
   if (separator < 0) return undefined
   const name = rootDirectory.slice(separator + 1)
   return worktreePath(projectId, name) === rootDirectory ? name : undefined
-}
-
-/// Applies a workspace's archive transition.
-///
-/// The event is published BEFORE any teardown so a client never waits on a
-/// process that refuses to die, and a cleanup failure can never swallow the
-/// state change the database already committed. Teardown failures leave the
-/// archive recorded and the worktree reclaimable by the boot reconciler or a
-/// repeat archive, rather than failing the request and stranding the client.
-export const applyWorkspaceArchiveEffects = async (
-  services: CodevisorServerServices,
-  fanout: EventFanout,
-  config: CodevisorServerConfig,
-  turns: RetiredTurnState,
-  workspace: Workspace,
-  wasArchived: boolean
-): Promise<Workspace> => {
-  await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, workspace)
-  if (workspace.isArchived === wasArchived) return workspace
-
-  if (workspace.isArchived) {
-    await retireWorkspaceRuntime(services, turns, workspace)
-    const ignored = await archiveWorkspaceWorktree(services, config.id, workspace)
-    if (ignored.length > 0) {
-      // Gitignored files are deliberately not snapshotted (they can hold
-      // secrets and are usually regenerable). Tell the client which ones went
-      // away with the worktree rather than losing them silently.
-      await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
-        ...workspace,
-        archiveDroppedIgnoredPaths: ignored
-      })
-    }
-    return workspace
-  }
-
-  const restored = await restoreWorkspaceWorktree(services, config.id, workspace)
-  if (!restored.restoredFiles) {
-    await appendAndPublish(services.db, fanout, "workspace.updated", workspace.id, {
-      ...restored.workspace,
-      archiveRestoreIncomplete: true
-    })
-    return restored.workspace
-  }
-  // A restore that had to rename the worktree rewrote `rootDirectory`, so the
-  // caller must answer with the new row rather than the one it wrote.
-  if (restored.workspace !== workspace) {
-    await appendAndPublish(
-      services.db,
-      fanout,
-      "workspace.updated",
-      workspace.id,
-      restored.workspace
-    )
-  }
-  return restored.workspace
 }

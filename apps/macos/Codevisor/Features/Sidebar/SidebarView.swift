@@ -22,9 +22,6 @@ struct SidebarView: View {
   @State var workspaceRenameTitle = ""
   @State var renamingTab: SidebarTabRenameRequest?
   @State var tabRenameTitle = ""
-  /// Bumped after workspace mutations (backfill sweep, renames) so the
-  /// non-observable repository is re-read.
-  @State var workspaceRevision = 0
   @State var workspaceDrag: SidebarWorkspaceDrag?
   @State var workspaceGeometry = SidebarWorkspaceGeometryStore()
   /// Collapsed by default: the archive is a place you go looking for
@@ -70,26 +67,7 @@ struct SidebarView: View {
       .padding(.top, 8)
 
       ScrollView {
-        // A plain VStack: lazy row materialization re-measures the
-        // content mid-bounce, which reads as random overscroll snaps.
-        VStack(alignment: .leading, spacing: 1) {
-          // `.geometryGroup()` makes each section translate as one
-          // rigid unit during reflows. Without it a row whose
-          // content changes in the same transaction as its move
-          // (the state change that reorders a chat also restyles
-          // its leading icon) animates each subview's position
-          // independently, which reads as shearing/jitter.
-          ForEach(workspaceItems) { item in
-            workspaceSection(item)
-              .geometryGroup()
-              .transition(.identity)
-          }
-
-        }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceItems.map(\.id))
-        .animation(Motion.listReflow(reduceMotion: reduceMotion), value: workspaceTabRowIDs)
+        workspaceList(visibleSidebarItems)
       }
       .scrollContentBackground(.hidden)
       .scrollBounceBehavior(.basedOnSize)
@@ -102,6 +80,31 @@ struct SidebarView: View {
     .coordinateSpace(.named(Self.reorderSpace))
     .overlay(alignment: .topLeading) { workspaceReorderGhost }
     .task(id: settlingWorkspaceID) { await finishSettledWorkspaceDrag() }
+  }
+
+  /// Iterates the precomputed list only; each section resolves its own
+  /// workspace, so this body never reads a workspace's contents.
+  private func workspaceList(_ items: [WorkspaceSidebarItem]) -> some View {
+    // A plain VStack: lazy row materialization re-measures the
+    // content mid-bounce, which reads as random overscroll snaps.
+    VStack(alignment: .leading, spacing: 1) {
+      // `.geometryGroup()` makes each section translate as one
+      // rigid unit during reflows. Without it a row whose
+      // content changes in the same transaction as its move
+      // (the state change that reorders a chat also restyles
+      // its leading icon) animates each subview's position
+      // independently, which reads as shearing/jitter.
+      ForEach(items) { item in
+        SidebarWorkspaceSection(
+          sidebar: self, item: item, selection: selection, draggingWorkspaceID: draggingWorkspaceID
+        )
+        .geometryGroup()
+        .transition(.identity)
+      }
+    }
+    .padding(.horizontal, 8)
+    .padding(.bottom, 8)
+    .animation(Motion.listReflow(reduceMotion: reduceMotion), value: items.map(\.id))
   }
 
   private var sidebarInteractionView: some View {
@@ -126,7 +129,6 @@ struct SidebarView: View {
             environment.workspaceSync.renameWorkspace(
               renamed, client: environment.machines.client(for: renamed.serverId)
             )
-            workspaceRevision += 1
           },
         )
       )

@@ -23,7 +23,6 @@ extension WorkspaceSyncModel {
       if workspace.centerTabs[index].customTitle != nil {
         workspace.centerTabs[index].customTitle = nil
         repository.save(workspace)
-        noteLocalMutation()
       }
       return projectList.renameSession(chat, to: trimmed, errorReporter: errorReporter)
     }
@@ -31,7 +30,6 @@ extension WorkspaceSyncModel {
     guard workspace.centerTabs[index].customTitle != normalized else { return nil }
     workspace.centerTabs[index].customTitle = normalized
     repository.save(workspace)
-    noteLocalMutation()
     return nil
   }
 }

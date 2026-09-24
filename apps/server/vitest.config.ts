@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    // Git runs at normal priority under test; see `withPriority`.
+    env: { CODEVISOR_COMMAND_PRIORITY: "normal" },
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
     // Every test here boots a server (database, fake agent runtime, MCP
     // manager, terminals) and drives it over HTTP; on a loaded CI runner —

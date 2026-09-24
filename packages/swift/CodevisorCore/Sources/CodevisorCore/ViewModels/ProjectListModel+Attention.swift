@@ -68,9 +68,12 @@ extension ProjectListModel {
     to next: [ChatSession],
     origin: SessionAttentionTransition.Origin
   ) {
+    var old: [SessionKey: ChatSession] = [:]
+    old.reserveCapacity(previous.count)
+    for session in previous { old[SessionKey(serverId: session.serverId, id: session.id)] = session }
     for session in next {
-      let old = previous.first { $0.serverId == session.serverId && $0.id == session.id }
-      emitAttentionTransition(old: old, new: session, origin: origin)
+      emitAttentionTransition(
+        old: old[SessionKey(serverId: session.serverId, id: session.id)], new: session, origin: origin)
     }
   }
 }

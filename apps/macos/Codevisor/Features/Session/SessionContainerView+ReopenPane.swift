@@ -74,9 +74,7 @@ extension SessionContainerView {
     switch closed.kind {
     case .chat:
       guard let chatId = closed.chatSessionId,
-        environment.projectList.sessions.contains(where: {
-          $0.serverId == selectedWorkspace.serverId && $0.id == chatId
-        })
+        environment.projectList.session(chatId, serverId: selectedWorkspace.serverId) != nil
       else { return nil }
       return PaneDescriptorState(
         id: paneId, kind: .chat, name: closed.name,

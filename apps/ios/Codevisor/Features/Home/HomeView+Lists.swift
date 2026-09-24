@@ -27,12 +27,14 @@ extension HomeView {
     }
   }
 
+  /// The live sidebar builds its own sections, so Home's body depends on
+  /// none of the workspaces it lists. The handler keeps one identity; only
+  /// its closures are refreshed here.
   private var sidebarList: some View {
-    HomeSidebarList(
-      sections: sidebarSections,
-      actions: sidebarActions,
-      refresh: refreshNavigation,
-      selection: layoutMode == .split ? splitSelection : nil
+    sidebarActionHandler.actions = sidebarActions
+    return HomeSidebarLiveList(
+      actions: sidebarActionHandler,
+      splitNavigation: layoutMode == .split ? navigation : nil
     )
   }
 

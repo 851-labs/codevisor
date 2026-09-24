@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises"
+import { constants } from "node:fs"
+import { copyFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -11,6 +12,7 @@ import {
   runGit
 } from "./git.js"
 import { worktreeStartPoint } from "./project-branches.js"
+import { type TrashedWorktree, trashWorktree } from "./worktree-trash.js"
 
 /// Archiving a chat used to delete its worktree outright, losing any work that
 /// was not committed. Instead we capture the worktree's full state as a commit
@@ -26,6 +28,17 @@ export const snapshotRefFor = (worktreeId: string): string =>
 
 const snapshotIdentityName = "Codevisor"
 const snapshotIdentityEmail = "noreply@codevisor.app"
+
+/// Snapshot commands read a copy of the worktree's index from a scratch path.
+/// An fsmonitor daemon answers for the real index, not the copy, and a split
+/// index names a shared file beside the real one; both are turned off so git
+/// reads the copy by itself and checks the files on disk.
+const snapshotConfig = ["-c", "core.fsmonitor=false", "-c", "core.splitIndex=false"]
+
+/// Snapshotting stats and hashes a whole checkout. The user may be waiting on
+/// it (an unarchive queues behind it), so it is throttled rather than deferred.
+/// The buffer is raised because listings of a large checkout pass 1MB.
+const heavy = { priority: "utility", maxBuffer: 256 * 1024 * 1024 } as const
 
 export interface WorktreeSnapshot {
   /// The commit the worktree was sitting on. Restore checks out from here, so
@@ -57,9 +70,10 @@ const collectIgnoredPaths = async (
   try {
     const output = await runGit(
       "list-ignored",
-      ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+      [...snapshotConfig, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
       worktreeDir,
-      env
+      env,
+      heavy
     )
     return meaningfulIgnoredPaths(
       output
@@ -73,6 +87,64 @@ const collectIgnoredPaths = async (
        this only guards a mid-archive filesystem fault. */
     return []
   }
+}
+
+/// Fills the scratch index with HEAD's tree so `add -A` records deletions of
+/// tracked files rather than treating the tree as empty.
+///
+/// A plain `read-tree HEAD` produces an index with no stat data, so `add -A`
+/// then reads and hashes every tracked file in the checkout. Starting from a
+/// copy of the worktree's own index and running a one-tree `read-tree -m`
+/// yields the same HEAD entries but keeps the recorded stat data for every
+/// file that still matches, so only changed files are hashed.
+///
+/// The copy is only an optimization, so any failure (no index yet, an
+/// unmerged index, a split index whose shared file is elsewhere, a git too old
+/// for `--path-format`) falls back to the plain read. So do assume-unchanged
+/// entries: git would trust their stale stat data and miss real edits.
+const seedScratchIndex = async (
+  worktreeDir: string,
+  parentSha: string,
+  indexFile: string,
+  env: NodeJS.ProcessEnv | undefined,
+  scratchEnv: NodeJS.ProcessEnv
+): Promise<void> => {
+  try {
+    const realIndex = await runGit(
+      "index-path",
+      ["rev-parse", "--path-format=absolute", "--git-path", "index"],
+      worktreeDir,
+      env
+    )
+    // A copy-on-write clone where the filesystem supports it, so even a huge
+    // index costs almost nothing to duplicate.
+    await copyFile(realIndex, indexFile, constants.COPYFILE_FICLONE)
+    await runGit(
+      "read-tree",
+      [...snapshotConfig, "read-tree", "-m", parentSha],
+      worktreeDir,
+      scratchEnv,
+      heavy
+    )
+    const entries = await runGit(
+      "ls-files",
+      [...snapshotConfig, "ls-files", "-v"],
+      worktreeDir,
+      scratchEnv,
+      heavy
+    )
+    // `ls-files -v` tags assume-unchanged entries with a lowercase letter.
+    if (!/^[a-z]/m.test(entries)) return
+  } catch {
+    // Fall through to the plain read below.
+  }
+  await runGit(
+    "read-tree",
+    [...snapshotConfig, "read-tree", parentSha],
+    worktreeDir,
+    scratchEnv,
+    heavy
+  )
 }
 
 /// Captures staged, unstaged, and untracked (non-ignored) state as one commit.
@@ -108,20 +180,25 @@ export const snapshotWorktree = async (
     GIT_COMMITTER_EMAIL: snapshotIdentityEmail
   }
   try {
-    // Seed the scratch index from HEAD so `add -A` records deletions of
-    // tracked files rather than treating the tree as empty.
-    await runGit("read-tree", ["read-tree", parentSha], worktreeDir, scratchEnv)
-    await runGit("add", ["add", "-A"], worktreeDir, scratchEnv)
-    const tree = await runGit("write-tree", ["write-tree"], worktreeDir, scratchEnv)
+    await seedScratchIndex(worktreeDir, parentSha, indexFile, env, scratchEnv)
+    await runGit("add", [...snapshotConfig, "add", "-A"], worktreeDir, scratchEnv, heavy)
+    const tree = await runGit(
+      "write-tree",
+      [...snapshotConfig, "write-tree"],
+      worktreeDir,
+      scratchEnv,
+      heavy
+    )
     const snapshotSha = await runGit(
       "commit-tree",
       ["commit-tree", tree, "-p", parentSha, "-m", `codevisor archive ${worktreeId}`],
       worktreeDir,
-      scratchEnv
+      scratchEnv,
+      heavy
     )
     const snapshotRef = snapshotRefFor(worktreeId)
     // update-ref runs against the repo, not the (about to be deleted) worktree.
-    await runGit("update-ref", ["update-ref", snapshotRef, snapshotSha], repoDir, env)
+    await runGit("update-ref", ["update-ref", snapshotRef, snapshotSha], repoDir, env, heavy)
     return {
       parentSha,
       snapshotSha,
@@ -148,15 +225,30 @@ export const snapshotWorktree = async (
 /// forever and defeat the point of archiving. Dropping it is safe precisely
 /// because the snapshot commit has the branch tip as its parent: the ref keeps
 /// every commit reachable, and restore recreates the branch from `parentSha`.
+///
+/// The files go to `trashRoot` and are deleted in the background (see
+/// worktree-trash.ts); `purged` settles when they are. The registration is
+/// pruned even when the directory was already gone, since a stale
+/// registration would keep the branch checked out and undeletable.
 export const removeArchivedWorktreeFiles = async (
   repoDir: string,
   worktreeDir: string,
   branch: string,
-  removeFiles: (repoDir: string, path: string, env?: NodeJS.ProcessEnv) => Promise<unknown>,
-  env?: NodeJS.ProcessEnv
-): Promise<void> => {
-  await removeFiles(repoDir, worktreeDir, env)
+  options: {
+    readonly trashRoot: string
+    readonly worktreeId: string
+    readonly env?: NodeJS.ProcessEnv
+  }
+): Promise<TrashedWorktree> => {
+  const { env } = options
+  const trashed = await trashWorktree(repoDir, worktreeDir, {
+    trashRoot: options.trashRoot,
+    id: options.worktreeId,
+    env
+  })
+  await pruneWorktreeRegistrations(repoDir, env)
   await releaseBranch(repoDir, branch, env)
+  return trashed
 }
 
 /// Every snapshot ref currently in the repository, by worktree id. The GC pass
@@ -190,7 +282,7 @@ export const pruneWorktreeRegistrations = async (
   env?: NodeJS.ProcessEnv
 ): Promise<void> => {
   try {
-    await runGit("worktree-prune", ["worktree", "prune"], repoDir, env)
+    await runGit("worktree-prune", ["worktree", "prune"], repoDir, env, { priority: "utility" })
   } catch {
     // Best effort: pruning is housekeeping, never a failure the user sees.
   }
@@ -205,7 +297,7 @@ export const releaseBranch = async (
   env?: NodeJS.ProcessEnv
 ): Promise<boolean> => {
   try {
-    await runGit("branch-delete", ["branch", "-D", branch], repoDir, env)
+    await runGit("branch-delete", ["branch", "-D", branch], repoDir, env, { priority: "utility" })
     return true
   } catch {
     return false

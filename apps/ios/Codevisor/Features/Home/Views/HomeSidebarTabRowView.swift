@@ -10,19 +10,38 @@ import SwiftUI
 /// owns tapping, the highlight, the selected trait, dismissing an overlay
 /// sidebar, and keeping a swipe from selecting. On the phone the row is a
 /// button that pushes the tab.
-struct HomeSidebarTabRowView: View {
+///
+/// Equatable on its inputs -- the row, its workspace, and the (stable)
+/// action handler -- so a sidebar re-render skips every row that didn't
+/// change.
+struct HomeSidebarTabRowView: View, Equatable {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   let row: HomeSidebarTabRow
-  let serverId: String
-  let onOpen: () -> Void
-  let onClose: () -> Void
-  /// Nil for pane rows, which have no title of their own to pin.
-  let onRename: (() -> Void)?
-  /// iPad only: shows the tab in a window of its own.
-  var onOpenInNewWindow: (() -> Void)?
+  let workspace: HomeSidebarWorkspaceRef
+  let actions: HomeSidebarActionHandler
   /// The row lives in a `List(selection:)`, which opens it instead.
   var isSelectionRow = false
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.row == rhs.row && lhs.workspace == rhs.workspace && lhs.actions === rhs.actions
+      && lhs.isSelectionRow == rhs.isSelectionRow
+  }
+
+  private func onOpen() { actions.actions.open(row, workspace) }
+  private func onClose() { actions.actions.close(row, workspace) }
+
+  /// Nil for pane rows, which have no title of their own to pin.
+  private var onRename: (() -> Void)? {
+    guard row.renamableTabId != nil else { return nil }
+    return { [actions, row, workspace] in actions.actions.rename(row, workspace) }
+  }
+
+  /// iPad only: shows the tab in a window of its own.
+  private var onOpenInNewWindow: (() -> Void)? {
+    guard let open = actions.actions.openInNewWindow else { return nil }
+    return { [row, workspace] in open(row, workspace) }
+  }
 
   var body: some View {
     Group {
@@ -68,7 +87,7 @@ struct HomeSidebarTabRowView: View {
 
   private var label: some View {
     HStack(spacing: 12) {
-      HomeSidebarTabIcon(row: row, serverId: serverId, size: 17)
+      HomeSidebarTabIcon(row: row, serverId: workspace.serverId, size: 17)
         .frame(width: 22, height: 22)
       HomeSidebarRowTitle(title: row.title)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)

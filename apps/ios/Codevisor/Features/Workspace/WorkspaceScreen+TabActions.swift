@@ -108,11 +108,7 @@ extension WorkspaceScreen {
         TranscriptPresentationSurfaceCache.shared.remove(paneID: original)
       }
     }
-    if pane.kind == .chat, let sessionId = pane.chatSessionId,
-      let closed = environment.projectList.sessions.first(where: {
-        $0.serverId == resolvedServerId && $0.id == sessionId
-      })
-    {
+    if pane.kind == .chat, let sessionId = pane.chatSessionId, let closed = session(for: sessionId) {
       environment.closeSession(closed)
     }
     if let workspaceId = owningWorkspaceId {

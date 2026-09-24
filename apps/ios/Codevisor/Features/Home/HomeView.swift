@@ -49,9 +49,6 @@ struct HomeView: View {
   @State var layoutMode: HomeLayoutMode = .stack
   /// The hosting bar has moved its items into iPhone Duo's side strip.
   @State var barsAreVertical = false
-  /// A sidebar tap the workspace has not recorded as its selection yet, so
-  /// the highlight lands on the tapped row without flicking back first.
-  @State var pendingSidebarSelection: UUID?
   /// The split view's column visibility. `.doubleColumn` is the two-column
   /// default; driving it lets a selection dismiss an overlay sidebar.
   @State var sidebarColumnVisibility: NavigationSplitViewVisibility = .doubleColumn
@@ -85,9 +82,12 @@ struct HomeView: View {
   @State var workspaceRenameTitle = ""
   @State var renamingTab: HomeTabRenameRequest?
   @State var tabRenameTitle = ""
-  /// The repository is deliberately non-observable. Bump this after a
-  /// workspace backfill or local layout mutation so the hierarchy re-reads.
-  @State var workspaceRevision = 0
+  /// The sidebar's actions behind one stable reference, so sidebar rows
+  /// skip re-rendering when only Home's closures were rebuilt.
+  @State var sidebarActionHandler = HomeSidebarActionHandler(HomeSidebarActions())
+  /// The launch state and sync indicator, precomputed off Home's body by
+  /// `HomeNavigationPresentationObserver`. Nil until its first value.
+  @State var navigationPresentation: HomeNavigationPresentation?
   /// The window hosting this Home. With several iPad windows open, only the
   /// one the user is working in answers app-wide presentation requests.
   @State var hostWindow = WeakWindow()
@@ -188,8 +188,15 @@ struct HomeView: View {
           "old=\(navigationPathSummary(oldPath)) new=\(navigationPathSummary(newPath))"
         )
       }
-      .onChange(of: presentedWorkspaceDisposition, initial: true) { _, disposition in
-        applyPresentedWorkspaceDisposition(disposition)
+      // Both observe on Home's behalf, so their stores' churn re-renders an
+      // empty view instead of Home and the workspace beside its sidebar.
+      .background {
+        HomePresentedWorkspaceObserver(route: navigation.selection) { disposition in
+          applyPresentedWorkspaceDisposition(disposition)
+        }
+        HomeNavigationPresentationObserver { presentation in
+          navigationPresentation = presentation
+        }
       }
     )
     .environment(\.homeLayoutMode, layoutMode)

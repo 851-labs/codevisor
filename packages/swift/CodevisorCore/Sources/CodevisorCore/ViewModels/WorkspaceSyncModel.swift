@@ -19,9 +19,10 @@ public enum WorkspaceRouteDisposition: Equatable, Sendable {
 @MainActor
 @Observable
 public final class WorkspaceSyncModel {
-  /// Advances whenever navigation state or this device's layout changes.
-  public var revision: UInt64 { (navigationStore?.revision ?? 0) &+ localRevision }
-  private var localRevision: UInt64 = 0
+  /// Advances on every navigation rebuild. A wake-up signal for code that
+  /// waits for navigation to settle; views observe their workspace's entry
+  /// instead, since this changes on every event from every machine.
+  public var revision: UInt64 { navigationStore?.revision ?? 0 }
 
   let repository: any WorkspaceRepository
   let projectList: ProjectListModel
@@ -30,11 +31,6 @@ public final class WorkspaceSyncModel {
   public init(repository: any WorkspaceRepository, projectList: ProjectListModel) {
     self.repository = repository
     self.projectList = projectList
-  }
-
-  /// A layout change saved through the repository; views re-read it.
-  public func noteLocalMutation() {
-    localRevision &+= 1
   }
 
   /// Fetches a machine's latest workspaces now (pull to refresh).

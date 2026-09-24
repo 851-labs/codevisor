@@ -1,3 +1,4 @@
+import ACPKit
 import Foundation
 
 extension MachineController {
@@ -64,6 +65,13 @@ extension MachineController {
     }
   }
 
+  /// A delta can carry every row an event touched; decoding it is kept off
+  /// the main actor so a burst of events never stalls navigation.
+  @concurrent
+  nonisolated static func decodeNavigationDelta(_ payload: JSONValue) async throws -> ServerNavigationDelta {
+    try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(payload))
+  }
+
   /// Stops every machine's event stream (app teardown and tests).
   public func stopEventSync() {
     for connection in connectionsById.values {
@@ -118,7 +126,7 @@ extension MachineController {
     switch event.kind {
     case "navigation.changed":
       do {
-        let delta = try JSONDecoder().decode(ServerNavigationDelta.self, from: JSONEncoder().encode(event.payload))
+        let delta = try await Self.decodeNavigationDelta(event.payload)
         guard let navigationStore else { return }
         // Another device's change arrives here and simply moves the cache
         // forward; this device's waiting changes stay laid over it.

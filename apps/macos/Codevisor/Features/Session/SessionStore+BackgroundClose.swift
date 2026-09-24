@@ -50,9 +50,7 @@ extension SessionStore {
         }
         if descriptor.kind == .chat {
           if let chatId = descriptor.chatSessionId,
-            let chat = environment.projectList.sessions.first(where: {
-              $0.serverId == workspace.serverId && $0.id == chatId
-            })
+            let chat = environment.projectList.session(chatId, serverId: workspace.serverId)
           {
             environment.closeSession(chat)
           } else if descriptor.chatSessionId == nil {
@@ -81,6 +79,5 @@ extension SessionStore {
     where updated.centerTabs.allSatisfy({ $0.root.group(id: leafId) == nil }) {
       evictCenterLeaf(workspaceId: workspace.id, leafId: leafId)
     }
-    workspaceLayoutRevision += 1
   }
 }

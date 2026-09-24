@@ -21,9 +21,7 @@ struct ChatPaneContentView: View {
 
   var body: some View {
     if let chatSessionId = descriptor.chatSessionId {
-      if let chatSession = environment.projectList.sessions.first(where: {
-        $0.serverId == hostWorkspace.serverId && $0.id == chatSessionId
-      }),
+      if let chatSession = environment.projectList.session(chatSessionId, serverId: hostWorkspace.serverId),
         let chatProject = environment.projectList.projects.first(where: {
           $0.serverId == hostWorkspace.serverId && $0.id == chatSession.projectId
         })
@@ -66,6 +64,9 @@ struct ChatPaneContentView: View {
             ComputerUsePiPPane(workspaceId: hostWorkspace.id, paneId: descriptor.id)
           )
           .id(chatSession.id)
+          .task(id: SessionStore.SessionKey(chatSession)) {
+            store.noteAccess(SessionStore.SessionKey(chatSession))
+          }
           .onChange(of: chatSession, initial: true) { _, updatedSession in
             store.reconcile(controller, for: updatedSession, project: chatProject)
           }
