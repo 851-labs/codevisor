@@ -79,7 +79,7 @@ export const makeSessionsService = (
   | "updateSessionTitleFromHarness"
   | "deleteSession"
 > => {
-  const { sqlite, config, localLocationFor, sessionSummarySelect, getSession } = context
+  const { sqlite, localLocationFor, sessionSummarySelect, getSession } = context
 
   const createSession = Effect.fn("CodevisorDatabase.createSession")(function* (
     request: CreateSessionRequest
@@ -177,9 +177,7 @@ export const makeSessionsService = (
     settleSessionAttention: (rawId) =>
       attempt("settleSessionAttention", () => {
         const id = canonicalUuid(rawId)
-        return sqlite.transaction(() =>
-          settleSessionAttention(sqlite, id, isoTimestamp(), config.attentionSettleGraceMs)
-        )()
+        return sqlite.transaction(() => settleSessionAttention(sqlite, id, isoTimestamp()))()
       }),
     listPendingAttentionSettles: attempt("listPendingAttentionSettles", () =>
       listPendingAttentionSettles(sqlite)

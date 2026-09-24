@@ -1,7 +1,8 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db", () => {
@@ -190,9 +191,11 @@ describe("@codevisor/db", () => {
   })
 
   it("holds a finished turn while a subagent runs and settles it exactly once", async () => {
-    const db = await run(
-      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 0 })
-    )
+    vi.useFakeTimers({ toFake: ["Date"] })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/subagent-hold" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 
@@ -259,8 +262,13 @@ describe("@codevisor/db", () => {
     expect((await run(db.getSessionSummary(session.id))).sidebarState).toBe("inProgress")
     await run(db.appendEvent("session.updated", session.id, { backgroundTasks: [] }))
 
-    // The grace elapsed (zero in this test) with no re-invocation: the whole
-    // chain settles into exactly one unread revision.
+    // Settling inside the grace window is refused.
+    vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS - 1)
+    expect((await run(db.settleSessionAttention(session.id))).settled).toBe(false)
+
+    // The grace elapsed with no re-invocation: the whole chain settles into
+    // exactly one unread revision.
+    vi.setSystemTime(Date.now() + 1)
     const settled = await run(db.settleSessionAttention(session.id))
     expect(settled.settled).toBe(true)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
@@ -274,9 +282,7 @@ describe("@codevisor/db", () => {
   })
 
   it("defers a released hold until its grace deadline", async () => {
-    const db = await run(
-      makeDatabase({ filename: tempDatabase(), serverId: "local", attentionSettleGraceMs: 60_000 })
-    )
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     const project = await run(db.createProject({ folderPath: "/tmp/settle-grace" }))
     const session = await run(db.createSession({ projectId: project.id, harnessId: "claude-code" }))
 

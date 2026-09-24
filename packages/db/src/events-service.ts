@@ -94,7 +94,7 @@ export const makeEventsService = (
               .run(state, subjectId, subjectRevision)
             sessionBytes = Buffer.byteLength(state)
           }
-          projectSessionAttention(sqlite, sessionEvent, config.attentionSettleGraceMs)
+          projectSessionAttention(sqlite, sessionEvent)
           projectSessionSidebarState(sqlite, subjectId, createdAt)
           if (kind === "session.output") {
             sqlite

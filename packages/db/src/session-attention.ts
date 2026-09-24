@@ -93,8 +93,7 @@ const terminalAttentionError = (event: SessionEventRow, payload: JsonRecord): bo
 const reevaluatePendingFinish = (
   sqlite: Database.Database,
   sessionId: string,
-  now: string,
-  graceMs: number
+  now: string
 ): void => {
   const state = attentionRow(sqlite, sessionId)
   if (state === undefined || state.pending_finish !== 1 || state.turn_active === 1) return
@@ -108,7 +107,7 @@ const reevaluatePendingFinish = (
   }
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return
   if (state.settle_due_at === null) {
-    const dueAt = new Date(Date.parse(now) + graceMs).toISOString()
+    const dueAt = new Date(Date.parse(now) + ATTENTION_SETTLE_GRACE_MS).toISOString()
     sqlite
       .prepare("update session_attention set settle_due_at = ? where session_id = ?")
       .run(dueAt, sessionId)
@@ -126,8 +125,7 @@ const reevaluatePendingFinish = (
 export const settleSessionAttention = (
   sqlite: Database.Database,
   sessionId: string,
-  now: string,
-  graceMs: number = ATTENTION_SETTLE_GRACE_MS
+  now: string
 ): { readonly settled: boolean; readonly nextDueAt?: string } => {
   const state = attentionRow(sqlite, sessionId)
   if (state === undefined || state.pending_finish !== 1 || state.turn_active === 1) {
@@ -140,7 +138,8 @@ export const settleSessionAttention = (
     return { settled: false }
   }
   if (sessionHasQueuedPrompts(sqlite, sessionId)) return { settled: false }
-  const dueAt = state.settle_due_at ?? new Date(Date.parse(now) + graceMs).toISOString()
+  const dueAt =
+    state.settle_due_at ?? new Date(Date.parse(now) + ATTENTION_SETTLE_GRACE_MS).toISOString()
   if (state.settle_due_at === null) {
     sqlite
       .prepare("update session_attention set settle_due_at = ? where session_id = ?")
@@ -193,8 +192,7 @@ export const attentionSettleDeadline = (
 /// a cursor advance, performed by clients when the chat is focused.
 export const projectSessionAttention = (
   sqlite: Database.Database,
-  event: SessionEventRow,
-  graceMs: number = ATTENTION_SETTLE_GRACE_MS
+  event: SessionEventRow
 ): void => {
   const payload = jsonRecord(JSON.parse(event.payload))
   if (payload === undefined) return
@@ -333,7 +331,7 @@ export const projectSessionAttention = (
     }
   }
 
-  reevaluatePendingFinish(sqlite, event.session_id, event.created_at, graceMs)
+  reevaluatePendingFinish(sqlite, event.session_id, event.created_at)
 }
 
 /** Computes the one mutually exclusive state rendered by native sidebars.

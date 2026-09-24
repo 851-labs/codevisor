@@ -11,17 +11,14 @@ import { appendAndPublish, makeEventFanout } from "../server-context.js"
 import { run, tempDirs } from "../test-support.js"
 import { makeAttentionSettleScheduler } from "./attention-settle.js"
 
-const makeAttentionDb = async (graceMs: number) => {
+/// @codevisor/db's grace between a released hold and the unread flip.
+const ATTENTION_SETTLE_GRACE_MS = 12_000
+
+const makeAttentionDb = async () => {
   const dir = mkdtempSync(join(tmpdir(), "codevisor-attention-settle-"))
   tempDirs.push(dir)
   const filename = join(dir, "codevisor.sqlite")
-  const db = await run(
-    makeDatabase({
-      filename,
-      serverId: "server-a",
-      attentionSettleGraceMs: graceMs
-    })
-  )
+  const db = await run(makeDatabase({ filename, serverId: "server-a" }))
   return { db, filename }
 }
 
@@ -32,7 +29,7 @@ describe("@codevisor/server attention settle", () => {
   })
   afterEach(() => vi.useRealTimers())
   it("settles a released subagent hold after the grace and publishes one flip", async () => {
-    const { db } = await makeAttentionDb(40)
+    const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
     const attentionEvents: Array<EventEnvelope> = []
     fanout.subscribe((event) => {
@@ -63,7 +60,9 @@ describe("@codevisor/server attention settle", () => {
 
     await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
     // The hold released; the scheduler owns the grace deadline from here.
-    await vi.advanceTimersByTimeAsync(40)
+    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS - 1)
+    expect((await run(db.getSessionSummary(session.id))).latestAttentionSequence).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1
@@ -81,7 +80,7 @@ describe("@codevisor/server attention settle", () => {
   })
 
   it("cancels the deadline when the agent is re-invoked within the grace", async () => {
-    const { db } = await makeAttentionDb(80)
+    const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
     const scheduler = makeAttentionSettleScheduler(db, fanout)
 
@@ -111,7 +110,7 @@ describe("@codevisor/server attention settle", () => {
       turnId: "turn-2",
       turnState: "started"
     })
-    await vi.advanceTimersByTimeAsync(160)
+    await vi.advanceTimersByTimeAsync(2 * ATTENTION_SETTLE_GRACE_MS)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 0,
       unreadCount: 0,
@@ -135,7 +134,7 @@ describe("@codevisor/server attention settle", () => {
   })
 
   it("drains parked finishes on recovery after a restart", async () => {
-    const { db } = await makeAttentionDb(30)
+    const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
 
     // The previous process died between the hold release and the settle:
@@ -175,7 +174,7 @@ describe("@codevisor/server attention settle", () => {
     // Startup reconciliation then publishes the empty snapshot; the live loop
     // arms the grace deadline and settles it.
     await appendAndPublish(db, fanout, "session.updated", session.id, { backgroundTasks: [] })
-    await vi.advanceTimersByTimeAsync(30)
+    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1
@@ -185,7 +184,7 @@ describe("@codevisor/server attention settle", () => {
   })
 
   it("arms recovered deadlines and clears live timers on close", async () => {
-    const { db } = await makeAttentionDb(60_000)
+    const { db } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
 
     const project = await run(db.createProject({ folderPath: "/tmp/attention-close" }))
@@ -228,7 +227,7 @@ describe("@codevisor/server attention settle", () => {
   })
 
   it("re-arms migrated parked finishes with no recorded deadline", async () => {
-    const { db, filename } = await makeAttentionDb(30)
+    const { db, filename } = await makeAttentionDb()
     const fanout = await run(makeEventFanout)
 
     const project = await run(db.createProject({ folderPath: "/tmp/attention-migrated" }))
@@ -268,7 +267,7 @@ describe("@codevisor/server attention settle", () => {
     // returned deadline schedules the flip.
     const scheduler = makeAttentionSettleScheduler(db, fanout)
     await scheduler.recover()
-    await vi.advanceTimersByTimeAsync(30)
+    await vi.advanceTimersByTimeAsync(ATTENTION_SETTLE_GRACE_MS)
     expect(await run(db.getSessionSummary(session.id))).toMatchObject({
       latestAttentionSequence: 1,
       unreadCount: 1

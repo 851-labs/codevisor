@@ -1,8 +1,9 @@
 import Database from "better-sqlite3"
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { makeDatabase } from "./index.js"
+import { ATTENTION_SETTLE_GRACE_MS } from "./session-attention.js"
 import { run, tempDatabase } from "./test-support.js"
 
 describe("@codevisor/db attention and checklist upgrades", () => {
@@ -131,9 +132,11 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     `)
     legacy.close()
 
-    const upgraded = await run(
-      makeDatabase({ filename, serverId: "local", attentionSettleGraceMs: 0 })
-    )
+    vi.useFakeTimers({ toFake: ["Date"] })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const upgraded = await run(makeDatabase({ filename, serverId: "local" }))
     // The revision inherits the ledger's sequence space, so the shared read
     // cursor carries over exactly: 3 settled turns, 2 seen, 1 unread error.
     expect(await run(upgraded.getSessionSummary(read.id))).toMatchObject({
@@ -148,6 +151,9 @@ describe("@codevisor/db attention and checklist upgrades", () => {
     expect(await run(upgraded.listPendingAttentionSettles)).toEqual([
       { sessionId: stuck.id, dueAt: null }
     ])
+    // Recovery arms the grace deadline, then settles once it elapses.
+    expect((await run(upgraded.settleSessionAttention(stuck.id))).settled).toBe(false)
+    vi.setSystemTime(Date.now() + ATTENTION_SETTLE_GRACE_MS)
     expect((await run(upgraded.settleSessionAttention(stuck.id))).settled).toBe(true)
     expect(await run(upgraded.getSessionSummary(stuck.id))).toMatchObject({
       latestAttentionSequence: 1,

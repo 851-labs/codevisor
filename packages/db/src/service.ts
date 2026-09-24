@@ -65,9 +65,6 @@ export interface CodevisorDatabaseConfig {
   /// every durable batch. The app-hosted server writes this to a sidecar file
   /// that remains readable while the HTTP server is still booting.
   readonly onDataUpgradeProgress?: (progress: DataUpgradeProgress) => void
-  /// Test override for the grace between a released attention hold and the
-  /// unread revision bump. Production uses ATTENTION_SETTLE_GRACE_MS.
-  readonly attentionSettleGraceMs?: number
 }
 
 export interface CodevisorDatabaseService {
