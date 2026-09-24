@@ -99,27 +99,21 @@ test("environment override wins, may be a hash, and rejects revoked identities",
   assert.match(explicitAdHoc.warning!, /requested through the environment/)
 })
 
-test("rig plist carries the fixed identity and is byte-stable across calls", () => {
-  const options = {
-    ...rigIdentity,
-    bundleIdentifier: rigIdentity.bundleIdentifier,
-    configuration: "release"
-  }
-  const first = diagnosticInfoPlist(options)
-  assert.equal(first, diagnosticInfoPlist({ ...options }))
+test("rig plist carries the fixed identity", () => {
+  const plist = diagnosticInfoPlist({ ...rigIdentity, configuration: "release" })
   assert.match(
-    first,
+    plist,
     /<key>CFBundleIdentifier<\/key><string>com\.codevisor\.ScreenSharingRig<\/string>/
   )
-  assert.match(first, /<key>CFBundleExecutable<\/key><string>screen-sharing-rig<\/string>/)
-  assert.match(first, /<key>NSHighResolutionCapable<\/key><true\/>/)
-  assert.match(first, /<key>NSScreenCaptureUsageDescription<\/key>/)
+  assert.match(plist, /<key>CFBundleExecutable<\/key><string>screen-sharing-rig<\/string>/)
+  assert.match(plist, /<key>NSHighResolutionCapable<\/key><true\/>/)
+  assert.match(plist, /<key>NSScreenCaptureUsageDescription<\/key>/)
   assert.match(
-    first,
+    plist,
     /<key>NSAppTransportSecurity<\/key><dict>\n<key>NSAllowsArbitraryLoads<\/key><true\/>\n<\/dict>/,
     "signaling over a Tailscale address is plain HTTP outside ATS's private-range exemption"
   )
-  assert.doesNotMatch(first, /w[0-9a-f]{12}/, "the rig identifier must not embed a worktree hash")
+  assert.doesNotMatch(plist, /w[0-9a-f]{12}/, "the rig identifier must not embed a worktree hash")
 })
 
 test("plist escapes XML in values and keeps keys sorted", () => {

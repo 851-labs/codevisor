@@ -1,8 +1,4 @@
-import {
-  normalizePromptInput,
-  withAttachmentNotes,
-  type PromptAttachmentInput
-} from "@codevisor/agent-runtime"
+import type { PromptAttachmentInput } from "@codevisor/agent-runtime"
 import { describe, expect, it } from "vitest"
 
 import { acpPrompt } from "./index.js"
@@ -22,22 +18,6 @@ describe("prompt attachments", () => {
     name: "notes.txt",
     path: "/tmp/att/notes.txt"
   }
-
-  it("normalizes prompt input from strings and structured input", () => {
-    expect(normalizePromptInput("hello")).toEqual({ text: "hello" })
-    const input = { attachments: [image], text: "hi" }
-    expect(normalizePromptInput(input)).toBe(input)
-  })
-
-  it("appends path notes for attachments, skipping empty text", () => {
-    expect(withAttachmentNotes("hello", [])).toBe("hello")
-    expect(withAttachmentNotes("hello", [file])).toBe(
-      "hello\n\n[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]"
-    )
-    expect(withAttachmentNotes("", [file])).toBe(
-      "[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]"
-    )
-  })
 
   it("builds ACP prompt blocks: resource_link for every file, inline images when supported", () => {
     expect(acpPrompt({ attachments: [image, file], text: "look" }, { image: true })).toEqual([
