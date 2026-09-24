@@ -90,14 +90,18 @@ describe("makePluginSupervisor", () => {
 
   it("fails with a typed error when the plugin never listens", async () => {
     const spawn = fakeSpawn({ listen: false })
+    const clock = advancingClock()
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 400,
-      ...advancingClock(),
+      ...clock,
       spawnShell: spawn.spawnShell
     })
-    await expect(supervisor.ensureRunning(plugin())).rejects.toThrow(/did not start listening/)
+    await expect(supervisor.ensureRunning(plugin())).rejects.toThrow(
+      "did not start listening on $PORT within 15000ms"
+    )
+    // Probing continued until the readiness deadline, and not past it.
+    expect(clock.now()).toBe(15_000)
     expect(supervisor.state("owner.example")).toBe("failed")
   })
 
@@ -108,7 +112,6 @@ describe("makePluginSupervisor", () => {
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 350,
       ...advancingClock(),
       spawnShell: (_command, options) => {
         server = createServer((request, response) => {
@@ -152,7 +155,6 @@ describe("makePluginSupervisor", () => {
     cleanups.push(() => server?.close())
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
-      readyTimeoutMs: 1_000,
       ...advancingClock(),
       spawnShell: (_command, options) => {
         server = createServer((_request, response) => {
@@ -175,7 +177,6 @@ describe("makePluginSupervisor", () => {
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 250,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
@@ -202,7 +203,6 @@ describe("makePluginSupervisor", () => {
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 1_100,
       ...clock,
       spawnShell: fakeSpawn({ listen: false }).spawnShell
     })
@@ -217,7 +217,6 @@ describe("makePluginSupervisor", () => {
     const spawn = fakeSpawn({ listen: false })
     const supervisor = makePluginSupervisor({
       dataDir: makeDataDir(),
-      readyTimeoutMs: 5_000,
       sleep: async () => {
         spawn.simulateExit("exited with code 3\nboom")
       },

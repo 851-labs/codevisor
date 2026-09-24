@@ -123,7 +123,6 @@ describe("manager install pipeline", () => {
     const spawn = fakeSpawn({ listen: false })
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 200,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
@@ -140,7 +139,6 @@ describe("manager install pipeline", () => {
         return { resolvedCommit: "a".repeat(40) }
       },
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 200,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })

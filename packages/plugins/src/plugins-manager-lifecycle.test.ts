@@ -90,7 +90,6 @@ describe("enabled state and recovery", () => {
     const spawn = fakeSpawn({ listen: false })
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 100,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
@@ -157,7 +156,9 @@ describe("state events", () => {
 
 describe("always-running lifecycle", () => {
   it("starts installed plugins and restarts them after a crash", async () => {
-    const { fake, manager } = makeManager({ backoffBaseMs: 0 })
+    // The injected clock advances only while the manager waits between
+    // restart attempts, so recovery crosses the real 500 ms crash backoff.
+    const { fake, manager } = makeManager({ ...advancingClock() })
     await Promise.all([manager.startAll(), manager.startAll()])
     expect((await manager.get("owner.example")).state).toBe("running")
     expect(fake.spawnCount()).toBe(1)
@@ -174,7 +175,6 @@ describe("always-running lifecycle", () => {
     const spawn = fakeSpawn({ listen: false })
     const { manager } = makeManager({
       maxConsecutiveFailures: 1,
-      readyTimeoutMs: 200,
       ...advancingClock(),
       spawnShell: spawn.spawnShell
     })
