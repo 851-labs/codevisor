@@ -38,14 +38,22 @@ export interface PaneTokenStore {
   /// Verifies like `verify`, then promotes the initial token to a long-lived
   /// cookie session (the navigation exchange that sets the cookie).
   readonly exchange: (token: string, pluginId: string) => PaneTokenScope | undefined
-  /// Signs a serialized context payload so plugins can trust
-  /// X-Codevisor-Context came from this server, not another local process.
-  readonly signContext: (payload: string) => string
+  /// The plugin's context-signing key, handed to its process as
+  /// CODEVISOR_PLUGIN_CONTEXT_SECRET. Derived per plugin so one plugin cannot
+  /// forge context for another; stable for this server's lifetime so
+  /// restarted plugin processes keep verifying.
+  readonly contextSecret: (pluginId: string) => string
+  /// HMAC-SHA256 (hex) of the exact X-Codevisor-Context header value, keyed
+  /// by the plugin's contextSecret string. Plugins holding that secret can
+  /// verify the context came from this server, not another local process.
+  readonly signContext: (pluginId: string, payload: string) => string
 }
 
 export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore => {
   const records = new Map<string, PaneTokenRecord>()
   const secret = randomBytes(32)
+  const contextSecret = (pluginId: string): string =>
+    createHmac("sha256", secret).update(`codevisor-plugin-context:${pluginId}`).digest("hex")
   const sweep = (): void => {
     const current = now()
     for (const [token, record] of records) {
@@ -67,6 +75,7 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
     return record.scope
   }
   return {
+    contextSecret,
     exchange: (token, pluginId) => extend(token, pluginId, SESSION_TTL_MS),
     issue: (scope) => {
       sweep()
@@ -75,7 +84,8 @@ export const makePaneTokenStore = (now: () => number = Date.now): PaneTokenStore
       records.set(token, { expiresAt, scope })
       return { expiresAt: new Date(expiresAt).toISOString(), token }
     },
-    signContext: (payload) => createHmac("sha256", secret).update(payload).digest("hex"),
+    signContext: (pluginId, payload) =>
+      createHmac("sha256", contextSecret(pluginId)).update(payload).digest("hex"),
     verify: (token, pluginId) => extend(token, pluginId, INITIAL_TOKEN_TTL_MS)
   }
 }

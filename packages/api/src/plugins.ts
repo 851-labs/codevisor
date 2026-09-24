@@ -107,8 +107,9 @@ export const PluginManifestV1 = Schema.Struct({
   /// Run once at install/update time (dependency fetch, build). Absent for
   /// zero-dependency plugins — the documented golden path.
   install: Schema.optional(PluginCommand),
-  /// Launches the plugin server; receives PORT, CODEVISOR_PLUGIN_ID, and
-  /// CODEVISOR_PLUGIN_DATA_DIR in its environment.
+  /// Launches the plugin server; receives PORT, CODEVISOR_PLUGIN_ID,
+  /// CODEVISOR_PLUGIN_DATA_DIR, and CODEVISOR_PLUGIN_CONTEXT_SECRET in its
+  /// environment.
   run: PluginCommand
 })
 export type PluginManifestV1 = typeof PluginManifestV1.Type

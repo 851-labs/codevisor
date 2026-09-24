@@ -11,6 +11,7 @@ import {
   makeDir,
   makeManager,
   makeOuterServer,
+  verifyPluginContext,
   writePlugin
 } from "./test-support.js"
 
@@ -51,7 +52,9 @@ describe("plugin listing", () => {
       "/assets/icon.svg",
       "/assets/pane.svg"
     ])
-    expect(fake.requests[0]?.headers["x-codevisor-context-signature"]).toBeDefined()
+    expect(
+      verifyPluginContext(fake.env()["CODEVISOR_PLUGIN_CONTEXT_SECRET"], fake.requests[0]!.headers)
+    ).toBe(true)
 
     fake.stop()
     await expect(manager.fetchIcon("owner.example")).rejects.toThrow(/request failed/)
@@ -172,13 +175,20 @@ describe("pane proxy", () => {
     expect(setCookie).toContain("codevisor-plugin-owner-example=")
     expect(setCookie).toContain("Path=/v1/plugins/owner.example/")
     // The plugin saw the pane id and extra params, never the token; context
-    // arrived as a signed header.
+    // arrived signed with the secret the plugin received at spawn, and a
+    // tampered context no longer verifies.
     const seen = fake.requests[0]
     expect(seen?.path).toContain("paneId=pane-1")
     expect(seen?.path).toContain("extra=1")
     expect(seen?.path).not.toContain("codevisorPaneToken")
-    expect(seen?.headers["x-codevisor-context"]).toBeDefined()
-    expect(seen?.headers["x-codevisor-context-signature"]).toBeDefined()
+    const secret = fake.env()["CODEVISOR_PLUGIN_CONTEXT_SECRET"]
+    expect(verifyPluginContext(secret, seen!.headers)).toBe(true)
+    const forged = Buffer.from(JSON.stringify({ cwd: "/", pluginId: "owner.example" })).toString(
+      "base64"
+    )
+    expect(verifyPluginContext(secret, { ...seen!.headers, "x-codevisor-context": forged })).toBe(
+      false
+    )
     expect(seen?.headers["authorization"]).toBeUndefined()
     const context = JSON.parse(
       Buffer.from(String(seen?.headers["x-codevisor-context"]), "base64").toString("utf8")

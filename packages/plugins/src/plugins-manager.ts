@@ -66,6 +66,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
   const supervisorOverrides: Omit<PluginSupervisorConfig, "dataDir" | "onStateChange"> = config
   const supervisor = makePluginSupervisor({
     ...supervisorOverrides,
+    contextSecret: tokens.contextSecret,
     // "plugin-data" (not "plugins") so per-plugin runtime state can never
     // collide with an installed-plugins root living in the same directory —
     // dev instances keep both directly under one flat data dir.
@@ -139,21 +140,21 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
     }
   }
 
-  /// Encodes and signs a context payload so plugins can trust that
-  /// X-Codevisor-Context came from this server — shared by pane proxying and
-  /// tool invocation, which carry different context shapes.
-  const signedContextHeaders = (
-    payload: Readonly<Record<string, unknown>>
-  ): Record<string, string> => {
-    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
-    return {
-      "x-codevisor-context": encoded,
-      "x-codevisor-context-signature": tokens.signContext(encoded)
+  /// Encodes and signs a context payload with the target plugin's key so it
+  /// can trust that X-Codevisor-Context came from this server — shared by
+  /// pane proxying, icons, and tool invocation, which carry different shapes.
+  const signedContextHeaders =
+    (pluginId: string) =>
+    (payload: Readonly<Record<string, unknown>>): Record<string, string> => {
+      const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64")
+      return {
+        "x-codevisor-context": encoded,
+        "x-codevisor-context-signature": tokens.signContext(pluginId, encoded)
+      }
     }
-  }
 
   const contextHeaders = (scope: PaneTokenScope): Record<string, string> =>
-    signedContextHeaders({
+    signedContextHeaders(scope.pluginId)({
       cwd: scope.cwd,
       paneId: scope.paneId,
       paneType: scope.paneType,
@@ -268,7 +269,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         noteSuccess: () => supervisor.noteSuccess(plugin.id),
         paneType,
         plugin,
-        signedContextHeaders,
+        signedContextHeaders: signedContextHeaders(plugin.id),
         timeoutMs: proxyTimeoutMs
       })
     },
@@ -441,7 +442,7 @@ export const makePluginsManager = (config: PluginsManagerConfig): PluginsManager
         markUnreachable: () => supervisor.markUnreachable(plugin.id),
         noteSuccess: () => supervisor.noteSuccess(plugin.id),
         plugin,
-        signedContextHeaders,
+        signedContextHeaders: signedContextHeaders(plugin.id),
         timeoutMs: toolTimeoutMs,
         toolName
       })
