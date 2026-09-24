@@ -1,0 +1,207 @@
+<!doctype html>
+<!--
+  The cross-app frame clock's host page (851-2358). Open it on the machine being
+  viewed, full screen. The top strip shows the frame number (1/60 s steps of this
+  page's clock) in 8 flat-coloured cells, mirroring FrameClock.cells(for:) in
+  ScreenSharingRigKit: 6 cells of 3 bits (red, green, blue on or off, most
+  significant first), then a 6-bit position-weighted checksum in 2 cells. For the
+  first seconds, for 3 s after any click, and while ?calibrate is set, every cell
+  is orange (255, 128, 0), a colour no data cell can take, so a capture can find the strip. Below it runs the workload: ?mode=video (default), scroll,
+  type or still.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Keep Safari from tinting its toolbar to match the strip. -->
+    <meta name="theme-color" content="#000000" />
+    <title>Frame clock</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font:
+          28px -apple-system,
+          Helvetica,
+          sans-serif;
+        color: #eee;
+      }
+      #strip {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 10vh;
+        display: flex;
+      }
+      #strip div {
+        flex: 1;
+      }
+      #stage {
+        position: fixed;
+        left: 0;
+        top: 10vh;
+        width: 100%;
+        height: 90vh;
+      }
+      #hint {
+        position: fixed;
+        right: 12px;
+        bottom: 8px;
+        font-size: 14px;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="strip"></div>
+    <canvas id="stage"></canvas>
+    <div id="hint"></div>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const mode = params.get("mode") || "video"
+      const calibrateSeconds = params.has("calibrate")
+        ? Infinity
+        : Number(params.get("calibrate-seconds") || 4)
+      const CELLS = 8,
+        DATA = 6,
+        MODULUS = 1 << (3 * DATA)
+      const strip = document.getElementById("strip")
+      const cells = Array.from({ length: CELLS }, () =>
+        strip.appendChild(document.createElement("div"))
+      )
+      const canvas = document.getElementById("stage")
+      const context = canvas.getContext("2d")
+      document.getElementById("hint").textContent =
+        `frame clock · ${mode} · click to recalibrate · ⌃⌘F for full screen`
+
+      function checksum(digits) {
+        return digits.reduce((sum, digit, index) => sum + (index + 1) * (digit * 7 + index), 0) & 63
+      }
+      function digitsFor(frame) {
+        const value = ((frame % MODULUS) + MODULUS) % MODULUS
+        const digits = Array.from(
+          { length: DATA },
+          (_, index) => (value >> (3 * (DATA - 1 - index))) & 7
+        )
+        const check = checksum(digits)
+        return [...digits, check >> 3, check & 7]
+      }
+      const colour = (bits) =>
+        `rgb(${bits & 4 ? 255 : 0},${bits & 2 ? 255 : 0},${bits & 1 ? 255 : 0})`
+
+      function resize() {
+        const scale = window.devicePixelRatio || 1
+        canvas.width = Math.round(canvas.clientWidth * scale)
+        canvas.height = Math.round(canvas.clientHeight * scale)
+      }
+      window.addEventListener("resize", resize)
+      resize()
+
+      // A deterministic, detailed texture for the video mode: coloured noise that doesn't compress to nothing.
+      const texture = document.createElement("canvas")
+      texture.width = texture.height = 256
+      {
+        const t = texture.getContext("2d")
+        const image = t.createImageData(256, 256)
+        let seed = 12345
+        const random = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff
+        for (let i = 0; i < image.data.length; i += 4) {
+          const base = 80 + 120 * random()
+          image.data[i] = base * random()
+          image.data[i + 1] = base * random()
+          image.data[i + 2] = base
+          image.data[i + 3] = 255
+        }
+        t.putImageData(image, 0, 0)
+      }
+      const lines = Array.from(
+        { length: 400 },
+        (_, index) =>
+          `${String(index).padStart(3, "0")}  The quick brown fox jumps over the lazy dog; 0123456789 {[()]} — line ${index}`
+      )
+      let typed = ""
+
+      const start = performance.now()
+      let lastFrame = -1
+      // A click shows the orange calibration strip again for 3 s, so a capture started later can find it.
+      let calibrateUntil = 0
+      window.addEventListener("mousedown", () => {
+        calibrateUntil = performance.now() + 3000
+        lastFrame = -1
+      })
+      function draw(now) {
+        const elapsed = (now - start) / 1000
+        const frame = Math.floor(((now - start) * 60) / 1000)
+        if (frame !== lastFrame || now < calibrateUntil) {
+          lastFrame = frame
+          const digits =
+            elapsed < calibrateSeconds || now < calibrateUntil ? null : digitsFor(frame)
+          cells.forEach(
+            (cell, index) =>
+              (cell.style.background = digits ? colour(digits[index]) : "rgb(255,128,0)")
+          )
+        }
+        const { width, height } = canvas
+        const scale = window.devicePixelRatio || 1
+        if (mode === "video") {
+          // Two scrolling noise layers plus moving shapes: most of the stage changes every frame.
+          const pattern = context.createPattern(texture, "repeat")
+          context.save()
+          context.translate(-((elapsed * 240 * scale) % 256), -((elapsed * 90 * scale) % 256))
+          context.fillStyle = pattern
+          context.fillRect(0, 0, width + 256, height + 256)
+          context.restore()
+          for (let k = 0; k < 6; k++) {
+            const x = width * (0.5 + 0.4 * Math.sin(elapsed * (0.7 + k * 0.23) + k))
+            const y = height * (0.5 + 0.4 * Math.cos(elapsed * (0.5 + k * 0.31) + 2 * k))
+            const gradient = context.createRadialGradient(x, y, 0, x, y, height * 0.25)
+            gradient.addColorStop(0, `hsla(${(k * 60 + elapsed * 90) % 360},90%,60%,0.9)`)
+            gradient.addColorStop(1, "hsla(0,0%,0%,0)")
+            context.fillStyle = gradient
+            context.fillRect(0, 0, width, height)
+          }
+        } else if (mode === "scroll") {
+          context.fillStyle = "#fafafa"
+          context.fillRect(0, 0, width, height)
+          context.fillStyle = "#111"
+          context.font = `${22 * scale}px Menlo, monospace`
+          const lineHeight = 30 * scale
+          const offset = (elapsed * 300 * scale) % (lines.length * lineHeight)
+          const first = Math.floor(offset / lineHeight)
+          for (let row = 0; row * lineHeight < height + lineHeight; row++) {
+            context.fillText(
+              lines[(first + row) % lines.length],
+              20 * scale,
+              row * lineHeight - (offset % lineHeight) + 24 * scale
+            )
+          }
+        } else if (mode === "type") {
+          const wanted = Math.floor(elapsed * 10)
+          while (typed.length < wanted) typed += lines[typed.length % 7][typed.length % 60]
+          context.fillStyle = "#fafafa"
+          context.fillRect(0, 0, width, height)
+          context.fillStyle = "#111"
+          context.font = `${22 * scale}px Menlo, monospace`
+          const perLine = 100
+          const shown = typed.slice(-perLine * 20)
+          for (let row = 0; row * perLine < shown.length; row++) {
+            context.fillText(
+              shown.slice(row * perLine, (row + 1) * perLine),
+              20 * scale,
+              (row + 1) * 30 * scale
+            )
+          }
+        } else if (frame === 0 || !draw.still) {
+          draw.still = true
+          context.fillStyle = "#fafafa"
+          context.fillRect(0, 0, width, height)
+        }
+        requestAnimationFrame(draw)
+      }
+      requestAnimationFrame(draw)
+    </script>
+  </body>
+</html>

@@ -39,6 +39,10 @@
           VNCBenchCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
+        if arguments.first == "frame-clock" {
+          FrameClockCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
         if arguments.first == "vnc-server" {
           VNCServerCommand.main(arguments: Array(arguments.dropFirst()))
           return

@@ -1,0 +1,39 @@
+{
+  "apps" : {
+    "com.apple.ScreenSharing" : {
+      "calibrated" : true,
+      "captures" : 450,
+      "gapMaxMs" : 433.83999999999997,
+      "gapP50Ms" : 143.44,
+      "gapP95Ms" : 291.42000000000002,
+      "hostFramesShown" : 0.10000000000000001,
+      "tornFraction" : 0.02,
+      "unreadableFraction" : 0,
+      "updatesPerSecond" : 6.0899999999999999,
+      "window" : "1440x987"
+    },
+    "com.codevisor.ScreenSharingRig" : {
+      "calibrated" : true,
+      "captures" : 547,
+      "gapMaxMs" : 11222.690000000001,
+      "gapP50Ms" : 1409.6199999999999,
+      "gapP95Ms" : 3073.8699999999999,
+      "hostFramesShown" : 0.01,
+      "tornFraction" : 0,
+      "unreadableFraction" : 0,
+      "updatesPerSecond" : 0.54000000000000004,
+      "window" : "1431x817"
+    }
+  },
+  "lags" : {
+    "com.apple.ScreenSharing behind com.codevisor.ScreenSharingRig" : {
+      "p50Ms" : -1083,
+      "p95Ms" : -50
+    },
+    "com.codevisor.ScreenSharingRig behind com.apple.ScreenSharing" : {
+      "p50Ms" : 1083,
+      "p95Ms" : 8167
+    }
+  },
+  "seconds" : 60
+}
