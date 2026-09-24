@@ -122,7 +122,6 @@ export interface RestartCoordinatorDeps {
   }
   readonly snapshot: RestartSnapshotStore
   readonly defaultTimeoutMs?: number | undefined
-  readonly drainedGraceMs?: number | undefined
   readonly log?: ((line: string) => void) | undefined
   /// Re-drains a held session after `cancel` (the prompt queue drain in
   /// production; a recorder in the coordinator's own tests).
@@ -133,7 +132,6 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
   const { services, fanout, turns, snapshot, redrain } = deps
   const log = deps.log ?? ((line: string) => console.log(line))
   const defaultTimeoutMs = deps.defaultTimeoutMs ?? DEFAULT_RESTART_DRAIN_TIMEOUT_MS
-  const drainedGraceMs = deps.drainedGraceMs ?? DRAINED_WITHOUT_RESTART_GRACE_MS
 
   let phase: RestartDrainState["state"] = "idle"
   /// When the current phase began.
@@ -239,7 +237,7 @@ export const makeRestartCoordinator = (deps: RestartCoordinatorDeps): RestartCoo
     graceTimer = setTimeout(() => {
       log("Restart drain abandoned: the server never restarted")
       void coordinator.cancel()
-    }, drainedGraceMs)
+    }, DRAINED_WITHOUT_RESTART_GRACE_MS)
     graceTimer.unref()
     return state()
   }
