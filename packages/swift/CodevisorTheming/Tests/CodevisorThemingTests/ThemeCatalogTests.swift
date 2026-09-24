@@ -63,6 +63,14 @@ struct ThemeCatalogTests {
           || palette.textSecondary == palette.textPrimary,
         "\(descriptor.id) muted text below 4.5:1 and not the primary fallback")
       #expect(palette.isDark == (descriptor.type == .dark), "\(descriptor.id) type mismatch")
+      // A fenced code block is borderless: its fill is the only thing
+      // separating it from the page, so it has to clear the window
+      // surface on every theme we ship.
+      let page = palette.windowBackground
+      let code = palette.codeBackground
+      #expect(
+        max(abs(code.r - page.r), abs(code.g - page.g), abs(code.b - page.b)) >= 6,
+        "\(descriptor.id) code background is invisible against the window")
     }
   }
 

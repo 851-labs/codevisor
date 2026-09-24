@@ -43,9 +43,12 @@ public func makeMarkdownTheme(theme: Theme, highlight: (key: String, json: Strin
   markdown.secondaryTextForeground = theme.textSecondary
   markdown.codeForeground = theme.textPrimary
   if let palette = theme.palette {
-    markdown.codeBackground = Color(rgba: palette.cardBackground)
-    // cardHoverBackground (12% fg mix) — cardBackground's 6% mix vanishes
-    // against the window background in most custom themes.
+    // codeBackground, not cardBackground: a fenced block has no border, so
+    // the fill is its only affordance and must clear the window surface.
+    markdown.codeBackground = Color(rgba: palette.codeBackground)
+    // Inline chips carry a heavier tint than the block (cardHoverBackground,
+    // a 12% fg mix): a few characters set in a line of prose need more
+    // separation than a full-width block does to read as code.
     markdown.inlineCodeBackground = Color(rgba: palette.cardHoverBackground)
     markdown.quoteBarColor = theme.border
     markdown.tableBorderColor = theme.separator

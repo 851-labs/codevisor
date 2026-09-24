@@ -264,6 +264,63 @@ struct PaletteDeriverTests {
     #expect(flat.popoverBackground == flatFg.mixed(with: flatBg, weight: 0.07))
   }
 
+  @Test("Code blocks never inherit a card fill that matches the page")
+  func codeBackgroundClearsWindow() throws {
+    func delta(_ a: RGBA, _ b: RGBA) -> Double {
+      max(abs(a.r - b.r), abs(a.g - b.g), abs(a.b - b.b))
+    }
+
+    // tokyo-night's real shape: the authored widget is a genuinely
+    // different surface from the SIDEBAR (so it wins the card) but sits 2
+    // code values off the editor background. A bordered card reads there;
+    // a borderless code block does not. Exact equality would miss this.
+    let nearMiss = try #require(
+      PaletteDeriver.derive(
+        from: VSCodeTheme(
+          type: "dark",
+          colors: [
+            "sideBar.background": "#16161e",
+            "editor.background": "#1a1b26",
+            "editorWidget.background": "#1c1c25",
+          ],
+          fg: "#c0caf5", bg: "#1a1b26")))
+    // The card keeps the designer's intent...
+    #expect(nearMiss.cardBackground == RGBA(hex: "#1c1c25"))
+    #expect(delta(nearMiss.cardBackground, nearMiss.windowBackground) < 6)
+    // ...while the code fill lifts clear of the page instead of vanishing.
+    #expect(nearMiss.codeBackground != nearMiss.cardBackground)
+    #expect(delta(nearMiss.codeBackground, nearMiss.windowBackground) >= 6)
+
+    // The light shape from the field report: an authored #ffffff widget on
+    // a #ffffff editor, with a distinct sidebar.
+    let light = try #require(
+      PaletteDeriver.derive(
+        from: VSCodeTheme(
+          type: "light",
+          colors: [
+            "sideBar.background": "#f0eff3",
+            "editor.background": "#ffffff",
+            "editorWidget.background": "#ffffff",
+          ],
+          fg: "#1f1f1f", bg: "#ffffff")))
+    #expect(light.cardBackground == light.windowBackground)
+    #expect(delta(light.codeBackground, light.windowBackground) >= 6)
+
+    // A card that already reads against the page is used verbatim — no
+    // second surface, so a code block and the cards near it cannot drift.
+    let elevated = try #require(
+      PaletteDeriver.derive(
+        from: VSCodeTheme(
+          type: "light",
+          colors: [
+            "sideBar.background": "#f6f8fa",
+            "editor.background": "#ffffff",
+          ],
+          fg: "#1f2328", bg: "#ffffff")))
+    #expect(delta(elevated.cardBackground, elevated.windowBackground) >= 6)
+    #expect(elevated.codeBackground == elevated.cardBackground)
+  }
+
   @Test("Status tints fall back to constants when theme signals miss the floor")
   func statusFloor() throws {
     // solarized-light style: ansiGreen #859900 is ~2.98:1 on #FDF6E3 —

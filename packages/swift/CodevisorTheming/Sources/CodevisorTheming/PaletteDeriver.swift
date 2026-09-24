@@ -28,6 +28,11 @@ public struct DerivedPalette: Equatable, Sendable {
   public let sidebarBackground: RGBA
   public let cardBackground: RGBA
   public let cardHoverBackground: RGBA
+  /// Fill behind a fenced Markdown code block. A code block draws no border
+  /// of its own, so this fill is the only thing separating it from the page
+  /// — unlike `cardBackground`, it is guaranteed to differ from
+  /// `windowBackground`.
+  public let codeBackground: RGBA
   public let cardBorder: RGBA
   public let popoverBackground: RGBA
   public let popoverBorder: RGBA
@@ -169,6 +174,20 @@ public enum PaletteDeriver {
     let cardHoverBackground =
       authoredCard.map { fg.mixed(with: $0, weight: 0.06) }
       ?? fg.mixed(with: sidebarBg, weight: 0.12)
+    // A fenced code block is a card with no border: the fill IS the
+    // affordance, and it renders on the window surface rather than the
+    // sidebar. `cardBackground` alone cannot serve it — a theme may
+    // deliberately elevate its widget off the SIDEBAR while leaving it on
+    // (or within a code value or two of) the editor surface: tokyo-night,
+    // catppuccin-mocha, one-dark-pro and ayu all do. That reads fine for
+    // the bordered plan and tool-call cards, but leaves a code block
+    // invisible against the page.
+    // Keep the card fill when it genuinely reads there; else nudge the
+    // page itself, the same 6% lift the card would have taken.
+    let codeBackground =
+      separated(cardBackground, from: editorBg)
+      ? cardBackground
+      : liftedSurface(from: fg, over: editorBg)
     let popoverBackground =
       authoredElevatedSurface(
         resolved,
@@ -236,6 +255,7 @@ public enum PaletteDeriver {
       sidebarBackground: sidebarBg,
       cardBackground: cardBackground,
       cardHoverBackground: cardHoverBackground,
+      codeBackground: codeBackground,
       cardBorder: fg.mixed(with: sidebarBg, weight: 0.12),
       popoverBackground: popoverBackground,
       popoverBorder: fg.mixed(with: sidebarBg, weight: 0.18),
@@ -307,6 +327,40 @@ public enum PaletteDeriver {
   ) -> RGBA? {
     let fill = accent.withAlpha(alpha).compositedOver(base)
     return usableRowFill(fill, text: text, base: base) ? fill : nil
+  }
+
+  // Minimum sRGB channel separation for one surface to read as distinct
+  // from another.
+  //
+  // Deliberately a code-value delta rather than a luminance delta: relative
+  // luminance compresses to near-zero at the dark end, so a ΔL floor calls
+  // every dark theme's elevated surface identical to its page (tokyo-night's
+  // card and editor differ by 2 code values but only 0.0008 ΔL). sRGB code
+  // values are already perceptually encoded, so one threshold holds at both
+  // ends of the range.
+  //
+  // 6 is calibrated, not picked: it is the separation dracula,
+  // everforest-dark, github-dark and rose-pine-dawn already ship and read
+  // fine at. Anything below that floor is a theme we render wrong, not a
+  // subtle look we should preserve.
+  private static let minSurfaceDelta = 6.0
+
+  private static func separated(_ fill: RGBA, from surface: RGBA) -> Bool {
+    max(abs(fill.r - surface.r), abs(fill.g - surface.g), abs(fill.b - surface.b))
+      >= minSurfaceDelta
+  }
+
+  // A surface lifted off `base` toward `fg` far enough to read as its own
+  // plane. The first rung is the 6% nudge the cards take; the ladder only
+  // advances for themes whose foreground sits unusually close to the
+  // surface, where 6% of the gap is still under the floor.
+  private static func liftedSurface(from fg: RGBA, over base: RGBA) -> RGBA {
+    let ladder = [0.06, 0.10, 0.16, 0.24]
+    for weight in ladder {
+      let fill = fg.mixed(with: base, weight: weight)
+      if separated(fill, from: base) { return fill }
+    }
+    return fg.mixed(with: base, weight: ladder[ladder.count - 1])
   }
 
   // First authored elevated-surface candidate that is a genuinely different
