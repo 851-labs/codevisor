@@ -47,9 +47,13 @@ public actor RFBClient {
 
   /// Handshake, then SetPixelFormat and SetEncodings; the framebuffer takes the server's size.
   @discardableResult
-  public func connect(password: String?, shared: Bool = true) async throws -> RFBHandshake.Outcome {
+  public func connect(
+    password: String?, username: String? = nil, shared: Bool = true
+  ) async throws
+    -> RFBHandshake.Outcome
+  {
     let outcome = try await RFBHandshake.perform(
-      stream: stream, transport: transport, password: password, shared: shared)
+      stream: stream, transport: transport, password: password, username: username, shared: shared)
     try framebuffer.resize(width: outcome.parameters.width, height: outcome.parameters.height)
     try await transport.write(
       RFBClientMessage.setPixelFormat(.bgra32).encoded + RFBClientMessage.setEncodings(encodings).encoded)

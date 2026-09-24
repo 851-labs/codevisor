@@ -34,6 +34,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
   public struct Configuration: Sendable {
     public var version = RFBProtocolVersion.v3_8
     public var securityTypes: [UInt8] = [RFBSecurityType.vncAuthentication.rawValue]
+    /// The macOS account security type 30 accepts (851-2341).
+    public var account: (username: String, password: String)?
     public var password: String? = "secret"
     public var width = 64
     public var height = 48
@@ -86,7 +88,7 @@ public final class RFBLoopbackServer: @unchecked Sendable {
 
   public private(set) var port: UInt16 = 0
   public let framebuffer: RFBFramebuffer
-  private let configuration: Configuration
+  let configuration: Configuration
   private let listener: NWListener
   private let queue = DispatchQueue(label: "com.851labs.Codevisor.rfb.loopback")
   private let lock = NSLock()
@@ -357,6 +359,8 @@ public final class RFBLoopbackServer: @unchecked Sendable {
       try await transport.write([0, 0, 0, 0])
     case RFBSecurityType.none.rawValue:
       if version == .v3_8 { try await transport.write([0, 0, 0, 0]) }
+    case RFBSecurityType.appleRemoteDesktop.rawValue:
+      guard try await authenticateAppleAccount(stream: stream, transport: transport, version: version) else { return }
     default:
       return
     }

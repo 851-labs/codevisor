@@ -10,10 +10,12 @@ public enum RFBHandshake {
   }
 
   /// Negotiates the newest of 3.3/3.7/3.8 the server supports (Apple's
-  /// 3.889 counts as 3.8), picks VNC Authentication when a password is
-  /// given and offered, otherwise None, and returns the ServerInit.
+  /// 3.889 counts as 3.8), picks Apple's account sign-in (type 30, 851-2341)
+  /// when a username is given and offered, else VNC Authentication when a
+  /// password is given and offered, otherwise None, and returns the ServerInit.
   public static func perform(
-    stream: RFBInputStream, transport: any RFBTransport, password: String?, shared: Bool = true
+    stream: RFBInputStream, transport: any RFBTransport, password: String?, username: String? = nil,
+    shared: Bool = true
   ) async throws -> Outcome {
     let serverVersion = RFBProtocolVersion.parse(try await stream.bytes(12))
     guard let serverVersion, serverVersion >= .v3_3 else {
@@ -27,7 +29,9 @@ public enum RFBHandshake {
     if version == .v3_3 {
       let type = try await stream.u32()
       guard type != 0 else { throw RFBError.authenticationFailed(try await reason(stream)) }
-      guard let chosen = RFBSecurityType(rawValue: UInt8(clamping: type)), chosen != .appleRemoteDesktop else {
+      guard let chosen = RFBSecurityType(rawValue: UInt8(clamping: type)),
+        chosen != .appleRemoteDesktop || username != nil
+      else {
         throw RFBError.securityUnsupported([UInt8(clamping: type)])
       }
       security = chosen
@@ -35,7 +39,9 @@ public enum RFBHandshake {
       let count = Int(try await stream.u8())
       guard count > 0 else { throw RFBError.authenticationFailed(try await reason(stream)) }
       let offered = try await stream.bytes(count)
-      if password != nil, offered.contains(RFBSecurityType.vncAuthentication.rawValue) {
+      if username != nil, password != nil, offered.contains(RFBSecurityType.appleRemoteDesktop.rawValue) {
+        security = .appleRemoteDesktop
+      } else if password != nil, offered.contains(RFBSecurityType.vncAuthentication.rawValue) {
         security = .vncAuthentication
       } else if offered.contains(RFBSecurityType.none.rawValue) {
         security = .none
@@ -56,7 +62,20 @@ public enum RFBHandshake {
     case .none:
       if version == .v3_8 { try await securityResult(stream, version: version) }
     case .appleRemoteDesktop:
-      throw RFBError.securityUnsupported([security.rawValue])
+      guard let username, let password else {
+        throw RFBError.authenticationFailed("This Mac asks for its account's user name and password.")
+      }
+      let generator = try await stream.u16()
+      let length = Int(try await stream.u16())
+      guard RFBAppleAuthentication.keyLengths.contains(length) else {
+        throw RFBError.malformed("Diffie-Hellman key of \(length) bytes")
+      }
+      let prime = try await stream.bytes(length)
+      let serverKey = try await stream.bytes(length)
+      try await transport.write(
+        try RFBAppleAuthentication.response(
+          generator: generator, prime: prime, serverKey: serverKey, username: username, password: password))
+      try await securityResult(stream, version: version)
     }
 
     try await transport.write([shared ? 1 : 0])
