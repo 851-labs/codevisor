@@ -21,7 +21,7 @@ import { applySyncParticipation } from "./sync.js"
 /// the RFC 8628 device flow, so it appears in the user's apps automatically.
 /// Pure logic against CliDeps (+ an injectable fetch); wiring lives in cli.ts.
 
-export const DEFAULT_CLOUD_URL = "https://cloud.codevisor.dev"
+const DEFAULT_CLOUD_URL = "https://cloud.codevisor.dev"
 
 export interface CloudAuthOptions extends CommandOptions {
   /// Base URL of the cloud instance (self-hosted or dev); defaults to the

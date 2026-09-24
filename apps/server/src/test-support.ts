@@ -46,7 +46,7 @@ export const idleRestartCoordinator = (): RestartCoordinator => {
   }
 }
 
-export class FakeProcess implements TerminalProcess {
+class FakeProcess implements TerminalProcess {
   readonly writes: Array<string> = []
   readonly resizes: Array<readonly [number, number]> = []
   killCount = 0
@@ -64,7 +64,7 @@ export class FakeProcess implements TerminalProcess {
   }
 }
 
-export const makeSpawner = (): TerminalSpawner & {
+const makeSpawner = (): TerminalSpawner & {
   readonly requests: ReadonlyArray<TerminalSpawnRequest>
   readonly handlers: ReadonlyArray<TerminalHandlers>
   readonly processes: ReadonlyArray<FakeProcess>

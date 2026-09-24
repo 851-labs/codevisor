@@ -9,6 +9,7 @@ import {
 import { Effect } from "effect"
 
 import {
+  CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE,
   effectiveHarnessPreference,
   HARNESSES_SYNC_NAMESPACE,
   readHarnessSettings
@@ -208,7 +209,7 @@ export const reconcileHarnesses = async (deps: HarnessSyncDeps): Promise<Harness
 
   // ── Apply: custom specs, folded into one replace when anything changed.
   const localCustom = new Set(
-    (await run(deps.db.getSyncEntries("local.harness-custom-overrides")))
+    (await run(deps.db.getSyncEntries(CUSTOM_HARNESS_LOCAL_EDITS_NAMESPACE)))
       .filter((entry) => !entry.deleted)
       .map((entry) => entry.key)
   )

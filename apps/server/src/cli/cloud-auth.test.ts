@@ -1,12 +1,7 @@
 import type { FetchLike } from "@codevisor/cloud-client"
 import { describe, expect, it, vi } from "vitest"
 
-import {
-  authLoginCommand,
-  authLogoutCommand,
-  authStatusCommand,
-  DEFAULT_CLOUD_URL
-} from "./cloud-auth.js"
+import { authLoginCommand, authLogoutCommand, authStatusCommand } from "./cloud-auth.js"
 import type { CloudRegistration } from "./cloud-control.js"
 import type { CliDeps, ExecResult } from "./support.js"
 
@@ -271,7 +266,7 @@ describe("authLoginCommand", () => {
 
     const fromDefault = makeWorld()
     await authLoginCommand(fromDefault.deps, { fetchImpl: recordingFetch })
-    expect(urls[1]).toBe(`${DEFAULT_CLOUD_URL}/.well-known/codevisor`)
+    expect(urls[1]).toBe("https://cloud.codevisor.dev/.well-known/codevisor")
   })
 })
 

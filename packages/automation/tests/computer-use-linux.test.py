@@ -44,6 +44,17 @@ class ComputerUseLinuxTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             h["current_snapshot"]("session", app, 3, {})
 
+    def test_element_value_reads_text_through_the_text_interface(self):
+        h = helper()
+        text = "x" * (h["TEXT_LIMIT"] + 1)
+        h["Atspi"] = SimpleNamespace(Text=SimpleNamespace(
+            get_character_count=lambda _: len(text),
+            get_text=lambda _, start, end: text[start:end]))
+        # is_text can disagree with the introspected interface; the interface is authoritative.
+        node = SimpleNamespace(get_role_name=lambda: "entry", is_text=lambda: False,
+                               get_text_iface=lambda: object(), get_value_iface=lambda: None)
+        self.assertEqual(h["element_value"](node), "x" * h["TEXT_LIMIT"] + "…")
+
     def test_recycled_element_path_is_rejected(self):
         h = helper()
         node = SimpleNamespace(get_role_name=lambda: "menu item", get_name=lambda: "Delete")
