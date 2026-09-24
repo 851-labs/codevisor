@@ -64,6 +64,42 @@ struct VNCScreenSharingViewerBackendTests {
     await #expect(throws: RFBError.authenticationFailed("Authentication failed")) { try await wrong.backend.discover() }
   }
 
+  /// 851-2353: discovery's handshake is the connection; a connect after it signs in once, not twice.
+  @Test func discoveryThenConnectOpensOneConnection() async throws {
+    let harness = try await Harness()
+    defer { harness.stop() }
+    _ = try await harness.backend.discover()
+    harness.connect()
+    await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 1)
+    harness.surfaces[0].present()
+    await awaitObserved { harness.log.events.count >= 2 }
+    expectNoDifference(harness.log.events, [.opened(harness.log.endpoints[0]), .ready])
+    #expect(harness.server.connectionCount == 1)
+    // A second discovery replaces the kept connection instead of adding to it.
+    await harness.cancelConsumers()
+    _ = try await harness.backend.discover()
+    _ = try await harness.backend.discover()
+    #expect(harness.server.connectionCount == 3)
+  }
+
+  /// A kept connection the server closed before any video is replaced by a fresh one, not an error.
+  @Test func aStaleDiscoveryConnectionIsReplaced() async throws {
+    let harness = try await Harness()
+    defer { harness.stop() }
+    _ = try await harness.backend.discover()
+    harness.connect()
+    await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 1)
+    harness.server.closeClient()
+    await awaitObserved { harness.log.endpoints.count == 2 || harness.log.finished == 1 }
+    try #require(harness.log.endpoints.count == 2)
+    let (first, second) = (harness.log.endpoints[0], harness.log.endpoints[1])
+    expectNoDifference(harness.log.events, [.opened(first), .reconnecting, .opened(second)])
+    #expect(harness.server.connectionCount == 2)
+    await harness.cancelConsumers()
+  }
+
   @Test func readyAfterTheFirstFrameAndReplacementAfterALostSocket() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
