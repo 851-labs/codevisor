@@ -178,3 +178,21 @@ extension ComputerUseLivePreviewLayout {
     return width * (width / aspect)
   }
 }
+
+extension ComputerUseLivePreviewLayout {
+  /// Smallest agent-pointer scale in the card, so it stays legible when the
+  /// card is much smaller than the window it shows.
+  public static let minimumCursorScale: CGFloat = 0.5
+  /// Largest agent-pointer scale: never bigger than it is on screen.
+  public static let maximumCursorScale: CGFloat = 1
+
+  /// Scale for the agent pointer drawn over the card: the card's zoom of the
+  /// streamed window, so the pointer keeps its on-screen size relative to the
+  /// window, clamped to stay legible.
+  public static func cursorScale(cardWidth: CGFloat, windowWidth: CGFloat) -> CGFloat {
+    guard cardWidth.isFinite, windowWidth.isFinite, cardWidth > 0, windowWidth > 0 else {
+      return maximumCursorScale
+    }
+    return min(maximumCursorScale, max(minimumCursorScale, cardWidth / windowWidth))
+  }
+}
