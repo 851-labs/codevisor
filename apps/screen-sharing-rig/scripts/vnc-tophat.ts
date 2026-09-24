@@ -5,13 +5,22 @@
 // window, and writes tmp/vnc-tophat/<time>/summary.json with the screenshots.
 // Exit 0 only if every step passed. The terminal running it needs
 // Accessibility permission (System Settings → Privacy & Security).
-import { spawnSync } from "node:child_process"
+import { spawnSync, type SpawnSyncOptions } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { clipboardToken, parseTophatArguments, parseWindow, summarize } from "./vnc-tophat-lib.mjs"
+import { errorMessage } from "./screen-sharing-rig-lib.ts"
+import {
+  clipboardToken,
+  parseTophatArguments,
+  parseWindow,
+  summarize,
+  type RigWindow,
+  type Step,
+  type TophatOptions
+} from "./vnc-tophat-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const bundle = join(root, "tmp/screen-sharing/ScreenSharingRig.app")
@@ -22,11 +31,11 @@ Runs the rig through the product path in the background and records window-only 
 "loopback" (default) needs nothing; "contabo" needs Tailscale up and the Contabo VPS reachable.
 `
 
-let options
+let options: TophatOptions
 try {
   options = parseTophatArguments(process.argv.slice(2))
 } catch (error) {
-  process.stderr.write(`${error.message}\n\n${usage}`)
+  process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
   process.exit(2)
 }
 if (options.help) {
@@ -34,8 +43,9 @@ if (options.help) {
   process.exit(0)
 }
 
-const run = (command, args, extra = {}) => spawnSync(command, args, { encoding: "utf8", ...extra })
-const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const run = (command: string, args: string[], extra: SpawnSyncOptions = {}) =>
+  spawnSync(command, args, { ...extra, encoding: "utf8" })
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const output = join(
   root,
   "tmp/vnc-tophat",
@@ -69,15 +79,16 @@ if (options.build) {
   }
 }
 
-const steps = []
-let pid
-const ax = (...args) => run(helper, [String(pid), ...args])
-const step = (name, check) => {
-  let result
+const steps: Step[] = []
+let pid: string | undefined
+const ax = (...args: string[]) => run(helper, [String(pid), ...args])
+type Check = { ok: boolean; detail?: string }
+const step = (name: string, check: () => Check) => {
+  let result: Check
   try {
     result = check()
   } catch (error) {
-    result = { ok: false, detail: error.message }
+    result = { ok: false, detail: errorMessage(error) }
   }
   const entry = { name, ok: Boolean(result.ok), detail: result.detail ?? "" }
   steps.push(entry)
@@ -86,20 +97,20 @@ const step = (name, check) => {
   )
   return entry.ok
 }
-const axStep = (name, ...args) =>
+const axStep = (name: string, ...args: string[]) =>
   step(name, () => {
     const result = ax(...args)
     return { ok: result.status === 0, detail: result.stdout.trim() }
   })
-const window = () => parseWindow(ax("window").stdout)
-const capture = (name) => {
+const window = (): RigWindow => parseWindow(ax("window").stdout)
+const capture = (name: string) => {
   const file = join(output, `${name}.png`)
   const result = run("screencapture", ["-x", "-o", "-l", String(window().number), file])
   if (result.status !== 0) throw new Error(`screencapture failed: ${result.stderr}`)
   return file
 }
 /// Two window captures a moment apart differ when the content is moving.
-const moving = (name) => {
+const moving = (name: string): Check => {
   const first = readFileSync(capture(`${name}-a`))
   pause(700)
   const second = readFileSync(capture(`${name}-b`))
@@ -232,7 +243,7 @@ function clipboardStep() {
 }
 
 /// The video size Connection Details reports, e.g. { width: 1227, height: 754 }.
-function videoSize() {
+function videoSize(): { width: number; height: number } | undefined {
   // Mid-reconnect there is no Connection Details button: don't toggle the popover out of step.
   if (ax("press", "Connection Details").status !== 0) return undefined
   const line = ax("texts")
@@ -240,19 +251,19 @@ function videoSize() {
     .find((text) => /^\d+ × \d+$/.test(text.trim()))
   ax("press", "Connection Details")
   if (!line) return undefined
-  const [width, height] = line.trim().split(" × ").map(Number)
+  const [width = 0, height = 0] = line.trim().split(" × ").map(Number)
   return { width, height }
 }
 
 /// The window capture shows a picture, not a blank frame; the first picture follows connecting within seconds.
-function desktopOnScreen(name, file) {
+function desktopOnScreen(name: string, file: string) {
   step(name, () => {
     // A picture: many colours, and neither the right nor the bottom half all black (what a desktop that
     // hasn't repainted after growing looks like; a black terminal window doesn't fill a half).
     let colours = 0
     let black = 1
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      ;[colours, black] = ax("colours", capture(file)).stdout.trim().split(" ").map(Number)
+      ;[colours = 0, black = 1] = ax("colours", capture(file)).stdout.trim().split(" ").map(Number)
       if (colours > 8 && black < 0.95)
         return {
           ok: true,

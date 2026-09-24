@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p scripts/tsconfig.json --pretty false",
-    "test": "node --test scripts/*.test.ts scripts/*.test.mjs",
-    "test:coverage": "node --test --experimental-test-coverage scripts/*.test.ts scripts/*.test.mjs"
+    "test": "node --test scripts/*.test.ts",
+    "test:coverage": "node --test --experimental-test-coverage scripts/*.test.ts"
   }
 }

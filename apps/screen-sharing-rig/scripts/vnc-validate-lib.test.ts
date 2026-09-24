@@ -8,7 +8,7 @@ import {
   renderReport,
   reportDirectory,
   testCount
-} from "./vnc-validate-lib.mjs"
+} from "./vnc-validate-lib.ts"
 
 test("an issue is required; layers can be skipped by name", () => {
   const options = parseValidateArguments([

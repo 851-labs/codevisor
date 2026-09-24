@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { clipboardToken, parseTophatArguments, parseWindow, summarize } from "./vnc-tophat-lib.mjs"
+import { clipboardToken, parseTophatArguments, parseWindow, summarize } from "./vnc-tophat-lib.ts"
 
 test("the loopback flow runs by default; Contabo is opt-in", () => {
   assert.deepEqual(parseTophatArguments([]), { machines: ["loopback"], build: true })

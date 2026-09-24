@@ -8,7 +8,7 @@ import {
   interopEnvironment,
   parseDockerPort,
   parseInteropArguments
-} from "./vnc-interop-lib.mjs"
+} from "./vnc-interop-lib.ts"
 
 test("arguments default to the interop suites and a 1024x768 desktop", () => {
   assert.deepEqual(parseInteropArguments([]), {

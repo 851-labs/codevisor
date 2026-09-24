@@ -1,7 +1,7 @@
 #!/bin/sh
 # Xvnc on :1 (port 5901) with VNC authentication and a solid root colour the
 # interop tests assert on. GEOMETRY, PASSWORD and ROOT_COLOR come from
-# apps/screen-sharing-rig/scripts/vnc-interop.mjs.
+# apps/screen-sharing-rig/scripts/vnc-interop.ts.
 set -eu
 : "${GEOMETRY:=1024x768}" "${PASSWORD:=codevisor}" "${ROOT_COLOR:=#336699}"
 mkdir -p /root/.vnc

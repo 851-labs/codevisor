@@ -1,12 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import {
-  baselineName,
-  buildLabel,
-  parseBenchArguments,
-  runDirectoryName
-} from "./vnc-bench-lib.mjs"
+import { baselineName, buildLabel, parseBenchArguments, runDirectoryName } from "./vnc-bench-lib.ts"
 
 test("each machine model has its own baseline file", () => {
   assert.equal(baselineName("Mac16,6"), "baseline-Mac16_6.json")

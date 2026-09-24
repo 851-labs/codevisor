@@ -5,17 +5,19 @@
 // compares with docs/measurements/vnc/baseline-<machine>.json when present
 // (exit 1 on a regression beyond the noise band). --save-baseline makes this
 // run the machine's baseline.
-import { spawnSync } from "node:child_process"
+import { spawnSync, type SpawnSyncOptions } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { errorMessage } from "./screen-sharing-rig-lib.ts"
 import {
   baselineName,
+  type BenchOptions,
   buildLabel,
   parseBenchArguments,
   runDirectoryName
-} from "./vnc-bench-lib.mjs"
+} from "./vnc-bench-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const packagePath = join(root, "apps/screen-sharing-rig")
@@ -28,11 +30,11 @@ Options passed through: --scenes, --profiles, --runs, --frames, --size, --seed
 (see \`screen-sharing-rig vnc-bench --help\`). Run on AC power with nothing else heavy running.
 `
 
-let options
+let options: BenchOptions
 try {
   options = parseBenchArguments(process.argv.slice(2))
 } catch (error) {
-  process.stderr.write(`${error.message}\n\n${usage}`)
+  process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
   process.exit(2)
 }
 if (options.help) {
@@ -40,9 +42,9 @@ if (options.help) {
   process.exit(0)
 }
 
-const run = (command, args, extra = {}) => {
-  const result = spawnSync(command, args, { encoding: "utf8", ...extra })
-  if (result.status !== 0 && !extra.allowFailure) {
+const run = (command: string, args: string[], extra: SpawnSyncOptions = {}) => {
+  const result = spawnSync(command, args, { ...extra, encoding: "utf8" })
+  if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed:\n${result.stderr || result.stdout}`)
   }
   return result

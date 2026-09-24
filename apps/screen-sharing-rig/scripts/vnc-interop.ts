@@ -10,14 +10,16 @@ import { connect } from "node:net"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { errorMessage } from "./screen-sharing-rig-lib.ts"
 import {
   checkTestRun,
   defaults,
   imageTag,
+  type InteropOptions,
   interopEnvironment,
   parseDockerPort,
   parseInteropArguments
-} from "./vnc-interop-lib.mjs"
+} from "./vnc-interop-lib.ts"
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const context = join(root, "apps/screen-sharing-rig/scripts/vnc-interop")
@@ -28,11 +30,11 @@ Xvnc container. --keep leaves the container running and prints its VNC_TEST_* en
 Needs a running Docker (OrbStack or Colima).
 `
 
-let options
+let options: InteropOptions
 try {
   options = parseInteropArguments(process.argv.slice(2))
 } catch (error) {
-  process.stderr.write(`${error.message}\n\n${usage}`)
+  process.stderr.write(`${errorMessage(error)}\n\n${usage}`)
   process.exit(2)
 }
 if (options.help) {
@@ -40,7 +42,7 @@ if (options.help) {
   process.exit(0)
 }
 
-const docker = (args, { allowFailure = false } = {}) => {
+const docker = (args: string[], { allowFailure = false } = {}) => {
   const result = spawnSync("docker", args, { encoding: "utf8" })
   if (result.status !== 0 && !allowFailure) {
     throw new Error(`docker ${args.join(" ")} failed: ${result.stderr || result.stdout}`)
@@ -114,14 +116,14 @@ try {
   )
   status = verdict.ok ? 0 : 1
 } catch (error) {
-  process.stderr.write(`vnc:interop: ${error.message}\n`)
+  process.stderr.write(`vnc:interop: ${errorMessage(error)}\n`)
 } finally {
   cleanup()
 }
 process.exit(status)
 
 /// The entrypoint prints "vnc-interop: ready" once the root colour and pointer are set.
-async function waitForReady(container, deadlineMs = 30_000) {
+async function waitForReady(container: string, deadlineMs = 30_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
     if (docker(["logs", container], { allowFailure: true }).stdout.includes("vnc-interop: ready"))
@@ -133,15 +135,15 @@ async function waitForReady(container, deadlineMs = 30_000) {
 }
 
 /// Real I/O: connect until the server's 12-byte "RFB 003.00x\n" greeting arrives.
-async function waitForGreeting(port, deadlineMs = 30_000) {
+async function waitForGreeting(port: number, deadlineMs = 30_000): Promise<void> {
   const started = Date.now()
   while (Date.now() - started < deadlineMs) {
     // Retries are sequential by design: each attempt waits for the previous one.
     // oxlint-disable-next-line no-await-in-loop
-    const greeting = await new Promise((resolve) => {
+    const greeting = await new Promise<string | null>((resolve) => {
       const socket = connect({ host: "127.0.0.1", port })
       let data = ""
-      const finish = (value) => {
+      const finish = (value: string | null) => {
         socket.destroy()
         resolve(value)
       }
@@ -160,7 +162,7 @@ async function waitForGreeting(port, deadlineMs = 30_000) {
   throw new Error(`No RFB greeting on 127.0.0.1:${port} within ${deadlineMs / 1000} s`)
 }
 
-function runSwiftTests(filter, environment) {
+function runSwiftTests(filter: string, environment: Record<string, string>): Promise<string> {
   return new Promise((resolve) => {
     const child = spawn(
       "swift",
