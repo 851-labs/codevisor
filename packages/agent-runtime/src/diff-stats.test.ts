@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { diffStatsFromTexts, diffStatsFromUnified, lineCount, sumDiffStats } from "./diff-stats.js"
+import { diffStatsFromTexts, diffStatsFromUnified, lineCount } from "./diff-stats.js"
 
 describe("diff-stats", () => {
   describe("lineCount", () => {
@@ -86,17 +86,6 @@ describe("diff-stats", () => {
 
     it("counts nothing for an empty diff", () => {
       expect(diffStatsFromUnified("a.txt", "")).toEqual({ added: 0, path: "a.txt", removed: 0 })
-    })
-  })
-
-  describe("sumDiffStats", () => {
-    it("sums across files", () => {
-      expect(
-        sumDiffStats([
-          { added: 3, path: "a", removed: 1 },
-          { added: 2, path: "b", removed: 4 }
-        ])
-      ).toEqual({ added: 5, removed: 5 })
     })
   })
 })

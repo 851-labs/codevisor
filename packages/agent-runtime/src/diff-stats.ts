@@ -41,15 +41,3 @@ export const diffStatsFromUnified = (path: string, unifiedDiff: string): DiffSta
   }
   return { added, path, removed }
 }
-
-export const sumDiffStats = (
-  stats: ReadonlyArray<DiffStat>
-): { added: number; removed: number } => {
-  let added = 0
-  let removed = 0
-  for (const stat of stats) {
-    added += stat.added
-    removed += stat.removed
-  }
-  return { added, removed }
-}

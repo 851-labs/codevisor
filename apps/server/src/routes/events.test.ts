@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { CodevisorServer, makeEventFanout } from "../server.js"
+import { makeEventFanout } from "../server.js"
 import {
   jsonRequest,
   makeServices,
@@ -436,32 +436,5 @@ describe("event routes", () => {
     } finally {
       socket.close()
     }
-  })
-
-  it("exposes an Effect service layer and EventFanout subscription", async () => {
-    const { services } = await makeServices("layered")
-    const layered = await run(
-      Effect.gen(function* () {
-        const server = yield* CodevisorServer
-        return yield* server.db.getUpdateInfo
-      }).pipe(Effect.provide(CodevisorServer.layer(services)))
-    )
-    expect(layered.currentVersion).toBe("0.1.0")
-
-    const fanout = await run(makeEventFanout)
-    const events: Array<unknown> = []
-    const unsubscribe = fanout.subscribe((event) => events.push(event))
-    await run(
-      fanout.publish({
-        createdAt: "2026-06-30T00:00:00.000Z",
-        id: 1,
-        kind: "update.changed",
-        payload: {},
-        serverId: "server-a",
-        subjectId: "update"
-      })
-    )
-    unsubscribe()
-    expect(events).toHaveLength(1)
   })
 })
