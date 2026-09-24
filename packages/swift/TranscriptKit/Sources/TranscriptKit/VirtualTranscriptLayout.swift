@@ -78,10 +78,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
     self.heightIndex = heightIndex
   }
 
-  public func updatingHeight(forKey key: String, to height: CGFloat) -> VirtualTranscriptLayout? {
-    updatingHeights([key: height])
-  }
-
   /// Copies only affected height-index paths. Existing layout snapshots keep
   /// their original geometry for restoration and animation. Unknown keys
   /// require a topology rebuild; unchanged subtrees are reused.

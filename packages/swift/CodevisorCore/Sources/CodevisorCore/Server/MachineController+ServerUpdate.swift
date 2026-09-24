@@ -11,10 +11,6 @@ extension MachineController {
   /// this long is wedged, not slow.
   static let migrationMaximumDuration: Duration = .seconds(10 * 60)
 
-  public func serverUpdatePhase(for machineId: String) -> ServerUpdatePhase {
-    connectionsById[machineId]?.updatePhase ?? .idle
-  }
-
   public var isAnyServerUpdating: Bool {
     connectionsById.values.contains { $0.updatePhase == .updating }
   }
@@ -60,10 +56,6 @@ extension MachineController {
       else { continue }
       connection(for: machineId).updateInfo = update
     }
-  }
-
-  public func serverUpdateInfo(for machineId: String) -> ServerUpdateInfo? {
-    connectionsById[machineId]?.updateInfo
   }
 
   /// Restores the updated machine's event stream without changing any

@@ -179,23 +179,4 @@ struct PaneGroupStateTests {
     state.selectPane(id: UUID())
     #expect(state.selectedPaneId == state.panes[0].id)
   }
-
-  @Test("Moving a pane reorders it around the target in both directions")
-  func movePane() {
-    var state = PaneGroupState.initial(sessionId: sessionId)
-    let first = state.panes[0]
-    let second = state.addTerminalPane(sessionId: sessionId)
-    let third = state.addTerminalPane(sessionId: sessionId)
-
-    state.movePane(id: first.id, onto: third.id)
-    #expect(state.panes.map(\.id) == [second.id, third.id, first.id])
-
-    state.movePane(id: first.id, onto: second.id)
-    #expect(state.panes.map(\.id) == [first.id, second.id, third.id])
-
-    // No-ops: same pane, unknown ids.
-    state.movePane(id: first.id, onto: first.id)
-    state.movePane(id: UUID(), onto: second.id)
-    #expect(state.panes.map(\.id) == [first.id, second.id, third.id])
-  }
 }

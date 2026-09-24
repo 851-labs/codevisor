@@ -12,15 +12,12 @@ private final class FakeRemoteFs: @unchecked Sendable {
   private var hiddenListings: [String: ServerFsListing]
   private var failures: [String: CodevisorServerClientError]
   private var _fetchedPaths: [String] = []
-  let homePath: String
 
   init(
-    homePath: String,
     listings: [String: ServerFsListing],
     hiddenListings: [String: ServerFsListing] = [:],
     failures: [String: CodevisorServerClientError] = [:]
   ) {
-    self.homePath = homePath
     self.listings = listings
     self.hiddenListings = hiddenListings
     self.failures = failures
@@ -36,17 +33,16 @@ private final class FakeRemoteFs: @unchecked Sendable {
 
   func lister() -> RemoteDirectoryBrowserModel.Lister {
     { [self] path, showHidden in
-      let resolved = path ?? homePath
-      lock.withLock { _fetchedPaths.append(resolved) }
-      if let failure = lock.withLock({ failures[resolved] }) {
+      lock.withLock { _fetchedPaths.append(path) }
+      if let failure = lock.withLock({ failures[path] }) {
         throw failure
       }
       let listing = lock.withLock {
-        showHidden ? (hiddenListings[resolved] ?? listings[resolved]) : listings[resolved]
+        showHidden ? (hiddenListings[path] ?? listings[path]) : listings[path]
       }
       guard let listing else {
         throw CodevisorServerClientError.httpStatus(
-          404, #"{"error":"No such directory: \#(resolved)","code":"not_found"}"#
+          404, #"{"error":"No such directory: \#(path)","code":"not_found"}"#
         )
       }
       return listing
@@ -96,7 +92,6 @@ struct RemoteDirectoryBrowserModelTests {
   /// A small tree: /home/user{src{alpha,beta},docs}, plus a hidden variant.
   private func makeFs() -> FakeRemoteFs {
     FakeRemoteFs(
-      homePath: "/home/user",
       listings: [
         "/": listing("/", children: ["home"]),
         "/home": listing("/home", children: ["user"]),
@@ -113,13 +108,12 @@ struct RemoteDirectoryBrowserModelTests {
     RemoteDirectoryBrowserModel(machineName: "devbox", list: fs.lister())
   }
 
-  @Test("Initial load shows home as the single column and learns homePath")
+  @Test("Opening a folder shows it as the single column")
   func initialLoad() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     #expect(model.columns.count == 1)
     #expect(model.columns[0].listing?.path == "/home/user")
-    #expect(model.homePath == "/home/user")
     #expect(model.chosenPath == "/home/user")
     #expect(model.canGoUp)
   }
@@ -127,7 +121,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Selecting an entry appends a child column and chosenPath follows the selection")
   func selectAppendsChild() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     #expect(model.columns.map(\.path) == ["/home/user", "/home/user/src"])
     #expect(model.columns[0].selectedEntryPath == "/home/user/src")
@@ -138,7 +132,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Re-selecting in an earlier column truncates deeper columns")
   func reselectTruncates() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     await model.select("/home/user/src/alpha", inColumn: "/home/user/src")
     #expect(model.columns.count == 3)
@@ -151,7 +145,7 @@ struct RemoteDirectoryBrowserModelTests {
   func reselectSameEntryIsNoOp() async {
     let fs = makeFs()
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     let fetchCount = fs.fetchedPaths.count
     await model.select("/home/user/src", inColumn: "/home/user")
@@ -162,7 +156,6 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Selecting a folder that fails to list keeps the error inside its column")
   func selectFailureShowsColumnError() async {
     let fs = FakeRemoteFs(
-      homePath: "/home/user",
       listings: ["/home/user": listing("/home/user", children: ["locked"])],
       failures: [
         "/home/user/locked": .httpStatus(
@@ -171,7 +164,7 @@ struct RemoteDirectoryBrowserModelTests {
       ]
     )
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/locked", inColumn: "/home/user")
     #expect(model.columns.count == 2)
     #expect(model.columns[1].errorMessage?.contains("isn't allowed to read") == true)
@@ -183,7 +176,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("prependParent adds the parent as the leftmost column with the old root selected")
   func prependParent() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.prependParent()
     #expect(model.columns.map(\.path) == ["/home", "/home/user"])
     #expect(model.columns[0].selectedEntryPath == "/home/user")
@@ -194,7 +187,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("prependParent at the filesystem root is a no-op")
   func prependParentAtRoot() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.open("/")
     #expect(!model.canGoUp)
     await model.prependParent()
@@ -204,7 +197,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("goToPath jumps on success and resets the column stack")
   func goToPathSuccess() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     let moved = await model.goToPath("  /home/user/docs  ")
     #expect(moved)
@@ -215,7 +208,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("goToPath failure keeps the current columns and reports guidance")
   func goToPathFailure() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     let moved = await model.goToPath("/home/user/missing")
     #expect(!moved)
     #expect(model.columns.map(\.path) == ["/home/user"])
@@ -225,7 +218,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("goToPath rejects empty input with path guidance")
   func goToPathEmpty() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     let moved = await model.goToPath("   ")
     #expect(!moved)
     #expect(model.goToError?.contains("absolute path") == true)
@@ -235,7 +228,7 @@ struct RemoteDirectoryBrowserModelTests {
   func cacheAvoidsRefetch() async {
     let fs = makeFs()
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     await model.select("/home/user/docs", inColumn: "/home/user")
     let fetchCount = fs.fetchedPaths.count
@@ -247,7 +240,6 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Toggling hidden folders reloads every column and keeps surviving selections")
   func showHiddenReloads() async {
     let fs = FakeRemoteFs(
-      homePath: "/home/user",
       listings: [
         "/home/user": listing("/home/user", children: ["docs", "src"]),
         "/home/user/src": listing("/home/user/src", children: ["alpha"]),
@@ -258,7 +250,7 @@ struct RemoteDirectoryBrowserModelTests {
       ]
     )
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.select("/home/user/src", inColumn: "/home/user")
     await model.setShowHidden(true)
     #expect(model.showHidden)
@@ -272,7 +264,6 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Toggling hidden truncates below a selection that disappeared")
   func showHiddenTruncatesDeadSelection() async {
     let fs = FakeRemoteFs(
-      homePath: "/home/user",
       // `.work` only exists in the hidden view: turning hidden *off*
       // while browsing inside it must truncate back to home.
       listings: [
@@ -284,7 +275,7 @@ struct RemoteDirectoryBrowserModelTests {
       ]
     )
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.setShowHidden(true)
     await model.select("/home/user/.work", inColumn: "/home/user")
     #expect(model.columns.count == 2)
@@ -297,11 +288,10 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("open failure renders guidance inside the column")
   func openFailure() async {
     let fs = FakeRemoteFs(
-      homePath: "/home/user",
       listings: ["/home/user": listing("/home/user", children: [])]
     )
     let model = makeModel(fs)
-    await model.loadInitial()
+    await model.open("/home/user")
     await model.open("/vanished")
     #expect(model.columns.count == 1)
     #expect(model.columns[0].errorMessage?.contains("doesn't exist on devbox") == true)
@@ -311,7 +301,7 @@ struct RemoteDirectoryBrowserModelTests {
   @Test("Breadcrumb lists the browse root and its ancestors, deepest first")
   func breadcrumbAncestors() async {
     let model = makeModel(makeFs())
-    await model.loadInitial()
+    await model.open("/home/user")
     #expect(model.breadcrumb == ["/home/user", "/home", "/"])
   }
 

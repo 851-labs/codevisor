@@ -259,29 +259,6 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     centerTabs.lazy.compactMap { $0.root.group(id: leafId)?.selectedPane }.first
   }
 
-  /// The one chat this workspace currently puts in front of the user: the
-  /// selected pane of the active split leaf of the selected center tab,
-  /// when that pane is a chat. This is the focus signal for read state —
-  /// merely remaining mounted in another split is insufficient.
-  ///
-  /// `activeLeafId` is the window's live active leaf; nil falls back to the
-  /// tab's persisted value. First-responder focus routes through leaf
-  /// activation + sidebar selection before reaching here, so
-  /// pane-selection-level focus is the source of truth.
-  public func focusedChatId(activeLeafId: UUID?) -> UUID? {
-    guard let selectedTab = selectedCenterTab else { return nil }
-    let resolvedActiveLeafId: UUID
-    if let activeLeafId, selectedTab.root.group(id: activeLeafId) != nil {
-      resolvedActiveLeafId = activeLeafId
-    } else {
-      resolvedActiveLeafId = selectedTab.activeLeafId
-    }
-    guard let pane = selectedTab.root.group(id: resolvedActiveLeafId)?.selectedPane,
-      pane.kind == .chat
-    else { return nil }
-    return pane.chatSessionId
-  }
-
   /// The pane that owns a chat session reference, if it is still open.
   public func pane(containingChat sessionId: UUID) -> PaneDescriptorState? {
     centerTabs.lazy

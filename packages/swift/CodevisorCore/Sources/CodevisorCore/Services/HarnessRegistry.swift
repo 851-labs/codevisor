@@ -116,11 +116,6 @@ public enum HarnessRegistry {
     return descriptor(for: id).displayName
   }
 
-  /// Fleet-shared harnesses whose sign-in needs an online host machine.
-  public static var fleetHostedSignInIds: [String] {
-    builtin.filter(\.fleetSignInNeedsMachine).map(\.id)
-  }
-
   /// `grok-build` → `Grok Build`. Ids are lowercase and dash-separated.
   static func humanized(_ id: String) -> String {
     id.split(whereSeparator: { $0 == "-" || $0 == "_" })

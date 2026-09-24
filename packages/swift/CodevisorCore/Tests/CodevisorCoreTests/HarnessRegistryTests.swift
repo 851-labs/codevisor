@@ -59,7 +59,6 @@ struct HarnessRegistryTests {
     #expect(!HarnessRegistry.descriptor(for: "cursor").sharesFleetAccounts)
     #expect(HarnessRowState.sharesFleetAccounts(harnessId: "opencode"))
     #expect(!HarnessRowState.sharesFleetAccounts(harnessId: "cursor"))
-    #expect(HarnessRegistry.fleetHostedSignInIds.sorted() == ["claude-code", "codex", "grok-build", "opencode", "pi"])
   }
 
   @Test("Multiple accounts are a per-harness fact")

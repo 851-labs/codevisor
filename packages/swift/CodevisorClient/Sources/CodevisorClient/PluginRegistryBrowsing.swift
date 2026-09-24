@@ -20,20 +20,6 @@ public enum PluginRegistryBrowsing {
     }
   }
 
-  /// "2 panes · 1 agent tool" — what installing the entry adds. Empty when
-  /// the manifest declares neither (the registry accepts tool-only and
-  /// pane-only plugins alike).
-  public static func capabilitySummary(for entry: ServerPluginRegistryEntry) -> String {
-    var parts: [String] = []
-    if !entry.panes.isEmpty {
-      parts.append("\(entry.panes.count) pane\(entry.panes.count == 1 ? "" : "s")")
-    }
-    if let tools = entry.tools, !tools.isEmpty {
-      parts.append("\(tools.count) agent tool\(tools.count == 1 ? "" : "s")")
-    }
-    return parts.joined(separator: " · ")
-  }
-
   /// An entry is "already installed" when a plugin with its id is on the
   /// machine — same identity rule the install pipeline uses, so the marker
   /// and `alreadyInstalled` on the consent sheet always agree.

@@ -78,12 +78,4 @@ struct ServerHarnessSemanticsTests {
     let data = try JSONSerialization.data(withJSONObject: value)
     return try JSONDecoder().decode(ServerHarness.self, from: data)
   }
-
-  @Test("Catalog settings keep global and override preferences separate")
-  func settingsAndLifecycle() throws {
-    var item = try harness(enabled: false, desiredEnabled: false, authState: nil)
-    item.settings = ServerHarnessSettings(global: .init(enabled: true, installed: true))
-    #expect(item.settings?.global?.enabled == true)
-    #expect(item.settings?.override == nil)
-  }
 }

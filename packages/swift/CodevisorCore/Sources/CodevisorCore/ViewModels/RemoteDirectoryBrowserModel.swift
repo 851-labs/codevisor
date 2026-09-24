@@ -19,8 +19,8 @@ import Observation
 @MainActor
 @Observable
 public final class RemoteDirectoryBrowserModel {
-  /// Fetches one directory listing. `path == nil` means the server's home.
-  public typealias Lister = @Sendable (_ path: String?, _ showHidden: Bool) async throws -> ServerFsListing
+  /// Fetches one directory listing.
+  public typealias Lister = @Sendable (_ path: String, _ showHidden: Bool) async throws -> ServerFsListing
 
   public struct Column: Identifiable, Equatable, Sendable {
     /// The requested directory path; stable identity for scroll targets.
@@ -39,9 +39,6 @@ public final class RemoteDirectoryBrowserModel {
 
   public private(set) var columns: [Column] = []
   public private(set) var showHidden = false
-  /// The server-resolved home directory, learned from the first load.
-  /// Sidebar "Home" and the initial breadcrumb hang off this.
-  public private(set) var homePath: String?
   /// Error for the go-to-folder field only; column errors live on columns.
   public private(set) var goToError: String?
 
@@ -88,18 +85,12 @@ public final class RemoteDirectoryBrowserModel {
 
   // MARK: - Navigation
 
-  /// Loads the browse root (the server's home directory).
-  public func loadInitial() async {
-    await open(nil)
-  }
-
-  /// Resets the browser to a single column at `path` (nil = server home).
-  /// Used by the sidebar, breadcrumb, and recents. Failures render inside
-  /// the column, keeping the sidebar as the recovery path.
-  public func open(_ path: String?) async {
+  /// Resets the browser to a single column at `path`. Failures render
+  /// inside the column.
+  public func open(_ path: String) async {
     generation += 1
     let requestGeneration = generation
-    var column = Column(path: path ?? "~")
+    var column = Column(path: path)
     column.isLoading = true
     columns = [column]
     goToError = nil
@@ -107,7 +98,6 @@ public final class RemoteDirectoryBrowserModel {
       let listing = try await fetch(path: path, showHidden: showHidden)
       guard generation == requestGeneration else { return }
       columns = [resolvedColumn(for: listing)]
-      if path == nil { homePath = listing.path }
     } catch {
       guard generation == requestGeneration else { return }
       columns[0].isLoading = false
@@ -294,12 +284,13 @@ public final class RemoteDirectoryBrowserModel {
     return column
   }
 
-  private func fetch(path: String?, showHidden: Bool) async throws -> ServerFsListing {
-    let key = "\(showHidden ? "h" : "v"):\(path ?? "~")"
+  private func fetch(path: String, showHidden: Bool) async throws -> ServerFsListing {
+    let key = "\(showHidden ? "h" : "v"):\(path)"
     if let cached = cache[key] { return cached }
     let listing = try await list(path, showHidden)
     cache[key] = listing
-    // Also key by the resolved path so "~" and "/home/user" share an entry.
+    // Also key by the resolved path so an unnormalized request and its
+    // resolved path share an entry.
     cache["\(showHidden ? "h" : "v"):\(listing.path)"] = listing
     return listing
   }
@@ -307,10 +298,6 @@ public final class RemoteDirectoryBrowserModel {
   private func invalidateCachedListing(for path: String) {
     cache.removeValue(forKey: "v:\(path)")
     cache.removeValue(forKey: "h:\(path)")
-    if path == homePath {
-      cache.removeValue(forKey: "v:~")
-      cache.removeValue(forKey: "h:~")
-    }
   }
 
   /// Actionable messages for the server's classified `fs/list` failures.
