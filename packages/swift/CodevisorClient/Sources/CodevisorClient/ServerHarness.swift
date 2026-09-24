@@ -364,10 +364,6 @@ public extension ServerHarness {
   /// effective value, so preserve that as a compatibility fallback.
   var isDesiredEnabled: Bool { desiredEnabled ?? enabled }
 
-  /// Whether the server can expose this harness to new chats right now,
-  /// after readiness and authentication gates have been applied.
-  var isEffectivelyEnabled: Bool { enabled }
-
   /// True only when this harness declares authentication and that
   /// requirement has not yet been satisfied.
   var requiresAuthentication: Bool {

@@ -13,7 +13,6 @@ struct ServerHarnessSemanticsTests {
     )
 
     #expect(harness.isDesiredEnabled)
-    #expect(!harness.isEffectivelyEnabled)
     #expect(harness.requiresAuthentication)
   }
 
@@ -22,7 +21,6 @@ struct ServerHarnessSemanticsTests {
     let harness = try harness(enabled: true, desiredEnabled: nil, authState: nil)
 
     #expect(harness.isDesiredEnabled)
-    #expect(harness.isEffectivelyEnabled)
     #expect(!harness.requiresAuthentication)
   }
 
@@ -81,14 +79,11 @@ struct ServerHarnessSemanticsTests {
     return try JSONDecoder().decode(ServerHarness.self, from: data)
   }
 
-  @Test("Catalog settings decode and lifecycle phases report busy")
+  @Test("Catalog settings keep global and override preferences separate")
   func settingsAndLifecycle() throws {
     var item = try harness(enabled: false, desiredEnabled: false, authState: nil)
     item.settings = ServerHarnessSettings(global: .init(enabled: true, installed: true))
     #expect(item.settings?.global?.enabled == true)
     #expect(item.settings?.override == nil)
-    #expect(!item.isLifecycleBusy)
-    item.lifecycle = ServerHarnessLifecycleState(phase: "uninstalling")
-    #expect(item.isLifecycleBusy)
   }
 }

@@ -55,12 +55,6 @@ public struct PaneDescriptorState: Identifiable, Codable, Sendable, Equatable {
   public var screenSharing: ScreenSharingPanePreferences?
   public var browserURL: String?
   public var documentPath: String?
-  /// Every pane moves between groups alike — tabs are tabs (the only
-  /// rule with real stakes is the CLOSE rule: a lone placeholder only
-  /// closes when its group can dissolve — see `canClosePane` + the
-  /// model's policy). A move is never a close, so nothing gates it.
-  public var isMovable: Bool { true }
-
   public init(
     id: UUID,
     kind: PaneKind,

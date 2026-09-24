@@ -25,10 +25,3 @@ public struct ServerHarnessUninstallInfo: Codable, Equatable, Sendable {
   public var detail: String?
   public var command: String?
 }
-
-public extension ServerHarness {
-  var isLifecycleBusy: Bool {
-    guard let phase = lifecycle?.resolvedPhase else { return false }
-    return phase == .installing || phase == .uninstalling || phase == .updating || phase == .pendingUpdate
-  }
-}

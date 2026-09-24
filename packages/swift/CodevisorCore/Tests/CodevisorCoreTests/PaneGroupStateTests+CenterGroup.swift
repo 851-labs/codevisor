@@ -3,14 +3,11 @@ import Testing
 @testable import CodevisorCore
 
 extension PaneGroupStateTests {
-  @Test("Center initial state is a visible, selected, immovable chat pane")
+  @Test("Center initial state is a single selected chat pane")
   func centerInitial() {
     let state = PaneGroupState.centerInitial(sessionId: sessionId)
     #expect(state.panes.count == 1)
     #expect(state.panes[0].kind == .chat)
-    // Every pane moves between groups (tabs are tabs); whether the chat
-    // may CLOSE is the owning model's workspace-wide policy.
-    #expect(state.panes[0].isMovable)
     #expect(state.selectedPaneId == state.panes[0].id)
   }
 
@@ -44,7 +41,7 @@ extension PaneGroupStateTests {
     #expect(state.panes.count == 3)
   }
 
-  @Test("Drafts and established chats close at the group level; chats never move")
+  @Test("Drafts and established chats close at the group level")
   func chatCloseRules() {
     var state = PaneGroupState.centerInitial(sessionId: sessionId)
     let anchor = state.panes[0]
@@ -52,9 +49,7 @@ extension PaneGroupStateTests {
     state.assignChatSession(paneId: anchor.id, sessionId: sessionId, name: "First")
     // Group-locally closable (close = archive); the workspace-wide
     // keep-one-chat anchor is the owning model's policy, not state's.
-    // Moving is ungated for every kind.
     #expect(state.canClosePane(id: anchor.id))
-    #expect(anchor.isMovable)
 
     // A draft closes freely.
     let draft = state.addChatPane()
@@ -81,14 +76,12 @@ extension PaneGroupStateTests {
     #expect(bound?.name == "Build the parser")
   }
 
-  @Test("New Tab placeholders are real tabs: movable, group-locally closable")
+  @Test("New Tab placeholders are real tabs: removable and group-locally closable")
   func newTabCloseRules() {
     var state = PaneGroupState()
     let placeholder = state.addNewTabPane()
     #expect(placeholder.kind == .newTab)
     #expect(state.selectedPaneId == placeholder.id)
-    // A real tab: drags between groups like the rest.
-    #expect(placeholder.isMovable)
     // Group-locally closable — the cross-group rules (a lone
     // placeholder only closes when its group can dissolve) live in the
     // owning model's policies, which see the whole workspace.

@@ -1,14 +1,14 @@
 import Foundation
 
 /// The priority of a plan entry.
-public enum PlanEntryPriority: String, Sendable, Codable, Equatable, CaseIterable {
+public enum PlanEntryPriority: String, Sendable, Codable, Equatable {
   case high
   case medium
   case low
 }
 
 /// The status of a plan entry.
-public enum PlanEntryStatus: String, Sendable, Codable, Equatable, CaseIterable {
+public enum PlanEntryStatus: String, Sendable, Codable, Equatable {
   case pending
   case inProgress = "in_progress"
   case completed
