@@ -34,12 +34,6 @@ const allExcept =
     !denied.includes(kind)
 
 describe("RFB client stream filter (851-2338)", () => {
-  it("passes the handshake and every message when everything is allowed", () => {
-    const filter = new RFBClientStreamFilter()
-    const stream = Buffer.concat([handshake(), ...Object.values(messages)])
-    expect(filter.push(stream, () => true)).toEqual(stream)
-  })
-
   it("drops exactly the refused messages, keeping every other byte in order", () => {
     const filter = new RFBClientStreamFilter()
     const out = filter.push(

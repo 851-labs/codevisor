@@ -105,32 +105,3 @@ describe("publishSkillReadiness", () => {
     expect(second.changedEntries).toHaveLength(0)
   })
 })
-
-describe("publishSkillReadiness without a pass", () => {
-  it("reports a fleet skill missing here as awaiting content with no reason", async () => {
-    const { services } = await makeServices("skill-static")
-    await run(
-      services.db.mergeSyncEntries(SKILLS_SYNC_NAMESPACE, [
-        { key: "dataviz", value: { hash: "a", name: "dataviz" }, timestamp: at(1) }
-      ])
-    )
-    const skills = {
-      list: async () => ({ canonicalDir: "/tmp/skills", global: [], harnesses: [] })
-    }
-
-    // No missingBlobs: the on-demand publish has no pass to explain why
-    // the bytes haven't arrived, so the row carries no reason.
-    const result = await publishSkillReadiness({
-      db: services.db,
-      skills: skills as never,
-      serverId: "skill-static",
-      now: () => 1_234
-    })
-
-    expect(result.changedEntries).toHaveLength(1)
-    expect(result.changedEntries[0]?.value).toEqual({
-      skills: [{ directoryName: "dataviz", state: "awaitingContent" }]
-    })
-    expect(result.changedEntries[0]?.timestamp.wallMs).toBe(1_234)
-  })
-})

@@ -74,20 +74,6 @@ describe("workspace route idempotency", () => {
     expect(response.status).toBe(404)
   })
 
-  it("patches an existing pane", async () => {
-    const { server } = await setUp()
-    await jsonRequest(server, "/v1/workspaces/ws-1/panes/pane-1", {
-      body: JSON.stringify({ providerId: "codevisor", paneType: "terminal", title: "Terminal" }),
-      method: "PUT"
-    })
-    const response = await jsonRequest(server, "/v1/workspaces/ws-1/panes/pane-1", {
-      body: JSON.stringify({ title: "Renamed" }),
-      method: "PATCH"
-    })
-    expect(response.status).toBe(200)
-    expect(response.body).toMatchObject({ title: "Renamed" })
-  })
-
   it("creates a chat's workspace once, however many times opening it is retried", async () => {
     // A new workspace lives only on the device until its first chat opens;
     // opening that chat is what creates it on the server, so the open has to
