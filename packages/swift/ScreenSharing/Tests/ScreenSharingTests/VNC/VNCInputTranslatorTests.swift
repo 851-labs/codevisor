@@ -66,11 +66,11 @@ struct VNCInputTranslatorTests {
       ])
   }
 
-  @Test func theCurrentKeyboardLayoutProducesLatinLettersAndSpace() {
+  @Test func theCurrentKeyboardLayoutProducesLatinLettersAndSpace() throws {
     let keys = VNCKeyTranslator()
-    let lower = try? #require(keys.keysym(code: 0, modifiers: 0))
-    #expect(lower.map { (0x61...0x7a).contains($0) } == true)
-    #expect(keys.keysym(code: 0, modifiers: 1) == lower.map { $0 - 32 })
+    let lower = try #require(keys.keysym(code: 0, modifiers: 0))
+    #expect((0x61...0x7a).contains(lower))
+    #expect(keys.keysym(code: 0, modifiers: 1) == lower - 32)
     #expect(keys.keysym(code: 49, modifiers: 0) == 0x20)
     #expect(keys.keysym(code: 126, modifiers: 0) == RFBKeysym.up)
   }

@@ -57,7 +57,7 @@ private final class RecordingSurface: TranscriptSurfaceTextView {
 @MainActor
 @Suite("Transcript surface secondary click")
 struct TranscriptSurfaceTextViewTests {
-  private struct Fixture {
+  @MainActor private struct Fixture {
     let window: NSWindow
     let host: SelectionHost
     let surface: RecordingSurface

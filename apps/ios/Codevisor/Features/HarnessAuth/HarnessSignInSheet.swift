@@ -88,7 +88,7 @@ struct HarnessSignInSheet: View {
           }
         }
     }
-    .environment(\.harnessAccountsDismiss, { finish() })
+    .environment(\.harnessAccountsDismiss, HarnessAccountsDismissAction { finish() })
     .task {
       guard harness == nil else { return }
       if let initial = request.initialHarness {

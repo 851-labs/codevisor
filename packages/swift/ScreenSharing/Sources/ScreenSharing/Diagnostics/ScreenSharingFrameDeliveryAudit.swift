@@ -315,7 +315,6 @@ public final class ScreenSharingFrameDeliveryAudit: @unchecked Sendable {
         frames.filter { has(seen[$0]!, .submission) && !has(seen[$0]!, .presentedResult) }.count
       coverage["presentedResultZero"] =
         records.filter { $0.stage == Stage.presentedResult.rawValue && $0.valueNs == 0 }.count
-      records.filter { $0.stage == Stage.presentedResult.rawValue && $0.valueNs == 0 }.count
       let sequences = frames.isEmpty ? nil : [frames.min()!, frames.max()!]
       let begin = originNs.map { $0 + Int64(window.beginSeconds * 1_000_000_000) }
       return Snapshot(

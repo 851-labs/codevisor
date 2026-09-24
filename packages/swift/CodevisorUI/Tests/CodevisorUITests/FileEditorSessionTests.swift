@@ -79,12 +79,12 @@ struct FileEditorSessionTests {
 
   @Test func cacheEvictionReleasesUnownedDocumentsButPreservesUnsavedEdits() async {
     let store = FileDocumentStore(capacity: 1)
-    weak var evicted = store.document(key: "clean") { document() }
+    weak let evicted = store.document(key: "clean") { document() }
     var dirty: FileDocumentModel? = store.document(key: "dirty") { document("/dirty.md") }
     #expect(evicted == nil)
     await dirty?.refresh()
     dirty?.edit("unsaved")
-    weak var preserved = dirty
+    weak let preserved = dirty
     dirty = nil
     _ = store.document(key: "third") { document("/third.md") }
     #expect(preserved?.text == "unsaved")

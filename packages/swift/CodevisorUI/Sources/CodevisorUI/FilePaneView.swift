@@ -2,7 +2,17 @@ import CodevisorCore
 import SwiftUI
 
 extension EnvironmentValues {
-  @Entry public var openFileDocument: ((String) -> Bool)?
+  @Entry public var openFileDocument: OpenFileDocumentAction?
+}
+
+/// Opens a file target (a path, optionally with a line) in the owning
+/// workspace's document pane. Returns whether the target was handled.
+public struct OpenFileDocumentAction: Sendable {
+  private let handler: @MainActor @Sendable (_ target: String) -> Bool
+
+  public init(_ handler: @escaping @MainActor @Sendable (_ target: String) -> Bool) { self.handler = handler }
+
+  @MainActor @discardableResult public func callAsFunction(_ target: String) -> Bool { handler(target) }
 }
 
 /// Content only. The owning workspace supplies the native toolbar.
@@ -71,7 +81,7 @@ public struct FilePaneView: View {
       .sheet(isPresented: $model.showsExplorer) {
         FileBrowserSheet(model: model)
         .buttonStyle(.automatic)
-        .environment(\.closeFileBrowser, { model.showsExplorer = false })
+        .environment(\.closeFileBrowser, CloseFileBrowserAction { model.showsExplorer = false })
       }
     #endif
     .sheet(isPresented: $model.showsConflict) { FileConflictView(model: model) }

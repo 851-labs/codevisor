@@ -57,7 +57,7 @@ struct IOSPromptQueueAccessory: View {
       )
     )
     .background { IOSQueueSendTarget(animation: sendAnimation) }
-    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendAnimation.arrival) { content, scale in
+    .keyframeAnimator(initialValue: CGFloat(1), trigger: sendAnimation.arrival) { [reduceMotion] content, scale in
       content.scaleEffect(reduceMotion ? 1 : scale)
     } keyframes: { _ in
       CubicKeyframe(1.025, duration: 0.12)

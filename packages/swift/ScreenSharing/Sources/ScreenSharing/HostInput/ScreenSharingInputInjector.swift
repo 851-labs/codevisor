@@ -1,6 +1,5 @@
 #if os(macOS)
   import AppKit
-  import ScreenSharing
 
   /// Public Quartz events only, without automation's waits or app activation.
   /// Display bounds are Quartz global points, including negative display origins.

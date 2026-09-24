@@ -488,13 +488,15 @@ struct ScreenSharingMetalEncoder: @unchecked Sendable {
       _ request: ScreenSharingPreparationRequest,
       completion: @escaping @Sendable (ScreenSharingPreparedSubmission?) -> Void
     ) {
-      let layer = layer
       let encoder = encoder
       let metrics = metrics
       let audit = request.isNewFrame ? audit : nil
       let identity = request.auditIdentity
       let rtp = request.frame.rtpTimestamp
       queue.async {
+        // The layer is not Sendable; it is only touched on this queue, which is the
+        // confinement this class's `@unchecked Sendable` stands for.
+        let layer = self.layer
         // One autorelease-pool boundary per preparation: a drawable or texture
         // that is not handed back is released here, never at a later drain.
         let prepared: ScreenSharingPreparedSubmission? = autoreleasepool {

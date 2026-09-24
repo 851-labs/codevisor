@@ -1,6 +1,5 @@
 #if os(macOS)
   import AppKit
-  import ScreenSharing
 
   @MainActor
   protocol ScreenSharingInputTarget: NSView {

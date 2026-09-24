@@ -357,7 +357,7 @@ extension HomeView {
             },
             // The sheet flies its own bubble; Home only learns when it
             // has left the composer, to time the expansion.
-            onSendAnimationStarted: { _, _ in
+            onSendAnimationStarted: TranscriptSendAnimationStartAction { _, _ in
               markFirstSendAnimationStarted(liveFlow)
               return false
             },

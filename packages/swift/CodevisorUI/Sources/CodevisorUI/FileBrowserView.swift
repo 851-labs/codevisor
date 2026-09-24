@@ -3,7 +3,16 @@
   import SwiftUI
 
   extension EnvironmentValues {
-    @Entry var closeFileBrowser: (() -> Void)?
+    @Entry var closeFileBrowser: CloseFileBrowserAction?
+  }
+
+  /// Closes the file browser that hosts the current view.
+  struct CloseFileBrowserAction: Sendable {
+    private let handler: @MainActor @Sendable () -> Void
+
+    init(_ handler: @escaping @MainActor @Sendable () -> Void) { self.handler = handler }
+
+    @MainActor func callAsFunction() { handler() }
   }
 
   /// Open File on iPhone and iPad: folder pages in a navigation stack, with
@@ -146,7 +155,7 @@
         }
         if let closeBrowser {
           ToolbarItem(placement: .topBarLeading) {
-            Button(role: .close, action: closeBrowser)
+            Button(role: .close, action: { closeBrowser() })
           }
         }
       }

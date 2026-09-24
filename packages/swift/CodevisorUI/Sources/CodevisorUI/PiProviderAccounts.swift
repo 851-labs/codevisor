@@ -120,7 +120,7 @@ public struct PiProviderAccounts: View {
       }
       .environment(
         \.harnessMachineSignIn,
-        {
+        HarnessMachineSignInAction {
           pendingMachineSignIn = $0; setup = nil
         })
     }

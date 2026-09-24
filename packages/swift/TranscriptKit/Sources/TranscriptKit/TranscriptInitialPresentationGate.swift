@@ -27,4 +27,21 @@ public struct TranscriptInitialPresentationGate: Sendable, Equatable {
     isReady = true
     return true
   }
+
+  /// Opens the gate for a user-send flight into a transcript that has never
+  /// been presented, such as a brand-new chat's first send. The flight has
+  /// already established its own readiness (the destination row is laid out
+  /// and presentation-ready), and it deliberately holds back the active
+  /// projection and the rows beneath it until it lands, so the normal
+  /// requirements cannot be met until after the reply arrives. History that
+  /// is still hydrating keeps the gate closed: the flight never reveals a
+  /// partially restored transcript.
+  ///
+  /// Returns `true` only for the update that transitions the gate to ready.
+  @discardableResult
+  public mutating func openForSendPresentation(isHydrating: Bool) -> Bool {
+    guard !isReady, !isHydrating else { return false }
+    isReady = true
+    return true
+  }
 }

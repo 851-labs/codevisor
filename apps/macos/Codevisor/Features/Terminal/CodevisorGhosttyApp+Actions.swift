@@ -94,8 +94,9 @@ extension CodevisorGhosttyApp {
       guard let surfaceView = surfaceView(for: target) else { return false }
       let v = action.action.key_sequence
       if v.active {
-        let shortcut = Ghostty.keyboardShortcut(for: v.trigger)
+        let trigger = v.trigger
         onMain {
+          let shortcut = Ghostty.keyboardShortcut(for: trigger)
           NotificationCenter.default.post(
             name: Ghostty.Notification.didContinueKeySequence,
             object: surfaceView,
@@ -123,33 +124,33 @@ extension CodevisorGhosttyApp {
       }
 
     case GHOSTTY_ACTION_CONFIG_CHANGE:
-      // Clone the config so we own the memory (upstream L2194-2240) —
-      // synchronously: the source pointer dies with the callback.
-      let config = Ghostty.Config(clone: action.action.config_change.config)
+      // The app takes the new config; a surface's is only announced.
+      let host: CodevisorGhosttyApp?
+      let surfaceView: Ghostty.SurfaceView?
       switch target.tag {
       case GHOSTTY_TARGET_APP:
-        let host = hostApp(from: ghostty_app_userdata(app))
-        onMain {
-          NotificationCenter.default.post(
-            name: .ghosttyConfigDidChange,
-            object: nil,
-            userInfo: [SwiftUI.Notification.Name.GhosttyConfigChangeKey: config]
-          )
-          host.config = config
-        }
+        host = hostApp(from: ghostty_app_userdata(app))
+        surfaceView = nil
       case GHOSTTY_TARGET_SURFACE:
-        guard let surface = target.target.surface,
-          let surfaceView = surfaceView(from: surface)
-        else { return false }
-        onMain {
-          NotificationCenter.default.post(
-            name: .ghosttyConfigDidChange,
-            object: surfaceView,
-            userInfo: [SwiftUI.Notification.Name.GhosttyConfigChangeKey: config]
-          )
-        }
+        guard let surface = target.target.surface, let view = self.surfaceView(from: surface) else { return false }
+        host = nil
+        surfaceView = view
       default:
         return false
+      }
+      // Clone the config so we own the memory (upstream L2194-2240) —
+      // synchronously: the source pointer dies with the callback. The clone
+      // is ours alone, so ownership moves with the hop to main, where it is
+      // wrapped (Ghostty.Config is main-actor state and frees it on deinit).
+      nonisolated(unsafe) let clone = ghostty_config_clone(action.action.config_change.config)
+      onMain {
+        let config = Ghostty.Config(config: clone)
+        NotificationCenter.default.post(
+          name: .ghosttyConfigDidChange,
+          object: surfaceView,
+          userInfo: [SwiftUI.Notification.Name.GhosttyConfigChangeKey: config]
+        )
+        host?.config = config
       }
 
     case GHOSTTY_ACTION_RELOAD_CONFIG:

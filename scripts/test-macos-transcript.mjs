@@ -48,9 +48,13 @@ let package = Package(
       ]
         .map((name) => `.product(name: "${name}", package: "swift")`)
         .join(", ")}],
-      swiftSettings: [.swiftLanguageMode(.v5), .defaultIsolation(MainActor.self)]
+      swiftSettings: [.swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .treatAllWarnings(as: .error)]
     ),
-    .testTarget(name: "TranscriptSurfaceTests", dependencies: ["TranscriptSurface"])
+    .testTarget(
+      name: "TranscriptSurfaceTests",
+      dependencies: ["TranscriptSurface"],
+      swiftSettings: [.treatAllWarnings(as: .error)]
+    )
   ]
 )
 `

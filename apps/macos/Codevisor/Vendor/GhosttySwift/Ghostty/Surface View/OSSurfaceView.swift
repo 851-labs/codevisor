@@ -134,11 +134,14 @@ extension Ghostty.OSSurfaceView {
         /// The range of the needle's text selection in the find bar.
         @Published var needleSelection: Range<String.Index>?
 
+        // CODEVISOR-PATCH-BEGIN: backport of upstream's optional pasteboard parameter; a default
+        // argument cannot read the main-actor `OSPasteboard.find`, the initializer body can.
         init(
             from startSearch: Ghostty.Action.StartSearch,
-            pasteboard: OSPasteboard = OSPasteboard.find
+            pasteboard: OSPasteboard? = nil
         ) {
-            self.pasteboard = pasteboard
+            self.pasteboard = pasteboard ?? .find
+            // CODEVISOR-PATCH-END
             if let needle = startSearch.needle, !needle.isEmpty {
                 self.needle = needle
                 writePasteboardNeedle()

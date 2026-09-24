@@ -248,12 +248,18 @@ extension VirtualizedTranscriptScrollView {
       rowContent(row)
         .environment(\.streamingTextAnimationFrameClock, streamingTextFrameClock)
         .environment(\.streamMarkdownTextLayoutWidth, effectiveRowWidth)
-        .environment(\.transcriptPerformAnchoredDisclosureChange) { [weak self] change in
-          self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
-        }
-        .environment(\.transcriptInvalidateRowMeasurement) { [weak self] in
-          self?.mountedHosts[key]?.requestContentMeasurement()
-        }
+        .environment(
+          \.transcriptPerformAnchoredDisclosureChange,
+          TranscriptAnchoredDisclosureChangeAction { [weak self] change in
+            self?.performAnchoredDisclosureChange(in: key, change: change) ?? change()
+          }
+        )
+        .environment(
+          \.transcriptInvalidateRowMeasurement,
+          TranscriptRowMeasurementInvalidationAction { [weak self] in
+            self?.mountedHosts[key]?.requestContentMeasurement()
+          }
+        )
         .onPreferenceChange(AttachmentGeometryReadinessPreferenceKey.self) {
           [weak self] unresolvedCount in
           self?.attachmentGeometryReadinessDidChange(

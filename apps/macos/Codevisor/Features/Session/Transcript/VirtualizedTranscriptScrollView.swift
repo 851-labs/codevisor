@@ -315,7 +315,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       object: contentView,
       queue: .main
     ) { [weak self] _ in
-      Self.onMain { self?.viewportDidScroll() }
+      Self.onMain { [weak self] in self?.viewportDidScroll() }
     }
     liveScrollObservers = [
       NotificationCenter.default.addObserver(
@@ -323,7 +323,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         object: self,
         queue: .main
       ) { [weak self] _ in
-        Self.onMain {
+        Self.onMain { [weak self] in
           self?.cancelDisclosureViewportAnchor()
           self?.bottomJumpGate.cancel()
           self?.isLiveScrolling = true
@@ -336,7 +336,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
         object: self,
         queue: .main
       ) { [weak self] _ in
-        Self.onMain {
+        Self.onMain { [weak self] in
           self?.mountedRowsUpdateRequested = false
           self?.updateMountedRows()
           self?.emitViewportSnapshot()
@@ -367,7 +367,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   /// notification arrived on the main thread (always the case for these
   /// `.main`-queue observers), or dispatched otherwise. Guarded so a stray
   /// off-main delivery cannot trap `MainActor.assumeIsolated`.
-  nonisolated private static func onMain(_ work: @escaping @MainActor () -> Void) {
+  nonisolated private static func onMain(_ work: @escaping @MainActor @Sendable () -> Void) {
     if Thread.isMainThread {
       MainActor.assumeIsolated(work)
     } else {

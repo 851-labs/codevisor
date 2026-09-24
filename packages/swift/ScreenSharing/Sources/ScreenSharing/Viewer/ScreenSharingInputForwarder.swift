@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import Foundation
 
   /// The data-plane half of a control lease: numbers each captured input event

@@ -10,7 +10,7 @@ import ScreenSharingTesting
 /// `Fixtures/README.md`).
 struct RFBRecordingTests {
   static let fixtures: [URL] = {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+    guard let directory = Bundle.module.url(forResource: "Fixtures", withExtension: nil) else { return [] }
     let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
     return names.filter { $0.hasSuffix(".json") }.sorted().map { directory.appendingPathComponent($0) }
   }()

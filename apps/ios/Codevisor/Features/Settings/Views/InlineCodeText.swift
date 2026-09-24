@@ -55,12 +55,12 @@ struct InlineCodeText: View {
     Array(text.components(separatedBy: "`").enumerated())
       .reduce(Text("")) { result, piece in
         if piece.offset.isMultiple(of: 2) {
-          return result + Text(piece.element)
+          return Text("\(result)\(Text(piece.element))")
         }
-        return result
-          + Text(piece.element)
+        let chip = Text(piece.element)
           .font(.footnote.monospaced())
           .customAttribute(ChipMarker())
+        return Text("\(result)\(chip)")
       }
       .textRenderer(ChipRenderer())
   }

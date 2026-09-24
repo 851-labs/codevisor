@@ -50,7 +50,13 @@ const resend = () =>
 const reset = (otp = code()) =>
   request("email-otp/reset-password", { email, otp, password: "a-new-test-password" })
 const session = (token: string) =>
-  worker.fetch(new Request(`${BASE}/api/auth/get-session`, { headers: authed(token) }), configured)
+  worker.fetch(
+    new Request(`${BASE}/api/auth/get-session`, {
+      // Cloudflare's edge sets cf-connecting-ip on every request.
+      headers: { ...authed(token), "cf-connecting-ip": clientIP }
+    }),
+    configured
+  )
 
 describe("native email authentication", () => {
   it("advertises email only with a configured mail service", async () => {

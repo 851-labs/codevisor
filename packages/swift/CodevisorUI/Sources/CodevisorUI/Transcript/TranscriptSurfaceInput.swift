@@ -130,6 +130,24 @@ public struct TranscriptSurfaceInput {
       self.rowFrame = rowFrame
     }
   }
+
+  /// Told when a send animation begins at its transcript row. Returns true
+  /// when the caller flies the message itself instead of the transcript.
+  public struct TranscriptSendAnimationStartAction: Sendable {
+    private let handler: @MainActor @Sendable (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
+
+    public init(
+      _ handler: @escaping @MainActor @Sendable (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
+    ) {
+      self.handler = handler
+    }
+
+    @MainActor public func callAsFunction(
+      _ request: UserSendAnimationRequest, _ target: TranscriptSendAnimationTarget
+    ) -> Bool {
+      handler(request, target)
+    }
+  }
 #endif
 
 /// The closures a native transcript surface calls back into SwiftUI with.
@@ -151,7 +169,7 @@ public struct TranscriptSurfaceCallbacks {
   /// Inline images preview on activation and offer new-tab/copy in their menu.
   public var markdownImageActions: MarkdownImageActions?
   #if canImport(UIKit)
-    public var onSendAnimationStarted: (@MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool)?
+    public var onSendAnimationStarted: TranscriptSendAnimationStartAction?
   #endif
 
   #if canImport(UIKit)
@@ -167,9 +185,7 @@ public struct TranscriptSurfaceCallbacks {
       markdownImageLoader: MarkdownImageLoader? = nil,
       openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
       markdownImageActions: MarkdownImageActions? = nil,
-      onSendAnimationStarted: (
-        @MainActor (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
-      )? = nil
+      onSendAnimationStarted: TranscriptSendAnimationStartAction? = nil
     ) {
       self.claimSendAnimation = claimSendAnimation
       self.rowContent = rowContent

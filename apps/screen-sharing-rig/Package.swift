@@ -1,5 +1,10 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
+
+// Every first-party target compiles with warnings as errors, so the pre-commit suite fails on
+// any new warning instead of letting them pile up.
+let strictSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6), .treatAllWarnings(as: .error)]
+let strictCSettings: [CSetting] = [.treatAllWarnings(as: .error)]
 
 // The screen-sharing development tools, never shipped: the two-Mac rig and, as the
 // `probe` subcommand, the single-process diagnostic. A consumer of the media package.
@@ -21,7 +26,7 @@ let package = Package(
         .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
         "ScreenSharingDiagnostics",
       ],
-      swiftSettings: [.swiftLanguageMode(.v6)]
+      swiftSettings: strictSwiftSettings
     ),
     .executableTarget(
       name: "ScreenSharingRig",
@@ -35,7 +40,7 @@ let package = Package(
         .product(name: "ScreenSharingTesting", package: "CodevisorKit"),
         "ScreenSharingDiagnostics",
       ],
-      swiftSettings: [.swiftLanguageMode(.v6)]
+      swiftSettings: strictSwiftSettings
     ),
     // Diagnostics shared by the rig, its probe subcommand and their tests: workload window, painter,
     // synthetic source, and experiment-only instrumentation (RTC event log, first-observation and
@@ -46,18 +51,19 @@ let package = Package(
         .product(name: "ScreenSharing", package: "CodevisorKit"),
         .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
       ],
-      swiftSettings: [.swiftLanguageMode(.v6)]
+      swiftSettings: strictSwiftSettings
     ),
     // Private CoreGraphics virtual-display declarations; rig only, see the header.
     .target(
       name: "CGVirtualDisplayPrivate",
       publicHeadersPath: "include",
+      cSettings: strictCSettings,
       linkerSettings: [.linkedFramework("CoreGraphics")]
     ),
     .testTarget(
       name: "ScreenSharingDiagnosticsTests",
       dependencies: ["ScreenSharingDiagnostics", .product(name: "CodevisorTestSupport", package: "CodevisorKit")],
-      swiftSettings: [.swiftLanguageMode(.v6)],
+      swiftSettings: strictSwiftSettings,
       linkerSettings: [
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))
       ]
@@ -65,7 +71,7 @@ let package = Package(
     .testTarget(
       name: "ScreenSharingRigKitTests",
       dependencies: ["ScreenSharingRigKit", .product(name: "CodevisorTestSupport", package: "CodevisorKit")],
-      swiftSettings: [.swiftLanguageMode(.v6)],
+      swiftSettings: strictSwiftSettings,
       // SwiftPM's macOS test bundle loader needs the sibling binary framework.
       linkerSettings: [
         .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."], .when(platforms: [.macOS]))

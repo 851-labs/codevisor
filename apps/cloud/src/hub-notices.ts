@@ -1,4 +1,3 @@
-// @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import { encodeCloudFrame, type HubToMachine } from "@codevisor/api"
 
 import { machinePresence, machineRow } from "./hub-schema.js"

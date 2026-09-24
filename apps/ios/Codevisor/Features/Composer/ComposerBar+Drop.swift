@@ -11,7 +11,7 @@ extension ComposerBar {
   /// drop with nothing attachable is refused so the system can show that.
   func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
     guard !controller.isSubmitting, remainingAttachmentSlots > 0 else { return false }
-    let accepted = providers.filter(Self.canAttachDrop).prefix(remainingAttachmentSlots)
+    let accepted = providers.filter { Self.canAttachDrop($0) }.prefix(remainingAttachmentSlots)
     guard !accepted.isEmpty else { return false }
     ComposerPasteProviderLoader.logInvocation(route: "drop", providers: Array(accepted))
     for provider in accepted {
@@ -47,7 +47,8 @@ extension ComposerBar {
     let kind: Attachment.Kind = type.conforms(to: .image) ? .image : .file
     handlePasteAttachmentEvent(
       .began(id: id, name: name, mimeType: type.preferredMIMEType ?? "application/octet-stream", kind: kind))
-    provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
+    // Progress is not surfaced: the attachment chip shows loading until the copy resolves.
+    _ = provider.loadFileRepresentation(for: type, openInPlace: false) { url, _, error in
       let copied = url.flatMap { Self.copyDroppedFile($0, named: name) }
       Task { @MainActor in
         if let copied {

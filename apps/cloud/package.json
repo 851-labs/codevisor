@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --var DEV_AUTH:1 --var PUBLIC_BASE_URL:http://localhost:8787 --var 'INSTANCE_NAME:Codevisor Cloud (dev)'",
+    "dev": "WRANGLER_BUILD_CONDITIONS=@codevisor/source,workerd,worker,browser wrangler dev --var DEV_AUTH:1 --var PUBLIC_BASE_URL:http://localhost:8787 --var 'INSTANCE_NAME:Codevisor Cloud (dev)'",
     "build": "bun run build:css && tsc --noEmit",
     "build:css": "tailwindcss -i src/pages/tailwind.css -o src/generated/styles.css --minify",
     "typecheck": "bun run build:css && tsc --noEmit --pretty false",
     "test": "bun run build:css && vitest run",
     "test:coverage": "bun run test",
     "cf-typegen": "wrangler types",
-    "deploy": "wrangler deploy",
+    "deploy": "WRANGLER_BUILD_CONDITIONS=@codevisor/source,workerd,worker,browser wrangler deploy",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply codevisor-cloud --local"
   },

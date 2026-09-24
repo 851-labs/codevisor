@@ -243,6 +243,9 @@ final class CodevisorGhosttyApp {
     state: UnsafeMutableRawPointer?
   ) -> Bool {
     let surfaceView = surfaceUserdata(from: userdata)
+    // libghostty's opaque token for this request. It is handed back exactly once, on the main
+    // actor, so ownership moves with the hop and nothing else touches it.
+    nonisolated(unsafe) let state = state
 
     // The synchronous Bool (did we handle it?) needs the pasteboard,
     // which is main-thread territory. Reads originate from input
@@ -288,6 +291,8 @@ final class CodevisorGhosttyApp {
     // Copy the C string before hopping — the pointer dies with the callback.
     guard let string, let valueStr = String(cString: string, encoding: .utf8) else { return }
     guard let request = Ghostty.ClipboardRequest.from(request: request) else { return }
+    // libghostty's opaque token for this request, handed back exactly once on the main actor.
+    nonisolated(unsafe) let state = state
 
     onMain {
       guard let surface = surfaceView.surface else { return }

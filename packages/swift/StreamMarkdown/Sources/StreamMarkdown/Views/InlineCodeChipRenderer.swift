@@ -59,7 +59,7 @@
       pieces
         .reduce(Text("")) { text, piece in
           let segment = Text(piece.text)
-          return text + (piece.isChip ? segment.customAttribute(InlineCodeChipMarker()) : segment)
+          return Text("\(text)\(piece.isChip ? segment.customAttribute(InlineCodeChipMarker()) : segment)")
         }
         .textRenderer(
           InlineCodeChipRenderer(

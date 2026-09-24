@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import CoreVideo
   import Foundation
   import IOSurface

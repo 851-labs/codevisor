@@ -6,7 +6,11 @@ extension Ghostty {
     ///
     /// Wraps a `ghostty_inspector_t`
     final class Inspector: Sendable {
-        private let inspector: ghostty_inspector_t
+        // CODEVISOR-PATCH-BEGIN: backport of upstream da8b171265
+        /// A inspector is sendable because it is just a reference type. Using the inspector in parameters
+        /// may be unsafe but the value itself is safe to send across threads.
+        nonisolated(unsafe) private let inspector: ghostty_inspector_t
+        // CODEVISOR-PATCH-END
 
         /// Read the underlying C value for this inspector. This is unsafe because the value will be
         /// freed when the Inspector class is deinitialized.

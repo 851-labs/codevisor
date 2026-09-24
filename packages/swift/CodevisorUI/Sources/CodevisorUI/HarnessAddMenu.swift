@@ -8,8 +8,8 @@
     let harnesses: [ServerHarness]
     let isLoading: Bool
     let loadFailed: Bool
-    let retry: () -> Void
-    let add: (ServerHarness) -> Void
+    let retry: @MainActor () -> Void
+    let add: @MainActor (ServerHarness) -> Void
     @ViewBuilder let icon: (String, String) -> Icon
 
     private var loadingState: Autocomplete.LoadingState {

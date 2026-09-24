@@ -251,7 +251,7 @@ struct RootView: View {
           // Land on the new-workspace page (picker) rather than the
           // quick-create fast path — the user should name/configure
           // their first workspace, not get a random one auto-made.
-          selection = .newChat(project.map(NewChatTarget.init))
+          selection = .newChat(project.map { NewChatTarget($0) })
         }
       }
     }

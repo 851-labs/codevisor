@@ -424,7 +424,7 @@ struct NewChatView: View {
         )
       }
       controller.serverSession = session
-      controller.onWorktreeCreated = { [weak projectList = environment.projectList, weak store] worktree in
+      controller.onWorktreeCreated = { [weak projectList = environment.projectList, weak store = store] worktree in
         projectList?.setWorktree(
           name: worktree.name,
           cwd: worktree.path,

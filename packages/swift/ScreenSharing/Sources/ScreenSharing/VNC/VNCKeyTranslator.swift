@@ -1,6 +1,5 @@
 #if os(macOS)
   import Carbon.HIToolbox
-  import ScreenSharing
   import Foundation
 
   /// Mac virtual key codes (what `ScreenSharingInputEvent.key` carries) to X11

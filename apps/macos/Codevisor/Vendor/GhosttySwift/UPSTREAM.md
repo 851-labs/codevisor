@@ -51,6 +51,16 @@ Patch classes (12 files):
 3. **AppEnum/App Intents removed** (Ghostty.Input) — conflicts with Codevisor's
    `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`; `Key.allCases` preserved since
    `Key.init?(keyCode:)` depends on it.
+4. **Warnings-as-errors fixes** — the app target treats warnings as errors.
+   Backports of later upstream fixes: da8b171265 (no retroactive `Sendable` on
+   `ghostty_surface_t`/`ghostty_command_s`; `nonisolated(unsafe)` handles in
+   Ghostty.Surface/Inspector), async notification scheduling
+   (SurfaceView_AppKit) and the optional `SearchState` pasteboard
+   (OSSurfaceView). Codevisor-only: `nonisolated` on the C-payload value types
+   and `Ghostty.logger` that libghostty callbacks use off the main thread
+   (Ghostty.Action, GhosttyPackage, GhosttyPackageMeta), the off-main surface
+   free in Ghostty.Surface's deinit, and `bindingFlags` tested for presence
+   after the removed menu attempt.
 
 ## Re-syncing to a new upstream commit
 

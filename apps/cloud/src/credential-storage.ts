@@ -1,4 +1,3 @@
-// @boundaries-ignore the Worker bundles the API package from source.
 import {
   coordinateCredential,
   type CredentialRecord,

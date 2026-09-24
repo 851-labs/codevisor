@@ -1,4 +1,3 @@
-// @boundaries-ignore intentionally resolved to package source: this app bundles @codevisor/api from src (tsconfig paths / vite alias)
 import type { CloudMachinePresence } from "@codevisor/api"
 
 /// The hub's durable shape: per-hub SQLite migrations (append-only, applied

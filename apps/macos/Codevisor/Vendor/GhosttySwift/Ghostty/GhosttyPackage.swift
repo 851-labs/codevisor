@@ -4,12 +4,10 @@ import GhosttyKit
 
 // MARK: C Extensions
 
-/// A command is fully self-contained so it is Sendable.
-extension ghostty_command_s: @unchecked @retroactive Sendable {}
-
-/// A surface is sendable because it is just a reference type. Using the surface in parameters
-/// may be unsafe but the value itself is safe to send across threads.
-extension ghostty_surface_t: @unchecked @retroactive Sendable {}
+// CODEVISOR-PATCH: removed the retroactive `Sendable` conformances of `ghostty_command_s` and
+// `ghostty_surface_t` (an `UnsafeMutableRawPointer`, which Swift marks explicitly non-Sendable),
+// backporting upstream da8b171265 ("macOS: fix Sendable warning for UnsafeMutablePointer"); the
+// Surface and Inspector wrappers now carry the handle instead.
 
 extension Ghostty {
     // The user notification category identifier
@@ -107,7 +105,9 @@ extension Ghostty {
         }
     }
 
-    enum SetSecureInput {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated enum SetSecureInput {
         case on
         case off
         case toggle
@@ -222,7 +222,9 @@ extension Ghostty {
 
 extension Ghostty {
     /// The type of a clipboard request
-    enum ClipboardRequest {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated enum ClipboardRequest {
         /// A direct paste of clipboard contents
         case paste
 
@@ -266,7 +268,9 @@ extension Ghostty {
         }
     }
 
-    struct ClipboardContent {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated struct ClipboardContent {
         let mime: String
         let data: String
 

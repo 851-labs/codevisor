@@ -26,8 +26,26 @@ public struct HarnessMachineSignIn: Identifiable {
 
 extension EnvironmentValues {
   @Entry public var sharedHarnessAccounts = false
-  @Entry public var harnessAccountsDismiss: (@MainActor () -> Void)?
-  @Entry public var harnessMachineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?
+  @Entry public var harnessAccountsDismiss: HarnessAccountsDismissAction?
+  @Entry public var harnessMachineSignIn: HarnessMachineSignInAction?
+}
+
+/// Dismisses the harness accounts presentation that owns the current page.
+public struct HarnessAccountsDismissAction: Sendable {
+  private let handler: @MainActor @Sendable () -> Void
+
+  public init(_ handler: @escaping @MainActor @Sendable () -> Void) { self.handler = handler }
+
+  @MainActor public func callAsFunction() { handler() }
+}
+
+/// Starts a sign-in that has to run on a chosen machine.
+public struct HarnessMachineSignInAction: Sendable {
+  private let handler: @MainActor @Sendable (HarnessMachineSignIn) -> Void
+
+  public init(_ handler: @escaping @MainActor @Sendable (HarnessMachineSignIn) -> Void) { self.handler = handler }
+
+  @MainActor public func callAsFunction(_ request: HarnessMachineSignIn) { handler(request) }
 }
 
 /// The editor is shared by both scopes. Only machine-bound auth needs a chooser.
@@ -81,7 +99,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
           }
         #endif
     }
-    .environment(\.harnessAccountsDismiss, { dismiss() })
+    .environment(\.harnessAccountsDismiss, HarnessAccountsDismissAction { dismiss() })
     .onPreferenceChange(HarnessAccountsWorkingPreference.self) { operation = $0 }
     .interactiveDismissDisabled(isWorking)
     #if os(macOS)
@@ -108,7 +126,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
             }
           #endif
       }
-      .environment(\.harnessAccountsDismiss, { machineSignIn = nil })
+      .environment(\.harnessAccountsDismiss, HarnessAccountsDismissAction { machineSignIn = nil })
       // A nested sheet is its own presentation, so the outer sheet's
       // preference reader never sees this editor's work. It reads its own.
       .onPreferenceChange(HarnessAccountsWorkingPreference.self) { pickerOperation = $0 }
@@ -158,7 +176,7 @@ public struct HarnessAccountsSheet<Editor: View>: View {
       {
         editor(nil, harness, initialSignInRequest)
           .environment(\.sharedHarnessAccounts, true)
-          .environment(\.harnessMachineSignIn, { machineSignIn = $0 })
+          .environment(\.harnessMachineSignIn, HarnessMachineSignInAction { machineSignIn = $0 })
       }
     }
     // Machine-bound accounts never reach this sheet: the harness list
@@ -273,7 +291,7 @@ struct HarnessAccountMachinePicker<Editor: View>: View {
           // `role: .close` is the iOS 26 dismissal idiom. Dismissal is the
           // one action universally understood as a glyph, so it stays
           // icon-only; confirm actions keep their verb as text.
-          Button("Close", systemImage: "xmark", role: .close, action: close)
+          Button("Close", systemImage: "xmark", role: .close, action: { close() })
             .labelStyle(.iconOnly)
         }
       }

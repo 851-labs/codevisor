@@ -12,7 +12,7 @@ enum TranscriptMarkdownImageOpener {
   static func actions(
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?,
-    openDocument: ((String) -> Bool)?
+    openDocument: OpenFileDocumentAction?
   ) -> MarkdownImageActions {
     MarkdownImageActions(
       open: { url in

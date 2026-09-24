@@ -62,7 +62,7 @@ extension WorkspaceScreen {
       pluginPaneModel: { pluginPaneModel(for: $0) },
       onRenamePane: { renamePane($0, to: $1) }
     )
-    .environment(\.openFileDocument, openFileDocument)
+    .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
     // BrowserPaneView extends its page separately so its floating controls
     // retain the home-indicator and keyboard safe areas.
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])

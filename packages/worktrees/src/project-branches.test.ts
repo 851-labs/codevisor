@@ -12,7 +12,7 @@ const makeRepo = (): { readonly root: string; readonly repo: string } => {
   const root = testTempDir(join(tmpdir(), "codevisor-project-branches-"))
   const repo = join(root, "repo")
   mkdirSync(repo)
-  execFileSync("git", ["init"], { cwd: repo })
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo })
   execFileSync(
     "git",
     ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],

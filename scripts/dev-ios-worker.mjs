@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 
 import { parseDevelopmentRunnerArguments } from "./dev-arguments.mjs"
 import { bootstrapDevelopment } from "./dev-bootstrap.mjs"
+import { cloudWranglerEnvironment } from "./dev-cloud.mjs"
 import {
   launchDevRemoteServer,
   prepareDevContainers,
@@ -191,7 +192,7 @@ if (externalCloudURL === undefined) {
       ...cloudExtraVariables,
       "--show-interactive-dev-session=false"
     ],
-    { cwd: join(repoRoot, "apps/cloud"), env: process.env, stdio: "inherit" }
+    { cwd: join(repoRoot, "apps/cloud"), env: cloudWranglerEnvironment(), stdio: "inherit" }
   )
 }
 

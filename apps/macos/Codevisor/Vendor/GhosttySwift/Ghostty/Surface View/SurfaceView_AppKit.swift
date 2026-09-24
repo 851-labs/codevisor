@@ -1313,7 +1313,9 @@ extension Ghostty {
             }
 
             // If this is a binding then we want to perform it.
-            if let bindingFlags {
+            // CODEVISOR-PATCH: `bindingFlags` is only tested for presence; its value fed the
+            // removed menu-item attempt below.
+            if bindingFlags != nil {
                 // Attempt to trigger a menu item for this key binding. We only do this if:
                 //   - We're not in a key sequence or table (those are separate bindings)
                 //   - The binding is NOT `all` (menu uses FirstResponder chain)
@@ -1743,30 +1745,45 @@ extension Ghostty {
                 trigger: nil
             )
 
+            // CODEVISOR-PATCH-BEGIN: backport of upstream's async scheduling. The completion-handler
+            // form ran its `@MainActor` closure on UNUserNotificationCenter's background queue (the
+            // annotation was dropped converting to the handler's nonisolated type), racing the view
+            // state it mutated.
             // Note the callback may be executed on a background thread as documented
             // so we need @MainActor since we're reading/writing view state.
-            UNUserNotificationCenter.current().add(request) { @MainActor error in
-                if let error = error {
-                    Ghostty.logger.error("Error scheduling user notification: \(error, privacy: .public)")
-                    return
-                }
+            // We use [weak self] here because we don't want to extend the surface's
+            // lifetime when a notification is triggered right before the surface closes.
+            Task { @MainActor [weak self] in
+                do {
+                    try await UNUserNotificationCenter.current().add(request)
 
-                // We need to keep track of this notification so we can remove it
-                // under certain circumstances
-                self.notificationIdentifiers.insert(uuid)
+                    guard let focused = self?.focused else {
+                        // We remove the notification if the surface is deallocated.
+                        UNUserNotificationCenter.current()
+                            .removeDeliveredNotifications(withIdentifiers: [uuid])
+                        return
+                    }
 
-                // If we're focused then we schedule to remove the notification
-                // after a few seconds. If we gain focus we automatically remove it
-                // in focusDidChange.
-                if self.focused {
-                    Task { @MainActor [weak self] in
-                        try await Task.sleep(for: .seconds(3))
+                    // We need to keep track of this notification so we can remove it
+                    // under certain circumstances
+                    self?.notificationIdentifiers.insert(uuid)
+
+                    // If we're focused then we schedule to remove the notification
+                    // after a few seconds. If we gain focus we automatically remove it
+                    // in focusDidChange.
+                    if focused {
+                        // If the suspension is failed, we remove the notification anyway.
+                        try? await Task.sleep(for: .seconds(3))
                         self?.notificationIdentifiers.remove(uuid)
+                        // We remove the notification if the surface is deallocated while we wait.
                         UNUserNotificationCenter.current()
                             .removeDeliveredNotifications(withIdentifiers: [uuid])
                     }
+                } catch {
+                    Ghostty.logger.error("Error scheduling user notification: \(error, privacy: .public)")
                 }
             }
+            // CODEVISOR-PATCH-END
         }
 
         /// Handle a user notification click

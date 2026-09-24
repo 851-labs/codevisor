@@ -121,6 +121,9 @@ describe("browser email sessions", () => {
         return Response.json({ id: "web-test-mail" })
       }
     }
+    // Cloudflare's edge sets cf-connecting-ip on every request, and Better
+    // Auth's rate limiter keys on it.
+    const clientIP = "192.0.2.240"
     const request = (path: string, body: object) =>
       worker.fetch(
         new Request(`${BASE}/api/auth/${path}`, {
@@ -128,7 +131,7 @@ describe("browser email sessions", () => {
           headers: {
             "content-type": "application/json",
             origin: BASE,
-            "cf-connecting-ip": "192.0.2.240"
+            "cf-connecting-ip": clientIP
           },
           body: JSON.stringify(body)
         }),
@@ -136,7 +139,12 @@ describe("browser email sessions", () => {
       )
     const otp = () => mail.match(/\n\n(\d{6})\n\n/)![1]!
     const session = (cookie: string) =>
-      worker.fetch(new Request(`${BASE}/api/auth/get-session`, { headers: { cookie } }), configured)
+      worker.fetch(
+        new Request(`${BASE}/api/auth/get-session`, {
+          headers: { cookie, "cf-connecting-ip": clientIP }
+        }),
+        configured
+      )
 
     expect((await request("sign-up/email", { email, password, name: "Web User" })).status).toBe(200)
     expect(await (await request("sign-in/email", { email, password })).json()).toMatchObject({
@@ -155,7 +163,7 @@ describe("browser email sessions", () => {
     expect(grant.status).toBe(200)
     const claimed = await worker.fetch(
       new Request(`${BASE}/api/auth/device?user_code=${encodeURIComponent(userCode)}`, {
-        headers: { cookie }
+        headers: { cookie, "cf-connecting-ip": clientIP }
       }),
       configured
     )
@@ -163,7 +171,12 @@ describe("browser email sessions", () => {
     const approved = await worker.fetch(
       new Request(`${BASE}/api/auth/device/approve`, {
         method: "POST",
-        headers: { cookie, origin: BASE, "content-type": "application/json" },
+        headers: {
+          cookie,
+          origin: BASE,
+          "content-type": "application/json",
+          "cf-connecting-ip": clientIP
+        },
         body: JSON.stringify({ userCode })
       }),
       configured

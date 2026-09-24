@@ -153,13 +153,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var sendHistoryHoldMounts: [String: SendHistoryHoldMount] = [:]
   var sendAnimationSourceFrame: CGRect?
   var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
-  var onSendAnimationStarted:
-    (
-      (
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-      ) -> Bool
-    )?
+  var onSendAnimationStarted: TranscriptSendAnimationStartAction?
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
   var activeSendAnimationRequest: UserSendAnimationRequest?
   var isStartingSendAnimation = false

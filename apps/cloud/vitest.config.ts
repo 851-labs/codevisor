@@ -25,6 +25,12 @@ export default defineConfig(async () => {
         }
       })
     ],
+    // Workspace packages resolve to TypeScript source (see packages/api
+    // exports). Tests run in the ssr environment, which merges this onto its
+    // default conditions.
+    environments: {
+      ssr: { resolve: { conditions: ["@codevisor/source"] } }
+    },
     test: {
       include: ["test/**/*.test.ts"],
       setupFiles: ["./test/apply-migrations.ts"]

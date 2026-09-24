@@ -12,7 +12,8 @@ extension SidebarView {
       let workspace = environment.workspaces.workspace(id: sourceID)
     else { return }
     withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
-      environment.workspaceSync.reorderWorkspace(
+      // The write is fire-and-forget; the sync model coalesces and owns it.
+      _ = environment.workspaceSync.reorderWorkspace(
         id: sourceID, visibleIDs: reordered,
         client: environment.machines.client(for: workspace.serverId)
       )

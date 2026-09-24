@@ -1,4 +1,3 @@
-// @boundaries-ignore the Worker bundles the API package from source.
 import { CredentialCommand, decode } from "@codevisor/api"
 import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"

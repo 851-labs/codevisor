@@ -145,7 +145,7 @@ struct SessionContainerView: View {
       )
       // Keep background terminals synchronized across all of a workspace's
       // chats, including persisted terminal descriptors from older layouts.
-      .environment(\.openFileDocument, openFileDocument)
+      .environment(\.openFileDocument, OpenFileDocumentAction { openFileDocument($0) })
       .onChange(of: backgroundTaskFingerprint, initial: true) { _, _ in
         syncWorkspaceBackgroundTerminals()
       }

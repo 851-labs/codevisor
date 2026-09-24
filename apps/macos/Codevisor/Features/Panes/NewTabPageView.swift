@@ -96,8 +96,11 @@ struct NewTabPageView: View {
       }
     )
     .onAppear {
-      group?.registerNewTabFocus(paneId: paneId) {
-        inputFocus.focus { [weak group] in
+      // The group stores this handler, so it holds the group weakly; capturing
+      // the view would keep the group alive through its own handler table.
+      guard let group else { return }
+      group.registerNewTabFocus(paneId: paneId) { [weak group, inputFocus, paneId] in
+        inputFocus.focus {
           group?.canFocusSelectedPane == true && group?.state.selectedPaneId == paneId
         }
       }

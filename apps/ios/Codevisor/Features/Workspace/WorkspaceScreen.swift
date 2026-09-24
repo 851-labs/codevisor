@@ -81,13 +81,7 @@ struct WorkspaceScreen: View {
   /// scroll owner until Home commits the handoff.
   var transcriptPresentationRole: TranscriptPresentationRole = .foreground
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
-  var onSendAnimationStarted:
-    (
-      (
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-      ) -> Bool
-    )? = nil
+  var onSendAnimationStarted: TranscriptSendAnimationStartAction? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   var composerTextEditorHandoffRole: ComposerTextEditorHandoffRole = .none
   var composerTextEditorHandoffID: UUID? = nil

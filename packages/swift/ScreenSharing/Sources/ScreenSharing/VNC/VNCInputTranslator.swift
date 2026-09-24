@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import Foundation
 
   /// Viewer input events to RFB PointerEvent/KeyEvent messages: normalized

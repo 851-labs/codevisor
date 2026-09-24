@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import Foundation
 
   /// The host's side of Codevisor's control and clipboard protocols, played

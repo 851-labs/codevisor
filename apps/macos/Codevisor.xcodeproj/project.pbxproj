@@ -255,6 +255,8 @@
 		000000000000000011000000 /* Debug configuration for PBXProject "Codevisor" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APPLETVOS_DEPLOYMENT_TARGET = 27.0;
 				ARCHS = arm64;
@@ -326,6 +328,8 @@
 		000000000000000012000000 /* Release configuration for PBXProject "Codevisor" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				APPLETVOS_DEPLOYMENT_TARGET = 27.0;
 				ARCHS = arm64;
@@ -422,7 +426,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/sdk";
+				SYSTEM_HEADER_SEARCH_PATHS = "$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/sdk";
 				SWIFT_OBJC_BRIDGING_HEADER = "Codevisor/Codevisor-Bridging-Header.h";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				CODEVISOR_GHOSTTY_LIBRARY = "$(SRCROOT)/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/ghostty-internal.a";
@@ -521,7 +525,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/sdk";
+				SYSTEM_HEADER_SEARCH_PATHS = "$(SRCROOT)/Frameworks/Chromium/$(CURRENT_ARCH)/sdk";
 				SWIFT_OBJC_BRIDGING_HEADER = "Codevisor/Codevisor-Bridging-Header.h";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				CODEVISOR_GHOSTTY_LIBRARY = "$(SRCROOT)/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/ghostty-internal.a";

@@ -81,6 +81,18 @@ extension VirtualizedTranscriptScrollView {
         )
     else { return }
 
+    // A first send into a never-presented transcript (a brand-new chat)
+    // presents through this flight. The initial gate would otherwise stay
+    // closed until the harness replies, because it waits on the active
+    // projection and rows this flight deliberately holds back, so the whole
+    // flight would play at alpha 0. Reveal before measuring travel so the
+    // first flight frame is on screen and the geometry is final.
+    if initialPresentationGate.openForSendPresentation(
+      isHydrating: isLoadingInitialHistory || isPreparingInitialProjection
+    ) {
+      presentInitialTranscript()
+    }
+
     let sourceLayout = pendingSendSourceLayout
     let sourceViewportYByRowKey = pendingSendSourceViewportYByRowKey
     let bottomSpacerHeight =

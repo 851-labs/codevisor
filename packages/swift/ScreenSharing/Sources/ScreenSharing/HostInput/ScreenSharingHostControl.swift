@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import Foundation
 
   /// The session owns this controller and closes it before stopping media.

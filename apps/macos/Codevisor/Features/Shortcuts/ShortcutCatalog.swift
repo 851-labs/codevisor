@@ -249,7 +249,7 @@ enum ShortcutCatalog {
   }
 
   static var all: [ShortcutDefinition] {
-    ShortcutID.allCases.map(definition(for:))
+    ShortcutID.allCases.map { definition(for: $0) }
   }
 
   /// Every category that has at least one listable shortcut, in declaration

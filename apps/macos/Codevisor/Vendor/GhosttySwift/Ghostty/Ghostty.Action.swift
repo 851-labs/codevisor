@@ -6,7 +6,9 @@ extension Ghostty {
 }
 
 extension Ghostty.Action {
-    struct ColorChange {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated struct ColorChange {
         let kind: Kind
         let color: Color
 
@@ -41,7 +43,9 @@ extension Ghostty.Action {
         }
     }
 
-    struct OpenURL {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated struct OpenURL {
         enum Kind {
             case unknown
             case text
@@ -74,7 +78,9 @@ extension Ghostty.Action {
         }
     }
 
-    struct ProgressReport {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated struct ProgressReport {
         enum State {
             case remove
             case set
@@ -142,7 +148,9 @@ extension Ghostty.Action {
         }
     }
 
-    enum KeyTable {
+    // CODEVISOR-PATCH: nonisolated — libghostty action callbacks convert C payloads here off the
+    // main thread, and Codevisor builds with SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor.
+    nonisolated enum KeyTable {
         case activate(name: String)
         case deactivate
         case deactivateAll
@@ -165,7 +173,8 @@ extension Ghostty.Action {
 }
 
 // Putting the initializer in an extension preserves the automatic one.
-extension Ghostty.Action.ProgressReport {
+// CODEVISOR-PATCH: nonisolated, like ProgressReport itself (see there).
+nonisolated extension Ghostty.Action.ProgressReport {
     init(c: ghostty_action_progress_report_s) {
         self.state = State(c.state)
         self.progress = c.progress >= 0 ? UInt8(c.progress) : nil

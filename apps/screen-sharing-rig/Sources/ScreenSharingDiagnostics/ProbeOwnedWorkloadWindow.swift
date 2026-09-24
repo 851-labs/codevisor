@@ -212,7 +212,7 @@ package final class ProbeOwnedWorkloadWindow {
     {
     case .found(let entry):
       record["cgWindowRecord"] = [
-        "number": entry.number, "ownerPID": entry.ownerPID,
+        "number": entry.number, "ownerPID": entry.ownerPID ?? "unreported",
         "boundsTopLeftPoints": entry.bounds.map { [$0.x, $0.y, $0.width, $0.height] } ?? "unreported",
         "boundsConvention": "kCGWindowBounds: points, origin top-left of the main display (raw)",
         "layer": entry.layer ?? "unreported", "isOnscreen": entry.isOnscreen ?? "unreported",

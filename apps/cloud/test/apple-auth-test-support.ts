@@ -51,7 +51,9 @@ beforeEach(({ task }) => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const request = new Request(input, init)
     if (request.url === `${issuer}/auth/keys`) return Response.json(jwks)
-    const body = new URLSearchParams(await request.text())
+    // Apple's token and revoke endpoints take form bodies; decode the bytes as
+    // form data rather than calling .text() on a non-text Content-Type.
+    const body = new URLSearchParams(new TextDecoder().decode(await request.arrayBuffer()))
     if (request.url === `${issuer}/auth/token` || request.url === `${issuer}/auth/revoke`) {
       const audience = body.get("client_id")!
       expect([clientId, nativeClientId]).toContain(audience)

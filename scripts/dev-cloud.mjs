@@ -5,6 +5,18 @@ import process from "node:process"
 import { readCloudDevVariables } from "./dev-host-tools.mjs"
 import { delay, findAvailablePort, isPortAvailable, parsePort } from "./dev-shared.mjs"
 
+/// Environment for every wrangler bundle of apps/cloud. Wrangler's esbuild
+/// ignores tsconfig customConditions, so the "@codevisor/source" condition
+/// (workspace packages export their TypeScript source under it) is passed
+/// here. The variable replaces wrangler's default condition list, so those
+/// defaults are repeated after it. Keep in sync with apps/cloud/package.json
+/// and .github/workflows/deploy-cloud.yml.
+export const CLOUD_WRANGLER_BUILD_CONDITIONS = "@codevisor/source,workerd,worker,browser"
+
+export function cloudWranglerEnvironment(environment = process.env) {
+  return { ...environment, WRANGLER_BUILD_CONDITIONS: CLOUD_WRANGLER_BUILD_CONDITIONS }
+}
+
 /// The cloud dev instance (apps/cloud on `wrangler dev`): auth + relay hub,
 /// running fully locally with DEV_AUTH enabled and state under tmp/.
 
@@ -91,7 +103,7 @@ export function spawnCloudDev({ cloud, containerized, repoRoot, worktreeName }) 
       ...cloud.cloudExtraVariables,
       "--show-interactive-dev-session=false"
     ],
-    { cwd: join(repoRoot, "apps/cloud"), env: process.env, stdio: "inherit" }
+    { cwd: join(repoRoot, "apps/cloud"), env: cloudWranglerEnvironment(), stdio: "inherit" }
   )
 }
 

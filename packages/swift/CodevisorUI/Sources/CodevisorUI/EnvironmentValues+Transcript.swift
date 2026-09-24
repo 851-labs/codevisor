@@ -15,9 +15,30 @@ extension EnvironmentValues {
 
   /// Runs a user disclosure change while the containing transcript row is
   /// pinned to its current viewport position.
-  @Entry public var transcriptPerformAnchoredDisclosureChange: ((@escaping () -> Void) -> Void)?
+  @Entry public var transcriptPerformAnchoredDisclosureChange: TranscriptAnchoredDisclosureChangeAction?
 
   /// Requests a fresh intrinsic-height measurement from the containing
   /// native transcript row after isolated SwiftUI content changes.
-  @Entry public var transcriptInvalidateRowMeasurement: (() -> Void)?
+  @Entry public var transcriptInvalidateRowMeasurement: TranscriptRowMeasurementInvalidationAction?
+}
+
+/// Runs a disclosure change with the containing transcript row pinned in the
+/// viewport. Call it like a function, as with SwiftUI's `OpenURLAction`.
+public struct TranscriptAnchoredDisclosureChangeAction: Sendable {
+  private let handler: @MainActor @Sendable (_ change: @escaping () -> Void) -> Void
+
+  public init(_ handler: @escaping @MainActor @Sendable (_ change: @escaping () -> Void) -> Void) {
+    self.handler = handler
+  }
+
+  @MainActor public func callAsFunction(_ change: @escaping () -> Void) { handler(change) }
+}
+
+/// Asks the containing native transcript row to re-measure its content.
+public struct TranscriptRowMeasurementInvalidationAction: Sendable {
+  private let handler: @MainActor @Sendable () -> Void
+
+  public init(_ handler: @escaping @MainActor @Sendable () -> Void) { self.handler = handler }
+
+  @MainActor public func callAsFunction() { handler() }
 }

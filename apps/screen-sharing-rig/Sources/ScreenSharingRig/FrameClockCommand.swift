@@ -23,7 +23,7 @@
       app's samples as JSON lines too.
       """
 
-    static func main(arguments: [String]) {
+    @MainActor static func main(arguments: [String]) {
       if arguments.contains("--help") {
         print(usage)
         return

@@ -21,10 +21,10 @@ struct TerminalColors: Equatable {
     if let palette {
       background = Self.uiColor(palette.background)
       foreground = Self.uiColor(palette.foreground)
-      cursor = palette.cursorColor.map(Self.uiColor) ?? foreground
-      selection = palette.selectionBackground.map(Self.uiColor)
+      cursor = palette.cursorColor.map { Self.uiColor($0) } ?? foreground
+      selection = palette.selectionBackground.map { Self.uiColor($0) }
       let colors = palette.ansi.compactMap { $0 }
-      ansi = colors.count == 16 ? colors.map(Self.hex) : nil
+      ansi = colors.count == 16 ? colors.map { Self.hex($0) } : nil
       isDark = Self.luminance(palette.background) < 0.5
     } else {
       // The chat's own surface, so terminals and chats sit on one color.

@@ -110,7 +110,7 @@ final class SheetGestureShieldView: UIView, UIGestureRecognizerDelegate {
     var drags: [UIGestureRecognizer] = []
     var view: UIView? = root.view
     while let current = view {
-      drags += (current.gestureRecognizers ?? []).filter(Self.isPresentationDrag)
+      drags += (current.gestureRecognizers ?? []).filter { Self.isPresentationDrag($0) }
       if current === container { break }
       view = current.superview
     }

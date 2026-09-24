@@ -11,7 +11,11 @@ extension Ghostty {
     ///
     /// Wraps a `ghostty_surface_t`
     final class Surface: Sendable {
-        private let surface: ghostty_surface_t
+        // CODEVISOR-PATCH-BEGIN: backport of upstream da8b171265
+        /// A surface is sendable because it is just a reference type. Using the surface in parameters
+        /// may be unsafe but the value itself is safe to send across threads.
+        nonisolated(unsafe) private let surface: ghostty_surface_t
+        // CODEVISOR-PATCH-END
 
         /// Read the underlying C value for this surface. This is unsafe because the value will be
         /// freed when the Surface class is deinitialized.
@@ -25,7 +29,10 @@ extension Ghostty {
         }
 
         deinit {
-            let surface = self.surface
+            // CODEVISOR-PATCH: the raw handle is not Sendable. Deinit holds the last reference,
+            // so ownership moves wholesale to whichever path frees it (the off-main fallback's
+            // main-actor task); nothing else can touch the handle afterwards.
+            nonisolated(unsafe) let surface = self.surface
             // Codevisor normally releases surfaces from main-actor UI teardown.
             // Free synchronously in that case so libghostty finishes callbacks
             // while its unretained SurfaceView userdata is still alive. Deferring

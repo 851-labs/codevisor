@@ -14,7 +14,7 @@ enum TranscriptMarkdownLinkOpener {
     _ url: URL,
     quickLook: QuickLookController?,
     attachmentImages: AttachmentImageStore?,
-    openDocument: ((String) -> Bool)? = nil
+    openDocument: OpenFileDocumentAction? = nil
   ) -> Bool {
     if openDocument?(url.relativeString) == true { return true }
     guard

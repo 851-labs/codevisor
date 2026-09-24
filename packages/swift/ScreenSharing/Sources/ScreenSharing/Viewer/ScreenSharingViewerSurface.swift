@@ -1,6 +1,5 @@
 #if os(macOS)
   import AppKit
-  import ScreenSharing
 
   /// The AppKit half of a viewer endpoint: the view the pane mounts, its input
   /// capture, and the signal that a frame reached the screen. The product

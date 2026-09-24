@@ -1,5 +1,4 @@
 #if os(macOS)
-  import ScreenSharing
   import Foundation
 
   /// A `ScreenSharingViewingSession` over one connected `RFBClient`: every

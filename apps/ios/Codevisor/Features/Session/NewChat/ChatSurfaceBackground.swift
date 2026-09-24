@@ -54,6 +54,6 @@ final class ChatSurfaceBackgroundView: UIView {
   }
 
   static func inHierarchy(_ view: UIView) -> [ChatSurfaceBackgroundView] {
-    (view as? ChatSurfaceBackgroundView).map { [$0] } ?? view.subviews.flatMap(inHierarchy)
+    (view as? ChatSurfaceBackgroundView).map { [$0] } ?? view.subviews.flatMap { inHierarchy($0) }
   }
 }

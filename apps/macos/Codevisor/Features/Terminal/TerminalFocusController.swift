@@ -65,13 +65,17 @@ final class TerminalFocusController {
     responderObservation = hostWindow?.observe(
       \.firstResponder, options: [.new]
     ) { [weak self] window, _ in
-      let responder = window.firstResponder
-      let revision = self?.navigationRevision?()
-      Task { @MainActor [weak self] in
-        guard let self, self.navigationRevision?() == revision,
-          self.hostWindow === window, window.firstResponder === responder
-        else { return }
-        self.firstResponderChanged(responder)
+      // AppKit changes a window's first responder on the main thread, and KVO
+      // notifies synchronously on the thread that made the change.
+      MainActor.assumeIsolated {
+        let responder = window.firstResponder
+        let revision = self?.navigationRevision?()
+        Task { @MainActor [weak self] in
+          guard let self, self.navigationRevision?() == revision,
+            self.hostWindow === window, window.firstResponder === responder
+          else { return }
+          self.firstResponderChanged(responder)
+        }
       }
     }
   }

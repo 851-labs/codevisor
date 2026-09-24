@@ -127,8 +127,13 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
 
   private var presentationWindow: ASPresentationAnchor {
     #if os(iOS)
-      UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        .flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+      let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+      if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) { return keyWindow }
+      // Sign-in always starts from on-screen UI, so a window scene exists; prefer the active one.
+      guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+        preconditionFailure("Sign-in was requested with no connected window scene to present from")
+      }
+      return scene.windows.first ?? UIWindow(windowScene: scene)
     #else
       NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
     #endif
@@ -136,8 +141,8 @@ public final class CloudAuthenticationCoordinator: NSObject, ASWebAuthentication
 }
 
 #if os(iOS)
-  extension CloudAuthenticationCoordinator: @preconcurrency ASAuthorizationControllerDelegate,
-    @preconcurrency ASAuthorizationControllerPresentationContextProviding
+  extension CloudAuthenticationCoordinator: ASAuthorizationControllerDelegate,
+    ASAuthorizationControllerPresentationContextProviding
   {
     private func authorizeApple(_ challenge: CloudAppleChallenge) async throws -> CloudAppleCredential {
       defer { appleController = nil; appleChallenge = nil; appleCompletion = nil }

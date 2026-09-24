@@ -1,6 +1,6 @@
 import Foundation
-import WebRTC
 import ScreenSharing
+import WebRTCProcessFieldTrials
 
 /// The single process boundary for WebRTC field-trial initialization.
 ///
@@ -25,7 +25,7 @@ import ScreenSharing
 /// third-party RTC use.
 ///
 /// Contract for the apply closure: it must not re-enter this instance (the real one calls
-/// `RTCInitFieldTrialDictionary` and returns).
+/// `RTCInitFieldTrialDictionary`, through `CodevisorInstallWebRTCProcessFieldTrials`, and returns).
 public final class ScreenSharingFieldTrials: @unchecked Sendable {
   public struct Selection: Equatable, Sendable {
     /// Human-readable provenance of the selection ("default" for the empty one). Provenance is descriptive only: it
@@ -90,7 +90,7 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
   /// The real production boundary. The native call is skipped for an empty dictionary — installing "default" only
   /// fixes this process's selection, exactly as the probe behaved before this type existed.
   public static let process = ScreenSharingFieldTrials(apply: { trials in
-    if !trials.isEmpty { RTCInitFieldTrialDictionary(trials) }
+    if !trials.isEmpty { CodevisorInstallWebRTCProcessFieldTrials(trials) }
   })
 
   /// The selection in force, or nil while nothing has been applied yet. A selection appears here only once its native

@@ -50,7 +50,7 @@ final class TerminalKeyController: ObservableObject {
       center.addObserver(
         forName: .terminalViewControlModifierReset, object: nil, queue: .main
       ) { [weak self] _ in
-        Task { @MainActor in self?.ctrlActive = false }
+        Task { @MainActor [weak self] in self?.ctrlActive = false }
       })
   }
 

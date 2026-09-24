@@ -340,6 +340,12 @@ extension VirtualizedTranscriptScrollView {
       )
     else { return }
 
+    presentInitialTranscript()
+  }
+
+  /// Reveals the transcript document after its initial presentation gate
+  /// opens, whether through normal readiness or a first send's flight.
+  func presentInitialTranscript() {
     applyPositionTransaction {
       if initialBottomPin.isActive {
         setDistanceFromBottom(0)

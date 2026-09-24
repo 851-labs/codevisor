@@ -6,7 +6,7 @@ struct OpenCodeProfileScreen: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.theme) private var theme
   let isShared: Bool
-  let machineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?
+  let machineSignIn: HarnessMachineSignInAction?
 
   let serverId: String
   let harness: ServerHarness
@@ -29,7 +29,7 @@ struct OpenCodeProfileScreen: View {
     harness: ServerHarness,
     initialAccount: ServerHarnessAccount,
     isShared: Bool,
-    machineSignIn: (@MainActor (HarnessMachineSignIn) -> Void)?,
+    machineSignIn: HarnessMachineSignInAction?,
     initialProviderId: String? = nil, startsSignIn: Bool = false,
     onChange: @escaping () -> Void
   ) {
@@ -127,7 +127,7 @@ struct OpenCodeProfileScreen: View {
       .environment(\.sharedHarnessAccounts, isShared)
       .environment(
         \.harnessMachineSignIn,
-        { request in
+        HarnessMachineSignInAction { request in
           pendingMachineSignIn = request
           setupProvider = nil
         })

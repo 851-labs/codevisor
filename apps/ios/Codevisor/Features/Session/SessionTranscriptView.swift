@@ -41,13 +41,7 @@ struct SessionTranscriptView: View {
   /// events and shared viewport state until the handoff commits.
   var presentationRole: TranscriptPresentationRole = .foreground
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
-  var onSendAnimationStarted:
-    (
-      (
-        UserSendAnimationRequest,
-        TranscriptSendAnimationTarget
-      ) -> Bool
-    )? = nil
+  var onSendAnimationStarted: TranscriptSendAnimationStartAction? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   /// A promoted New Chat keeps its UIKit editor first responder while its
   /// real workspace route mounts underneath. Ordinary chats still dismiss

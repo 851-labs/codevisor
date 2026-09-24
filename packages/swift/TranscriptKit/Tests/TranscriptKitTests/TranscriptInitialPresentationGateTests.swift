@@ -119,4 +119,31 @@ struct TranscriptInitialPresentationGateTests {
     #expect(!secondReveal)
     #expect(gate.isReady)
   }
+
+  @Test func firstSendFlightOpensAGateItsHeldRowsKeepClosed() {
+    var gate = TranscriptInitialPresentationGate()
+    // A new chat's flight holds back the active projection and a row beneath
+    // its target, so normal readiness cannot resolve until the reply lands.
+    let normalReveal = gate.resolve(
+      isHydrating: false,
+      isActiveProjectionPending: true,
+      requiredKeys: ["message", "setup", "spacer"],
+      resolvedKeys: ["message", "spacer"],
+    )
+    #expect(!normalReveal)
+
+    let flightReveal = gate.openForSendPresentation(isHydrating: false)
+    #expect(flightReveal)
+    #expect(gate.isReady)
+    let repeatedReveal = gate.openForSendPresentation(isHydrating: false)
+    #expect(!repeatedReveal)
+  }
+
+  @Test func firstSendFlightNeverRevealsHydratingHistory() {
+    var gate = TranscriptInitialPresentationGate()
+
+    let revealed = gate.openForSendPresentation(isHydrating: true)
+    #expect(!revealed)
+    #expect(!gate.isReady)
+  }
 }

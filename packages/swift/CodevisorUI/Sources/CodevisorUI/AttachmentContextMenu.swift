@@ -207,7 +207,8 @@ public enum AttachmentClipboard {
 
 /// `FileRepresentation` needs its content type at the type level, so each
 /// media kind gets a phantom type instead of a runtime switch.
-protocol AttachmentShareType {
+/// `SendableMetatype`: the export closure runs off the main actor and reads `T.contentType`.
+protocol AttachmentShareType: SendableMetatype {
   static var contentType: UTType { get }
 }
 

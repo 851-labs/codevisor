@@ -246,7 +246,8 @@ final class MacServerAgentController {
 
 /// Resumes exactly one waiter with whichever result arrives first; later
 /// results report that they lost the race.
-private final class FirstOutcome<T: Sendable>: @unchecked Sendable {
+/// Lock-protected, so usable from any thread (nonisolated despite the app's MainActor default).
+nonisolated private final class FirstOutcome<T: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
   private var continuation: CheckedContinuation<T, any Error>?
   private var pending: Result<T, any Error>?
