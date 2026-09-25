@@ -34,6 +34,11 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
     public let trials: [String: String]
     public init(name: String, trials: [String: String]) { self.name = name; self.trials = trials }
     public static let `default` = Selection(name: "default", trials: [:])
+    /// What the app runs with (851-2374): the receiver's playout delay bounded to 15…80 ms. WebRTC's
+    /// adaptive jitter buffer held ~124 ms on Wi-Fi; these bounds cut image age by ~45–60 ms at a
+    /// few percent of frame rate (docs/measurements/native/2026-09-25-851-2374/report.md).
+    public static let product = Selection(
+      name: "product", trials: ["WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80"])
     /// The exact native playout string, when this selection installs one.
     public var playoutExperimentLabel: String? {
       trials["WebRTC-ForcePlayoutDelay"].map { "WebRTC-ForcePlayoutDelay \($0)" }
@@ -126,8 +131,15 @@ public final class ScreenSharingFieldTrials: @unchecked Sendable {
   /// force. A conflict throws here, before any peer exists.
   @discardableResult
   public func install(profile: ScreenSharingDiagnosticProfile?) throws -> Selection {
-    try install(profile?.trialSelection ?? .default)
+    guard let profile else { return installProduct() }
+    return try install(profile.trialSelection)
   }
+
+  /// The app's own selection when nothing is installed yet. A process that already pinned another
+  /// (a tool or a test that built a bare peer first) keeps it: the app installs before any peer
+  /// exists, so this only ever differs outside it, and it must not fail a session there.
+  @discardableResult
+  public func installProduct() -> Selection { applyOrWaitForFirst(.product) }
 
   /// Applies `requested` when this process has applied nothing yet, waits when another thread is mid-apply, and in
   /// every case returns the selection that has ACTUALLY been applied. Never throws: the native call is `void` and

@@ -82,6 +82,23 @@ import Testing
     }
   }
 
+  /// The app's roles install with no profile (851-2374): the receiver's playout is bounded to
+  /// 15…80 ms. A process some tool or test already pinned keeps what it has, without failing.
+  @Test func withoutAProfileTheAppBoundsThePlayoutDelay() throws {
+    let recorder = Recorder()
+    let trials = ScreenSharingFieldTrials(apply: { recorder.record($0) })
+    let installed = try trials.install(profile: nil)
+    #expect(installed == .product)
+    #expect(recorder.last == ["WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80"])
+    #expect(try trials.install(profile: nil) == .product && recorder.count == 1)
+
+    let pinned = ScreenSharingFieldTrials(apply: { _ in })
+    pinned.ensureInstalled()
+    #expect(try pinned.install(profile: nil) == .default)
+    // A diagnostic profile still refuses to replace the product selection.
+    #expect(throws: ScreenSharingError.self) { try trials.install(profile: .paced15Worker) }
+  }
+
   @Test func theFirstSelectionIsAppliedOnceAndFixesTheProcess() throws {
     let recorder = Recorder()
     let trials = ScreenSharingFieldTrials(apply: { recorder.record($0) })
