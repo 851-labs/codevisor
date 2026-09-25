@@ -295,18 +295,60 @@ struct ScreenSharingCaptureStartWatchdogTests {
     #expect(harness.restarts == 1 && harness.start.calls == 1)
   }
 
-  @Test func withinTheRateLimitAHungStartIsOnlyWaitedFor() async throws {
+  @Test func withinTheRateLimitAHungStartThatRecoversIsWaitedFor() async throws {
     let harness = Harness()
-    harness.lastRestart = 1000 - 60
+    harness.lastRestart = 1000 - 30
     let run = harness.run()
     await harness.clock.waitForSleep(.seconds(5))
     harness.clock.advance(by: .seconds(5))
-    // Reported as stalled, but replayd was restarted a minute ago: no second kill.
+    // Reported as stalled, but replayd was restarted 30 s ago: no second kill.
     await harness.stalled.wait()
     #expect(harness.restarts == 0)
+    await harness.clock.waitForSleep(.seconds(5), count: 2)
+    harness.clock.advance(by: .seconds(4))
     harness.start.finish()
     try await run.value
     #expect(harness.start.calls == 1)
+  }
+
+  /// tuftlord, 851-2390: replayd killed at 12:10:00 was stuck again at 12:10:31. The start used to
+  /// wait forever, the bridge gave up at 25 s, and the viewer was told to update Codevisor.
+  @Test func withinTheRateLimitAStartThatStaysStuckFailsAfterTenSeconds() async throws {
+    let harness = Harness()
+    harness.lastRestart = 1000 - 30
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    await harness.clock.waitForSleep(.seconds(5), count: 2)
+    harness.clock.advance(by: .seconds(4))
+    #expect(harness.start.calls == 1)
+    harness.clock.advance(by: .seconds(1))
+    let error = await #expect(throws: ScreenSharingError.self) { try await run.value }
+    #expect(error?.localizedDescription == ScreenSharingCaptureStallRecovery.stuck.localizedDescription)
+    #expect(harness.restarts == 0 && harness.start.calls == 1)
+  }
+
+  @Test func aDaemonRestartedAMinuteAgoMayBeRestartedAgain() async throws {
+    let harness = Harness()
+    harness.lastRestart = 1000 - 60
+    harness.onRestart = { $0.finish() }
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    try await run.value
+    #expect(harness.restarts == 1)
+  }
+
+  @Test func aRetryThatHangsOnTheFreshDaemonFailsAfterFiveSeconds() async throws {
+    let harness = Harness()
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    await harness.start.called.wait(for: 2)
+    await harness.clock.waitForSleep(.seconds(5), count: 2)
+    harness.clock.advance(by: .seconds(5))
+    await #expect(throws: ScreenSharingError.self) { try await run.value }
+    #expect(harness.start.retries == [false, true])
   }
 
   /// Ending a session doesn't wait on a stop a wedged daemon holds.
