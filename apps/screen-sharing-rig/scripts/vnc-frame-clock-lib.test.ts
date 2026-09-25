@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { frameClockReport, parseFrameClockArguments } from "./vnc-frame-clock-lib.ts"
+import { clockOffset, frameClockReport, parseFrameClockArguments } from "./vnc-frame-clock-lib.ts"
 
 test("vnc:frame-clock defaults to the rig and Apple Screen Sharing and validates options (851-2358)", () => {
   assert.deepEqual(parseFrameClockArguments([]), {
@@ -63,12 +63,27 @@ test("vnc:frame-clock reports each viewer and only the positive lags", () => {
   )
   assert.match(report, /# Frame clock — baseline/)
   assert.ok(
-    report.includes("| Codevisor rig | 1431x817 | 0.64 | 1% | 1392 | 2430 | 5637 | 0% | 0% |")
+    report.includes(
+      "| Codevisor rig | 1431x817 | 0.64 | 1% | 1392 | 2430 | 5637 | – | – | 0% | 0% |"
+    )
   )
-  assert.ok(report.includes("| com.example.Other | – | – | – | – | – | – | – | – |"))
+  assert.ok(report.includes("| com.example.Other | – | – | – | – | – | – | – | – | – | – |"))
   assert.ok(report.includes("| Codevisor rig behind Apple Screen Sharing | 917 | 2217 |"))
   assert.ok(!report.includes("-917"))
   assert.ok(
     !frameClockReport({ seconds: 5, apps: {}, lags: {} }, { mode: "still" }).includes("| lag |")
   )
+})
+
+test("vnc:frame-clock takes the host clock offset from the shortest round trip (851-2371)", () => {
+  // Host 5 ms ahead. The slow sample (40 ms) would skew the estimate; the 2 ms one wins.
+  const offset = clockOffset([
+    { sent: 100, host: 100.035, received: 100.04 },
+    { sent: 200, host: 200.006, received: 200.002 }
+  ])
+  assert.ok(offset !== undefined)
+  assert.ok(Math.abs(offset.offsetMs - 5) < 1e-6 && Math.abs(offset.roundTripMs - 2) < 1e-6)
+  assert.equal(clockOffset([]), undefined)
+  const parsed = parseFrameClockArguments(["--host-ssh", "u@h"])
+  assert.ok(parsed !== "help" && parsed.hostSsh === "u@h")
 })

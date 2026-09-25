@@ -1,0 +1,25 @@
+{
+  "apps": {
+    "com.codevisor.ScreenSharingRig": {
+      "calibrated": true,
+      "captures": 3264,
+      "gapMaxMs": 91.07,
+      "gapP50Ms": 34.12,
+      "gapP95Ms": 37.29,
+      "hostFramesShown": 0.58,
+      "imageAgeP50Ms": 190,
+      "imageAgeP95Ms": 218,
+      "receiveMbitPerSecond": 10.1,
+      "tornFraction": 0,
+      "unreadableFraction": 0,
+      "updatesPerSecond": 35,
+      "window": "1180x760"
+    }
+  },
+  "lags": {},
+  "seconds": 45,
+  "clock": {
+    "offsetMs": -0.2880096435546875,
+    "roundTripMs": 6.000041961669922
+  }
+}

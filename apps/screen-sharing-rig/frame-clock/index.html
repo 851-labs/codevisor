@@ -28,10 +28,12 @@
           sans-serif;
         color: #eee;
       }
+      /* A black margin above the strip: Safari tints its toolbar to the page's top, and a toolbar
+         touching the orange calibration strip would merge with it. */
       #strip {
         position: fixed;
         left: 0;
-        top: 0;
+        top: 3vh;
         width: 100%;
         height: 10vh;
         display: flex;
@@ -42,9 +44,9 @@
       #stage {
         position: fixed;
         left: 0;
-        top: 10vh;
+        top: 13vh;
         width: 100%;
-        height: 90vh;
+        height: 87vh;
       }
       #hint {
         position: fixed;
@@ -137,7 +139,12 @@
       })
       function draw(now) {
         const elapsed = (now - start) / 1000
-        const frame = Math.floor(((now - start) * 60) / 1000)
+        // ?clock=epoch counts 1/60 s of wall-clock time (Date.now()), so a viewer that knows the
+        // offset between the two Macs' clocks can tell each picture's absolute age.
+        const frame =
+          params.get("clock") === "epoch"
+            ? Math.floor((Date.now() * 60) / 1000)
+            : Math.floor(((now - start) * 60) / 1000)
         if (frame !== lastFrame || now < calibrateUntil) {
           lastFrame = frame
           const digits =

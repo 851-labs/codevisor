@@ -239,6 +239,26 @@ public struct FrameClockTimeline: Sendable {
     return (Self.percentile(lags, 0.5), Self.percentile(lags, 0.95))
   }
 
+  /// Each update's image age in ms, for a host page counting wall-clock time
+  /// (`?clock=epoch`): when the frame first appeared on this Mac, minus when
+  /// the host drew it. `viewerWallMinusCaptureClock` turns capture timestamps
+  /// into this Mac's wall time; `hostMinusViewer` is the host's clock minus
+  /// this Mac's (seconds). Frame numbers wrap every `modulus / 60` seconds; the
+  /// frame is placed in the period nearest the host's time.
+  public func imageAges(viewerWallMinusCaptureClock: Double, hostMinusViewer: Double) -> [Double] {
+    let period = Double(FrameClock.modulus) / FrameClock.framesPerSecond
+    return updates.map { update in
+      let hostNow = update.time + viewerWallMinusCaptureClock + hostMinusViewer
+      var age = (hostNow - Double(update.frame) / FrameClock.framesPerSecond)
+        .truncatingRemainder(dividingBy: period)
+      if age < 0 { age += period }
+      if age > period / 2 { age -= period }
+      return age * 1000
+    }
+  }
+
+  public static func percentileOf(_ values: [Double], _ fraction: Double) -> Double { percentile(values, fraction) }
+
   static func percentile(_ values: [Double], _ fraction: Double) -> Double {
     guard !values.isEmpty else { return 0 }
     let sorted = values.sorted()

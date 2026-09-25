@@ -13,7 +13,7 @@
   enum FrameClockCommand {
     static let usage = """
       Usage: screen-sharing-rig frame-clock --app BUNDLE_ID [--app BUNDLE_ID …] [--seconds 20]
-                                            [--out DIR]
+                                            [--out DIR] [--host-offset-ms MS]
       Captures the largest on-screen window of each app (e.g. com.codevisor.ScreenSharingRig,
       com.apple.ScreenSharing): only those windows, never the display. Start the host page
       (apps/screen-sharing-rig/frame-clock/index.html) first, or reload it while this runs,
@@ -28,7 +28,7 @@
         print(usage)
         return
       }
-      var apps: [String] = [], seconds = 20.0, out: URL?
+      var apps: [String] = [], seconds = 20.0, out: URL?, hostOffsetMs: Double?
       var iterator = arguments.makeIterator()
       while let argument = iterator.next() {
         guard let value = iterator.next() else { fail("\(argument) needs a value\n\n\(usage)") }
@@ -36,6 +36,7 @@
         case "--app": apps.append(value)
         case "--seconds": seconds = Double(value) ?? seconds
         case "--out": out = URL(fileURLWithPath: value)
+        case "--host-offset-ms": hostOffsetMs = Double(value)
         default: fail("unknown option \(argument)\n\n\(usage)")
         }
       }
@@ -44,7 +45,7 @@
       NSApplication.shared.setActivationPolicy(.prohibited)
       Task {
         do {
-          let result = try await run(apps: apps, seconds: seconds, out: out)
+          let result = try await run(apps: apps, seconds: seconds, out: out, hostOffsetMs: hostOffsetMs)
           let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys, .prettyPrinted])
           print(String(decoding: data, as: UTF8.self))
           exit(EXIT_SUCCESS)
@@ -55,9 +56,15 @@
       dispatchMain()
     }
 
-    static func run(apps: [String], seconds: Double, out: URL?) async throws -> [String: Any] {
+    /// `hostOffsetMs`: the host's clock minus this Mac's, for a host page counting wall-clock
+    /// frames (`?clock=epoch`); with it, each viewer's image age is reported too (851-2371).
+    static func run(
+      apps: [String], seconds: Double, out: URL?, hostOffsetMs: Double? = nil
+    ) async throws
+      -> [String: Any]
+    {
       let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-      var streams: [(app: String, stream: SCStream, reader: FrameClockReader, size: CGSize)] = []
+      var streams: [(app: String, stream: SCStream, reader: FrameClockReader, size: CGSize, pid: pid_t?)] = []
       for app in apps {
         guard
           let window = content.windows.filter({
@@ -78,7 +85,7 @@
         let reader = FrameClockReader(app: app)
         let stream = SCStream(filter: filter, configuration: config, delegate: reader)
         try stream.addStreamOutput(reader, type: .screen, sampleHandlerQueue: reader.queue)
-        streams.append((app, stream, reader, window.frame.size))
+        streams.append((app, stream, reader, window.frame.size, window.owningApplication?.processID))
       }
       for entry in streams { try await entry.stream.startCapture() }
       // Measure `seconds` from when every window has read its first frame (after calibrating on
@@ -96,13 +103,19 @@
       }
       FileHandle.standardError.write(Data("frame-clock: every window calibrated; measuring \(seconds) s\n".utf8))
       for entry in streams { entry.reader.reset() }
+      // Capture timestamps are host-time seconds; this turns them into this Mac's wall time.
+      let wallMinusCapture = Date().timeIntervalSince1970 - CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
+      let bytesBefore = streams.map { $0.pid.flatMap(Self.bytesReceived) }
+      let measured = ContinuousClock.now
       try await Task.sleep(for: .seconds(seconds))
+      let bytesAfter = streams.map { $0.pid.flatMap(Self.bytesReceived) }
+      let elapsed = measured.duration(to: .now) / .seconds(1)
       for entry in streams { try? await entry.stream.stopCapture() }
 
       var timelines: [String: FrameClockTimeline] = [:]
       var result: [String: Any] = ["seconds": seconds]
       var perApp: [String: Any] = [:]
-      for entry in streams {
+      for (index, entry) in streams.enumerated() {
         let snapshot = await entry.reader.finish()
         let timeline = FrameClockTimeline(samples: snapshot.samples)
         timelines[entry.app] = timeline
@@ -120,6 +133,19 @@
           summary["gapMaxMs"] = round(s.gapMaximumMilliseconds)
           summary["tornFraction"] = round(s.tornFraction)
           summary["unreadableFraction"] = round(s.unreadableFraction)
+        }
+        if let before = bytesBefore[index], let after = bytesAfter[index], after >= before {
+          let bits: Double = Double(after - before) * 8
+          let megabits: Double = bits / elapsed / 1_000_000
+          summary["receiveMbitPerSecond"] = (megabits * 10).rounded() / 10
+        }
+        if let hostOffsetMs {
+          let ages = timeline.imageAges(
+            viewerWallMinusCaptureClock: wallMinusCapture, hostMinusViewer: hostOffsetMs / 1000)
+          if !ages.isEmpty {
+            summary["imageAgeP50Ms"] = FrameClockTimeline.percentileOf(ages, 0.5).rounded()
+            summary["imageAgeP95Ms"] = FrameClockTimeline.percentileOf(ages, 0.95).rounded()
+          }
         }
         perApp[entry.app] = summary
         if let out {
@@ -146,6 +172,24 @@
       }
       result["lags"] = lags
       return result
+    }
+
+    /// Bytes a process has received over the network (`nettop`), or nil if it can't be read.
+    static func bytesReceived(pid: pid_t) -> Int? {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/nettop")
+      process.arguments = ["-P", "-L1", "-p", "\(pid)", "-J", "bytes_in"]
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = FileHandle.nullDevice
+      guard (try? process.run()) != nil else { return nil }
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+      // ",bytes_in," then "name.pid,<bytes>,"
+      let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+      guard lines.count >= 2 else { return nil }
+      let fields = lines[1].split(separator: ",", omittingEmptySubsequences: false)
+      return fields.count >= 2 ? Int(fields[1]) : nil
     }
 
     struct Failure: LocalizedError {
