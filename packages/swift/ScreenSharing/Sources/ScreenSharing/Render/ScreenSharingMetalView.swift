@@ -75,7 +75,7 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
     super.init(frame: .zero, device: device)
     colorPixelFormat = .bgra8Unorm
     clearColor = MTLClearColorMake(0.025, 0.025, 0.025, 1)
-    preferredFramesPerSecond = 60
+    preferredFramesPerSecond = Self.drawRate(displayRefresh: 60)
     framebufferOnly = true
     isPaused = renderOnArrival
     enableSetNeedsDisplay = renderOnArrival
@@ -129,7 +129,39 @@ public final class ScreenSharingMetalView: MTKView, MTKViewDelegate {
 
   public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { coordinator.setNeedsRedraw() }
 
+  /// The draw rate for a display refreshing `displayRefresh` times a second (851-2374). The
+  /// display link can only run at whole fractions of the refresh, so asking for 60 on a 72 Hz
+  /// display got 36: the "30 fps ceiling" every native session had on such a display. This is the
+  /// smallest whole fraction that still reaches 60 (72 at 72 Hz, 60 at 120 Hz, 72 at 144 Hz), or
+  /// the refresh itself on a display slower than 60 Hz.
+  public nonisolated static func drawRate(displayRefresh: Int) -> Int {
+    guard displayRefresh > 60 else { return max(1, displayRefresh) }
+    return displayRefresh / (displayRefresh / 60)
+  }
+
   #if os(macOS)
+    private var screenObserver: (any NSObjectProtocol)?
+
+    /// Follows the refresh of whatever screen the window is on.
+    public override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+      screenObserver = nil
+      guard let window else { return }
+      matchDisplayRefresh()
+      screenObserver = NotificationCenter.default.addObserver(
+        forName: NSWindow.didChangeScreenNotification, object: window, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.matchDisplayRefresh() } }
+    }
+
+    private func matchDisplayRefresh() {
+      guard let refresh = window?.screen?.maximumFramesPerSecond, refresh > 0 else { return }
+      let rate = Self.drawRate(displayRefresh: refresh)
+      guard rate != preferredFramesPerSecond else { return }
+      preferredFramesPerSecond = rate
+      metrics.label("drawRate", "\(rate) per second on a \(refresh) Hz display")
+    }
+
     public override func layout() {
       super.layout()
       resizeDrawableOffMain()
