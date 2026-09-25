@@ -9,6 +9,14 @@ import OSLog
 /// carrying the authenticated SDP connects, and a missed lease stops capture.
 @MainActor
 final class ScreenSharingHostService {
+  /// The sender's ceiling on LAN and Tailscale (the only networks native sharing targets,
+  /// 851-2370): room for sharp text and motion; the encoder spends it only when content needs it.
+  static let bitrateCeiling = 30_000_000
+  /// What 60 fps at the session's resolution needs; the adaptive policy measures shortage
+  /// against this, not the ceiling (851-2372).
+  static let fullQualityBitrate = 6_000_000
+  /// Estimates while the bandwidth estimator ramps up after connecting aren't a shortage.
+  static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   @MainActor private final class Session {
@@ -41,7 +49,8 @@ final class ScreenSharingHostService {
       let scale = min(1, min(1920.0 / Double(display.width), 1080.0 / Double(display.height)))
       configuration = try ScreenSharingVideoConfiguration(
         width: max(64, Int(Double(display.width) * scale) / 2 * 2),
-        height: max(64, Int(Double(display.height) * scale) / 2 * 2))
+        height: max(64, Int(Double(display.height) * scale) / 2 * 2),
+        bitrate: ScreenSharingHostService.bitrateCeiling)
       metrics = ScreenSharingMetrics()
       // install(profile:) throws unless the process trial map equals what this profile requires, so reaching the next
       // line means the profile's settings below are the ones actually wired. "Active" therefore names THIS validated
@@ -217,7 +226,9 @@ final class ScreenSharingHostService {
   private func configure(_ session: Session) {
     session.qualityTask = Task { [weak self, weak session] in
       guard let initial = session?.configuration else { return }
-      var quality = ScreenSharingAdaptiveQuality(configuration: initial)
+      var quality = ScreenSharingAdaptiveQuality(
+        configuration: initial, fullQualityBitrate: ScreenSharingHostService.fullQualityBitrate,
+        warmUp: ScreenSharingHostService.estimateWarmUp)
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         guard let session, !session.stopping else { return }

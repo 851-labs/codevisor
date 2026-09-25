@@ -117,4 +117,41 @@ struct ScreenSharingAdaptiveQualityTests {
     #expect(try #require(recoveredValue).framesPerSecond == 60)
     #expect(quality.level == 0)
   }
+
+  /// 851-2372: a 30 Mbit/s ceiling whose estimate sits at what the sender actually sends
+  /// (~10 Mbit/s) is healthy, not short: shortage is measured against what full quality needs.
+  @Test func aGenerousCeilingDoesNotMakeAHealthyLinkLookShort() throws {
+    let configuration = try ScreenSharingVideoConfiguration(bitrate: 30_000_000)
+    var old = ScreenSharingAdaptiveQuality(configuration: configuration)
+    _ = old.update(availableBitrate: 10_000_000, now: 0)
+    let oldStep = old.update(availableBitrate: 10_000_000, now: 2)
+    #expect(oldStep?.framesPerSecond == 30, "the old ceiling-relative rule")
+    var quality = ScreenSharingAdaptiveQuality(configuration: configuration, fullQualityBitrate: 6_000_000)
+    for now in stride(from: 0.0, through: 60, by: 1) {
+      #expect(quality.update(availableBitrate: 10_000_000, now: now) == nil)
+    }
+    #expect(quality.level == 0)
+    // A real shortage still steps down: 2 Mbit/s is a third of what full quality needs.
+    _ = quality.update(availableBitrate: 2_000_000, now: 61)
+    let down = quality.update(availableBitrate: 2_000_000, now: 63)
+    #expect(down?.framesPerSecond == 30)
+    // And recovery needs headroom over the need, not the ceiling.
+    _ = quality.update(availableBitrate: 6_000_000, now: 64)
+    let up = quality.update(availableBitrate: 6_000_000, now: 79)
+    #expect(up?.framesPerSecond == 60)
+  }
+
+  /// The estimator starts low and ramps up after connecting: that isn't a shortage.
+  @Test func theWarmUpIgnoresTheEstimatorsRampUp() throws {
+    var quality = ScreenSharingAdaptiveQuality(
+      configuration: try .init(bitrate: 30_000_000), fullQualityBitrate: 6_000_000, warmUp: 5)
+    for now in [100.0, 101, 102, 103, 104.999] {
+      #expect(quality.update(availableBitrate: 300_000, now: now) == nil)
+    }
+    #expect(quality.level == 0)
+    // After the warm-up a sustained shortage counts as usual.
+    #expect(quality.update(availableBitrate: 300_000, now: 105) == nil)
+    let stepped = quality.update(availableBitrate: 300_000, now: 107)
+    #expect(stepped != nil)
+  }
 }
