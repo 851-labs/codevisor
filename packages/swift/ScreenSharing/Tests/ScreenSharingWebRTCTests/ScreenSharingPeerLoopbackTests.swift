@@ -179,6 +179,29 @@ struct ScreenSharingPeerLoopbackTests {
     #expect(replayed == updates)
   }
 
+  /// The host's sound (851-2379): enabling audio subscribes once the unordered channel opens,
+  /// the host's packets reach the viewer, and muting unsubscribes.
+  @Test func aViewerPlayingSoundSubscribesReceivesPacketsAndUnsubscribesOnMute() async throws {
+    let harness = try Harness()
+    defer { harness.close() }
+    let hostHeard = TestSignal()
+    var hostReceived: [ScreenSharingAudioMessage] = []
+    harness.sender.audioChannel.onMessage = {
+      hostReceived.append($0)
+      hostHeard.signal()
+    }
+    #expect(harness.receiver.supportsAudio)
+    harness.receiver.setAudioEnabled(true)
+    try await harness.negotiate()
+    await hostHeard.wait()
+    #expect(hostReceived == [.subscribe])
+    let packet = ScreenSharingAudioPacket(sequence: 0, timestampNs: 1, frames: 960, payload: Data([1, 2, 3]))
+    #expect(harness.sender.audioChannel.send(.packet(packet)))
+    harness.receiver.setAudioEnabled(false)
+    await hostHeard.wait(for: 2)
+    #expect(hostReceived == [.subscribe, .unsubscribe])
+  }
+
   @Test func negotiationRefusesUnsupportedDescriptionsAndAnythingAfterClose() async throws {
     let source = try Harness()
     defer { source.close() }
@@ -239,7 +262,7 @@ struct ScreenSharingPeerLoopbackTests {
     // Direct LAN is the default: no relay credentials are embedded anywhere.
     #expect(configuration.iceServers.isEmpty && configuration.iceTransportPolicy == .all)
     #expect(!staged.controlChannel.isAvailable && !staged.clipboardChannel.isAvailable)
-    #expect(!staged.cursorChannel.isAvailable)
+    #expect(!staged.cursorChannel.isAvailable && !staged.audioChannel.isAvailable)
     #expect(!staged.videoRefresh.isAvailable)
     // Trials are pinned before any RTC object exists, and the pin is published.
     #expect(metrics.snapshot().labels["fieldTrialProvenance"] != nil)

@@ -75,6 +75,10 @@ public protocol ScreenSharingViewingSession: AnyObject {
   /// a VNC server needn't (macOS Screen Sharing neither draws it nor reports a
   /// shape, 851-2355), so the viewer shows the local arrow when it has no shape.
   var videoShowsPointer: Bool { get }
+  /// Whether this session can play the host's sound (the native stream, 851-2379).
+  var supportsAudio: Bool { get }
+  /// Plays the host's sound, or mutes it (the host then stops sending it).
+  func setAudioEnabled(_ enabled: Bool)
 }
 
 extension ScreenSharingViewingSession {
@@ -83,6 +87,8 @@ extension ScreenSharingViewingSession {
   public var initialDesktopSize: (width: Int, height: Int)? { nil }
   public var linkBitsPerSecond: Double? { nil }
   public var videoShowsPointer: Bool { true }
+  public var supportsAudio: Bool { false }
+  public func setAudioEnabled(_ enabled: Bool) {}
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

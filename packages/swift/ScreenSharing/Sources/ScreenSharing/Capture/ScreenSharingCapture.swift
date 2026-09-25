@@ -25,8 +25,15 @@
     private var captureIntervalFPS: Int? { requestState.overrideFramesPerSecond }
     /// Whether the pointer is drawn into the frames; off once the viewer draws it from the cursor stream (851-2377).
     public private(set) var showsCursor = true
+    /// Whether the system's sound is captured too (851-2379); off until a viewer asks for it.
+    public private(set) var capturesAudio = false
+    /// Where audio sample buffers go, on the capture's audio queue; set it any time.
+    public let audio = ScreenSharingCaptureAudioTap()
     /// The video configuration the running stream was last started or updated with.
     private var video: ScreenSharingVideoConfiguration?
+    /// What the running stream was started with, so turning audio on can start it again.
+    private var restart:
+      (target: any ScreenSharingCaptureTarget, sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics)?
 
     public init(
       queueDepth: Int = 3, pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -147,7 +154,8 @@
       // describes only requests that were actually applied.
       let interval = try requestState.validated(video: configuration, override: captureIntervalFPS)
       let streamConfiguration = Self.streamConfiguration(
-        configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat, showsCursor: showsCursor)
+        configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat, showsCursor: showsCursor,
+        capturesAudio: capturesAudio)
       requestState.commit(override: captureIntervalFPS, request: interval, metrics: metrics)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
@@ -157,7 +165,9 @@
       metrics.label("captureContentWidthPoints", String(content.widthPoints))
       metrics.label("captureContentHeightPoints", String(content.heightPoints))
       metrics.label("captureContentPixelScale", String(content.pointPixelScale))
-      let output = ScreenSharingCaptureOutput(sink: sink, metrics: metrics, copySurface: copySurface) {
+      let output = ScreenSharingCaptureOutput(
+        sink: sink, metrics: metrics, copySurface: copySurface, audio: audio
+      ) {
         [weak self] message in
         Task { @MainActor in
           guard let self, self.generation == generation else { return }
@@ -168,6 +178,7 @@
       self.output = output
       self.stream = stream
       video = configuration
+      restart = (target, sink, metrics)
       do {
         try await stream.startCapture()
         metrics.label("captureStartedAtNs", String(ScreenSharingMetrics.nowNs))
@@ -206,7 +217,7 @@
           try await stream.updateConfiguration(
             Self.streamConfiguration(
               configuration, interval: interval, queueDepth: self.queueDepth, pixelFormat: self.pixelFormat,
-              showsCursor: self.showsCursor))
+              showsCursor: self.showsCursor, capturesAudio: self.capturesAudio))
         }, isCurrent: { self.generation == generation })
       video = configuration
     }
@@ -217,13 +228,37 @@
       guard shows != showsCursor else { return }
       let previous = showsCursor
       showsCursor = shows
-      guard let video, stream != nil else { return }
-      do {
-        try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
-      } catch {
+      do { try await reconfigure() } catch {
         showsCursor = previous
         throw error
       }
+    }
+
+    /// Captures the system's sound too, or stops, now and for later starts. The audio output
+    /// hears only this Mac's other apps: the capturing process is excluded. Turning audio on
+    /// starts a running stream again with audio in its starting configuration: on tuftlord a live
+    /// update turned it on and ScreenCaptureKit never delivered a buffer (851-2379).
+    public func setCapturesAudio(_ captures: Bool) async throws {
+      guard captures != capturesAudio else { return }
+      let previous = capturesAudio
+      capturesAudio = captures
+      do {
+        if captures, stream != nil, let restart, let video {
+          try await stop()
+          try await start(target: restart.target, configuration: video, sink: restart.sink, metrics: restart.metrics)
+        } else {
+          try await reconfigure()
+        }
+      } catch {
+        capturesAudio = previous
+        throw error
+      }
+    }
+
+    /// Applies the current settings to a running stream.
+    private func reconfigure() async throws {
+      guard let video, stream != nil else { return }
+      try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
     }
 
     /// The whole update transaction in one place: validate, apply, re-check the generation, and only then commit the
@@ -245,7 +280,7 @@
     /// configuration from an unvalidated request.
     private static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, interval: ScreenSharingCaptureIntervalRequest, queueDepth: Int,
-      pixelFormat: OSType, showsCursor: Bool
+      pixelFormat: OSType, showsCursor: Bool, capturesAudio: Bool
     ) -> SCStreamConfiguration {
       let config = SCStreamConfiguration()
       config.width = video.width; config.height = video.height
@@ -254,7 +289,12 @@
       config.pixelFormat = pixelFormat
       config.colorSpaceName = CGColorSpace.itur_709
       config.showsCursor = showsCursor
-      config.capturesAudio = false
+      config.capturesAudio = capturesAudio
+      if capturesAudio {
+        config.sampleRate = 48_000
+        config.channelCount = 2
+        config.excludesCurrentProcessAudio = true
+      }
       config.scalesToFit = true
       return config
     }
@@ -301,18 +341,22 @@
   /// error paths reachable from a test that has no stream to hand back.
   final class ScreenSharingCaptureOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let queue = DispatchQueue(label: "codevisor.screen-sharing.capture", qos: .userInteractive)
+    /// Audio has its own queue: sound never waits behind a frame.
+    let audioQueue = DispatchQueue(label: "codevisor.screen-sharing.capture-audio", qos: .userInteractive)
     let sink: any ScreenSharingFrameSink
     let metrics: ScreenSharingMetrics
     let onStopped: @Sendable (String) -> Void
+    let audio: ScreenSharingCaptureAudioTap?
     private let surfaceCopy: ScreenSharingCaptureBufferCopy?
 
     init(
       sink: any ScreenSharingFrameSink, metrics: ScreenSharingMetrics, copySurface: Bool,
-      onStopped: @escaping @Sendable (String) -> Void
+      audio: ScreenSharingCaptureAudioTap? = nil, onStopped: @escaping @Sendable (String) -> Void
     ) {
       self.sink = sink
       self.metrics = metrics
       self.onStopped = onStopped
+      self.audio = audio
       surfaceCopy = copySurface ? ScreenSharingCaptureBufferCopy() : nil
     }
 
@@ -321,6 +365,11 @@
     }
 
     func deliver(_ sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+      if type == .audio {
+        metrics.increment("captureAudioBuffers")
+        audio?.deliver(sampleBuffer)
+        return
+      }
       guard type == .screen else { return }
       let attachments =
         CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
@@ -369,5 +418,18 @@
       metrics.label("captureError", error.localizedDescription)
       onStopped(error.localizedDescription)
     }
+  }
+
+  /// The capture's audio hand-off (851-2379): whoever encodes the sound sets `handler`, before or
+  /// after the stream starts; buffers arriving while it's nil are dropped.
+  public final class ScreenSharingCaptureAudioTap: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (@Sendable (CMSampleBuffer) -> Void)?
+
+    public init() {}
+
+    public func set(_ handler: (@Sendable (CMSampleBuffer) -> Void)?) { lock.withLock { self.handler = handler } }
+
+    func deliver(_ sampleBuffer: CMSampleBuffer) { lock.withLock { handler }?(sampleBuffer) }
   }
 #endif

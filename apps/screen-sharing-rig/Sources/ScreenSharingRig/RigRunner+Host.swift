@@ -96,6 +96,7 @@
       peerName = offer.name
       peerBuild = offer.build
       installCursorStream(in: session)
+      installAudioStream(in: session)
       peer.onConnectionChanged = { [weak self, weak session] state in
         Task { @MainActor in
           guard let self, let session else { return }
@@ -258,6 +259,45 @@
         log("display \(id) captured")
       }
       await applyCursorStream(in: session)
+      await applyAudioStream(in: session)
+    }
+
+    /// The product host's audio stream (851-2379) for every captured source.
+    func installAudioStream(in session: RigSession) {
+      guard let peer = session.peer as? ScreenSharingSender else { return }
+      let channel = peer.audioChannel
+      channel.onMessage = { [weak self, weak session, weak channel] message in
+        guard let self, let session, let channel, !session.closed else { return }
+        switch message {
+        case .subscribe:
+          guard session.audioEncoder == nil,
+            let encoder = try? ScreenSharingAudioEncoder(onPacket: { [weak channel, metrics = session.metrics] packet in
+              metrics.increment("audioPacketsEncoded")
+              DispatchQueue.main.async { MainActor.assumeIsolated { _ = channel?.send(.packet(packet)) } }
+            })
+          else { return }
+          session.audioEncoder = encoder
+          self.log("audio stream on")
+          Task { await self.applyAudioStream(in: session) }
+        case .unsubscribe:
+          session.audioEncoder = nil
+          Task { await self.applyAudioStream(in: session) }
+        case .packet:
+          return
+        }
+      }
+    }
+
+    /// Points the current capture's audio at the encoder (a new source has a new capture).
+    func applyAudioStream(in session: RigSession) async {
+      guard let capture = session.capture else { return }
+      if let encoder = session.audioEncoder {
+        capture.audio.set { encoder.append(sampleBuffer: $0) }
+        try? await capture.setCapturesAudio(true)
+      } else {
+        capture.audio.set(nil)
+        try? await capture.setCapturesAudio(false)
+      }
     }
 
     /// The product host's cursor stream (851-2377): once the viewer subscribes, a display-backed

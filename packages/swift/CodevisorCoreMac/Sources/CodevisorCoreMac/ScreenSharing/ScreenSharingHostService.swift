@@ -19,7 +19,7 @@ final class ScreenSharingHostService {
   static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
   private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
-  @MainActor private final class Session {
+  @MainActor final class Session {
     let owner: ScreenSharingHostLease.Owner
     let peer: ScreenSharingSender
     let capture: ScreenSharingCapture
@@ -38,6 +38,8 @@ final class ScreenSharingHostService {
     var captureRestarts = ScreenSharingCaptureRestartPolicy()
     /// The pointer as its own stream, once the viewer subscribed (851-2377).
     var cursor: ScreenSharingCursorPublisher?
+    /// The host's sound, once the viewer subscribed (851-2379).
+    var audioEncoder: ScreenSharingAudioEncoder?
     var control: ScreenSharingHostControl?
     var clipboard: ScreenSharingClipboardTransfer?
     var stopping = false
@@ -303,6 +305,7 @@ final class ScreenSharingHostService {
     }
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
     configureCursor(session)
+    configureAudio(session)
 
     session.capture.onStopped = { [weak self, weak session] message in
       guard let self, let session else { return }
@@ -371,6 +374,7 @@ final class ScreenSharingHostService {
     session.watchdog?.cancel()
     session.qualityTask?.cancel()
     session.cursor?.stop()
+    session.capture.audio.set(nil)
     session.peer.close()
     session.captureTask?.cancel()
     // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
