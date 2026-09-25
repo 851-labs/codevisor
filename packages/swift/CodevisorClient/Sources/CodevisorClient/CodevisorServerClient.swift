@@ -16,11 +16,21 @@ public enum CodevisorServerClientError: Error, Equatable, Sendable, LocalizedErr
     case .invalidResponse:
       "The Codevisor server sent an unexpected response. Try again in a moment."
     case let .httpStatus(_, body):
-      body.isEmpty ? "The Codevisor server rejected the request." : body
+      // Server failures are `{"error": "…"}`: show the sentence, not the JSON (851-2391).
+      body.isEmpty ? "The Codevisor server rejected the request." : serverErrorMessage(body) ?? body
     case .invalidDate, .invalidUUID:
       "The Codevisor server sent data this version of Codevisor couldn't read. Updating Codevisor may fix this."
     }
   }
+}
+
+/// The `error` sentence of a server error body (`{"error": …}`), if the body is one.
+func serverErrorMessage(_ body: String) -> String? {
+  guard let data = body.data(using: .utf8),
+    let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let message = payload["error"] as? String, !message.isEmpty
+  else { return nil }
+  return message
 }
 
 /// The machine-readable failure category from a server error body
