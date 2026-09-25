@@ -68,6 +68,9 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
   public var platform: String
   public var bindHost: String
   public var features: [String]?
+  /// The largest `POST /v1/files` body the server accepts. Servers from
+  /// before streamed relay uploads omit it (their limit is 32 MiB).
+  public var maxUploadBytes: Int?
   /// The machine's Codevisor Cloud device id, when it is cloud-connected —
   /// lets clients match this machine to its cloud presence entry.
   public var cloudDeviceId: String?
@@ -80,6 +83,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     platform: String,
     bindHost: String,
     features: [String]? = nil,
+    maxUploadBytes: Int? = nil,
     cloudDeviceId: String? = nil
   ) {
     self.id = id
@@ -89,6 +93,7 @@ public struct ServerInfo: Decodable, Equatable, Sendable {
     self.platform = platform
     self.bindHost = bindHost
     self.features = features
+    self.maxUploadBytes = maxUploadBytes
     self.cloudDeviceId = cloudDeviceId
   }
 }

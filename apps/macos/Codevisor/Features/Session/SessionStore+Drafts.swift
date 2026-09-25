@@ -60,7 +60,8 @@ extension SessionStore {
       // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
       machines: environment.machines,
-      notificationDelivery: notificationDelivery
+      notificationDelivery: notificationDelivery,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
     // Fresh drafts start from the machine's remembered run-location

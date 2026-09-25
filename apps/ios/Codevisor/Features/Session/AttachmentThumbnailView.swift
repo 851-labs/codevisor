@@ -251,11 +251,10 @@ func materializeQuickLookURL(
   return await materializeQuickLookURL(data: data, name: file.name)
 }
 
-/// Writes already-local attachment bytes under their display filename for
-/// Quick Look. Composer attachments use this path while upload is still in
-/// flight, so previewing never waits for the server round trip.
+/// Writes fetched attachment bytes under their display filename for Quick
+/// Look.
 @MainActor
-func materializeQuickLookURL(data: Data, name: String) async -> URL? {
+private func materializeQuickLookURL(data: Data, name: String) async -> URL? {
   guard !data.isEmpty else { return nil }
   let directory = FileManager.default.temporaryDirectory
     .appendingPathComponent("Codevisor-QuickLook", isDirectory: true)

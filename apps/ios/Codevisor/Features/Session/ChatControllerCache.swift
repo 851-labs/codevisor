@@ -71,7 +71,8 @@ final class ChatControllerCache {
         serverId: session.serverId
       ),
       serverClient: environment.machines.client(for: session.serverId),
-      machines: environment.machines
+      machines: environment.machines,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)
@@ -145,7 +146,8 @@ final class ChatControllerCache {
       // The restored project's OWN machine — a retargeted draft keeps
       // talking to the machine it was pointed at across relaunches.
       serverClient: environment.machines.client(for: restoredProject.serverId),
-      machines: environment.machines
+      machines: environment.machines,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
     // Fresh drafts start from the machine's remembered run-location

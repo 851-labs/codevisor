@@ -65,7 +65,13 @@ final class ScriptedHttpMachine: @unchecked Sendable {
   private let lock = NSLock()
   private var requestsByChannel: [String: (params: OpenPayload.Params, body: Data)] = [:]
   private var _channelIds: [String] = []
+  private var _receivedBodyBytes: [String: Int] = [:]
   private(set) var completedRequests: [ReceivedRequest] = []
+
+  /// Request body bytes that have arrived on a channel so far.
+  func receivedBodyBytes(channelId: String) -> Int {
+    lock.withLock { _receivedBodyBytes[channelId, default: 0] }
+  }
 
   /// Every http channel ever opened, in order (survives completion).
   var openChannelIds: [String] {
@@ -119,7 +125,10 @@ final class ScriptedHttpMachine: @unchecked Sendable {
         guard let encoded = frame.data,
           let chunk = CloudChannelCrypto.base64URLDecode(encoded)
         else { return }
-        lock.withLock { requestsByChannel[channelId]?.body.append(chunk) }
+        lock.withLock {
+          requestsByChannel[channelId]?.body.append(chunk)
+          _receivedBodyBytes[channelId, default: 0] += chunk.count
+        }
       case "end":
         finish(channelId: channelId)
       default:

@@ -321,6 +321,10 @@ extension SyncFakeServerClient {
     lock.withLock { _infoFeatures = features }
   }
 
+  func configureInfoMaxUploadBytes(_ bytes: Int?) {
+    lock.withLock { _infoMaxUploadBytes = bytes }
+  }
+
   func info() async throws -> ServerInfo {
     let (version, id): (String, String) = try lock.withLock {
       if migrationStillRunning() { throw Self.migratingFailure }
@@ -335,6 +339,7 @@ extension SyncFakeServerClient {
       id: id, name: "Local", kind: "local", version: version, platform: "darwin", bindHost: "127.0.0.1")
     info.cloudDeviceId = cloudDeviceId
     info.features = features
+    info.maxUploadBytes = lock.withLock { _infoMaxUploadBytes }
     return info
   }
   func updateInfo(refresh: Bool, channel: ServerUpdateChannel) async throws -> ServerUpdateInfo {

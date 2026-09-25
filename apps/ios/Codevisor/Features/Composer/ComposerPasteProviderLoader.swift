@@ -10,7 +10,7 @@ import os
 enum PastedAttachment: Sendable {
   case fileURL(URL)
   /// The provider's original compressed representation whenever it fits the
-  /// upload boundary; oversized images are downsampled to JPEG.
+  /// pasted-image budget; oversized images are downsampled to JPEG.
   case image(data: Data, suggestedName: String, mimeType: String)
 }
 
@@ -266,45 +266,84 @@ enum ComposerPasteProviderLoader {
     return "\(stem).\(ext)"
   }
 
+  /// Pasted images larger than this are downsampled to JPEG. A pasted
+  /// photo rarely needs more, and it keeps the composer's paste path cheap;
+  /// it is deliberately independent of the machine's upload limit, which
+  /// governs files.
+  nonisolated static let pastedImageBudgetBytes = 32 * 1024 * 1024
+
   static func prepareImage(
     data: Data,
     suggestedName: String,
     contentType: UTType
   ) async -> (data: Data, name: String, mimeType: String)? {
     let mimeType = contentType.preferredMIMEType ?? "application/octet-stream"
-    let maxUploadBytes = SessionController.maxAttachmentUploadBytes
     return await Task.detached(priority: .userInitiated) {
       guard let source = CGImageSourceCreateWithData(data as CFData, nil),
         CGImageSourceGetCount(source) > 0
       else { return nil }
-      if data.count <= maxUploadBytes {
+      if data.count <= pastedImageBudgetBytes {
         return (data, suggestedName, mimeType)
       }
+      guard let encoded = downsampledJPEG(from: source) else { return nil }
+      return (encoded, jpegName(for: suggestedName), "image/jpeg")
+    }.value
+  }
 
-      // Only oversized images pay for decoding. Downsample before JPEG
-      // encoding so peak memory and output size both stay bounded.
-      let dimensions = [4096, 3072, 2048, 1536, 1024]
-      let qualities: [CGFloat] = [0.9, 0.8, 0.7, 0.6]
-      for dimension in dimensions {
-        let options: [CFString: Any] = [
-          kCGImageSourceCreateThumbnailFromImageAlways: true,
-          kCGImageSourceCreateThumbnailWithTransform: true,
-          kCGImageSourceShouldCacheImmediately: true,
-          kCGImageSourceThumbnailMaxPixelSize: dimension,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        else { continue }
-        let uiImage = UIImage(cgImage: image)
-        for quality in qualities {
-          guard let encoded = uiImage.jpegData(compressionQuality: quality) else { continue }
-          if encoded.count <= maxUploadBytes {
-            let stem = (suggestedName as NSString).deletingPathExtension
-            return (encoded, "\(stem.isEmpty ? "Pasted image" : stem).jpg", "image/jpeg")
-          }
+  /// The staged-file twin of `prepareImage(data:)`: validates the image
+  /// straight from disk, and only an image over the budget is re-encoded,
+  /// replacing the staged file.
+  static func prepareImage(
+    stagedFileURL: URL,
+    attachmentID: UUID,
+    files: ComposerAttachmentFileStore,
+    suggestedName: String,
+    contentType: UTType
+  ) async -> (fileURL: URL, name: String, mimeType: String)? {
+    let mimeType = contentType.preferredMIMEType ?? "application/octet-stream"
+    return await Task.detached(priority: .userInitiated) {
+      guard let source = CGImageSourceCreateWithURL(stagedFileURL as CFURL, nil),
+        CGImageSourceGetCount(source) > 0,
+        let size = ComposerAttachmentFileStore.byteCount(of: stagedFileURL)
+      else { return nil }
+      if size <= pastedImageBudgetBytes {
+        return (stagedFileURL, suggestedName, mimeType)
+      }
+      guard let encoded = downsampledJPEG(from: source) else { return nil }
+      let name = jpegName(for: suggestedName)
+      guard let url = try? files.stage(data: encoded, id: attachmentID, name: name) else { return nil }
+      return (url, name, "image/jpeg")
+    }.value
+  }
+
+  /// Only oversized images pay for decoding. Downsample before JPEG
+  /// encoding so peak memory and output size both stay bounded.
+  private nonisolated static func downsampledJPEG(from source: CGImageSource) -> Data? {
+    let dimensions = [4096, 3072, 2048, 1536, 1024]
+    let qualities: [CGFloat] = [0.9, 0.8, 0.7, 0.6]
+    for dimension in dimensions {
+      let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceThumbnailMaxPixelSize: dimension,
+      ]
+      guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+      else { continue }
+      let uiImage = UIImage(cgImage: image)
+      for quality in qualities {
+        guard let encoded = uiImage.jpegData(compressionQuality: quality) else { continue }
+        if encoded.count <= pastedImageBudgetBytes {
+          return encoded
         }
       }
-      return nil
-    }.value
+    }
+    return nil
+  }
+
+  private nonisolated static func jpegName(for suggestedName: String) -> String {
+    let stem = (suggestedName as NSString).deletingPathExtension
+    return "\(stem.isEmpty ? "Pasted image" : stem).jpg"
   }
 
   private static func timestamp() -> String {

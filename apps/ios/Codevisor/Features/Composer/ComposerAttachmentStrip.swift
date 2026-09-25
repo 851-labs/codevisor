@@ -5,10 +5,10 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Staging picked media/files for the composer. Everything funnels through a
-/// temporary file and `SessionController.attachFileURLs`, so the shared
-/// staging path derives the mime type and kind, and the eager upload starts
-/// exactly as it does on macOS.
+/// Staging picked media/files for the composer. Everything funnels through
+/// the controller's attachment folder (`SessionController.attachFileURLs`
+/// for picks), so the shared staging path derives the mime type and kind,
+/// and the eager upload starts exactly as it does on macOS.
 @MainActor
 enum ComposerAttachmentStaging {
   /// Resolves a pasted file URL into an existing optimistic placeholder.
@@ -21,27 +21,34 @@ enum ComposerAttachmentStaging {
     let type = UTType(filenameExtension: url.pathExtension)
     let mimeType = type?.preferredMIMEType ?? "application/octet-stream"
     let kind: Attachment.Kind = type?.conforms(to: .image) == true ? .image : .file
+    let name = url.lastPathComponent.isEmpty ? "Pasted file" : url.lastPathComponent
+    let files = controller.attachmentFiles
     Task {
+      // Copy (an APFS clone) straight into the attachment folder while
+      // the security scope is open; the bytes never pass through memory.
       let result = await Task.detached(priority: .userInitiated) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-          return Result<Data, Error>.success(try Data(contentsOf: url))
+          return Result<URL, Error>.success(
+            try files.stageCopy(of: url, id: attachmentID, name: name))
         } catch {
-          return Result<Data, Error>.failure(error)
+          return Result<URL, Error>.failure(error)
         }
       }.value
       switch result {
-      case let .success(data):
-        let name = url.lastPathComponent.isEmpty ? "Pasted file" : url.lastPathComponent
+      case let .success(stagedURL):
         if kind == .image, let type {
           guard
             let prepared = await ComposerPasteProviderLoader.prepareImage(
-              data: data,
+              stagedFileURL: stagedURL,
+              attachmentID: attachmentID,
+              files: files,
               suggestedName: name,
               contentType: type
             )
           else {
+            files.remove(id: attachmentID)
             let message =
               "Couldn't prepare the pasted image. Try copying it again or choose it from Photos."
             if controller.discardLoadingAttachment(id: attachmentID) {
@@ -54,7 +61,7 @@ enum ComposerAttachmentStaging {
             name: prepared.name,
             mimeType: prepared.mimeType,
             kind: .image,
-            data: prepared.data
+            stagedFileURL: prepared.fileURL
           ) {
             onFailure(message, .image)
           }
@@ -65,7 +72,7 @@ enum ComposerAttachmentStaging {
           name: name,
           mimeType: mimeType,
           kind: kind,
-          data: data
+          stagedFileURL: stagedURL
         ) {
           onFailure(message, kind)
         }
@@ -78,27 +85,15 @@ enum ComposerAttachmentStaging {
     }
   }
 
-  /// Copies security-scoped picker URLs into the app's temp directory (the
-  /// shared staging path reads bytes asynchronously, after the scope would
-  /// otherwise be released) and hands them to the controller. The reads and
-  /// copies run off the main actor — reading a picked iCloud Drive file can
-  /// block on a download — and unreadable files are skipped, as before.
+  /// Hands security-scoped picker URLs to the controller, which copies them
+  /// into the attachment folder off the main actor (reading a picked iCloud
+  /// Drive file can block on a download). Each scope stays open until its
+  /// copy finishes.
   static func stage(pickedURLs urls: [URL], into controller: SessionController) {
+    let scoped = urls.filter { $0.startAccessingSecurityScopedResource() }
     Task {
-      let staged = await Task.detached(priority: .userInitiated) { () -> [URL] in
-        var staged: [URL] = []
-        for url in urls {
-          let scoped = url.startAccessingSecurityScopedResource()
-          defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-          guard let data = try? Data(contentsOf: url) else { continue }
-          if let copy = writeTemporary(data: data, name: url.lastPathComponent) {
-            staged.append(copy)
-          }
-        }
-        return staged
-      }.value
-      guard !staged.isEmpty else { return }
-      controller.attachFileURLs(staged)
+      await controller.attachFileURLs(urls).value
+      for url in scoped { url.stopAccessingSecurityScopedResource() }
     }
   }
 
@@ -116,7 +111,7 @@ enum ComposerAttachmentStaging {
         writeTemporary(data: data, name: name)
       }.value
       if let url {
-        controller.attachFileURLs([url])
+        await attachTemporary(url, into: controller)
       }
     }
   }
@@ -131,9 +126,16 @@ enum ComposerAttachmentStaging {
         return writeTemporary(data: data, name: name)
       }.value
       if let url {
-        controller.attachFileURLs([url])
+        await attachTemporary(url, into: controller)
       }
     }
+  }
+
+  /// Stages a file this type wrote to the temporary folder, then deletes
+  /// that intermediate copy.
+  private static func attachTemporary(_ url: URL, into controller: SessionController) async {
+    await controller.attachFileURLs([url]).value
+    try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
   }
 
   private nonisolated static func writeTemporary(data: Data, name: String) -> URL? {
@@ -230,23 +232,14 @@ private struct ComposerAttachmentChip: View {
           .padding(6)
       }
     }
-    .task(id: attachment.localData.count) {
-      guard attachment.hasVisualPreview, !attachment.localData.isEmpty, thumbnail == nil else {
+    .task(id: attachment.fileURL) {
+      guard attachment.hasVisualPreview, thumbnail == nil, let fileURL = attachment.fileURL else {
         return
       }
-      let data = attachment.localData
-      let name = attachment.name
-      let mimeType = attachment.mimeType
       let isVideo = attachment.isVideo
       let isPDF = attachment.isPDF
       let image = await Task.detached(priority: .userInitiated) {
-        await attachmentPreviewImage(
-          data: data,
-          name: name,
-          mimeType: mimeType,
-          isVideo: isVideo,
-          isPDF: isPDF
-        )
+        await attachmentPreviewImage(fileURL: fileURL, isVideo: isVideo, isPDF: isPDF)
       }.value
       guard !Task.isCancelled else { return }
       thumbnail = image
@@ -320,16 +313,14 @@ private struct ComposerAttachmentChip: View {
     .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
   }
 
-  private var canPreview: Bool { !attachment.localData.isEmpty }
+  private var canPreview: Bool { attachment.fileURL != nil }
 
+  /// The staged file already carries the display filename Quick Look reads
+  /// its type from, and the preview closes with this chip, so it can be
+  /// shown in place.
   private func preview() {
-    guard canPreview else { return }
-    let data = attachment.localData
-    let name = attachment.name
-    Task {
-      guard let url = await materializeQuickLookURL(data: data, name: name) else { return }
-      quickLookURL = url
-    }
+    guard let fileURL = attachment.fileURL else { return }
+    quickLookURL = fileURL
   }
 
   private func visualRetryButton(reason: String) -> some View {

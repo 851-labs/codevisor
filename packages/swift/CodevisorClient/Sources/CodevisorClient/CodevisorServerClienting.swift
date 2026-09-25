@@ -334,6 +334,8 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
   ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
+  /// Uploads a file from disk, streaming it rather than loading it.
+  func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata
   func filePreview(id: String) async throws -> Data
   func filePreview(path: String, sessionId: UUID?) async throws -> Data
   func fileData(id: String) async throws -> Data

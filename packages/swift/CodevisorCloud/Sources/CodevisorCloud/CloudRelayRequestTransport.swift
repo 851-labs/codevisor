@@ -88,19 +88,46 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   /// The whole request/response under one deadline, body buffered — the
   /// JSON API surface. Streaming callers use `stream(for:)`.
   public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    try await raced(timeout: timeout) { deadline in
-      let (response, source) = try await performStream(request, deadline: deadline)
-      var body = Data()
-      do {
-        while let chunk = try await source.nextBodyChunk() {
-          body.append(chunk)
-        }
-      } catch {
-        await source.finish(reason: .done)
-        throw error
-      }
-      return (body, response)
+    try await raced(expiry: { [sleep, timeout] in try await sleep(timeout) }) { deadline in
+      let (response, source) = try await performStream(
+        request, body: .data(request.httpBody), deadline: deadline)
+      return try await Self.collect(response, source)
     }
+  }
+
+  /// Streams the file as request body chunks, reading one chunk at a time
+  /// so a large upload never sits in memory. A fixed deadline would cap an
+  /// upload's size by the link speed, so the body runs under an idle
+  /// deadline instead: every chunk sent and every credit grant restarts the
+  /// timer. Once the end frame is out, the response gets the normal timeout.
+  public func upload(
+    for request: URLRequest,
+    fromFile fileURL: URL
+  ) async throws -> (Data, HTTPURLResponse) {
+    let handle = try FileHandle(forReadingFrom: fileURL)
+    defer { try? handle.close() }
+    let watchdog = IdleWatchdog(timeout: timeout, sleep: sleep)
+    return try await raced(expiry: { try await watchdog.waitForExpiry() }) { deadline in
+      let (response, source) = try await performStream(
+        request, body: .file(handle, watchdog), deadline: deadline)
+      return try await Self.collect(response, source)
+    }
+  }
+
+  private static func collect(
+    _ response: HTTPURLResponse,
+    _ source: HttpResponseSource
+  ) async throws -> (Data, HTTPURLResponse) {
+    var body = Data()
+    do {
+      while let chunk = try await source.nextBodyChunk() {
+        body.append(chunk)
+      }
+    } catch {
+      await source.finish(reason: .done)
+      throw error
+    }
+    return (body, response)
   }
 
   /// Streams the response: the head is bounded by the transport timeout,
@@ -110,8 +137,9 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   public func stream(
     for request: URLRequest
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
-    let (response, source) = try await raced(timeout: timeout) { deadline in
-      try await performStream(request, deadline: deadline)
+    let (response, source) = try await raced(expiry: { [sleep, timeout] in try await sleep(timeout) }) {
+      deadline in
+      try await performStream(request, body: .data(request.httpBody), deadline: deadline)
     }
     let body = AsyncThrowingStream<Data, any Error>(unfolding: {
       do {
@@ -124,11 +152,12 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     return (response, body)
   }
 
-  /// Races `operation` against the transport deadline; the loser is
-  /// cancelled (cancellation unblocks the frame stream, and the request
-  /// path then closes its channel on the way out).
+  /// Races `operation` against the transport deadline (`expiry` returns
+  /// once it passes); the loser is cancelled (cancellation unblocks the
+  /// frame stream, and the request path then closes its channel on the way
+  /// out).
   private func raced<Value: Sendable>(
-    timeout: Duration,
+    expiry: @escaping @Sendable () async throws -> Void,
     _ operation: @escaping @Sendable (DeadlineFlag) async throws -> Value
   ) async throws -> Value {
     let deadline = DeadlineFlag()
@@ -137,7 +166,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         try await operation(deadline)
       }
       group.addTask {
-        try await sleep(timeout)
+        try await expiry()
         // Marked before the operation is cancelled, so its unwind can
         // tell a deadline from a caller's cancellation.
         deadline.markExpired()
@@ -161,8 +190,22 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     var hasExpired: Bool { lock.withLock { expired } }
   }
 
+  /// Where a request's body comes from: buffered bytes, or a file read one
+  /// chunk at a time whose progress feeds the upload's idle deadline.
+  /// @unchecked: the file handle is read only by the single sending task.
+  enum RequestBody: @unchecked Sendable {
+    case data(Data?)
+    case file(FileHandle, IdleWatchdog)
+
+    var watchdog: IdleWatchdog? {
+      if case let .file(_, watchdog) = self { return watchdog }
+      return nil
+    }
+  }
+
   private func performStream(
     _ request: URLRequest,
+    body: RequestBody,
     deadline: DeadlineFlag
   ) async throws -> (HTTPURLResponse, HttpResponseSource) {
     guard let url = request.url,
@@ -193,7 +236,11 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
           continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
         }
       },
-      onCredit: { bytes in gate.add(bytes) },
+      onCredit: { bytes in
+        // A grant is progress: the machine is draining the upload.
+        body.watchdog?.touch()
+        gate.add(bytes)
+      },
       onClosed: { reason in
         gate.fail(CloudRelayTransportError.channelClosed(reason))
         if reason == .done {
@@ -206,7 +253,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
     let source = HttpResponseSource(channel: channel, frames: frames)
     do {
       try await channel.grantCredit(bytes: CloudRelayProxy.initialCreditBytes)
-      try await sendRequestBody(request, channel: channel, gate: gate)
+      try await sendRequestBody(body, channel: channel, gate: gate)
       let response = try await source.readHead(url: url)
       return (response, source)
     } catch {
@@ -221,7 +268,7 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   /// Uploads the body as chunk frames and the terminating end frame, each
   /// gated on the machine's request-body window.
   private func sendRequestBody(
-    _ request: URLRequest,
+    _ body: RequestBody,
     channel: CloudRelayChannel,
     gate: CloudChannelCreditGate
   ) async throws {
@@ -232,21 +279,120 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
         CloudChannelCreditGate.sealedCost(plaintextBytes: payload.count, compressed: true))
       _ = try await channel.send(plaintext: payload)
     }
-    if let body = request.httpBody, !body.isEmpty {
-      var offset = body.startIndex
-      while offset < body.endIndex {
-        let end =
-          body.index(offset, offsetBy: Self.chunkSize, limitedBy: body.endIndex)
-          ?? body.endIndex
-        try await send(
-          ClientFrame(
-            kind: "chunk",
-            data: CloudChannelCrypto.base64URLEncode(body[offset..<end])
-          ))
-        offset = end
-      }
+    func sendChunk(_ bytes: Data) async throws {
+      try await send(ClientFrame(kind: "chunk", data: CloudChannelCrypto.base64URLEncode(bytes)))
     }
-    try await send(ClientFrame(kind: "end"))
+    switch body {
+    case let .data(data):
+      if let data, !data.isEmpty {
+        var offset = data.startIndex
+        while offset < data.endIndex {
+          let end =
+            data.index(offset, offsetBy: Self.chunkSize, limitedBy: data.endIndex)
+            ?? data.endIndex
+          try await sendChunk(data[offset..<end])
+          offset = end
+        }
+      }
+      try await send(ClientFrame(kind: "end"))
+    case let .file(handle, watchdog):
+      while let chunk = try handle.read(upToCount: Self.chunkSize), !chunk.isEmpty {
+        try Task.checkCancellation()
+        try await sendChunk(chunk)
+        watchdog.touch()
+      }
+      try await send(ClientFrame(kind: "end"))
+      // The body is out: from here the response runs under one fixed
+      // timeout, which later credit grants must not extend.
+      watchdog.freeze()
+    }
+  }
+}
+
+/// The idle deadline for a streamed upload: expires once `timeout` passes
+/// with no `touch()`. Each touch restarts the timer; `freeze()` restarts it
+/// one last time and ignores later touches, so the tail of the request gets
+/// a plain fixed deadline.
+final class IdleWatchdog: @unchecked Sendable {
+  private let timeout: Duration
+  private let sleep: @Sendable (Duration) async throws -> Void
+  private let lock = NSLock()
+  private var generation = 0
+  private var frozen = false
+  private var finished = false
+  private var timer: Task<Void, Never>?
+  private var waiter: CheckedContinuation<Void, any Error>?
+
+  init(timeout: Duration, sleep: @escaping @Sendable (Duration) async throws -> Void) {
+    self.timeout = timeout
+    self.sleep = sleep
+    touch()
+  }
+
+  func touch() {
+    restart(freezing: false)
+  }
+
+  func freeze() {
+    restart(freezing: true)
+  }
+
+  private func restart(freezing: Bool) {
+    let previous: Task<Void, Never>? = lock.withLock {
+      guard !frozen, !finished else { return nil }
+      frozen = freezing
+      generation += 1
+      let current = generation
+      let previous = timer
+      timer = Task { [weak self, sleep, timeout] in
+        do {
+          try await sleep(timeout)
+        } catch {
+          return
+        }
+        self?.expire(generation: current)
+      }
+      return previous
+    }
+    previous?.cancel()
+  }
+
+  private func expire(generation fired: Int) {
+    let resume: CheckedContinuation<Void, any Error>? = lock.withLock {
+      // A stale timer lost its race with the touch that replaced it.
+      guard fired == generation, !finished else { return nil }
+      // With no waiter yet, `finished` makes the next wait return at once.
+      finished = true
+      defer { waiter = nil }
+      return waiter
+    }
+    resume?.resume()
+  }
+
+  /// Returns once the deadline passes. Cancelling the wait (the request
+  /// finished first) also stops the timer.
+  func waitForExpiry() async throws {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+        let alreadyExpired: Bool = lock.withLock {
+          if finished { return true }
+          waiter = continuation
+          return false
+        }
+        if alreadyExpired { continuation.resume() }
+      }
+    } onCancel: {
+      let (resume, timer): (CheckedContinuation<Void, any Error>?, Task<Void, Never>?) = lock.withLock {
+        finished = true
+        defer {
+          waiter = nil
+          self.timer = nil
+        }
+        return (waiter, self.timer)
+      }
+      timer?.cancel()
+      resume?.resume(throwing: CancellationError())
+    }
   }
 }
 

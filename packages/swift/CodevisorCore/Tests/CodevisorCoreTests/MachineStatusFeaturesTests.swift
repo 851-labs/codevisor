@@ -35,6 +35,7 @@ struct MachineStatusFeaturesTests {
   func probeCachesFeatures() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureInfoFeatures(["plugins-v1", "screen-sharing-v1"])
+    fake.configureInfoMaxUploadBytes(524_288_000)
     let (controller, remote) = try makeController(fake: fake)
 
     await controller.refreshStatus(for: remote.id)
@@ -42,9 +43,10 @@ struct MachineStatusFeaturesTests {
     let status = try #require(controller.statusByMachineId[remote.id])
     #expect(status.features == ["plugins-v1", "screen-sharing-v1"])
     #expect(status.supportsScreenSharing)
+    #expect(status.uploadLimitBytes == 524_288_000)
   }
 
-  @Test("A server without a feature list advertises no capabilities")
+  @Test("A server without a feature list advertises no capabilities and the legacy upload limit")
   func missingFeaturesMeansNone() async throws {
     let fake = SyncFakeServerClient(projects: [], sessions: [])
     fake.configureInfoFeatures(nil)
@@ -55,6 +57,7 @@ struct MachineStatusFeaturesTests {
     let status = try #require(controller.statusByMachineId[remote.id])
     #expect(status.features.isEmpty)
     #expect(!status.supportsScreenSharing)
+    #expect(status.uploadLimitBytes == 32 * 1024 * 1024)
   }
 
   @Test("Adopting a cloud identity keeps the probed features")

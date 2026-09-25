@@ -9,7 +9,7 @@ import TranscriptKit
 #endif
 
 /// Thumbnails of images the user just sent, decoded from the composer's
-/// local bytes the moment Send is pressed. A sent message's attachment
+/// small staged-image previews the moment Send is pressed. A sent message's attachment
 /// thumbnails read this synchronously, so the bubble flying out of the
 /// composer shows its photos from its first frame instead of a placeholder
 /// while the server copy loads.
@@ -23,9 +23,9 @@ public enum SentAttachmentThumbnails {
   public static func prepare(_ attachments: [ComposerAttachment]) {
     for attachment in attachments where attachment.isImage {
       guard case let .uploaded(ref) = attachment.state,
+        let data = attachment.sentPreviewData,
         !images.contains(where: { $0.fileId == ref.fileId })
       else { continue }
-      let data = attachment.localData
       let fileId = ref.fileId
       Task {
         guard

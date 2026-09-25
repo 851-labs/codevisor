@@ -60,6 +60,87 @@ struct CloudRelayFlowControlTests {
     await hub.shutdown()
   }
 
+  /// A file spanning three body chunks, the last one short.
+  private func uploadFixture() throws -> (url: URL, contents: Data) {
+    let count = CloudRelayRequestTransport.chunkSize * 3 - 100
+    let contents = Data((0..<count).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("relay-upload-\(UUID().uuidString).bin")
+    try contents.write(to: url)
+    return (url, contents)
+  }
+
+  private func uploadRequest() -> URLRequest {
+    var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/files?name=clip.mov")!)
+    request.httpMethod = "POST"
+    return request
+  }
+
+  /// Covers one chunk frame's sealed cost but not two, so each grant
+  /// releases exactly one chunk.
+  private static let oneChunkGrant = 400_000
+
+  @Test("A file upload streams chunk by chunk, paced by grants, for longer than the timeout")
+  func fileUploadIdleDeadline() async throws {
+    let (fileURL, contents) = try uploadFixture()
+    defer { try? FileManager.default.removeItem(at: fileURL) }
+    let scriptedMachine = ScriptedHttpMachine()
+    scriptedMachine.grantsUploadWindow = false
+    scriptedMachine.respond = { request in
+      ScriptedHttpMachine.ScriptedResponse(
+        status: 201, headers: [:], bodyChunks: [Data("\(request.body.count)".utf8)])
+    }
+    let (endpoint, hub) = makeRelayEndpoint(
+      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let clock = TestClock()
+    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
+
+    let pending = Task { try await transport.upload(for: uploadRequest(), fromFile: fileURL) }
+    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+    let channelId = scriptedMachine.openChannelIds[0]
+    // 20s between grants, 60s in all: past a fixed 30s deadline, but the
+    // upload never idles for 30s.
+    for chunk in 1...3 {
+      await clock.waitForSleep(.seconds(30))
+      clock.advance(by: .seconds(20))
+      scriptedMachine.grantUploadWindow(channelId: channelId, bytes: Self.oneChunkGrant)
+      let expected = min(chunk * CloudRelayRequestTransport.chunkSize, contents.count)
+      #expect(await waitUntil { scriptedMachine.receivedBodyBytes(channelId: channelId) >= expected })
+      // No more credit, so the next chunk cannot have gone out.
+      #expect(scriptedMachine.receivedBodyBytes(channelId: channelId) == expected)
+    }
+
+    let (data, response) = try await pending.value
+    #expect(response.statusCode == 201)
+    #expect(data == Data("\(contents.count)".utf8))
+    #expect(scriptedMachine.completedRequests.first?.body == contents)
+    await hub.shutdown()
+  }
+
+  @Test("A file upload that stalls fails with the transport timeout")
+  func stalledFileUploadTimesOut() async throws {
+    let (fileURL, _) = try uploadFixture()
+    defer { try? FileManager.default.removeItem(at: fileURL) }
+    let scriptedMachine = ScriptedHttpMachine()
+    scriptedMachine.grantsUploadWindow = false
+    scriptedMachine.respond = { _ in
+      ScriptedHttpMachine.ScriptedResponse(status: 201, headers: [:], bodyChunks: [])
+    }
+    let (endpoint, hub) = makeRelayEndpoint(
+      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let clock = TestClock()
+    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
+
+    let pending = Task { try await transport.upload(for: uploadRequest(), fromFile: fileURL) }
+    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
+
+    await #expect(throws: CloudRelayTransportError.timedOut) { try await pending.value }
+    #expect(scriptedMachine.completedRequests.isEmpty)
+    await hub.shutdown()
+  }
+
   @Test("Streamed responses replenish the machine's window per consumed chunk")
   func streamingReplenishesWindow() async throws {
     let first = Data(repeating: 0x61, count: 2_048)

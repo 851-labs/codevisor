@@ -393,16 +393,29 @@ extension CodevisorServerClient {
   }
 
   public func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
-    // Conservative encoding: percent-encode everything non-alphanumeric so
-    // names with `&`, `+`, or `=` survive the query round-trip.
-    let encodedName = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"
     let response = try await performRaw(
-      "/v1/files?name=\(encodedName)",
+      Self.uploadPath(name: name),
       method: "POST",
       body: data,
       contentType: mimeType
     )
     return try decoder.decode(ServerFileMetadata.self, from: response)
+  }
+
+  public func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata {
+    let response = try await performUpload(
+      Self.uploadPath(name: name),
+      fileURL: fileURL,
+      contentType: mimeType
+    )
+    return try decoder.decode(ServerFileMetadata.self, from: response)
+  }
+
+  private static func uploadPath(name: String) -> String {
+    // Conservative encoding: percent-encode everything non-alphanumeric so
+    // names with `&`, `+`, or `=` survive the query round-trip.
+    let encodedName = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "attachment"
+    return "/v1/files?name=\(encodedName)"
   }
 
   public func filePreview(id: String) async throws -> Data {

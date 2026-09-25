@@ -381,90 +381,55 @@ private actor AttachmentPreviewDiskCache {
     return representation.representation(using: .png, properties: [:])
   }
 
-  /// Decodes images/PDFs directly and asks AVFoundation for an early frame of a
-  /// video. AVFoundation needs a file URL, so video bytes are materialized only
-  /// for the duration of thumbnail generation.
-  public nonisolated func attachmentPreviewImage(
-    data: Data,
-    name: String,
-    mimeType: String,
-    isVideo: Bool
-  ) async -> NSImage? {
-    guard isVideo else { return NSImage(data: data) }
-
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    do {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      defer { try? FileManager.default.removeItem(at: directory) }
-
-      let pathExtension =
-        (name as NSString).pathExtension.isEmpty
-        ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
-        : (name as NSString).pathExtension
-      let file = directory.appendingPathComponent("preview.\(pathExtension)")
-      try data.write(to: file, options: .atomic)
-
-      let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-      generator.appliesPreferredTrackTransform = true
-      generator.maximumSize = NSSize(width: 480, height: 480)
-      let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-      var frame = try? await generator.image(at: time)
-      if frame == nil {
-        frame = try? await generator.image(at: .zero)
-      }
-      guard let frame else { return nil }
-      return NSImage(cgImage: frame.image, size: .zero)
-    } catch {
-      return nil
-    }
-  }
-#elseif canImport(UIKit)
-  /// Decodes images directly, renders the first page of a PDF, and asks
-  /// AVFoundation for an early frame of a video.
-  public nonisolated func attachmentPreviewImage(
-    data: Data,
-    name: String,
-    mimeType: String,
-    isVideo: Bool,
-    isPDF: Bool
-  ) async -> UIImage? {
-    if isPDF {
-      guard let page = PDFDocument(data: data)?.page(at: 0) else { return nil }
-      return page.thumbnail(of: CGSize(width: 480, height: 480), for: .cropBox)
-    }
-    guard isVideo else {
-      return UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 480, height: 480))
-        ?? UIImage(data: data)
-    }
-
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("Codevisor-Video-Thumbnails", isDirectory: true)
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    do {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      defer { try? FileManager.default.removeItem(at: directory) }
-
-      let pathExtension =
-        (name as NSString).pathExtension.isEmpty
-        ? (UTType(mimeType: mimeType)?.preferredFilenameExtension ?? "mp4")
-        : (name as NSString).pathExtension
-      let file = directory.appendingPathComponent("preview.\(pathExtension)")
-      try data.write(to: file, options: .atomic)
-
-      let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
-      generator.appliesPreferredTrackTransform = true
-      generator.maximumSize = CGSize(width: 480, height: 480)
-      let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-      var frame = try? await generator.image(at: time)
-      if frame == nil {
-        frame = try? await generator.image(at: .zero)
-      }
-      guard let frame else { return nil }
-      return UIImage(cgImage: frame.image)
-    } catch {
-      return nil
-    }
-  }
 #endif
+
+/// A composer thumbnail rendered straight from the staged file: ImageIO
+/// downsamples an image without decoding it at full size, PDFs render their
+/// first page, and AVFoundation grabs an early frame of a video.
+public nonisolated func attachmentPreviewImage(
+  fileURL: URL,
+  isVideo: Bool,
+  isPDF: Bool
+) async -> OSImage? {
+  let maxPixelSize: CGFloat = 480
+  if isVideo {
+    let generator = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
+    generator.appliesPreferredTrackTransform = true
+    generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
+    let time = CMTime(seconds: 0.1, preferredTimescale: 600)
+    var frame = try? await generator.image(at: time)
+    if frame == nil {
+      frame = try? await generator.image(at: .zero)
+    }
+    guard let frame else { return nil }
+    return osImage(frame.image)
+  }
+  if isPDF {
+    #if canImport(AppKit)
+      return NSImage(contentsOf: fileURL)
+    #else
+      guard let page = PDFDocument(url: fileURL)?.page(at: 0) else { return nil }
+      return page.thumbnail(of: CGSize(width: maxPixelSize, height: maxPixelSize), for: .cropBox)
+    #endif
+  }
+  guard
+    let source = CGImageSourceCreateWithURL(
+      fileURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+    let image = CGImageSourceCreateThumbnailAtIndex(
+      source, 0,
+      [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+      ] as CFDictionary)
+  else { return nil }
+  return osImage(image)
+}
+
+private nonisolated func osImage(_ image: CGImage) -> OSImage {
+  #if canImport(AppKit)
+    NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+  #else
+    UIImage(cgImage: image)
+  #endif
+}

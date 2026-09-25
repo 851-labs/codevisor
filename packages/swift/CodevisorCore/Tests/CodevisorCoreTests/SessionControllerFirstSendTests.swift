@@ -67,7 +67,8 @@ struct SessionControllerFirstSendTests {
   @Test("Submission failure keeps the optimistic message and its attachments in chat")
   func failedSubmissionRemainsInChat() async throws {
     let fixture = try Fixture()
-    fixture.controller.composerAttachments = [attachment()]
+    let staged = try attachment(in: fixture.controller.attachmentFiles)
+    fixture.controller.composerAttachments = [staged]
     fixture.client.promptFailure = .httpStatus(503, "Please retry")
 
     await fixture.controller.send()
@@ -82,13 +83,15 @@ struct SessionControllerFirstSendTests {
     #expect(message.text == "Send this message")
     #expect(message.attachments.map(\.name) == ["note.txt"])
     #expect(userMessages(in: fixture.controller).count == 1)
+    // The message went out with server refs; its staged copy is spent.
+    #expect(!FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
     fixture.controller.model?.shutdown()
   }
 
   @Test("Setup failure restores the submitted draft and attachments like macOS")
   func setupFailureRestoresDraft() async throws {
     let fixture = try Fixture()
-    let staged = attachment()
+    let staged = try attachment(in: fixture.controller.attachmentFiles)
     fixture.controller.composerAttachments = [staged]
     fixture.client.openSessionFailure = .httpStatus(503, "Setup failed")
     var didFailSetup = false
@@ -102,6 +105,8 @@ struct SessionControllerFirstSendTests {
     #expect(fixture.controller.shouldShowNewChatComposer)
     #expect(fixture.controller.composerText == "Send this message")
     #expect(fixture.controller.composerAttachments == [staged])
+    // The restored attachment can still be retried or re-uploaded.
+    #expect(FileManager.default.fileExists(atPath: try #require(staged.fileURL).path))
     #expect(fixture.controller.model == nil)
     #expect(fixture.controller.pendingUserMessage == nil)
     #expect(fixture.controller.userSendAnimationRequest == nil)
@@ -203,10 +208,11 @@ struct SessionControllerFirstSendTests {
     }
   }
 
-  private func attachment() -> ComposerAttachment {
-    ComposerAttachment(
-      id: UUID(), name: "note.txt", mimeType: "text/plain", kind: .file,
-      localData: Data("note".utf8),
+  private func attachment(in files: ComposerAttachmentFileStore) throws -> ComposerAttachment {
+    let id = UUID()
+    return ComposerAttachment(
+      id: id, name: "note.txt", mimeType: "text/plain", kind: .file,
+      fileURL: try files.stage(data: Data("note".utf8), id: id, name: "note.txt"),
       state: .uploaded(
         ServerAttachmentRef(
           fileId: "file-1", name: "note.txt", mimeType: "text/plain", sizeBytes: 4, kind: .file

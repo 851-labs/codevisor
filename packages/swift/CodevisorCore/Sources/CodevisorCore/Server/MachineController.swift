@@ -53,6 +53,9 @@ public struct MachineStatus: Sendable, Equatable {
   /// capability synchronously instead of re-probing the server on every
   /// mount — a probe-after-render pops the gated UI in late.
   public var features: Set<String>
+  /// The largest attachment upload the server advertised (`maxUploadBytes`
+  /// from /v1/info); nil for servers that predate the field.
+  public var maxUploadBytes: Int?
 
   public init(
     isReachable: Bool,
@@ -60,7 +63,8 @@ public struct MachineStatus: Sendable, Equatable {
     cloudDeviceId: String? = nil,
     route: MachineRoute? = nil,
     serverId: String? = nil,
-    features: Set<String> = []
+    features: Set<String> = [],
+    maxUploadBytes: Int? = nil
   ) {
     self.isReachable = isReachable
     self.label = label
@@ -68,7 +72,15 @@ public struct MachineStatus: Sendable, Equatable {
     self.route = route
     self.serverId = serverId
     self.features = features
+    self.maxUploadBytes = maxUploadBytes
   }
+
+  /// What servers accepted before they advertised a limit: their cloud
+  /// relay buffered each request body and capped it at 32 MiB.
+  public static let legacyUploadLimitBytes = 32 * 1024 * 1024
+
+  /// The largest attachment this machine accepts.
+  public var uploadLimitBytes: Int { maxUploadBytes ?? Self.legacyUploadLimitBytes }
 
   /// Whether the server can drive a native screen-sharing session.
   public var supportsScreenSharing: Bool { features.contains("screen-sharing-v1") }

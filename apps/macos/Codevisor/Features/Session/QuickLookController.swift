@@ -28,15 +28,15 @@ final class QuickLookController {
       let itemName = item.name
       let itemMimeType = item.mimeType
       do {
-        let data: Data
+        let contents: Contents
         switch item {
-        case let .local(localData, _, _):
-          data = localData
+        case let .local(fileURL, _, _):
+          contents = .file(fileURL)
         case let .remote(source, _, _):
           guard let attachmentStore else {
             throw QuickLookError.attachmentUnavailable
           }
-          data = try await attachmentStore.data(for: source)
+          contents = .data(try await attachmentStore.data(for: source))
         }
 
         try Task.checkCancellation()
@@ -44,7 +44,7 @@ final class QuickLookController {
 
         let materialized = try await Task.detached(priority: .userInitiated) {
           try Self.materialize(
-            data: data,
+            contents,
             name: itemName,
             mimeType: itemMimeType
           )
@@ -110,8 +110,16 @@ final class QuickLookController {
     }
   }
 
+  /// The bytes to preview: fetched from the server, or a composer's staged
+  /// file (cloned, so removing the attachment can't pull the file out from
+  /// under the open preview).
+  private enum Contents: Sendable {
+    case data(Data)
+    case file(URL)
+  }
+
   nonisolated private static func materialize(
-    data: Data,
+    _ contents: Contents,
     name: String,
     mimeType: String
   ) throws -> (directory: URL, file: URL) {
@@ -128,7 +136,12 @@ final class QuickLookController {
         safeFilename(name: name, mimeType: mimeType),
         isDirectory: false
       )
-      try data.write(to: file, options: .atomic)
+      switch contents {
+      case let .data(data):
+        try data.write(to: file, options: .atomic)
+      case let .file(source):
+        try FileManager.default.copyItem(at: source, to: file)
+      }
       return (directory, file)
     } catch {
       try? FileManager.default.removeItem(at: directory)

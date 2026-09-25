@@ -75,21 +75,16 @@ struct ComposerAttachmentThumb: View {
       transaction.disablesAnimations = true
       withTransaction(transaction) { isHovered = hovering }
     }
-    .task(id: attachment.localData.count) {
-      guard attachment.hasVisualPreview, thumbnail == nil else { return }
-      let data = attachment.localData
-      let name = attachment.name
-      let mimeType = attachment.mimeType
+    .task(id: attachment.fileURL) {
+      guard attachment.hasVisualPreview, thumbnail == nil, let fileURL = attachment.fileURL else {
+        return
+      }
       let isVideo = attachment.isVideo
-      // Decode off the main thread — a pasted screenshot can be many
-      // megabytes and the thumb is 56 pt.
+      let isPDF = attachment.isPDF
+      // Downsample off the main thread, straight from the staged file — a
+      // pasted screenshot can be many megabytes and the thumb is 56 pt.
       thumbnail = await Task.detached(priority: .userInitiated) {
-        await attachmentPreviewImage(
-          data: data,
-          name: name,
-          mimeType: mimeType,
-          isVideo: isVideo
-        )
+        await attachmentPreviewImage(fileURL: fileURL, isVideo: isVideo, isPDF: isPDF)
       }.value
     }
     .accessibilityElement(children: .combine)
@@ -97,9 +92,10 @@ struct ComposerAttachmentThumb: View {
   }
 
   private func preview() {
+    guard let fileURL = attachment.fileURL else { return }
     quickLook?.present(
       .local(
-        data: attachment.localData,
+        fileURL: fileURL,
         name: attachment.name,
         mimeType: attachment.mimeType
       ),
