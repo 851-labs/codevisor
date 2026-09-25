@@ -12,7 +12,7 @@ import {
 } from "@codevisor/worktrees"
 
 import type { CodevisorServerServices, RouteState } from "./server-context-types.js"
-import { getProjectOrFail, localLocationOrFail, run } from "./server-http.js"
+import { getProjectOrFail, localLocationOrFail, run, swallowError } from "./server-http.js"
 import { settleCleanup, workspaceTerminalKeys } from "./workspace-runtime.js"
 import { withWorktreeLifecycle } from "./worktree-lifecycle.js"
 
@@ -93,6 +93,24 @@ export const forgetRetiredSessionTurn = (turns: RetiredTurnState, sessionId: str
   turns.promptTurnReleases.get(sessionId)?.()
   turns.activeTurnSessions.delete(sessionId)
   turns.turnHeldSessions.delete(sessionId)
+}
+
+/// Drops a just-counted turn if its chat is already archived. An archived
+/// chat's runtime is on its way out, so its turns never hold an update — but
+/// a harness can still start one after the archive (a background task
+/// finishing wakes the agent), and that turn's end event never comes.
+///
+/// Called right after the turn is counted, so it cannot race the archive:
+/// either this read sees the archive, or the archive commits later and its
+/// own `forgetRetiredSessionTurn` sweep clears the turn.
+export const forgetTurnIfArchived = async (
+  services: CodevisorServerServices,
+  turns: RetiredTurnState,
+  sessionId: string
+): Promise<void> => {
+  const session = await run(services.db.getSessionSummary(sessionId)).catch(swallowError)
+  if (session === undefined || !(await sessionIsArchived(services, session))) return
+  forgetRetiredSessionTurn(turns, sessionId)
 }
 
 /// Everything running on a workspace's behalf, read while the workspace and

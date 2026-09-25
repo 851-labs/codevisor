@@ -5,6 +5,7 @@ import { RESTART_GATE_HARNESS_ID, RESTART_GATE_HARNESS_NAME } from "../restart-d
 import {
   appendAndPublish,
   failureMessage,
+  forgetTurnIfArchived,
   resolvePromptAttachments,
   run,
   sessionIsArchived,
@@ -243,6 +244,7 @@ export const makeTurnDispatchListener =
         : {}
     if (event.kind === "session.updated" && payload.turnState === "started") {
       routeState.activeTurnSessions.add(event.subjectId)
+      void forgetTurnIfArchived(services, routeState, event.subjectId).catch(swallowError)
       return
     }
     const terminal =
