@@ -32,6 +32,19 @@ struct ScreenSharingMachineSettingsTests {
     #expect(draft.changes(from: Self.original).isEmpty)
   }
 
+  /// Sound (851-2379) applies live, never reconnects, and only a connection with sound shows it.
+  @Test func soundChangesApplyWithoutReconnecting() {
+    var withSound = Self.original
+    withSound.sound = .init(enabled: true, volume: 1)
+    var draft = ScreenSharingMachineSettingsDraft(withSound)
+    draft.settings.sound?.volume = 0.4
+    #expect(draft.changes(from: withSound) == .init(sound: .init(enabled: true, volume: 0.4)))
+    #expect(!draft.changes(from: withSound).reconnects)
+    draft.settings.sound = .init(enabled: true, volume: 1)
+    #expect(draft.changes(from: withSound).isEmpty)
+    #expect(ScreenSharingMachineSettingsDraft(Self.original).changes(from: Self.original).sound == nil)
+  }
+
   @Test func signInChangesReconnect() {
     var draft = ScreenSharingMachineSettingsDraft(Self.original)
     draft.settings.signIn?.userName = "  admin "

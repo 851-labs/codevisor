@@ -21,6 +21,13 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
     }
   }
 
+  /// The machine's sound (851-2379): whether it plays, and how loud, 0…1.
+  public struct Sound: Equatable, Sendable {
+    public var enabled: Bool
+    public var volume: Double
+    public init(enabled: Bool = true, volume: Double = 1) { self.enabled = enabled; self.volume = volume }
+  }
+
   public var name: String
   /// How the machine is reached, e.g. "Codevisor on this Mac" or "VNC".
   public var connection: String
@@ -32,11 +39,14 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var displays: [Display]
   public var preferredDisplayId: String?
   public var lastConnected: Date?
+  /// Nil when the connection carries no sound (VNC).
+  public var sound: Sound?
 
   public init(
     name: String, connection: String, address: String? = nil, signIn: SignIn? = nil, dynamicResolution: Bool? = nil,
-    displays: [Display] = [], preferredDisplayId: String? = nil, lastConnected: Date? = nil
+    displays: [Display] = [], preferredDisplayId: String? = nil, lastConnected: Date? = nil, sound: Sound? = nil
   ) {
+    self.sound = sound
     self.name = name; self.connection = connection; self.address = address; self.signIn = signIn
     self.dynamicResolution = dynamicResolution; self.displays = displays
     self.preferredDisplayId = preferredDisplayId; self.lastConnected = lastConnected
@@ -54,11 +64,13 @@ public struct ScreenSharingMachineSettingsChanges: Equatable, Sendable {
   public var preferredDisplayId: String?
   public var userName: String?
   public var password: Password = .keep
+  public var sound: ScreenSharingMachineSettings.Sound?
 
   public init(
     dynamicResolution: Bool? = nil, preferredDisplayId: String? = nil, userName: String? = nil,
-    password: Password = .keep
+    password: Password = .keep, sound: ScreenSharingMachineSettings.Sound? = nil
   ) {
+    self.sound = sound
     self.dynamicResolution = dynamicResolution; self.preferredDisplayId = preferredDisplayId
     self.userName = userName; self.password = password
   }
@@ -88,6 +100,7 @@ public struct ScreenSharingMachineSettingsDraft: Equatable, Sendable {
     {
       changes.preferredDisplayId = display
     }
+    if let sound = settings.sound, sound != original.sound { changes.sound = sound }
     if let signIn = settings.signIn, let before = original.signIn {
       let userName = signIn.userName.trimmingCharacters(in: .whitespaces)
       if userName != before.userName { changes.userName = userName }
@@ -128,6 +141,7 @@ public struct ScreenSharingMachineSettingsSheet: View {
         }
         if draft.settings.signIn != nil { signIn }
         display
+        if draft.settings.sound != nil { sound }
       }
       .formStyle(.grouped)
       footer
@@ -171,6 +185,28 @@ public struct ScreenSharingMachineSettingsSheet: View {
     if draft.forgettingPassword { return "Will be forgotten" }
     if draft.changingPassword { return "Replacing" }
     return original.signIn?.hasSavedPassword == true ? "Saved" : "Asked when connecting"
+  }
+
+  private var sound: some View {
+    Section("Sound") {
+      Toggle(
+        "Play this machine's sound",
+        isOn: Binding(get: { draft.settings.sound?.enabled ?? false }, set: { draft.settings.sound?.enabled = $0 }))
+      LabeledContent("Volume") {
+        Slider(
+          value: Binding(get: { draft.settings.sound?.volume ?? 1 }, set: { draft.settings.sound?.volume = $0 }),
+          in: 0...1
+        ) {
+          Text("Volume")
+        } minimumValueLabel: {
+          Image(systemName: "speaker.fill")
+        } maximumValueLabel: {
+          Image(systemName: "speaker.wave.3.fill")
+        }
+        .labelsHidden()
+      }
+      .disabled(draft.settings.sound?.enabled != true)
+    }
   }
 
   @ViewBuilder private var display: some View {

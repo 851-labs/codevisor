@@ -21,6 +21,8 @@ final class ScreenSharingPane: Pane {
   private var persistedRevision = 0
   private var persistedResolutionRevision = 0
   private var recordedViewing = false
+  /// The endpoint the machine's sound settings were last applied to.
+  private var soundAppliedTo: ObjectIdentifier?
   private let machineId: String
   /// How the machine is reached and where, for the settings sheet (851-2367).
   private let connection: (kind: String, address: String?)
@@ -52,6 +54,12 @@ final class ScreenSharingPane: Pane {
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
+      // Each new connection plays the machine's sound as its settings say (851-2379).
+      if let endpoint = store.endpoint, let audio = endpoint.audio, self.soundAppliedTo != ObjectIdentifier(endpoint) {
+        self.soundAppliedTo = ObjectIdentifier(endpoint)
+        let saved = ScreenSharingMachinePreferences().sound(machineId: self.machineId)
+        audio.apply(.init(enabled: saved.enabled, volume: saved.volume))
+      }
       // Video arriving is what "last connected" means in the settings sheet.
       let viewing = store.phase == .viewing
       if viewing, !self.recordedViewing {
@@ -81,7 +89,8 @@ final class ScreenSharingPane: Pane {
           machineId: machineId),
       displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
       preferredDisplayId: store?.selectedDisplayId ?? store?.preferences.preferredDisplayId,
-      lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId))
+      lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
+      sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
   }
 
   /// Done in the sheet: Dynamic Resolution applies as the toolbar toggle does (and is saved for
@@ -90,6 +99,10 @@ final class ScreenSharingPane: Pane {
     guard let store else { return }
     if let enabled = changes.dynamicResolution, enabled != store.dynamicResolution {
       store.send(.dynamicResolutionToggled)
+    }
+    if let sound = changes.sound {
+      ScreenSharingMachinePreferences().setSound(enabled: sound.enabled, volume: sound.volume, machineId: machineId)
+      store.endpoint?.audio?.apply(sound)
     }
     if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
   }
