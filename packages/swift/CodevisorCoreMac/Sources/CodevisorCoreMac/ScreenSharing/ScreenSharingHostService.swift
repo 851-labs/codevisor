@@ -315,9 +315,10 @@ final class ScreenSharingHostService {
           guard let self, let session else { return }
           do {
             let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
-            try await self.startCapture(session)
+            try await self.startWatchedCapture(session)
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             session.state = "viewing"
+            session.notice = nil
             session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
             self.indicator.show(display: session.display.name) { [weak self, weak session] in
               guard let self, let session else { return }
@@ -372,8 +373,11 @@ final class ScreenSharingHostService {
     session.cursor?.stop()
     session.peer.close()
     session.captureTask?.cancel()
-    // Capture invalidates its generation; a late startup stops its own stream.
-    try? await session.capture.stop()
+    // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
+    // can hold the stop; the session ends anyway (851-2385).
+    if await !ScreenSharingCaptureStallRecovery.stop({ try await session.capture.stop() }) {
+      Self.logger.error("Capture didn't stop within 3 s; ending the session anyway")
+    }
     indicator.hide()
     session.displaySleepAssertion = nil
     _ = lease.release(session.owner)
@@ -386,25 +390,6 @@ final class ScreenSharingHostService {
       message:
         "Allow Codevisor in System Settings → Privacy & Security → Screen & System Audio Recording on the host Mac, then retry."
     )
-  }
-
-  private static func displays() async throws -> [Display] {
-    try await ScreenSharingCapture.displays().compactMap { display in
-      guard let uuid = CGDisplayCreateUUIDFromDisplayID(display.id)?.takeRetainedValue() else { return nil }
-      let identity = CFUUIDCreateString(nil, uuid) as String
-      let mode = CGDisplayCopyDisplayMode(display.id)
-      let pixelScale = mode.map { Double($0.pixelWidth) / Double(max(1, $0.width)) } ?? 1
-      let name =
-        NSScreen.screens.first {
-          ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.id
-        }?.localizedName ?? "Display"
-      return (
-        display.id,
-        ServerScreenSharingDisplay(
-          id: identity, name: name,
-          width: Int(Double(display.width) * pixelScale), height: Int(Double(display.height) * pixelScale))
-      )
-    }
   }
 
   /// Shared by the system notification adapter and deterministic request-ordering coverage.
@@ -486,7 +471,7 @@ extension ScreenSharingHostService {
       let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
       do {
         try? await session.capture.stop()
-        try await self.startCapture(session)
+        try await self.startWatchedCapture(session)
       } catch {
         guard self.current === session, !session.stopping, !Task.isCancelled else { return }
         Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")
@@ -509,8 +494,19 @@ extension ScreenSharingHostService {
   /// A capture that never delivers is restarted, then `replayd` is (851-2385). Meanwhile the
   /// session reads as connecting, with a notice for the viewer; if nothing helps, the capture
   /// error ends it at the viewer's next heartbeat.
-  private func recoverStalledCapture(_ session: Session, baseline: Int) async {
-    let recovery = ScreenSharingCaptureStallRecovery.live(
+  /// Starts the capture, restarting a wedged `replayd` if the start doesn't return (851-2385).
+  private func startWatchedCapture(_ session: Session) async throws {
+    let recovery = captureRecovery(session)
+    try await recovery.start { [weak self, weak session] retry in
+      guard let self, let session else { throw CancellationError() }
+      // The abandoned attempt may still hold the capture's start; stopping clears it.
+      if retry { try? await session.capture.stop() }
+      try await self.startCapture(session)
+    }
+  }
+
+  private func captureRecovery(_ session: Session) -> ScreenSharingCaptureStallRecovery {
+    ScreenSharingCaptureStallRecovery.live(
       metrics: session.metrics,
       restartCapture: { [weak self, weak session] in
         guard let self, let session, self.current === session, !session.stopping else { throw CancellationError() }
@@ -520,12 +516,16 @@ extension ScreenSharingHostService {
       log: { Self.logger.notice("\($0, privacy: .public)") },
       onStalled: { [weak session] in
         guard let session, !session.stopping else { return }
-        Self.logger.notice("Capture started but delivered nothing; restarting it")
+        Self.logger.notice("Capture stalled (no frames, or a start that didn't return); recovering")
         session.metrics.increment("captureStalls")
         session.control?.revoke("The host's screen capture stalled.")
         session.state = "connecting"
         session.notice = "Capture stalled, restarting…"
       })
+  }
+
+  private func recoverStalledCapture(_ session: Session, baseline: Int) async {
+    let recovery = captureRecovery(session)
     guard let outcome = try? await recovery.run(baseline: baseline), current === session, !session.stopping else {
       return
     }

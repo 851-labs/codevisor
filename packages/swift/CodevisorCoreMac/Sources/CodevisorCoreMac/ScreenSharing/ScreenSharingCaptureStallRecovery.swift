@@ -36,6 +36,9 @@ public struct ScreenSharingCaptureStallRecovery {
   static let daemonRespawn: Duration = .seconds(1)
   /// The shortest time between two `replayd` restarts by this process.
   static let daemonRestartInterval: TimeInterval = 600
+  /// How long starting a capture may take. A wedged `replayd` (on tuftlord, a stopped one) never
+  /// answers, and the start waits forever instead of failing.
+  static let startTimeout: Duration = .seconds(5)
 
   /// Every sample callback the capture has made so far (a counter that only grows).
   var callbacks: () -> Int
@@ -46,14 +49,14 @@ public struct ScreenSharingCaptureStallRecovery {
   /// When `replayd` was last restarted by this process, and the clock to compare with.
   var lastDaemonRestart: () -> TimeInterval?
   var now: () -> TimeInterval
-  var sleep: (Duration) async throws -> Void
+  var sleep: @MainActor (Duration) async throws -> Void
   /// Called once, when the capture is first found stalled.
   var onStalled: () -> Void = {}
 
   init(
     callbacks: @escaping () -> Int, restartCapture: @escaping () async throws -> Void,
     restartDaemon: @escaping () -> Bool, lastDaemonRestart: @escaping () -> TimeInterval?,
-    now: @escaping () -> TimeInterval, sleep: @escaping (Duration) async throws -> Void,
+    now: @escaping () -> TimeInterval, sleep: @escaping @MainActor (Duration) async throws -> Void,
     onStalled: @escaping () -> Void = {}
   ) {
     self.callbacks = callbacks; self.restartCapture = restartCapture; self.restartDaemon = restartDaemon
@@ -99,10 +102,77 @@ public struct ScreenSharingCaptureStallRecovery {
     if try await delivers(after: baseline) { return .healthy }
     onStalled()
     if try await restartDelivers() { return .recovered(restartedDaemon: false) }
-    if let last = lastDaemonRestart(), now() - last < Self.daemonRestartInterval { return .failed }
-    guard restartDaemon() else { return .failed }
+    guard mayRestartDaemon, restartDaemon() else { return .failed }
     try await sleep(Self.daemonRespawn)
     return try await restartDelivers() ? .recovered(restartedDaemon: true) : .failed
+  }
+
+  private var mayRestartDaemon: Bool {
+    guard let last = lastDaemonRestart() else { return true }
+    return now() - last >= Self.daemonRestartInterval
+  }
+
+  /// Starts a capture with `start`, which a wedged `replayd` can leave waiting forever. If it
+  /// hasn't returned within `startTimeout`, the daemon is restarted (same rate limit). The waiting
+  /// start may then complete; if it fails, or is still waiting after `daemonRespawn` (on tuftlord,
+  /// ScreenCaptureKit dropped the killed daemon's reply and the start never returned), it's
+  /// abandoned and `start(true)` runs on the fresh daemon: `true` asks it to reset what the
+  /// abandoned attempt left. Cancelling the caller cancels the start.
+  public func start(_ start: @escaping @MainActor (_ retry: Bool) async throws -> Void) async throws {
+    let attempt = Task { @MainActor in try await start(false) }
+    try await withTaskCancellationHandler {
+      if await Self.finishes(attempt, within: Self.startTimeout, sleep: sleep) { return try await attempt.value }
+      onStalled()
+      guard mayRestartDaemon, restartDaemon() else { return try await attempt.value }
+      if await Self.finishes(attempt, within: Self.daemonRespawn, sleep: sleep), case .success = await attempt.result {
+        return
+      }
+      attempt.cancel()
+      try Task.checkCancellation()
+      try await start(true)
+    } onCancel: {
+      attempt.cancel()
+    }
+  }
+
+  /// Stopping a capture waits on `replayd` too; a wedged daemon must not keep a session from
+  /// ending (and the host busy). Waits for `stop` at most `stopTimeout`, then moves on.
+  static let stopTimeout: Duration = .seconds(3)
+
+  public static func stop(
+    _ stop: @escaping @MainActor () async throws -> Void,
+    sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+  ) async -> Bool {
+    await finishes(Task { @MainActor in try await stop() }, within: stopTimeout, sleep: sleep)
+  }
+
+  /// Whether `task` finishes (either way) before `sleep(timeout)` does.
+  private static func finishes(
+    _ task: Task<Void, any Error>, within timeout: Duration, sleep: @escaping @MainActor (Duration) async throws -> Void
+  ) async -> Bool {
+    let race = Race()
+    return await withCheckedContinuation { continuation in
+      race.continuation = continuation
+      race.timer = Task { @MainActor in
+        guard (try? await sleep(timeout)) != nil else { return }
+        race.finish(false)
+      }
+      Task { @MainActor in
+        _ = await task.result
+        race.finish(true)
+      }
+    }
+  }
+
+  @MainActor private final class Race {
+    var continuation: CheckedContinuation<Bool, Never>?
+    var timer: Task<Void, Never>?
+    func finish(_ value: Bool) {
+      guard let continuation else { return }
+      self.continuation = nil
+      timer?.cancel()
+      continuation.resume(returning: value)
+    }
   }
 
   private func restartDelivers() async throws -> Bool {
