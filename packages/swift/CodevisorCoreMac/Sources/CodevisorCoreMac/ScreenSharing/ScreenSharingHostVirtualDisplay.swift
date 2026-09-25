@@ -38,7 +38,7 @@ final class ScreenSharingHostVirtualDisplay {
   private let mirrored: CGDirectDisplayID
   private let queue = DispatchQueue(label: "codevisor.screen-sharing.virtual-display")
 
-  /// Creates the display at `width`×`height` points and mirrors `physical` onto it.
+  /// Creates the display at `width`×`height` points; `mirror()` then puts `physical` on it.
   init(width: Int, height: Int, mirroring physical: CGDirectDisplayID) throws {
     guard Self.isAvailable else { throw ScreenSharingError.unavailable("This Mac can't create a virtual display.") }
     let descriptor = CGVirtualDisplayDescriptor()
@@ -61,7 +61,18 @@ final class ScreenSharingHostVirtualDisplay {
     let size = Self.clamp(width: width, height: height)
     self.size = size
     try apply(size)
-    try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, physical, self.displayID) }
+  }
+
+  /// Mirrors the physical display onto this one once WindowServer has it online: mirroring a
+  /// display that isn't online yet fails (it did in the app on tuftlord, 851-2376).
+  func mirror() async throws {
+    for _ in 0..<60 where CGDisplayIsOnline(displayID) == 0 || CGDisplayPixelsWide(displayID) == 0 {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    guard CGDisplayIsOnline(displayID) != 0 else {
+      throw ScreenSharingError.unavailable("The virtual display didn't come online.")
+    }
+    try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, mirrored, displayID) }
   }
 
   /// Resizes the display (and so the mirrored physical one) to `width`×`height` points.
