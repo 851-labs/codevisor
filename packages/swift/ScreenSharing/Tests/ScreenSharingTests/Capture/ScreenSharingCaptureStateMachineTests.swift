@@ -230,6 +230,46 @@
       #expect(fixture.stream.calls == [.stop, .start, .stop])
     }
 
+    /// tuftlord over Tailscale (851-2379): the viewer's audio subscription arrived while the capture
+    /// was starting; restarting for audio stopped the stream and cancelled the start, ending every
+    /// session. The change now waits for the start, then restarts with audio.
+    @Test func turningAudioOnDuringAHeldStartWaitsForItThenRestartsWithAudio() async throws {
+      let fixture = CaptureFixture()
+      let held = CaptureGate()
+      fixture.stream.holdStart = held
+      let start = Task { @MainActor in try await fixture.start() }
+      await held.entered.wait()
+      // Only the first start is held; any later one runs straight through.
+      fixture.stream.holdStart = nil
+      let waiting = TestSignal()
+      fixture.capture.onWaitingForStart = { waiting.signal() }
+      let audio = Task { @MainActor in try await fixture.capture.setCapturesAudio(true) }
+      await waiting.wait()
+      #expect(fixture.stream.calls.isEmpty)
+      held.release()
+      try await start.value
+      try await audio.value
+      #expect(fixture.stream.calls == [.start, .stop, .start])
+      #expect(fixture.target.settings?.capturesAudio == true)
+    }
+
+    @Test func showingTheCursorDuringAHeldStartUpdatesTheStreamOnceItRuns() async throws {
+      let fixture = CaptureFixture()
+      let held = CaptureGate()
+      fixture.stream.holdStart = held
+      let start = Task { @MainActor in try await fixture.start() }
+      await held.entered.wait()
+      let waiting = TestSignal()
+      fixture.capture.onWaitingForStart = { waiting.signal() }
+      let cursor = Task { @MainActor in try await fixture.capture.setShowsCursor(false) }
+      await waiting.wait()
+      held.release()
+      try await start.value
+      try await cursor.value
+      #expect(fixture.stream.calls == [.start, .update])
+      #expect(fixture.stream.updated?.showsCursor == false)
+    }
+
     // MARK: A source that goes away
 
     @Test func aStreamErrorIsReportedOnceAndOnlyForTheGenerationThatIsStillLive() async throws {
