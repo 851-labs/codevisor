@@ -161,53 +161,25 @@ struct ComputerUsePiPOverlay: View {
 
   /// Right-click and control-click. Controls the card only; stopping the
   /// agent stays in the menu bar.
-  @ViewBuilder
   private var contextMenu: some View {
-    if !model.isRemote {
-      Button {
-        model.activateTarget()
-      } label: {
-        menuLabel("Show \(model.title)", "macwindow")
-      }
-      .disabled(!model.canActivateTarget)
-    }
-    Button {
-      model.reload()
-    } label: {
-      menuLabel("Refresh", "arrow.clockwise")
-    }
-    .disabled(!model.canReload)
-    Divider()
-    Picker(
-      selection: Binding(
-        get: { model.corner },
-        set: { corner in withAnimation(snapAnimation) { model.corner = corner } }
+    let model = model
+    let snap = snapAnimation
+    return ComputerUsePiPContextMenu(
+      title: model.title,
+      showsTarget: !model.isRemote,
+      canActivateTarget: model.canActivateTarget,
+      canReload: model.canReload,
+      corner: model.corner,
+      hasCustomSize: model.hasCustomSize,
+      actions: .init(
+        activateTarget: { model.activateTarget() },
+        reload: { model.reload() },
+        move: { corner in withAnimation(snap) { model.corner = corner } },
+        resetSize: { withAnimation(snap) { model.resetSize() } },
+        close: { model.dismiss() }
       )
-    ) {
-      ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
-        menuLabel(corner.title, corner.systemImage).tag(corner)
-      }
-    } label: {
-      menuLabel("Move to", "arrow.up.and.down.and.arrow.left.and.right")
-    }
-    .pickerStyle(.menu)
-    Button {
-      withAnimation(snapAnimation) { model.resetSize() }
-    } label: {
-      menuLabel("Reset Size", "arrow.down.right.and.arrow.up.left")
-    }
-    .disabled(!model.hasCustomSize)
-    Divider()
-    Button {
-      model.dismiss()
-    } label: {
-      menuLabel("Close", "xmark")
-    }
-  }
-
-  /// macOS menus drop a label's icon unless the style asks for it.
-  private func menuLabel(_ title: String, _ systemImage: String) -> some View {
-    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
+    )
+    .equatable()
   }
 
   /// The on-screen pointer scaled by the card's zoom of the window.
@@ -376,5 +348,60 @@ extension ComputerUseLivePreviewResizeHandle {
     case .bottomLeading: .bottomLeading
     case .bottomTrailing: .bottomTrailing
     }
+  }
+}
+
+/// The card's context menu, built from plain values rather than the model.
+/// The card re-renders with every streamed frame, and rebuilding the menu
+/// that often closes an open submenu, so it redraws only when what it shows
+/// changes.
+private struct ComputerUsePiPContextMenu: View, Equatable {
+  struct Actions {
+    let activateTarget: () -> Void
+    let reload: () -> Void
+    let move: (ComputerUseLivePreviewCorner) -> Void
+    let resetSize: () -> Void
+    let close: () -> Void
+  }
+
+  let title: String
+  let showsTarget: Bool
+  let canActivateTarget: Bool
+  let canReload: Bool
+  let corner: ComputerUseLivePreviewCorner
+  let hasCustomSize: Bool
+  let actions: Actions
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.title == rhs.title && lhs.showsTarget == rhs.showsTarget
+      && lhs.canActivateTarget == rhs.canActivateTarget && lhs.canReload == rhs.canReload
+      && lhs.corner == rhs.corner && lhs.hasCustomSize == rhs.hasCustomSize
+  }
+
+  var body: some View {
+    if showsTarget {
+      Button(action: actions.activateTarget) { label("Show \(title)", "macwindow") }
+        .disabled(!canActivateTarget)
+    }
+    Button(action: actions.reload) { label("Refresh", "arrow.clockwise") }
+      .disabled(!canReload)
+    Divider()
+    Picker(selection: Binding(get: { corner }, set: actions.move)) {
+      ForEach(ComputerUseLivePreviewCorner.allCases, id: \.self) { corner in
+        label(corner.title, corner.systemImage).tag(corner)
+      }
+    } label: {
+      label("Move to", "arrow.up.and.down.and.arrow.left.and.right")
+    }
+    .pickerStyle(.menu)
+    Button(action: actions.resetSize) { label("Reset Size", "arrow.down.right.and.arrow.up.left") }
+      .disabled(!hasCustomSize)
+    Divider()
+    Button(action: actions.close) { label("Close", "xmark") }
+  }
+
+  /// macOS menus drop a label's icon unless the style asks for it.
+  private func label(_ title: String, _ systemImage: String) -> some View {
+    Label(title, systemImage: systemImage).labelStyle(.titleAndIcon)
   }
 }
