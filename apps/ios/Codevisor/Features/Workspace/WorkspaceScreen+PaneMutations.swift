@@ -20,6 +20,7 @@ extension WorkspaceScreen {
       worktreeName: rootSession?.worktreeName,
       cwd: workspaceCwd
     )
+    convertedChatFocusRequest = (chatSessionId: chat.id, request: UUID())
     var state = panes
     let converted = state.convertNewTabPane(
       id: pane.id, to: .chat, sessionId: workspaceSessionId, chatSessionId: chat.id

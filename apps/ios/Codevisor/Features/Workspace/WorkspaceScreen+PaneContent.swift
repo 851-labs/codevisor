@@ -36,9 +36,14 @@ extension WorkspaceScreen {
       session: { session(for: $0) },
       projectList: environment.projectList,
       showsRunPickers: isDraft && !presentsAsStarted,
-      initialComposerFocusRequest: initialComposerFocusRequest,
-      onInitialComposerFocusRequestFulfilled:
-        onInitialComposerFocusRequestFulfilled,
+      initialComposerFocusRequest: composerFocusRequest(for: pane),
+      onInitialComposerFocusRequestFulfilled: { request in
+        if convertedChatFocusRequest?.request == request {
+          convertedChatFocusRequest = nil
+        } else {
+          onInitialComposerFocusRequestFulfilled?(request)
+        }
+      },
       transcriptPresentationRole: transcriptPresentationRole,
       onSendAnimationCompleted: onSendAnimationCompleted,
       onSendAnimationStarted: onSendAnimationStarted,
@@ -66,6 +71,15 @@ extension WorkspaceScreen {
     // BrowserPaneView extends its page separately so its floating controls
     // retain the home-indicator and keyboard safe areas.
     .ignoresSafeArea(.container, edges: pane.kind == .plugin ? .bottom : [])
+  }
+
+  /// A chat the New Tab page just created focuses its composer, like the
+  /// New Chat sheet; every other pane keeps Home's request.
+  func composerFocusRequest(for pane: PaneDescriptorState) -> UUID? {
+    if let pending = convertedChatFocusRequest, pane.chatSessionId == pending.chatSessionId {
+      return pending.request
+    }
+    return initialComposerFocusRequest
   }
 
   func browserPaneModel(for pane: PaneDescriptorState) -> BrowserPaneModel {

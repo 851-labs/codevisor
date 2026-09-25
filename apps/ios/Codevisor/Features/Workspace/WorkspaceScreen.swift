@@ -108,6 +108,9 @@ struct WorkspaceScreen: View {
   /// Stands in for the session id a draft doesn't have yet, so its pane
   /// group can exist (and keep a STABLE pane id) from the first frame.
   @State var draftPlaceholderId = UUID()
+  /// One-shot keyboard focus for a chat just created from the New Tab
+  /// page, keyed by that chat's session id so only its composer takes it.
+  @State var convertedChatFocusRequest: (chatSessionId: UUID, request: UUID)?
 
   /// This workspace's chat: the routed one, or the one a draft's first send
   /// created. Nil only while an unsent draft.
