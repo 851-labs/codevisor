@@ -142,6 +142,43 @@ struct ScreenSharingPeerLoopbackTests {
     await harness.awaitClosed()
   }
 
+  /// The pointer as its own stream (851-2377): a viewer that draws it subscribes once the
+  /// channel opens, and the host's shape and position arrive as sized, normalized updates.
+  @Test func aViewerThatDrawsThePointerSubscribesAndReceivesIt() async throws {
+    let harness = try Harness()
+    defer { harness.close() }
+    let subscribed = TestSignal()
+    let updated = TestSignal()
+    var updates: [ScreenSharingCursorUpdate] = []
+    harness.sender.cursorChannel.onMessage = { if case .subscribe = $0 { subscribed.signal() } }
+    harness.receiver.onCursorChanged = {
+      updates.append($0)
+      updated.signal()
+    }
+    try await harness.negotiate()
+    await subscribed.wait()
+    #expect(harness.receiver.videoShowsPointer, "the video keeps the pointer until the host sends one")
+    let png = try #require(
+      ScreenSharingCursorImage.png(pixelWidth: 2, pixelHeight: 2) { context in
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+      })
+    let image = ScreenSharingCursorImage(png: png, hotspotX: 1, hotspotY: 1, width: 0.01, height: 0.02)
+    #expect(harness.sender.cursorChannel.send(.shape(image)))
+    #expect(harness.sender.cursorChannel.send(.position(ScreenSharingPointer(x: 0.5, y: 0.25))))
+    await updated.wait(for: 2)
+    let shape = try #require(image.shape())
+    #expect(
+      updates == [
+        .sizedShape(shape, width: 0.01, height: 0.02), .normalizedPosition(ScreenSharingPointer(x: 0.5, y: 0.25)),
+      ])
+    #expect(!harness.receiver.videoShowsPointer)
+    // A viewer that starts listening later gets the latest shape and position at once.
+    var replayed: [ScreenSharingCursorUpdate] = []
+    harness.receiver.onCursorChanged = { replayed.append($0) }
+    #expect(replayed == updates)
+  }
+
   @Test func negotiationRefusesUnsupportedDescriptionsAndAnythingAfterClose() async throws {
     let source = try Harness()
     defer { source.close() }
@@ -202,6 +239,7 @@ struct ScreenSharingPeerLoopbackTests {
     // Direct LAN is the default: no relay credentials are embedded anywhere.
     #expect(configuration.iceServers.isEmpty && configuration.iceTransportPolicy == .all)
     #expect(!staged.controlChannel.isAvailable && !staged.clipboardChannel.isAvailable)
+    #expect(!staged.cursorChannel.isAvailable)
     #expect(!staged.videoRefresh.isAvailable)
     // Trials are pinned before any RTC object exists, and the pin is published.
     #expect(metrics.snapshot().labels["fieldTrialProvenance"] != nil)

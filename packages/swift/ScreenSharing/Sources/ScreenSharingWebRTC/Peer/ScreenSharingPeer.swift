@@ -25,6 +25,8 @@ public class ScreenSharingPeer {
   public let metrics: ScreenSharingMetrics
   public let controlChannel: ScreenSharingControlChannel
   public let clipboardChannel: ScreenSharingClipboardChannel
+  /// The host's pointer (851-2377); a peer without it never opens this channel.
+  public let cursorChannel: ScreenSharingCursorChannel
   public var onConnectionChanged: ((String) -> Void)?
   let factory: RTCPeerConnectionFactory
   let codecFactory: ScreenSharingCodecFactory
@@ -45,6 +47,7 @@ public class ScreenSharingPeer {
     connection = staged.connection
     controlChannel = staged.controlChannel
     clipboardChannel = staged.clipboardChannel
+    cursorChannel = staged.cursorChannel
     videoRefresh = staged.videoRefresh
     videoRefresh.onMessage = { [weak self] message in
       guard let self, !self.closed else { return }
@@ -180,6 +183,7 @@ public class ScreenSharingPeer {
     willClose()
     videoRefresh.close()
     clipboardChannel.close()
+    cursorChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
     connection.close()
@@ -228,6 +232,7 @@ struct ScreenSharingPeerStaging {
   let connection: RTCPeerConnection
   let controlChannel: ScreenSharingControlChannel
   let clipboardChannel: ScreenSharingClipboardChannel
+  let cursorChannel: ScreenSharingCursorChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
   init(
@@ -274,5 +279,10 @@ struct ScreenSharingPeerStaging {
     videoRefresh = try ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>(
       connection: connection, id: 4, label: "codevisor.video-refresh.v1",
       encode: { $0.encoded() }, decode: ScreenSharingVideoRefreshMessage.decode)
+    // Negotiated like the others, before the offer: no renegotiation, and an older peer that
+    // doesn't create stream 6 simply never answers on it.
+    cursorChannel = try ScreenSharingCursorChannel(
+      connection: connection, id: 6, label: "codevisor.cursor.v1", limits: .cursor,
+      encode: { try $0.encoded() }, decode: ScreenSharingCursorMessage.decode)
   }
 }

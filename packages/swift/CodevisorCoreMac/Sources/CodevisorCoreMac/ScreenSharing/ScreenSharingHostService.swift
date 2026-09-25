@@ -36,6 +36,8 @@ final class ScreenSharingHostService {
     /// Held from the first captured frame's session start until the session ends (851-2375).
     var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
     var captureRestarts = ScreenSharingCaptureRestartPolicy()
+    /// The pointer as its own stream, once the viewer subscribed (851-2377).
+    var cursor: ScreenSharingCursorPublisher?
     var control: ScreenSharingHostControl?
     var clipboard: ScreenSharingClipboardTransfer?
     var stopping = false
@@ -295,6 +297,7 @@ final class ScreenSharingHostService {
       if !available { control?.revoke("The control channel closed.") }
     }
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
+    configureCursor(session)
 
     session.capture.onStopped = { [weak self, weak session] message in
       guard let self, let session else { return }
@@ -361,6 +364,7 @@ final class ScreenSharingHostService {
     )
     session.watchdog?.cancel()
     session.qualityTask?.cancel()
+    session.cursor?.stop()
     session.peer.close()
     session.captureTask?.cancel()
     // Capture invalidates its generation; a late startup stops its own stream.
@@ -424,6 +428,35 @@ final class ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  /// A viewer that draws the pointer itself subscribes on the cursor channel (851-2377): the
+  /// capture leaves the pointer out and the publisher streams it. If the channel goes, the
+  /// pointer goes back into the video. An older viewer never subscribes.
+  private func configureCursor(_ session: Session) {
+    let displayID = session.displayID
+    let channel = session.peer.cursorChannel
+    channel.onMessage = { [weak session, weak channel] message in
+      guard case .subscribe = message, let session, let channel, !session.stopping, session.cursor == nil else {
+        return
+      }
+      let publisher = ScreenSharingCursorPublisher(
+        bounds: { ScreenSharingCursorPublisher.displayArea(displayID) },
+        scale: { ScreenSharingCursorPublisher.displayScale(displayID) },
+        send: { [weak channel] in channel?.send($0) ?? false })
+      session.cursor = publisher
+      session.metrics.label("cursorStream", "on")
+      publisher.start()
+      Task { try? await session.capture.setShowsCursor(false) }
+    }
+    channel.onAvailabilityChanged = { [weak session] available in
+      guard !available, let session, let publisher = session.cursor else { return }
+      publisher.stop()
+      session.cursor = nil
+      session.metrics.label("cursorStream", "closed")
+      guard !session.stopping else { return }
+      Task { try? await session.capture.setShowsCursor(true) }
+    }
+  }
+
   /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
   /// session, a bounded number of times, with the viewer told why the picture paused.
   private func captureStopped(_ session: Session, message: String) {

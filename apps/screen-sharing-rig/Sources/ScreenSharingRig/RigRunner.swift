@@ -34,6 +34,8 @@
     var metalView: ScreenSharingMetalView?
     var frameSize: CGSize?
     var sourceStarted = false
+    /// The pointer as its own stream once the viewer subscribed (851-2377); display-backed sources only.
+    var cursor: ScreenSharingCursorPublisher?
 
     /// The host role's frame sender; the host runner only creates sender sessions.
     var frameSender: ScreenSharingFrameSender {
@@ -85,6 +87,8 @@
       guard !closed else { return }
       closed = true
       stateContinuation.finish()
+      cursor?.stop()
+      cursor = nil
       await stopSource()
       metalView?.stop()
       metalView?.removeFromSuperview()

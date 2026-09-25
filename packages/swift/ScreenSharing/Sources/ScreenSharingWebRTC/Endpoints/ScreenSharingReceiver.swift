@@ -37,6 +37,10 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       throw ScreenSharingError.unavailable("Cannot create screen video receiver.")
     }
     codecFactory.refreshSignal.request()
+    cursorChannel.onMessage = { [weak self] in self?.receiveCursor($0) }
+    cursorChannel.onAvailabilityChanged = { [weak self] available in
+      if available { self?.subscribeToCursor() }
+    }
   }
 
   // MARK: ScreenSharingViewingSession
@@ -46,6 +50,48 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   public var control: (any ScreenSharingMessageChannel<ScreenSharingControlMessage>)? { controlChannel }
   public var clipboard: (any ScreenSharingMessageChannel<ScreenSharingClipboardMessage>)? { clipboardChannel }
   public var failure: String? { metrics.snapshot().labels["decoderError"] }
+
+  /// The host's pointer arrives on its own channel once the host answered `subscribe`
+  /// (851-2377); from then on the video no longer shows it.
+  public private(set) var videoShowsPointer = true
+  /// Setting it asks the host for the pointer: only a viewer that draws it subscribes, so one
+  /// that doesn't (the rig's measuring viewer) keeps the pointer in the video.
+  public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
+    didSet {
+      subscribeToCursor()
+      // Replay what arrived before the viewer listened.
+      if let shape = lastCursorShape { onCursorChanged?(shape) }
+      if let position = lastCursorPosition { onCursorChanged?(position) }
+    }
+  }
+  private var lastCursorShape: ScreenSharingCursorUpdate?
+  private var lastCursorPosition: ScreenSharingCursorUpdate?
+  private var subscribedToCursor = false
+
+  private func subscribeToCursor() {
+    guard onCursorChanged != nil, !subscribedToCursor, cursorChannel.isAvailable else { return }
+    subscribedToCursor = cursorChannel.send(.subscribe)
+  }
+
+  private func receiveCursor(_ message: ScreenSharingCursorMessage) {
+    switch message {
+    case .subscribe:
+      return
+    case .shape(let image):
+      guard let shape = image.shape() else {
+        metrics.increment("cursorShapesRejected")
+        return
+      }
+      videoShowsPointer = false
+      let update = ScreenSharingCursorUpdate.sizedShape(shape, width: image.width, height: image.height)
+      lastCursorShape = update
+      onCursorChanged?(update)
+    case .position(let pointer):
+      let update = ScreenSharingCursorUpdate.normalizedPosition(pointer)
+      lastCursorPosition = update
+      onCursorChanged?(update)
+    }
+  }
 
   // MARK: Diagnostics
 

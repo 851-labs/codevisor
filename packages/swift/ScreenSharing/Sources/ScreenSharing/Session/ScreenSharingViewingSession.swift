@@ -17,11 +17,18 @@ public struct ScreenSharingCapabilities: OptionSet, Sendable, Hashable {
 }
 
 /// The remote pointer, for a backend that reports it separately from the
-/// frames (VNC's Cursor and PointerPos pseudo-encodings): its shape, drawn
-/// locally, and where the host moved it, in video pixels.
+/// frames (VNC's Cursor and PointerPos pseudo-encodings, the native cursor
+/// stream): its shape, drawn locally, and where the host moved it.
 public enum ScreenSharingCursorUpdate: Sendable, Equatable {
+  /// A shape whose pixels are video pixels (VNC).
   case shape(RFBCursorShape)
+  /// Where the host moved the pointer, in video pixels (VNC).
   case position(RFBPoint)
+  /// A shape drawn `width` × `height` of the display's size, whatever its pixel count (the native
+  /// stream, 851-2377): a HiDPI pointer stays sharp and in proportion at any video resolution.
+  case sizedShape(RFBCursorShape, width: Double, height: Double)
+  /// Where the pointer is, normalized in the display; nil when it's off it (the native stream).
+  case normalizedPosition(ScreenSharingPointer?)
 }
 
 /// One live media session as the viewer sees it: decoded frames land in
