@@ -441,6 +441,10 @@ public extension CodevisorServerClienting {
     throw CodevisorServerClientError.invalidResponse
   }
 
+  func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata {
+    throw CodevisorServerClientError.invalidResponse
+  }
+
   func filePreview(id: String) async throws -> Data { throw CodevisorServerClientError.invalidResponse }
   func filePreview(path: String, sessionId: UUID?) async throws -> Data {
     throw CodevisorServerClientError.invalidResponse

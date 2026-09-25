@@ -232,7 +232,8 @@ final class SessionStore {
       },
       serverClient: environment.machines.client(for: session.serverId),
       machines: environment.machines,
-      notificationDelivery: notificationDelivery
+      notificationDelivery: notificationDelivery,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.transcriptCache = environment.transcriptCache
     controller.configureExistingSession(session)

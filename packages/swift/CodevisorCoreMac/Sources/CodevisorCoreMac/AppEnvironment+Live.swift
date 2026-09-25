@@ -27,12 +27,21 @@ extension AppEnvironment {
         supportDirectory: CodevisorAppVariant.serverDataDirectoryURL()
       )
     )
+    let composerDrafts = ComposerDraftStore(
+      store: store,
+      attachmentFiles: ComposerAttachmentFileStore(
+        root: CodevisorAppVariant.applicationSupportURL()
+          .appendingPathComponent("ComposerAttachments", isDirectory: true)
+      )
+    )
+    // No composer exists yet: anything staged but undrafted is a leftover.
+    composerDrafts.removeUnreferencedAttachmentFiles()
     return AppEnvironment(
       navigationPersistence: store,
       transcriptCache: .shared,
       configCache: ConfigOptionCache(store: store),
       composerDefaults: ComposerDefaultsStore(store: store),
-      composerDrafts: ComposerDraftStore(store: store),
+      composerDrafts: composerDrafts,
       settings: settings,
       machineStore: store,
       machineCredentialStore: KeychainMachineCredentialStore.shared,

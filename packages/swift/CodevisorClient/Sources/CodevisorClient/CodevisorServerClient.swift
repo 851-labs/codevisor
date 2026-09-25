@@ -118,9 +118,24 @@ public protocol ServerRequestTransport: Sendable {
   func stream(
     for request: URLRequest
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>)
+
+  /// Sends `fileURL`'s contents as the request body without loading the
+  /// file into memory, buffering the (small) response.
+  func upload(for request: URLRequest, fromFile fileURL: URL) async throws -> (Data, HTTPURLResponse)
 }
 
 extension ServerRequestTransport {
+  /// Default for fakes: reads the file into the body. Real transports
+  /// stream it instead.
+  public func upload(
+    for request: URLRequest,
+    fromFile fileURL: URL
+  ) async throws -> (Data, HTTPURLResponse) {
+    var request = request
+    request.httpBody = try Data(contentsOf: fileURL)
+    return try await data(for: request)
+  }
+
   /// Default: buffer via `data(for:)` and yield the body as one chunk.
   public func stream(
     for request: URLRequest
@@ -145,6 +160,17 @@ public struct URLSessionRequestTransport: ServerRequestTransport {
 
   public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let (data, response) = try await session.data(for: request)
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw CodevisorServerClientError.invalidResponse
+    }
+    return (data, httpResponse)
+  }
+
+  public func upload(
+    for request: URLRequest,
+    fromFile fileURL: URL
+  ) async throws -> (Data, HTTPURLResponse) {
+    let (data, response) = try await session.upload(for: request, fromFile: fileURL)
     guard let httpResponse = response as? HTTPURLResponse else {
       throw CodevisorServerClientError.invalidResponse
     }
@@ -422,6 +448,27 @@ public final class CodevisorServerClient: CodevisorServerClienting, @unchecked S
       throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)
     }
     return (data, httpResponse)
+  }
+
+  /// Sibling of `performRaw` whose body streams from a file, so an upload's
+  /// size never becomes the app's memory footprint.
+  func performUpload(
+    _ path: String,
+    fileURL: URL,
+    contentType: String
+  ) async throws -> Data {
+    try await waitForServerIfNeeded(path: path)
+    var request = URLRequest(url: try url(for: path))
+    request.httpMethod = "POST"
+    applyAuthorization(to: &request)
+    request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+
+    let (data, httpResponse) = try await requestTransport.upload(for: request, fromFile: fileURL)
+    guard (200..<300).contains(httpResponse.statusCode) else {
+      let message = String(data: data, encoding: .utf8) ?? ""
+      throw CodevisorServerClientError.httpStatus(httpResponse.statusCode, message)
+    }
+    return data
   }
 
   /// Lifecycle requests are what establish/re-establish readiness and must

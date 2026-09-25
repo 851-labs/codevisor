@@ -125,6 +125,8 @@ extension SessionController {
       await applyPendingRuntimeConfiguration(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
+      // The message holds server refs now; the staged copies are spent.
+      releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }
@@ -152,6 +154,8 @@ extension SessionController {
       await applyPendingRuntimeConfiguration(to: model)
       await applyPendingGoal(to: model)
       await model.send(outgoingMessage)
+      // The message holds server refs now; the staged copies are spent.
+      releaseStagedFiles(of: staged)
       if pendingUserMessage?.id == outgoingMessage.id {
         pendingUserMessage = nil
       }

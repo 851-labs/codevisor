@@ -1,8 +1,9 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// A file staged in the composer: bytes held locally for instant thumbnails,
-/// uploaded eagerly so send only has to collect the server refs.
+/// A file staged in the composer: copied into the app's attachment folder
+/// (see `ComposerAttachmentFileStore`) for thumbnails and retries, uploaded
+/// eagerly so send only has to collect the server refs.
 public struct ComposerAttachment: Identifiable, Equatable {
   public enum State: Equatable {
     /// The paste/drop provider has been accepted, but its bytes have not
@@ -18,8 +19,31 @@ public struct ComposerAttachment: Identifiable, Equatable {
   public var name: String
   public var mimeType: String
   public var kind: Attachment.Kind
-  public var localData: Data
+  /// The staged copy every upload reads; nil while the bytes are still
+  /// arriving, or when they never could be read.
+  public var fileURL: URL?
+  /// A small JPEG rendition of a staged image. The sent message shows it
+  /// locally once the staged file itself is gone.
+  public var sentPreviewData: Data?
   public var state: State
+
+  public init(
+    id: UUID,
+    name: String,
+    mimeType: String,
+    kind: Attachment.Kind,
+    fileURL: URL? = nil,
+    sentPreviewData: Data? = nil,
+    state: State
+  ) {
+    self.id = id
+    self.name = name
+    self.mimeType = mimeType
+    self.kind = kind
+    self.fileURL = fileURL
+    self.sentPreviewData = sentPreviewData
+    self.state = state
+  }
 
   public var isImage: Bool { kind == .image }
 

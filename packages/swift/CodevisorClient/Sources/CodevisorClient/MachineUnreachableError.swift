@@ -33,6 +33,10 @@ struct UnreachableRequestTransport: ServerRequestTransport {
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
     throw MachineUnreachableError(machineId: machineId)
   }
+
+  func upload(for request: URLRequest, fromFile fileURL: URL) async throws -> (Data, HTTPURLResponse) {
+    throw MachineUnreachableError(machineId: machineId)
+  }
 }
 
 struct UnreachableWebSocketTransport: ServerWebSocketTransport {

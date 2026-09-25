@@ -21,6 +21,10 @@ extension ServerSessionTransport {
     try await client.uploadFile(name: name, mimeType: mimeType, data: data)
   }
 
+  public func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata {
+    try await client.uploadFile(name: name, mimeType: mimeType, fileURL: fileURL)
+  }
+
   public func fileData(id: String) async throws -> Data {
     try await client.fileData(id: id)
   }

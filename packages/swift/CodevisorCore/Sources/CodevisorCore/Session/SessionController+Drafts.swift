@@ -10,13 +10,13 @@ extension SessionController {
       projectServerId: project.serverId,
       composerText: composerText,
       attachments: composerAttachments.compactMap {
-        guard $0.state != .loading else { return nil }
+        guard $0.state != .loading, let fileURL = $0.fileURL else { return nil }
         return ComposerDraftStore.DraftAttachment(
           id: $0.id,
           name: $0.name,
           mimeType: $0.mimeType,
           kind: $0.kind.rawValue,
-          localData: $0.localData
+          fileURL: fileURL
         )
       },
       selectedHarnessId: selectedHarnessId,
@@ -39,7 +39,7 @@ extension SessionController {
         name: $0.name,
         mimeType: $0.mimeType,
         kind: Attachment.Kind(rawValue: $0.kind) ?? .file,
-        localData: $0.localData,
+        fileURL: $0.fileURL,
         state: .uploading
       )
     }
@@ -74,8 +74,9 @@ extension SessionController {
     }
 
     // Server file ids are not assumed to survive indefinitely. Re-upload
-    // the persisted local bytes and produce fresh refs for the next send.
+    // the staged files and produce fresh refs for the next send.
     reuploadAllAttachments()
+    for attachment in composerAttachments { prepareSentPreview(for: attachment) }
   }
 
   func draftDidChange() {

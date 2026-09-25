@@ -47,7 +47,8 @@ extension SessionStore {
       ),
       serverClient: environment.machines.client(for: project.serverId),
       machines: environment.machines,
-      notificationDelivery: notificationDelivery
+      notificationDelivery: notificationDelivery,
+      attachmentFiles: environment.composerDrafts.attachmentFiles
     )
     controller.applyComposerDefaults()
     if let persisted = environment.composerDrafts.paneDraft(forPane: paneId) {

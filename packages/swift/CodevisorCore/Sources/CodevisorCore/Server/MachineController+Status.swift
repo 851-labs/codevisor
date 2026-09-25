@@ -18,7 +18,8 @@ extension MachineController {
         cloudDeviceId: info.cloudDeviceId,
         route: routeInUse(forMachineId: id),
         serverId: info.id,
-        features: Set(info.features ?? [])
+        features: Set(info.features ?? []),
+        maxUploadBytes: info.maxUploadBytes
       )
       connection.dataUpgradeProgress = nil
       // Persist the direct↔cloud link on the record itself: dedup and
@@ -143,7 +144,8 @@ extension MachineController {
       cloudDeviceId: info.cloudDeviceId,
       route: .relay,
       serverId: info.id,
-      features: Set(info.features ?? [])
+      features: Set(info.features ?? []),
+      maxUploadBytes: info.maxUploadBytes
     )
   }
 

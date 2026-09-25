@@ -1,6 +1,7 @@
 import ACPKit
 import Foundation
 import Testing
+import CodevisorTestSupport
 
 @testable import CodevisorCore
 
@@ -90,6 +91,7 @@ struct ComposerAttachmentRetargetTests {
       id: id, name: "drop.png", mimeType: "image/png", kind: .image,
       data: Data([0x89, 0x50, 0x4E, 0x47])
     )
+    await controller.awaitStaged()
     let sent = await controller.collectAttachmentsForSend()
 
     #expect(sent?.map(\.fileId) == ["b:drop.png"])
@@ -155,7 +157,14 @@ private final class UploadRecordingClient: @unchecked Sendable {
 }
 
 extension SessionController {
+  /// Pasted bytes are written to the attachment folder before their
+  /// upload starts; wait for both.
   fileprivate func awaitUploads() async {
+    await awaitStaged()
     for task in uploadTasks.values { await task.value }
+  }
+
+  fileprivate func awaitStaged() async {
+    await awaitObserved { !self.composerAttachments.contains { $0.state == .loading } }
   }
 }

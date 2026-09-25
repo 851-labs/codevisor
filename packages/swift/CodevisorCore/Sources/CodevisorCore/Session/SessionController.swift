@@ -57,6 +57,9 @@ final public class SessionController {
   /// transcript thumbnails render from the first frame of the send instead
   /// of after a server round trip. See `filePreview(for:)`.
   @ObservationIgnored var sentAttachmentPreviews = SentAttachmentPreviews()
+  /// Where this composer stages its attachments. Shared with the draft
+  /// store, which persists references into it.
+  public let attachmentFiles: ComposerAttachmentFileStore
   public internal(set) var harnesses: [ServerHarness] = []
   public internal(set) var preparationState: PreparationState = .loading
   /// True while the draft's model, mode, and harness capabilities are being
@@ -349,9 +352,11 @@ final public class SessionController {
     composerDefaultsScope: ComposerDefaultsStore.Scope? = nil,
     serverClient: (any CodevisorServerClienting)? = nil,
     machines: MachineController? = nil,
-    notificationDelivery: (any ChatNotificationDelivering)? = nil
+    notificationDelivery: (any ChatNotificationDelivering)? = nil,
+    attachmentFiles: ComposerAttachmentFileStore = .temporary()
   ) {
     self.project = project
+    self.attachmentFiles = attachmentFiles
     self.configCache = configCache
     self.composerDefaults = composerDefaults
     self.composerDefaultsScope =

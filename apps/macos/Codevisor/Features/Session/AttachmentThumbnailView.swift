@@ -6,10 +6,10 @@ import UniformTypeIdentifiers
 
 // MARK: - Quick Look presentation
 
-/// What Quick Look is showing: bytes already on hand (composer drafts) or a
+/// What Quick Look is showing: a staged file on hand (composer drafts) or a
 /// remote file fetched from the session's server (history or a live path).
 enum QuickLookItem: Equatable {
-  case local(data: Data, name: String, mimeType: String)
+  case local(fileURL: URL, name: String, mimeType: String)
   case remote(source: PreviewFile.Source, name: String, mimeType: String)
 
   var name: String {

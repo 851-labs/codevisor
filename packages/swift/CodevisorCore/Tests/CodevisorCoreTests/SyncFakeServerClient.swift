@@ -18,6 +18,7 @@ struct FakeWorkspaceSnapshot: Sendable {
 final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable {
   var _infoCloudDeviceId: String?
   var _infoFeatures: [String]?
+  var _infoMaxUploadBytes: Int?
   /// Tests that need capability responses (or to delay them) install one.
   var capabilitiesHandler: (@Sendable (String) async throws -> ServerCapabilities)?
   var resolvedCapabilitiesHandler: (@Sendable (String, String, [String: String]) async throws -> ServerCapabilities)?
@@ -76,6 +77,10 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {
     guard let uploadFileHandler else { throw CodevisorServerClientError.invalidResponse }
     return try await uploadFileHandler(name, mimeType, data)
+  }
+
+  func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata {
+    try await uploadFile(name: name, mimeType: mimeType, data: Data(contentsOf: fileURL))
   }
 
   func setSessions(_ sessions: [ServerSession]) {

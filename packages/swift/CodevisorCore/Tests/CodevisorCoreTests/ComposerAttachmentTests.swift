@@ -2,6 +2,7 @@ import ACPKit
 import Foundation
 import Testing
 import UniformTypeIdentifiers
+import CodevisorTestSupport
 @testable import CodevisorCore
 
 @Suite("Composer attachments")
@@ -71,10 +72,13 @@ struct ComposerAttachmentTests {
 
   @MainActor
   @Test("Optimistic attachments keep their identity and are not persisted while empty")
-  func optimisticAttachmentLifecycle() throws {
+  func optimisticAttachmentLifecycle() async throws {
+    let files = ComposerAttachmentFileStore.temporary()
+    defer { try? FileManager.default.removeItem(at: files.root) }
     let controller = SessionController(
       project: Project.fromFolder(URL(fileURLWithPath: "/tmp/attachment-tests")),
-      configCache: ConfigOptionCache(store: InMemoryStore())
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      attachmentFiles: files
     )
     let id = UUID()
 
@@ -99,13 +103,116 @@ struct ComposerAttachmentTests {
       data: bytes
     )
     #expect(resolutionFailure == nil)
+    await awaitObserved { controller.composerAttachments.first?.state != .loading }
 
     let attachment = try #require(controller.composerAttachments.first)
     #expect(attachment.id == id)
     #expect(attachment.name == "cat.jpeg")
     #expect(attachment.mimeType == "image/jpeg")
-    #expect(attachment.localData == bytes)
+    let fileURL = try #require(attachment.fileURL)
+    #expect(files.relativePath(of: fileURL) != nil)
+    #expect(try Data(contentsOf: fileURL) == bytes)
     #expect(attachment.state == .failed("Server unavailable"))
+
+    controller.removeAttachment(id: id)
+    #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+  }
+
+  /// A sparse file reports a large size without writing its bytes.
+  private func sparseFile(named name: String, bytes: Int) throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("attachment-limit-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent(name)
+    #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.truncate(atOffset: UInt64(bytes))
+    try handle.close()
+    return url
+  }
+
+  /// The controller only weakly references its machines; callers keep
+  /// the returned machine controller alive.
+  @MainActor
+  private func controller(
+    maxUploadBytes: Int?,
+    files: ComposerAttachmentFileStore
+  ) -> (SessionController, MachineController) {
+    let machines = MachineController(
+      store: InMemoryStore(),
+      projectList: ProjectListModel.fixture(),
+      clientFactory: { _ in SyncFakeServerClient(projects: [], sessions: []) }
+    )
+    machines.connection(for: CodevisorMachine.local.id).status = MachineStatus(
+      isReachable: true, label: "Local", serverId: "local", maxUploadBytes: maxUploadBytes)
+    let controller = SessionController(
+      project: Project.fromFolder(URL(fileURLWithPath: "/tmp/attachment-tests")),
+      configCache: ConfigOptionCache(store: InMemoryStore()),
+      machines: machines,
+      attachmentFiles: files
+    )
+    return (controller, machines)
+  }
+
+  @MainActor
+  @Test("A server that advertises no upload limit gets the 32 MB legacy limit")
+  func legacyUploadLimit() async throws {
+    let files = ComposerAttachmentFileStore.temporary()
+    defer { try? FileManager.default.removeItem(at: files.root) }
+    let (controller, machines) = controller(maxUploadBytes: nil, files: files)
+    defer { withExtendedLifetime(machines) {} }
+    let tooLarge = try sparseFile(named: "capture.mov", bytes: 32 * 1024 * 1024 + 1)
+    defer { try? FileManager.default.removeItem(at: tooLarge.deletingLastPathComponent()) }
+
+    await controller.attachFileURLs([tooLarge]).value
+
+    #expect(controller.composerAttachments.isEmpty)
+    #expect(
+      controller.status
+        == .failed("“capture.mov” is too large to upload. Choose a file smaller than 32 MB."))
+  }
+
+  @MainActor
+  @Test("The machine's advertised upload limit replaces the legacy limit")
+  func advertisedUploadLimit() async throws {
+    let files = ComposerAttachmentFileStore.temporary()
+    defer { try? FileManager.default.removeItem(at: files.root) }
+    let (controller, machines) = controller(maxUploadBytes: 64 * 1024 * 1024, files: files)
+    defer { withExtendedLifetime(machines) {} }
+    let aboveLegacy = try sparseFile(named: "capture.mov", bytes: 32 * 1024 * 1024 + 1)
+    let aboveAdvertised = try sparseFile(named: "longer.mov", bytes: 64 * 1024 * 1024 + 1)
+    defer {
+      try? FileManager.default.removeItem(at: aboveLegacy.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: aboveAdvertised.deletingLastPathComponent())
+    }
+
+    await controller.attachFileURLs([aboveLegacy, aboveAdvertised]).value
+
+    let accepted = try #require(controller.composerAttachments.first)
+    #expect(controller.composerAttachments.count == 1)
+    #expect(accepted.name == "capture.mov")
+    #expect(accepted.fileURL.flatMap(ComposerAttachmentFileStore.byteCount(of:)) == 32 * 1024 * 1024 + 1)
+    #expect(
+      controller.status
+        == .failed("“longer.mov” is too large to upload. Choose a file smaller than 64 MB."))
+  }
+
+  @MainActor
+  @Test("Pasted bytes over the machine's limit are rejected with the limit")
+  func oversizedPastedBytesRejected() throws {
+    let files = ComposerAttachmentFileStore.temporary()
+    defer { try? FileManager.default.removeItem(at: files.root) }
+    let (controller, machines) = controller(maxUploadBytes: 1024 * 1024, files: files)
+    defer { withExtendedLifetime(machines) {} }
+    let id = UUID()
+    #expect(controller.beginLoadingAttachment(id: id, name: "shot.png", mimeType: "image/png", kind: .image))
+
+    let failure = controller.resolveLoadingAttachment(
+      id: id, name: "shot.png", mimeType: "image/png", kind: .image,
+      data: Data(count: 1024 * 1024 + 1))
+
+    #expect(failure == "“shot.png” is too large to upload. Choose a file smaller than 1 MB.")
+    #expect(controller.composerAttachments.isEmpty)
   }
 
   @MainActor
@@ -122,7 +229,7 @@ struct ComposerAttachmentTests {
     let attachment = try #require(controller.composerAttachments.first)
     #expect(attachment.name == "optimistic-image.png")
     #expect(attachment.kind == .image)
-    #expect(attachment.localData.isEmpty)
+    #expect(attachment.fileURL == nil)
     #expect(attachment.state == .loading)
   }
 

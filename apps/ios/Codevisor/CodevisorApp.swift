@@ -97,12 +97,22 @@ struct CodevisorApp: App {
   /// server (iOS is a pure client — `localServer` stays nil).
   private static func makeEnvironment(storage: ClientStorage) -> AppEnvironment {
     let store = storage.store
+    let composerDrafts = ComposerDraftStore(
+      store: store,
+      attachmentFiles: ComposerAttachmentFileStore(
+        root: URL.applicationSupportDirectory
+          .appendingPathComponent("Codevisor", isDirectory: true)
+          .appendingPathComponent("ComposerAttachments", isDirectory: true)
+      )
+    )
+    // No composer exists yet: anything staged but undrafted is a leftover.
+    composerDrafts.removeUnreferencedAttachmentFiles()
     return AppEnvironment(
       navigationPersistence: store,
       transcriptCache: .shared,
       configCache: ConfigOptionCache(store: store),
       composerDefaults: ComposerDefaultsStore(store: store),
-      composerDrafts: ComposerDraftStore(store: store),
+      composerDrafts: composerDrafts,
       settings: AppSettingsModel(store: store),
       machineStore: store,
       machineCredentialStore: KeychainMachineCredentialStore.shared,
