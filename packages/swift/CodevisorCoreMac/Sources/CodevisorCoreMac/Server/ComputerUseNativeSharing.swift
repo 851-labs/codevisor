@@ -3,6 +3,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
+import ScreenSharing
 
 struct ComputerUseShareKey: Hashable, Sendable {
   let sessionID: String
@@ -212,6 +213,7 @@ final class ComputerUseNativeSharing: NSObject,
       keys.forEach { windowIDByKey[$0] = windowID }
       windowIDByStream[ObjectIdentifier(stream)] = windowID
       resubscribe(windowID: windowID)
+      watchForStall(stream: stream, publisher: publisher, windowID: windowID)
     } catch {
       clearPending(windowID: windowID)
       Log.computerUse.error(
@@ -483,6 +485,32 @@ final class ComputerUseNativeSharing: NSObject,
     Log.computerUse.error(
       "Native sharing picker failed: \(error.localizedDescription, privacy: .public)"
     )
+  }
+}
+
+extension ComputerUseNativeSharing {
+  /// A preview stream that starts and never calls back is what an exhausted `replayd` looks like
+  /// (on this Mac: 246 pipes, and the PiP sat on "Starting…"). Screen sharing's recovery restarts
+  /// the stream, then the daemon (at most once per 10 minutes, shared with screen sharing), then
+  /// the stream again. It gives up quietly if the window's stream is replaced or stopped meanwhile.
+  fileprivate func watchForStall(stream: SCStream, publisher: ComputerUseFramePublisher, windowID: CGWindowID) {
+    let recovery = ScreenSharingCaptureStallRecovery.live(
+      metrics: ScreenSharingMetrics(), callbacks: { publisher.callbacks },
+      restartCapture: { [weak self] in
+        guard let self, self.entriesByWindowID[windowID]?.stream === stream else { throw CancellationError() }
+        try? await stream.stopCapture()
+        try await stream.startCapture()
+      },
+      log: { Log.computerUse.notice("\($0, privacy: .public)") },
+      onStalled: {
+        Log.computerUse.notice("Live preview for window \(windowID, privacy: .public) delivered nothing; recovering")
+      })
+    Task { @MainActor in
+      let outcome = try? await recovery.run(baseline: 0)
+      if outcome == .failed {
+        Log.computerUse.error("Live preview for window \(windowID, privacy: .public) never delivered a frame")
+      }
+    }
   }
 }
 

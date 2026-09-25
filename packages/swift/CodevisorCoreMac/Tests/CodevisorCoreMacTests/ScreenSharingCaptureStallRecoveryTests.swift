@@ -1,6 +1,7 @@
 import CodevisorTestSupport
 import Darwin
 import Foundation
+import ScreenSharing
 import Testing
 @testable import CodevisorCoreMac
 
@@ -156,6 +157,21 @@ struct ScreenSharingCaptureStallRecoveryTests {
     #expect(ScreenSharingCaptureDaemon.processes(named: name).contains(getpid()))
     #expect((ScreenSharingCaptureDaemon.descriptorCount(getpid()) ?? 0) > 0)
     #expect(ScreenSharingCaptureDaemon.processes(named: "no-such-process-\(UUID().uuidString.prefix(8))").isEmpty)
+  }
+
+  /// The Computer Use preview counts its own stream's callbacks (851-2385); only the count is read here.
+  @Test func theLiveRecoveryCanCountAnotherStreamsCallbacks() {
+    var count = 7
+    let recovery = ScreenSharingCaptureStallRecovery.live(
+      metrics: ScreenSharingMetrics(), callbacks: { count }, restartCapture: {}, log: { _ in }, onStalled: {})
+    #expect(recovery.callbacks() == 7)
+    count = 9
+    #expect(recovery.callbacks() == 9)
+    let metrics = ScreenSharingMetrics()
+    metrics.increment("capturedFrames")
+    let fromMetrics = ScreenSharingCaptureStallRecovery.live(
+      metrics: metrics, restartCapture: {}, log: { _ in }, onStalled: {})
+    #expect(fromMetrics.callbacks() == 1)
   }
 
   @Test func activityCountsCallbacksAndDeliveredFrames() {
