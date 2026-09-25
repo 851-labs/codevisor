@@ -231,8 +231,6 @@ export const routeWorkspaces = async (
       throw new HttpFailure(404, `Workspace not found: ${workspaceId}`)
     }
     const wasArchived = existing.isArchived
-    // A sidebarOrder whose expectedRevision is stale is answered with the
-    // current row and no change; the client then shows the server's order.
     const workspace = await run(services.db.updateWorkspace(workspaceId, payload))
     const settled = await applyWorkspaceArchiveEffects(
       services,

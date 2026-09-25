@@ -32,6 +32,9 @@ struct SidebarWorkspaceDrag: Equatable {
   /// The header's frame when it was lifted.
   let liftedFrame: CGRect
   var translation: CGFloat = 0
+  /// The slot the header is over. Shown by reflowing the rows, and saved
+  /// only on release.
+  var targetIndex: Int?
   /// Set on release: the ghost is flying onto `settleFrame`, the row's
   /// current frame, which keeps tracking a reflow still in flight.
   var settleFrame: CGRect?
@@ -64,14 +67,17 @@ extension SidebarView {
           workspaceDrag = SidebarWorkspaceDrag(workspaceID: id, liftedFrame: header)
         }
         workspaceDrag?.translation = value.translation.height
-        moveDraggedWorkspace()
+        retargetDraggedWorkspace()
       }
       .onEnded { value in
         guard let drag = workspaceDrag, !drag.isSettling else { return }
         // A fast release can carry movement past the last `onChanged`;
         // apply it so the drop lands where the pointer actually let go.
         workspaceDrag?.translation = value.translation.height
-        moveDraggedWorkspace()
+        retargetDraggedWorkspace()
+        if let target = workspaceDrag?.targetIndex {
+          commitWorkspaceMove(drag.workspaceID, toIndex: target)
+        }
         workspaceDrag?.settleFrame = workspaceGeometry.frames[drag.workspaceID]?.header ?? drag.liftedFrame
       }
   }
@@ -93,7 +99,9 @@ extension SidebarView {
     workspaceGeometry.frames[id] = nil
   }
 
-  private func moveDraggedWorkspace() {
+  /// Moves the dragged header's slot on screen; nothing is saved until
+  /// release.
+  private func retargetDraggedWorkspace() {
     guard let drag = workspaceDrag, !drag.isSettling else { return }
     let order = visibleSidebarItems.map(\.id)
     let sections = workspaceGeometry.frames.compactMapValues {
@@ -104,7 +112,10 @@ extension SidebarView {
         of: drag.workspaceID, in: order, frames: sections, midY: drag.ghostFrame.midY
       )
     else { return }
-    moveWorkspace(drag.workspaceID, toIndex: index)
+    guard index != drag.targetIndex else { return }
+    withAnimation(Motion.listReflow(reduceMotion: reduceMotion)) {
+      workspaceDrag?.targetIndex = index
+    }
   }
 
   /// Once the ghost has landed, remove it while the dimmed row fades back

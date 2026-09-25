@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 import { jsonRequest, readSseEvents, run, start, tempDirs, listEvents } from "../test-support.js"
 
 describe("workspace ordering over HTTP", () => {
-  it("publishes revisioned moves, returns the winner to a stale client, and snapshots the same order", async () => {
+  it("publishes moves, applies the latest one even from a stale revision, and snapshots the same order", async () => {
     const { server, services } = await start()
     const folder = mkdtempSync(join(tmpdir(), "workspace-order-http-"))
     tempDirs.push(folder)
@@ -18,7 +18,7 @@ describe("workspace ordering over HTTP", () => {
       body: JSON.stringify({ projectId: project.id, name: "A", hasCustomName: false })
     }
     const first = (await jsonRequest(server, "/v1/workspaces/first", put)).body as Workspace
-    const second = (await jsonRequest(server, "/v1/workspaces/second", put)).body as Workspace
+    await jsonRequest(server, "/v1/workspaces/second", put)
     const frontier = initialWorkspacePosition(2_000_000_000_000, "third")
     const third = (
       await jsonRequest(server, "/v1/workspaces/third", {
@@ -47,13 +47,14 @@ describe("workspace ordering over HTTP", () => {
         payload: expect.objectContaining({ sidebarPosition: position, sidebarOrderRevision: 2 })
       })
     ])
+    // The drag's next step, sent before its sender saw the first land.
+    const latest = initialWorkspacePosition(50, first.id)
     const stale = await jsonRequest(server, "/v1/workspaces/first", {
       method: "PATCH",
-      body: JSON.stringify({
-        sidebarOrder: { position: second.sidebarPosition, expectedRevision: 1 }
-      })
+      body: JSON.stringify({ sidebarOrder: { position: latest, expectedRevision: 1 } })
     })
-    expect(stale.body).toMatchObject({ sidebarPosition: position, sidebarOrderRevision: 2 })
+    expect(stale.status).toBe(200)
+    expect(stale.body).toMatchObject({ sidebarPosition: latest, sidebarOrderRevision: 3 })
     const snapshot = (await jsonRequest(server, "/v1/workspace-snapshot")).body as {
       workspaces: Workspace[]
     }

@@ -26,9 +26,10 @@ public enum NavigationIntent: Codable, Equatable, Sendable {
   case markSessionUnread(sessionId: UUID)
   case renameWorkspace(workspaceId: UUID, name: String, hasCustomName: Bool)
   case setWorkspaceArchived(workspaceId: UUID, isArchived: Bool)
-  /// `expectedRevision` is the order revision this device last saw. The
-  /// server applies the move only if nobody reordered since; otherwise it
-  /// keeps its order and this device simply shows that.
+  /// The latest move wins, like a rename. `expectedRevision` is the order
+  /// revision this device last saw; current servers ignore it, and it is
+  /// sent only because servers from before last-write-wins ordering require
+  /// the field.
   case reorderWorkspace(workspaceId: UUID, position: String, expectedRevision: Int)
   case upsertPane(PaneDescriptorState, workspaceId: UUID)
   case closePane(paneId: UUID, workspaceId: UUID)

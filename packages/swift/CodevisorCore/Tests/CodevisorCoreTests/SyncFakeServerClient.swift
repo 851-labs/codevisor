@@ -233,10 +233,8 @@ final class SyncFakeServerClient: CodevisorServerClienting, @unchecked Sendable 
       guard let index = _workspaces.firstIndex(where: { UUID(uuidString: $0.id) == id }) else {
         throw CodevisorServerClientError.httpStatus(404, "Missing workspace")
       }
-      if _workspaces[index].sidebarOrderRevision == expectedRevision {
-        _workspaces[index].sidebarPosition = position
-        _workspaces[index].sidebarOrderRevision = expectedRevision + 1
-      }
+      _workspaces[index].sidebarPosition = position
+      _workspaces[index].sidebarOrderRevision = (_workspaces[index].sidebarOrderRevision ?? 1) + 1
       return _workspaces[index]
     }
   }

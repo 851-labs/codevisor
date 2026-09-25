@@ -135,12 +135,6 @@ export const makeWorkspacesService = (
         if (existing === undefined) {
           throw new Error(`Workspace not found: ${id}`)
         }
-        if (
-          request.sidebarOrder !== undefined &&
-          request.sidebarOrder.expectedRevision !== existing.sidebar_order_revision
-        ) {
-          return workspaceFromRow(existing)
-        }
         const wasArchived = existing.is_archived === 1
         // `archivedStamp` returns a moment exactly when the row ends up
         // archived, so the stamp doubles as the archived flag — deriving both

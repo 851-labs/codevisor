@@ -4,10 +4,9 @@ import Testing
 
 @testable import CodevisorCore
 
-/// Sidebar moves go through the outbox as `reorderWorkspace` requests carrying
-/// the order revision this device last saw. The move shows immediately; the
-/// server applies it only if nobody reordered since, and otherwise this
-/// device shows the server's order once the request has been answered.
+/// Sidebar moves go through the outbox as `reorderWorkspace` requests. The
+/// move shows immediately and the latest move wins on the server, so a
+/// workspace stays where the user put it.
 @MainActor
 struct WorkspaceOrderSyncTests {
   private func makeFixture(
@@ -72,26 +71,54 @@ struct WorkspaceOrderSyncTests {
     #expect(fixture.current?.sidebarPosition == latest)
   }
 
-  @Test("A drag made offline yields to a move another device made first")
-  func staleOfflineDragYieldsToTheServerWinner() async throws {
+  @Test("A move queued while an earlier move is in flight still lands, and stays")
+  func moveQueuedBehindInFlightMoveLands() async throws {
+    let fixture = await makeFixture()
+    fixture.connect()
+    let started = TestSignal()
+    let release = TestSignal()
+    fixture.server.onRequest { name in
+      guard name == "reorder:1", started.value == 0 else { return }
+      started.signal()
+      await release.wait()
+    }
+    moveToTop(fixture)
+    await started.wait()
+    // The cache hasn't seen the first move land, so this one is queued with
+    // the same revision the first carried.
+    fixture.sync.reorderWorkspace(
+      id: fixture.workspace.id, visibleIDs: [fixture.otherWorkspace.id, fixture.workspace.id])
+    let latest = try #require(fixture.current?.sidebarPosition)
+    #expect(try !isOnTop(fixture))
+    release.signal()
+    await fixture.settle()
+    #expect(fixture.server.requests == ["reorder:1", "reorder:1"])
+    #expect(try fixture.serverRecord(fixture.workspace.id).sidebarPosition == latest)
+    #expect(fixture.store.pendingIntents.isEmpty)
+    #expect(fixture.current?.sidebarPosition == latest)
+    #expect(try !isOnTop(fixture))
+  }
+
+  @Test("A move made offline is applied when the device reconnects")
+  func offlineMoveAppliesOnReconnect() async throws {
     let fixture = await makeFixture()
     moveToTop(fixture)
+    let pending = try #require(fixture.current?.sidebarPosition)
     // Another device moved the same workspace while this one was offline.
-    var winner = try fixture.serverRecord(fixture.workspace.id)
-    winner.sidebarPosition = WorkspacePosition.initial(
+    var earlier = try fixture.serverRecord(fixture.workspace.id)
+    earlier.sidebarPosition = WorkspacePosition.initial(
       createdAt: Date(timeIntervalSince1970: 1_600_000_000), id: fixture.workspace.id)
-    winner.sidebarOrderRevision = 2
-    fixture.server.commit(workspaces: [winner])
+    earlier.sidebarOrderRevision = 2
+    fixture.server.commit(workspaces: [earlier])
     await fixture.deliver()
-    // Still this device's move until the server answers it.
     #expect(try isOnTop(fixture))
 
     fixture.connect()
     await fixture.settle()
     #expect(fixture.server.requests == ["reorder:1"])
-    #expect(try fixture.serverRecord(fixture.workspace.id).sidebarPosition == winner.sidebarPosition)
-    #expect(fixture.current?.sidebarPosition == winner.sidebarPosition)
-    #expect(fixture.current?.sidebarOrderRevision == 2)
+    #expect(try fixture.serverRecord(fixture.workspace.id).sidebarPosition == pending)
+    #expect(fixture.current?.sidebarPosition == pending)
+    #expect(fixture.current?.sidebarOrderRevision == 3)
     #expect(fixture.store.pendingIntents.isEmpty)
   }
 

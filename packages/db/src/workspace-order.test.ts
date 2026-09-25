@@ -55,34 +55,35 @@ describe("shared workspace positions", () => {
     }
   })
 
-  it("accepts one concurrent drag, rejects stale retries, and preserves order through metadata changes", async () => {
+  it("applies the latest move even from a stale revision, and keeps order through metadata changes", async () => {
     const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
     try {
-      const project = await run(db.createProject({ folderPath: "/tmp/workspace-cas" }))
+      const project = await run(db.createProject({ folderPath: "/tmp/workspace-order-lww" }))
       const request = { projectId: project.id, name: "Workspace", hasCustomName: false }
       const first = await run(db.upsertWorkspace(request))
       const sibling = await run(db.upsertWorkspace(request))
-      const position = initialWorkspacePosition(100, first.id)
-      const accepted = await run(
-        db.updateWorkspace(first.id, { sidebarOrder: { position, expectedRevision: 1 } })
+      const earlier = initialWorkspacePosition(100, first.id)
+      await run(
+        db.updateWorkspace(first.id, { sidebarOrder: { position: earlier, expectedRevision: 1 } })
       )
-      const stale = await run(
-        db.updateWorkspace(first.id, {
-          sidebarOrder: { position: sibling.sidebarPosition!, expectedRevision: 1 }
-        })
+      // A second move of the same drag, sent before its sender saw the first
+      // one land, still carries the first revision.
+      const latest = initialWorkspacePosition(50, first.id)
+      const moved = await run(
+        db.updateWorkspace(first.id, { sidebarOrder: { position: latest, expectedRevision: 1 } })
       )
-      expect(stale.sidebarPosition).toBe(position)
-      expect(stale.sidebarOrderRevision).toBe(2)
-      const retried = await run(
-        db.updateWorkspace(first.id, { sidebarOrder: { position, expectedRevision: 1 } })
+      expect(moved.sidebarPosition).toBe(latest)
+      expect(moved.sidebarOrderRevision).toBe(3)
+      const unrevisioned = await run(
+        db.updateWorkspace(first.id, { sidebarOrder: { position: earlier } })
       )
-      expect(retried.sidebarOrderRevision).toBe(accepted.sidebarOrderRevision)
+      expect(unrevisioned.sidebarPosition).toBe(earlier)
       await run(db.updateWorkspace(first.id, { name: "Renamed", isArchived: true }))
       const restored = await run(db.updateWorkspace(first.id, { isArchived: false }))
-      expect(restored.sidebarPosition).toBe(position)
-      expect(restored.sidebarOrderRevision).toBe(2)
+      expect(restored.sidebarPosition).toBe(earlier)
+      expect(restored.sidebarOrderRevision).toBe(4)
       const upserted = await run(db.upsertWorkspace({ ...request, id: first.id }))
-      expect(upserted.sidebarPosition).toBe(position)
+      expect(upserted.sidebarPosition).toBe(earlier)
       expect(
         (await run(db.listWorkspaces)).find((row) => row.id === sibling.id)?.sidebarPosition
       ).toBe(sibling.sidebarPosition)

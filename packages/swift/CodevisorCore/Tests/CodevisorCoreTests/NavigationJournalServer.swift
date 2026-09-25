@@ -149,13 +149,12 @@ final class NavigationJournalServer: CodevisorServerClienting, @unchecked Sendab
     }
   }
 
-  /// Like the server: the move applies only if nobody reordered since the
-  /// revision the device saw; otherwise the current order is returned.
+  /// Like the server: the latest move wins, whatever revision it was sent
+  /// with; each move bumps the revision.
   func reorderWorkspace(id: UUID, position: String, expectedRevision: Int) async throws -> ServerWorkspace {
     try await request("reorder:\(expectedRevision)")
     return try updateWorkspace(id) { record in
       let revision = record.sidebarOrderRevision ?? 1
-      guard revision == expectedRevision else { return false }
       record.sidebarPosition = position
       record.sidebarOrderRevision = revision + 1
       return true

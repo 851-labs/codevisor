@@ -26,11 +26,15 @@ export type Workspace = typeof Workspace.Type
 /// Partial workspace update. Exists alongside the full `PUT` upsert so a client
 /// can archive a workspace without resending (and racing on) its whole record.
 export const UpdateWorkspaceRequest = Schema.Struct({
-  /// Compare-and-set: a stale drag receives the current authoritative record.
+  /// Moves the workspace in the shared sidebar order. The last move wins:
+  /// positions end in the workspace's own id, so moves of different
+  /// workspaces never collide, and the latest move of the same workspace is
+  /// the one its user expects to see. `expectedRevision` is accepted from
+  /// clients that still send it and ignored.
   sidebarOrder: Schema.optional(
     Schema.Struct({
       position: WorkspacePosition,
-      expectedRevision: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
+      expectedRevision: Schema.optional(Schema.Number)
     })
   ),
   name: Schema.optional(Schema.String),

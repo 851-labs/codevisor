@@ -2,12 +2,26 @@ import CodevisorCore
 import Foundation
 
 extension SidebarView {
-  /// The listed workspaces in display order, precomputed by the navigation
-  /// store and limited here to machines this Mac knows.
-  var visibleSidebarItems: [WorkspaceSidebarItem] {
+  /// The listed workspaces in their saved order, precomputed by the
+  /// navigation store and limited here to machines this Mac knows.
+  var listedSidebarItems: [WorkspaceSidebarItem] {
     environment.navigationStore.workspaceEntries.sidebar.filter {
       environment.machines.machine(for: $0.serverId) != nil
     }
+  }
+
+  /// The listed workspaces as shown: the saved order, with a dragged header
+  /// in the slot it is over. Applied to the live list, so a workspace that
+  /// arrives or leaves mid-drag doesn't reset the drag.
+  var visibleSidebarItems: [WorkspaceSidebarItem] {
+    let items = listedSidebarItems
+    guard let drag = workspaceDrag, let target = drag.targetIndex,
+      let current = items.firstIndex(where: { $0.id == drag.workspaceID }),
+      current != target, items.indices.contains(target)
+    else { return items }
+    var reordered = items
+    reordered.insert(reordered.remove(at: current), at: target)
+    return reordered
   }
 
   /// The chat a workspace routes through: its first routing chat that the
