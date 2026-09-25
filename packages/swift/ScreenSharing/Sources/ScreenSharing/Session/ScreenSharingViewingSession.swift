@@ -53,8 +53,12 @@ public protocol ScreenSharingViewingSession: AnyObject {
   /// The viewer's size in points: backends that can resize the remote
   /// desktop to fit (VNC ExtendedDesktopSize) do; the default ignores it.
   func requestDesktopSize(width: Int, height: Int)
-  /// Whether `requestDesktopSize` does anything: what Dynamic Resolution needs (851-2340).
+  /// Whether `requestDesktopSize` can do anything: what Dynamic Resolution needs (851-2340).
   var resizesDesktop: Bool { get }
+  /// Whether the remote desktop will actually change size, once the session knows (the
+  /// server announced its layout, or its first update came without one, or it refused a
+  /// resize). Only sessions whose `resizesDesktop` is true report it (851-2368).
+  var onResizeSupportChanged: ((Bool) -> Void)? { get set }
   /// The desktop's size when the session opened: what turning Dynamic Resolution off restores
   /// when the server names no provisioned size.
   var initialDesktopSize: (width: Int, height: Int)? { get }
@@ -74,6 +78,11 @@ extension ScreenSharingViewingSession {
   public var videoShowsPointer: Bool { true }
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
+    get { nil }
+    set {}
+  }
+
+  public var onResizeSupportChanged: ((Bool) -> Void)? {
     get { nil }
     set {}
   }

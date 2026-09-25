@@ -20,6 +20,9 @@
     var scene: RFBLoopbackScene.Kind?
     /// Answer pointer events with the reference server's echo marker.
     var echoPointer = false
+    /// Let the viewer resize the desktop (ExtendedDesktopSize); off behaves like macOS
+    /// Screen Sharing, whose desktop keeps its size (851-2368).
+    var resizable = true
     private(set) var port: UInt16?
     private(set) var status = "Stopped"
     private(set) var log: [String] = []
@@ -41,7 +44,8 @@
       configuration.cursor = .referenceArrow  // drawn locally by the viewer while controlling (851-2311)
       configuration.continuousUpdates = true  // pushed updates, paced by fences (851-2312)
       configuration.fences = true
-      configuration.desktopResize = .accept  // the desktop follows the viewer's window (851-2314)
+      // The desktop follows the viewer's window (851-2314), unless it's set to behave like macOS.
+      configuration.desktopResize = resizable ? .accept : .unsupported
       configuration.extendedClipboard = true  // UTF-8 clipboard (851-2316)
       configuration.negotiateEncoding = true  // Tight when the viewer prefers it (851-2313)
       status = "Starting…"
@@ -154,6 +158,7 @@
           Toggle("Animate (off: one frame, like a static desktop)", isOn: Bindable(model).animated)
             .accessibilityLabel("Animate")
           Toggle("Echo pointer input as a marker", isOn: Bindable(model).echoPointer)
+          Toggle("Resizable desktop (off: fixed size, like macOS)", isOn: Bindable(model).resizable)
             .accessibilityLabel("Echo pointer input")
         }
         .formStyle(.grouped)

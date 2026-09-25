@@ -34,6 +34,9 @@
     private let sleep: @Sendable (Duration) async throws -> Void
     private var resizeSupported = false
     private var resizeRefused = false
+    /// The first update has arrived: a server that can resize announces its layout in it.
+    private var firstUpdateSeen = false
+    public var onResizeSupportChanged: ((Bool) -> Void)?
     private var screenID: UInt32 = 0
     private var desktopSize: (width: Int, height: Int)
     private var desiredSize: (width: Int, height: Int)?
@@ -103,6 +106,8 @@
               if let result = update.desktopSize {
                 Task { @MainActor in self?.desktopSizeChanged(result) }
               }
+              let announcedLayout = update.desktopSize != nil
+              Task { @MainActor in self?.updateArrived(announcedLayout: announcedLayout) }
               if !cursor.isEmpty {
                 // One hop per update keeps shape-then-position order.
                 Task { @MainActor in cursor.forEach { self?.onCursorChanged?($0) } }
@@ -146,6 +151,7 @@
       frames.clear()
       onConnectionChanged = nil
       onCursorChanged = nil
+      onResizeSupportChanged = nil
     }
 
     /// Asks the server to make the remote desktop `width` × `height` once the
@@ -180,13 +186,23 @@
       let firstLayout = !resizeSupported
       resizeSupported = true
       if let screen = result.screens.first { screenID = screen.id }
+      if firstLayout, !resizeRefused { onResizeSupportChanged?(true) }
       if result.reason == .thisClient, result.status != .ok {
         // The server won't resize for us: keep scaling the desktop to fit.
+        if !resizeRefused { onResizeSupportChanged?(false) }
         resizeRefused = true
         metrics.label("vncResize", "refused (\(result.status))")
       }
       // A size asked for before the server said it could resize.
       if firstLayout, resizeTask == nil { sendDesktopSizeIfNeeded() }
+    }
+
+    /// A server that can resize announces its layout with the first update; without it
+    /// (macOS Screen Sharing) the desktop keeps its size, whatever the viewer asks.
+    private func updateArrived(announcedLayout: Bool) {
+      guard !firstUpdateSeen else { return }
+      firstUpdateSeen = true
+      if !announcedLayout, !resizeSupported { onResizeSupportChanged?(false) }
     }
 
     private func observeBandwidth(bytes: Int, duration: Duration) {

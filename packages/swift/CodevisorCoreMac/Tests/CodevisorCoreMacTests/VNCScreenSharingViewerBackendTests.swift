@@ -100,6 +100,26 @@ struct VNCScreenSharingViewerBackendTests {
     await harness.cancelConsumers()
   }
 
+  /// 851-2368: the Dynamic Resolution button is usable only where the desktop can follow the pane.
+  @Test func resolutionAvailabilityFollowsWhatTheServerSupports() async throws {
+    var resizable = RFBLoopbackServer.Configuration()
+    resizable.desktopResize = .accept
+    for (configuration, expected) in [(RFBLoopbackServer.Configuration(), false), (resizable, true)] {
+      let harness = try await Harness(configuration: configuration)
+      defer { harness.stop() }
+      harness.connect()
+      await awaitObserved { harness.log.endpoints.count == 1 || harness.log.finished == 1 }
+      let endpoint = try #require(harness.log.endpoints.first)
+      #expect(endpoint.supportsDynamicResolution)
+      await awaitObserved { endpoint.resolutionAvailability.available != nil }
+      #expect(endpoint.resolutionAvailability.available == expected)
+      // A server that can change the desktop's UI scale makes it usable either way (851-2339).
+      endpoint.desktopCanScale = true
+      #expect(endpoint.resolutionAvailability.available == true)
+      await harness.cancelConsumers()
+    }
+  }
+
   @Test func readyAfterTheFirstFrameAndReplacementAfterALostSocket() async throws {
     let harness = try await Harness()
     defer { harness.stop() }
