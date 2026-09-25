@@ -94,9 +94,14 @@ extension ScreenSharingHostService {
       if session.state == "viewing" {
         if movesDisplay {
           try? await session.capture.stop()
-          try await startWatchedCapture(session)
+          try await startWatchedCapture(
+            session, reason: session.virtualDisplay == nil ? "physical display restored" : "moved to virtual display")
         } else {
+          let began = ContinuousClock.now
           try await session.capture.update(configuration: session.configuration)
+          Self.logger.notice(
+            "Capture resized to \(session.configuration.width)×\(session.configuration.height) in \(Self.milliseconds(since: began)) ms"
+          )
         }
       }
       let points = session.virtualDisplay?.size

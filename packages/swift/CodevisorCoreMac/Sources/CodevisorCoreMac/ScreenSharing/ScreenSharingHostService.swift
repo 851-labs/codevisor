@@ -18,7 +18,7 @@ final class ScreenSharingHostService {
   /// Estimates while the bandwidth estimator ramps up after connecting aren't a shortage.
   static let estimateWarmUp: TimeInterval = 5
   typealias Display = (id: UInt32, description: ServerScreenSharingDisplay)
-  private static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
+  static let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
   @MainActor final class Session {
     let owner: ScreenSharingHostLease.Owner
     let peer: ScreenSharingSender
@@ -340,7 +340,7 @@ final class ScreenSharingHostService {
           guard let self, let session else { return }
           do {
             let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
-            try await self.startWatchedCapture(session)
+            try await self.startWatchedCapture(session, reason: "viewer connected")
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             session.state = "viewing"
             session.notice = nil
@@ -477,7 +477,7 @@ extension ScreenSharingHostService {
       let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
       do {
         try? await session.capture.stop()
-        try await self.startWatchedCapture(session)
+        try await self.startWatchedCapture(session, reason: "capture stopped")
       } catch {
         guard self.current === session, !session.stopping, !Task.isCancelled else { return }
         Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")
@@ -491,27 +491,13 @@ extension ScreenSharingHostService {
     }
   }
 
-  private func startCapture(_ session: Session) async throws {
+  func startCapture(_ session: Session) async throws {
     try await session.capture.start(
       displayID: session.captureDisplayID, configuration: session.configuration,
       sink: session.peer.frameSender, metrics: session.metrics)
   }
 
-  /// A capture that never delivers is restarted, then `replayd` is (851-2385). Meanwhile the
-  /// session reads as connecting, with a notice for the viewer; if nothing helps, the capture
-  /// error ends it at the viewer's next heartbeat.
-  /// Starts the capture, restarting a wedged `replayd` if the start doesn't return (851-2385).
-  func startWatchedCapture(_ session: Session) async throws {
-    let recovery = captureRecovery(session)
-    try await recovery.start { [weak self, weak session] retry in
-      guard let self, let session else { throw CancellationError() }
-      // The abandoned attempt may still hold the capture's start; stopping clears it.
-      if retry { try? await session.capture.stop() }
-      try await self.startCapture(session)
-    }
-  }
-
-  private func captureRecovery(_ session: Session) -> ScreenSharingCaptureStallRecovery {
+  func captureRecovery(_ session: Session) -> ScreenSharingCaptureStallRecovery {
     ScreenSharingCaptureStallRecovery.live(
       metrics: session.metrics,
       restartCapture: { [weak self, weak session] in
