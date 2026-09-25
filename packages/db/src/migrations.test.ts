@@ -5,6 +5,19 @@ import { describe, expect, it } from "vitest"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
+// SQLite resolves `on delete set null` with this lookup; a full scan of the
+// multi-GB backup per deleted item pinned the server for minutes.
+const cascadePlan = (sqlite: Database.Database): string =>
+  (
+    sqlite
+      .prepare(
+        "explain query plan update legacy_session_events set chat_item_id = null where chat_item_id = ?"
+      )
+      .all("item") as Array<{ detail: string }>
+  )
+    .map((row) => row.detail)
+    .join("\n")
+
 describe("@codevisor/db", () => {
   it("migrates once and persists projects, sessions, conversation, and events", async () => {
     const filename = tempDatabase()
@@ -347,5 +360,24 @@ describe("@codevisor/db", () => {
       { text: "Visible work", hasDetails: true }
     ])
     await run(migrated.close)
+  })
+
+  it("looks up the retired session journal's chat item reference by index when a chat item is deleted", async () => {
+    const filename = tempDatabase()
+    await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+
+    // A fresh install indexes the journal before the cutover renames it.
+    let sqlite = new Database(filename)
+    expect(cascadePlan(sqlite)).toContain("INDEX session_events_chat_item_fk_idx")
+
+    // A database cut over before this migration gets the index on the backup.
+    sqlite.exec("drop index session_events_chat_item_fk_idx")
+    sqlite.prepare("delete from schema_migrations where id = 52").run()
+    expect(cascadePlan(sqlite)).toContain("SCAN legacy_session_events")
+    sqlite.close()
+    await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+    sqlite = new Database(filename)
+    expect(cascadePlan(sqlite)).toContain("INDEX session_events_chat_item_fk_idx")
+    sqlite.close()
   })
 })
