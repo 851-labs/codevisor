@@ -5,12 +5,31 @@ export const frameClockModes = ["video", "scroll", "type", "still"] as const
 export type FrameClockMode = (typeof frameClockModes)[number]
 
 export type FrameClockOptions = {
+  /// `user@host` of the viewed Mac: measure its clock offset over SSH and ask the page for
+  /// wall-clock frames, so each viewer's absolute image age is reported (851-2371).
+  hostSsh?: string
   apps: string[]
   seconds: number
   mode: FrameClockMode
   port: number
   out?: string
   label?: string
+}
+
+/// A clock sample: this Mac sent at `sent`, the host answered `host`, the answer arrived at
+/// `received` (seconds). The host's clock minus this Mac's, in ms, from the sample with the
+/// shortest round trip (NTP's reasoning: its midpoint is the tightest bound). Undefined when empty.
+export function clockOffset(
+  samples: ReadonlyArray<{ sent: number; host: number; received: number }>
+): { offsetMs: number; roundTripMs: number } | undefined {
+  let best: { offsetMs: number; roundTripMs: number } | undefined
+  for (const { sent, host, received } of samples) {
+    const roundTripMs = (received - sent) * 1000
+    if (best === undefined || roundTripMs < best.roundTripMs) {
+      best = { offsetMs: (host - (sent + received) / 2) * 1000, roundTripMs }
+    }
+  }
+  return best
 }
 
 /// One app's line of `screen-sharing-rig frame-clock` output.
@@ -26,10 +45,14 @@ export type FrameClockApp = {
   tornFraction?: number
   unreadableFraction?: number
   failure?: string
+  receiveMbitPerSecond?: number
+  imageAgeP50Ms?: number
+  imageAgeP95Ms?: number
 }
 
 export type FrameClockSummary = {
   seconds: number
+  clock?: { offsetMs: number; roundTripMs: number }
   apps: Record<string, FrameClockApp>
   lags: Record<string, { p50Ms: number; p95Ms: number }>
 }
@@ -62,6 +85,9 @@ export function parseFrameClockArguments(argv: string[]): FrameClockOptions | "h
         break
       case "--label":
         options.label = value
+        break
+      case "--host-ssh":
+        options.hostSsh = value
         break
       default:
         throw new Error(`unknown option ${key}`)
@@ -100,8 +126,8 @@ export function frameClockReport(
     "",
     `Workload \`${context.mode}\`, ${summary.seconds} s after every window calibrated. Host frames count at 60/s.`,
     "",
-    "| viewer | window | updates/s | host frames shown | gap p50 ms | gap p95 ms | gap max ms | torn | unreadable |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    "| viewer | window | updates/s | host frames shown | gap p50 ms | gap p95 ms | gap max ms | image age p50 / p95 ms | Mbit/s | torn | unreadable |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
   ]
   for (const [app, row] of Object.entries(summary.apps)) {
     lines.push(
@@ -109,7 +135,9 @@ export function frameClockReport(
         row.hostFramesShown === undefined ? undefined : row.hostFramesShown * 100,
         0,
         "%"
-      )} | ${cell(row.gapP50Ms)} | ${cell(row.gapP95Ms)} | ${cell(row.gapMaxMs)} | ${cell(
+      )} | ${cell(row.gapP50Ms)} | ${cell(row.gapP95Ms)} | ${cell(row.gapMaxMs)} | ${
+        row.imageAgeP50Ms === undefined ? "–" : `${row.imageAgeP50Ms} / ${row.imageAgeP95Ms}`
+      } | ${cell(row.receiveMbitPerSecond, 1)} | ${cell(
         row.tornFraction === undefined ? undefined : row.tornFraction * 100,
         0,
         "%"

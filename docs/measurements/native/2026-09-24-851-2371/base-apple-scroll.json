@@ -1,0 +1,25 @@
+{
+  "apps": {
+    "com.apple.ScreenSharing": {
+      "calibrated": true,
+      "captures": 3269,
+      "gapMaxMs": 69.58,
+      "gapP50Ms": 17.76,
+      "gapP95Ms": 36.4,
+      "hostFramesShown": 0.76,
+      "imageAgeP50Ms": 150,
+      "imageAgeP95Ms": 161,
+      "receiveMbitPerSecond": 0,
+      "tornFraction": 0,
+      "unreadableFraction": 0,
+      "updatesPerSecond": 45.77,
+      "window": "1920x1132"
+    }
+  },
+  "lags": {},
+  "seconds": 45,
+  "clock": {
+    "offsetMs": -0.7221698760986328,
+    "roundTripMs": 4.999876022338867
+  }
+}

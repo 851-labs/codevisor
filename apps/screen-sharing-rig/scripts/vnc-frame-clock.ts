@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url"
 
 import { errorMessage } from "./screen-sharing-rig-lib.ts"
 import {
+  clockOffset,
   frameClockReport,
   parseFrameClockArguments,
   type FrameClockSummary
@@ -36,11 +37,64 @@ function lanAddress(): string {
   return "localhost"
 }
 
+/// The host's clock minus this Mac's (ms), over one SSH connection so each sample costs a
+/// network round trip, not a process start: tuftlord answers `time.time()` per line.
+async function measureClockOffset(
+  host: string
+): Promise<{ offsetMs: number; roundTripMs: number }> {
+  const ssh = spawn(
+    "ssh",
+    [
+      "-o",
+      "BatchMode=yes",
+      host,
+      `python3 -u -c 'import sys,time\nfor l in sys.stdin: print(repr(time.time()), flush=True)'`
+    ],
+    { stdio: ["pipe", "pipe", "inherit"] }
+  )
+  const lines: string[] = []
+  let waiting: ((line: string) => void) | undefined
+  let buffered = ""
+  ssh.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    buffered += chunk
+    let index: number
+    while ((index = buffered.indexOf("\n")) >= 0) {
+      const line = buffered.slice(0, index)
+      buffered = buffered.slice(index + 1)
+      if (waiting === undefined) lines.push(line)
+      else {
+        const resolve = waiting
+        waiting = undefined
+        resolve(line)
+      }
+    }
+  })
+  const next = () =>
+    new Promise<string>((resolve) => {
+      const line = lines.shift()
+      if (line === undefined) waiting = resolve
+      else resolve(line)
+    })
+  const samples: { sent: number; host: number; received: number }[] = []
+  for (let index = 0; index < 40; index += 1) {
+    const sent = Date.now() / 1000
+    ssh.stdin.write("x\n")
+    const host = Number(await next())
+    const received = Date.now() / 1000
+    if (index >= 3) samples.push({ sent, host, received })
+  }
+  ssh.stdin.end()
+  const offset = clockOffset(samples)
+  if (offset === undefined) throw new Error(`no clock samples from ${host}`)
+  return offset
+}
+
 async function main(): Promise<void> {
   const options = parseFrameClockArguments(process.argv.slice(2))
   if (options === "help") {
     console.log(`Usage: bun run vnc:frame-clock [--app BUNDLE_ID]… [--seconds 60] [--mode video|scroll|type|still]
-                               [--port 8765] [--out DIR] [--label TEXT]
+                               [--port 8765] [--out DIR] [--label TEXT] [--host-ssh USER@HOST]
+--host-ssh measures the viewed Mac's clock offset and reports each viewer's image age (open the URL with &clock=epoch).
 Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run screen-sharing:rig build --build-only).`)
     return
   }
@@ -56,8 +110,15 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
   const out =
     options.out ?? join(root, "tmp/vnc-frame-clock", new Date().toISOString().replaceAll(":", "-"))
   mkdirSync(out, { recursive: true })
+  const clock =
+    options.hostSsh === undefined ? undefined : await measureClockOffset(options.hostSsh)
+  if (clock !== undefined) {
+    console.log(
+      `${options.hostSsh} clock: ${clock.offsetMs.toFixed(1)} ms ahead of this Mac (± ${(clock.roundTripMs / 2).toFixed(1)} ms)`
+    )
+  }
   console.log(
-    `Open http://${lanAddress()}:${options.port}/?mode=${options.mode} on the viewed machine, full screen.`
+    `Open http://${lanAddress()}:${options.port}/?mode=${options.mode}${clock === undefined ? "" : "&clock=epoch"} on the viewed machine, full screen.`
   )
   console.log(
     "Then click the page (or reload it) once the capture below is waiting; it calibrates on the orange strip."
@@ -70,7 +131,8 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
       "--seconds",
       String(options.seconds),
       "--out",
-      out
+      out,
+      ...(clock === undefined ? [] : ["--host-offset-ms", clock.offsetMs.toFixed(2)])
     ],
     { stdio: ["ignore", "pipe", "inherit"] }
   )
@@ -80,6 +142,7 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
   server.close()
   if (status !== 0) throw new Error(`frame-clock capture failed (exit ${status})`)
   const summary = JSON.parse(stdout) as FrameClockSummary
+  if (clock !== undefined) summary.clock = clock
   writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n")
   const report = frameClockReport(summary, {
     mode: options.mode,

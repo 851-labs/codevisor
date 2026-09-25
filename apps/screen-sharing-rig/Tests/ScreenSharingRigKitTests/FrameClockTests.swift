@@ -142,4 +142,24 @@ struct FrameClockTests {
     #expect(torn.tornFraction > 0 && torn.unreadableFraction > 0)
     #expect(FrameClockTimeline(samples: []).summary == nil)
   }
+
+  /// 851-2371: image age from a host page counting wall-clock frames (`?clock=epoch`).
+  @Test func imageAgeComesFromWallClockFramesAndTheClockOffset() throws {
+    // The host is 2.5 s ahead of this Mac. Each capture at viewer time t shows the frame the
+    // host drew 120 ms earlier (host time t + 2.5 − 0.12), in 60ths of a second since 1970.
+    let viewerWallMinusCapture = 1_700_000_000.0, hostMinusViewer = 2.5
+    let samples = stride(from: 0.0, to: 3, by: 0.1).map { t -> FrameClockTimeline.Sample in
+      let hostDrew = t + viewerWallMinusCapture + hostMinusViewer - 0.12
+      let frame = Int((hostDrew * FrameClock.framesPerSecond).rounded(.down)) % FrameClock.modulus
+      return .init(time: t, reading: .frame(frame))
+    }
+    let ages = FrameClockTimeline(samples: samples)
+      .imageAges(viewerWallMinusCaptureClock: viewerWallMinusCapture, hostMinusViewer: hostMinusViewer)
+    #expect(ages.count == 30)
+    #expect(ages.allSatisfy { $0 >= 120 && $0 < 120 + 1000 / FrameClock.framesPerSecond + 1e-6 }, "\(ages.prefix(3))")
+    // A clock offset that's slightly wrong shows up as that much age, never as a wrapped period.
+    let skewed = FrameClockTimeline(samples: samples)
+      .imageAges(viewerWallMinusCaptureClock: viewerWallMinusCapture, hostMinusViewer: hostMinusViewer - 0.2)
+    #expect(skewed.allSatisfy { $0 < 0 && $0 > -100 })
+  }
 }
