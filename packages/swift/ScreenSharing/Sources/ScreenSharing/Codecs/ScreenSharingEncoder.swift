@@ -37,13 +37,25 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
   private var currentFPS: Int
   public let metrics: ScreenSharingMetrics
 
+  /// The largest frame the low-latency rate control keeps up with at 60 fps: past 1440p its
+  /// per-frame encode time climbs (4K HEVC: 36 ms p50, ~43 fps, over 100 drops in 10 s on an
+  /// M4 Max), while standard rate control encodes 4K60 in 18 ms without drops (851-2373).
+  public static let lowLatencyMaximumPixels = 2560 * 1440
+
+  /// Whether a frame size gets low-latency rate control when it's requested.
+  public static func usesLowLatencyRateControl(requested: Bool, width: Int, height: Int) -> Bool {
+    requested && width * height <= lowLatencyMaximumPixels
+  }
+
   public init(
     configuration: ScreenSharingVideoConfiguration, metrics: ScreenSharingMetrics,
-    useLowLatencyRateControl: Bool = true, codec: ScreenSharingVideoCodec = .h264,
+    useLowLatencyRateControl requestedLowLatency: Bool = true, codec: ScreenSharingVideoCodec = .h264,
     disableLookAhead: Bool = false, maximumPendingFrames: Int = 2, completeEachFrame: Bool = false,
     prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2
   ) throws {
     self.configuration = configuration
+    let useLowLatencyRateControl = Self.usesLowLatencyRateControl(
+      requested: requestedLowLatency, width: configuration.width, height: configuration.height)
     currentBitrate = configuration.bitrate
     currentFPS = configuration.framesPerSecond
     self.metrics = metrics
@@ -61,7 +73,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
     metrics.label("encoderInitialBitrate", String(configuration.bitrate))
     metrics.label("encoderInitialFPS", String(configuration.framesPerSecond))
     metrics.label("encoderKeyframeIntervalSeconds", String(keyframeIntervalSeconds))
-    guard codec != .hevc444 || !useLowLatencyRateControl else {
+    guard codec != .hevc444 || !requestedLowLatency else {
       throw ScreenSharingError.invalid(
         "Main444 requires standard rate control; the low-latency encoder can reduce chroma.")
     }

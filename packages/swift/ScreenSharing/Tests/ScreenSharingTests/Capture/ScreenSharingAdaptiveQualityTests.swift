@@ -155,3 +155,25 @@ struct ScreenSharingAdaptiveQualityTests {
     #expect(stepped != nil)
   }
 }
+
+/// 851-2373: low-latency rate control up to 1440p, standard above, where it keeps 4K60.
+struct ScreenSharingEncoderRateControlTests {
+  @Test func lowLatencyRateControlStopsAt1440p() {
+    #expect(ScreenSharingEncoder.usesLowLatencyRateControl(requested: true, width: 1920, height: 1080))
+    #expect(ScreenSharingEncoder.usesLowLatencyRateControl(requested: true, width: 2560, height: 1440))
+    #expect(!ScreenSharingEncoder.usesLowLatencyRateControl(requested: true, width: 3840, height: 2160))
+    #expect(!ScreenSharingEncoder.usesLowLatencyRateControl(requested: true, width: 3024, height: 1964))
+    #expect(!ScreenSharingEncoder.usesLowLatencyRateControl(requested: false, width: 1920, height: 1080))
+  }
+
+  @Test func aFourKEncoderReportsStandardRateControl() throws {
+    let metrics = ScreenSharingMetrics()
+    let encoder = try ScreenSharingEncoder(
+      configuration: try .init(width: 3840, height: 2160, bitrate: 30_000_000), metrics: metrics, codec: .hevc)
+    defer { encoder.stop() }
+    #expect(metrics.snapshot().labels["encoderRateControl"] == "standard")
+    let small = try ScreenSharingEncoder(configuration: try .init(), metrics: metrics, codec: .hevc)
+    defer { small.stop() }
+    #expect(metrics.snapshot().labels["encoderRateControl"] == "low latency")
+  }
+}
