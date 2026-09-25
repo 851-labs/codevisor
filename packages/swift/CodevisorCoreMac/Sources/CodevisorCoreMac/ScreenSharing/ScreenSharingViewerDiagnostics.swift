@@ -13,6 +13,8 @@ public final class ScreenSharingViewerDiagnostics {
   public private(set) var decoder = "Waiting for decoder"
   public private(set) var decodeMilliseconds: Double?
   public private(set) var droppedFrames = 0
+  /// Native only: the streams beside the video (pointer 851-2377, sound 851-2379, display 851-2376).
+  public private(set) var streams: String?
   /// VNC only: framebuffer updates applied per second.
   public private(set) var updatesPerSecond: Double?
   /// VNC only: mean wire bytes per update over the last interval.
@@ -20,6 +22,15 @@ public final class ScreenSharingViewerDiagnostics {
   /// VNC only: p95 from sending an update request to applying its update.
   public private(set) var updateLatencyMilliseconds: Double?
   @ObservationIgnored private var previous: (time: TimeInterval, frames: Int, bytes: Double, updates: Int)?
+
+  static func streams(_ labels: [String: String]) -> String? {
+    let parts = [
+      labels["pointer"].map { "pointer \($0)" },
+      labels["audioTargetDelayMs"].map { "sound \($0) ms behind" },
+      labels["desktopResize"].map { "display \($0)" },
+    ].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
 
   func update(metrics: ScreenSharingMetrics.Snapshot, statistics: [String: String], now: TimeInterval) {
     let vncTransport = statistics["vnc.transport"]
@@ -44,6 +55,7 @@ public final class ScreenSharingViewerDiagnostics {
     resolution = metrics.labels["videoSize"] ?? resolution
     decoder = metrics.labels["decoder"] ?? decoder
     droppedFrames = metrics.counters["renderDrops", default: 0]
+    streams = Self.streams(metrics.labels)
     if let vncTransport {
       let pushed = metrics.labels["vncUpdateMode"] == "continuous"
       route =

@@ -44,6 +44,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     displayChannel.onMessage = { [weak self] in self?.receiveDisplay($0) }
     audioChannel.onMessage = { [weak self] message in
       guard case .packet(let packet) = message else { return }
+      self?.audioPacketsReceived += 1
       self?.audioPlayer?.receive(packet)
     }
     audioChannel.onAvailabilityChanged = { [weak self] available in
@@ -120,6 +121,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   private var audioWanted = false
   private var audioSubscribed = false
   private var audioSync: Task<Void, Never>?
+  private var audioPacketsReceived = 0
 
   /// Plays the host's sound: subscribes once the channel is open and keeps the sound as late as
   /// the picture (the video's jitter-buffer delay, measured every second). Disabling unsubscribes,
@@ -190,7 +192,8 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
         let videoDelay = (delay - previous.delay) / (emitted - previous.emitted) + 0.02
         let target = Self.audioTarget(videoDelay: videoDelay, margin: margin)
         player.setTargetDelay(target)
-        metrics.label("audioTargetDelayMs", String(Int(target * 1000)))
+        // Only once the host sends sound: an older host never does.
+        if audioPacketsReceived > 0 { metrics.label("audioTargetDelayMs", String(Int(target * 1000))) }
       }
       previous = (delay, emitted)
       let buffer = player.statistics
@@ -219,6 +222,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
         metrics.increment("cursorShapesRejected")
         return
       }
+      if videoShowsPointer { metrics.label("pointer", "streamed") }
       videoShowsPointer = false
       let update = ScreenSharingCursorUpdate.sizedShape(shape, width: image.width, height: image.height)
       lastCursorShape = update

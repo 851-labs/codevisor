@@ -86,3 +86,15 @@ struct ScreenSharingDiagnosticsTests {
     #expect(diagnostics.roundTripMilliseconds == nil)
   }
 }
+
+/// Connection Details names the native streams beside the video.
+@MainActor
+struct ScreenSharingStreamsDiagnosticsTests {
+  @Test func theStreamsLineListsWhatTheSessionReported() {
+    #expect(ScreenSharingViewerDiagnostics.streams([:]) == nil)
+    #expect(
+      ScreenSharingViewerDiagnostics.streams([
+        "pointer": "streamed", "audioTargetDelayMs": "105", "desktopResize": "1280×800 pt",
+      ]) == "pointer streamed · sound 105 ms behind · display 1280×800 pt")
+  }
+}
