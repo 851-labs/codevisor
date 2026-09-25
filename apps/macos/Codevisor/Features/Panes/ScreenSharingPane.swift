@@ -82,7 +82,7 @@ final class ScreenSharingPane: Pane {
   /// The machine's settings as the sheet shows them (851-2367). The connection is the
   /// machine's codevisor-server's to define, so only the viewer's choices are editable.
   func machineSettings() -> ScreenSharingMachineSettings {
-    ScreenSharingMachineSettings(
+    var settings = ScreenSharingMachineSettings(
       name: machineName, connection: connection.kind, address: connection.address,
       dynamicResolution: store?.dynamicResolution
         ?? ScreenSharingMachinePreferences().dynamicResolution(
@@ -91,6 +91,17 @@ final class ScreenSharingPane: Pane {
       preferredDisplayId: store?.selectedDisplayId ?? store?.preferences.preferredDisplayId,
       lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId),
       sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
+    settings.dynamicResolutionNote = Self.dynamicResolutionNote(store?.endpoint)
+    return settings
+  }
+
+  /// Why Dynamic Resolution can't apply on this connection (851-2368), for the settings sheet.
+  static func dynamicResolutionNote(_ endpoint: ScreenSharingViewerEndpoint?) -> String? {
+    guard let endpoint else { return nil }
+    if !endpoint.supportsDynamicResolution || endpoint.resolutionAvailability.available == false {
+      return "This machine can't change its resolution over this connection."
+    }
+    return nil
   }
 
   /// Done in the sheet: Dynamic Resolution applies as the toolbar toggle does (and is saved for

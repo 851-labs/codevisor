@@ -36,6 +36,8 @@ public struct ScreenSharingMachineSettings: Equatable, Sendable {
   public var signIn: SignIn?
   /// Nil when the connection can't resize the remote desktop.
   public var dynamicResolution: Bool?
+  /// Why Dynamic Resolution can't apply on the current connection; the toggle is then disabled.
+  public var dynamicResolutionNote: String?
   public var displays: [Display]
   public var preferredDisplayId: String?
   public var lastConnected: Date?
@@ -216,7 +218,12 @@ public struct ScreenSharingMachineSettingsSheet: View {
           Toggle(
             "Dynamic Resolution",
             isOn: Binding(
-              get: { draft.settings.dynamicResolution ?? false }, set: { draft.settings.dynamicResolution = $0 }))
+              get: { draft.settings.dynamicResolution ?? false }, set: { draft.settings.dynamicResolution = $0 })
+          )
+          .disabled(draft.settings.dynamicResolutionNote != nil)
+          if let note = draft.settings.dynamicResolutionNote {
+            Text(note).font(.callout).foregroundStyle(.secondary)
+          }
         }
         if draft.settings.displays.count > 1 {
           Picker("Display", selection: $draft.settings.preferredDisplayId) {

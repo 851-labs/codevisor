@@ -15,13 +15,8 @@ struct ScreenSharingToolbar: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-      HStack {
-        if store.endpoint?.supportsControl != false { controlActions }
-        // The pane persists the machine's choice when the revision moves (851-2340).
-        if store.endpoint?.supportsDynamicResolution == true {
-          ScreenSharingDynamicResolutionToggle(store: store) { _ in }
-        }
-      }
+      // Dynamic Resolution lives in the machine settings sheet.
+      if store.endpoint?.supportsControl != false { controlActions }
     }
     ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
       if store.displays.count > 1 { displayMenu }

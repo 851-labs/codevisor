@@ -64,6 +64,11 @@
         displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
         preferredDisplayId: store?.selectedDisplayId, lastConnected: RigMachineSettings.lastConnected(machine.id),
         sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
+      if let endpoint = store?.endpoint,
+        !endpoint.supportsDynamicResolution || endpoint.resolutionAvailability.available == false
+      {
+        settings.dynamicResolutionNote = "This machine can't change its resolution over this connection."
+      }
       switch machine.connection {
       case .server(let url, _):
         settings.connection = "Codevisor server"
