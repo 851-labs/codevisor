@@ -16,8 +16,9 @@ import ScreenSharing
 /// The recovery, in order: restart the capture; if it still delivers nothing,
 /// kill the user's own `replayd` (launchd starts a fresh one on the next
 /// request) and restart the capture again. Killing it interrupts every other
-/// screen recording on this Mac, so it happens only for a stalled capture and at
-/// most once per `daemonRestartInterval` in this process.
+/// screen recording on this Mac, so it happens only for a stalled capture (when
+/// every other recording is stuck too) and at most once per
+/// `daemonRestartInterval` in this process.
 @MainActor
 public struct ScreenSharingCaptureStallRecovery {
   public enum Outcome: Equatable, Sendable {
@@ -34,8 +35,10 @@ public struct ScreenSharingCaptureStallRecovery {
   static let pollInterval: Duration = .milliseconds(250)
   /// Time for launchd to take the killed daemon's place before the next start.
   static let daemonRespawn: Duration = .seconds(1)
-  /// The shortest time between two `replayd` restarts by this process.
-  static let daemonRestartInterval: TimeInterval = 600
+  /// The shortest time between two `replayd` restarts by this process. A fresh daemon can wedge
+  /// again within seconds (tuftlord, 851-2390: killed at 12:10:00, stuck again at 12:10:31); ten
+  /// minutes left every viewer failing until it passed.
+  static let daemonRestartInterval: TimeInterval = 60
   /// How long starting a capture may take. A wedged `replayd` (on tuftlord, a stopped one) never
   /// answers, and the start waits forever instead of failing.
   static let startTimeout: Duration = .seconds(5)
@@ -120,20 +123,48 @@ public struct ScreenSharingCaptureStallRecovery {
   /// ScreenCaptureKit dropped the killed daemon's reply and the start never returned), it's
   /// abandoned and `start(true)` runs on the fresh daemon: `true` asks it to reset what the
   /// abandoned attempt left. Cancelling the caller cancels the start.
+  ///
+  /// Never waits forever (851-2390): when the daemon can't be restarted, the stuck start gets one
+  /// more `startTimeout`, and the retry gets `startTimeout`; after that it throws `stuck`. Worst
+  /// case 11 s, inside the 25 s the app's bridge gives a request.
   public func start(_ start: @escaping @MainActor (_ retry: Bool) async throws -> Void) async throws {
     let attempt = Task { @MainActor in try await start(false) }
     try await withTaskCancellationHandler {
       if await Self.finishes(attempt, within: Self.startTimeout, sleep: sleep) { return try await attempt.value }
       onStalled()
-      guard mayRestartDaemon, restartDaemon() else { return try await attempt.value }
+      guard mayRestartDaemon, restartDaemon() else {
+        return try await Self.value(of: attempt, within: Self.startTimeout, sleep: sleep)
+      }
       if await Self.finishes(attempt, within: Self.daemonRespawn, sleep: sleep), case .success = await attempt.result {
         return
       }
       attempt.cancel()
       try Task.checkCancellation()
-      try await start(true)
+      try await Self.value(of: Task { @MainActor in try await start(true) }, within: Self.startTimeout, sleep: sleep)
     } onCancel: {
       attempt.cancel()
+    }
+  }
+
+  /// What a start that ScreenCaptureKit never answers ends with.
+  public static let stuck = ScreenSharingError.unavailable(
+    "This Mac's screen capture isn't responding. Try again in a minute.")
+
+  /// `task`'s outcome if it finishes within `timeout`; otherwise it's cancelled and `stuck` thrown.
+  /// Cancelling the caller cancels `task`.
+  private static func value(
+    of task: Task<Void, any Error>, within timeout: Duration,
+    sleep: @escaping @MainActor (Duration) async throws -> Void
+  ) async throws {
+    try await withTaskCancellationHandler {
+      guard await finishes(task, within: timeout, sleep: sleep) else {
+        task.cancel()
+        try Task.checkCancellation()
+        throw stuck
+      }
+      try await task.value
+    } onCancel: {
+      task.cancel()
     }
   }
 
