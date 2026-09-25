@@ -163,9 +163,6 @@ describe("persisted transcript state", () => {
         )
       raw.prepare("update sessions set revision = ? where id = ?").run(count + 1, session.id)
       raw.prepare("delete from backfill_jobs where id = 'persisted-transcript-state-v1'").run()
-      raw.exec(
-        "drop table legacy_session_events; drop table legacy_events; drop index delivery_events_subject; drop index delivery_events_item;"
-      )
     })()
     raw.close()
     await expect(

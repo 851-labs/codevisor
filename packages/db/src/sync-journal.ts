@@ -131,8 +131,10 @@ export const readSyncBatch = (
     return { events, cursor, requiresSnapshot: false }
   })()
 
-/** Atomic cutover after verification. Keep old source tables as an upgrade
- * backup, but create empty delivery journals which runtime readers alone use. */
+/** Atomic cutover after verification. The old source tables are dropped, not
+ * kept as a backup: nothing reads them, and their foreign keys made every
+ * chat item delete scan the whole journal. Runtime readers use only the empty
+ * delivery journals created here. */
 export const activateSyncJournals = (db: Database.Database): void => {
   const global = (
     db.prepare("select coalesce(max(id), 0) as cursor from events").get() as { cursor: number }
@@ -143,8 +145,8 @@ export const activateSyncJournals = (db: Database.Database): void => {
     db.exec(`drop trigger "${row.name.replaceAll('"', '""')}"`)
   }
   db.exec(`
-    alter table events rename to legacy_events;
-    alter table session_events rename to legacy_session_events;
+    drop table events;
+    drop table session_events;
     create table events (
       id integer primary key autoincrement, server_id text not null, kind text not null,
       subject_id text not null, created_at text not null, payload text not null, transcript_item_id text

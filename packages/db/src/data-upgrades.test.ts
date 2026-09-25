@@ -234,9 +234,6 @@ describe("@codevisor/db", () => {
       .prepare("update backfill_jobs set state = 'failed', completed = 0 where id = ?")
       .run("canonical-session-chat-v1")
     sqlite.prepare("delete from backfill_jobs where id = ?").run("persisted-transcript-state-v1")
-    sqlite.exec(
-      "drop table legacy_session_events; drop table legacy_events; drop index delivery_events_subject; drop index delivery_events_item;"
-    )
     sqlite.close()
 
     const migrated = await run(makeDatabase({ filename, serverId: "local" }))

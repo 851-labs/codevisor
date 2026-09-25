@@ -5,18 +5,18 @@ import { describe, expect, it } from "vitest"
 import { DatabaseError, makeDatabase } from "./index.js"
 import { listEvents, listSubjectEvents, run, tempDatabase } from "./test-support.js"
 
-// SQLite resolves `on delete set null` with this lookup; a full scan of the
-// multi-GB backup per deleted item pinned the server for minutes.
-const cascadePlan = (sqlite: Database.Database): string =>
-  (
-    sqlite
-      .prepare(
-        "explain query plan update legacy_session_events set chat_item_id = null where chat_item_id = ?"
-      )
-      .all("item") as Array<{ detail: string }>
-  )
-    .map((row) => row.detail)
-    .join("\n")
+const legacyJournals = (filename: string): ReadonlyArray<string> => {
+  const sqlite = new Database(filename)
+  try {
+    return (
+      sqlite
+        .prepare("select name from sqlite_master where type = 'table' and name like 'legacy_%'")
+        .all() as Array<{ name: string }>
+    ).map((row) => row.name)
+  } finally {
+    sqlite.close()
+  }
+}
 
 describe("@codevisor/db", () => {
   it("migrates once and persists projects, sessions, conversation, and events", async () => {
@@ -362,22 +362,38 @@ describe("@codevisor/db", () => {
     await run(migrated.close)
   })
 
-  it("looks up the retired session journal's chat item reference by index when a chat item is deleted", async () => {
+  it("keeps no retired event journals, whose foreign keys made chat deletes scan them", async () => {
     const filename = tempDatabase()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+    // The transcript cutover drops the old journals instead of renaming them.
+    expect(legacyJournals(filename)).toEqual([])
 
-    // A fresh install indexes the journal before the cutover renames it.
-    let sqlite = new Database(filename)
-    expect(cascadePlan(sqlite)).toContain("INDEX session_events_chat_item_fk_idx")
-
-    // A database cut over before this migration gets the index on the backup.
-    sqlite.exec("drop index session_events_chat_item_fk_idx")
-    sqlite.prepare("delete from schema_migrations where id = 52").run()
-    expect(cascadePlan(sqlite)).toContain("SCAN legacy_session_events")
+    // A database cut over by an earlier build still holds the renamed backup.
+    const sqlite = new Database(filename)
+    sqlite.exec(`
+      create table legacy_events (id integer primary key autoincrement, payload text not null);
+      create table legacy_session_events (
+        session_id text not null references sessions(id) on delete cascade,
+        chat_item_id text references chat_items(id) on delete set null
+      );
+      delete from schema_migrations where id = 53;
+    `)
     sqlite.close()
     await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
-    sqlite = new Database(filename)
-    expect(cascadePlan(sqlite)).toContain("INDEX session_events_chat_item_fk_idx")
+    expect(legacyJournals(filename)).toEqual([])
+  })
+
+  it("finds a deleted chat item's routes by index instead of scanning every route", async () => {
+    const filename = tempDatabase()
+    await run((await run(makeDatabase({ filename, serverId: "local" }))).close)
+    const sqlite = new Database(filename)
+    // SQLite resolves the `on delete cascade` from chat_items with this lookup.
+    const plan = (
+      sqlite
+        .prepare("explain query plan delete from chat_item_routes where item_id = ?")
+        .all("item") as Array<{ detail: string }>
+    ).map((row) => row.detail)
     sqlite.close()
+    expect(plan.join("\n")).toContain("INDEX chat_item_routes_item_idx")
   })
 })
