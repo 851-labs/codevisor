@@ -172,6 +172,32 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.clock.pendingCount == 0)
   }
 
+  /// A host restarting a stalled capture (851-2385) says so with its heartbeat. The viewer
+  /// passes the notice on and doesn't count those heartbeats toward "No video arrived"; the
+  /// host bounds its recovery and ends the session itself if it fails.
+  @Test func aHostRecoveringItsCaptureHoldsOffTheMissingVideoTimeout() async throws {
+    let stalled = ServerScreenSharingReply(status: "connecting", message: "Capture stalled, restarting…")
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(heartbeatReplies: [stalled, stalled, stalled, .init(status: "viewing")]))
+    harness.configureSession = { $0.deliversVideo = false }
+    harness.connect()
+    for heartbeat in 1...5 {
+      await harness.clock.waitForSleep(.seconds(8), count: heartbeat)
+      harness.clock.advance(by: .seconds(8))
+    }
+    await harness.clock.waitForSleep(.seconds(8), count: 6)
+    #expect(harness.log.finished == 0)
+    let endpoint = try #require(harness.log.endpoints.first)
+    expectNoDifference(
+      harness.log.events, [.opened(endpoint), .hostNotice("Capture stalled, restarting…"), .hostNotice(nil)])
+    // Counting resumes once the notice is gone: the third quiet heartbeat after it ends the wait.
+    harness.clock.advance(by: .seconds(8))
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(
+      harness.log.events.last
+        == .ended("No video arrived. Check the connection between these Macs or the configured relay, then retry."))
+  }
+
   @Test func decoderFailureEndsViewingAtTheNextHeartbeat() async throws {
     let harness = NativeBackendHarness()
     harness.connect()

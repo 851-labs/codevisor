@@ -17,6 +17,9 @@ public enum ScreenSharingViewerEvent: Equatable, Sendable {
   case ready
   /// Transport loss after video; a fresh `opened` follows, or `ended`.
   case reconnecting
+  /// What the host says about the missing video (a stalled capture it is restarting,
+  /// 851-2385); nil once it has nothing more to say.
+  case hostNotice(String?)
 }
 
 /// The seam between the viewer feature and whatever negotiates media. The
@@ -246,6 +249,7 @@ private final class NativeScreenSharingViewerRunner {
         }
         try await session.accept(answer)
         var heartbeatsBeforeVideo = 0
+        var notice: String?
         while true {
           try await sleep(.seconds(8))
           try Task.checkCancellation()
@@ -255,7 +259,12 @@ private final class NativeScreenSharingViewerRunner {
             return .ended(reply.message ?? "Screen sharing ended on the host Mac.")
           }
           if let failure = session.failure { return .ended(failure) }
-          if !attempt.ready {
+          if reply.message != notice {
+            notice = reply.message
+            emit(.hostNotice(notice))
+          }
+          // A host recovering its capture bounds that itself, and says so if it fails.
+          if !attempt.ready, notice == nil {
             heartbeatsBeforeVideo += 1
             guard heartbeatsBeforeVideo < 3 else {
               return .ended(

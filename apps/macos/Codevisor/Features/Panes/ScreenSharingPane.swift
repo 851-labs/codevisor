@@ -155,6 +155,7 @@ private struct ScreenSharingPaneView: View {
             Text(
               store.phase == .reconnecting
                 ? "Reconnecting to \(pane.connectionName)…" : "Connecting to \(pane.connectionName)…")
+            if let notice = store.hostNotice { Text(notice).font(.callout).foregroundStyle(.secondary) }
           }
           .padding(24)
         }

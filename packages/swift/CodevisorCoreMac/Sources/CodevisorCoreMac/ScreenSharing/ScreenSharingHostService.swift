@@ -30,6 +30,9 @@ final class ScreenSharingHostService {
     let displayID: UInt32
     let configuration: ScreenSharingVideoConfiguration
     var state = "connecting"
+    /// What the viewer should show while there's no video, sent with the heartbeat's status
+    /// (older viewers ignore it): a stalled capture being recovered (851-2385).
+    var notice: String?
     var control: ScreenSharingHostControl?
     var clipboard: ScreenSharingClipboardTransfer?
     var stopping = false
@@ -138,7 +141,7 @@ final class ScreenSharingHostService {
         await end(current)
         return .init(status: "failed", message: error)
       }
-      return .init(status: current.state)
+      return .init(status: current.state, message: current.notice)
     case .capabilities:
       guard captureAccess() else { return permissionRequired() }
       do {
@@ -299,15 +302,15 @@ final class ScreenSharingHostService {
         session.captureTask = Task { [weak self, weak session] in
           guard let self, let session else { return }
           do {
-            try await session.capture.start(
-              displayID: session.displayID, configuration: session.configuration,
-              sink: session.peer.frameSender, metrics: session.metrics)
+            let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
+            try await self.startCapture(session)
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             session.state = "viewing"
             self.indicator.show(display: session.display.name) { [weak self, weak session] in
               guard let self, let session else { return }
               self.scheduleEnd(session)
             }
+            await self.recoverStalledCapture(session, baseline: baseline)
           } catch { await self.end(session) }
         }
       } else if ["disconnected", "failed", "closed"].contains(state) {
@@ -411,5 +414,51 @@ final class ScreenSharingHostService {
       notificationCenter.addObserver(
         forName: NSApplication.didChangeScreenParametersNotification,
         object: nil, queue: .main, using: stop))
+  }
+}
+
+extension ScreenSharingHostService {
+  private func startCapture(_ session: Session) async throws {
+    try await session.capture.start(
+      displayID: session.displayID, configuration: session.configuration,
+      sink: session.peer.frameSender, metrics: session.metrics)
+  }
+
+  /// A capture that never delivers is restarted, then `replayd` is (851-2385). Meanwhile the
+  /// session reads as connecting, with a notice for the viewer; if nothing helps, the capture
+  /// error ends it at the viewer's next heartbeat.
+  private func recoverStalledCapture(_ session: Session, baseline: Int) async {
+    let recovery = ScreenSharingCaptureStallRecovery.live(
+      metrics: session.metrics,
+      restartCapture: { [weak self, weak session] in
+        guard let self, let session, self.current === session, !session.stopping else { throw CancellationError() }
+        try await session.capture.stop()
+        try await self.startCapture(session)
+      },
+      log: { Self.logger.notice("\($0, privacy: .public)") },
+      onStalled: { [weak session] in
+        guard let session, !session.stopping else { return }
+        Self.logger.notice("Capture started but delivered nothing; restarting it")
+        session.metrics.increment("captureStalls")
+        session.control?.revoke("The host's screen capture stalled.")
+        session.state = "connecting"
+        session.notice = "Capture stalled, restarting…"
+      })
+    guard let outcome = try? await recovery.run(baseline: baseline), current === session, !session.stopping else {
+      return
+    }
+    switch outcome {
+    case .healthy: return
+    case .recovered(let restartedDaemon):
+      Self.logger.notice("Capture recovered\(restartedDaemon ? " after restarting replayd" : "", privacy: .public)")
+      session.metrics.increment("captureStallRecoveries")
+      session.state = "viewing"
+      session.notice = nil
+    case .failed:
+      Self.logger.error("Capture stalled and did not recover")
+      session.notice = nil
+      session.metrics.label(
+        "captureError", "The host Mac couldn't capture its screen. Restarting the host Mac fixes this if it persists.")
+    }
   }
 }

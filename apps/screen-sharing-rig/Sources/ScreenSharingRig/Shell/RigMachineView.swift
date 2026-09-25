@@ -292,10 +292,11 @@
       .padding(24)
     }
 
-    private func progress(_ message: String) -> some View {
+    private func progress(_ message: String, notice: String? = nil) -> some View {
       VStack(spacing: 12) {
         ProgressView().controlSize(.small)
         Text(message)
+        if let notice { Text(notice).font(.callout).foregroundStyle(.secondary) }
       }
       .padding(24)
     }
@@ -311,7 +312,8 @@
           if store.phase != .viewing {
             progress(
               store.phase == .reconnecting
-                ? "Reconnecting to \(model.machine.name)…" : "Connecting to \(model.machine.name)…")
+                ? "Reconnecting to \(model.machine.name)…" : "Connecting to \(model.machine.name)…",
+              notice: store.hostNotice)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

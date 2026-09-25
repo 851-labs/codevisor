@@ -1,5 +1,6 @@
 #if os(macOS)
   import AppKit
+  import CodevisorCoreMac
   import ScreenSharing
   import ScreenSharingWebRTC
   import ScreenSharingDiagnostics
@@ -198,8 +199,9 @@
           session.sourceStarted = true
           Task { @MainActor in
             do {
+              let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
               try await self.startSource(in: session)
-              self.watchForStall(in: session)
+              await self.watchForStall(in: session, baseline: baseline)
             } catch {
               self.log("source \(self.activeCapture) failed: \(error)")
               await self.endSession(session, reason: "source failed")
