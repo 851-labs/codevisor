@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js"
 import { Schema } from "effect"
 
@@ -153,6 +155,21 @@ const responseError = async (spec: CodevisorApiToolSpec, response: Response): Pr
   )
 }
 
+/// Fills the defaults an agent-created chat needs: the calling project, and a
+/// fresh workspace. Native sidebars list workspaces, so a chat created without
+/// one runs but never appears to the user. Native clients may create
+/// workspace-less rows and attach them later; agents have no such follow-up.
+const sessionCreatePayload = (
+  payload: Readonly<Record<string, unknown>>,
+  context: AutomationProviderContext
+): Readonly<Record<string, unknown>> => ({
+  ...payload,
+  ...("projectId" in payload || context.projectId === undefined
+    ? {}
+    : { projectId: context.projectId }),
+  ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
+})
+
 const invokeApiTool = async (
   getBaseUrl: () => string,
   getBearerToken: () => Promise<string>,
@@ -207,23 +224,19 @@ const invokeApiTool = async (
     // ergonomics, but the server consumes it from Content-Type.
     url.searchParams.delete("mimeType")
   } else if (spec.body !== undefined) {
-    const payload: unknown =
+    const fields = (): Readonly<Record<string, unknown>> =>
+      Object.fromEntries(
+        bodyPropertyNames(spec.body!)
+          .filter((name) => args[name] !== undefined)
+          .map((name) => [name, args[name]])
+      )
+    body = JSON.stringify(
       spec.wrappedBody === true
         ? args.body
-        : Object.fromEntries(
-            bodyPropertyNames(spec.body)
-              .filter((name) => args[name] !== undefined)
-              .map((name) => [name, args[name]])
-          )
-    const contextualPayload =
-      spec.name === "sessions.create" &&
-      typeof payload === "object" &&
-      payload !== null &&
-      !("projectId" in payload) &&
-      context.projectId !== undefined
-        ? { ...payload, projectId: context.projectId }
-        : payload
-    body = JSON.stringify(contextualPayload)
+        : spec.name === "sessions.create"
+          ? sessionCreatePayload(fields(), context)
+          : fields()
+    )
     headers.set("content-type", "application/json")
   }
 

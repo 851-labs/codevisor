@@ -169,6 +169,7 @@ describe("Codevisor MCP provider", () => {
     await provider.invoke({ sessionId: "caller" }, "sessions.create", {
       id: "explicit-session",
       projectId: "explicit-project",
+      workspaceId: "existing-workspace",
       harnessId: "codex"
     })
     await provider.invoke({ sessionId: "caller" }, "sessions.create", {
@@ -195,8 +196,17 @@ describe("Codevisor MCP provider", () => {
       projectId: "calling project/id",
       harnessId: "codex"
     })
-    expect(JSON.parse(requests[3]!.init.body as string).projectId).toBe("explicit-project")
-    expect(JSON.parse(requests[4]!.init.body as string)).not.toHaveProperty("projectId")
+    // Sidebars list workspaces, so an agent-created chat must land in one.
+    const created = JSON.parse(requests[2]!.init.body as string) as { workspaceId: string }
+    const unscoped = JSON.parse(requests[4]!.init.body as string) as { workspaceId: string }
+    expect(created.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(unscoped.workspaceId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(unscoped.workspaceId).not.toBe(created.workspaceId)
+    expect(JSON.parse(requests[3]!.init.body as string)).toMatchObject({
+      projectId: "explicit-project",
+      workspaceId: "existing-workspace"
+    })
+    expect(unscoped).not.toHaveProperty("projectId")
     expect(JSON.parse(requests[5]!.init.body as string)).toEqual({})
     expect(Buffer.from(requests[6]!.init.body as ArrayBuffer).toString()).toBe("hello")
     expect(requests[6]!.url.searchParams.get("name")).toBe("hello.txt")
