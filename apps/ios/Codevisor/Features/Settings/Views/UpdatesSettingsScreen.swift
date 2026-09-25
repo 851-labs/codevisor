@@ -9,7 +9,6 @@ import SwiftUI
 /// until that check finishes, so nothing installs from a stale list.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   /// Whether this visit's opening check has finished.
   @State private var hasCheckedOnOpen = false
 
@@ -114,24 +113,23 @@ struct UpdatesSettingsScreen: View {
     }
   }
 
-  /// One line. With an update pending, the installed version truncates
-  /// first so the version being installed always shows. Accessibility text
-  /// sizes wrap instead: no single line fits a version there.
+  /// Versions are never truncated. A pending update reads "installed →
+  /// latest" on one line when it fits and otherwise breaks at the arrow, one
+  /// version per line. In-flight and failure status stays on one line.
   @ViewBuilder
   private func detail(for component: UpdateComponent) -> some View {
-    if dynamicTypeSize.isAccessibilitySize {
-      Text(component.detailText)
-    } else if let change = component.pendingVersionChange {
-      HStack(spacing: 4) {
-        Text(verbatim: change.installed)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Text(verbatim: "→ \(change.latest)")
-          .lineLimit(1)
-          .layoutPriority(1)
+    if let change = component.pendingVersionChange {
+      ViewThatFits(in: .horizontal) {
+        Text(component.detailText)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(verbatim: "\(change.installed) →")
+          Text(verbatim: change.latest)
+        }
       }
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(change.installed) to \(change.latest)")
+    } else if component.phase == .idle {
+      Text(component.detailText)
     } else {
       Text(component.detailText)
         .lineLimit(1)

@@ -37,10 +37,10 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
 }
 
 extension UpdateComponent {
-  /// The row's one-line detail in every state: versions when idle, what the
-  /// machine is doing while updating, a one-line reason when failed. One
-  /// line by contract — rows keep their height through a live update, and
-  /// the full failure output lives behind a details control.
+  /// The row's detail in every state: versions when idle, what the machine
+  /// is doing while updating, a one-line reason when failed. Status stays on
+  /// one line and the full failure output lives behind a details control;
+  /// versions are never truncated, so rows may wrap them.
   public var detailText: String {
     switch phase {
     case .updating:
@@ -62,9 +62,8 @@ extension UpdateComponent {
   }
 
   /// The move an idle row's update would make, when both ends are known.
-  /// Rows draw it apart from `detailText` so that on a narrow row the
-  /// installed version gives way and the version being installed stays
-  /// readable.
+  /// Rows use it to break a version change that doesn't fit one line at the
+  /// arrow instead of inside a version.
   public var pendingVersionChange: (installed: String, latest: String)? {
     guard phase == .idle, updateAvailable, let installedVersion, let latestVersion else {
       return nil
