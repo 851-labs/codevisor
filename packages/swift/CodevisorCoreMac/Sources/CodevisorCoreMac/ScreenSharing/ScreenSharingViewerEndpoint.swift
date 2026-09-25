@@ -59,6 +59,8 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   /// server resizes its desktop, or it can change its UI scale. Unknown until the session
   /// hears from the server; the toolbar disables the button while it isn't true.
   public let resolutionAvailability = ScreenSharingResolutionAvailability()
+  /// The host's sound and its mute toggle (851-2379); nil when the session can't play it.
+  public private(set) var audio: ScreenSharingAudioControl?
   private var desktopResizes: Bool? {
     didSet { updateResolutionAvailability() }
   }
@@ -147,6 +149,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       surface?.showRemoteCursor(update)
     }
     session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
+    if session.supportsAudio { audio = ScreenSharingAudioControl(session: session) }
     // With Dynamic Resolution on, a desktop that can resize follows the pane (851-2314, 851-2340).
     surface.onSizeChanged = { [weak self] size, scale in
       self?.paneSize = (size, scale)
@@ -264,4 +267,21 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
 public final class ScreenSharingResolutionAvailability {
   public internal(set) var available: Bool?
   init() {}
+}
+
+/// The host's sound on a native session (851-2379): on unless muted. Muting tells the host to stop
+/// sending it.
+@MainActor
+@Observable
+public final class ScreenSharingAudioControl {
+  public var enabled: Bool {
+    didSet { if enabled != oldValue { session?.setAudioEnabled(enabled) } }
+  }
+  @ObservationIgnored private weak var session: (any ScreenSharingViewingSession)?
+
+  init(session: any ScreenSharingViewingSession, enabled: Bool = true) {
+    self.session = session
+    self.enabled = enabled
+    session.setAudioEnabled(enabled)
+  }
 }

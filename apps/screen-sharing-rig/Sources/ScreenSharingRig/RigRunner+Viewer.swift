@@ -60,6 +60,9 @@
       let peer = try ScreenSharingReceiver(configuration: configuration.video, metrics: metrics, options: options)
       let session = RigSession(id: UUID().uuidString.lowercased(), peer: peer, metrics: metrics)
       self.session = session
+      // The host's sound (851-2379), silent here: the rig measures it, it doesn't play it.
+      peer.audioVolume = 0
+      peer.setAudioEnabled(true)
       peer.onConnectionChanged = { [weak self, weak session] state in
         Task { @MainActor in
           guard let self, let session else { return }

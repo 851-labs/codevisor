@@ -41,6 +41,13 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     cursorChannel.onAvailabilityChanged = { [weak self] available in
       if available { self?.subscribeToCursor() }
     }
+    audioChannel.onMessage = { [weak self] message in
+      guard case .packet(let packet) = message else { return }
+      self?.audioPlayer?.receive(packet)
+    }
+    audioChannel.onAvailabilityChanged = { [weak self] available in
+      if available { self?.subscribeToAudio() } else { self?.audioSubscribed = false }
+    }
   }
 
   // MARK: ScreenSharingViewingSession
@@ -64,6 +71,94 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       if let position = lastCursorPosition { onCursorChanged?(position) }
     }
   }
+  // MARK: Audio (851-2379)
+
+  public var supportsAudio: Bool { true }
+  private var audioPlayer: ScreenSharingAudioPlayer?
+  private var audioWanted = false
+  private var audioSubscribed = false
+  private var audioSync: Task<Void, Never>?
+
+  /// Plays the host's sound: subscribes once the channel is open and keeps the sound as late as
+  /// the picture (the video's jitter-buffer delay, measured every second). Disabling unsubscribes,
+  /// so a muted viewer costs the host nothing.
+  public func setAudioEnabled(_ enabled: Bool) {
+    audioWanted = enabled
+    if enabled {
+      if audioPlayer == nil {
+        do {
+          let player = try ScreenSharingAudioPlayer()
+          try player.start()
+          player.volume = audioVolume
+          audioPlayer = player
+        } catch {
+          metrics.label("audioError", error.localizedDescription)
+          return
+        }
+      }
+      subscribeToAudio()
+      audioSync = audioSync ?? Task { [weak self] in await self?.followVideoDelay() }
+    } else {
+      if audioSubscribed { audioChannel.send(.unsubscribe) }
+      audioSubscribed = false
+      audioSync?.cancel()
+      audioSync = nil
+      audioPlayer?.stop()
+      audioPlayer = nil
+    }
+  }
+
+  /// Output level for the host's sound, 0…1; kept across mute and unmute.
+  public var audioVolume: Float = 1 {
+    didSet { audioPlayer?.volume = audioVolume }
+  }
+
+  private func subscribeToAudio() {
+    guard audioWanted, !audioSubscribed, audioChannel.isAvailable else { return }
+    audioSubscribed = audioChannel.send(.subscribe)
+  }
+
+  /// The audio target: as late as the picture, but at least 60 ms, plus a margin that grows by
+  /// 10 ms with each underrun (Wi-Fi delivers in bursts) and shrinks by 2 ms a second.
+  static func audioTarget(videoDelay: Double, margin: Double) -> Double { max(0.06, videoDelay) + margin }
+
+  static func audioMargin(_ margin: Double, newUnderruns: Int) -> Double {
+    newUnderruns > 0 ? min(0.12, margin + 0.01 * Double(newUnderruns)) : max(0, margin - 0.002)
+  }
+
+  private func followVideoDelay() async {
+    var previous: (delay: Double, emitted: Double)?
+    var margin = 0.0
+    var underruns = 0
+    while !Task.isCancelled {
+      do { try await Task.sleep(for: .seconds(1)) } catch { return }
+      let statistics = await self.statistics()
+      guard let player = audioPlayer else { return }
+      let delay = statistics.first { $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".jitterBufferDelay") }
+        .flatMap { Double($0.value) }
+      let emitted = statistics.first {
+        $0.key.hasPrefix("inbound-rtp.") && $0.key.hasSuffix(".jitterBufferEmittedCount")
+      }.flatMap { Double($0.value) }
+      guard let delay, let emitted else { continue }
+      let counted = player.statistics.underruns
+      margin = Self.audioMargin(margin, newUnderruns: counted - underruns)
+      underruns = counted
+      if let previous, emitted > previous.emitted {
+        // The video waits this long in its jitter buffer, plus about a frame to decode and draw.
+        let videoDelay = (delay - previous.delay) / (emitted - previous.emitted) + 0.02
+        let target = Self.audioTarget(videoDelay: videoDelay, margin: margin)
+        player.setTargetDelay(target)
+        metrics.label("audioTargetDelayMs", String(Int(target * 1000)))
+      }
+      previous = (delay, emitted)
+      let buffer = player.statistics
+      metrics.label(
+        "audio",
+        "buffered \(buffer.buffered) frames, underruns \(buffer.underruns), lost \(buffer.lost), dropped \(buffer.dropped)"
+      )
+    }
+  }
+
   private var lastCursorShape: ScreenSharingCursorUpdate?
   private var lastCursorPosition: ScreenSharingCursorUpdate?
   private var subscribedToCursor = false
@@ -131,6 +226,9 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
   }
 
   override func willClose() {
+    audioSync?.cancel()
+    audioPlayer?.stop()
+    audioPlayer = nil
     codecFactory.refreshSignal.close()
     ownedWork.close(with: recovery.close())
     codecFactory.sourceIdleMonitor.stop()

@@ -27,6 +27,8 @@ public class ScreenSharingPeer {
   public let clipboardChannel: ScreenSharingClipboardChannel
   /// The host's pointer (851-2377); a peer without it never opens this channel.
   public let cursorChannel: ScreenSharingCursorChannel
+  /// The host's sound (851-2379); a peer without it never opens this channel.
+  public let audioChannel: ScreenSharingAudioChannel
   public var onConnectionChanged: ((String) -> Void)?
   let factory: RTCPeerConnectionFactory
   let codecFactory: ScreenSharingCodecFactory
@@ -48,6 +50,7 @@ public class ScreenSharingPeer {
     controlChannel = staged.controlChannel
     clipboardChannel = staged.clipboardChannel
     cursorChannel = staged.cursorChannel
+    audioChannel = staged.audioChannel
     videoRefresh = staged.videoRefresh
     videoRefresh.onMessage = { [weak self] message in
       guard let self, !self.closed else { return }
@@ -184,6 +187,7 @@ public class ScreenSharingPeer {
     videoRefresh.close()
     clipboardChannel.close()
     cursorChannel.close()
+    audioChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
     connection.close()
@@ -233,6 +237,7 @@ struct ScreenSharingPeerStaging {
   let controlChannel: ScreenSharingControlChannel
   let clipboardChannel: ScreenSharingClipboardChannel
   let cursorChannel: ScreenSharingCursorChannel
+  let audioChannel: ScreenSharingAudioChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
   init(
@@ -284,5 +289,8 @@ struct ScreenSharingPeerStaging {
     cursorChannel = try ScreenSharingCursorChannel(
       connection: connection, id: 6, label: "codevisor.cursor.v1", limits: .cursor,
       encode: { try $0.encoded() }, decode: ScreenSharingCursorMessage.decode)
+    audioChannel = try ScreenSharingAudioChannel(
+      connection: connection, id: 8, label: "codevisor.audio.v1", reliable: false,
+      encode: { $0.encoded() }, decode: ScreenSharingAudioMessage.decode)
   }
 }

@@ -36,6 +36,8 @@
     var sourceStarted = false
     /// The pointer as its own stream once the viewer subscribed (851-2377); display-backed sources only.
     var cursor: ScreenSharingCursorPublisher?
+    /// The host's sound once the viewer subscribed (851-2379).
+    var audioEncoder: ScreenSharingAudioEncoder?
     /// The negotiated codec's capture format: BGRA for HEVC Main 4:4:4, NV12 otherwise (851-2381).
     var capturePixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
 

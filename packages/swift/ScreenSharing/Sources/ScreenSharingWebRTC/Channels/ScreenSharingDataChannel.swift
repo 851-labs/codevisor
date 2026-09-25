@@ -15,18 +15,23 @@ public final class ScreenSharingDataChannel<Message: Sendable>: ScreenSharingMes
   private var closed = false
   private let encode: (Message) throws -> Data
   private let maximumBufferedBytes: Int
+  private let reliable: Bool
 
   /// `limits` bounds one message and what may wait in either direction; the cursor channel
   /// carries images, the others small messages.
   init(
     connection: RTCPeerConnection, id: Int32, label: String, limits: ScreenSharingChannelLimits = .control,
+    reliable: Bool = true,
     encode: @escaping (Message) throws -> Data, decode: @escaping (Data) throws -> Message
   ) throws {
     self.encode = encode
     maximumBufferedBytes = limits.bufferedBytes
+    self.reliable = reliable
     receiver = ScreenSharingControlReceiver(limits: limits)
     let options = RTCDataChannelConfiguration()
-    options.isOrdered = true
+    // Audio (851-2379) is unordered and never retransmitted: a late packet is worse than a lost one.
+    options.isOrdered = reliable
+    if !reliable { options.maxRetransmits = 0 }
     options.isNegotiated = true
     options.channelId = id
     options.protocol = label
@@ -52,6 +57,8 @@ public final class ScreenSharingDataChannel<Message: Sendable>: ScreenSharingMes
   @discardableResult
   public func send(_ message: Message) -> Bool {
     guard isAvailable, let data = try? encode(message) else { return false }
+    // An unreliable channel sheds what doesn't fit instead of giving up.
+    if !reliable, channel.bufferedAmount + UInt64(data.count) > UInt64(maximumBufferedBytes) { return false }
     guard channel.bufferedAmount + UInt64(data.count) <= UInt64(maximumBufferedBytes),
       channel.sendData(RTCDataBuffer(data: data, isBinary: true))
     else { close(); return false }
@@ -142,3 +149,4 @@ struct ScreenSharingControlInbox {
 public typealias ScreenSharingControlChannel = ScreenSharingDataChannel<ScreenSharingControlMessage>
 public typealias ScreenSharingClipboardChannel = ScreenSharingDataChannel<ScreenSharingClipboardMessage>
 public typealias ScreenSharingCursorChannel = ScreenSharingDataChannel<ScreenSharingCursorMessage>
+public typealias ScreenSharingAudioChannel = ScreenSharingDataChannel<ScreenSharingAudioMessage>

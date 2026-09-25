@@ -47,3 +47,19 @@ public struct ScreenSharingDynamicResolutionToggle: View {
     }
   }
 }
+
+/// Mutes or unmutes the host's sound (851-2379), in the app's and the rig's toolbars.
+public struct ScreenSharingMuteButton: View {
+  @Bindable var audio: ScreenSharingAudioControl
+
+  public init(audio: ScreenSharingAudioControl) { self.audio = audio }
+
+  public var body: some View {
+    Toggle(isOn: $audio.enabled) {
+      Image(systemName: audio.enabled ? "speaker.wave.2" : "speaker.slash")
+    }
+    .toggleStyle(.button)
+    .accessibilityLabel(audio.enabled ? "Mute" : "Unmute")
+    .help(audio.enabled ? "Mute this machine's sound" : "Play this machine's sound")
+  }
+}

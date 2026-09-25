@@ -64,6 +64,8 @@
     ) throws -> any ScreenSharingCaptureStream {
       let stream = SCStream(filter: self, configuration: configuration, delegate: output)
       try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: output.queue)
+      // Silent until the configuration asks for audio (851-2379).
+      try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: output.audioQueue)
       return ScreenSharingSystemCaptureStream(stream: stream)
     }
   }
