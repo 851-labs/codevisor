@@ -41,6 +41,7 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     cursorChannel.onAvailabilityChanged = { [weak self] available in
       if available { self?.subscribeToCursor() }
     }
+    displayChannel.onMessage = { [weak self] in self?.receiveDisplay($0) }
     audioChannel.onMessage = { [weak self] message in
       guard case .packet(let packet) = message else { return }
       self?.audioPlayer?.receive(packet)
@@ -71,6 +72,47 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
       if let position = lastCursorPosition { onCursorChanged?(position) }
     }
   }
+  // MARK: Dynamic Resolution (851-2376)
+
+  /// The host sizes a virtual display to the pane once it says it can (`ready`).
+  public var resizesDesktop: Bool { true }
+  public var onResizeSupportChanged: ((Bool) -> Void)? {
+    didSet { if let displaySupport { onResizeSupportChanged?(displaySupport) } }
+  }
+  private var displaySupport: Bool?
+  private var requestedDesktop: ScreenSharingDisplayMessage?
+
+  public func requestDesktopSize(width: Int, height: Int) {
+    sendDisplay(.resize(width: width, height: height))
+  }
+
+  public func resetDesktopSize() { sendDisplay(.restore) }
+
+  /// Latest wins: what the pane wants now is sent once the host is ready, and not again.
+  private func sendDisplay(_ message: ScreenSharingDisplayMessage) {
+    guard message != requestedDesktop else { return }
+    requestedDesktop = message
+    guard displaySupport == true else { return }
+    displayChannel.send(message)
+  }
+
+  private func receiveDisplay(_ message: ScreenSharingDisplayMessage) {
+    switch message {
+    case .ready:
+      displaySupport = true
+      onResizeSupportChanged?(true)
+      if let requestedDesktop { displayChannel.send(requestedDesktop) }
+    case .unavailable(let reason):
+      displaySupport = false
+      metrics.label("desktopResize", reason)
+      onResizeSupportChanged?(false)
+    case .resized(let width, let height):
+      metrics.label("desktopResize", "\(width)×\(height) pt")
+    case .resize, .restore:
+      return
+    }
+  }
+
   // MARK: Audio (851-2379)
 
   public var supportsAudio: Bool { true }

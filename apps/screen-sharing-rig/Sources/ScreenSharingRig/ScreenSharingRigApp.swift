@@ -43,6 +43,10 @@
           FrameClockCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
+        if arguments.first == "mirror-check" {
+          MirrorCheckCommand.main(arguments: Array(arguments.dropFirst()))
+          return
+        }
         if arguments.first == "vnc-server" {
           VNCServerCommand.main(arguments: Array(arguments.dropFirst()))
           return

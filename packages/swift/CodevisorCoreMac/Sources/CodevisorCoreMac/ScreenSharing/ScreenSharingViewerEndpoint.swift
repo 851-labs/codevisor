@@ -105,6 +105,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
       if let size = defaultDesktopSize ?? session.initialDesktopSize {
         session.requestDesktopSize(width: size.width, height: size.height)
       }
+      session.resetDesktopSize()
       if appliedScale == 2 { applyDesktopScale(1) }
     }
     let slow = (session.linkBitsPerSecond ?? .infinity) < ScreenSharingDynamicResolution.oneXBelowBitsPerSecond

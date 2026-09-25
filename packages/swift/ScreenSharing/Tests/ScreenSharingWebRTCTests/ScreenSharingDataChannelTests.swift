@@ -38,9 +38,9 @@ struct ScreenSharingDataChannelTests {
         return data
       }
       host = try ScreenSharingDataChannel<Data>(
-        connection: harness.sender.connection, id: 12, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+        connection: harness.sender.connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       viewer = try ScreenSharingDataChannel<Data>(
-        connection: harness.receiver.connection, id: 12, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+        connection: harness.receiver.connection, id: 14, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       viewer.onMessage = { [self] data in
         received.append(data)
         delivered.signal()
