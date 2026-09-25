@@ -112,7 +112,34 @@
       return RigAnswerResponse(sessionID: offer.sessionID, answer: answer, build: build, name: name)
     }
 
+    /// Starts the active source; a start that a wedged `replayd` leaves waiting is recovered by
+    /// restarting the daemon, as the product host does (851-2385). A retry first releases what the
+    /// hung attempt made (its capture, virtual display, workload window).
     func startSource(in session: RigSession) async throws {
+      let source = activeCapture
+      var attempts = 0
+      let recovery = ScreenSharingCaptureStallRecovery.live(
+        metrics: session.metrics, restartCapture: {}, log: { [weak self] in self?.log($0) },
+        onStalled: { [weak self, weak session] in
+          session?.metrics.label("sourceStall", "starting \(source) didn't return; restarting replayd")
+          self?.log("stall: starting \(source) didn't return in 5 s; restarting replayd")
+        })
+      try await recovery.start { [weak self, weak session] retry in
+        guard let self, let session, !session.closed else { throw CancellationError() }
+        attempts += 1
+        if retry {
+          await session.stopSource()
+          session.sourceStarted = true
+        }
+        try await self.startSourceUnwatched(in: session)
+      }
+      if attempts > 1 {
+        session.metrics.label("sourceStall", "")
+        log("stall recovered: \(source) started after restarting replayd")
+      }
+    }
+
+    private func startSourceUnwatched(in session: RigSession) async throws {
       let video = configuration.video
       session.metrics.label("captureError", "")
       if session.displaySleepAssertion == nil {

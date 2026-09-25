@@ -1,3 +1,4 @@
+import CodevisorTestSupport
 import Darwin
 import Foundation
 import Testing
@@ -161,5 +162,160 @@ struct ScreenSharingCaptureStallRecoveryTests {
     #expect(ScreenSharingCaptureStallRecovery.activity([:]) == 0)
     #expect(ScreenSharingCaptureStallRecovery.activity(["capturedFrames": 2]) == 2)
     #expect(ScreenSharingCaptureStallRecovery.activity(["capturedFrames": 2, "unrelated": 7]) == 2)
+  }
+}
+
+/// A capture start that a wedged `replayd` leaves waiting (on tuftlord, a stopped daemon made the
+/// start hang until the daemon ran again, 851-2385): after 5 s the daemon is restarted, the
+/// waiting start fails or completes, and a failed one is tried once more.
+@MainActor
+struct ScreenSharingCaptureStartWatchdogTests {
+  /// A start that waits until the test finishes it.
+  @MainActor final class Start {
+    private var continuations: [CheckedContinuation<Void, any Error>] = []
+    private(set) var calls = 0
+    private(set) var retries: [Bool] = []
+    let called = TestSignal()
+    var completesAtOnceFromCall: Int?
+
+    func run(retry: Bool) async throws {
+      calls += 1
+      retries.append(retry)
+      called.signal()
+      if let first = completesAtOnceFromCall, calls >= first { return }
+      try await withCheckedThrowingContinuation { continuations.append($0) }
+    }
+
+    func finish(throwing error: (any Error)? = nil) {
+      guard !continuations.isEmpty else { return }
+      let continuation = continuations.removeFirst()
+      if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+    }
+  }
+
+  @MainActor final class Harness {
+    let clock = TestClock()
+    let start = Start()
+    var restarts = 0
+    var stalls = 0
+    let stalled = TestSignal()
+    var lastRestart: TimeInterval?
+    /// What restarting the daemon does to the waiting start.
+    var onRestart: (Start) -> Void = { $0.finish(throwing: CocoaError(.featureUnsupported)) }
+
+    var recovery: ScreenSharingCaptureStallRecovery {
+      ScreenSharingCaptureStallRecovery(
+        callbacks: { 0 }, restartCapture: {},
+        restartDaemon: {
+          self.restarts += 1
+          self.onRestart(self.start)
+          return true
+        },
+        lastDaemonRestart: { self.lastRestart }, now: { 1000 },
+        sleep: { try await self.clock.sleep(for: $0) },
+        onStalled: {
+          self.stalls += 1
+          self.stalled.signal()
+        })
+    }
+
+    func run() -> Task<Void, any Error> {
+      let recovery = recovery
+      let start = start
+      return Task { try await recovery.start { try await start.run(retry: $0) } }
+    }
+  }
+
+  @Test func aStartThatReturnsInTimeIsLeftAlone() async throws {
+    let harness = Harness()
+    harness.start.completesAtOnceFromCall = 1
+    try await harness.run().value
+    #expect(harness.start.calls == 1 && harness.restarts == 0 && harness.stalls == 0)
+  }
+
+  @Test func aSlowStartThatStillFinishesInTimeIsNotAStall() async throws {
+    let harness = Harness()
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(4))
+    harness.start.finish()
+    try await run.value
+    #expect(harness.restarts == 0 && harness.stalls == 0)
+  }
+
+  @Test func aStartTheDaemonRestartFailsIsStartedAgainAsARetry() async throws {
+    let harness = Harness()
+    harness.start.completesAtOnceFromCall = 2
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    try await run.value
+    #expect(harness.stalls == 1 && harness.restarts == 1)
+    #expect(harness.start.retries == [false, true])
+  }
+
+  /// What tuftlord did: the killed daemon's reply never came, so the first start never returned.
+  @Test func aStartThatNeverReturnsIsAbandonedOnceTheDaemonIsBack() async throws {
+    let harness = Harness()
+    harness.start.completesAtOnceFromCall = 2
+    harness.onRestart = { _ in }
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    await harness.clock.waitForSleep(.seconds(1))
+    #expect(harness.start.calls == 1, "launchd gets its second before the retry")
+    harness.clock.advance(by: .seconds(1))
+    try await run.value
+    #expect(harness.start.retries == [false, true])
+  }
+
+  @Test func aHungStartThatCompletesOnceTheDaemonIsBackIsNotRepeated() async throws {
+    let harness = Harness()
+    harness.onRestart = { $0.finish() }
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    try await run.value
+    #expect(harness.restarts == 1 && harness.start.calls == 1)
+  }
+
+  @Test func withinTheRateLimitAHungStartIsOnlyWaitedFor() async throws {
+    let harness = Harness()
+    harness.lastRestart = 1000 - 60
+    let run = harness.run()
+    await harness.clock.waitForSleep(.seconds(5))
+    harness.clock.advance(by: .seconds(5))
+    // Reported as stalled, but replayd was restarted a minute ago: no second kill.
+    await harness.stalled.wait()
+    #expect(harness.restarts == 0)
+    harness.start.finish()
+    try await run.value
+    #expect(harness.start.calls == 1)
+  }
+
+  /// Ending a session doesn't wait on a stop a wedged daemon holds.
+  @Test func aStopThatHangsIsWaitedForAtMostThreeSeconds() async {
+    let clock = TestClock()
+    let start = Start()
+    let ended = Task {
+      await ScreenSharingCaptureStallRecovery.stop(
+        { try await start.run(retry: false) }, sleep: { try await clock.sleep(for: $0) })
+    }
+    await clock.waitForSleep(.seconds(3))
+    clock.advance(by: .seconds(3))
+    #expect(await ended.value == false)
+    let quick = await ScreenSharingCaptureStallRecovery.stop({}, sleep: { try await clock.sleep(for: $0) })
+    #expect(quick)
+    start.finish()
+  }
+
+  @Test func cancellingTheCallerCancelsTheStart() async throws {
+    let harness = Harness()
+    let run = harness.run()
+    await harness.start.called.wait()
+    run.cancel()
+    harness.start.finish(throwing: CancellationError())
+    await #expect(throws: CancellationError.self) { try await run.value }
+    #expect(harness.restarts == 0)
   }
 }
