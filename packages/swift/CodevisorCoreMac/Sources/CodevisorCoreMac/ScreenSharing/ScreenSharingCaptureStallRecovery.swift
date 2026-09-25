@@ -68,13 +68,15 @@ public struct ScreenSharingCaptureStallRecovery {
 
   /// The real thing: counts `metrics`' capture callbacks and delivered frames, kills the
   /// user's `replayd` for real (logging its descriptor count first) and sleeps for real.
+  /// `callbacks` overrides counting from `metrics`, for a stream whose callbacks aren't in them
+  /// (the Computer Use preview's).
   public static func live(
-    metrics: ScreenSharingMetrics, restartCapture: @escaping () async throws -> Void,
+    metrics: ScreenSharingMetrics, callbacks: (() -> Int)? = nil, restartCapture: @escaping () async throws -> Void,
     log: @escaping (String) -> Void, onStalled: @escaping () -> Void
   ) -> Self {
     let uptime = { ProcessInfo.processInfo.systemUptime }
     return Self(
-      callbacks: { activity(metrics.snapshot().counters) }, restartCapture: restartCapture,
+      callbacks: callbacks ?? { activity(metrics.snapshot().counters) }, restartCapture: restartCapture,
       restartDaemon: {
         let daemons = ScreenSharingCaptureDaemon.processes()
         let descriptors = daemons.map { ScreenSharingCaptureDaemon.descriptorCount($0).map(String.init) ?? "?" }

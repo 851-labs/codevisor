@@ -54,6 +54,10 @@ func computerUseLiveFrame(
 final class ComputerUseFramePublisher: NSObject, SCStreamOutput, @unchecked Sendable {
   private let lock = NSLock()
   private var sinks: [UUID: any ComputerUseFrameSink] = [:]
+  private var callbackCount = 0
+
+  /// Every screen callback so far: a stream that never calls back is stalled (851-2385).
+  var callbacks: Int { lock.withLock { callbackCount } }
 
   func setSinks(_ sinks: [UUID: any ComputerUseFrameSink]) {
     lock.withLock { self.sinks = sinks }
@@ -87,6 +91,7 @@ final class ComputerUseFramePublisher: NSObject, SCStreamOutput, @unchecked Send
     // Receiving frames also keeps the system's live sharing preview
     // populated; with no sink attached they are simply released.
     guard type == .screen else { return }
+    lock.withLock { callbackCount += 1 }
     publish(sampleBuffer)
   }
 }
