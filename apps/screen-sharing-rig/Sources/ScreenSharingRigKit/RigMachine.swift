@@ -56,21 +56,23 @@ public struct RigMachine: Sendable, Equatable, Identifiable, Hashable {
       detail: "Xfce over the server's VNC socket, via Tailscale",
       connection: .server(URL(string: "http://contabo-vps.tail6fc9a.ts.net:49361")!, sshTarget: "root@164.68.121.169"),
       systemImage: "server.rack"),
+    // tuftlord by its Tailscale name: reachable on its LAN and off it (the rig couldn't reach
+    // tuftlord at all once the two Macs were on different networks, 2026-09-25).
     // Apple's own Screen Sharing server, with "VNC viewers may control screen with password" on.
     RigMachine(
       id: "tuftlord-mac",
       name: "tuftlord · VNC",
-      detail: "macOS Screen Sharing on tuftlords-macbook-pro.local",
-      connection: .vnc(host: "tuftlords-macbook-pro.local", port: 5900, password: .keychain),
+      detail: "macOS Screen Sharing on tuftlords-macbook-pro, via Tailscale",
+      connection: .vnc(host: "tuftlords-macbook-pro.tail6fc9a.ts.net", port: 5900, password: .keychain),
       systemImage: "laptopcomputer"),
     // The same Mac through the Codevisor app's server: the native path (851-2370).
     RigMachine(
       id: "tuftlord-native",
       name: "tuftlord · High Performance",
-      detail: "Codevisor native screen sharing on tuftlords-macbook-pro.local",
+      detail: "Codevisor native screen sharing on tuftlords-macbook-pro, via Tailscale",
       connection: .server(
-        URL(string: "http://tuftlords-macbook-pro.local:49361")!,
-        sshTarget: "tuftlord@tuftlords-macbook-pro.local"),
+        URL(string: "http://tuftlords-macbook-pro.tail6fc9a.ts.net:49361")!,
+        sshTarget: "tuftlord@tuftlords-macbook-pro.tail6fc9a.ts.net"),
       systemImage: "laptopcomputer"),
   ]
 }
