@@ -12,6 +12,9 @@
     @Bindable var store: StoreOf<ScreenSharingViewer>
     /// Where the rig remembers this machine's Dynamic Resolution choice.
     let machineId: String
+    /// The machine settings sheet behind the gear (851-2367).
+    let settings: () -> ScreenSharingMachineSettings
+    let applySettings: (ScreenSharingMachineSettingsChanges) -> Void
 
     var body: some ToolbarContent {
       ToolbarItem(id: "screenSharing.mode", placement: .principal) {
@@ -44,6 +47,9 @@
       }
       ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
         RigScreenSharingDetailsButton(store: store).id(ObjectIdentifier(store))
+      }
+      ToolbarItem(id: "screenSharing.settings", placement: .primaryAction) {
+        ScreenSharingMachineSettingsButton(settings: settings, apply: applySettings).id(ObjectIdentifier(store))
       }
     }
 

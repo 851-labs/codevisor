@@ -117,5 +117,12 @@
     static func setDynamicResolution(_ enabled: Bool, for id: String) {
       UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
     }
+    /// When video last arrived from this machine (851-2367).
+    static func lastConnected(_ id: String) -> Date? {
+      UserDefaults.standard.object(forKey: "lastConnected.\(id)") as? Date
+    }
+    static func setLastConnected(_ date: Date, for id: String) {
+      UserDefaults.standard.set(date, forKey: "lastConnected.\(id)")
+    }
   }
 #endif

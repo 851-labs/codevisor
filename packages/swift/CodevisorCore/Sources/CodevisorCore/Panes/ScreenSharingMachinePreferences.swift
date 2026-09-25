@@ -18,4 +18,13 @@ public struct ScreenSharingMachinePreferences {
   public func setDynamicResolution(_ enabled: Bool, machineId: String) {
     defaults.set(enabled, forKey: Self.key(machineId))
   }
+
+  /// When video last arrived from this machine, for the settings sheet (851-2367).
+  public func lastConnected(machineId: String) -> Date? {
+    defaults.object(forKey: "screenSharing.lastConnected.\(machineId)") as? Date
+  }
+
+  public func setLastConnected(_ date: Date, machineId: String) {
+    defaults.set(date, forKey: "screenSharing.lastConnected.\(machineId)")
+  }
 }

@@ -20,7 +20,10 @@ final class ScreenSharingPane: Pane {
   private var mounts = Set<UUID>()
   private var persistedRevision = 0
   private var persistedResolutionRevision = 0
+  private var recordedViewing = false
   private let machineId: String
+  /// How the machine is reached and where, for the settings sheet (851-2367).
+  private let connection: (kind: String, address: String?)
   private var observation: ObserveToken?
 
   /// The machine the pane streams from.
@@ -31,6 +34,7 @@ final class ScreenSharingPane: Pane {
     machineName = context.machine.name
     machineId = context.machine.id
     isLocal = context.machine.isLocal
+    connection = Self.connection(of: context.machine)
     store = context.workspaceId.map { workspaceId in
       let client = context.client ?? CodevisorServerClient(config: context.machine.serverConfig)
       let state = ScreenSharingViewer.State(
@@ -48,6 +52,12 @@ final class ScreenSharingPane: Pane {
     observation = observe { [weak self] in
       guard let self else { return }
       store.endpoint?.onFocusChanged = self.onFocusChanged
+      // Video arriving is what "last connected" means in the settings sheet.
+      let viewing = store.phase == .viewing
+      if viewing, !self.recordedViewing {
+        ScreenSharingMachinePreferences().setLastConnected(Date(), machineId: self.machineId)
+      }
+      self.recordedViewing = viewing
       // Dynamic Resolution is the machine's, not the pane's (851-2340).
       if store.dynamicResolutionRevision != self.persistedResolutionRevision {
         self.persistedResolutionRevision = store.dynamicResolutionRevision
@@ -60,6 +70,36 @@ final class ScreenSharingPane: Pane {
     }
   }
   func makeView() -> AnyView { AnyView(ScreenSharingPaneView(pane: self)) }
+
+  /// The machine's settings as the sheet shows them (851-2367). The connection is the
+  /// machine's codevisor-server's to define, so only the viewer's choices are editable.
+  func machineSettings() -> ScreenSharingMachineSettings {
+    ScreenSharingMachineSettings(
+      name: machineName, connection: connection.kind, address: connection.address,
+      dynamicResolution: store?.dynamicResolution
+        ?? ScreenSharingMachinePreferences().dynamicResolution(
+          machineId: machineId),
+      displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
+      preferredDisplayId: store?.selectedDisplayId ?? store?.preferences.preferredDisplayId,
+      lastConnected: ScreenSharingMachinePreferences().lastConnected(machineId: machineId))
+  }
+
+  /// Done in the sheet: Dynamic Resolution applies as the toolbar toggle does (and is saved for
+  /// the machine); another display reconnects to it and is remembered for the pane.
+  func applyMachineSettings(_ changes: ScreenSharingMachineSettingsChanges) {
+    guard let store else { return }
+    if let enabled = changes.dynamicResolution, enabled != store.dynamicResolution {
+      store.send(.dynamicResolutionToggled)
+    }
+    if let display = changes.preferredDisplayId { store.send(.displaySelected(display)) }
+  }
+
+  private static func connection(of machine: CodevisorMachine) -> (kind: String, address: String?) {
+    if machine.isLocal { return ("Codevisor on this Mac", nil) }
+    if machine.isCloud { return ("Codevisor Cloud", nil) }
+    let url = machine.baseURL
+    return ("Codevisor server", url.host().map { host in url.port.map { "\(host):\($0)" } ?? host })
+  }
   func focus() { if store?.lease?.phase != .controlling { onFocus?() } }
   func visibilityChanged(_ visible: Bool) { store?.send(visible ? .paneAppeared : .paneDisappeared) }
   func applyPreferences(_ preferences: ScreenSharingPanePreferences) { store?.send(.preferencesSynced(preferences)) }

@@ -54,6 +54,56 @@
       prepare(typed: RigVNCSignIn.Typed(username: username, password: password, remember: remember))
     }
 
+    /// The machine's settings for the sheet (851-2367): the catalog's connection, read-only;
+    /// the saved sign-in (never the password), Dynamic Resolution and the display, editable.
+    func machineSettings() -> ScreenSharingMachineSettings {
+      var settings = ScreenSharingMachineSettings(
+        name: machine.name, connection: "",
+        dynamicResolution: store?.dynamicResolution
+          ?? RigMachineSettings.dynamicResolution(machine.id),
+        displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
+        preferredDisplayId: store?.selectedDisplayId, lastConnected: RigMachineSettings.lastConnected(machine.id))
+      switch machine.connection {
+      case .server(let url, _):
+        settings.connection = "Codevisor server"
+        settings.address = url.host().map { host in url.port.map { "\(host):\($0)" } ?? host }
+      case .vnc(let host, let port, let password):
+        settings.connection = "VNC"
+        settings.address = "\(host):\(port)"
+        if password == .keychain {
+          let saved = RigVNCSignIn.saved(machineId: machine.id, store: RigKeychain.vncPasswords)
+          settings.signIn = .init(userName: saved.userName, hasSavedPassword: saved.hasPassword)
+        }
+      }
+      return settings
+    }
+
+    /// Done in the sheet: Dynamic Resolution applies now and is saved; another display
+    /// reconnects to it; changed sign-in is saved (or forgotten) and the machine signs in again.
+    func applySettings(_ changes: ScreenSharingMachineSettingsChanges) {
+      if let enabled = changes.dynamicResolution {
+        RigMachineSettings.setDynamicResolution(enabled, for: machine.id)
+        if let store, store.dynamicResolution != enabled { store.send(.dynamicResolutionToggled) }
+      }
+      if let display = changes.preferredDisplayId { store?.send(.displaySelected(display)) }
+      guard changes.userName != nil || changes.password != .keep else { return }
+      let password: RigVNCSignIn.PasswordChange =
+        switch changes.password {
+        case .keep: .keep
+        case .forget: .forget
+        case .replace(let new): .replace(new)
+        }
+      do {
+        if try RigVNCSignIn.update(
+          machineId: machine.id, userName: changes.userName, password: password, store: RigKeychain.vncPasswords)
+        {
+          retry()
+        }
+      } catch {
+        failure = "The Keychain didn't save the sign-in: \(error.localizedDescription)"
+      }
+    }
+
     /// Removes this machine's stored VNC password and asks for it again.
     func forgetPassword() {
       guard case .vnc(_, _, .keychain) = machine.connection else { return }
@@ -263,10 +313,18 @@
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+      // Video arriving is what "last connected" means in the settings sheet (851-2367).
+      .onChange(of: model.store?.phase) { _, phase in
+        if phase == .viewing { RigMachineSettings.setLastConnected(Date(), for: model.machine.id) }
+      }
       .navigationTitle(model.machine.name)
       .navigationSubtitle(model.machine.detail)
       .toolbar {
-        if let store = model.store { RigScreenSharingToolbar(store: store, machineId: model.machine.id) }
+        if let store = model.store {
+          RigScreenSharingToolbar(
+            store: store, machineId: model.machine.id, settings: { model.machineSettings() },
+            applySettings: { model.applySettings($0) })
+        }
       }
       // View → Reconnect (⌘R): only the selected machine's view is mounted, so it is the one that reconnects.
       .onReceive(NotificationCenter.default.publisher(for: RigMainMenu.reconnect)) { _ in model.retry() }
