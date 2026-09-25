@@ -6,10 +6,12 @@ import ScreenSharing
 /// experiment the probe and the rig can select. `nil` means "the product
 /// default" for the optional thresholds.
 public struct ScreenSharingPeerOptions: Sendable, Equatable {
-  /// Preferred codec: HEVC on Apple silicon (851-2370 targets it only), sharper at the same bitrate.
-  public var codec: ScreenSharingVideoCodec = .hevc
-  /// Also offered, for a peer that can't use `codec` (an older app speaks H.264 only, 851-2372).
-  public var fallbackCodecs: [ScreenSharingVideoCodec] = [.h264]
+  /// Preferred codec: HEVC Main 4:4:4 on Apple silicon (851-2370 targets it only), so coloured
+  /// text keeps its chroma (851-2381).
+  public var codec: ScreenSharingVideoCodec = .hevc444
+  /// Also offered, for a peer that can't use `codec`: an app from before 851-2381 speaks HEVC
+  /// Main, one from before 851-2372 H.264 only.
+  public var fallbackCodecs: [ScreenSharingVideoCodec] = [.hevc, .h264]
   /// Encoder: VideoToolbox low-latency rate control (the product) or standard.
   public var useLowLatencyRateControl = true
   public var disableLookAhead = false

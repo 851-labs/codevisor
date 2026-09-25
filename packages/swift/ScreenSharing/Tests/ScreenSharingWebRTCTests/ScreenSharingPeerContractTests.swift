@@ -87,7 +87,7 @@ struct ScreenSharingPeerContractTests {
   @Test func peerOptionsCarryTheProductDefaultsAndCompareByValue() throws {
     let options = ScreenSharingPeerOptions()
     // HEVC first, H.264 for older peers (851-2372).
-    #expect(options.codec == .hevc && options.fallbackCodecs == [.h264] && options.useLowLatencyRateControl)
+    #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
     #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
     #expect(!options.prioritizeSpeed && !options.maintainSourceRate)
     #expect(options.maximumPendingFrames == 2 && options.keyframeIntervalSeconds == 2)

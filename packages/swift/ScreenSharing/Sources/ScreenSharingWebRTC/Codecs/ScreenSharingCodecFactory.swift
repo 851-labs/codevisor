@@ -48,36 +48,49 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     self.keyframeIntervalSeconds = keyframeIntervalSeconds
   }
 
-  /// The primary, then each fallback not already listed that shares its capture format.
+  /// The primary, then each fallback not already listed. HEVC Main 4:4:4 and Main share the
+  /// H265 payload name and are told apart by profile-id (851-2381). A host captures in the
+  /// pixel format of the codec the answer names (`ScreenSharingVideoCodec.negotiated`).
   static func negotiable(
     primary: ScreenSharingVideoCodec, fallbacks: [ScreenSharingVideoCodec]
   ) -> [ScreenSharingVideoCodec] {
     var codecs = [primary]
-    for fallback in fallbacks
-    where !codecs.contains(fallback) && fallback.capturePixelFormat == primary.capturePixelFormat
-      && !codecs.contains(where: { $0.payloadName == fallback.payloadName })
-    {
-      codecs.append(fallback)
-    }
+    for fallback in fallbacks where !codecs.contains(fallback) { codecs.append(fallback) }
     return codecs
+  }
+
+  /// The low-latency encoder can't do 4:4:4 (it may reduce chroma). A peer that asked for low
+  /// latency and negotiated Main 4:4:4 gets the next fastest: standard rate control at the
+  /// encoder's speed preference, about 3 ms more encode time at 1080p (851-2381).
+  static func rateControl(
+    for codec: ScreenSharingVideoCodec, lowLatencyRequested: Bool, prioritizeSpeed: Bool
+  ) -> (lowLatency: Bool, prioritizeSpeed: Bool) {
+    guard codec == .hevc444, lowLatencyRequested else { return (lowLatencyRequested, prioritizeSpeed) }
+    return (false, true)
   }
 
   func supportedCodecs() -> [RTCVideoCodecInfo] {
     codecs.map { RTCVideoCodecInfo(name: $0.payloadName, parameters: $0.sdpParameters) }
   }
 
-  /// The codec a negotiated payload name selects (names are unique within `codecs`).
+  /// The codec a negotiated format selects: by payload name, and for H265 by profile-id
+  /// (absent means Main, RFC 7798). Only codecs in `codecs` are ever selected.
   func codec(for info: RTCVideoCodecInfo) -> ScreenSharingVideoCodec? {
-    codecs.first { $0.payloadName == info.name }
+    let candidates = codecs.filter { $0.payloadName == info.name }
+    guard candidates.count > 1 || info.name == "H265" else { return candidates.first }
+    let profile = info.parameters["profile-id"] ?? "1"
+    return candidates.first { $0.sdpParameters["profile-id"] == profile }
   }
 
   func createEncoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoEncoder)? {
     guard let codec = codec(for: info) else { return nil }
     metrics.label("videoCodec", codec.rawValue)
+    let rateControl = Self.rateControl(
+      for: codec, lowLatencyRequested: useLowLatencyRateControl, prioritizeSpeed: prioritizeSpeed)
     return ScreenSharingRTCEncoder(
-      metrics: metrics, useLowLatencyRateControl: useLowLatencyRateControl, codec: codec,
+      metrics: metrics, useLowLatencyRateControl: rateControl.lowLatency, codec: codec,
       disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames, staticCodecRate: staticCodecRate,
-      completeEachFrame: completeEachFrame, prioritizeSpeed: prioritizeSpeed,
+      completeEachFrame: completeEachFrame, prioritizeSpeed: rateControl.prioritizeSpeed,
       keyframeIntervalSeconds: keyframeIntervalSeconds, dropCheck: encoderDropCheck,
       refreshRequest: encoderRefreshRequest, idleMonitor: sourceIdleMonitor)
   }
