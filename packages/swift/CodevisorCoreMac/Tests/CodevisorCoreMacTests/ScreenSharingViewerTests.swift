@@ -37,8 +37,9 @@ struct ScreenSharingViewerTests {
     }
   }
 
-  /// The host's notice about missing video (851-2385) shows while connecting and goes with the first frame.
-  @Test func aHostNoticeShowsWhileConnectingAndClearsWhenVideoArrives() async {
+  /// The host's notice about missing video (851-2385) shows while connecting and goes with the first frame;
+  /// one about paused video (851-2375) shows over live video until the host clears it.
+  @Test func hostNoticesShowWhileConnectingAndOverLiveVideo() async {
     await withMainSerialExecutor {
       let backend = FakeBackend(displays: [display])
       let client = FakeEndpointClient()
@@ -56,9 +57,11 @@ struct ScreenSharingViewerTests {
         $0.phase = .viewing
         $0.hostNotice = nil
       }
-      // A late notice can't cover live video.
-      backend.emit(.hostNotice("Capture stalled, restarting…"))
-      await store.receive(\.connectionEvent.hostNotice)
+      // Over live video it's a banner: the host restarting a capture that stopped (851-2375), until it says it's done.
+      backend.emit(.hostNotice("Capture stopped, restarting…"))
+      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = "Capture stopped, restarting…" }
+      backend.emit(.hostNotice(nil))
+      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = nil }
       await store.send(.paneClosed) {
         $0.visible = false
         $0.endpoint = nil

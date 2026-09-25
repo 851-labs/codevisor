@@ -30,7 +30,8 @@ public struct ScreenSharingViewer {
     /// The control lease over the live endpoint's channel.
     public var lease: ControlLease.State?
     public var message: String?
-    /// The host's word on video that hasn't come yet, shown under the progress (851-2385).
+    /// The host's word on missing or paused video (851-2385, 851-2375): under the progress while
+    /// connecting, as a banner over live video.
     public var hostNotice: String?
     public var phase: Phase = .idle
     public var preferences: ScreenSharingPanePreferences
@@ -108,7 +109,8 @@ public struct ScreenSharingViewer {
         return .cancel(id: CancelID.controlEvents)
 
       case .connectionEvent(.hostNotice(let notice)):
-        guard [.connecting, .reconnecting].contains(state.phase) else { return .none }
+        // While viewing too: a capture the host is restarting mid-session (851-2375) pauses the picture.
+        guard [.connecting, .reconnecting, .viewing].contains(state.phase) else { return .none }
         state.hostNotice = notice
         return .none
 

@@ -111,7 +111,8 @@
       let video = configuration.video
       session.metrics.label("captureError", "")
       if session.displaySleepAssertion == nil {
-        session.displaySleepAssertion = RigDisplaySleepAssertion(reason: "Codevisor Screen Sharing Rig host session")
+        session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(
+          reason: "Codevisor Screen Sharing Rig host session")
       }
       switch activeCapture {
       case .synthetic:
