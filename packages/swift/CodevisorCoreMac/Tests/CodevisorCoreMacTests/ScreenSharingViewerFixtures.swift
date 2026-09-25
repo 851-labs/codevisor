@@ -127,6 +127,8 @@ actor SharingTransport: ServerRequestTransport {
   private let blockFirstStart: Bool
   private let capabilitiesStatus: String
   private let heartbeatStatus: String
+  /// Answers the first heartbeats, in order, before `heartbeatStatus` takes over.
+  private var heartbeatReplies: [ServerScreenSharingReply]
   private let restartStatus: String
   private let provider: String?
   private(set) var requests: [ServerScreenSharingRequest] = []
@@ -134,8 +136,9 @@ actor SharingTransport: ServerRequestTransport {
 
   init(
     blockFirstStart: Bool = false, capabilitiesStatus: String = "available", heartbeatStatus: String = "viewing",
-    restartStatus: String = "connecting", provider: String? = nil
+    restartStatus: String = "connecting", provider: String? = nil, heartbeatReplies: [ServerScreenSharingReply] = []
   ) {
+    self.heartbeatReplies = heartbeatReplies
     self.blockFirstStart = blockFirstStart
     self.capabilitiesStatus = capabilitiesStatus
     self.heartbeatStatus = heartbeatStatus
@@ -155,7 +158,8 @@ actor SharingTransport: ServerRequestTransport {
       started.signal()
       if first, blockFirstStart { await releaseFirstStart.wait() }
       reply = .init(status: payload.operation == .restart ? restartStatus : "connecting", answer: "fixture answer")
-    case .heartbeat: reply = .init(status: heartbeatStatus)
+    case .heartbeat:
+      reply = heartbeatReplies.isEmpty ? .init(status: heartbeatStatus) : heartbeatReplies.removeFirst()
     case .setScale: reply = .init(status: "unsupported")
     case .stop:
       stopWasCancelled = stopWasCancelled || Task.isCancelled

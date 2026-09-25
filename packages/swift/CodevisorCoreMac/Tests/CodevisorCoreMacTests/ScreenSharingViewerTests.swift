@@ -37,6 +37,38 @@ struct ScreenSharingViewerTests {
     }
   }
 
+  /// The host's notice about missing video (851-2385) shows while connecting and goes with the first frame.
+  @Test func aHostNoticeShowsWhileConnectingAndClearsWhenVideoArrives() async {
+    await withMainSerialExecutor {
+      let backend = FakeBackend(displays: [display])
+      let client = FakeEndpointClient()
+      let store = await makeConnectingStore(backend, client)
+      await store.send(.interactionModeChanged(.view)) { $0.interactionMode = .view }
+      let endpoint = backend.open()
+      await store.receive(\.connectionEvent.opened) {
+        $0.endpoint = endpoint
+        $0.lease = ControlLease.State(endpoint: endpoint.id)
+      }
+      backend.emit(.hostNotice("Capture stalled, restarting…"))
+      await store.receive(\.connectionEvent.hostNotice) { $0.hostNotice = "Capture stalled, restarting…" }
+      backend.emit(.ready)
+      await store.receive(\.connectionEvent.ready) {
+        $0.phase = .viewing
+        $0.hostNotice = nil
+      }
+      // A late notice can't cover live video.
+      backend.emit(.hostNotice("Capture stalled, restarting…"))
+      await store.receive(\.connectionEvent.hostNotice)
+      await store.send(.paneClosed) {
+        $0.visible = false
+        $0.endpoint = nil
+        $0.lease = nil
+        $0.phase = .suspended
+      }
+      await store.finish()
+    }
+  }
+
   @Test(arguments: [ScreenSharingViewer.InteractionMode.view, .control])
   func connectingKeepsTheLatestModeAndRequestsControlOnlyAfterReady(
     mode: ScreenSharingViewer.InteractionMode

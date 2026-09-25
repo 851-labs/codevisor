@@ -30,6 +30,8 @@ public struct ScreenSharingViewer {
     /// The control lease over the live endpoint's channel.
     public var lease: ControlLease.State?
     public var message: String?
+    /// The host's word on video that hasn't come yet, shown under the progress (851-2385).
+    public var hostNotice: String?
     public var phase: Phase = .idle
     public var preferences: ScreenSharingPanePreferences
     /// Incremented for every preference change the user made here (never for
@@ -96,6 +98,7 @@ public struct ScreenSharingViewer {
         guard [.connecting, .reconnecting].contains(state.phase), state.lease != nil else { return .none }
         state.phase = .viewing
         state.message = nil
+        state.hostNotice = nil
         return state.interactionMode == .control ? .send(.lease(.controlRequested)) : .none
 
       case .connectionEvent(.reconnecting):
@@ -103,6 +106,11 @@ public struct ScreenSharingViewer {
         state.phase = .reconnecting
         state.message = "Reconnecting to this Mac…"
         return .cancel(id: CancelID.controlEvents)
+
+      case .connectionEvent(.hostNotice(let notice)):
+        guard [.connecting, .reconnecting].contains(state.phase) else { return .none }
+        state.hostNotice = notice
+        return .none
 
       case .connectionEvent(.ended(let message)):
         dropEndpoint(&state)
@@ -224,6 +232,7 @@ public struct ScreenSharingViewer {
   private func dropEndpoint(_ state: inout State) {
     state.endpoint = nil
     state.lease = nil
+    state.hostNotice = nil
   }
 
   private func fail(_ state: inout State, _ message: String) {

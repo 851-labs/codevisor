@@ -1,5 +1,6 @@
 #if os(macOS)
   import AppKit
+  import CodevisorCoreMac
   import ScreenSharing
   import ScreenSharingWebRTC
   import ScreenSharingDiagnostics
@@ -246,21 +247,35 @@
     }
 
     /// A source that starts and then delivers nothing is what an exhausted capture daemon looks
-    /// like (see the plan): say so instead of showing a silent "— fps".
-    static let stallSeconds: Double = 5
-
-    func watchForStall(in session: RigSession) {
+    /// like: the product host's recovery (851-2385) restarts the source, then `replayd`, and the
+    /// label says what happened instead of a silent "— fps".
+    func watchForStall(in session: RigSession, baseline: Int) async {
       session.metrics.label("sourceStall", "")
-      let started = session.metrics.snapshot().counters["capturedFrames", default: 0]
-      Task { @MainActor [weak self, weak session] in
-        try? await Task.sleep(for: .seconds(Self.stallSeconds))
-        guard let self, let session, session === self.session, !session.closed else { return }
-        let frames = session.metrics.snapshot().counters["capturedFrames", default: 0]
-        guard frames == started else { return }
+      let source = activeCapture
+      let recovery = ScreenSharingCaptureStallRecovery.live(
+        metrics: session.metrics,
+        restartCapture: { [weak self, weak session] in
+          guard let self, let session, session === self.session, !session.closed else { throw CancellationError() }
+          _ = try await self.switchSource(to: self.activeCapture)
+        },
+        log: { [weak self] in self?.log($0) },
+        onStalled: { [weak self, weak session] in
+          session?.metrics.label("sourceStall", "no frames after \(source) started; restarting it")
+          self?.log("stall: no frames after \(source) started; restarting the source")
+        })
+      guard let outcome = try? await recovery.run(baseline: baseline), session === self.session, !session.closed else {
+        return
+      }
+      switch outcome {
+      case .healthy: return
+      case .recovered(let restartedDaemon):
+        session.metrics.label("sourceStall", "")
+        log("stall recovered\(restartedDaemon ? " after restarting replayd" : "")")
+      case .failed:
         let text =
-          "no frames \(Int(Self.stallSeconds)) s after \(self.activeCapture) started; if this persists for physical displays too, replayd is probably exhausted (kill it; see docs/plans/screen-sharing-rig.md)"
+          "no frames after \(source) started, and restarting it (and replayd, at most every 10 min) didn't help"
         session.metrics.label("sourceStall", text)
-        self.log("stall: \(text)")
+        log("stall: \(text)")
       }
     }
 
