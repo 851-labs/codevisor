@@ -212,6 +212,11 @@ final class ScreenSharingHostService {
         do {
           try await session.peer.accept(.init(kind: "offer", sdp: offer))
           let answer = try await session.peer.makeDescription(offer: false)
+          // Main 4:4:4 needs BGRA frames to keep chroma; the others take NV12 (851-2381).
+          if let codec = ScreenSharingVideoCodec.negotiated(inDescription: answer.sdp) {
+            session.capture.pixelFormat = codec.capturePixelFormat
+            session.metrics.label("negotiatedCodec", codec.rawValue)
+          }
           try Task.checkCancellation()
           guard current === session, !session.stopping else { throw CancellationError() }
           return .init(status: "connecting", answer: answer.sdp)

@@ -12,7 +12,9 @@
     private var stream: (any ScreenSharingCaptureStream)?
     private var output: ScreenSharingCaptureOutput?
     private let queueDepth: Int
-    private let pixelFormat: OSType
+    /// What the frames are captured as; a host sets it to the negotiated codec's format
+    /// (`ScreenSharingVideoCodec.capturePixelFormat`) before starting (851-2381).
+    public var pixelFormat: OSType
     private let copySurface: Bool
     /// Optional SCK minimum-frame-interval request in frames per second, isolated
     /// from the negotiated video/encoder rate. `nil` keeps the existing behaviour

@@ -26,6 +26,31 @@ public enum ScreenSharingVideoCodec: String, Sendable, CaseIterable {
   }
 }
 
+extension ScreenSharingVideoCodec {
+  /// The codec a session description sends video with: the first payload type on its video
+  /// line, named by its rtpmap and, for H.265, told apart by its fmtp profile-id (1 Main, 4
+  /// Main 4:4:4). Nil when the description has no video codec this build knows.
+  public static func negotiated(inDescription sdp: String) -> ScreenSharingVideoCodec? {
+    let lines = sdp.split(whereSeparator: \.isNewline).map(String.init)
+    guard let media = lines.first(where: { $0.hasPrefix("m=video") }),
+      let payload = media.split(separator: " ").dropFirst(3).first.map(String.init),
+      let rtpmap = lines.first(where: { $0.hasPrefix("a=rtpmap:\(payload) ") }),
+      let name = rtpmap.split(separator: " ").last?.split(separator: "/").first
+    else { return nil }
+    switch name.uppercased() {
+    case "H264": return .h264
+    case "H265":
+      let fmtp = lines.first { $0.hasPrefix("a=fmtp:\(payload) ") } ?? ""
+      let profile = fmtp.split(separator: " ").dropFirst().joined(separator: " ").split(separator: ";")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .first { $0.hasPrefix("profile-id=") }?.dropFirst("profile-id=".count)
+      // RFC 7798: profile-id defaults to 1 (Main) when absent.
+      return profile == "4" ? .hevc444 : .hevc
+    default: return nil
+    }
+  }
+}
+
 /// Parse the hvcC fields needed to reject silent chroma/depth fallback.
 struct ScreenSharingHEVCFormat: Equatable {
   let profile: Int

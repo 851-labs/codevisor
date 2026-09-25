@@ -44,8 +44,12 @@ final class ComputerUseSenderPeer: ComputerUseStreamPeer {
     try ScreenSharingFieldTrials.process.install(profile: ScreenSharingDiagnosticProfile.process())
     let metrics = ScreenSharingMetrics()
     let configuration = try computerUseStreamVideoConfiguration(size: size)
+    // A small view-only preview: HEVC Main is plenty, and its frames aren't captured as BGRA.
+    var options = ScreenSharingPeerOptions()
+    options.codec = .hevc
+    options.fallbackCodecs = [.h264]
     let sender = try ScreenSharingSender(
-      configuration: configuration, metrics: metrics, connectivity: connectivity.native())
+      configuration: configuration, metrics: metrics, options: options, connectivity: connectivity.native())
     self.sender = sender
     sink = ComputerUseSenderSink(sender: sender)
     control = ScreenSharingHostControl(
