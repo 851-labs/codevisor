@@ -27,7 +27,7 @@ struct WorkspacePaneContentView: View {
   let onInitialComposerFocusRequestFulfilled: ((UUID) -> Void)?
   let transcriptPresentationRole: TranscriptPresentationRole
   let onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
-  let onSendAnimationStarted: TranscriptSendAnimationStartAction?
+  let onSendAnimationStarted: ((UserSendAnimationRequest) -> Void)?
   let onComposerWillSend: ((String, CGRect) -> Void)?
   let preservesComposerFocusOnSend: Bool
   let composerTextEditorHandoffRole: ComposerTextEditorHandoffRole

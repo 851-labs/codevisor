@@ -73,24 +73,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   var deferredActiveRowsRange: Range<Int>?
   var deferredProjectionRevision: UInt64?
 
-  struct DeferredSendProjection {
-    let projectedRows: [TranscriptVirtualRow]
-    let projectedRowsVersion: TranscriptRowSetRevision
-    let projectionRevision: UInt64
-    let activeRows: [TranscriptVirtualRow]
-    let activeRowsVersion: TranscriptRowSetRevision
-  }
-
-  struct SendHistoryHoldMount {
-    let hostID: ObjectIdentifier
-    let translationY: CGFloat
-  }
-
-  /// The live assistant remains visually hidden during the outgoing flight.
-  /// Keep its changing topology out of layout too, then commit only the
-  /// latest projection after the flight completes.
-  var deferredSendProjection: DeferredSendProjection?
-
   struct DisclosureViewportAnchor {
     let id: UUID
     let viewportTop: CGFloat
@@ -125,59 +107,10 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   /// first publication, so nothing is ever visible in that window.
   var deferredActivePlaceholderKey: String?
   var scrollCommand = TranscriptScrollCommand()
-  var receivedSendAnimationToken: UInt64?
-  var pendingSendAnimationRequest: UserSendAnimationRequest? {
-    didSet {
-      guard pendingSendAnimationRequest == nil else { return }
-      _ = pendingSendLifecycle.cancel()
-      pendingSendWatchdog?.cancel()
-      pendingSendWatchdog = nil
-    }
-  }
-  var pendingSendAnimationRowKey: String?
-  /// Bounds the pending phase. When it expires the flight starts from
-  /// whatever geometry is ready, or the held model state is revealed if the
-  /// destination never mounted; it never simply lets the holds lapse.
-  var pendingSendLifecycle = TranscriptSendPresentationLifecycle(
-    duration: TranscriptSendAnimationContract.pendingFlightDeadline
-  )
-  var pendingSendWatchdog: Task<Void, Never>?
-  /// The host currently carrying the destination's pending hold. A remount
-  /// of the same row moves the hold to its new host; the same host is never
-  /// re-hidden once its hold has been applied.
-  var sendTargetHoldMount: ObjectIdentifier?
-  var pendingSendSourceLayout: VirtualTranscriptLayout?
-  var pendingSendSourceScreenYByRowKey: [String: CGFloat]?
-  /// Tracks the host that received each pending history lock. If a bounded
-  /// lock expires, later layout passes must not rewind that visible host.
-  var sendHistoryHoldMounts: [String: SendHistoryHoldMount] = [:]
+  /// Every send presentation on this surface; see `TranscriptSendTransitions`.
+  let sendTransitions = TranscriptSendTransitions<VirtualizedTranscriptScrollView>()
   var sendAnimationSourceFrame: CGRect?
-  var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
-  var onSendAnimationStarted: TranscriptSendAnimationStartAction?
-  var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)?
-  var activeSendAnimationRequest: UserSendAnimationRequest?
-  var isStartingSendAnimation = false
-  var isSendAnimationStartScheduled = false
-  var activeSendSourceLayout: VirtualTranscriptLayout?
-  /// One bounded assistant hold is allowed per mounted host and send. This
-  /// prevents a slow pending projection from re-hiding a row after its
-  /// safety hold has deliberately expired.
-  var sendAssistantHoldMounts: [String: ObjectIdentifier] = [:]
-  /// Landed positions stay fixed while deferred send rows finish measuring.
-  var sendCompletionSourceScreenYByRowKey: [String: CGFloat]?
-  var isApplyingSendCompletion = false
-  var sendCompletionNotifiesCompletion = false
-  var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
-  var sendPresentationWatchdog: Task<Void, Never>?
-  var sendAnimationCompletion: TranscriptSendAnimationCompletion?
-  /// While a send is pending, in flight, or completing, mounted rows are
-  /// drawn at held or animating positions that differ from model geometry.
-  /// The virtual window must not remove them by model position alone.
-  var isSendPresentationHoldingHosts: Bool {
-    pendingSendAnimationRequest != nil
-      || activeSendAnimationRequest != nil
-      || sendCompletionSourceScreenYByRowKey != nil
-  }
+  var isSendTransitionCleanupScheduled = false
   var presentationRole: TranscriptPresentationRole = .foreground
   var reduceMotion = false
 
@@ -219,6 +152,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
 
   override init(frame: CGRect) {
     super.init(frame: frame)
+    sendTransitions.adapter = self
     streamingTextFrameClock.setFrameRequester { [weak self] in
       self?.requestDisplayFrame()
     }
@@ -255,7 +189,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       object: nil,
       queue: .main
     ) { [weak self] _ in
-      Self.onMain { [weak self] in self?.interruptSendPresentation() }
+      Self.onMain { [weak self] in self?.sendTransitions.interrupt() }
     }
   }
 
@@ -280,8 +214,6 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
     presentationDisplayLink?.invalidate()
     measurementCommitTask?.cancel()
     disclosureAnchorReleaseTask?.cancel()
-    sendPresentationWatchdog?.cancel()
-    pendingSendWatchdog?.cancel()
     if let applicationObserver {
       NotificationCenter.default.removeObserver(applicationObserver)
     }
@@ -304,7 +236,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
   override func didMoveToWindow() {
     if window == nil, superview != nil {
       republishLastStableScrollState()
-      interruptSendPresentation()
+      sendTransitions.interrupt()
       isDetaching = true
       uninstallPresentationDisplayLink()
     } else if window != nil {
@@ -363,7 +295,7 @@ final class VirtualizedTranscriptScrollView: UIScrollView, UIScrollViewDelegate 
       lastDistanceFromBottom = currentDistanceFromBottom()
       publishBottomState(lastDistanceFromBottom <= Self.atBottomThreshold)
     }
-    startPendingSendAnimationIfPossible()
+    sendTransitions.advance()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
   }

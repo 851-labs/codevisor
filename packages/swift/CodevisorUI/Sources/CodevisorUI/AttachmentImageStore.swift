@@ -82,6 +82,14 @@ public final class AttachmentImageStore {
     self.version = version
   }
 
+  /// The decoded preview already in memory, synchronously. A view that
+  /// mounts over pixels another view already loaded (the copy of a row
+  /// that flies out of the composer) draws them in its first frame
+  /// instead of flashing a placeholder until its own load task runs.
+  public func memoryPreview(for file: PreviewFile) -> AttachmentPreviewImage? {
+    Self.memory.object(forKey: baseKey(for: file.source) as NSString)?.value
+  }
+
   /// Returns the most recently persisted preview without revalidation. It
   /// provides stable geometry immediately on reopen; `image(for:)` then
   /// validates live paths and replaces stale pixels without resizing them.

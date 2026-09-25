@@ -119,37 +119,6 @@ public struct TranscriptSurfaceInput {
   }
 }
 
-#if canImport(UIKit)
-  import UIKit
-
-  /// Geometry of the live virtualized row when a send can begin.
-  public struct TranscriptSendAnimationTarget {
-    public let rowFrame: CGRect
-
-    public init(rowFrame: CGRect) {
-      self.rowFrame = rowFrame
-    }
-  }
-
-  /// Told when a send animation begins at its transcript row. Returns true
-  /// when the caller flies the message itself instead of the transcript.
-  public struct TranscriptSendAnimationStartAction: Sendable {
-    private let handler: @MainActor @Sendable (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
-
-    public init(
-      _ handler: @escaping @MainActor @Sendable (UserSendAnimationRequest, TranscriptSendAnimationTarget) -> Bool
-    ) {
-      self.handler = handler
-    }
-
-    @MainActor public func callAsFunction(
-      _ request: UserSendAnimationRequest, _ target: TranscriptSendAnimationTarget
-    ) -> Bool {
-      handler(request, target)
-    }
-  }
-#endif
-
 /// The closures a native transcript surface calls back into SwiftUI with.
 /// Callbacks that only one platform consumes default to no-ops.
 @MainActor
@@ -168,65 +137,36 @@ public struct TranscriptSurfaceCallbacks {
   public var openMarkdownLink: (@MainActor (URL) -> Bool)?
   /// Inline images preview on activation and offer new-tab/copy in their menu.
   public var markdownImageActions: MarkdownImageActions?
-  #if canImport(UIKit)
-    public var onSendAnimationStarted: TranscriptSendAnimationStartAction?
-  #endif
+  /// A send's flight (or lift) began at its transcript row.
+  public var onSendAnimationStarted: @MainActor (UserSendAnimationRequest) -> Void
 
-  #if canImport(UIKit)
-    public init(
-      claimSendAnimation: @escaping @MainActor (UserSendAnimationRequest) -> Bool,
-      rowContent: @escaping @MainActor (TranscriptVirtualRow) -> AnyView,
-      onViewportChange: @escaping @MainActor (SessionScrollState) -> Void,
-      onBottomStateChange: @escaping @MainActor (Bool) -> Void,
-      onFollowStateChange: @escaping @MainActor (Bool) -> Void,
-      onNearTop: @escaping @MainActor () -> Bool,
-      onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
-      onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
-      markdownImageLoader: MarkdownImageLoader? = nil,
-      openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
-      markdownImageActions: MarkdownImageActions? = nil,
-      onSendAnimationStarted: TranscriptSendAnimationStartAction? = nil
-    ) {
-      self.claimSendAnimation = claimSendAnimation
-      self.rowContent = rowContent
-      self.onViewportChange = onViewportChange
-      self.onBottomStateChange = onBottomStateChange
-      self.onFollowStateChange = onFollowStateChange
-      self.onNearTop = onNearTop
-      self.onOlderHistoryPresented = onOlderHistoryPresented
-      self.onSendAnimationCompleted = onSendAnimationCompleted
-      self.markdownImageLoader = markdownImageLoader
-      self.openMarkdownLink = openMarkdownLink
-      self.markdownImageActions = markdownImageActions
-      self.onSendAnimationStarted = onSendAnimationStarted
-    }
-  #else
-    public init(
-      claimSendAnimation: @escaping @MainActor (UserSendAnimationRequest) -> Bool,
-      rowContent: @escaping @MainActor (TranscriptVirtualRow) -> AnyView,
-      onViewportChange: @escaping @MainActor (SessionScrollState) -> Void,
-      onBottomStateChange: @escaping @MainActor (Bool) -> Void,
-      onFollowStateChange: @escaping @MainActor (Bool) -> Void,
-      onNearTop: @escaping @MainActor () -> Bool,
-      onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
-      onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
-      markdownImageLoader: MarkdownImageLoader? = nil,
-      openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
-      markdownImageActions: MarkdownImageActions? = nil
-    ) {
-      self.claimSendAnimation = claimSendAnimation
-      self.rowContent = rowContent
-      self.onViewportChange = onViewportChange
-      self.onBottomStateChange = onBottomStateChange
-      self.onFollowStateChange = onFollowStateChange
-      self.onNearTop = onNearTop
-      self.onOlderHistoryPresented = onOlderHistoryPresented
-      self.onSendAnimationCompleted = onSendAnimationCompleted
-      self.markdownImageLoader = markdownImageLoader
-      self.openMarkdownLink = openMarkdownLink
-      self.markdownImageActions = markdownImageActions
-    }
-  #endif
+  public init(
+    claimSendAnimation: @escaping @MainActor (UserSendAnimationRequest) -> Bool,
+    rowContent: @escaping @MainActor (TranscriptVirtualRow) -> AnyView,
+    onViewportChange: @escaping @MainActor (SessionScrollState) -> Void,
+    onBottomStateChange: @escaping @MainActor (Bool) -> Void,
+    onFollowStateChange: @escaping @MainActor (Bool) -> Void,
+    onNearTop: @escaping @MainActor () -> Bool,
+    onOlderHistoryPresented: @escaping @MainActor (UInt64) -> Void = { _ in },
+    onSendAnimationCompleted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in },
+    markdownImageLoader: MarkdownImageLoader? = nil,
+    openMarkdownLink: (@MainActor (URL) -> Bool)? = nil,
+    markdownImageActions: MarkdownImageActions? = nil,
+    onSendAnimationStarted: @escaping @MainActor (UserSendAnimationRequest) -> Void = { _ in }
+  ) {
+    self.claimSendAnimation = claimSendAnimation
+    self.rowContent = rowContent
+    self.onViewportChange = onViewportChange
+    self.onBottomStateChange = onBottomStateChange
+    self.onFollowStateChange = onFollowStateChange
+    self.onNearTop = onNearTop
+    self.onOlderHistoryPresented = onOlderHistoryPresented
+    self.onSendAnimationCompleted = onSendAnimationCompleted
+    self.markdownImageLoader = markdownImageLoader
+    self.openMarkdownLink = openMarkdownLink
+    self.markdownImageActions = markdownImageActions
+    self.onSendAnimationStarted = onSendAnimationStarted
+  }
 }
 
 /// Retained for the lifetime of a Core Animation group so send and disclosure

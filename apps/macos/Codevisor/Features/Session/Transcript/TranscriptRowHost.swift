@@ -145,7 +145,7 @@ final class TranscriptRowHost: TranscriptMountedRowHost {
   }
 
   override func prepareForMountedRow() {
-    if let layer { TranscriptSendAnimationLayerAnimations.removeAll(from: layer) }
+    if let layer { TranscriptSendLayerAnimations.removeAll(from: layer) }
     presentationReady = false
     attachmentGeometryReady = true
     hasAttemptedPresentation = false

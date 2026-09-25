@@ -131,11 +131,11 @@ final class TranscriptRowHost: UIView {
     guard needsRoot else { return }
     isPresentationReady = false
     isAttachmentGeometryReady = true
-    // An optimistic message can become settled while its lift is still in
-    // flight. Preserve the wrapper animation when the stable row identity
+    // An optimistic message can become settled while its send is still in
+    // flight. Preserve the send animations when the stable row identity
     // is unchanged; only reused hosts may discard another row's animation.
     if representsDifferentRow {
-      TranscriptSendAnimationLayerAnimations.removeAll(from: layer)
+      TranscriptSendLayerAnimations.removeAll(from: layer)
     }
     contentController.installRootView(rootView)
   }
@@ -144,7 +144,7 @@ final class TranscriptRowHost: UIView {
   /// its previous mount. Re-mounting always starts from visible model state;
   /// the virtualizer can reapply a current hold after installation if needed.
   func prepareForMountedRow() {
-    TranscriptSendAnimationLayerAnimations.removeAll(from: layer)
+    TranscriptSendLayerAnimations.removeAll(from: layer)
   }
 
   func requestContentMeasurement(forceReport: Bool = true) {
@@ -158,13 +158,6 @@ final class TranscriptRowHost: UIView {
     layoutIfNeeded()
     contentHost.setNeedsLayout()
     contentHost.layoutIfNeeded()
-  }
-
-  var userBubbleFrameInWindow: CGRect? {
-    guard let bubble = firstDescendant(where: { $0 is UserBubbleGeometryView }),
-      !bubble.bounds.isEmpty
-    else { return nil }
-    return bubble.convert(bubble.bounds, to: nil)
   }
 
   func resetReportedContentHeight() {

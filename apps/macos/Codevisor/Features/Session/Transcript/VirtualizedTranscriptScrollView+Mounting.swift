@@ -76,8 +76,6 @@ extension VirtualizedTranscriptScrollView {
     {
       requestMountedRowsUpdate()
     }
-    synchronizePendingSendHistoryPositions()
-    synchronizeSendAssistantVisibility()
     refreshSelectionHighlightsIfNeeded()
   }
 
@@ -202,8 +200,6 @@ extension VirtualizedTranscriptScrollView {
         }
     }
     host.prepareForMountedRow()
-    sendHistoryHoldMounts.removeValue(forKey: key)
-    sendAssistantHoldMounts.removeValue(forKey: key)
     observeRowPresentation(host, for: key)
     transcriptDocumentView.addSubview(host)
     mountedHosts[key] = host
@@ -233,9 +229,7 @@ extension VirtualizedTranscriptScrollView {
     if requiresImmediatePresentation {
       host.prepareForImmediatePresentation()
     }
-    synchronizePendingSendTargetVisibility()
-    synchronizePendingSendHistoryPositions()
-    synchronizeSendAssistantVisibility()
+    sendTransitions.hostDidMount(host, key: key)
     return true
   }
 
@@ -279,8 +273,6 @@ extension VirtualizedTranscriptScrollView {
     }
 
     host.prepareForMountedRow()
-    sendHistoryHoldMounts.removeValue(forKey: key)
-    sendAssistantHoldMounts.removeValue(forKey: key)
     host.onHeightChange = { [weak self] height in
       self?.recordMeasuredHeight(height, for: key)
     }
@@ -304,8 +296,7 @@ extension VirtualizedTranscriptScrollView {
     if requiresImmediatePresentation, !host.isPresentationReady {
       host.prepareForImmediatePresentation()
     }
-    synchronizePendingSendHistoryPositions()
-    synchronizeSendAssistantVisibility()
+    sendTransitions.hostDidMount(host, key: key)
     return true
   }
 
@@ -332,10 +323,13 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func retireMountedHosts(excluding retainedKeys: Set<String>) {
-    // Held and animating rows are drawn where the send presentation put
-    // them, not at their model frames. Retiring one by model position
-    // would blank it mid-hold; the presentation's teardown reconciles.
-    guard !isSendPresentationHoldingHosts else { return }
+    // Rows mid-shift are drawn where the send's springs put them, not at
+    // their model frames. Retiring one by model position would blank it
+    // mid-motion; the next pass after the springs settle reconciles.
+    guard !sendTransitions.isAnimatingRows else {
+      requestMountedRowsUpdateAfterSendTransition()
+      return
+    }
     let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
     retireMountedHosts(withKeys: obsoleteKeys)
   }

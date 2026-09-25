@@ -223,24 +223,6 @@ public struct VirtualTranscriptLayout: Sendable, Equatable {
   }
 }
 
-/// Presentation-only displacement for rows retained across a send.
-///
-/// The scroll view commits the new layout and jumps to its bottom immediately.
-/// A retained row can then start at this translation and animate to zero,
-/// producing the visual "make room" motion without animating scroll state or
-/// compromising the virtual layout's authoritative geometry.
-public enum TranscriptSendHistoryTransition {
-  /// FLIP displacement between a retained row's actual viewport positions.
-  /// Using screen geometry makes a clamped short transcript produce zero
-  /// motion while a bottom-pinned, scrollable transcript still makes room.
-  public static func translationY(
-    fromScreenY previousScreenY: CGFloat,
-    toScreenY currentScreenY: CGFloat
-  ) -> CGFloat {
-    previousScreenY - currentScreenY
-  }
-}
-
 /// Insets-aware scroll coordinates for the native transcript adapters.
 ///
 /// UIKit represents the fully scrolled-to-top position as a negative content

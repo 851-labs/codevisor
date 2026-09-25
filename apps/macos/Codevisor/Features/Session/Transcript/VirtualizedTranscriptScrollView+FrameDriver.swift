@@ -42,12 +42,14 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     isLiveScrolling = false
     userInputDeadline = 0
     uninstallPresentationFrameDriver()
-    interruptSendPresentation()
+    sendTransitions.interrupt()
     finishAllDisclosureCollapsePresentations()
     rowContent = nil
     openMarkdownLink = nil
     markdownImageActions = nil
-    claimSendAnimation = nil
+    sendTransitions.claim = nil
+    sendTransitions.onStarted = nil
+    sendTransitions.onCompleted = nil
     onViewportChange = nil
     onBottomStateChange = nil
     onFollowStateChange = nil
@@ -203,7 +205,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     // Host readiness can change without a height change. Its notification
     // requests this frame after the host's AppKit layout stack unwinds.
     updateInitialPresentationReadiness()
-    startPendingSendAnimationIfPossible()
+    sendTransitions.advance()
     if !isLiveScrolling, !isHandlingUserInput {
       drainRetiringHosts(limit: 1)
     }

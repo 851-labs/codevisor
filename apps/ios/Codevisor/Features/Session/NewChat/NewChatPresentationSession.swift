@@ -226,7 +226,7 @@ final class NewChatPromotionSurface {
           translationX: 0, y: sourceBarFrame.minY - destinationBarFrame.minY)
       }
     }
-    UserSendMorphCoordinator.shared.bringFlightToFront()
+    TranscriptSendStaging.shared.bringOverlaysToFront()
 
     let changes = {
       self.container.frame = sourceWindow.bounds

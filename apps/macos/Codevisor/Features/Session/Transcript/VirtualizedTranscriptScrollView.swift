@@ -53,20 +53,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var receivedProjectionRevision: UInt64?
   var activeRowsVersion: TranscriptRowSetRevision?
 
-  struct DeferredSendProjection {
-    let projectedRows: [TranscriptVirtualRow]
-    let projectedRowsVersion: TranscriptRowSetRevision
-    let projectionRevision: UInt64
-    let activeRows: [TranscriptVirtualRow]
-    let activeRowsVersion: TranscriptRowSetRevision
-  }
-
-  struct SendHistoryHoldMount {
-    let hostID: ObjectIdentifier
-    let translationY: CGFloat
-  }
-
-  var deferredSendProjection: DeferredSendProjection?
   var mountedHosts: [String: TranscriptMountedRowHost] = [:]
   /// The transcript-wide text selection; see `+Selection.swift`.
   let textSelection = TranscriptSelectionState()
@@ -155,57 +141,9 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
   var isAwaitingFirstActiveProjection = false
   var scrollCommand = TranscriptScrollCommand()
   var hasReceivedScrollCommandForAttachment = false
-  var receivedSendAnimationToken: UInt64?
-  var pendingSendAnimationRequest: UserSendAnimationRequest? {
-    didSet {
-      guard pendingSendAnimationRequest == nil else { return }
-      _ = pendingSendLifecycle.cancel()
-      pendingSendWatchdog?.cancel()
-      pendingSendWatchdog = nil
-    }
-  }
-  var pendingSendAnimationRowKey: String?
-  /// Bounds the pending phase. When it expires the flight starts from
-  /// whatever geometry is ready, or the held model state is revealed if the
-  /// destination never mounted; it never simply lets the holds lapse.
-  var pendingSendLifecycle = TranscriptSendPresentationLifecycle(
-    duration: TranscriptSendAnimationContract.pendingFlightDeadline
-  )
-  var pendingSendWatchdog: Task<Void, Never>?
-  /// The host currently carrying the destination's pending hold. A remount
-  /// of the same row moves the hold to its new host; the same host is never
-  /// re-hidden once its hold has been applied.
-  var sendTargetHoldMount: ObjectIdentifier?
-  /// Layout before the optimistic user row was inserted. It is retained
-  /// until the target row has exact geometry, then used only to animate
-  /// presentation layers; the scroll position and virtual layout are already
-  /// committed at the bottom.
-  var pendingSendSourceLayout: VirtualTranscriptLayout?
-  var pendingSendSourceViewportYByRowKey: [String: CGFloat]?
-  /// Tracks the host that received each pending history lock. If a bounded
-  /// lock expires, later layout passes must not rewind that visible host.
-  var sendHistoryHoldMounts: [String: SendHistoryHoldMount] = [:]
-  var activeSendAnimationRequest: UserSendAnimationRequest?
-  var activeSendSourceLayout: VirtualTranscriptLayout?
-  /// One bounded assistant hold is allowed per mounted host and send. This
-  /// prevents a slow pending projection from re-hiding a row after its
-  /// safety hold has deliberately expired.
-  var sendAssistantHoldMounts: [String: ObjectIdentifier] = [:]
-  /// Landed positions stay fixed while deferred send rows finish measuring.
-  var sendCompletionSourceViewportYByRowKey: [String: CGFloat]?
-  var isApplyingSendCompletion = false
-  var sendPresentationLifecycle = TranscriptSendPresentationLifecycle()
-  var sendPresentationWatchdog: Task<Void, Never>?
-  var sendAnimationCompletion: TranscriptSendAnimationCompletion?
-  /// While a send is pending, in flight, or completing, mounted rows are
-  /// drawn at held or animating positions that differ from model geometry.
-  /// The virtual window must not retire them by model position alone.
-  var isSendPresentationHoldingHosts: Bool {
-    pendingSendAnimationRequest != nil
-      || activeSendAnimationRequest != nil
-      || sendCompletionSourceViewportYByRowKey != nil
-  }
-  var claimSendAnimation: ((UserSendAnimationRequest) -> Bool)?
+  /// Every send presentation on this surface; see `TranscriptSendTransitions`.
+  let sendTransitions = TranscriptSendTransitions<VirtualizedTranscriptScrollView>()
+  var isSendTransitionCleanupScheduled = false
   var reduceMotion = false
   /// Geometry changes and their compensating scroll are one transaction.
   /// The depth (rather than a Bool) keeps nested position restorations from
@@ -278,6 +216,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
+    sendTransitions.adapter = self
     streamingTextFrameClock.setFrameRequester { [weak self] in
       self?.requestDisplayFrame()
     }
@@ -354,7 +293,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
       object: nil,
       queue: .main
     ) { [weak self] _ in
-      Self.onMain { [weak self] in self?.interruptSendPresentation() }
+      Self.onMain { [weak self] in self?.sendTransitions.interrupt() }
     }
   }
 
@@ -380,8 +319,6 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     measurementCommitTask?.cancel()
     disclosureAnchorReleaseTask?.cancel()
     for task in disclosureExitTasks.values { task.cancel() }
-    sendPresentationWatchdog?.cancel()
-    pendingSendWatchdog?.cancel()
     if let boundsObserver {
       NotificationCenter.default.removeObserver(boundsObserver)
     }
@@ -404,7 +341,7 @@ final class VirtualizedTranscriptScrollView: NSScrollView {
     // caches; never sample teardown geometry here.
     if newWindow == nil, window != nil {
       republishLastStableScrollState()
-      interruptSendPresentation()
+      sendTransitions.interrupt()
       isDetaching = true
       uninstallPresentationFrameDriver()
       uninstallSelectionMouseMonitor()

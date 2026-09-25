@@ -112,7 +112,9 @@ struct AttachmentThumbnailView: View {
         RoundedRectangle(cornerRadius: 8)
           .fill(theme.bubbleBackground)
       }
-      if let image {
+      if let image = image ?? attachmentImages?.memoryPreview(for: file)?.image
+        ?? SentAttachmentThumbnails.image(for: file)
+      {
         Image(uiImage: image)
           .resizable()
           .aspectRatio(contentMode: .fit)

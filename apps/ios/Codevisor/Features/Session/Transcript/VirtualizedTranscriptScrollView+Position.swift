@@ -182,7 +182,7 @@ extension VirtualizedTranscriptScrollView {
     }
     commitPendingMeasurements()
     updateMountedRows()
-    startPendingSendAnimationIfPossible()
+    sendTransitions.advance()
     emitViewportSnapshot()
     checkForHistoryPrefetch()
     acknowledgeOlderHistoryPresentationIfPossible()
@@ -291,6 +291,12 @@ extension VirtualizedTranscriptScrollView {
       )
     else { return }
 
+    presentInitialTranscript()
+  }
+
+  /// Reveals the transcript canvas after its initial presentation gate
+  /// opens, whether through normal readiness or a first send's flight.
+  func presentInitialTranscript() {
     applyPositionTransaction {
       if initialBottomPin.isActive {
         setDistanceFromBottom(0)

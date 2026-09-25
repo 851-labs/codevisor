@@ -107,8 +107,6 @@ extension VirtualizedTranscriptScrollView {
     {
       requestMountedRowsUpdate()
     }
-    synchronizePendingSendHistoryPositions()
-    synchronizeSendAssistantVisibility()
   }
 
   @discardableResult
@@ -133,8 +131,6 @@ extension VirtualizedTranscriptScrollView {
 
     let host = takeParkedHost(for: key) ?? TranscriptRowHost(parent: parent)
     host.prepareForMountedRow()
-    sendHistoryHoldMounts.removeValue(forKey: key)
-    sendAssistantHoldMounts.removeValue(forKey: key)
     host.onMeasuredHeight = { [weak self] measurement in
       self?.recordMeasuredHeight(measurement)
     }
@@ -159,9 +155,7 @@ extension VirtualizedTranscriptScrollView {
     if requiresImmediatePresentation {
       host.prepareForImmediatePresentation()
     }
-    synchronizePendingSendTargetVisibility()
-    synchronizePendingSendHistoryPositions()
-    synchronizeSendAssistantVisibility()
+    sendTransitions.hostDidMount(host, key: key)
     return true
   }
 
@@ -200,10 +194,13 @@ extension VirtualizedTranscriptScrollView {
   }
 
   func removeMountedHosts(excluding retainedKeys: Set<String>) {
-    // Held and animating rows are drawn where the send presentation put
-    // them, not at their model frames. Removing one by model position
-    // would blank it mid-hold; the presentation's teardown reconciles.
-    guard !isSendPresentationHoldingHosts else { return }
+    // Rows mid-shift are drawn where the send's springs put them, not at
+    // their model frames. Removing one by model position would blank it
+    // mid-motion; the next pass after the springs settle reconciles.
+    guard !sendTransitions.isAnimatingRows else {
+      requestMountedRowsUpdateAfterSendTransition()
+      return
+    }
     let obsoleteKeys = mountedHosts.keys.filter { !retainedKeys.contains($0) }
     removeMountedHosts(withKeys: obsoleteKeys)
   }

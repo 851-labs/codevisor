@@ -54,6 +54,8 @@ struct ComposerCard: View {
   /// as a window sheet (matching the add-project flow) instead of the
   /// detached app-modal window `NSOpenPanel.runModal()` produces.
   @State private var isPickingFiles = false
+  /// The editor whose glyphs lift out of the composer on send.
+  @State private var sendSource = ComposerSendSource()
 
   /// Tallest the slash-command menu can grow before it scrolls (~6 rows).
   private static let slashMenuMaxHeight: CGFloat = 220
@@ -200,7 +202,10 @@ private extension ComposerCard {
             onSubmit: submitOrAcceptSlash,
             onKeyCommand: handleKeyCommand,
             onPasteAttachments: handlePastedAttachments,
-            onTextViewReady: onTextViewReady
+            onTextViewReady: { textView in
+              sendSource.textView = textView
+              onTextViewReady?(textView)
+            }
           )
           .frame(height: editorHeight)
           .writingToolsAffordanceVisibility(.hidden)
@@ -435,35 +440,6 @@ private extension ComposerCard {
       .lowercased()
   }
 
-  /// The "/token" being typed at the caret — anywhere in the message, not
-  /// just at its start: the nearest "/" before the caret with no whitespace
-  /// in between, itself preceded by whitespace or the start of the text
-  /// (so paths and URLs like "src/foo" never trigger the palette).
-  static func slashTokenRange(in text: String, selection: NSRange) -> NSRange? {
-    guard selection.length == 0 else { return nil }
-    let text = text as NSString
-    let caret = min(selection.location, text.length)
-    var index = caret
-    while index > 0 {
-      let unit = text.character(at: index - 1)
-      if isWhitespace(unit) { return nil }
-      if unit == unichar(UInt8(ascii: "/")) {
-        let slashIndex = index - 1
-        guard slashIndex == 0 || isWhitespace(text.character(at: slashIndex - 1)) else {
-          return nil
-        }
-        return NSRange(location: slashIndex, length: caret - slashIndex)
-      }
-      index -= 1
-    }
-    return nil
-  }
-
-  private static func isWhitespace(_ unit: unichar) -> Bool {
-    guard let scalar = Unicode.Scalar(unit) else { return false }
-    return CharacterSet.whitespacesAndNewlines.contains(scalar)
-  }
-
   /// Local commands run in the app itself instead of being sent to the
   /// agent: /plan and /goal toggle their composer modes.
   private var localSlashCommands: [ComposerSlashItem] {
@@ -547,6 +523,12 @@ private extension ComposerCard {
     } else {
       guard controller.canSend, !isAppUpdateInProgress else { return }
       didAcceptSubmission = true
+      // A send into an idle chat becomes a transcript row: its glyphs
+      // leave the editor now and the transcript flies them into the
+      // bubble. A send during a turn joins the queue instead.
+      if !reduceMotion, !controller.isSending {
+        sendSource.stage(controller: controller, theme: theme)
+      }
       Task {
         await controller.send()
         didAcceptSubmission = false

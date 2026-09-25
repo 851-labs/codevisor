@@ -53,6 +53,10 @@ final public class SessionController {
   public var composerText: String = "" { didSet { draftDidChange() } }
   public internal(set) var composerAttachments: [ComposerAttachment] = [] { didSet { draftDidChange() } }
   var uploadTasks: [UUID: Task<Void, Never>] = [:]
+  /// Bytes of images this device just sent, by uploaded file id, so their
+  /// transcript thumbnails render from the first frame of the send instead
+  /// of after a server round trip. See `filePreview(for:)`.
+  @ObservationIgnored var sentAttachmentPreviews = SentAttachmentPreviews()
   public internal(set) var harnesses: [ServerHarness] = []
   public internal(set) var preparationState: PreparationState = .loading
   /// True while the draft's model, mode, and harness capabilities are being

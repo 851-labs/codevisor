@@ -209,11 +209,6 @@ extension VirtualizedTranscriptScrollView {
       // final canonical distance, not the transient pre-compensation one.
       lastDistanceFromBottom = currentDistanceFromBottom()
     }
-    // Final geometry and its bottom compensation are now authoritative,
-    // but the display server has not committed this run-loop transaction.
-    // Lock surviving rows to their captured viewport coordinates here so
-    // the intermediate model position can never paint.
-    synchronizePendingSendHistoryPositions()
     if initialRestoreRange != nil || changedHeights == nil || mountedCoverageNeedsUpdate() {
       updateMountedRows(rangeOverride: initialRestoreRange)
     }
@@ -290,7 +285,8 @@ extension VirtualizedTranscriptScrollView {
       self?.recordMeasuredHeight(height, for: key)
     }
     host.onPresentationReady = { [weak self] in
-      self?.sendRowPresentationDidBecomeReady()
+      // Never start a flight inside the host's AppKit layout callback.
+      self?.requestDisplayFrameOrLayout()
     }
   }
 
@@ -309,7 +305,7 @@ extension VirtualizedTranscriptScrollView {
       promoteTargetWindowAndRetireIfReady()
       updateInitialPresentationReadiness()
       resolveBottomJumpIfPossible()
-      startPendingSendAnimationIfPossible()
+      sendTransitions.advance()
       return
     }
     pendingMeasuredHeights[key] = height
@@ -333,18 +329,14 @@ extension VirtualizedTranscriptScrollView {
     measurementCommitTask = nil
     let pending = pendingMeasuredHeights
     pendingMeasuredHeights.removeAll(keepingCapacity: true)
+    // A corrected height moves the rows around it; during a send those
+    // moves are carried by its springs rather than painted as a jump.
+    let contentShift = sendTransitions.beginContentShift()
     var committedHeights: [String: CGFloat] = [:]
-    let flightDeferralIndex = sendFlightMeasurementDeferralIndex
     for (key, height) in pending {
       guard rowByKey[key] != nil, mountedHosts[key]?.isAttachmentGeometryReady == true,
         measurements.needsCommit(height, for: key)
       else { continue }
-      if let flightDeferralIndex, let index = virtualLayout.indexByKey[key], index >= flightDeferralIndex {
-        // A height change below the flying bubble would re-pin the bottom
-        // and move its destination mid-flight. Completion commits these.
-        pendingMeasuredHeights[key] = height
-        continue
-      }
       if storeMeasuredHeight(height, for: key) {
         committedHeights[key] = height
       }
@@ -354,17 +346,11 @@ extension VirtualizedTranscriptScrollView {
       // row-set changes always come through `configure`'s full rebuild.
       rebuildDocumentGeometry(changedHeights: committedHeights)
     }
+    sendTransitions.commitContentShift(contentShift)
     promoteTargetWindowAndRetireIfReady()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
-    startPendingSendAnimationIfPossible()
-  }
-
-  /// The first row index whose height commits wait for flight completion,
-  /// or nil when no flight is running.
-  var sendFlightMeasurementDeferralIndex: Int? {
-    guard let request = activeSendAnimationRequest, !isApplyingSendCompletion else { return nil }
-    return virtualLayout.indexByKey[TranscriptVirtualRow.ID.message(request.messageID).layoutKey]
+    sendTransitions.advance()
   }
 
   /// Commits one measurement into the ledger and the revision-keyed caches.

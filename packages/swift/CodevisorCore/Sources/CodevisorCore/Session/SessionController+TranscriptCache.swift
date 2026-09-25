@@ -34,11 +34,11 @@ extension SessionController {
       // is published. Keep this as a fallback for any model attachment
       // race; a first send retains its existing optimistic destination.
       guard userSendAnimationRequest?.messageID != messageID else { return }
-      requestUserSendAnimation(for: messageID, destination: .activeTurn)
+      requestUserSendAnimation(for: messageID)
     }
     model.onQueuedPromptPromoted = { [weak self] messageID in
       guard let messageID else { return }
-      self?.requestUserSendAnimation(for: messageID, destination: .activeTurn)
+      self?.requestUserSendAnimation(for: messageID)
     }
     model.onPlanApprovalChanged = { [weak self] required in
       self?.pendingPlanApproval = required

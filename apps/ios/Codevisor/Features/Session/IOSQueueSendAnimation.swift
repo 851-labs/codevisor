@@ -20,6 +20,9 @@ final class IOSQueueSendAnimation {
   @ObservationIgnored private var watchdog: DispatchWorkItem?
   @ObservationIgnored private var startScheduled = false
 
+  /// A queued prompt the server never confirms leaves no proxy behind.
+  private static let watchdogDuration: TimeInterval = 0.71
+
   func stage(text: String, queue: [ServerPromptQueueItem], sourceFrame: CGRect, in window: UIWindow?) {
     cancel()
     guard let window, !sourceFrame.isEmpty, !UIAccessibility.isReduceMotionEnabled else { return }
@@ -38,7 +41,7 @@ final class IOSQueueSendAnimation {
     let watchdog = DispatchWorkItem { [weak self] in self?.cancel() }
     self.watchdog = watchdog
     DispatchQueue.main.asyncAfter(
-      deadline: .now() + TranscriptSendAnimationContract.presentationSafetyDuration,
+      deadline: .now() + Self.watchdogDuration,
       execute: watchdog
     )
   }
@@ -173,5 +176,19 @@ final class IOSQueueSendTargetView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window != nil { animation?.updateTarget(self) }
+  }
+}
+
+extension UIWindow {
+  /// The foreground scene's key window: where send proxies float.
+  /// iPad can have several windows in the foreground; only one of them is
+  /// key (it just took the send tap), so search every foreground scene
+  /// rather than taking the first.
+  static var codevisorKeyWindow: UIWindow? {
+    let scenes = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .filter { $0.activationState == .foregroundActive }
+    return scenes.lazy.flatMap(\.windows).first(where: \.isKeyWindow)
+      ?? scenes.first?.keyWindow
   }
 }

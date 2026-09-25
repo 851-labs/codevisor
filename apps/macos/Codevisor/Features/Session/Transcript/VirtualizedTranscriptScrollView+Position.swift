@@ -153,7 +153,7 @@ extension VirtualizedTranscriptScrollView {
       setDistanceFromBottom(0)
       updateMountedRows()
     }
-    startPendingSendAnimationIfPossible()
+    sendTransitions.advance()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
   }

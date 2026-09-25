@@ -26,7 +26,6 @@ struct SessionControllerFirstSendTests {
     let animation = try #require(fixture.controller.userSendAnimationRequest)
     #expect(message.text == "Send this message")
     #expect(animation.messageID == message.id)
-    #expect(animation.destination == .optimistic)
 
     release.finish()
     await send.value

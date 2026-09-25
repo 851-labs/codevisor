@@ -45,11 +45,7 @@ struct UserBubbleRow: View {
           )
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
-          .background(
-            theme.bubbleBackground,
-            in: RoundedRectangle(cornerRadius: 14)
-          )
-          .background { UserBubbleGeometryAnchor() }
+          .background { UserBubbleBackground(color: theme.bubbleBackground) }
           MessageCopyButton(text: text, help: "Copy message")
         }
       }

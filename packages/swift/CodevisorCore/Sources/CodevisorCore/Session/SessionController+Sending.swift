@@ -30,11 +30,11 @@ extension SessionController {
     }
     defer { isFirstSendConnecting = false }
 
-    // Plain-text sends have no asynchronous preparation. Keeping that
-    // common path synchronous through first-send materialization lets the
-    // workspace appear in the same main-actor turn. Attachment sends still
-    // settle eager uploads first; a failed upload blocks the send with an
-    // inline status instead of silently dropping the file.
+    // Attachment sends settle their eager uploads first (usually already
+    // done: uploads start when a file is attached). A failed upload blocks
+    // the send with an inline status instead of silently dropping the file.
+    // The composer's glyphs are already held above the composer by the
+    // platform's send staging, so this wait never shows as a gap.
     let attachments: [Attachment]
     if composerAttachments.isEmpty {
       attachments = []
@@ -51,16 +51,12 @@ extension SessionController {
     // re-pins only once the send is certain to proceed.
     userSendSignal &+= 1
 
-    // Establish presentation ownership before publishing the optimistic
-    // row. The native transcript can then hold that destination from its
-    // very first mounted frame while a connected send waits for precise
-    // active-turn geometry. A model-less first send can animate into the
-    // optimistic row immediately while setup catches up.
+    // Fully optimistic: the row and its animation request are published
+    // together, before any network work. Configuration, goals, the
+    // scratch folder and the harness all catch up behind the bubble; the
+    // transcript only needs the row to be laid out to fly into it.
     if shouldAnimateTranscriptSend {
-      requestUserSendAnimation(
-        for: outgoingMessage.id,
-        destination: model == nil ? .optimistic : .activeTurn
-      )
+      requestUserSendAnimation(for: outgoingMessage.id)
       pendingUserMessage = outgoingMessage
     }
 
@@ -166,14 +162,8 @@ extension SessionController {
     }
   }
 
-  func requestUserSendAnimation(
-    for messageID: UUID,
-    destination: UserSendAnimationDestination
-  ) {
-    userSendAnimationRequest = userSendAnimationCoordinator.issue(
-      for: messageID,
-      destination: destination
-    )
+  func requestUserSendAnimation(for messageID: UUID) {
+    userSendAnimationRequest = userSendAnimationCoordinator.issue(for: messageID)
   }
 
   /// Called by a native transcript only after the target row is mounted and

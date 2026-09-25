@@ -157,7 +157,7 @@ extension SessionTranscriptView {
           },
           openMarkdownLink: openMarkdownLink,
           markdownImageActions: transcriptImageActions,
-          onSendAnimationStarted: onSendAnimationStarted
+          onSendAnimationStarted: { onSendAnimationStarted?($0) }
         )
       )
     }

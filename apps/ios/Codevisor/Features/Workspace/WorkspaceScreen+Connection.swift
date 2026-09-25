@@ -202,12 +202,9 @@ extension WorkspaceScreen {
     startedSessionId = session.id
     paneState = state
     withAnimation(
-      .timingCurve(
-        0.22,
-        1,
-        0.36,
-        1,
-        duration: TranscriptSendAnimationMetrics.duration
+      .spring(
+        response: TranscriptSendMotion.content.response,
+        dampingFraction: TranscriptSendMotion.content.dampingFraction
       )
     ) {
       hasStarted = true

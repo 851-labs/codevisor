@@ -42,7 +42,6 @@ extension VirtualizedTranscriptScrollView {
     }
     let newSendAnimationRequest = input.sendAnimationRequest
     let newReduceMotion = input.reduceMotion
-    let newClaimSendAnimation = callbacks.claimSendAnimation
     let newRowContent = callbacks.rowContent
     let onViewportChange = callbacks.onViewportChange
     let onBottomStateChange = callbacks.onBottomStateChange
@@ -94,32 +93,17 @@ extension VirtualizedTranscriptScrollView {
     )
     positionPaginationLoadingIndicator()
     reduceMotion = newReduceMotion
-    claimSendAnimation = newClaimSendAnimation
-
-    if newSendAnimationRequest?.token != receivedSendAnimationToken {
-      finishSendPresentation()
-      receivedSendAnimationToken = newSendAnimationRequest?.token
-      pendingSendAnimationRequest = newSendAnimationRequest
-      pendingSendAnimationRowKey = nil
-      pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
-      pendingSendSourceViewportYByRowKey =
-        newSendAnimationRequest == nil ? nil : sendHistoryViewportYByRowKey()
-      sendTargetHoldMount = nil
-      if let request = newSendAnimationRequest {
-        beginPendingSendLifecycle(token: request.token)
-      }
-      synchronizePendingSendTargetVisibility()
-      synchronizeSendAssistantVisibility()
-    }
-    if let request = pendingSendAnimationRequest {
-      let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-      if newProjectedRows.contains(where: { row in
-        row.layoutKey == requestedKey
-          && TranscriptSendAnimationContract.isEligibleTarget(row, for: request.destination)
-      }) {
-        pendingSendAnimationRowKey = requestedKey
-      }
-    }
+    sendTransitions.session = sessionController.map(ObjectIdentifier.init)
+    sendTransitions.reduceMotion = newReduceMotion
+    sendTransitions.claim = callbacks.claimSendAnimation
+    sendTransitions.onStarted = callbacks.onSendAnimationStarted
+    sendTransitions.onCompleted = callbacks.onSendAnimationCompleted
+    sendTransitions.receive(newSendAnimationRequest, isForeground: true)
+    // Everything below can move rows. While a send is live, rows that
+    // move are carried from their previous on-screen position by the
+    // send's springs instead of jumping.
+    let contentShift = sendTransitions.beginContentShift()
+    defer { sendTransitions.commitContentShift(contentShift) }
 
     let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
     layoutFingerprint = newLayoutFingerprint
@@ -133,26 +117,14 @@ extension VirtualizedTranscriptScrollView {
     surfaceController.currentScrollCommand = scrollCommand
     surfaceController.observeStreamingPresentation(input)
 
-    if layoutFingerprintChanged, activeSendAnimationRequest != nil {
-      finishSendPresentation()
+    if layoutFingerprintChanged {
+      // A new width re-lays out every row; land any flight first. (A new
+      // surface's first configure also lands here, with nothing in flight.)
+      sendTransitions.landFlights()
     }
 
-    let rowProjectionChanged =
-      projectedRowsChanged || projectionRevisionChanged || activeRowsChanged
     let rebuiltRows: Bool
-    if activeSendAnimationRequest != nil,
-      rowProjectionChanged,
-      !layoutFingerprintChanged
-    {
-      deferredSendProjection = DeferredSendProjection(
-        projectedRows: newProjectedRows,
-        projectedRowsVersion: newRowsVersion,
-        projectionRevision: newProjectionRevision,
-        activeRows: newActiveRows,
-        activeRowsVersion: newActiveRowsVersion
-      )
-      rebuiltRows = false
-    } else if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
+    if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
       projectedRows = newProjectedRows
       projectedRowsVersion = newRowsVersion
       receivedProjectionRevision = newProjectionRevision
@@ -186,7 +158,6 @@ extension VirtualizedTranscriptScrollView {
 
     applyPendingInitialPositionIfPossible()
     presentDeferredActivePlaceholderIfNeeded()
-    startPendingSendAnimationIfPossible()
     updateInitialPresentationReadiness()
     resolveBottomJumpIfPossible()
     checkForHistoryPrefetch()

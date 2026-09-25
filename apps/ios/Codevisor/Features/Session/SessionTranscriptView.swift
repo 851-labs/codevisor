@@ -41,7 +41,7 @@ struct SessionTranscriptView: View {
   /// events and shared viewport state until the handoff commits.
   var presentationRole: TranscriptPresentationRole = .foreground
   var onSendAnimationCompleted: ((UserSendAnimationRequest) -> Void)? = nil
-  var onSendAnimationStarted: TranscriptSendAnimationStartAction? = nil
+  var onSendAnimationStarted: ((UserSendAnimationRequest) -> Void)? = nil
   var onComposerWillSend: ((String, CGRect) -> Void)? = nil
   /// A promoted New Chat keeps its UIKit editor first responder while its
   /// real workspace route mounts underneath. Ordinary chats still dismiss
@@ -437,7 +437,7 @@ struct SessionTranscriptView: View {
         },
         onWillSend: { text in
           if controller.isSending {
-            UserSendMorphCoordinator.shared.cancelStagedProxy(for: ObjectIdentifier(controller))
+            TranscriptSendStaging.shared.cancel(session: ObjectIdentifier(controller))
             if !reduceMotion {
               queueSendAnimation.stage(
                 text: text,
@@ -449,16 +449,14 @@ struct SessionTranscriptView: View {
             return
           }
           queueSendAnimation.cancel()
-          // The text leaves the editor as a bubble in the same frame it
-          // clears; the transcript flies this proxy into the real row.
+          // The glyphs leave the editor in the same frame it clears; the
+          // transcript flies them into the new bubble once it is laid out.
           if !reduceMotion {
-            UserSendMorphCoordinator.shared.stage(
-              text: text,
+            SentAttachmentThumbnails.prepare(controller.composerAttachments)
+            ComposerSendStaging.stage(
               session: ObjectIdentifier(controller),
               sourceFrame: sendAnimationSourceFrame ?? .zero,
-              bubbleColor: UIColor(theme.bubbleBackground),
-              textColor: UIColor(theme.textPrimary),
-              in: UIWindow.codevisorKeyWindow
+              theme: theme
             )
           }
           onComposerWillSend?(text, sendAnimationSourceFrame ?? .zero)

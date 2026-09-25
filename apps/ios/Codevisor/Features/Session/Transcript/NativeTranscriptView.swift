@@ -4,29 +4,6 @@ import StreamMarkdown
 import SwiftUI
 import UIKit
 
-enum TranscriptSendAnimationMetrics {
-  static let duration = TranscriptSendAnimationContract.duration
-
-  static func plan(
-    sourceY: CGFloat,
-    targetY: CGFloat,
-    reduceMotion: Bool = false
-  ) -> TranscriptSendAnimationPlan? {
-    TranscriptSendAnimationContract.plan(
-      sourceY: sourceY,
-      targetY: targetY,
-      reduceMotion: reduceMotion
-    )
-  }
-
-  static var propertyTimingParameters: UICubicTimingParameters {
-    UICubicTimingParameters(
-      controlPoint1: TranscriptSendAnimationContract.controlPoint1,
-      controlPoint2: TranscriptSendAnimationContract.controlPoint2
-    )
-  }
-}
-
 /// SwiftUI boundary around the UIKit virtualizer. One dedicated container
 /// controller owns every row host, keeping transcript content out of the
 /// surrounding navigation controller's containment tree.

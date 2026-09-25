@@ -46,13 +46,13 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
     deferredProjectionRevision = nil
     olderHistoryPresentationTarget = nil
     disclosureAnchorReleaseTask?.cancel()
-    interruptSendPresentation()
+    sendTransitions.interrupt()
     rowContent = nil
     openMarkdownLink = nil
     markdownImageActions = nil
-    claimSendAnimation = nil
-    onSendAnimationStarted = nil
-    onSendAnimationCompleted = nil
+    sendTransitions.claim = nil
+    sendTransitions.onStarted = nil
+    sendTransitions.onCompleted = nil
     onViewportChange = nil
     onBottomStateChange = nil
     onFollowStateChange = nil
@@ -176,11 +176,7 @@ extension VirtualizedTranscriptScrollView: TranscriptFrameAdapter {
   }
 
   var allowsMeasurementCommit: Bool {
-    let flightDeferralIndex = sendFlightMeasurementDeferralIndex
-    return pendingMeasurements.keys.contains { key in
-      guard let index = virtualLayout.indexByKey[key] else { return false }
-      return flightDeferralIndex.map { index < $0 } ?? true
-    }
+    pendingMeasurements.keys.contains { virtualLayout.indexByKey[$0] != nil }
   }
 
   func finishPresentationFrame() {

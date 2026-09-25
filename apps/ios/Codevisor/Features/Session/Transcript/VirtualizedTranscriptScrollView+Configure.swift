@@ -43,9 +43,6 @@ extension VirtualizedTranscriptScrollView {
     let newPresentationRole = input.presentationRole
     let newReduceMotion = input.reduceMotion
     let newScrollIndicatorBottomInset = input.scrollIndicatorBottomInset
-    let newClaimSendAnimation = callbacks.claimSendAnimation
-    let newOnSendAnimationStarted = callbacks.onSendAnimationStarted
-    let newOnSendAnimationCompleted = callbacks.onSendAnimationCompleted
     let newRowContent = callbacks.rowContent
     let onViewportChange = callbacks.onViewportChange
     let onBottomStateChange = callbacks.onBottomStateChange
@@ -96,9 +93,11 @@ extension VirtualizedTranscriptScrollView {
     reduceMotion = newReduceMotion
     updateBottomScrollIndicatorInsetIfNeeded(newScrollIndicatorBottomInset)
     sendAnimationSourceFrame = newSendAnimationSourceFrame
-    claimSendAnimation = newClaimSendAnimation
-    onSendAnimationStarted = newOnSendAnimationStarted
-    onSendAnimationCompleted = newOnSendAnimationCompleted
+    sendTransitions.session = sessionController.map(ObjectIdentifier.init)
+    sendTransitions.reduceMotion = newReduceMotion
+    sendTransitions.claim = callbacks.claimSendAnimation
+    sendTransitions.onStarted = callbacks.onSendAnimationStarted
+    sendTransitions.onCompleted = callbacks.onSendAnimationCompleted
     let becameForeground =
       presentationRole != .foreground
       && newPresentationRole == .foreground
@@ -108,43 +107,14 @@ extension VirtualizedTranscriptScrollView {
     presentationRole = newPresentationRole
     updatePresentationFrameDriverRegistration()
     if leftForeground {
-      interruptSendPresentation()
+      sendTransitions.interrupt()
     }
-
-    if newSendAnimationRequest?.token != receivedSendAnimationToken {
-      IOSNavigationDiagnostics.record(
-        "transcript.sendAnimation.request",
-        "old=\(receivedSendAnimationToken.map(String.init) ?? "nil") new=\(newSendAnimationRequest.map { "\($0.token)/\($0.destination)" } ?? "nil") "
-          + "active=\(activeSendAnimationRequest.map { String($0.token) } ?? "nil") role=\(newPresentationRole)"
-      )
-      finishSendPresentation(notifyCompletion: true, reason: "newRequestToken")
-      receivedSendAnimationToken = newSendAnimationRequest?.token
-      // A prewarming destination (the route mounted under the New Chat
-      // sheet) shows the landed row from its first frame: the sheet's
-      // own transcript flies the bubble, and holding this row invisible
-      // would only leave a hole when the sheet dissolves into it.
-      pendingSendAnimationRequest =
-        newPresentationRole == .foreground ? newSendAnimationRequest : nil
-      pendingSendAnimationRowKey = nil
-      pendingSendSourceLayout = newSendAnimationRequest == nil ? nil : virtualLayout
-      pendingSendSourceScreenYByRowKey =
-        newSendAnimationRequest == nil ? nil : sendHistoryScreenYByRowKey()
-      sendTargetHoldMount = nil
-      if let request = pendingSendAnimationRequest {
-        beginPendingSendLifecycle(token: request.token)
-      }
-      synchronizePendingSendTargetVisibility()
-      synchronizeSendAssistantVisibility()
-    }
-    if let request = pendingSendAnimationRequest {
-      let requestedKey = TranscriptVirtualRow.ID.message(request.messageID).layoutKey
-      if newProjectedRows.contains(where: { row in
-        row.layoutKey == requestedKey
-          && TranscriptSendAnimationContract.isEligibleTarget(row, for: request.destination)
-      }) {
-        pendingSendAnimationRowKey = requestedKey
-      }
-    }
+    // Everything below can move rows. While a send is live, rows that
+    // move are carried from their previous on-screen position by the
+    // send's springs instead of jumping.
+    sendTransitions.receive(newSendAnimationRequest, isForeground: newPresentationRole == .foreground)
+    let contentShift = sendTransitions.beginContentShift()
+    defer { sendTransitions.commitContentShift(contentShift) }
 
     let layoutFingerprintChanged = layoutFingerprint != newLayoutFingerprint
     layoutFingerprint = newLayoutFingerprint
@@ -157,26 +127,13 @@ extension VirtualizedTranscriptScrollView {
     surfaceController.currentScrollCommand = scrollCommand
     surfaceController.observeStreamingPresentation(input)
 
-    if layoutFingerprintChanged, activeSendAnimationRequest != nil {
-      finishSendPresentation(notifyCompletion: true, reason: "layoutFingerprint")
+    if layoutFingerprintChanged {
+      // A new width re-lays out every row; land any flight first. (A new
+      // surface's first configure also lands here, with nothing in flight.)
+      sendTransitions.landFlights()
     }
-
-    let rowProjectionChanged =
-      projectedRowsChanged || projectionRevisionChanged || activeRowsChanged
     let rebuiltRows: Bool
-    if activeSendAnimationRequest != nil,
-      rowProjectionChanged,
-      !layoutFingerprintChanged
-    {
-      deferredSendProjection = DeferredSendProjection(
-        projectedRows: newProjectedRows,
-        projectedRowsVersion: newRowsVersion,
-        projectionRevision: newProjectionRevision,
-        activeRows: newActiveRows,
-        activeRowsVersion: newActiveRowsVersion
-      )
-      rebuiltRows = false
-    } else if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
+    if projectedRowsChanged || projectionRevisionChanged || layoutFingerprintChanged {
       projectedRows = newProjectedRows
       projectedRowsVersion = newRowsVersion
       receivedProjectionRevision = newProjectionRevision
@@ -237,7 +194,6 @@ extension VirtualizedTranscriptScrollView {
 
     applyPendingInitialPositionIfPossible()
     presentDeferredActivePlaceholderIfNeeded()
-    startPendingSendAnimationIfPossible()
     if becameForeground {
       // The foreground transcript is now the sole viewport publisher.
       // First-send promotion is always pinned to the newest row, but use

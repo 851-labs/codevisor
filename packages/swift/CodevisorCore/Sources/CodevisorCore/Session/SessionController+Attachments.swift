@@ -1,5 +1,6 @@
 import Foundation
 import ACPKit
+import ImageIO
 import UniformTypeIdentifiers
 import os
 
@@ -234,6 +235,9 @@ extension SessionController {
   /// Fetches either immutable attachment bytes or a live path from the
   /// machine that owns this session.
   public func filePreview(for source: PreviewFile.Source) async throws -> Data {
+    if case let .attachment(fileId) = source, let local = await sentAttachmentPreviews.preview(for: fileId) {
+      return local
+    }
     guard let serverClient else { throw SessionControllerError.serverUnavailable }
     switch source {
     case let .attachment(fileId): return try await serverClient.filePreview(id: fileId)
@@ -355,6 +359,9 @@ extension SessionController {
       switch staged.state {
       case let .uploaded(ref):
         attachments.append(ref.attachment)
+        if staged.isImage {
+          sentAttachmentPreviews.remember(staged.localData, for: ref.fileId)
+        }
       case .failed:
         status = .failed("An attachment failed to upload. Retry or remove it, then send again.")
         return nil
@@ -374,4 +381,58 @@ extension SessionController {
     formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
     return formatter
   }()
+}
+
+/// Recently sent images, kept on the device that sent them. Attachments are
+/// immutable, so a local preview is exactly what the server would return.
+@MainActor
+final class SentAttachmentPreviews {
+  private static let capacity = 8
+  /// The preview size the transcript's image store accepts and decodes.
+  nonisolated private static let maxPixelSize = 960
+  private var entries: [(fileId: String, data: Data, isPreview: Bool)] = []
+
+  func remember(_ data: Data, for fileId: String) {
+    entries.removeAll { $0.fileId == fileId }
+    entries.append((fileId, data, false))
+    if entries.count > Self.capacity { entries.removeFirst(entries.count - Self.capacity) }
+  }
+
+  /// A small encoded preview of the sent bytes, or nil for files this
+  /// device did not send.
+  func preview(for fileId: String) async -> Data? {
+    guard let index = entries.firstIndex(where: { $0.fileId == fileId }) else { return nil }
+    let entry = entries[index]
+    if entry.isPreview { return entry.data }
+    let original = entry.data
+    let preview = await Task.detached(priority: .userInitiated) {
+      Self.encodePreview(of: original)
+    }.value
+    guard let preview else { return nil }
+    if let current = entries.firstIndex(where: { $0.fileId == fileId }) {
+      entries[current] = (fileId, preview, true)
+    }
+    return preview
+  }
+
+  nonisolated private static func encodePreview(of data: Data) -> Data? {
+    guard
+      let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+      let image = CGImageSourceCreateThumbnailAtIndex(
+        source, 0,
+        [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+          kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ] as CFDictionary)
+    else { return nil }
+    let output = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(
+      destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else { return nil }
+    return output as Data
+  }
 }
