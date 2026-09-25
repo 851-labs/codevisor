@@ -9,7 +9,15 @@ import UIKit
 @MainActor @Observable
 final class NewChatFlow: Identifiable {
   let id = UUID()
+  /// Whether the sheet zooms out of Home's compose button. Decided once at
+  /// presentation: the button is only on screen at the stack's root, and a
+  /// zoom whose source is off screen is not something UIKit can morph.
+  let zoomsFromComposeButton: Bool
   var composerFocusRequest: UUID? = UUID()
+
+  init(zoomsFromComposeButton: Bool) {
+    self.zoomsFromComposeButton = zoomsFromComposeButton
+  }
   var sessionId: UUID?
   var requestedServerId: String?
   var phase = NewChatPromotionPhase.composing

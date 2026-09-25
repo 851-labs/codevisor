@@ -23,8 +23,22 @@ extension HomeView {
       selectDetail(.newChat(serverId: serverId))
       return
     }
+    // One New Chat presentation at a time. `newChatFlow` outlives
+    // `presentedNewChatFlow` until the sheet's dismissal finishes, so this
+    // also covers a sheet that is still zooming back into the compose
+    // button. Starting a second zoom on that button while the first is
+    // mid-morph aborts inside UIKit (`_morphPreviewFromCurrentState`):
+    // a quick double tap, or reopening during the dismissal, did exactly
+    // that. The New Chat command and client control reach here too.
+    guard newChatFlow == nil else {
+      IOSNavigationDiagnostics.record(
+        "home.newChat.presentIgnored",
+        "presented=\(presentedNewChatFlow != nil)"
+      )
+      return
+    }
     newChatSheetPath = NavigationPath()
-    let flow = NewChatFlow()
+    let flow = NewChatFlow(zoomsFromComposeButton: path.isEmpty && showsNewChatButton)
     flow.requestedServerId = serverId
     newChatFlow = flow
     presentedNewChatFlow = flow
@@ -381,7 +395,11 @@ extension HomeView {
     }
     .presentationDetents([.large])
     .presentationDragIndicator(.hidden)
-    .navigationTransition(.zoom(sourceID: Self.newChatTransitionID, in: newChatTransition))
+    .newChatZoomTransition(
+      flow.zoomsFromComposeButton,
+      sourceID: Self.newChatTransitionID,
+      in: newChatTransition
+    )
     .interactiveDismissDisabled(flow.isPromoting || newChatComposerBlocksDismiss)
   }
 
@@ -437,4 +455,22 @@ extension HomeView {
   /// Folder rows add type-erased values to the sheet's own NavigationPath.
   /// Selecting one keeps the draft sheet alive and removes only those
   /// browser pushes.
+}
+
+extension View {
+  /// Zooms the New Chat sheet out of its source only when that source is
+  /// on screen; otherwise the sheet keeps the standard slide-up. Fixed for
+  /// a presentation's lifetime, so the branch never changes identity.
+  @ViewBuilder
+  fileprivate func newChatZoomTransition(
+    _ enabled: Bool,
+    sourceID: some Hashable,
+    in namespace: Namespace.ID
+  ) -> some View {
+    if enabled {
+      navigationTransition(.zoom(sourceID: sourceID, in: namespace))
+    } else {
+      self
+    }
+  }
 }
