@@ -23,7 +23,11 @@ const fixture = async (
   runningServers.push(server)
   const project = await run(services.db.createProject({ folderPath: "/fixture/screen-sharing" }))
   const workspace = await run(
-    services.db.upsertWorkspace({ projectId: project.id, name: "Sharing", hasCustomName: false })
+    services.db.upsertWorkspace({
+      projectId: project.id,
+      name: "Sharing",
+      hasCustomName: false
+    })
   )
   const pane = await run(
     services.db.upsertWorkspacePane(workspace.id, {
@@ -103,7 +107,10 @@ describe("native Screen Sharing signaling", () => {
     })
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("no-store")
-    expect(await response.json()).toMatchObject({ status: "connecting", answer: "fixture answer" })
+    expect(await response.json()).toMatchObject({
+      status: "connecting",
+      answer: "fixture answer"
+    })
     expect(helper).toHaveBeenLastCalledWith(request)
     expect((await post({ ...request, operation: "restart" })).status).toBe(200)
     expect((await post({ ...request, operation: "heartbeat" })).status).toBe(200)
@@ -121,7 +128,12 @@ describe("native Screen Sharing signaling", () => {
     const { server, request, post } = await fixture(helper)
     expect((await jsonRequest(server, "/v1/screen-sharing")).status).toBe(405)
     expect(
-      (await jsonRequest(server, "/v1/screen-sharing", { method: "POST", body: "{" })).status
+      (
+        await jsonRequest(server, "/v1/screen-sharing", {
+          method: "POST",
+          body: "{"
+        })
+      ).status
     ).toBe(400)
     expect((await post({ ...request, version: 2 })).status).toBe(400)
     for (const field of ["workspaceId", "paneId", "viewerId"]) {
@@ -174,7 +186,11 @@ describe("native Screen Sharing signaling", () => {
     expect((await post({ ...request, workspaceId: randomUUID() })).status).toBe(404)
     expect((await post({ ...request, paneId: randomUUID() })).status).toBe(404)
     const second = await run(
-      services.db.upsertWorkspace({ projectId: project.id, name: "Other", hasCustomName: false })
+      services.db.upsertWorkspace({
+        projectId: project.id,
+        name: "Other",
+        hasCustomName: false
+      })
     )
     expect((await post({ ...request, workspaceId: second.id })).status).toBe(404)
     await run(
@@ -230,6 +246,37 @@ describe("native Screen Sharing signaling", () => {
     const failed = await post(capabilities())
     expect(failed.status).toBe(503)
     expect(JSON.stringify(failed.body)).not.toContain("secret")
+    expect(failed.body).toMatchObject({
+      error: expect.stringContaining("Open or update Codevisor")
+    })
+  })
+
+  // 851-2391: a stuck capture on the host was reported as "open or update Codevisor".
+  it("tells a host that timed out or stopped apart from one that can't be reached", async () => {
+    const helper = vi.fn(async (): Promise<unknown> => ({ version: 2 }))
+    const { post } = await fixture(helper)
+    helper.mockRejectedValueOnce(new Error("Screen Sharing host timed out."))
+    const timedOut = await post(capabilities())
+    expect(timedOut.status).toBe(504)
+    expect(timedOut.body).toMatchObject({
+      error: expect.stringContaining("screen capture may be stuck")
+    })
+    helper.mockRejectedValueOnce(new Error("Computer Use helper timed out"))
+    expect((await post(capabilities())).status).toBe(504)
+    helper.mockRejectedValueOnce(new Error("Screen Sharing host is stopped."))
+    const stopped = await post(capabilities())
+    expect(stopped.status).toBe(503)
+    expect(stopped.body).toMatchObject({
+      error: expect.stringContaining("Open a Codevisor window")
+    })
+    helper.mockRejectedValueOnce(new Error("Screen Sharing host timed out. /Users/secret"))
+    const other = await post(capabilities())
+    expect(other.body).toMatchObject({
+      error: expect.stringContaining("Open or update Codevisor")
+    })
+    expect(JSON.stringify(other.body)).not.toContain("secret")
+    helper.mockRejectedValueOnce("Screen Sharing host timed out.")
+    expect((await post(capabilities())).status).toBe(503)
   })
 
   it("streams a chat's Computer Use window only to that chat's pane", async () => {

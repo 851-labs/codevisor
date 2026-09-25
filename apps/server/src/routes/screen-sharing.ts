@@ -99,13 +99,27 @@ export const routeScreenSharing = async (
   let result: ScreenSharingReply
   try {
     result = Schema.decodeUnknownSync(ScreenSharingReply)(await config.screenSharing(payload))
-  } catch {
-    // Never expose helper paths, tokens, or SDP through a transport error.
-    throw new HttpFailure(
-      503,
-      "Open or update Codevisor on the host Mac, then retry Screen Sharing"
-    )
+  } catch (cause) {
+    // Never expose helper paths, tokens, or SDP through a transport error: only
+    // the app's own known failures are told apart (851-2391).
+    throw screenSharingHostFailure(cause)
   }
   writeJson(response, 200, result)
   return true
+}
+
+/** The viewer's message for a failed request to the host app. */
+export const screenSharingHostFailure = (cause: unknown): HttpFailure => {
+  const message = cause instanceof Error ? cause.message : ""
+  if (message === "Screen Sharing host timed out." || message === "Computer Use helper timed out")
+    return new HttpFailure(
+      504,
+      "The host Mac didn't answer in time; its screen capture may be stuck. Retry in a minute."
+    )
+  if (message === "Screen Sharing host is stopped.")
+    return new HttpFailure(
+      503,
+      "Codevisor on the host Mac isn't sharing right now. Open a Codevisor window there, then retry."
+    )
+  return new HttpFailure(503, "Open or update Codevisor on the host Mac, then retry Screen Sharing")
 }
