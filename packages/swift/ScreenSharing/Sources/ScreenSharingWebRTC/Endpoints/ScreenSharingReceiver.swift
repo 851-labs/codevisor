@@ -157,6 +157,8 @@ public final class ScreenSharingReceiver: ScreenSharingPeer, ScreenSharingViewin
     didSet { audioPlayer?.volume = audioVolume }
   }
 
+  public func setAudioVolume(_ volume: Float) { audioVolume = min(1, max(0, volume)) }
+
   private func subscribeToAudio() {
     guard audioWanted, !audioSubscribed, audioChannel.isAvailable else { return }
     audioSubscribed = audioChannel.send(.subscribe)

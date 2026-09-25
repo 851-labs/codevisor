@@ -1,5 +1,6 @@
 #if os(macOS)
   import AppKit
+  import CodevisorCoreMac
   import ScreenSharingRigKit
 
   /// The standard menu bar. The rig runs `NSApplication` by hand, not as a
@@ -116,6 +117,16 @@
     }
     static func setDynamicResolution(_ enabled: Bool, for id: String) {
       UserDefaults.standard.set(enabled, forKey: "dynamicResolution.\(id)")
+    }
+    /// The machine's sound (851-2379): on unless turned off, volume 0…1.
+    static func sound(_ id: String) -> ScreenSharingMachineSettings.Sound {
+      .init(
+        enabled: UserDefaults.standard.object(forKey: "soundEnabled.\(id)") as? Bool ?? true,
+        volume: UserDefaults.standard.object(forKey: "soundVolume.\(id)") as? Double ?? 1)
+    }
+    static func setSound(_ sound: ScreenSharingMachineSettings.Sound, for id: String) {
+      UserDefaults.standard.set(sound.enabled, forKey: "soundEnabled.\(id)")
+      UserDefaults.standard.set(sound.volume, forKey: "soundVolume.\(id)")
     }
     /// When video last arrived from this machine (851-2367).
     static func lastConnected(_ id: String) -> Date? {

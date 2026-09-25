@@ -270,19 +270,30 @@ public final class ScreenSharingResolutionAvailability {
   init() {}
 }
 
-/// The host's sound on a native session (851-2379): on unless muted. Muting tells the host to stop
-/// sending it.
+/// The host's sound on a native session (851-2379), set from the machine's settings: on unless
+/// turned off (the host then stops sending it), at the chosen volume.
 @MainActor
 @Observable
 public final class ScreenSharingAudioControl {
   public var enabled: Bool {
     didSet { if enabled != oldValue { session?.setAudioEnabled(enabled) } }
   }
+  public var volume: Double {
+    didSet { if volume != oldValue { session?.setAudioVolume(Float(volume)) } }
+  }
   @ObservationIgnored private weak var session: (any ScreenSharingViewingSession)?
 
-  init(session: any ScreenSharingViewingSession, enabled: Bool = true) {
+  init(session: any ScreenSharingViewingSession, enabled: Bool = true, volume: Double = 1) {
     self.session = session
     self.enabled = enabled
+    self.volume = volume
     session.setAudioEnabled(enabled)
+    session.setAudioVolume(Float(volume))
+  }
+
+  /// Applies a machine's saved sound settings.
+  public func apply(_ sound: ScreenSharingMachineSettings.Sound) {
+    enabled = sound.enabled
+    volume = sound.volume
   }
 }

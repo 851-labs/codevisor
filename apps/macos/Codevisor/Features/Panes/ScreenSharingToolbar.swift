@@ -26,9 +26,6 @@ struct ScreenSharingToolbar: ToolbarContent {
     ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
       if store.displays.count > 1 { displayMenu }
     }
-    ToolbarItem(id: "screenSharing.audio", placement: .primaryAction) {
-      if let audio = store.endpoint?.audio { ScreenSharingMuteButton(audio: audio) }
-    }
     ToolbarItem(id: "screenSharing.clipboard", placement: .primaryAction) {
       if store.endpoint?.supportsClipboard != false {
         Menu {

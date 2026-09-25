@@ -82,6 +82,8 @@ public protocol ScreenSharingViewingSession: AnyObject {
   var supportsAudio: Bool { get }
   /// Plays the host's sound, or mutes it (the host then stops sending it).
   func setAudioEnabled(_ enabled: Bool)
+  /// How loud the host's sound plays, 0…1.
+  func setAudioVolume(_ volume: Float)
 }
 
 extension ScreenSharingViewingSession {
@@ -93,6 +95,7 @@ extension ScreenSharingViewingSession {
   public var videoShowsPointer: Bool { true }
   public var supportsAudio: Bool { false }
   public func setAudioEnabled(_ enabled: Bool) {}
+  public func setAudioVolume(_ volume: Float) {}
 
   public var onCursorChanged: ((ScreenSharingCursorUpdate) -> Void)? {
     get { nil }

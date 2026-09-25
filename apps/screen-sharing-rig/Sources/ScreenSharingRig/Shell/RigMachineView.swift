@@ -62,7 +62,8 @@
         dynamicResolution: store?.dynamicResolution
           ?? RigMachineSettings.dynamicResolution(machine.id),
         displays: store?.displays.map { .init(id: $0.id, name: $0.name) } ?? [],
-        preferredDisplayId: store?.selectedDisplayId, lastConnected: RigMachineSettings.lastConnected(machine.id))
+        preferredDisplayId: store?.selectedDisplayId, lastConnected: RigMachineSettings.lastConnected(machine.id),
+        sound: store?.endpoint?.audio.map { .init(enabled: $0.enabled, volume: $0.volume) })
       switch machine.connection {
       case .server(let url, _):
         settings.connection = "Codevisor server"
@@ -84,6 +85,10 @@
       if let enabled = changes.dynamicResolution {
         RigMachineSettings.setDynamicResolution(enabled, for: machine.id)
         if let store, store.dynamicResolution != enabled { store.send(.dynamicResolutionToggled) }
+      }
+      if let sound = changes.sound {
+        RigMachineSettings.setSound(sound, for: machine.id)
+        store?.endpoint?.audio?.apply(sound)
       }
       if let display = changes.preferredDisplayId { store?.send(.displaySelected(display)) }
       guard changes.userName != nil || changes.password != .keep else { return }
@@ -314,6 +319,10 @@
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       // Video arriving is what "last connected" means in the settings sheet (851-2367).
+      // Each new connection plays the machine's sound as its settings say (851-2379).
+      .onChange(of: model.store?.endpoint?.id) { _, _ in
+        model.store?.endpoint?.audio?.apply(RigMachineSettings.sound(model.machine.id))
+      }
       .onChange(of: model.store?.phase) { _, phase in
         if phase == .viewing { RigMachineSettings.setLastConnected(Date(), for: model.machine.id) }
       }

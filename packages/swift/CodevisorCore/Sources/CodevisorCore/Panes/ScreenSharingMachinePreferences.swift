@@ -19,6 +19,19 @@ public struct ScreenSharingMachinePreferences {
     defaults.set(enabled, forKey: Self.key(machineId))
   }
 
+  /// Whether the machine's sound plays (on unless turned off) and how loud, 0…1 (851-2379).
+  public func sound(machineId: String) -> (enabled: Bool, volume: Double) {
+    (
+      defaults.object(forKey: "screenSharing.soundEnabled.\(machineId)") as? Bool ?? true,
+      defaults.object(forKey: "screenSharing.soundVolume.\(machineId)") as? Double ?? 1
+    )
+  }
+
+  public func setSound(enabled: Bool, volume: Double, machineId: String) {
+    defaults.set(enabled, forKey: "screenSharing.soundEnabled.\(machineId)")
+    defaults.set(volume, forKey: "screenSharing.soundVolume.\(machineId)")
+  }
+
   /// When video last arrived from this machine, for the settings sheet (851-2367).
   public func lastConnected(machineId: String) -> Date? {
     defaults.object(forKey: "screenSharing.lastConnected.\(machineId)") as? Date
