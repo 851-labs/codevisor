@@ -18,14 +18,8 @@
 
     var body: some ToolbarContent {
       ToolbarItem(id: "screenSharing.mode", placement: .principal) {
-        HStack {
-          if store.endpoint?.supportsControl != false { controlActions }
-          if store.endpoint?.supportsDynamicResolution == true {
-            ScreenSharingDynamicResolutionToggle(store: store) {
-              RigMachineSettings.setDynamicResolution($0, for: machineId)
-            }
-          }
-        }
+        // Dynamic Resolution lives in the machine settings sheet.
+        if store.endpoint?.supportsControl != false { controlActions }
       }
       ToolbarItem(id: "screenSharing.display", placement: .primaryAction) {
         if store.displays.count > 1 { displayMenu }
