@@ -158,6 +158,15 @@ public protocol ServerWebSocketConnecting: AnyObject, Sendable {
   /// The server-sent close code once the connection has closed, `.invalid`
   /// while it hasn't.
   var closeCode: URLSessionWebSocketTask.CloseCode { get }
+  /// The caller is abandoning this connection because the peer never
+  /// answered in time. Call before `cancel`; transports that multiplex over
+  /// a shared pipe use it to detect a pipe that silently drops new
+  /// connections. Plain sockets have nothing to report.
+  func markUnanswered()
+}
+
+extension ServerWebSocketConnecting {
+  public func markUnanswered() {}
 }
 
 /// How a server client opens WebSocket connections — the socket sibling of

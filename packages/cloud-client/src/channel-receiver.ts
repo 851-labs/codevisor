@@ -250,10 +250,16 @@ export class ChannelReceiver {
     reason: ChannelCloseReason
   ): void {
     this.#channels.delete(key)
-    this.#refuse(peerId, channelId, reason)
+    // A live channel has already sent frames; its close must continue that
+    // seq so the opener reads the real reason instead of a seq gap.
+    const seq = live.nextSendSeq
+    live.nextSendSeq += 1
+    this.options.sendEnvelope(peerId, { t: "close", channelId, seq, reason })
     live.channel.onClosed?.(reason)
   }
 
+  /// Closes a channel this side never answered (refused open, or a frame
+  /// for a channel it no longer knows): nothing was sent on it, so seq 0.
   #refuse(peerId: string, channelId: string, reason: ChannelCloseReason): void {
     this.options.sendEnvelope(peerId, { t: "close", channelId, seq: 0, reason })
   }

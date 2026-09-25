@@ -8,6 +8,8 @@ import CodevisorTestSupport
 /// when none arrive — exactly like a dead relay channel.
 private final class ScriptedEventSocket: ServerWebSocketConnecting, @unchecked Sendable {
   let receiving = TestSignal()
+  private let lock = NSLock()
+  private var calls: [String] = []
   private let stream: AsyncThrowingStream<ServerWebSocketMessage, any Error>
   private let continuation: AsyncThrowingStream<ServerWebSocketMessage, any Error>.Continuation
   // Single-consumer, like a URLSessionWebSocketTask receive loop.
@@ -36,7 +38,15 @@ private final class ScriptedEventSocket: ServerWebSocketConnecting, @unchecked S
     return next
   }
 
+  /// Abandonment calls in order, for asserting report-before-cancel.
+  var lifecycle: [String] { lock.withLock { calls } }
+
+  func markUnanswered() {
+    lock.withLock { calls.append("unanswered") }
+  }
+
   func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+    lock.withLock { calls.append("cancel") }
     continuation.finish(throwing: URLError(.cancelled))
   }
 
@@ -190,6 +200,9 @@ struct EventStreamKeepaliveTests {
     await recovering.wait()
     await transport.connected.wait(for: 2)
     #expect(since(of: transport.requests.last) == "12")
+    // The abandoned socket learned it went unanswered before it was closed,
+    // so a relayed transport can judge its pipe.
+    #expect(transport.socket(0)?.lifecycle.prefix(2) == ["unanswered", "cancel"])
     consumer.cancel()
     _ = await consumer.result
   }

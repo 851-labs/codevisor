@@ -129,6 +129,30 @@ describe("session resume", () => {
     expect(reborn.welcome.resumed).toBeUndefined()
   })
 
+  it("an expired session tells openers their buffered channels are lost", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "expiry-buffer-vps")
+    const app = await connectApp(token)
+    await disconnect(token, machine.socket, "deploy")
+    sendRelay(
+      app.socket,
+      { machineId: machine.deviceId, frame: { t: "data", channelId: "ch-lost", seq: 1 } },
+      new Uint8Array([5])
+    )
+    // Round-trip a ping so the buffered write is processed before expiry.
+    app.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect((await app.reader.next()).t).toBe("pong")
+    await expireResumeGrace(token)
+    expect((await app.reader.next()).t).toBe("presence")
+    expect(await app.reader.next()).toMatchObject({ t: "error", machineId: machine.deviceId })
+    expect(await app.reader.next()).toMatchObject({
+      t: "error",
+      code: "machine-offline",
+      machineId: machine.deviceId,
+      channelId: "ch-lost"
+    })
+  })
+
   it("buffer overflow abandons the session and reports the machine offline", async () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "overflow-vps")

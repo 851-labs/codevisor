@@ -57,6 +57,7 @@ public actor CloudDirectConnection {
     let flowControlled: Bool
     let compressed: Bool
     var inboundCredit = 0
+    var receivedInbound = false
     let onMessage: @Sendable (Data, Int) -> Void
     let onCredit: @Sendable (Int) -> Void
     let onClosed: @Sendable (CloudChannelCloseReason?) -> Void
@@ -180,7 +181,7 @@ public actor CloudDirectConnection {
       }
     } catch {
       if !Task.isCancelled, !isDown {
-        Log.cloud.info(
+        Log.cloud.notice(
           "Direct pipe to \(self.machineDeviceId, privacy: .public) ended: \(String(describing: error), privacy: .public)"
         )
       }
@@ -326,7 +327,7 @@ public actor CloudDirectConnection {
 
   private func expireHeartbeat() {
     guard !isDown, pongDeadlineTask != nil else { return }
-    Log.cloud.info(
+    Log.cloud.notice(
       "Direct pipe to \(self.machineDeviceId, privacy: .public) missed its pong deadline")
     goDown()
   }
@@ -355,6 +356,13 @@ public actor CloudDirectConnection {
 extension CloudDirectConnection {
   private func handleRelay(_ frame: CloudRelayFrame, payload: Data) {
     guard let state = channels[frame.channelId] else { return }
+    state.receivedInbound = true
+    // A close ends the channel whatever its seq (see CloudHubConnection+Inbound).
+    if case let .close(channelId, _, reason) = frame {
+      channels.removeValue(forKey: channelId)
+      state.onClosed(reason)
+      return
+    }
     // Per-direction seqs are strictly monotonic from 0; a gap or repeat
     // is a protocol error and kills the channel.
     guard frame.seq == state.nextInboundSeq else {
@@ -396,9 +404,9 @@ extension CloudDirectConnection {
         return
       }
       state.onCredit(bytes)
-    case let .close(channelId, _, reason):
-      channels.removeValue(forKey: channelId)
-      state.onClosed(reason)
+    case .close:
+      // Handled before the seq check.
+      break
     }
   }
 
@@ -561,6 +569,19 @@ extension CloudDirectConnection: CloudChannelHosting {
     let seq = state.nextOutboundSeq
     state.nextOutboundSeq += 1
     try? sendRelay(frame: .close(channelId: channelId, seq: seq, reason: reason))
+  }
+
+  /// The owner gave up before the machine sent anything on this channel.
+  /// Pings can keep succeeding while channel opens go unanswered, so the
+  /// heartbeat alone cannot demote this pipe; an unanswered open does. The
+  /// selection layer then routes new opens over the relay, and the pipe is
+  /// re-probed on a later roster refresh.
+  func reportUnanswered(channelId: String) {
+    guard let state = channels[channelId], !state.receivedInbound, !isDown else { return }
+    Log.cloud.notice(
+      "Direct pipe to \(self.machineDeviceId, privacy: .public) left a channel open unanswered; falling back to the relay"
+    )
+    goDown()
   }
 
   private func abortChannel(_ channelId: String, reason: CloudChannelCloseReason) {

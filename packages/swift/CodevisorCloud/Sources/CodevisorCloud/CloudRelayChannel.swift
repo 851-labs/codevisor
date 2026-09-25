@@ -24,6 +24,12 @@ public final class CloudRelayChannel: Sendable {
     try await host.grantCredit(channelId: id, bytes: bytes)
   }
 
+  /// Tells the hosting pipe the owner gave up waiting for the machine to
+  /// answer. Call before `close(reason:)`.
+  public func reportUnanswered() async {
+    await host.reportUnanswered(channelId: id)
+  }
+
   /// Closes the channel toward the peer. The channel's `onClosed` callback
   /// does not fire for self-initiated closes.
   public func close(reason: CloudChannelCloseReason) async {

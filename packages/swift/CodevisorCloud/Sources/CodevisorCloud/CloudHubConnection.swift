@@ -28,6 +28,11 @@ public actor CloudHubConnection {
   private let reconnectDelay: @Sendable (Int) -> Duration
   private let onMachineWait: @Sendable () -> Void
   private let readyTimeout: Duration
+  /// How long a channel open parks for an offline machine before it is sent
+  /// anyway. Presence can go stale across hub restarts; past this bound the
+  /// hub itself answers (routes the open, or fails it with machine-offline)
+  /// instead of the open waiting on a presence frame that may never come.
+  private let machineWaitTimeout: Duration
   private let heartbeatInterval: Duration
   let heartbeatTimeout: Duration
   /// How long held channels survive a socket gap while a resume is pending
@@ -50,6 +55,14 @@ public actor CloudHubConnection {
   private var machineOnlineWaiters: [Int: (machineId: String, continuation: CheckedContinuation<Void, any Error>)] =
     [:]
   var channels: [String: ChannelState] = [:]
+  /// Consecutive channels per machine whose owner gave up before a single
+  /// frame arrived. Any inbound frame from the machine resets its count.
+  var unansweredOpens: [String: Int] = [:]
+  /// Fresh sessions already started on a machine's behalf without it
+  /// answering since; each one doubles the unanswered opens required for the
+  /// next, so a machine that is itself wedged cannot churn the hub for
+  /// every other machine.
+  var unansweredSessionRestarts: [String: Int] = [:]
   /// Keychain-backed values are immutable for this hub's lifetime. The
   /// account controller destroys the hub on sign-out/server switch, so no
   /// channel or reconnect should ever return to the credential store.
@@ -92,6 +105,9 @@ public actor CloudHubConnection {
     /// bodies it deems worthwhile (see CloudDeflate).
     let compressed: Bool
     var inboundCredit = 0
+    /// Whether any frame from the machine has arrived on this channel —
+    /// proof that the relay path to the machine carries traffic.
+    var receivedInbound = false
     let onMessage: @Sendable (Data, Int) -> Void
     let onCredit: @Sendable (Int) -> Void
     let onClosed: @Sendable (CloudChannelCloseReason?) -> Void
@@ -128,6 +144,7 @@ public actor CloudHubConnection {
     heartbeatInterval: Duration = .seconds(30),
     heartbeatTimeout: Duration = .seconds(10),
     resumeSuspensionTimeout: Duration = .seconds(70),
+    machineWaitTimeout: Duration = .seconds(20),
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     reconnectDelay: @escaping @Sendable (Int) -> Duration = { failures in
       .milliseconds(min(5_000, 250 * (1 << min(failures, 5))) + Int.random(in: 0...250))
@@ -147,6 +164,7 @@ public actor CloudHubConnection {
     self.heartbeatInterval = heartbeatInterval
     self.heartbeatTimeout = heartbeatTimeout
     self.resumeSuspensionTimeout = resumeSuspensionTimeout
+    self.machineWaitTimeout = machineWaitTimeout
   }
 
   public static var defaultDeviceName: String {
@@ -405,7 +423,10 @@ public actor CloudHubConnection {
   /// An offline machine is a state transition, not a timer-based connection
   /// failure. Park channel openers until presence says it is back instead of
   /// letting every event stream and terminal create an independent retry
-  /// loop. Cancellation removes the parked request promptly.
+  /// loop. Cancellation removes the parked request promptly. The park is
+  /// bounded: local presence can be stale (a frame lost across hub
+  /// restarts), so past `machineWaitTimeout` the open proceeds and the hub —
+  /// which knows whether the machine is really connected — answers it.
   func waitUntilMachineOnline(_ machineId: String) async throws {
     guard let machine = machines.first(where: { $0.deviceId == machineId }) else {
       throw CloudHubConnectionError.machineUnavailable
@@ -415,6 +436,14 @@ public actor CloudHubConnection {
 
     let id = machineWaiterSeq
     machineWaiterSeq += 1
+    let timeout = machineWaitTimeout
+    let sleep = sleep
+    let timeoutTask = Task { [weak self] in
+      try? await sleep(timeout)
+      guard !Task.isCancelled else { return }
+      await self?.expireMachineWaiter(id)
+    }
+    defer { timeoutTask.cancel() }
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation {
         (continuation: CheckedContinuation<Void, any Error>) in
@@ -433,6 +462,14 @@ public actor CloudHubConnection {
 
   private func cancelMachineWaiter(_ id: Int) {
     machineOnlineWaiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+  }
+
+  private func expireMachineWaiter(_ id: Int) {
+    guard let waiter = machineOnlineWaiters.removeValue(forKey: id) else { return }
+    Log.cloud.notice(
+      "Machine \(waiter.machineId, privacy: .public) still looks offline after \(String(describing: self.machineWaitTimeout), privacy: .public); opening through the hub anyway"
+    )
+    waiter.continuation.resume()
   }
 
   func resumeMachineWaiters(for machineId: String) {

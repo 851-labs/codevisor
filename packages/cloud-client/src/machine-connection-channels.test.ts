@@ -129,7 +129,9 @@ describe("incoming channels", () => {
       opened.cipher.seal("ch-overrun", "opener-to-responder", 1, new Uint8Array([1]))
     )
     expect(closes).toEqual(["protocol-error"])
-    expect(socket.lastClose()).toMatchObject({ t: "close", reason: "protocol-error" })
+    // The credit grant used responder seq 0, so the abort continues at 1 —
+    // a close at seq 0 would read as a seq gap and hide its reason.
+    expect(socket.lastClose()).toMatchObject({ t: "close", seq: 1, reason: "protocol-error" })
   })
 
   it("machine-side close notifies the peer once", () => {

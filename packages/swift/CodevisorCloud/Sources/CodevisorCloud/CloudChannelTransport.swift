@@ -46,6 +46,10 @@ protocol CloudChannelHosting: Actor {
   func send(channelId: String, plaintext: Data) throws -> Int
   func grantCredit(channelId: String, bytes: Int) throws
   func closeChannel(_ channelId: String, reason: CloudChannelCloseReason)
+  /// The channel's owner gave up waiting for the machine's first frame.
+  /// Call before `closeChannel`; hosts ignore channels that did receive
+  /// traffic, and treat repeated silence as a broken pipe.
+  func reportUnanswered(channelId: String)
 }
 
 extension CloudHubConnection: CloudChannelHosting {}

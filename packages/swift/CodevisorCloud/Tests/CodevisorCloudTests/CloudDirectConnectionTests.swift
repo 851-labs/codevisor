@@ -253,6 +253,34 @@ struct CloudDirectConnectionTests {
     #expect(scripted.pings >= 1)
   }
 
+  @Test("An unanswered open demotes the pipe even while pings succeed")
+  func unansweredOpenDemotesPipe() async throws {
+    let scripted = ScriptedDirectMachine()
+    let downs = Recorder()
+    let connection = makeDirectConnection(to: scripted) { downs.record(Data()) }
+
+    let recorder = Recorder()
+    let answered = try await connection.openChannel(
+      channelType: "ws",
+      params: nil,
+      onMessage: { recorder.record($0) },
+      onClosed: { _ in }
+    )
+    #expect(await waitUntil { scripted.machine.channel(answered.id) != nil })
+    let reply = try scripted.machine.sealData(channelId: answered.id, payload: Data("hi".utf8))
+    scripted.sendToApp(frame: reply.frame, payload: reply.payload)
+    #expect(await waitUntil { recorder.messages.count == 1 })
+    // A channel that heard back says nothing about the pipe.
+    await answered.reportUnanswered()
+    #expect(await connection.isReady)
+
+    let silent = try await connection.openChannel(
+      channelType: "ws", params: nil, onMessage: { _ in }, onClosed: { _ in })
+    await silent.reportUnanswered()
+    #expect(!(await connection.isReady))
+    #expect(downs.messages.count == 1)
+  }
+
   @Test("Shutdown is silent: channels fail but onDown never fires")
   func silentShutdown() async throws {
     let scripted = ScriptedDirectMachine()

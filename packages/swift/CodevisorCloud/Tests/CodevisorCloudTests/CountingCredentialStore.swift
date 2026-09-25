@@ -135,6 +135,7 @@ func makeHub(
   _ scripted: ScriptedCloudHub,
   heartbeatInterval: Duration = .seconds(30),
   heartbeatTimeout: Duration = .seconds(10),
+  clock: TestClock = TestClock(),
   onMachineWait: @escaping @Sendable () -> Void = {}
 ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
   let store = InMemoryCloudCredentialStore(token: "session-token")
@@ -147,7 +148,7 @@ func makeHub(
     readyTimeout: .seconds(2),
     heartbeatInterval: heartbeatInterval,
     heartbeatTimeout: heartbeatTimeout,
-    sleep: TestClock().sleep,
+    sleep: clock.sleep,
     // A closed fake socket must suspend between attempts, even with one Swift worker.
     reconnectDelay: { _ in .seconds(1) },
     onMachineWait: onMachineWait

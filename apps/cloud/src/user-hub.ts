@@ -21,7 +21,7 @@ import {
   type HubDeliveryPort
 } from "./hub-delivery.js"
 import { HubMetrics } from "./hub-metrics.js"
-import { announceExpired, type HubNoticesPort } from "./hub-notices.js"
+import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
 import { listHubMachines, removeHubMachine } from "./hub-registry.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
@@ -481,9 +481,8 @@ export class UserHub extends DurableObject<CloudEnv> {
   override async alarm(): Promise<void> {
     const now = Date.now()
     for (const session of this.#resume.expired(now)) {
-      this.#resume.delete(session.connection_id)
       this.#metrics.resumeExpired(session)
-      announceExpired(this.#notices(), session)
+      abandonSession(this.#notices(), session)
     }
     const next = this.#resume.nextExpiry()
     if (next !== undefined) await this.ctx.storage.setAlarm(Math.max(next, now + 250))

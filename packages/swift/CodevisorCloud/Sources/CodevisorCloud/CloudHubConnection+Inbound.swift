@@ -53,16 +53,16 @@ extension CloudHubConnection {
     switch probe.t {
     case "welcome":
       guard let welcome = try? decoder.decode(WelcomeMessage.self, from: data) else { return }
-      Log.cloud.info("Cloud hub welcomed this device (\(welcome.machines.count) machines)")
+      Log.cloud.notice("Cloud hub welcomed this device (\(welcome.machines.count) machines)")
       suspensionTask?.cancel()
       suspensionTask = nil
       let resumed = welcome.resumed == true && welcome.connectionId == lastConnectionId
       // Resume observability: success keeps channels; a declined resume
       // (expired grace, rotated token) degrades to the plain teardown.
       if resumed {
-        Log.cloud.info("Cloud hub resumed this session; held channels continue")
+        Log.cloud.notice("Cloud hub resumed this session; held channels continue")
       } else if resumeToken != nil {
-        Log.cloud.info("Cloud hub declined the resume; starting a fresh session")
+        Log.cloud.notice("Cloud hub declined the resume; starting a fresh session")
       }
       resumeToken = welcome.resume
       lastConnectionId = welcome.connectionId
@@ -195,6 +195,17 @@ extension CloudHubConnection {
         "CLOUDRELAYDBG channel.inbound kind=\(kind, privacy: .public) id=\(String(frame.channelId.prefix(8)), privacy: .public) seq=\(frame.seq) expected=\(state.nextInboundSeq)"
       )
     #endif
+    state.receivedInbound = true
+    noteInbound(from: state.machineDeviceId)
+    // A close ends the channel whatever its seq: it carries no sealed
+    // payload, and a responder that lost count (e.g. refusing a channel it
+    // no longer knows) must still be able to say why instead of surfacing
+    // as a protocol error.
+    if case let .close(channelId, _, reason) = frame {
+      channels.removeValue(forKey: channelId)
+      state.onClosed(reason)
+      return
+    }
     // Per-direction seqs are strictly monotonic from 0; a gap or repeat
     // is a protocol error and kills the channel.
     guard frame.seq == state.nextInboundSeq else {
@@ -238,9 +249,9 @@ extension CloudHubConnection {
         return
       }
       state.onCredit(bytes)
-    case let .close(channelId, _, reason):
-      channels.removeValue(forKey: channelId)
-      state.onClosed(reason)
+    case .close:
+      // Handled before the seq check.
+      break
     }
   }
 

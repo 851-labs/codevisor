@@ -273,6 +273,9 @@ extension CodevisorServerClient {
         group.addTask { try await socket.receive() }
         group.addTask {
           try await self.eventSleep(deadline)
+          // A relayed socket that never produced a frame tells its pipe,
+          // which can then replace a pipe that stopped answering opens.
+          socket.markUnanswered()
           // Close before joining the receive task: cancellation alone may
           // not release a native receive or a channel still being opened.
           socket.cancel(with: .goingAway, reason: nil)

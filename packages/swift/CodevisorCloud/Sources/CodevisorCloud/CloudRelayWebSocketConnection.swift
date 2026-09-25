@@ -95,6 +95,16 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
   private var iterator: AsyncThrowingStream<Inbound, any Error>.Iterator
   private let continuation: AsyncThrowingStream<Inbound, any Error>.Continuation
   private var cancelled = false
+  private var unanswered = false
+  /// Set once the machine has sent any frame on the channel.
+  private let answered = AnsweredFlag()
+
+  private final class AnsweredFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func set() { lock.withLock { value = true } }
+    var isSet: Bool { lock.withLock { value } }
+  }
 
   init(endpoint: any CloudChannelTransport, request: URLRequest) {
     let (messages, continuation) = AsyncThrowingStream<Inbound, any Error>.makeStream()
@@ -120,12 +130,14 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     let pendingParts = PartAccumulator()
     let immediate = ImmediateGrants()
     let gate = gate
+    let answered = answered
     openTask = Task {
       let channel = try await endpoint.openFlowControlledChannel(
         channelType: "ws",
         params: .object(["path": .string(path)]),
         compressed: true,
         onMessage: { data, sealedBytes in
+          answered.set()
           guard let frame = try? decoder.decode(WsFrame.self, from: data) else {
             continuation.finish(throwing: CloudRelayTransportError.invalidFrame)
             return
@@ -215,11 +227,16 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     return inbound.message
   }
 
+  func markUnanswered() {
+    guard !answered.isSet else { return }
+    lock.withLock { unanswered = true }
+  }
+
   func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-    let shouldClose = lock.withLock {
+    let (shouldClose, unanswered) = lock.withLock {
       let first = !cancelled
       cancelled = true
-      return first
+      return (first, self.unanswered)
     }
     guard shouldClose else { return }
     continuation.finish(throwing: CancellationError())
@@ -228,6 +245,9 @@ final class CloudRelayWebSocketConnection: ServerWebSocketConnecting, @unchecked
     let openTask = openTask
     Task {
       if let channel = try? await openTask.value {
+        // Report before closing: the host judges the channel by its
+        // traffic, which the close would discard.
+        if unanswered { await channel.reportUnanswered() }
         await channel.close(reason: .done)
       }
     }

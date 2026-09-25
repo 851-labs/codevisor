@@ -88,8 +88,8 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   /// The whole request/response under one deadline, body buffered — the
   /// JSON API surface. Streaming callers use `stream(for:)`.
   public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    try await raced(timeout: timeout) {
-      let (response, source) = try await performStream(request)
+    try await raced(timeout: timeout) { deadline in
+      let (response, source) = try await performStream(request, deadline: deadline)
       var body = Data()
       do {
         while let chunk = try await source.nextBodyChunk() {
@@ -110,8 +110,8 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   public func stream(
     for request: URLRequest
   ) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
-    let (response, source) = try await raced(timeout: timeout) {
-      try await performStream(request)
+    let (response, source) = try await raced(timeout: timeout) { deadline in
+      try await performStream(request, deadline: deadline)
     }
     let body = AsyncThrowingStream<Data, any Error>(unfolding: {
       do {
@@ -129,14 +129,18 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   /// path then closes its channel on the way out).
   private func raced<Value: Sendable>(
     timeout: Duration,
-    _ operation: @escaping @Sendable () async throws -> Value
+    _ operation: @escaping @Sendable (DeadlineFlag) async throws -> Value
   ) async throws -> Value {
-    try await withThrowingTaskGroup(of: Value.self) { group in
+    let deadline = DeadlineFlag()
+    return try await withThrowingTaskGroup(of: Value.self) { group in
       group.addTask {
-        try await operation()
+        try await operation(deadline)
       }
       group.addTask {
         try await sleep(timeout)
+        // Marked before the operation is cancelled, so its unwind can
+        // tell a deadline from a caller's cancellation.
+        deadline.markExpired()
         throw CloudRelayTransportError.timedOut
       }
       guard let result = try await group.next() else {
@@ -149,8 +153,17 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
 
   /// Opens the channel, uploads the request, and consumes frames up to and
   /// including the head. The returned source yields decoded body chunks.
+  /// Whether the transport deadline fired for one request.
+  final class DeadlineFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var expired = false
+    func markExpired() { lock.withLock { expired = true } }
+    var hasExpired: Bool { lock.withLock { expired } }
+  }
+
   private func performStream(
-    _ request: URLRequest
+    _ request: URLRequest,
+    deadline: DeadlineFlag
   ) async throws -> (HTTPURLResponse, HttpResponseSource) {
     guard let url = request.url,
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -197,6 +210,9 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       let response = try await source.readHead(url: url)
       return (response, source)
     } catch {
+      // No head by the deadline: let the pipe judge whether the machine
+      // answered at all (the host ignores channels that saw traffic).
+      if deadline.hasExpired { await channel.reportUnanswered() }
       await source.finish(reason: .done)
       throw error
     }
