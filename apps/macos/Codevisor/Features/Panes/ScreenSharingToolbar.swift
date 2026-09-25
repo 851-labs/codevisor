@@ -123,6 +123,7 @@ private struct ScreenSharingDetailsButton: View {
         if let decode = diagnostics.decodeMilliseconds {
           LabeledContent("Decode p95", value: String(format: "%.2f ms", decode))
         }
+        if let streams = diagnostics.streams { LabeledContent("Streams", value: streams) }
         Text(diagnostics.decoder).font(.caption).foregroundStyle(.secondary)
       }
       .font(.callout)
