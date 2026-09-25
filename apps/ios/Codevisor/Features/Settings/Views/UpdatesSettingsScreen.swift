@@ -9,6 +9,7 @@ import SwiftUI
 /// until that check finishes, so nothing installs from a stale list.
 struct UpdatesSettingsScreen: View {
   @Environment(AppEnvironment.self) private var environment
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   /// Whether this visit's opening check has finished.
   @State private var hasCheckedOnOpen = false
 
@@ -104,14 +105,37 @@ struct UpdatesSettingsScreen: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
-        Text(component.detailText)
+        detail(for: component)
           .font(.footnote)
           .foregroundStyle(component.isFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-          .lineLimit(1)
-          .truncationMode(.tail)
       }
       Spacer(minLength: 8)
       trailing(for: component)
+    }
+  }
+
+  /// One line. With an update pending, the installed version truncates
+  /// first so the version being installed always shows. Accessibility text
+  /// sizes wrap instead: no single line fits a version there.
+  @ViewBuilder
+  private func detail(for component: UpdateComponent) -> some View {
+    if dynamicTypeSize.isAccessibilitySize {
+      Text(component.detailText)
+    } else if let change = component.pendingVersionChange {
+      HStack(spacing: 4) {
+        Text(verbatim: change.installed)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Text(verbatim: "→ \(change.latest)")
+          .lineLimit(1)
+          .layoutPriority(1)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(change.installed) to \(change.latest)")
+    } else {
+      Text(component.detailText)
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
   }
 

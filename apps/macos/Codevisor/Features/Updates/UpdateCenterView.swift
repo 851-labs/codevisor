@@ -147,13 +147,11 @@ struct UpdateCenterView: View {
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
-        Text(component.detailText)
+        detail(for: component)
           .font(.callout)
           .foregroundStyle(
             component.isFailed ? AnyShapeStyle(theme.statusError) : AnyShapeStyle(.secondary)
           )
-          .lineLimit(1)
-          .truncationMode(.tail)
           .help(component.detailText)
       }
       Spacer(minLength: 12)
@@ -161,6 +159,28 @@ struct UpdateCenterView: View {
         .frame(minWidth: 96, alignment: .trailing)
     }
     .padding(.vertical, 2)
+  }
+
+  /// One line. With an update pending, the installed version truncates
+  /// first so the version being installed always shows.
+  @ViewBuilder
+  private func detail(for component: UpdateComponent) -> some View {
+    if let change = component.pendingVersionChange {
+      HStack(spacing: 4) {
+        Text(verbatim: change.installed)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Text(verbatim: "→ \(change.latest)")
+          .lineLimit(1)
+          .layoutPriority(1)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(change.installed) to \(change.latest)")
+    } else {
+      Text(component.detailText)
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
   }
 
   @ViewBuilder

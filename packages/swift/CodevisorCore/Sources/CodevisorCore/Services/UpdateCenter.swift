@@ -51,11 +51,25 @@ extension UpdateComponent {
       let reason = message.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
       return reason.isEmpty ? "Update failed" : "Update failed: \(reason)"
     case .idle:
+      if let change = pendingVersionChange {
+        return "\(change.installed) → \(change.latest)"
+      }
       if updateAvailable, let latestVersion {
-        return installedVersion.map { "\($0) → \(latestVersion)" } ?? "\(latestVersion) available"
+        return "\(latestVersion) available"
       }
       return installedVersion ?? "Up to date"
     }
+  }
+
+  /// The move an idle row's update would make, when both ends are known.
+  /// Rows draw it apart from `detailText` so that on a narrow row the
+  /// installed version gives way and the version being installed stays
+  /// readable.
+  public var pendingVersionChange: (installed: String, latest: String)? {
+    guard phase == .idle, updateAvailable, let installedVersion, let latestVersion else {
+      return nil
+    }
+    return (installedVersion, latestVersion)
   }
 
   public var isFailed: Bool {
