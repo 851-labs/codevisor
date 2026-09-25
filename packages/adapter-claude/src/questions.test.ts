@@ -180,6 +180,23 @@ describe("ClaudeProvider", () => {
       behavior: "deny",
       message: "The user wants to keep refining the plan. Stay in plan mode and continue planning."
     })
+
+    // Feedback sent with "Keep planning" reaches the model.
+    const refined = fake.options!.canUseTool!("ExitPlanMode", toolInput as never, {} as never)
+    await fake.drain()
+    const refinedAsk = events.at(-1)?.payload as Record<string, unknown>
+    await run(
+      created.handle.answerQuestion!(refinedAsk.questionId as string, {
+        answers: { exit_plan_mode: { answers: ["Keep planning"], note: " Split step 2 " } },
+        outcome: "answered"
+      })
+    )
+    await expect(refined).resolves.toEqual({
+      behavior: "deny",
+      message:
+        "The user wants to keep refining the plan. Stay in plan mode and continue planning.\n\n" +
+        "The user's feedback on the plan:\nSplit step 2"
+    })
   })
 
   it("blocks AskUserQuestion on the human's answer and folds it into updatedInput", async () => {

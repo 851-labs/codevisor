@@ -108,7 +108,9 @@ public enum TranscriptReducer {
       // the arrival position it resolved. `upsertTool` dedupes by id, so
       // replay redelivering the pair is idempotent.
       turn.isThinking = false
-      upsertTool(syntheticQuestionCall(for: resolution), entries: &turn.entries)
+      let call = syntheticQuestionCall(for: resolution)
+      if let position = resolution.statePosition { turn.entryPositions["tool:\(call.toolCallId)"] = position }
+      upsertTool(call, entries: &turn.entries)
 
     case .question, .availableCommandsUpdate, .currentModeUpdate, .configOptionUpdate,
       .usageUpdate, .goalUpdate, .goalCleared:
@@ -323,12 +325,16 @@ public enum TranscriptReducer {
   }
 
   /// The chosen answer text for one sub-question: the selected option
-  /// label(s) plus any free-form note, or "No answer" when nothing was picked.
+  /// label(s), then any free-form note on its own labelled line so it never
+  /// reads as another selected option; "No answer" when nothing was given.
   private static func answerText(for question: QuestionSpec, in resolution: QuestionResolution) -> String {
     guard let entry = resolution.answers?[question.id] else { return "No answer" }
-    var parts = entry.answers
-    if let note = entry.note, !note.isEmpty { parts.append(note) }
-    return parts.isEmpty ? "No answer" : parts.joined(separator: ", ")
+    // Text with no selected option is the answer itself (macOS sends an
+    // "Other" reply this way), not a note on one.
+    if entry.answers.isEmpty, let note = entry.note, !note.isEmpty { return note }
+    let note = entry.note.flatMap { $0.isEmpty ? nil : "Note: \($0)" }
+    let lines = [entry.answers.isEmpty ? nil : entry.answers.joined(separator: ", "), note].compactMap(\.self)
+    return lines.isEmpty ? "No answer" : lines.joined(separator: "\n")
   }
 
   /// Routes a tool-call update by id lookup — main entries first, then every

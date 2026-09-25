@@ -72,6 +72,19 @@ export const makeEventsService = (
           ) {
             deliveredPayload = readToolSnapshot(sqlite, chatItemId, update.toolCallId)!
           }
+          if (
+            chatItemId !== undefined &&
+            update?.sessionUpdate === "question_resolved" &&
+            typeof update.questionId === "string"
+          ) {
+            // projectChatEvent just saved this entry, so the row exists.
+            const row = sqlite
+              .prepare(
+                "select position from transcript_entries where item_id = ? and entry_key = ?"
+              )
+              .get(chatItemId, `question_resolved:${update.questionId}`) as { position: number }
+            deliveredPayload = { ...update, statePosition: row.position }
+          }
           if (chatItemId !== undefined && update?.sessionUpdate === "plan_document") {
             deliveredPayload = {
               ...update,

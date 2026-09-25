@@ -285,6 +285,62 @@ struct TranscriptReducerTests {
     #expect(call.content == [.content(.text("Option A"))])
   }
 
+  @Test("An answer's note is labelled, not listed as another option")
+  func answeredQuestionNote() {
+    var turn = AssistantTurn()
+    TranscriptReducer.apply(
+      .questionResolved(
+        QuestionResolution(
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Season?")],
+          answers: ["a": QuestionAnswerEntry(answers: ["Summer"], note: "Sunny")])), to: &turn)
+    guard case let .tool(call) = turn.entries.first else {
+      Issue.record("expected a synthesized question tool call")
+      return
+    }
+    #expect(call.content == [.content(.text("Summer\nNote: Sunny"))])
+  }
+
+  @Test("Typed text with no selected option is the answer, not a note")
+  func answeredQuestionFreeformOnly() {
+    var turn = AssistantTurn()
+    TranscriptReducer.apply(
+      .questionResolved(
+        QuestionResolution(
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Fruit?")],
+          answers: ["a": QuestionAnswerEntry(answers: [], note: "Dragonfruit")])), to: &turn)
+    guard case let .tool(call) = turn.entries.first else {
+      Issue.record("expected a synthesized question tool call")
+      return
+    }
+    #expect(call.content == [.content(.text("Dragonfruit"))])
+  }
+
+  @Test("An answered question keeps its place when later tool calls arrive")
+  func answeredQuestionStaysWhereItWasAsked() {
+    func tool(_ id: String, position: Int) -> SessionUpdate {
+      var call = ToolCall(toolCallId: id, title: id)
+      call.statePosition = position
+      return .toolCall(call)
+    }
+    func resolved(position: Int?) -> SessionUpdate {
+      .questionResolved(
+        QuestionResolution(
+          questionId: "q", outcome: .answered, questions: [QuestionSpec(id: "a", question: "Pick")],
+          statePosition: position))
+    }
+    // Live (no durable position, as from an older server) and restored
+    // (server position, pages loaded newest-first) both keep the row
+    // between the work before and after the question.
+    for updates in [
+      [tool("before", position: 1), resolved(position: nil), tool("after", position: 3)],
+      [tool("after", position: 3), resolved(position: 2), tool("before", position: 1)],
+    ] {
+      var turn = AssistantTurn()
+      for update in updates { TranscriptReducer.apply(update, to: &turn) }
+      #expect(turn.entries.map(\.id) == ["tool:before", "tool:question:q", "tool:after"])
+    }
+  }
+
   @Test("Final answer is the trailing text; earlier entries collapse")
   func finalVersusWorked() {
     let turn = reduce([

@@ -3,24 +3,52 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// A blocking agent question as the composer card's content — the macOS
-/// QuestionPickerContent on a phone: the composer's one glass card morphs
-/// into this while a question is active. First-party setup flows receive a
-/// dedicated touch presentation; generic questions show one question at a
-/// time with arrow pagination, selections and notes accumulated across
-/// questions and submitted once. The common case — one single-select
-/// question — answers on a single tap. The hosting ComposerBar owns the glass
-/// surface and the generic "Submitting response…" overlay.
+/// A blocking agent question as the composer card's content: the composer's
+/// one glass card morphs into this while a question is active. Plan approval
+/// and first-party setup flows receive dedicated presentations; generic questions show one
+/// question at a time, selections and notes accumulated across questions and
+/// submitted once.
+///
+/// Touch-first and progressively disclosed:
+/// - Selecting an option never sends it: the answer goes only when the user
+///   taps Submit (or Next, for earlier questions). Any free-form field only
+///   appears once asked for ("Other", or "Add Note").
+/// - The card never outgrows the height it is offered (which shrinks with the
+///   keyboard). Header, answer field, and actions stay pinned; only the
+///   question and its options scroll, so Submit is always reachable.
+/// - Progress shows in place on the Submit button rather than blanketing
+///   the card.
 struct QuestionCardView: View {
   @Bindable var controller: SessionController
   let request: QuestionRequest
+  /// The tallest the card's content may be, already net of the card's
+  /// padding. Keyboard-aware: the host re-offers a smaller value as the
+  /// keyboard rises.
+  let maxHeight: CGFloat
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   @State private var questionIndex = 0
+  /// Direction of the last page change, so the push transition runs the
+  /// way the user navigated.
+  @State private var isPagingForward = true
   @State private var selections: [String: Set<String>] = [:]
   @State private var notes: [String: String] = [:]
+  /// Questions whose optional note field the user opened.
+  @State private var revealedNotes: Set<String> = []
+  @State private var headerHeight: CGFloat = 0
+  @State private var bottomHeight: CGFloat = 0
+  @State private var contentHeight: CGFloat = 0
+  @FocusState private var isAnswerFieldFocused: Bool
 
   /// Sentinel mirroring macOS: the synthetic "Other" row's stored label.
   private static let otherSentinel = "__other__"
+  private static let sectionSpacing: CGFloat = 12
+  /// Options never collapse below roughly two rows, even with the keyboard up.
+  private static let minimumScrollHeight: CGFloat = 96
+  /// Below this offered height the full card can't show header, options,
+  /// field, and actions together (roughly landscape with the keyboard up).
+  private static let compactThreshold: CGFloat = 220
 
   private var question: QuestionSpec? {
     guard request.questions.indices.contains(questionIndex) else { return nil }
@@ -31,29 +59,23 @@ struct QuestionCardView: View {
     questionIndex >= request.questions.count - 1
   }
 
-  private var isSingleTapRequest: Bool {
-    request.questions.count == 1
-      && request.questions[0].multiSelect != true
-      && !request.questions[0].options.isEmpty
-      && request.questions[0].allowsOther != true
-  }
-
-  /// Unanswered questions are allowed (macOS parity); only a selected
-  /// "Other" demands its text.
+  /// Individual questions may be left unanswered (macOS parity), but there
+  /// must be something to send, and a selected "Other" demands its text.
   private var isSubmittable: Bool {
-    for spec in request.questions {
-      if (selections[spec.id] ?? []).contains(Self.otherSentinel),
-        (notes[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      {
-        return false
-      }
+    let hasAnswer = request.questions.contains { spec in
+      !(selections[spec.id] ?? []).isEmpty || !trimmedNote(spec).isEmpty
     }
-    return true
+    return hasAnswer
+      && request.questions.allSatisfy { spec in
+        !isOtherSelected(spec) || !trimmedNote(spec).isEmpty
+      }
   }
 
   @ViewBuilder
   var body: some View {
-    if let question, question.presentation == .browserChoice {
+    if let question, request.questions.count == 1, question.id == QuestionRequest.exitPlanModeId {
+      PlanApprovalQuestionCard(controller: controller, question: question, maxHeight: maxHeight)
+    } else if let question, question.presentation == .browserChoice {
       BrowserChoiceQuestionCard(controller: controller, question: question)
     } else if let question, isBrowserExtensionPresentation(question) {
       BrowserExtensionQuestionCard(controller: controller, question: question)
@@ -62,26 +84,99 @@ struct QuestionCardView: View {
     }
   }
 
+  /// Too short for the full card while typing (landscape with the
+  /// keyboard up): collapse to one Messages-style row — the answer field
+  /// and its action. Dismissing the keyboard restores the card. Decided
+  /// from the offered height alone, never from measured chrome, so the
+  /// switch cannot oscillate.
+  private var isCompactWhileTyping: Bool {
+    isAnswerFieldFocused && maxHeight < Self.compactThreshold
+  }
+
   private var genericQuestionCard: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      header
-
-      if let message = request.message, !message.isEmpty {
-        Text(message)
-          .font(.footnote)
-          .foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: Self.sectionSpacing) {
+      if !isCompactWhileTyping {
+        header
+        if let question {
+          questionPage(question)
+            .id(question.id)
+            .transition(pageTransition)
+        }
       }
 
-      if let question {
-        Text(question.question)
-          .font(.subheadline.weight(.medium))
-
-        optionList(question)
-        notesEditor(question)
+      // AnyLayout keeps the field's identity (and so its focus and the
+      // keyboard) when the row collapses or expands.
+      let bottomLayout =
+        isCompactWhileTyping
+        ? AnyLayout(HStackLayout(alignment: .bottom, spacing: 10))
+        : AnyLayout(VStackLayout(alignment: .leading, spacing: Self.sectionSpacing))
+      bottomLayout {
+        if isCompactWhileTyping {
+          // The way back to the full card (and its options).
+          Button {
+            isAnswerFieldFocused = false
+          } label: {
+            Image(systemName: "keyboard.chevron.compact.down")
+              .composerCircleActionLabel(.secondary)
+          }
+          .buttonStyle(.plain)
+          .pointerHighlight(Circle())
+          .accessibilityLabel("Show all options")
+        }
+        if let question, showsAnswerField(question) {
+          // One field per question: reusing it across pages let the
+          // Return that advanced re-apply to the next question.
+          answerField(question)
+            .id(question.id)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        if isCompactWhileTyping {
+          primaryButton
+        } else {
+          footer
+        }
       }
-
-      footer
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: {
+        bottomHeight = $0
+      }
+      // The compact row has no scroll view for the system's interactive
+      // dismissal to ride on; a downward swipe on it does the same job.
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 12).onEnded { value in
+          guard isCompactWhileTyping, value.translation.height > 24 else { return }
+          isAnswerFieldFocused = false
+        }
+      )
     }
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: questionIndex)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: selections)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: revealedNotes)
+    .animation(Motion.quick(reduceMotion: reduceMotion), value: isCompactWhileTyping)
+    .sensoryFeedback(.selection, trigger: selections)
+    .sensoryFeedback(.selection, trigger: questionIndex)
+  }
+
+  /// The question is the header, pinned above the options so it stays in
+  /// view while they scroll (clamped to two lines while typing).
+  private var header: some View {
+    QuestionCardHeader(
+      title: question?.question ?? "",
+      lineLimit: isAnswerFieldFocused ? 2 : nil,
+      dismissLabel: "Dismiss question",
+      onDismiss: { Task { await controller.cancelQuestion() } }
+    )
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.height
+    } action: {
+      headerHeight = $0
+    }
+  }
+
+  private var pageTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return .push(from: isPagingForward ? .trailing : .leading)
   }
 
   private func isBrowserExtensionPresentation(_ spec: QuestionSpec) -> Bool {
@@ -89,116 +184,101 @@ struct QuestionCardView: View {
       || spec.presentation == .browserExtensionWaiting
   }
 
-  private var header: some View {
-    HStack(alignment: .firstTextBaseline) {
-      Label("Action required", systemImage: "questionmark.bubble")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.orange)
-      Spacer()
-      if request.questions.count > 1 {
-        Text("\(questionIndex + 1) of \(request.questions.count)")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .monospacedDigit()
-      }
-      Button {
-        Task { await controller.cancelQuestion() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .scaledFrame(width: 28, height: 28, relativeTo: .caption)
-          .expandedHitTarget(base: 28)
-      }
-      .buttonStyle(HoverIconButtonStyle(shape: .circle))
-      .accessibilityLabel("Dismiss question")
-    }
+  // MARK: - Question page
+
+  /// What remains for the scrolling region once pinned chrome is placed.
+  private var scrollBudget: CGFloat {
+    let chrome = headerHeight + bottomHeight + Self.sectionSpacing * 2
+    return max(Self.minimumScrollHeight, maxHeight - chrome)
   }
 
-  // MARK: - Options
-
-  @ViewBuilder
-  private func optionList(_ spec: QuestionSpec) -> some View {
-    let options = spec.options
-    // Long option lists scroll inside the card instead of growing it
-    // past the screen.
-    let list = VStack(spacing: 2) {
-      ForEach(options) { option in
-        optionRow(
-          spec: spec,
-          label: option.label,
-          title: option.label,
-          description: option.description
-        )
-      }
-      if spec.allowsOther == true {
-        optionRow(
-          spec: spec,
-          label: Self.otherSentinel,
-          title: "Other",
-          description: nil
-        )
-      }
-    }
-    if options.count > 6 {
+  /// The prompt and its options, in a scroll view sized to its content up
+  /// to the budget: short questions sit at their natural height, taller
+  /// ones scroll within it. The content's height never depends on the
+  /// frame, so measuring it cannot feed back into layout. (A `ViewThatFits`
+  /// here re-lays out every row per alignment query and hung the app.)
+  private func questionPage(_ spec: QuestionSpec) -> some View {
+    ScrollViewReader { proxy in
       ScrollView {
-        list
-      }
-      .frame(maxHeight: 280)
-    } else {
-      list
-    }
-  }
-
-  private func optionRow(
-    spec: QuestionSpec,
-    label: String,
-    title: String,
-    description: String?
-  ) -> some View {
-    let isSelected = (selections[spec.id] ?? []).contains(label)
-    return Button {
-      activate(label, spec: spec)
-    } label: {
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-          .font(.subheadline)
-          .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.primary)
-            .multilineTextAlignment(.leading)
-          if let description, !description.isEmpty {
-            Text(description)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.leading)
+        questionContent(spec)
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: {
+            contentHeight = $0
           }
-        }
-        Spacer(minLength: 0)
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .frame(minHeight: 44)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 10)
-          .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-      )
-      .contentShape(Rectangle())
+      // While typing, the options always take drags — even when they fit —
+      // so a downward swipe tracks the keyboard closed (the native
+      // interactive dismissal) and the list can be scrolled.
+      .scrollBounceBehavior(isAnswerFieldFocused ? .always : .basedOnSize)
+      .scrollEdgeEffectStyle(.soft, for: .vertical)
+      .scrollDismissesKeyboard(.interactively)
+      // When the keyboard squeezes the options, keep the choice being
+      // typed about ("Other", or the annotated option) in view.
+      .onChange(of: scrollBudget) {
+        guard isAnswerFieldFocused, let target = focusedOptionID(spec) else { return }
+        withAnimation(Motion.quick(reduceMotion: reduceMotion)) {
+          proxy.scrollTo(target, anchor: .bottom)
+        }
+      }
     }
-    .buttonStyle(.plain)
-    .pointerHighlight(RoundedRectangle(cornerRadius: 10))
+    // A ceiling, not a fixed height: the region yields space before the
+    // pinned header, answer field, and actions do.
+    .frame(minHeight: min(contentHeight, Self.minimumScrollHeight), maxHeight: min(contentHeight, scrollBudget))
+    .layoutPriority(-1)
   }
 
-  /// Toggle in multi-select, replace otherwise; the single-tap fast path
-  /// submits immediately.
-  private func activate(_ label: String, spec: QuestionSpec) {
-    if isSingleTapRequest {
-      submit([spec.id: QuestionAnswerEntry(answers: [label])])
-      return
+  private func focusedOptionID(_ spec: QuestionSpec) -> String? {
+    if isOtherSelected(spec) { return Self.otherSentinel }
+    return spec.options.last { isSelected($0.label, in: spec) }?.label
+  }
+
+  private func questionContent(_ spec: QuestionSpec) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if let message = request.message, !message.isEmpty, questionIndex == 0 {
+        Text(message)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+
+      VStack(spacing: 8) {
+        ForEach(spec.options) { option in
+          QuestionOptionRow(
+            title: option.label,
+            description: option.description,
+            indicator: spec.multiSelect == true ? .multiple : .single,
+            isSelected: isSelected(option.label, in: spec),
+            action: { activate(option.label, spec: spec) }
+          )
+          .id(option.label)
+        }
+        if spec.allowsOther == true {
+          QuestionOptionRow(
+            title: "Other",
+            description: nil,
+            indicator: spec.multiSelect == true ? .multiple : .single,
+            isSelected: isOtherSelected(spec),
+            action: { activate(Self.otherSentinel, spec: spec) }
+          )
+          .accessibilityHint("Type your own answer")
+          .id(Self.otherSentinel)
+        }
+      }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func isSelected(_ label: String, in spec: QuestionSpec) -> Bool {
+    (selections[spec.id] ?? []).contains(label)
+  }
+
+  private func isOtherSelected(_ spec: QuestionSpec) -> Bool {
+    isSelected(Self.otherSentinel, in: spec)
+  }
+
+  /// Toggle in multi-select, replace otherwise. Selecting only marks the
+  /// answer; sending is always an explicit Submit.
+  private func activate(_ label: String, spec: QuestionSpec) {
     var set = selections[spec.id] ?? []
     if spec.multiSelect == true {
       if set.contains(label) { set.remove(label) } else { set.insert(label) }
@@ -206,123 +286,201 @@ struct QuestionCardView: View {
       set = set.contains(label) ? [] : [label]
     }
     selections[spec.id] = set
+    // Choosing "Other" is asking to type: bring the keyboard with it.
+    // Backing out of it discards that answer rather than silently
+    // turning it into a note.
+    if label == Self.otherSentinel {
+      isAnswerFieldFocused = set.contains(label)
+      if !set.contains(label), !revealedNotes.contains(spec.id) {
+        notes[spec.id] = nil
+      }
+    }
   }
 
-  // MARK: - Notes
+  // MARK: - Answer field
 
-  /// Always-mounted note field, macOS-style: required text when Other is
-  /// selected, an optional note otherwise.
-  @ViewBuilder
-  private func notesEditor(_ spec: QuestionSpec) -> some View {
-    let otherSelected = (selections[spec.id] ?? []).contains(Self.otherSentinel)
-    TextField(
-      otherSelected ? "Type your answer (required)" : "Add a note (optional)",
+  /// "Other" needs its text; otherwise a note is opt-in via "Add Note" and
+  /// stays open while it has content.
+  private func showsAnswerField(_ spec: QuestionSpec) -> Bool {
+    isOtherSelected(spec) || revealedNotes.contains(spec.id) || !trimmedNote(spec).isEmpty
+  }
+
+  private func trimmedNote(_ spec: QuestionSpec) -> String {
+    (notes[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func answerField(_ spec: QuestionSpec) -> some View {
+    let otherSelected = isOtherSelected(spec)
+    let shape = ComposerCardStyle().insetShape(by: ComposerCardStyle.contentPadding)
+    // The compact row hides the card, so its placeholder carries the
+    // question for context.
+    let prompt =
+      isCompactWhileTyping ? spec.question : (otherSelected ? "Your answer" : "Add a note for the agent")
+    return TextField(
+      prompt,
       text: Binding(
         get: { notes[spec.id] ?? "" },
-        set: { notes[spec.id] = $0 }
+        set: { newValue in
+          // A vertical field turns Return into a newline; answers are
+          // short, so Return means "done" instead — never a trap
+          // behind the keyboard.
+          guard newValue.contains("\n") else {
+            notes[spec.id] = newValue
+            return
+          }
+          notes[spec.id] = newValue.replacingOccurrences(of: "\n", with: "")
+          // UIKit can report the same Return twice; only the field's own
+          // page may act on it, or one press would skip a question.
+          guard question?.id == spec.id else { return }
+          handleReturn()
+        }
       ),
       axis: .vertical
     )
-    .font(.subheadline)
+    .font(.body)
     .lineLimit(1...4)
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .frame(minHeight: 44)
-    .background(
-      RoundedRectangle(cornerRadius: 10)
-        .fill(Color(.tertiarySystemFill).opacity(0.5))
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: 10)
-        .strokeBorder(
-          otherSelected ? Color.accentColor : Color.clear,
-          lineWidth: 1
-        )
-    )
+    .focused($isAnswerFieldFocused)
+    .submitLabel(isLastQuestion ? .send : .next)
+    .padding(.horizontal, 14)
+    .padding(.vertical, 12)
+    .frame(minHeight: 48)
+    .background(shape.fill(HierarchicalShapeStyle.quaternary.opacity(0.6)))
+    .accessibilityLabel(otherSelected ? "Your answer" : "Note")
+  }
+
+  /// Return advances to the next question, or submits on the last one
+  /// (falling back to dismissing the keyboard when there's nothing valid
+  /// to send yet).
+  private func handleReturn() {
+    if !isLastQuestion {
+      page(by: 1)
+    } else if isSubmittable, !controller.isResolvingQuestion {
+      submitCollected()
+    } else {
+      isAnswerFieldFocused = false
+    }
   }
 
   // MARK: - Footer
 
   @ViewBuilder
   private var footer: some View {
-    if !isSingleTapRequest {
-      HStack(spacing: 10) {
-        if let question, let backLabel = question.backOptionLabel {
-          // A provider-supplied back action answers directly.
+    if let question {
+      HStack(spacing: 14) {
+        backButton(question)
+        if !showsAnswerField(question) {
           Button {
-            submit([question.id: QuestionAnswerEntry(answers: [backLabel])])
+            revealedNotes.insert(question.id)
+            isAnswerFieldFocused = true
           } label: {
-            Image(systemName: "arrow.left")
-              .font(.subheadline.weight(.semibold))
+            Label("Add Note", systemImage: "text.bubble")
+              .font(.subheadline.weight(.medium))
+              .padding(.horizontal, 12)
+              .frame(minHeight: 30)
+              .background(Capsule().fill(Color.secondary.opacity(0.16)))
+              .expandedHitTarget(base: 30)
           }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.circle)
-          .controlSize(.large)
-        } else if questionIndex > 0 {
-          Button {
-            withAnimation(.snappy(duration: 0.2)) { questionIndex -= 1 }
-          } label: {
-            Image(systemName: "arrow.left")
-              .font(.subheadline.weight(.semibold))
-          }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.circle)
-          .controlSize(.large)
-          .accessibilityLabel("Previous question")
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .pointerHighlight(Capsule())
         }
-        Spacer()
-        if isLastQuestion {
-          Button {
-            submitCollected()
-          } label: {
-            Image(systemName: "arrow.up")
-              .font(.subheadline.weight(.bold))
-          }
-          .buttonStyle(.borderedProminent)
-          .buttonBorderShape(.circle)
-          .controlSize(.large)
-          .disabled(!isSubmittable)
-          .accessibilityLabel("Submit answers")
-        } else {
-          Button {
-            withAnimation(.snappy(duration: 0.2)) { questionIndex += 1 }
-          } label: {
-            Image(systemName: "arrow.right")
-              .font(.subheadline.weight(.semibold))
-          }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.circle)
-          .controlSize(.large)
-          .accessibilityLabel("Next question")
-        }
+        Spacer(minLength: 0)
+        primaryButton
       }
     }
   }
 
+  @ViewBuilder
+  private func backButton(_ spec: QuestionSpec) -> some View {
+    if let backLabel = spec.backOptionLabel {
+      // A provider-supplied back action answers directly.
+      Button {
+        submit([spec.id: QuestionAnswerEntry(answers: [backLabel])])
+      } label: {
+        Image(systemName: "chevron.left")
+          .composerCircleActionLabel(.secondary)
+      }
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .accessibilityLabel(backLabel)
+    } else if questionIndex > 0 {
+      Button {
+        page(by: -1)
+      } label: {
+        Image(systemName: "chevron.left")
+          .composerCircleActionLabel(.secondary)
+      }
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .accessibilityLabel("Previous question")
+    }
+  }
+
+  @ViewBuilder
+  private var primaryButton: some View {
+    if isLastQuestion {
+      let canSubmit = isSubmittable && !controller.isResolvingQuestion
+      Button {
+        submitCollected()
+      } label: {
+        Group {
+          if controller.isResolvingQuestion {
+            ProgressView()
+              .controlSize(.small)
+              .tint(.white)
+          } else {
+            Image(systemName: "arrow.up")
+          }
+        }
+        .composerCircleActionLabel(.primary, isEnabled: canSubmit || controller.isResolvingQuestion)
+      }
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .disabled(!canSubmit)
+      .accessibilityLabel(controller.isResolvingQuestion ? "Submitting answers" : "Submit answers")
+    } else {
+      Button {
+        page(by: 1)
+      } label: {
+        Image(systemName: "arrow.right")
+          .composerCircleActionLabel(.primary)
+      }
+      .buttonStyle(.plain)
+      .pointerHighlight(Circle())
+      .accessibilityLabel("Next question")
+    }
+  }
+
+  private func page(by delta: Int) {
+    isPagingForward = delta > 0
+    isAnswerFieldFocused = false
+    questionIndex = min(max(0, questionIndex + delta), request.questions.count - 1)
+  }
+
   // MARK: - Submit
 
-  /// Builds one entry per answered question: real labels as answers, the
-  /// note attached, and a lone "Other" answered by its note text.
+  /// Builds one entry per answered question: real labels as answers and
+  /// the typed text as the note (macOS parity) — except a lone "Other",
+  /// whose text is the answer itself.
   private func submitCollected() {
     var entries: [String: QuestionAnswerEntry] = [:]
     for spec in request.questions {
-      var labels = (selections[spec.id] ?? []).subtracting([Self.otherSentinel])
-      let note = (notes[spec.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-      let otherSelected = (selections[spec.id] ?? []).contains(Self.otherSentinel)
-      if otherSelected, !note.isEmpty, labels.isEmpty {
-        labels = [note]
-      }
+      let labels = (selections[spec.id] ?? []).subtracting([Self.otherSentinel])
+      let note = trimmedNote(spec)
       guard !labels.isEmpty || !note.isEmpty else { continue }
-      entries[spec.id] = QuestionAnswerEntry(
-        answers: Array(labels),
-        note: otherSelected ? nil : (note.isEmpty ? nil : note)
-      )
+      entries[spec.id] =
+        if isOtherSelected(spec), labels.isEmpty {
+          QuestionAnswerEntry(answers: [note])
+        } else {
+          QuestionAnswerEntry(answers: Array(labels), note: note.isEmpty ? nil : note)
+        }
     }
     guard !entries.isEmpty else { return }
     submit(entries)
   }
 
   private func submit(_ entries: [String: QuestionAnswerEntry]) {
+    isAnswerFieldFocused = false
     Task { await controller.answerQuestion(answers: entries) }
   }
 }

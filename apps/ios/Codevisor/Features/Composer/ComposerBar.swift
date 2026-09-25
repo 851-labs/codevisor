@@ -192,6 +192,13 @@ struct ComposerBar: View {
     )
   }
 
+  /// A question replaces the composer inside the same card, so it gets the
+  /// same keyboard-aware ceiling, net of the card's padding.
+  private var questionContentMaxHeight: CGFloat {
+    let noticeOverhead = pasteFailureNotice == nil ? 0 : pasteFailureNoticeHeight + 8
+    return maxHeight - ComposerCardStyle.contentPadding * 2 - noticeOverhead
+  }
+
   /// Where the card rests when no drag is in flight.
   private var baseEditorHeight: CGFloat {
     isExpanded ? maxEditorHeight : collapsedEditorHeight
@@ -407,9 +414,13 @@ extension ComposerBar {
   private var card: some View {
     Group {
       if let question = controller.activeQuestion {
-        QuestionCardView(controller: controller, request: question)
-          .id(question.questionId)
-          .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
+        QuestionCardView(
+          controller: controller,
+          request: question,
+          maxHeight: questionContentMaxHeight
+        )
+        .id(question.questionId)
+        .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
       } else {
         composerContent
           .transition(Motion.unfold(reduceMotion: reduceMotion, anchor: .bottom))
@@ -433,12 +444,8 @@ extension ComposerBar {
       id: .composer,
       in: glassNamespace
     )
-    // Generic questions keep the submission blanket. Deterministic
-    // browser selection stays mounted and reports progress on its
-    // explicit Continue button.
-    .overlay {
-      QuestionResolutionOverlay(controller: controller, shape: cardStyle.shape)
-    }
+    // Question cards report submission progress in place (the tapped
+    // option or the Submit button); the card just stops taking input.
     .disabled(controller.isResolvingQuestion)
     .contentShape(Rectangle())
     // In the New Chat sheet, drags that start on the card belong to the

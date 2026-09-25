@@ -36,7 +36,7 @@ extension QuestionPickerContent {
         optionRow(
           question,
           index: index,
-          label: option.label,
+          label: displayLabel(option.label, in: question),
           description: option.description,
           isSelected: selections[question.id, default: []].contains(option.label)
         )
@@ -50,6 +50,18 @@ extension QuestionPickerContent {
           isSelected: selections[question.id, default: []].contains(Self.otherToken)
         )
       }
+    }
+  }
+
+  /// On-screen copy for an option. The plan approval's choices read as
+  /// "Implement Plan" / "Request Changes" (matching iOS); the submitted
+  /// answers keep the agent-runtime's labels, which the harnesses match on.
+  private func displayLabel(_ label: String, in question: QuestionSpec) -> String {
+    guard question.id == QuestionRequest.exitPlanModeId else { return label }
+    switch label {
+    case QuestionRequest.implementPlanLabel: return "Implement Plan"
+    case QuestionRequest.keepPlanningLabel: return "Request Changes"
+    default: return label
     }
   }
 
@@ -172,15 +184,7 @@ extension QuestionPickerContent {
 
   func footer(_ question: QuestionSpec) -> some View {
     HStack(spacing: 8) {
-      Text(
-        question.multiSelect == true
-          ? "Space toggles · Return continues · Esc dismisses"
-          : "↑↓ and 1-9 select · Return continues · Esc dismisses"
-      )
-      .font(.caption2)
-      .foregroundStyle(.tertiary)
       Spacer()
-      // Action buttons cluster tighter than the hint text.
       HStack(spacing: 4) {
         if let backOptionLabel = question.backOptionLabel {
           ComposerNavigationButton(

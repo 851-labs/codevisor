@@ -65,21 +65,22 @@ extension TranscriptReducer {
 extension TranscriptReducer {
   public static func orderEntries(_ turn: inout AssistantTurn) {
     let positions = turn.entryPositions
+    // An entry without a durable position (live-only rows such as a
+    // compaction marker, or an older server's answered question) stays
+    // anchored behind whatever preceded it when it arrived. Sorting it to
+    // the end instead would drag it past every later tool call, so it
+    // would keep reappearing in the newest "Worked for" group.
     func sorted(_ entries: [TranscriptEntry]) -> [TranscriptEntry] {
       guard entries.count > 1 else { return entries }
-      let indexed = entries.enumerated()
-      var previous = Int.min
-      let ordered = entries.allSatisfy { entry in
-        let position = positions[entry.id] ?? Int.max
-        defer { previous = position }
-        return position >= previous
+      var anchor = Int.min
+      let keys = entries.map { entry in
+        if let position = positions[entry.id] { anchor = position }
+        return anchor
       }
-      if ordered { return entries }
-      return indexed.sorted {
-        let left = positions[$0.element.id] ?? Int.max
-        let right = positions[$1.element.id] ?? Int.max
-        return left == right ? $0.offset < $1.offset : left < right
-      }.map(\.element)
+      if zip(keys, keys.dropFirst()).allSatisfy({ $0 <= $1 }) { return entries }
+      return entries.indices.sorted {
+        keys[$0] == keys[$1] ? $0 < $1 : keys[$0] < keys[$1]
+      }.map { entries[$0] }
     }
     turn.entries = sorted(turn.entries)
     if turn.planDocument != nil, turn.planRevision > 0 {

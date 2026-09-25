@@ -79,6 +79,9 @@ export const readTranscriptStatePage = (
         payload.stateRevision = row.revision
         payload.statePosition = row.position
       }
+      // Answered questions render as tool rows; without a durable position
+      // the client cannot place them among the tool calls around them.
+      if (row.category === "question") payload.statePosition = row.position
       if (row.category === "text" || row.category === "plan") {
         const text = readTranscriptText(db, itemId, row.entry_key, 24_000)
         const resource = transcriptTextResource(db, itemId, row.entry_key)

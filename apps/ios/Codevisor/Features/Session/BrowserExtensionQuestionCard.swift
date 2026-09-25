@@ -28,22 +28,11 @@ struct BrowserExtensionQuestionCard: View {
   }
 
   private var header: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
-      Label("Connect Chrome on the computer", systemImage: "puzzlepiece.extension")
-        .font(.subheadline.weight(.semibold))
-      Spacer(minLength: 12)
-      Button {
-        Task { await controller.cancelQuestion() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .scaledFrame(width: 28, height: 28, relativeTo: .caption)
-          .expandedHitTarget(base: 28)
-      }
-      .buttonStyle(HoverIconButtonStyle(shape: .circle))
-      .accessibilityLabel("Dismiss Chrome setup")
-    }
+    QuestionCardHeader(
+      title: "Connect Chrome on the computer",
+      dismissLabel: "Dismiss Chrome setup",
+      onDismiss: { Task { await controller.cancelQuestion() } }
+    )
   }
 
   private var handoffContent: some View {
@@ -75,8 +64,8 @@ struct BrowserExtensionQuestionCard: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 14)
     .background(
-      RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .fill(Color(.tertiarySystemFill).opacity(0.5))
+      ComposerCardStyle().insetShape(by: ComposerCardStyle.contentPadding)
+        .fill(HierarchicalShapeStyle.quaternary.opacity(0.6))
     )
   }
 

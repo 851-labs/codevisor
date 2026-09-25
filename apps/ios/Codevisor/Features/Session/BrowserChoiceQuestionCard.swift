@@ -13,80 +13,31 @@ struct BrowserChoiceQuestionCard: View {
   @State private var selectedLabel: String?
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      header
+    VStack(alignment: .leading, spacing: 12) {
+      QuestionCardHeader(
+        title: question.question,
+        dismissLabel: "Dismiss browser choices",
+        onDismiss: { Task { await controller.cancelQuestion() } }
+      )
 
-      Text(question.question)
-        .font(.subheadline.weight(.medium))
-
-      VStack(spacing: 2) {
+      VStack(spacing: 8) {
         ForEach(question.options) { option in
-          optionRow(option)
+          QuestionOptionRow(
+            title: option.label,
+            description: option.description,
+            indicator: .single,
+            isSelected: selectedLabel == option.label,
+            action: { selectedLabel = option.label }
+          )
         }
       }
 
       footer
     }
+    .sensoryFeedback(.selection, trigger: selectedLabel)
+    .animation(.snappy(duration: 0.2), value: selectedLabel)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Choose a browser")
-  }
-
-  private var header: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 10) {
-      Label("Browser Use", systemImage: "globe")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.secondary)
-      Spacer(minLength: 12)
-      Button {
-        Task { await controller.cancelQuestion() }
-      } label: {
-        Image(systemName: "xmark")
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
-          .scaledFrame(width: 28, height: 28, relativeTo: .caption)
-          .expandedHitTarget(base: 28)
-      }
-      .buttonStyle(HoverIconButtonStyle(shape: .circle))
-      .accessibilityLabel("Dismiss browser choices")
-    }
-  }
-
-  private func optionRow(_ option: QuestionOption) -> some View {
-    let isSelected = selectedLabel == option.label
-    return Button {
-      selectedLabel = option.label
-    } label: {
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-          .font(.subheadline)
-          .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(option.label)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.primary)
-            .multilineTextAlignment(.leading)
-          if let description = option.description, !description.isEmpty {
-            Text(description)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.leading)
-          }
-        }
-        Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
-      .frame(minHeight: 44)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: 10)
-          .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-      )
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .pointerHighlight(RoundedRectangle(cornerRadius: 10))
-    .accessibilityValue(isSelected ? "Selected" : "Not selected")
   }
 
   private var footer: some View {

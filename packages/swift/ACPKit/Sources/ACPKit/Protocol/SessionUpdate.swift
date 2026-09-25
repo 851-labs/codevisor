@@ -224,17 +224,23 @@ public struct QuestionResolution: Sendable, Codable, Equatable {
   public var outcome: QuestionOutcome
   public var questions: [QuestionSpec]
   public var answers: [String: QuestionAnswerEntry]?
+  /// Durable transcript position the server assigned the resolution, so the
+  /// answered-question row keeps its place in history instead of sorting
+  /// after work that arrived later.
+  public var statePosition: Int?
 
   public init(
     questionId: String,
     outcome: QuestionOutcome,
     questions: [QuestionSpec],
-    answers: [String: QuestionAnswerEntry]? = nil
+    answers: [String: QuestionAnswerEntry]? = nil,
+    statePosition: Int? = nil
   ) {
     self.questionId = questionId
     self.outcome = outcome
     self.questions = questions
     self.answers = answers
+    self.statePosition = statePosition
   }
 }
 
@@ -293,7 +299,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
     case currentModeId, configOptions
     case used, size, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens
     case cost, compactionId, status, goal, markdown, detailResource, stateRevision
-    case questionId, message, questions, autoResolutionMs, outcome, answers
+    case questionId, message, questions, autoResolutionMs, outcome, answers, statePosition
   }
 
   public init(from decoder: any Decoder) throws {
@@ -379,7 +385,8 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
           questionId: try container.decode(String.self, forKey: .questionId),
           outcome: try container.decode(QuestionOutcome.self, forKey: .outcome),
           questions: try container.decode([QuestionSpec].self, forKey: .questions),
-          answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers)
+          answers: try container.decodeIfPresent([String: QuestionAnswerEntry].self, forKey: .answers),
+          statePosition: try container.decodeIfPresent(Int.self, forKey: .statePosition)
         ))
     default:
       throw DecodingError.dataCorruptedError(
@@ -485,6 +492,7 @@ public enum SessionUpdate: Sendable, Codable, Equatable {
       try container.encode(resolution.outcome, forKey: .outcome)
       try container.encode(resolution.questions, forKey: .questions)
       try container.encodeIfPresent(resolution.answers, forKey: .answers)
+      try container.encodeIfPresent(resolution.statePosition, forKey: .statePosition)
     }
   }
 }

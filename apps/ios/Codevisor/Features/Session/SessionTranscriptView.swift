@@ -80,6 +80,13 @@ struct SessionTranscriptView: View {
   /// the composer rests on (above the home indicator or the keyboard).
   @State var transcriptWindowBottom: CGFloat = 0
   @State var chatAreaWindowBottom: CGFloat = 0
+  /// Window-space frame of the space offered to the chat (see `chat`).
+  @State var offeredChatWindowFrame: CGRect = .zero
+  /// Window-space top of the software keyboard while it is up. The
+  /// composer's ceiling is bounded by it directly: the geometry SwiftUI
+  /// reports for the chat area does not shrink by the keyboard's full
+  /// overlap here, which let a tall question card end up behind it.
+  @State var keyboardWindowTop: CGFloat?
   /// True while the composer is dragged to full height; informational
   /// accessories hide until it collapses, while actionable failures remain.
   @State var composerExpanded = false
@@ -332,6 +339,22 @@ struct SessionTranscriptView: View {
     // out of SwiftUI's keyboard avoidance, which left the composer sitting
     // underneath the keyboard.
     ZStack(alignment: .bottom) {
+      // The space the chat is offered (keyboard-avoided). Measured on a
+      // flexible child, not the ZStack: a ZStack grows to fit its largest
+      // child, so measuring it let an over-tall composer (a question card
+      // when the keyboard rose) inflate its own height ceiling and stay
+      // stuck behind the keyboard.
+      Color.clear
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: { height in
+          availableHeight = height
+        }
+        .background {
+          WindowFrameProbe { offeredChatWindowFrame = $0 }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
       transcriptExtentProbe
       Image("hunk")
         .resizable()
@@ -388,16 +411,17 @@ struct SessionTranscriptView: View {
       .padding(.horizontal, 10)
       .padding(.bottom, Self.composerBottomMargin)
     }
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.height
-    } action: { height in
-      availableHeight = height
-    }
     .background {
       ChatSurfaceBackground()
         .ignoresSafeArea()
     }
     .background { chatAreaExtentProbe }
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
+      updateKeyboardTop($0)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) {
+      updateKeyboardTop($0)
+    }
   }
 
   var composerCluster: some View {
@@ -510,7 +534,37 @@ extension SessionTranscriptView {
   /// bar) less the card's 6pt margins top and bottom and any actionable
   /// accessories above it.
   var composerMaxHeight: CGFloat {
-    max(160, availableHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
+    max(160, visibleChatHeight - Self.composerBottomMargin - 6 - composerAccessoryHeight)
+  }
+
+  /// The chat area's height as UIKit lays it out, less whatever the
+  /// keyboard or the window's bottom safe area covers of it. SwiftUI's
+  /// reported height overshoots here (with the keyboard up, and in
+  /// landscape), which let a tall question card run off screen.
+  var visibleChatHeight: CGFloat {
+    let offered = offeredChatWindowFrame
+    guard offered.height > 0, let window = UIWindow.codevisorKeyWindow else { return availableHeight }
+    let safeBottom = window.bounds.maxY - window.safeAreaInsets.bottom
+    let visibleBottom = min(offered.maxY, safeBottom, keyboardWindowTop ?? .infinity)
+    return min(availableHeight, max(0, visibleBottom - offered.minY))
+  }
+
+  /// Tracks the keyboard's top edge in window space; nil while it is
+  /// hidden, undocked off-screen, or floating (a floating keyboard doesn't
+  /// span the width, so it doesn't bound the composer).
+  func updateKeyboardTop(_ notification: Notification) {
+    guard
+      notification.name != UIResponder.keyboardWillHideNotification,
+      let screenFrame = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+        .cgRectValue,
+      let window = UIWindow.codevisorKeyWindow
+    else {
+      keyboardWindowTop = nil
+      return
+    }
+    let frame = window.convert(screenFrame, from: window.screen.coordinateSpace)
+    let docked = frame.width >= window.bounds.width - 1 && frame.minY < window.bounds.maxY
+    keyboardWindowTop = docked ? frame.minY : nil
   }
 
   /// How far the transcript's bottom edge sits below the resting composer's

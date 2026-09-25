@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest"
 import { makeDatabase } from "./index.js"
 import { run, tempDatabase } from "./test-support.js"
 
+const payload = (entry: { payload: unknown }) =>
+  entry.payload as { sessionUpdate?: string; statePosition: number }
+const live = (event: { payload: unknown }) => payload(event).statePosition
+
 describe("persisted transcript state", () => {
   it("pages Unicode text and merged tool state after the source events are unavailable", async () => {
     const filename = tempDatabase()
@@ -82,6 +86,53 @@ describe("persisted transcript state", () => {
       text.slice(0, 24_000)
     )
     await run(restarted.close)
+  })
+
+  it("positions answered questions between the tool calls around them", async () => {
+    const db = await run(makeDatabase({ filename: tempDatabase(), serverId: "local" }))
+    const project = await run(db.createProject({ folderPath: "/tmp/question-order" }))
+    const session = await run(db.createSession({ projectId: project.id, harnessId: "claude" }))
+    const questions = [{ id: "a", question: "Pick one", options: [{ label: "A" }] }]
+    const tool = (toolCallId: string) =>
+      run(
+        db.appendEvent("session.output", session.id, {
+          sessionUpdate: "tool_call",
+          toolCallId,
+          title: toolCallId,
+          status: "completed"
+        })
+      )
+    await run(db.appendEvent("session.updated", session.id, { turnState: "started" }))
+    const before = await tool("before")
+    await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question",
+        questionId: "q",
+        questions
+      })
+    )
+    const resolved = await run(
+      db.appendEvent("session.output", session.id, {
+        sessionUpdate: "question_resolved",
+        questionId: "q",
+        outcome: "answered",
+        questions,
+        answers: { a: { answers: ["A"] } }
+      })
+    )
+    const after = await tool("after")
+    await run(db.appendEvent("session.updated", session.id, { turnState: "ended" }))
+
+    expect(live(resolved)).toBeGreaterThan(live(before))
+    expect(live(resolved)).toBeLessThan(live(after))
+
+    const page = await run(db.getTranscriptPage(session.id, undefined, 8))
+    const details = (await run(db.getTranscriptItemDetails(session.id, page.items[0]!.id)))!
+    const restored = details.entries.find(
+      (entry) => payload(entry).sessionUpdate === "question_resolved"
+    )!
+    expect(payload(restored).statePosition).toBe(live(resolved))
+    await run(db.close)
   })
 
   it("resumes a committed migration batch without duplicating text", async () => {

@@ -175,6 +175,8 @@ export const holdClaudeApproval = (
 const EXIT_PLAN_MODE_QUESTION_ID = "exit_plan_mode"
 const IMPLEMENT_PLAN_LABEL = "Implement plan"
 const KEEP_PLANNING_LABEL = "Keep planning"
+const KEEP_PLANNING_MESSAGE =
+  "The user wants to keep refining the plan. Stay in plan mode and continue planning."
 
 /// ExitPlanMode's approval as a dedicated plan-approval question: the client
 /// renders an "implement this plan?" affordance (the plan markdown itself rides
@@ -205,15 +207,22 @@ export const holdClaudePlanApproval = (
     session.pendingQuestions.set(questionId, {
       questions: [spec],
       resolve,
-      respond: (answer) =>
-        answer.outcome === "answered" &&
-        answer.answers?.[spec.id]?.answers[0] === IMPLEMENT_PLAN_LABEL
-          ? { behavior: "allow", updatedInput: toolInput }
-          : {
-              behavior: "deny",
-              message:
-                "The user wants to keep refining the plan. Stay in plan mode and continue planning."
-            }
+      respond: (answer) => {
+        const entry = answer.outcome === "answered" ? answer.answers?.[spec.id] : undefined
+        if (entry?.answers[0] === IMPLEMENT_PLAN_LABEL) {
+          return { behavior: "allow", updatedInput: toolInput }
+        }
+        // Feedback typed with "Keep planning" is what the model should
+        // refine against; without it, just nudge it to keep planning.
+        const feedback = entry?.note?.trim()
+        return {
+          behavior: "deny",
+          message:
+            feedback === undefined || feedback === ""
+              ? KEEP_PLANNING_MESSAGE
+              : `${KEEP_PLANNING_MESSAGE}\n\nThe user's feedback on the plan:\n${feedback}`
+        }
+      }
     })
   })
 }
