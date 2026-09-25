@@ -279,7 +279,8 @@ describe("@codevisor/server", () => {
       kind: "local",
       machineId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       arch: process.arch,
-      hostname: expect.any(String)
+      hostname: expect.any(String),
+      maxUploadBytes: 500 * 1024 * 1024
     })
     // cloudDeviceId is only advertised when the machine is cloud-connected.
     expect((await jsonRequest(server, "/v1/info")).body).not.toHaveProperty("cloudDeviceId")

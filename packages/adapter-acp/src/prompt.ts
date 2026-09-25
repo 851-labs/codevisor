@@ -11,8 +11,8 @@ export interface AcpPromptCapabilities {
 /// Builds the session/prompt content blocks. Every attachment is surfaced as a
 /// `resource_link` — the ACP baseline that all agents must support — pointing
 /// at its materialized temp file, so any harness (opencode included) can read
-/// it from disk. Images are ALSO embedded inline as base64 when the harness
-/// declared image support, so multimodal agents see the pixels directly.
+/// it from disk. Images are ALSO embedded inline as base64 (as the server sized them) when
+/// the harness declared image support, so multimodal agents see the pixels directly.
 /// Exported for unit tests — the live wiring runs inside the stdio SDK connection.
 export const acpPrompt = (
   input: PromptInput,
@@ -27,14 +27,15 @@ export const acpPrompt = (
     blocks.push({
       mimeType: attachment.mimeType,
       name: attachment.name,
-      size: attachment.data.length,
+      size: attachment.sizeBytes,
       type: "resource_link",
       uri: pathToFileURL(attachment.path).href
     })
-    if (attachment.kind === "image" && capabilities.image === true) {
+    const inline = attachment.inline
+    if (inline?.mimeType.startsWith("image/") === true && capabilities.image === true) {
       blocks.push({
-        data: attachment.data.toString("base64"),
-        mimeType: attachment.mimeType,
+        data: inline.data.toString("base64"),
+        mimeType: inline.mimeType,
         type: "image"
       })
     }

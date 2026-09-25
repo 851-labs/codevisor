@@ -11,7 +11,9 @@ export const WS_CHANNEL_TYPE = "ws"
 
 /// Raw byte cap per chunk frame, measured before base64url encoding.
 export const MAX_CHUNK_BYTES = 262144
-/// Total buffered request body cap; larger uploads are rejected.
+/// Buffered request body cap for openers without flow control, whose
+/// uploads cannot be credit-paced. Flow-controlled channels stream request
+/// bodies instead and are bounded only by the local route.
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 
 /// Per-direction in-flight ciphertext window on flow-controlled http/ws

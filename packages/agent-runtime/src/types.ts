@@ -43,14 +43,22 @@ export interface CancelResult {
 }
 
 /// One attachment resolved by the server before the prompt reaches a
-/// provider: inline bytes for providers that embed content, plus a
-/// materialized temp-file path for providers that reference files on disk.
+/// provider: a materialized temp-file path every provider can reference, plus
+/// inline content for providers that embed it. The server never reads a whole
+/// attachment into memory unless it may be embedded.
 export interface PromptAttachmentInput {
   readonly name: string
   readonly mimeType: string
   readonly kind: "image" | "file"
-  readonly data: Buffer
+  readonly sizeBytes: number
   readonly path: string
+  /// Embeddable content, already sized for provider limits: images are
+  /// normalized (possibly re-encoded, so `mimeType` may differ from the
+  /// original) and PDFs are present only when small enough to inline.
+  readonly inline?: { readonly mimeType: string; readonly data: Buffer }
+  /// The attachment is a kind providers embed, but it could not be made to
+  /// fit. Providers fall back to the path and tell the model why.
+  readonly inlineOmitted?: boolean
 }
 
 export interface PromptInput {

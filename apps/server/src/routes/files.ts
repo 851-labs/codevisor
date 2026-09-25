@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
-import type { FileMetadata } from "@codevisor/api"
+import { MAX_UPLOAD_BYTES, type FileMetadata } from "@codevisor/api"
 
 import { mediaPreview } from "../infra/media-previews.js"
 import {
   attachmentDiskFile,
+  HttpFailure,
   matchRoute,
   requestedByteRange,
   run,
@@ -35,6 +36,28 @@ const sniffAttachmentKind = (data: Buffer, mimeType: string): "image" | "file" =
   return isImage ? "image" : "file"
 }
 
+const uploadTooLarge = (): HttpFailure =>
+  new HttpFailure(
+    413,
+    `Choose a file smaller than ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`,
+    "file_too_large"
+  )
+
+/// Passes the request body through while counting it. Relayed uploads arrive
+/// chunked with no Content-Length, so the limit is enforced on the bytes
+/// themselves; throwing makes putStream discard its staged temp file.
+export async function* limitedUploadBody(
+  source: AsyncIterable<Uint8Array>,
+  maxBytes = MAX_UPLOAD_BYTES
+): AsyncGenerator<Uint8Array> {
+  let received = 0
+  for await (const chunk of source) {
+    received += chunk.byteLength
+    if (received > maxBytes) throw uploadTooLarge()
+    yield chunk
+  }
+}
+
 export const routeFiles = async (
   services: CodevisorServerServices,
   request: IncomingMessage,
@@ -42,8 +65,9 @@ export const routeFiles = async (
   url: URL
 ): Promise<boolean> => {
   if (request.method === "POST" && url.pathname === "/v1/files") {
+    if (Number(request.headers["content-length"]) > MAX_UPLOAD_BYTES) throw uploadTooLarge()
     const store = services.attachments
-    const object = await store.putStream(request)
+    const object = await store.putStream(limitedUploadBody(request))
     const name = sanitizeFileName(url.searchParams.get("name") ?? "attachment")
     const mimeType =
       request.headers["content-type"]?.split(";")[0]?.trim() ?? "application/octet-stream"

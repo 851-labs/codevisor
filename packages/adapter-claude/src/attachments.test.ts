@@ -14,7 +14,7 @@ describe("ClaudeProvider", () => {
     vi.useRealTimers()
   })
 
-  it("maps attachments: inline images and PDFs, with path notes for every attachment", async () => {
+  it("maps attachments: server-sized inline images and PDFs, with path notes for every attachment", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)
     const createPromise = run(provider.createSession(definition, "/tmp", async () => undefined))
@@ -26,32 +26,43 @@ describe("ClaudeProvider", () => {
         text: "look at these",
         attachments: [
           {
-            data: Buffer.from("png-bytes"),
+            // The server re-encoded an oversized PNG, so the inline type wins.
+            inline: { data: Buffer.from("jpeg-bytes"), mimeType: "image/jpeg" },
             kind: "image",
             mimeType: "image/png",
             name: "shot.png",
-            path: "/tmp/att/shot.png"
+            path: "/tmp/att/shot.png",
+            sizeBytes: 40_000_000
           },
           {
-            data: Buffer.from("pdf-bytes"),
+            inline: { data: Buffer.from("pdf-bytes"), mimeType: "application/pdf" },
             kind: "file",
             mimeType: "application/pdf",
             name: "doc.pdf",
-            path: "/tmp/att/doc.pdf"
+            path: "/tmp/att/doc.pdf",
+            sizeBytes: 9
           },
           {
-            data: Buffer.from("plain"),
+            inlineOmitted: true,
+            kind: "file",
+            mimeType: "application/pdf",
+            name: "big.pdf",
+            path: "/tmp/att/big.pdf",
+            sizeBytes: 90_000_000
+          },
+          {
             kind: "file",
             mimeType: "text/plain",
             name: "notes.txt",
-            path: "/tmp/att/notes.txt"
+            path: "/tmp/att/notes.txt",
+            sizeBytes: 5
           },
           {
-            data: Buffer.from("heic-bytes"),
             kind: "image",
             mimeType: "image/heic",
             name: "raw.heic",
-            path: "/tmp/att/raw.heic"
+            path: "/tmp/att/raw.heic",
+            sizeBytes: 10
           }
         ]
       })
@@ -63,6 +74,7 @@ describe("ClaudeProvider", () => {
           "look at these",
           "[Attached file: /tmp/att/shot.png (shot.png, image/png)]",
           "[Attached file: /tmp/att/doc.pdf (doc.pdf, application/pdf)]",
+          "[Attached file: /tmp/att/big.pdf (big.pdf, application/pdf)]\n[big.pdf is too large to show inline. Read it from the path above if you need its contents, and tell the user it was not embedded.]",
           "[Attached file: /tmp/att/notes.txt (notes.txt, text/plain)]",
           "[Attached file: /tmp/att/raw.heic (raw.heic, image/heic)]"
         ].join("\n\n"),
@@ -70,8 +82,8 @@ describe("ClaudeProvider", () => {
       },
       {
         source: {
-          data: Buffer.from("png-bytes").toString("base64"),
-          media_type: "image/png",
+          data: Buffer.from("jpeg-bytes").toString("base64"),
+          media_type: "image/jpeg",
           type: "base64"
         },
         type: "image"
@@ -101,11 +113,12 @@ describe("ClaudeProvider", () => {
         text: "",
         attachments: [
           {
-            data: Buffer.from("img"),
+            inline: { data: Buffer.from("img"), mimeType: "image/jpeg" },
             kind: "image",
             mimeType: "image/jpeg",
             name: "a.jpg",
-            path: "/tmp/att/a.jpg"
+            path: "/tmp/att/a.jpg",
+            sizeBytes: 3
           }
         ]
       })

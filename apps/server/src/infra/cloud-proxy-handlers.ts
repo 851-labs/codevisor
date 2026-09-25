@@ -22,14 +22,79 @@ import { WebSocket } from "ws"
 /// `ws` — the frame/header/credit logic it composes is fully covered in
 /// @codevisor/cloud-client (cloud-proxy.ts, incoming-channel.ts).
 
-/// Serves one app-opened HTTP channel: buffer the sealed request body frames,
-/// replay the request against the local server (loopback is exempt from token
-/// auth, so the app's cloud bearer is stripped and never forwarded), then
-/// stream the response back as head/chunk/end frames. On flow-controlled
-/// opens the response is credit-paced: reading from the local server pauses
-/// while the send queue sits behind the app's credit window, so a 32MB body
-/// never balloons memory on this hop (or the hub's). Pure frame and header
-/// logic lives in cloud-proxy.ts.
+/// A request body fed by sealed chunk frames. Credit for a chunk is granted
+/// only when fetch pulls it, so the opener can never get more than its
+/// credit window ahead of the local server's consumption: a 500MB upload
+/// holds about PROXY_INITIAL_CREDIT_BYTES here, whatever its size.
+export const streamedRequestBody = (grantCredit: (sealedBytes: number) => void) => {
+  const queued: Array<{ readonly data: Uint8Array; readonly sealedBytes: number }> = []
+  let ended = false
+  let failure: Error | undefined
+  let wake: (() => void) | undefined
+  const notify = (): void => {
+    const resume = wake
+    wake = undefined
+    resume?.()
+  }
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull: async (controller) => {
+        while (queued.length === 0 && !ended && failure === undefined) {
+          await new Promise<void>((resolve) => (wake = resolve))
+        }
+        if (failure !== undefined) {
+          controller.error(failure)
+          return
+        }
+        const next = queued.shift()
+        if (next === undefined) {
+          controller.close()
+          return
+        }
+        controller.enqueue(next.data)
+        grantCredit(next.sealedBytes)
+      },
+      cancel: () => {
+        // The local server answered without reading the rest (e.g. 413);
+        // later chunks are dropped by the handler.
+        queued.length = 0
+        ended = true
+      }
+    },
+    { highWaterMark: 0 }
+  )
+  return {
+    stream,
+    push: (data: Uint8Array, sealedBytes: number): void => {
+      if (ended || failure !== undefined) return
+      queued.push({ data, sealedBytes })
+      notify()
+    },
+    end: (): void => {
+      ended = true
+      notify()
+    },
+    fail: (cause: Error): void => {
+      if (ended && queued.length === 0) return
+      failure = cause
+      queued.length = 0
+      notify()
+    }
+  }
+}
+
+/// Serves one app-opened HTTP channel: replay the sealed request against the
+/// local server (loopback is exempt from token auth, so the app's cloud
+/// bearer is stripped and never forwarded), then stream the response back as
+/// head/chunk/end frames.
+///
+/// On flow-controlled opens both directions are credit-paced. A request body
+/// streams into the local fetch as its chunks arrive (streamedRequestBody),
+/// and reading the response pauses while the send queue sits behind the
+/// app's credit window, so large uploads and downloads never balloon memory
+/// on this hop (or the hub's). Openers without flow control cannot be paced,
+/// so their bodies are buffered up to MAX_REQUEST_BODY_BYTES. Pure frame and
+/// header logic lives in cloud-proxy.ts.
 export const httpChannelHandler =
   (localBaseUrl: string, log: (line: string) => void): ChannelHandler =>
   (channel) => {
@@ -39,12 +104,16 @@ export const httpChannelHandler =
       return
     }
     const flowControlled = channel.flowControlRequested
-    const body = emptyBodyBuffer()
+    const buffered = emptyBodyBuffer()
+    let streamed: ReturnType<typeof streamedRequestBody> | undefined
+    const abort = new AbortController()
     let requestDone = false
     let channelClosed = false
     let releaseDrain: (() => void) | undefined
     channel.onClosed = () => {
       channelClosed = true
+      streamed?.fail(new Error("Cloud http channel closed before the request body ended"))
+      abort.abort()
       releaseDrain?.()
     }
     channel.onOutboundDrain = () => releaseDrain?.()
@@ -61,13 +130,25 @@ export const httpChannelHandler =
         }
       })
     if (flowControlled) channel.grantCredit(PROXY_INITIAL_CREDIT_BYTES)
-    const respond = async (): Promise<void> => {
+    const reject = (): void => {
+      requestDone = true
+      streamed?.fail(new Error("Cloud http channel request was rejected"))
+      abort.abort()
+      channel.close("rejected")
+    }
+    const respond = async (
+      body: Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array>
+    ): Promise<void> => {
       try {
-        const bytes = concatBodyBuffer(body)
         const response = await fetch(localBaseUrl + params.path, {
           method: params.method,
           headers: sanitizeRequestHeaders(params.headers),
-          ...(bytes.byteLength === 0 ? {} : { body: bytes })
+          signal: abort.signal,
+          ...(body instanceof ReadableStream
+            ? { body, duplex: "half" as const }
+            : body.byteLength === 0
+              ? {}
+              : { body })
         })
         if (channelClosed) {
           await response.body?.cancel()
@@ -91,10 +172,12 @@ export const httpChannelHandler =
             }
           }
         }
+        requestDone = true
         channel.send({ kind: "end" })
         // Queued frames flush as credit arrives; the close follows them.
         channel.close("done")
       } catch (cause) {
+        if (channelClosed) return
         log(`Cloud http channel failed: ${cause instanceof Error ? cause.message : String(cause)}`)
         channel.close("rejected")
       }
@@ -103,23 +186,27 @@ export const httpChannelHandler =
       if (requestDone) return
       const frame = parseHttpRequestFrame(value)
       if (frame === undefined) {
+        reject()
+        return
+      }
+      if (frame.kind === "end") {
         requestDone = true
-        channel.close("rejected")
+        if (streamed === undefined) void respond(concatBodyBuffer(buffered))
+        else streamed.end()
         return
       }
-      if (frame.kind === "chunk") {
-        if (!appendBodyChunk(body, frame.data)) {
-          requestDone = true
-          channel.close("rejected")
-        } else if (flowControlled) {
-          // The chunk is buffered (bounded by MAX_REQUEST_BODY_BYTES), so the
-          // upload window replenishes immediately.
-          channel.grantCredit(sealedBytes)
+      if (flowControlled) {
+        // The first chunk starts the local request; the rest stream into it.
+        if (streamed === undefined) {
+          streamed = streamedRequestBody((bytes) => {
+            if (!channelClosed) channel.grantCredit(bytes)
+          })
+          void respond(streamed.stream)
         }
+        streamed.push(frame.data, sealedBytes)
         return
       }
-      requestDone = true
-      void respond()
+      if (!appendBodyChunk(buffered, frame.data)) reject()
     }
   }
 

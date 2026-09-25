@@ -5,18 +5,19 @@ import { acpPrompt } from "./index.js"
 
 describe("prompt attachments", () => {
   const image: PromptAttachmentInput = {
-    data: Buffer.from("img"),
+    inline: { data: Buffer.from("img"), mimeType: "image/png" },
     kind: "image",
     mimeType: "image/png",
     name: "shot.png",
-    path: "/tmp/att/shot.png"
+    path: "/tmp/att/shot.png",
+    sizeBytes: 3
   }
   const file: PromptAttachmentInput = {
-    data: Buffer.from("notes"),
     kind: "file",
     mimeType: "text/plain",
     name: "notes.txt",
-    path: "/tmp/att/notes.txt"
+    path: "/tmp/att/notes.txt",
+    sizeBytes: 5
   }
 
   it("builds ACP prompt blocks: resource_link for every file, inline images when supported", () => {

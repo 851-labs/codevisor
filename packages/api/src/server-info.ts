@@ -25,6 +25,13 @@ export const HealthResponse = Schema.Struct({
 })
 export type HealthResponse = typeof HealthResponse.Type
 
+/// Largest attachment `POST /v1/files` accepts. Uploads stream to disk on
+/// every path (direct, and credit-paced through the Cloud relay), so this is
+/// a product bound on disk use and upload time, not a memory limit. Servers
+/// advertise it as `ServerInfo.maxUploadBytes`; clients talking to an older
+/// server without the field must assume that server's 32 MiB relay cap.
+export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+
 export const ServerInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -37,7 +44,10 @@ export const ServerInfo = Schema.Struct({
   /// survives --serverId defaults and renames. Optional for older servers.
   machineId: Schema.optional(Schema.String),
   arch: Schema.optional(Schema.String),
-  hostname: Schema.optional(Schema.String)
+  hostname: Schema.optional(Schema.String),
+  /// Per-file attachment upload limit (MAX_UPLOAD_BYTES). Optional for older
+  /// servers, which only accepted 32 MiB through the relay.
+  maxUploadBytes: Schema.optional(Schema.Number)
 })
 export type ServerInfo = typeof ServerInfo.Type
 

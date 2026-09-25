@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { createHash, randomUUID } from "node:crypto"
+import { constants, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
+import { copyFile, rename } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -7,6 +8,7 @@ import type { PromptAttachmentInput } from "@codevisor/agent-runtime"
 import type { AttachmentRef, FileMetadata } from "@codevisor/api"
 import { AttachmentStoreError } from "@codevisor/db"
 
+import { inlineSizing } from "./infra/prompt-media.js"
 import type { CodevisorServerServices } from "./server-context-types.js"
 import { run, HttpFailure } from "./server-http.js"
 
@@ -23,33 +25,21 @@ export const sanitizeFileName = (name: string): string => {
   return cleaned.length === 0 ? "attachment" : cleaned
 }
 
-const readAttachment = async (
+/// Rebuilds the disk object for a row that still carries its legacy SQLite
+/// bytes (pre-object-store attachments, or dual rows mid-migration).
+const restoreLegacyObject = async (
   services: CodevisorServerServices,
-  fileId: string
-): Promise<{ readonly data: Buffer; readonly metadata: FileMetadata }> => {
-  const record = await run(services.db.getFileStorage(fileId))
-  if (record === undefined) {
-    throw new HttpFailure(404, `File not found: ${fileId}`)
-  }
-  const store = services.attachments
-  if (record.storageState !== "sqlite") {
-    try {
-      return { data: await store.read(record.metadata), metadata: record.metadata }
-    } catch (cause) {
-      if (record.storageState === "disk") throw cause
-      // Dual rows retain their legacy bytes until the disk object has been
-      // reverified, so a damaged copy remains recoverable during migration.
-    }
-  }
+  fileId: string,
+  record: { readonly data: Buffer; readonly metadata: FileMetadata }
+): Promise<void> => {
   if (
     record.data.byteLength !== record.metadata.sizeBytes ||
     createHash("sha256").update(record.data).digest("hex") !== record.metadata.sha256
   ) {
     throw new AttachmentStoreError(`Attachment bytes are missing or corrupt: ${fileId}`)
   }
-  await store.put(record.data, record.metadata.sha256)
+  await services.attachments.put(record.data, record.metadata.sha256)
   await run(services.db.markFileStorageDual(fileId))
-  return { data: record.data, metadata: record.metadata }
 }
 
 export const attachmentDiskFile = async (
@@ -76,7 +66,7 @@ export const attachmentDiskFile = async (
       throw new AttachmentStoreError(`Attachment object is missing: ${fileId}`)
     }
   }
-  await readAttachment(services, fileId)
+  await restoreLegacyObject(services, fileId, record)
   return { path, metadata: record.metadata }
 }
 
@@ -121,22 +111,39 @@ export const resolvePromptAttachments = async (
 ): Promise<Array<PromptAttachmentInput>> => {
   const resolved: Array<PromptAttachmentInput> = []
   for (const ref of refs) {
-    let file: Awaited<ReturnType<typeof readAttachment>>
+    let file: Awaited<ReturnType<typeof attachmentDiskFile>>
     try {
-      file = await readAttachment(services, ref.fileId)
+      file = await attachmentDiskFile(services, ref.fileId)
     } catch (cause) {
       if (cause instanceof HttpFailure && cause.status === 404) {
         throw new HttpFailure(422, `Attachment file missing: ${ref.fileId}`)
       }
       throw cause
     }
+    // Streamed hash: a corrupt object must not reach the agent, and the
+    // file never needs to fit in memory.
+    if (!(await services.attachments.verify(file.metadata))) {
+      throw new AttachmentStoreError(`Attachment object is missing or corrupt: ${ref.fileId}`)
+    }
     const directory = join(attachmentsTempRoot(), ref.fileId)
     mkdirSync(directory, { recursive: true })
     const path = join(directory, sanitizeFileName(ref.name))
     if (!existsSync(path)) {
-      writeFileSync(path, file.data)
+      // Clone where the filesystem supports it; attachments can be hundreds
+      // of megabytes and must not pass through memory. The rename keeps an
+      // interrupted copy from being reused as the materialized file.
+      const partial = `${path}.${randomUUID()}.partial`
+      await copyFile(file.path, partial, constants.COPYFILE_FICLONE)
+      await rename(partial, path)
     }
-    resolved.push({ data: file.data, kind: ref.kind, mimeType: ref.mimeType, name: ref.name, path })
+    const attachment = {
+      kind: ref.kind,
+      mimeType: ref.mimeType,
+      name: ref.name,
+      path,
+      sizeBytes: file.metadata.sizeBytes
+    }
+    resolved.push({ ...attachment, ...(await inlineSizing(attachment)) })
   }
   return resolved
 }
