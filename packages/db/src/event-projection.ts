@@ -124,6 +124,24 @@ export const projectChatEvent = (
             .run(hasRenderableWorkedDetail(payload) ? 1 : 0, event.created_at, itemId)
           if (update === "plan_document" && typeof payload.markdown === "string") {
             upsertChatPart(sqlite, itemId, "plan", payload.markdown.slice(0, 24_000))
+            // A (re)proposed plan closes the planning section; any earlier
+            // resume belonged to the plan it replaces.
+            sqlite
+              .prepare(
+                "update chat_items set plan_proposed_at = ?, plan_resumed_at = null where id = ?"
+              )
+              .run(event.created_at, itemId)
+          } else if (update === "question_resolved") {
+            // Answering the plan — approve or keep planning — resumes the
+            // same turn. The first answer after a proposal starts the
+            // section below the plan; the wait for the user belongs to
+            // neither section.
+            sqlite
+              .prepare(
+                `update chat_items set plan_resumed_at = ?
+                 where id = ? and plan_proposed_at is not null and plan_resumed_at is null`
+              )
+              .run(event.created_at, itemId)
           }
           if (toolId !== undefined) setChatRoute(sqlite, sessionId, `tool:${toolId}`, itemId)
           const image =

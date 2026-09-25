@@ -49,7 +49,11 @@ enum TranscriptPlanRowProjection {
             fragment: chunk.fragment
           ),
           measurementRevision: projected.measurementRevision,
-          spacingAfter: 0
+          // Rows inside the card sit flush so the card reads as one
+          // surface. The card's last row ends the response the way final
+          // text does: whatever follows (a user message, or the work that
+          // resumes after approval) gets ordinary transcript spacing.
+          spacingAfter: projected.isLastInDocument ? nil : 0
         ))
     }
   }

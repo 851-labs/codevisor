@@ -293,6 +293,8 @@ export interface ChatItemRow {
   readonly turn_id: string | null
   readonly started_at: string | null
   readonly completed_at: string | null
+  readonly plan_proposed_at: string | null
+  readonly plan_resumed_at: string | null
   readonly stop_reason: string | null
   readonly stop_detail: string | null
   readonly stop_kind: string | null

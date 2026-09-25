@@ -234,6 +234,8 @@ export const transcriptFromChatRow = (row: ChatItemRow): TranscriptItem => {
     ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
     ...(row.started_at === null ? {} : { startedAt: row.started_at }),
     ...(row.completed_at === null ? {} : { endedAt: row.completed_at }),
+    ...(row.plan_proposed_at === null ? {} : { planProposedAt: row.plan_proposed_at }),
+    ...(row.plan_resumed_at === null ? {} : { planResumedAt: row.plan_resumed_at }),
     ...(row.stop_reason === null ? {} : { stopReason: row.stop_reason }),
     ...(row.stop_detail === null ? {} : { stopDetail: row.stop_detail }),
     ...(row.stop_kind === "usageLimit" ? { stopKind: "usageLimit" as const } : {}),

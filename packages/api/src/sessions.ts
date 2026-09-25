@@ -218,6 +218,12 @@ export const TranscriptItem = Schema.Struct({
   stopKind: Schema.optional(TurnStopKind),
   retryable: Schema.optional(Schema.Boolean),
   planDocument: Schema.optional(Schema.String),
+  /** When the latest plan document was proposed: the end of the turn's
+   * planning "Worked for…" section. */
+  planProposedAt: Schema.optional(Schema.String),
+  /** When the user answered the proposed plan and the same turn resumed
+   * working: the start of the "Worked for…" section below the plan. */
+  planResumedAt: Schema.optional(Schema.String),
   attachments: Schema.optional(Schema.Array(AttachmentRef)),
   /** Provider message id of the still-streaming answer candidate. Present only
    * while an assistant item is generating, so a client restoring mid-stream

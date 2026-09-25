@@ -43,16 +43,10 @@ public struct TranscriptWorkedSectionMembership: Sendable, Equatable {
 public struct TranscriptWorkedSectionHeader: Sendable, Equatable {
   public let message: AssistantMessage
   public let kind: TranscriptWorkedSectionKind
-  public let showsTimer: Bool
 
-  public init(
-    message: AssistantMessage,
-    kind: TranscriptWorkedSectionKind,
-    showsTimer: Bool
-  ) {
+  public init(message: AssistantMessage, kind: TranscriptWorkedSectionKind) {
     self.message = message
     self.kind = kind
-    self.showsTimer = showsTimer
   }
 }
 
@@ -61,16 +55,10 @@ public struct TranscriptWorkedSectionHeader: Sendable, Equatable {
 public struct TranscriptActiveWorkedSectionHeader: Sendable, Equatable {
   public let messageID: UUID
   public let kind: TranscriptWorkedSectionKind
-  public let showsTimer: Bool
 
-  public init(
-    messageID: UUID,
-    kind: TranscriptWorkedSectionKind,
-    showsTimer: Bool
-  ) {
+  public init(messageID: UUID, kind: TranscriptWorkedSectionKind) {
     self.messageID = messageID
     self.kind = kind
-    self.showsTimer = showsTimer
   }
 }
 
@@ -106,21 +94,19 @@ extension TranscriptAssistantRowProjection {
     _ message: AssistantMessage,
     kind: TranscriptWorkedSectionKind,
     items: [WorkedItem],
-    showsTimer: Bool,
-    allowsDeferred: Bool,
     lifecycle: TranscriptBlockLifecycle,
     to rows: inout [TranscriptPresentationRow]
   ) -> Bool {
     let deferredDetailID =
-      allowsDeferred && message.turn.hasDeferredWorkedDetails
+      message.turn.defersWorkedSection(kind)
       ? message.turn.deferredDetailItemId
       : nil
     guard !items.isEmpty || deferredDetailID != nil else { return false }
 
     let identity = TranscriptWorkedSectionIdentity(messageID: message.id, kind: kind)
-    let isFixedExpanded =
-      message.turn.isGenerating
-      && !message.turn.finalTextIsAsserted
+    // Once a plan lands, the planning section settles like a finished
+    // response while the work after the plan is the live one.
+    let isFixedExpanded = message.turn.isWorkedSectionLive(kind)
     let defaultExpanded = isFixedExpanded
     rows.append(
       .init(
@@ -132,7 +118,6 @@ extension TranscriptAssistantRowProjection {
         content: workedHeaderContent(
           message: message,
           kind: kind,
-          showsTimer: showsTimer,
           lifecycle: lifecycle
         ),
         estimatedHeight: 34,
@@ -270,18 +255,13 @@ extension TranscriptAssistantRowProjection {
   private static func workedHeaderContent(
     message: AssistantMessage,
     kind: TranscriptWorkedSectionKind,
-    showsTimer: Bool,
     lifecycle: TranscriptBlockLifecycle
   ) -> TranscriptPresentationRow.Content {
     switch lifecycle {
     case .receiving:
-      .activeWorkedHeader(
-        .init(messageID: message.id, kind: kind, showsTimer: showsTimer)
-      )
+      .activeWorkedHeader(.init(messageID: message.id, kind: kind))
     case .settled:
-      .assistantWorkedHeader(
-        .init(message: message, kind: kind, showsTimer: showsTimer)
-      )
+      .assistantWorkedHeader(.init(message: message, kind: kind))
     }
   }
 

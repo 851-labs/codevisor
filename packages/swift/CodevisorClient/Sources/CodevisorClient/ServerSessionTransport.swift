@@ -235,6 +235,8 @@ extension ServerSessionTransport {
         generation: item.textGeneration ?? 0, revision: item.textRevision ?? 0,
         resource: item.textResource.flatMap { ($0.fields.first?.sizeBytes ?? 0) > item.text.utf16.count * 2 ? $0 : nil }
       )
+      turn.planProposedAt = item.planProposedAt.flatMap(parseServerDate)
+      turn.planResumedAt = item.planResumedAt.flatMap(parseServerDate)
       turn.planResource = item.planResource.flatMap {
         ($0.fields.first?.sizeBytes ?? 0) > (item.planDocument?.utf16.count ?? 0) * 2 ? $0 : nil
       }

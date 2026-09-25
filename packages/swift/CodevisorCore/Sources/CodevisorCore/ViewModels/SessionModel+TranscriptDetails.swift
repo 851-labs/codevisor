@@ -92,6 +92,8 @@ extension SessionModel {
     turn.isGenerating = originalMessage.turn.isGenerating
     turn.startedAt = originalMessage.turn.startedAt
     turn.endedAt = originalMessage.turn.endedAt
+    turn.planProposedAt = originalMessage.turn.planProposedAt
+    turn.planResumedAt = originalMessage.turn.planResumedAt
     turn.stopReason = originalMessage.turn.stopReason
     turn.stopDetail = originalMessage.turn.stopDetail
     turn.stopKind = originalMessage.turn.stopKind

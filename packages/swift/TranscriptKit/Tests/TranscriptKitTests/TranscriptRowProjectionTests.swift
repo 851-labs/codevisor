@@ -216,9 +216,41 @@ struct TranscriptRowProjectionTests {
 
     #expect(activePlanRows.count == 2)
     #expect(activePlanRows.map(\.layoutKey) == settledPlanRows.map(\.layoutKey))
-    #expect(activePlanRows.allSatisfy { $0.spacingAfter == 0 })
+    // The card's rows sit flush; its last row leaves ordinary transcript
+    // spacing so a following user message never touches the card.
+    #expect(activePlanRows.dropLast().allSatisfy { $0.spacingAfter == 0 })
+    #expect(activePlanRows.last?.spacingAfter == nil)
+    #expect(settledPlanRows.last?.spacingAfter == nil)
     #expect(activePlanRows.first?.id == .activePlanHeader(id))
     #expect(settledPlanRows.first?.id == .planHeader(id))
+  }
+
+  @Test func restoredPlanTurnShowsBothWorkedSectionsBeforeDetailsLoad() throws {
+    let id = UUID()
+    var turn = AssistantTurn(
+      entries: [.text(id: "summary", markdown: "Done.")],
+      planDocument: "1. Ship it",
+      deferredDetailItemId: "item",
+      hasDeferredWorkedDetails: true
+    )
+    let headers: (AssistantTurn) throws -> [TranscriptPresentationRow.ID] = { turn in
+      try TranscriptRowProjectionCache.project(
+        makeInput(settled: [.assistant(AssistantMessage(id: id, turn: turn))]),
+        options: .init(includesConnectingRow: true)
+      ).map(\.id).filter {
+        $0 == .assistantWorkedHeader(id, .planning) || $0 == .assistantWorkedHeader(id, .implementation)
+      }
+    }
+
+    // A plan that ended the turn (codex) has only the work before it.
+    #expect(try headers(turn) == [.assistantWorkedHeader(id, .planning)])
+    // Answered and resumed (claude): the work after the plan keeps its own
+    // section below the card, as it did while live.
+    turn.planResumedAt = Date()
+    #expect(
+      try headers(turn) == [
+        .assistantWorkedHeader(id, .planning), .assistantWorkedHeader(id, .implementation),
+      ])
   }
 
   @Test func completedActiveRowCarriesItsFinishedResponseIdentity() throws {

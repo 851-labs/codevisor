@@ -121,8 +121,6 @@ enum TranscriptAssistantRowProjection {
       message,
       kind: .planning,
       items: message.turn.workedItemsBeforePlan,
-      showsTimer: message.turn.planBoundary == nil,
-      allowsDeferred: true,
       lifecycle: lifecycle,
       to: &rows
     )
@@ -139,8 +137,6 @@ enum TranscriptAssistantRowProjection {
           message,
           kind: .implementation,
           items: message.turn.workedItemsAfterPlan,
-          showsTimer: true,
-          allowsDeferred: false,
           lifecycle: lifecycle,
           to: &rows
         ) || projectedContent

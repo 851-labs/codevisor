@@ -14,8 +14,7 @@ public struct TranscriptSettledWorkedHeaderRow: View {
     TranscriptWorkedSectionHeaderView(
       turn: header.message.turn,
       messageID: header.message.id,
-      kind: header.kind,
-      showsTimer: header.showsTimer
+      kind: header.kind
     )
   }
 }
@@ -111,8 +110,7 @@ private struct TranscriptObservedActiveWorkedHeaderRow: View {
       TranscriptWorkedSectionHeaderView(
         turn: turn,
         messageID: header.messageID,
-        kind: header.kind,
-        showsTimer: header.showsTimer
+        kind: header.kind
       )
       .onChange(of: revision, initial: true) { _, _ in
         invalidateRowMeasurement?()

@@ -95,7 +95,7 @@ public enum TranscriptWorkedRowsVisibility {
           } ?? false
         let liveIsFixedExpanded =
           currentTurn.map {
-            $0.isGenerating && !$0.finalTextIsAsserted
+            $0.isWorkedSectionLive(membership.identity.kind)
           } ?? isFixedExpanded
         let expanded =
           liveIsFixedExpanded
@@ -153,7 +153,6 @@ public struct TranscriptWorkedSectionHeaderView: View {
   public let turn: AssistantTurn
   public let messageID: UUID
   public let kind: TranscriptWorkedSectionKind
-  public let showsTimer: Bool
 
   @Environment(\.transcriptDisclosure) private var disclosureStore
   @Environment(\.runningSubagentToolCallIds) private var runningSubagentToolCallIDs
@@ -164,13 +163,11 @@ public struct TranscriptWorkedSectionHeaderView: View {
   public init(
     turn: AssistantTurn,
     messageID: UUID,
-    kind: TranscriptWorkedSectionKind,
-    showsTimer: Bool
+    kind: TranscriptWorkedSectionKind
   ) {
     self.turn = turn
     self.messageID = messageID
     self.kind = kind
-    self.showsTimer = showsTimer
   }
 
   public var body: some View {
@@ -199,7 +196,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   private var defaultExpanded: Bool {
-    (turn.isGenerating && !turn.finalTextIsAsserted) || hasRunningSubagent
+    turn.isWorkedSectionLive(kind) || hasRunningSubagent
   }
 
   private var isExpanded: Bool {
@@ -207,7 +204,7 @@ public struct TranscriptWorkedSectionHeaderView: View {
   }
 
   private var isLiveAndFixedOpen: Bool {
-    turn.isGenerating && !turn.finalTextIsAsserted
+    turn.isWorkedSectionLive(kind)
   }
 
   @ViewBuilder
@@ -234,18 +231,11 @@ public struct TranscriptWorkedSectionHeaderView: View {
 
   @ViewBuilder
   private var label: some View {
-    if turn.isGenerating, showsTimer {
-      TranscriptWorkingDurationLabel(startedAt: turn.startedAt)
-    } else if !showsTimer {
-      Text("Planned")
+    if turn.workedSectionTicks(kind) {
+      TranscriptWorkingDurationLabel(turn: turn, kind: kind)
     } else {
-      Text(workedTitle)
+      Text(turn.workedSectionTitle(kind, now: Date()))
     }
-  }
-
-  private var workedTitle: String {
-    guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
-    return "Worked for \(formatWorkedDuration(Int(duration.rounded())))"
   }
 
   private func toggle() {
@@ -316,12 +306,13 @@ public struct TranscriptWorkedDisclosureIndicator: View {
 }
 
 private struct TranscriptWorkingDurationLabel: View {
-  let startedAt: Date?
+  let turn: AssistantTurn
+  let kind: TranscriptWorkedSectionKind
   @State private var now = Date()
 
   var body: some View {
-    Text("Working for \(formatWorkedDuration(elapsedSeconds))")
-      .task(id: startedAt) {
+    Text(turn.workedSectionTitle(kind, now: now))
+      .task(id: turn.workedSectionStart(kind)) {
         now = Date()
         while !Task.isCancelled {
           try? await Task.sleep(for: .seconds(1))
@@ -329,11 +320,6 @@ private struct TranscriptWorkingDurationLabel: View {
           now = Date()
         }
       }
-  }
-
-  private var elapsedSeconds: Int {
-    guard let startedAt else { return 0 }
-    return max(0, Int(now.timeIntervalSince(startedAt)))
   }
 }
 
@@ -344,8 +330,4 @@ private extension TranscriptWorkedSectionKind {
     case .implementation: .turnImplementation(messageID)
     }
   }
-}
-
-private func formatWorkedDuration(_ seconds: Int) -> String {
-  seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
 }

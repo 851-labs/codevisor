@@ -44,6 +44,7 @@ extension SessionModel {
       if pendingQuestion?.questionId == resolution.questionId {
         pendingQuestion = nil
       }
+      markActivePlanResumedIfNeeded()
       // Answered questions keep a card in the transcript flow, like
       // codex CLI's history cell; dismissed ones just disappear.
       if resolution.outcome == .answered {
@@ -80,7 +81,17 @@ extension SessionModel {
       // write re-renders every `isSending` observer (the composer) per
       // chunk for no state change.
       if !isSending { isSending = true }
+      let planRevision = message.turn.planRevision
+      let planDocument = message.turn.planDocument
       TranscriptReducer.apply(update, to: &message.turn)
+      if case .planDocument = update,
+        message.turn.planRevision != planRevision || message.turn.planDocument != planDocument
+      {
+        // Mirrors the server projection: a (re)proposed plan ends the
+        // planning section and awaits a fresh answer.
+        message.turn.planProposedAt = now()
+        message.turn.planResumedAt = nil
+      }
       activeItem = .assistant(message)
       recordToolRoute(for: update, itemId: message.id)
     }
@@ -527,6 +538,19 @@ extension SessionModel {
   /// Without this the elapsed label renders a frozen "Working for 0s" until
   /// some unrelated full-history snapshot happens to carry the server value,
   /// at which point it jumps to the true elapsed time.
+  /// The first answer to a proposed plan resumes the same turn (Claude keeps
+  /// working after ExitPlanMode); stamp where the section below the plan
+  /// starts. Mirrors the server projection, which supplies it on reload.
+  func markActivePlanResumedIfNeeded() {
+    guard case .assistant(var message) = activeItem,
+      message.turn.isGenerating,
+      message.turn.planProposedAt != nil,
+      message.turn.planResumedAt == nil
+    else { return }
+    message.turn.planResumedAt = now()
+    activeItem = .assistant(message)
+  }
+
   func markActiveTurnStartedIfNeeded() {
     guard case .assistant(var message) = activeItem, message.turn.startedAt == nil else { return }
     message.turn.startedAt = now()

@@ -95,6 +95,13 @@ public struct AssistantTurn: Sendable, Equatable {
   /// that follows approval (after), so the latter renders below the plan card
   /// instead of above it. nil when the turn produced no plan.
   public var planBoundary: Int?
+  /// When the latest plan document was proposed: the end of the planning
+  /// "Worked for…" section. Server-durable; stamped locally while live.
+  public var planProposedAt: Date? = nil
+  /// When the user answered the plan and this same turn resumed working
+  /// (Claude continues the turn after ExitPlanMode): the start of the section
+  /// below the plan. The wait for the user belongs to neither section.
+  public var planResumedAt: Date? = nil
   public var startedAt: Date?
   public var endedAt: Date?
   /// Nested subagent threads, keyed by the parent (Task/agent) tool call id.

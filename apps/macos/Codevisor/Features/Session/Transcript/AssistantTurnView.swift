@@ -95,9 +95,10 @@ struct AssistantTurnView: View {
   /// Match the actual collapsible content: streaming by itself is represented
   /// by the separate activity indicator and must not create an empty Worked
   /// disclosure.
-  private func showsPlanningSection(_ items: [WorkedItem]) -> Bool {
-    if turn.hasDeferredWorkedDetails { return true }
-    return !items.isEmpty
+  private func showsWorkedSection(
+    _ kind: TranscriptWorkedSectionKind, items: [WorkedItem]
+  ) -> Bool {
+    turn.defersWorkedSection(kind) || !items.isEmpty
   }
 
   var body: some View {
@@ -118,13 +119,8 @@ struct AssistantTurnView: View {
     VStack(alignment: .leading, spacing: 14) {
       // Planning/exploration collapses into the first "Worked for…"
       // section, above the proposed plan.
-      if presentation.showsPlanning, showsPlanningSection(beforePlan) {
-        workedSection(
-          items: beforePlan,
-          key: .turn(turnID),
-          timerLabel: turn.planBoundary == nil,
-          allowsDeferred: true
-        )
+      if presentation.showsPlanning, showsWorkedSection(.planning, items: beforePlan) {
+        workedSection(items: beforePlan, kind: .planning)
       }
 
       if presentation.showsPlanDocument,
@@ -138,13 +134,8 @@ struct AssistantTurnView: View {
       // Once the plan is approved, the implementation gets its own
       // "Worked for…" section BELOW the plan, so approved work reads in
       // order (plan → build) instead of piling up above the plan card.
-      if presentation.showsResultWork, !afterPlan.isEmpty {
-        workedSection(
-          items: afterPlan,
-          key: .turnImplementation(turnID),
-          timerLabel: true,
-          allowsDeferred: false
-        )
+      if presentation.showsResultWork, showsWorkedSection(.implementation, items: afterPlan) {
+        workedSection(items: afterPlan, kind: .implementation)
       }
 
       if presentation.showsActivity, let activity, !activity.followsResponse {
@@ -375,22 +366,22 @@ struct AssistantTurnView: View {
   /// planning and implementation sections collapse on their own.
   private func workedSection(
     items: [WorkedItem],
-    key: TranscriptDisclosureStore.Key,
-    timerLabel: Bool,
-    allowsDeferred: Bool
+    kind: TranscriptWorkedSectionKind
   ) -> some View {
+    let key: TranscriptDisclosureStore.Key =
+      kind == .planning ? .turn(turnID) : .turnImplementation(turnID)
     let expanded = isExpanded(key)
     let deferredDetailItemID =
-      allowsDeferred && turn.hasDeferredWorkedDetails
+      turn.defersWorkedSection(kind)
       ? turn.deferredDetailItemId
       : nil
     return VStack(alignment: .leading, spacing: 12) {
       // Early-collapsed sections (asserted final answer streaming) are
       // already settled: give them the chevron so the user can peek at
       // the work while the answer is still writing.
-      if turn.isGenerating, !hasAutoCollapsed {
+      if turn.isWorkedSectionLive(kind), !hasAutoCollapsed {
         workedHeader(
-          label: sectionLabel(timer: timerLabel),
+          label: sectionLabel(kind),
           showsChevron: false,
           expanded: expanded,
           deferredDetailItemID: nil
@@ -408,7 +399,7 @@ struct AssistantTurnView: View {
           performAnchoredDisclosureChange?(change) ?? change()
         } label: {
           workedHeader(
-            label: sectionLabel(timer: timerLabel),
+            label: sectionLabel(kind),
             showsChevron: true,
             expanded: expanded,
             deferredDetailItemID: deferredDetailItemID
@@ -468,41 +459,18 @@ struct AssistantTurnView: View {
     }
   }
 
-  /// The section label: the live "Working for Xs" / final "Worked for Xs"
-  /// timer for the active work, or a static "Planned" for the planning
-  /// section once a plan exists (the implementation section carries the
-  /// timer from there on).
+  /// "Working for Xs" while the section is live, "Worked for Xs" once it
+  /// settles. A plan splits the turn into two sections timed independently,
+  /// so the work after the plan reads like a second response.
   @ViewBuilder
-  private func sectionLabel(timer: Bool) -> some View {
-    if timer {
-      if turn.isGenerating {
-        TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
-          Text("Working for \(format(elapsedSeconds(to: context.date)))")
-        }
-      } else {
-        Text(workedTitle)
+  private func sectionLabel(_ kind: TranscriptWorkedSectionKind) -> some View {
+    if turn.workedSectionTicks(kind) {
+      TimelineView(.periodic(from: turn.workedSectionStart(kind) ?? Date(), by: 1)) { context in
+        Text(turn.workedSectionTitle(kind, now: context.date))
       }
     } else {
-      Text("Planned")
+      Text(turn.workedSectionTitle(kind, now: Date()))
     }
-  }
-}
-
-/// Presentation-only labels and durations, kept out of the view body so the
-/// struct stays within the type-body budget.
-extension AssistantTurnView {
-  private func elapsedSeconds(to date: Date) -> Int {
-    guard let start = turn.startedAt else { return 0 }
-    return max(0, Int(date.timeIntervalSince(start)))
-  }
-
-  private func format(_ seconds: Int) -> String {
-    seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
-  }
-
-  private var workedTitle: String {
-    guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
-    return "Worked for \(format(Int(duration.rounded())))"
   }
 }
 

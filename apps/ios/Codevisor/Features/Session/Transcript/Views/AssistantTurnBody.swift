@@ -85,22 +85,18 @@ struct AssistantTurnBody: View {
       if presentation.showsPlanning {
         workedSection(
           items: turn.workedItemsBeforePlan,
-          key: .turn(turnId),
-          showsTimer: turn.planBoundary == nil,
-          allowsDeferred: true
+          kind: .planning
         )
       }
       if presentation.showsPlanDocument, let planDocument = turn.planDocument {
         PlanDocumentView(markdown: planDocument)
       }
       if presentation.showsResultWork {
-        // Deferred detail hydrates through the first section only;
-        // this row begins with post-plan implementation work.
+        // Work after the plan. Restored history shows its header before
+        // details hydrate when the turn resumed after the plan.
         workedSection(
           items: turn.workedItemsAfterPlan,
-          key: .turnImplementation(turnId),
-          showsTimer: true,
-          allowsDeferred: false
+          kind: .implementation
         )
       }
       if presentation.showsActivity, let activity, !activity.followsResponse {
@@ -317,20 +313,20 @@ struct AssistantTurnBody: View {
   @ViewBuilder
   private func workedSection(
     items: [WorkedItem],
-    key: TranscriptDisclosureStore.Key,
-    showsTimer: Bool,
-    allowsDeferred: Bool
+    kind: TranscriptWorkedSectionKind
   ) -> some View {
-    if !items.isEmpty || (allowsDeferred && turn.hasDeferredWorkedDetails) {
+    let key: TranscriptDisclosureStore.Key =
+      kind == .planning ? .turn(turnId) : .turnImplementation(turnId)
+    if !items.isEmpty || turn.defersWorkedSection(kind) {
       let isExpanded = isExpanded(key)
       let deferredDetailItemID =
-        allowsDeferred && turn.hasDeferredWorkedDetails
+        turn.defersWorkedSection(kind)
         ? turn.deferredDetailItemId
         : nil
       VStack(alignment: .leading, spacing: 12) {
-        if isGenerating, !hasAutoCollapsed {
+        if turn.isWorkedSectionLive(kind), !hasAutoCollapsed {
           workedHeader(
-            label: sectionLabel(showsTimer: showsTimer),
+            label: sectionLabel(kind),
             showsChevron: false,
             expanded: isExpanded,
             deferredDetailItemID: nil
@@ -348,7 +344,7 @@ struct AssistantTurnBody: View {
             performAnchoredDisclosureChange?(change) ?? change()
           } label: {
             workedHeader(
-              label: sectionLabel(showsTimer: showsTimer),
+              label: sectionLabel(kind),
               showsChevron: true,
               expanded: isExpanded,
               deferredDetailItemID: deferredDetailItemID
@@ -403,32 +399,17 @@ struct AssistantTurnBody: View {
     }
   }
 
-  /// "Working for 12s" (live) while streaming; "Planned" for the planning
-  /// section once a plan boundary exists; "Worked for 12s" settled.
+  /// "Working for 12s" while the section is live, "Worked for 12s" once it
+  /// settles. A plan splits the turn into two independently timed sections,
+  /// so the work after the plan reads like a second response.
   @ViewBuilder
-  private func sectionLabel(showsTimer: Bool) -> some View {
-    if isGenerating, showsTimer {
-      TimelineView(.periodic(from: turn.startedAt ?? Date(), by: 1)) { context in
-        Text("Working for \(Self.format(elapsedSeconds(to: context.date)))")
+  private func sectionLabel(_ kind: TranscriptWorkedSectionKind) -> some View {
+    if turn.workedSectionTicks(kind) {
+      TimelineView(.periodic(from: turn.workedSectionStart(kind) ?? Date(), by: 1)) { context in
+        Text(turn.workedSectionTitle(kind, now: context.date))
       }
-    } else if !showsTimer {
-      Text("Planned")
     } else {
-      Text(workedTitle)
+      Text(turn.workedSectionTitle(kind, now: Date()))
     }
-  }
-
-  private var workedTitle: String {
-    guard let duration = turn.duration, duration >= 1 else { return "Worked for a moment" }
-    return "Worked for \(Self.format(Int(duration.rounded())))"
-  }
-
-  private func elapsedSeconds(to date: Date) -> Int {
-    guard let started = turn.startedAt else { return 0 }
-    return max(0, Int(date.timeIntervalSince(started)))
-  }
-
-  private static func format(_ seconds: Int) -> String {
-    seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
   }
 }

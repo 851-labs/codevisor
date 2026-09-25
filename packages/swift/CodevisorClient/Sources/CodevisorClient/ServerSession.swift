@@ -328,6 +328,10 @@ public struct ServerTranscriptItem: Decodable, Equatable, Sendable {
   public var stopKind: String?
   public var retryable: Bool?
   public var planDocument: String?
+  /// When the plan was proposed / when the turn resumed after it was
+  /// answered. Bound the two "Worked for…" sections around the plan.
+  public var planProposedAt: String? = nil
+  public var planResumedAt: String? = nil
   public var attachments: [ServerAttachmentRef]?
   /// Provider message id of the still-streaming answer candidate. Present
   /// only while the item is generating so a mid-stream restore can share
