@@ -55,6 +55,13 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   /// UI scale to match. Off: nothing is sent; if this viewer changed the size or
   /// scale, they're put back. Only for sessions that resize their desktop.
   public var supportsDynamicResolution: Bool { session.resizesDesktop }
+  /// Whether turning Dynamic Resolution on can change anything here (851-2368): the
+  /// server resizes its desktop, or it can change its UI scale. Unknown until the session
+  /// hears from the server; the toolbar disables the button while it isn't true.
+  public let resolutionAvailability = ScreenSharingResolutionAvailability()
+  private var desktopResizes: Bool? {
+    didSet { updateResolutionAvailability() }
+  }
   public private(set) var dynamicResolution = false
   /// Sets the desktop's UI scale on the server (`setScale`, 851-2339); nil when it can't.
   var setDesktopScale: (@MainActor (Int) async -> Void)?
@@ -62,7 +69,9 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   public var defaultDesktopSize: (width: Int, height: Int)?
   /// The desktop can draw its UI at 2× (the server lists scale 2, 851-2339). Without it a
   /// 2× framebuffer would only make everything half size, so the pane stays at 1× pixels.
-  public var desktopCanScale = false
+  public var desktopCanScale = false {
+    didSet { updateResolutionAvailability() }
+  }
   private var paneSize: (points: CGSize, backingScale: CGFloat)?
   private var resolution = ScreenSharingDynamicResolution()
   private var changedDesktop = false
@@ -75,6 +84,10 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   }
 
   /// Sends what the current mode needs; also re-checked every second, as the link estimate moves.
+  private func updateResolutionAvailability() {
+    resolutionAvailability.available = desktopCanScale ? true : desktopResizes
+  }
+
   private func applyResolution() {
     guard !closed, session.resizesDesktop else { return }
     if dynamicResolution, let pane = paneSize {
@@ -129,6 +142,7 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     // with the arrow when the video has none (851-2355).
     surface.setVideoShowsPointer(session.videoShowsPointer)
     session.onCursorChanged = { [weak surface] in surface?.showRemoteCursor($0) }
+    session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
     // With Dynamic Resolution on, a desktop that can resize follows the pane (851-2314, 851-2340).
     surface.onSizeChanged = { [weak self] size, scale in
       self?.paneSize = (size, scale)
@@ -238,4 +252,12 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
   nonisolated public static func == (lhs: ScreenSharingViewerEndpoint, rhs: ScreenSharingViewerEndpoint) -> Bool {
     lhs === rhs
   }
+}
+
+/// Whether Dynamic Resolution can do anything on this session: nil until known (851-2368).
+@MainActor
+@Observable
+public final class ScreenSharingResolutionAvailability {
+  public internal(set) var available: Bool?
+  init() {}
 }

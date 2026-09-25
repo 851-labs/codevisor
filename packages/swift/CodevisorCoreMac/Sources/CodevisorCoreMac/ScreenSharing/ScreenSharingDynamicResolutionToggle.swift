@@ -17,7 +17,7 @@ public struct ScreenSharingDynamicResolutionToggle: View {
   public var body: some View {
     Toggle(
       isOn: Binding(
-        get: { store.dynamicResolution },
+        get: { store.dynamicResolution && available == true },
         set: { _ in
           store.send(.dynamicResolutionToggled)
           persist(store.dynamicResolution)
@@ -28,9 +28,22 @@ public struct ScreenSharingDynamicResolutionToggle: View {
     }
     .toggleStyle(.button)
     .accessibilityLabel("Dynamic Resolution")
-    .help(
+    // A host that can't change its desktop's size or scale (macOS Screen Sharing over VNC):
+    // the button can't do anything, so it's off until the session knows (851-2368).
+    .disabled(available != true)
+    .help(help)
+  }
+
+  private var available: Bool? { store.endpoint?.resolutionAvailability.available }
+
+  private var help: String {
+    switch available {
+    case false: "This machine can't change its resolution over this connection"
+    case nil: "Dynamic Resolution: waiting for the remote desktop"
+    case true:
       store.dynamicResolution
         ? "Dynamic Resolution is on: the remote desktop matches this pane at your Mac's resolution"
-        : "Dynamic Resolution is off: the remote desktop keeps its own size, scaled to fit")
+        : "Dynamic Resolution is off: the remote desktop keeps its own size, scaled to fit"
+    }
   }
 }

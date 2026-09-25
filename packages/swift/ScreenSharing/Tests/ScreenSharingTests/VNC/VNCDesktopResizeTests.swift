@@ -58,6 +58,8 @@ struct VNCDesktopResizeTests {
     let server: RFBLoopbackServer
     let session: VNCScreenSharingSession
     let clock = TestClock()
+    /// What the session reported about resizing, in order (851-2368).
+    @MainActor var resizeSupport: [Bool] = []
     @MainActor init(_ resize: RFBLoopbackServer.Configuration.DesktopResize) async throws {
       server = try await RFBLoopbackServer(configuration: VNCDesktopResizeTests.server(resize))
       let client = try RFBClient(transport: try await RFBNetworkTransport.connect(host: "127.0.0.1", port: server.port))
@@ -65,6 +67,7 @@ struct VNCDesktopResizeTests {
       let clock = clock
       session = VNCScreenSharingSession(
         client: client, parameters: outcome.parameters, sleep: { try await clock.sleep(for: $0) })
+      session.onResizeSupportChanged = { [unowned self] in self.resizeSupport.append($0) }
     }
     @MainActor func stop() {
       session.close()
@@ -125,5 +128,30 @@ struct VNCDesktopResizeTests {
     await harness.clock.waitForSleep(VNCScreenSharingSession.resizeDebounce)
     harness.clock.advance(by: VNCScreenSharingSession.resizeDebounce)
     #expect(await awaitPolled { harness.server.framebuffer.width == 320 && harness.server.framebuffer.height == 240 })
+  }
+
+  // MARK: Whether Dynamic Resolution can do anything (851-2368)
+
+  @Test func aServerThatAnnouncesItsLayoutCanResize() async throws {
+    let harness = try await Session(.accept)
+    defer { harness.stop() }
+    #expect(await awaitPolled { harness.resizeSupport == [true] })
+  }
+
+  /// macOS Screen Sharing: no layout with the first update, so the desktop never follows the pane.
+  @Test func aServerWithoutALayoutCannotResize() async throws {
+    let harness = try await Session(.unsupported)
+    defer { harness.stop() }
+    #expect(await awaitPolled { harness.resizeSupport == [false] })
+  }
+
+  @Test func aRefusedResizeTurnsSupportOff() async throws {
+    let harness = try await Session(.refuse)
+    defer { harness.stop() }
+    #expect(await awaitPolled { harness.resizeSupport == [true] })
+    harness.session.requestDesktopSize(width: 700, height: 500)
+    await harness.clock.waitForSleep(VNCScreenSharingSession.resizeDebounce)
+    harness.clock.advance(by: VNCScreenSharingSession.resizeDebounce)
+    #expect(await awaitPolled { harness.resizeSupport == [true, false] })
   }
 }
