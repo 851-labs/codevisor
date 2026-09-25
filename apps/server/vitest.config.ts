@@ -8,8 +8,13 @@ export default defineConfig({
     // Every test here boots a server (database, fake agent runtime, MCP
     // manager, terminals) and drives it over HTTP; on a loaded CI runner —
     // where every package suite runs in parallel — the heaviest scenarios need
-    // well past vitest's 5s default.
+    // well past vitest's 5s default. afterEach closes those same real
+    // servers/databases/MCP managers (see the global afterEach in
+    // test-support.ts): give hooks the same room, or cleanup alone can trip
+    // Vitest's 10s hook default under the exact contention that justifies the
+    // longer test budget above.
     testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
