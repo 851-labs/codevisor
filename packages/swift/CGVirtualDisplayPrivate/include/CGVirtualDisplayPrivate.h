@@ -1,6 +1,7 @@
-// Declarations for CoreGraphics' private virtual-display classes, used by the
-// Screen Sharing rig only (never by the product). The classes are exported by
-// CoreGraphics.framework; no header ships in the SDK.
+// Declarations for CoreGraphics' private virtual-display classes: the native
+// host's display sized to the viewer (851-2376, private API approved for it)
+// and the Screen Sharing rig. The classes are exported by CoreGraphics.framework;
+// no header ships in the SDK.
 //
 // Derived from DeskPad's CGVirtualDisplayPrivate.h (MIT, Khaos Tian, 2021),
 // itself a class-dump of the framework. Properties observed at runtime on

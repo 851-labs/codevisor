@@ -42,6 +42,7 @@ let package = Package(
     .library(name: "ScreenSharingWebRTC", targets: ["ScreenSharingWebRTC"]),
     .library(name: "ScreenSharingTesting", targets: ["ScreenSharingTesting"]),
     .library(name: "CodevisorTestSupport", targets: ["CodevisorTestSupport"]),
+    .library(name: "CGVirtualDisplayPrivate", targets: ["CGVirtualDisplayPrivate"]),
   ],
   dependencies: [
     .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.59.3"),
@@ -111,6 +112,10 @@ let package = Package(
       ]
     ),
     .target(name: "CodevisorTestSupport", path: "TestSupport", swiftSettings: strictSwiftSettings),
+    // Private CoreGraphics virtual-display declarations (851-2376): the host's display sized to the viewer.
+    .target(
+      name: "CGVirtualDisplayPrivate", path: "CGVirtualDisplayPrivate", publicHeadersPath: "include",
+      cSettings: strictCSettings, linkerSettings: [.linkedFramework("CoreGraphics")]),
     // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
     // palette derivation — Foundation-only, no SwiftUI)
     .target(
@@ -345,7 +350,7 @@ let package = Package(
     .target(
       name: "CodevisorCoreMac",
       dependencies: [
-        "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC",
+        "CodevisorCore", "ScreenSharing", "ScreenSharingWebRTC", "CGVirtualDisplayPrivate",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       path: "CodevisorCoreMac/Sources/CodevisorCoreMac",

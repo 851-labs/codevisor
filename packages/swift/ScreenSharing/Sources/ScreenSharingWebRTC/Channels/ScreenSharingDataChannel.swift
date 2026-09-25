@@ -150,3 +150,4 @@ public typealias ScreenSharingControlChannel = ScreenSharingDataChannel<ScreenSh
 public typealias ScreenSharingClipboardChannel = ScreenSharingDataChannel<ScreenSharingClipboardMessage>
 public typealias ScreenSharingCursorChannel = ScreenSharingDataChannel<ScreenSharingCursorMessage>
 public typealias ScreenSharingAudioChannel = ScreenSharingDataChannel<ScreenSharingAudioMessage>
+public typealias ScreenSharingDisplayChannel = ScreenSharingDataChannel<ScreenSharingDisplayMessage>

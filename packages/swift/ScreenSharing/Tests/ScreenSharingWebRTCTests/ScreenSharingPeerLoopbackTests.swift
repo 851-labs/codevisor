@@ -202,6 +202,36 @@ struct ScreenSharingPeerLoopbackTests {
     #expect(hostReceived == [.subscribe, .unsubscribe])
   }
 
+  /// Dynamic Resolution on a virtual display (851-2376): the viewer holds its pane size until the
+  /// host says it's ready, then sends only the latest; the host's refusal marks it unsupported.
+  @Test func theViewerSendsItsPaneSizeOnceTheHostIsReady() async throws {
+    let harness = try Harness()
+    defer { harness.close() }
+    let opened = TestSignal()
+    let hostHeard = TestSignal()
+    var hostReceived: [ScreenSharingDisplayMessage] = []
+    var support: [Bool] = []
+    harness.sender.displayChannel.onAvailabilityChanged = { if $0 { opened.signal() } }
+    harness.sender.displayChannel.onMessage = {
+      hostReceived.append($0)
+      hostHeard.signal()
+    }
+    harness.receiver.onResizeSupportChanged = { support.append($0) }
+    #expect(harness.receiver.resizesDesktop)
+    harness.receiver.requestDesktopSize(width: 1000, height: 700)
+    harness.receiver.requestDesktopSize(width: 1280, height: 800)
+    try await harness.negotiate()
+    await opened.wait()
+    #expect(harness.sender.displayChannel.send(.ready))
+    await hostHeard.wait()
+    #expect(hostReceived == [.resize(width: 1280, height: 800)])
+    #expect(support == [true])
+    harness.receiver.requestDesktopSize(width: 1280, height: 800)
+    harness.receiver.resetDesktopSize()
+    await hostHeard.wait(for: 2)
+    #expect(hostReceived == [.resize(width: 1280, height: 800), .restore], "the same size isn't sent twice")
+  }
+
   @Test func negotiationRefusesUnsupportedDescriptionsAndAnythingAfterClose() async throws {
     let source = try Harness()
     defer { source.close() }

@@ -29,6 +29,8 @@ public class ScreenSharingPeer {
   public let cursorChannel: ScreenSharingCursorChannel
   /// The host's sound (851-2379); a peer without it never opens this channel.
   public let audioChannel: ScreenSharingAudioChannel
+  /// Dynamic Resolution on a virtual display (851-2376); a peer without it never opens this channel.
+  public let displayChannel: ScreenSharingDisplayChannel
   public var onConnectionChanged: ((String) -> Void)?
   let factory: RTCPeerConnectionFactory
   let codecFactory: ScreenSharingCodecFactory
@@ -51,6 +53,7 @@ public class ScreenSharingPeer {
     clipboardChannel = staged.clipboardChannel
     cursorChannel = staged.cursorChannel
     audioChannel = staged.audioChannel
+    displayChannel = staged.displayChannel
     videoRefresh = staged.videoRefresh
     videoRefresh.onMessage = { [weak self] message in
       guard let self, !self.closed else { return }
@@ -188,6 +191,7 @@ public class ScreenSharingPeer {
     clipboardChannel.close()
     cursorChannel.close()
     audioChannel.close()
+    displayChannel.close()
     controlChannel.close()
     cancelGathering(CancellationError())
     connection.close()
@@ -238,6 +242,7 @@ struct ScreenSharingPeerStaging {
   let clipboardChannel: ScreenSharingClipboardChannel
   let cursorChannel: ScreenSharingCursorChannel
   let audioChannel: ScreenSharingAudioChannel
+  let displayChannel: ScreenSharingDisplayChannel
   let videoRefresh: ScreenSharingDataChannel<ScreenSharingVideoRefreshMessage>
 
   init(
@@ -292,5 +297,8 @@ struct ScreenSharingPeerStaging {
     audioChannel = try ScreenSharingAudioChannel(
       connection: connection, id: 8, label: "codevisor.audio.v1", reliable: false,
       encode: { $0.encoded() }, decode: ScreenSharingAudioMessage.decode)
+    displayChannel = try ScreenSharingDisplayChannel(
+      connection: connection, id: 10, label: "codevisor.display.v1",
+      encode: { try $0.encoded() }, decode: ScreenSharingDisplayMessage.decode)
   }
 }

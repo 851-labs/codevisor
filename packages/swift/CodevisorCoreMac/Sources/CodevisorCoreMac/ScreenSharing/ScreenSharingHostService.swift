@@ -28,7 +28,18 @@ final class ScreenSharingHostService {
     let metrics: ScreenSharingMetrics
     let display: ServerScreenSharingDisplay
     let displayID: UInt32
-    let configuration: ScreenSharingVideoConfiguration
+    /// The physical display scaled to ≤1080p; a virtual display sized to the viewer replaces it
+    /// while Dynamic Resolution is on (851-2376).
+    var configuration: ScreenSharingVideoConfiguration
+    let physicalConfiguration: ScreenSharingVideoConfiguration
+    var virtualDisplay: ScreenSharingHostVirtualDisplay?
+    var captureDisplayID: UInt32 { virtualDisplay?.displayID ?? displayID }
+    /// Posts input within the shared display's current bounds (they change while mirrored).
+    var injector: ScreenSharingInputInjector?
+    var pendingResize: Task<Void, Never>?
+    /// Until this uptime, display changes are the host's own (a virtual display appearing,
+    /// mirroring, resizing) and don't end the session.
+    var ownDisplayChangeUntil: TimeInterval = 0
     var state = "connecting"
     /// What the viewer should show while there's no video, sent with the heartbeat's status
     /// (older viewers ignore it): a stalled capture being recovered (851-2385).
@@ -61,6 +72,7 @@ final class ScreenSharingHostService {
         width: max(64, Int(Double(display.width) * scale) / 2 * 2),
         height: max(64, Int(Double(display.height) * scale) / 2 * 2),
         bitrate: ScreenSharingHostService.bitrateCeiling)
+      physicalConfiguration = configuration
       metrics = ScreenSharingMetrics()
       // install(profile:) throws unless the process trial map equals what this profile requires, so reaching the next
       // line means the profile's settings below are the ones actually wired. "Active" therefore names THIS validated
@@ -242,12 +254,20 @@ final class ScreenSharingHostService {
   private func configure(_ session: Session) {
     session.qualityTask = Task { [weak self, weak session] in
       guard let initial = session?.configuration else { return }
+      var base = initial
       var quality = ScreenSharingAdaptiveQuality(
         configuration: initial, fullQualityBitrate: ScreenSharingHostService.fullQualityBitrate,
         warmUp: ScreenSharingHostService.estimateWarmUp)
       while !Task.isCancelled {
         do { try await Task.sleep(for: .seconds(1)) } catch { return }
         guard let session, !session.stopping else { return }
+        // A new size (851-2376) is a new full-quality level to adapt from.
+        if session.configuration != base {
+          base = session.configuration
+          quality = ScreenSharingAdaptiveQuality(
+            configuration: base, fullQualityBitrate: ScreenSharingHostService.fullQualityBitrate,
+            warmUp: ScreenSharingHostService.estimateWarmUp)
+        }
         guard session.state == "viewing" else { continue }
         let statistics = await session.peer.statistics()
         guard !Task.isCancelled, !session.stopping else { return }
@@ -282,13 +302,13 @@ final class ScreenSharingHostService {
     session.peer.clipboardChannel.onAvailabilityChanged = { [weak clipboard] available in
       if !available { clipboard?.cancel(reason: "The clipboard channel closed.") }
     }
-    let injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
+    session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
     let control = ScreenSharingHostControl(
       availability: { [weak session] in
         guard let session, !session.stopping, session.state == "viewing" else {
           return "Wait for live video before requesting control."
         }
-        guard injector.isAvailable else { return "Native input is unavailable on this Mac." }
+        guard session.injector?.isAvailable == true else { return "Native input is unavailable on this Mac." }
         guard AXIsProcessTrusted() else {
           return
             "Allow Codevisor in System Settings → Privacy & Security → Accessibility on the host Mac, then request control again."
@@ -296,7 +316,7 @@ final class ScreenSharingHostService {
         return nil
       },
       inject: { [weak session] in
-        session?.metrics.increment("controlInputEvents"); injector.post($0)
+        session?.metrics.increment("controlInputEvents"); session?.injector?.post($0)
       }, send: { [weak session] in session?.peer.controlChannel.send($0) ?? false })
     session.control = control
     session.peer.controlChannel.onMessage = { [weak control] in control?.receive($0) }
@@ -306,6 +326,7 @@ final class ScreenSharingHostService {
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
     configureCursor(session)
     configureAudio(session)
+    configureDisplay(session)
 
     session.capture.onStopped = { [weak self, weak session] message in
       guard let self, let session else { return }
@@ -375,6 +396,7 @@ final class ScreenSharingHostService {
     session.qualityTask?.cancel()
     session.cursor?.stop()
     session.capture.audio.set(nil)
+    session.pendingResize?.cancel()
     session.peer.close()
     session.captureTask?.cancel()
     // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd
@@ -383,6 +405,8 @@ final class ScreenSharingHostService {
       Self.logger.error("Capture didn't stop within 3 s; ending the session anyway")
     }
     indicator.hide()
+    session.virtualDisplay?.release()
+    session.virtualDisplay = nil
     session.displaySleepAssertion = nil
     _ = lease.release(session.owner)
     if current === session { current = nil }
@@ -416,41 +440,18 @@ final class ScreenSharingHostService {
     }
     observers.append(
       notificationCenter.addObserver(
-        forName: NSApplication.didChangeScreenParametersNotification,
-        object: nil, queue: .main, using: stop))
+        forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.screenParametersChanged() } })
+  }
+
+  /// A display change ends the session, unless the session made it itself (851-2376).
+  func screenParametersChanged() {
+    if let current, ProcessInfo.processInfo.systemUptime < current.ownDisplayChangeUntil { return }
+    systemStopped()
   }
 }
 
 extension ScreenSharingHostService {
-  /// A viewer that draws the pointer itself subscribes on the cursor channel (851-2377): the
-  /// capture leaves the pointer out and the publisher streams it. If the channel goes, the
-  /// pointer goes back into the video. An older viewer never subscribes.
-  private func configureCursor(_ session: Session) {
-    let displayID = session.displayID
-    let channel = session.peer.cursorChannel
-    channel.onMessage = { [weak session, weak channel] message in
-      guard case .subscribe = message, let session, let channel, !session.stopping, session.cursor == nil else {
-        return
-      }
-      let publisher = ScreenSharingCursorPublisher(
-        bounds: { ScreenSharingCursorPublisher.displayArea(displayID) },
-        scale: { ScreenSharingCursorPublisher.displayScale(displayID) },
-        send: { [weak channel] in channel?.send($0) ?? false })
-      session.cursor = publisher
-      session.metrics.label("cursorStream", "on")
-      publisher.start()
-      Task { try? await session.capture.setShowsCursor(false) }
-    }
-    channel.onAvailabilityChanged = { [weak session] available in
-      guard !available, let session, let publisher = session.cursor else { return }
-      publisher.stop()
-      session.cursor = nil
-      session.metrics.label("cursorStream", "closed")
-      guard !session.stopping else { return }
-      Task { try? await session.capture.setShowsCursor(true) }
-    }
-  }
-
   /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
   /// session, a bounded number of times, with the viewer told why the picture paused.
   private func captureStopped(_ session: Session, message: String) {
@@ -491,7 +492,7 @@ extension ScreenSharingHostService {
 
   private func startCapture(_ session: Session) async throws {
     try await session.capture.start(
-      displayID: session.displayID, configuration: session.configuration,
+      displayID: session.captureDisplayID, configuration: session.configuration,
       sink: session.peer.frameSender, metrics: session.metrics)
   }
 
@@ -499,7 +500,7 @@ extension ScreenSharingHostService {
   /// session reads as connecting, with a notice for the viewer; if nothing helps, the capture
   /// error ends it at the viewer's next heartbeat.
   /// Starts the capture, restarting a wedged `replayd` if the start doesn't return (851-2385).
-  private func startWatchedCapture(_ session: Session) async throws {
+  func startWatchedCapture(_ session: Session) async throws {
     let recovery = captureRecovery(session)
     try await recovery.start { [weak self, weak session] retry in
       guard let self, let session else { throw CancellationError() }

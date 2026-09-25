@@ -31,7 +31,7 @@ let package = Package(
     .executableTarget(
       name: "ScreenSharingRig",
       dependencies: [
-        "ScreenSharingRigKit", "CGVirtualDisplayPrivate",
+        "ScreenSharingRigKit", .product(name: "CGVirtualDisplayPrivate", package: "CodevisorKit"),
         .product(name: "CodevisorClient", package: "CodevisorKit"),
         // RFBWebSocketTransport: a machine's VNC display over its server's socket route, as the product opens it.
         .product(name: "CodevisorCoreMac", package: "CodevisorKit"),
@@ -52,13 +52,6 @@ let package = Package(
         .product(name: "ScreenSharingWebRTC", package: "CodevisorKit"),
       ],
       swiftSettings: strictSwiftSettings
-    ),
-    // Private CoreGraphics virtual-display declarations; rig only, see the header.
-    .target(
-      name: "CGVirtualDisplayPrivate",
-      publicHeadersPath: "include",
-      cSettings: strictCSettings,
-      linkerSettings: [.linkedFramework("CoreGraphics")]
     ),
     .testTarget(
       name: "ScreenSharingDiagnosticsTests",
