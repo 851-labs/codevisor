@@ -106,7 +106,8 @@ final class ScreenSharingHostService {
   convenience init() {
     self.init(
       captureAccess: { CGPreflightScreenCaptureAccess() }, notificationCenter: .default,
-      workspaceNotificationCenter: NSWorkspace.shared.notificationCenter, enumerateDisplays: Self.displays)
+      workspaceNotificationCenter: NSWorkspace.shared.notificationCenter,
+      enumerateDisplays: { try await Self.watchedDisplays() })
   }
 
   /// Keep OS permission, notifications and display enumeration at the boundary for request-ordering tests.

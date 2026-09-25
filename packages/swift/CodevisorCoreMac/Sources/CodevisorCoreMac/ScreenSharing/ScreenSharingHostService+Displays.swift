@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import CodevisorCore
 import ScreenSharing
 
@@ -22,5 +23,18 @@ extension ScreenSharingHostService {
           width: Int(Double(display.width) * pixelScale), height: Int(Double(display.height) * pixelScale))
       )
     }
+  }
+
+  /// Listing the displays asks `replayd` too, and a wedged one never answers (on tuftlord a
+  /// viewer waited forever on the capabilities request, before any capture): the same watchdog
+  /// as the capture start restarts it (851-2385).
+  static func watchedDisplays() async throws -> [Display] {
+    var result: [Display] = []
+    let logger = Logger(subsystem: "com.851labs.Codevisor", category: "ScreenSharing")
+    let recovery = ScreenSharingCaptureStallRecovery.live(
+      metrics: ScreenSharingMetrics(), restartCapture: {}, log: { logger.notice("\($0, privacy: .public)") },
+      onStalled: { logger.notice("Listing displays didn't return in 5 s; restarting replayd") })
+    try await recovery.start { _ in result = try await displays() }
+    return result
   }
 }
