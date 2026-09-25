@@ -305,6 +305,7 @@
       VStack(spacing: 0) {
         if let message = store.lease?.message { banner(message) }
         if let message = store.endpoint?.clipboard?.message { banner(message) }
+        if store.phase == .viewing, let notice = store.hostNotice { banner(notice) }
         ZStack {
           if let endpoint = store.endpoint {
             RigEndpointView(endpoint: endpoint)

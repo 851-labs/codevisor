@@ -145,6 +145,10 @@ private struct ScreenSharingPaneView: View {
         Text(message).font(.caption).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
       }
+      if store.phase == .viewing, let notice = store.hostNotice {
+        Text(notice).font(.caption).foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 8)
+      }
       ZStack {
         if let endpoint = store.endpoint {
           ScreenSharingNativeView(endpoint: endpoint, letterbox: theme.isSystem ? nil : theme.paneBackground)

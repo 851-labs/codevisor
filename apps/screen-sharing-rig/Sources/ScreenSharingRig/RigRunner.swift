@@ -21,7 +21,7 @@
     var capture: ScreenSharingCapture?
     var workload: ProbeOwnedWorkloadWindow?
     var virtualDisplay: RigVirtualDisplay?
-    var displaySleepAssertion: RigDisplaySleepAssertion?
+    var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
     /// Host: the display injected input maps to; nil for sources that are not a whole display.
     var controlDisplayID: CGDirectDisplayID?
     var hostControl: ScreenSharingHostControl?

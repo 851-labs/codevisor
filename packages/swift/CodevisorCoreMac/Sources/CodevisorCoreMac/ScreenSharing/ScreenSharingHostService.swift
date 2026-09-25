@@ -33,6 +33,9 @@ final class ScreenSharingHostService {
     /// What the viewer should show while there's no video, sent with the heartbeat's status
     /// (older viewers ignore it): a stalled capture being recovered (851-2385).
     var notice: String?
+    /// Held from the first captured frame's session start until the session ends (851-2375).
+    var displaySleepAssertion: ScreenSharingDisplaySleepAssertion?
+    var captureRestarts = ScreenSharingCaptureRestartPolicy()
     var control: ScreenSharingHostControl?
     var clipboard: ScreenSharingClipboardTransfer?
     var stopping = false
@@ -137,7 +140,8 @@ final class ScreenSharingHostService {
         return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
       }
       let labels = current.metrics.snapshot().labels
-      if let error = labels["captureError"] ?? labels["encoderError"] {
+      // A capture being restarted clears its error to "" (851-2375).
+      if let error = [labels["captureError"], labels["encoderError"]].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
         await end(current)
         return .init(status: "failed", message: error)
       }
@@ -292,9 +296,9 @@ final class ScreenSharingHostService {
     }
     control.onChanged = { [weak self] active in self?.indicator.setControlling(active) }
 
-    session.capture.onStopped = { [weak self, weak session] _ in
+    session.capture.onStopped = { [weak self, weak session] message in
       guard let self, let session else { return }
-      self.scheduleEnd(session)
+      self.captureStopped(session, message: message)
     }
     session.peer.onConnectionChanged = { [weak self, weak session] state in
       guard let self, let session, self.current === session, !session.stopping else { return }
@@ -306,6 +310,7 @@ final class ScreenSharingHostService {
             try await self.startCapture(session)
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
             session.state = "viewing"
+            session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")
             self.indicator.show(display: session.display.name) { [weak self, weak session] in
               guard let self, let session else { return }
               self.scheduleEnd(session)
@@ -361,6 +366,7 @@ final class ScreenSharingHostService {
     // Capture invalidates its generation; a late startup stops its own stream.
     try? await session.capture.stop()
     indicator.hide()
+    session.displaySleepAssertion = nil
     _ = lease.release(session.owner)
     if current === session { current = nil }
   }
@@ -418,6 +424,44 @@ final class ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
+  /// session, a bounded number of times, with the viewer told why the picture paused.
+  private func captureStopped(_ session: Session, message: String) {
+    guard current === session, !session.stopping else { return }
+    guard session.captureRestarts.allowsRestart(now: ProcessInfo.processInfo.systemUptime) else {
+      Self.logger.error("Capture stopped again (\(message, privacy: .public)); ending the session")
+      scheduleEnd(session)
+      return
+    }
+    Self.logger.notice("Capture stopped (\(message, privacy: .public)); restarting it")
+    session.metrics.increment("captureRestarts")
+    session.metrics.label("captureError", "")
+    session.control?.revoke("The host's screen capture stopped.")
+    session.state = "connecting"
+    session.notice = "Capture stopped, restarting…"
+    let pending = session.captureTask
+    pending?.cancel()
+    session.captureTask = Task { [weak self, weak session] in
+      await pending?.value
+      try? await Task.sleep(for: ScreenSharingCaptureRestartPolicy.delay)
+      guard let self, let session, self.current === session, !session.stopping, !Task.isCancelled else { return }
+      let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
+      do {
+        try? await session.capture.stop()
+        try await self.startCapture(session)
+      } catch {
+        guard self.current === session, !session.stopping, !Task.isCancelled else { return }
+        Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")
+        session.metrics.label("captureError", "The host Mac's screen capture stopped and couldn't be restarted.")
+        return
+      }
+      guard self.current === session, !session.stopping else { return }
+      session.state = "viewing"
+      session.notice = nil
+      await self.recoverStalledCapture(session, baseline: baseline)
+    }
+  }
+
   private func startCapture(_ session: Session) async throws {
     try await session.capture.start(
       displayID: session.displayID, configuration: session.configuration,
