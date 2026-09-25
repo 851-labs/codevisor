@@ -4,9 +4,9 @@ import Testing
 
 @Suite("Transcript send motion")
 struct TranscriptSendMotionTests {
-  /// Measured from iMessage: the bubble rises 3–4% of its travel past its
-  /// slot, rebounds once, and is still within about three quarters of a
-  /// second.
+  /// Shaped after iMessage: the bubble rises 3–4% of its travel past its
+  /// slot, rebounds once, and settles a little quicker than iMessage, in
+  /// about half a second.
   @Test("The bubble overshoots its slot by a few percent of its travel, then settles")
   func bubbleOvershootsAndSettles() {
     let spring = TranscriptSendMotion.bubble
@@ -17,7 +17,7 @@ struct TranscriptSendMotionTests {
     // its slot by a visible amount.
     let peak = samples.firstIndex(of: -overshoot) ?? 0
     #expect(samples[peak...].allSatisfy { $0 < 0.005 })
-    #expect(spring.settlingDuration() > 0.6 && spring.settlingDuration() < 0.9)
+    #expect(spring.settlingDuration() > 0.45 && spring.settlingDuration() < 0.7)
     #expect(abs(spring.displacementFraction(at: spring.settlingDuration())) <= 0.002)
   }
 

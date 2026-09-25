@@ -2,17 +2,18 @@ import CoreGraphics
 import Foundation
 import QuartzCore
 
-/// The motion of a send, measured frame by frame from iMessage recordings.
+/// The motion of a send, shaped after frame-by-frame iMessage recordings
+/// and run about 20% faster than them.
 ///
 /// - The outgoing bubble leaves the composer on an underdamped spring: it
 ///   rises past its slot by 3–4% of its travel (about 10–15 pt on a phone)
-///   and eases back with one visible rebound, settled in about 0.75 s.
+///   and eases back with one visible rebound, settled in under 0.6 s.
 /// - Everything already in the transcript makes room on a critically damped
 ///   spring that starts at once and never overshoots, so history leads and
 ///   the bubble follows it in.
 public enum TranscriptSendMotion {
-  public static let bubble = TranscriptSpring(response: 0.5, dampingFraction: 0.74)
-  public static let content = TranscriptSpring(response: 0.31, dampingFraction: 1)
+  public static let bubble = TranscriptSpring(response: 0.4, dampingFraction: 0.74)
+  public static let content = TranscriptSpring(response: 0.25, dampingFraction: 1)
 
   /// The flying bubble, text and all, starts this much smaller than its
   /// slot and grows to full size on the bubble spring (with its slight
@@ -22,11 +23,11 @@ public enum TranscriptSendMotion {
 
   /// The composer's glyphs become the bubble's over this crossfade while
   /// both are already moving.
-  public static let crossfadeDuration: TimeInterval = 0.12
+  public static let crossfadeDuration: TimeInterval = 0.1
 
   /// Rows that arrive below a flying bubble (the harness's first status
   /// line, a setup section) wait until the bubble is almost home, then fade.
-  public static let followerRevealDelay: TimeInterval = 0.32
+  public static let followerRevealDelay: TimeInterval = 0.26
   public static let followerFadeDuration: TimeInterval = 0.2
 
   /// How long after a send the transcript keeps animating its own layout
