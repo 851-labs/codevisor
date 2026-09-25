@@ -2,12 +2,14 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   utimesSync,
   writeFileSync
 } from "node:fs"
+import { request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -16,6 +18,7 @@ import { describe, expect, it } from "vitest"
 
 import { sweepAttachmentTempFiles } from "../server.js"
 import { jsonRequest, run, start, tempDirs, waitFor, listSubjectEvents } from "../test-support.js"
+import { limitedUploadBody } from "./files.js"
 
 describe("file routes", () => {
   it("stores files and threads prompt attachments end to end", async () => {
@@ -323,6 +326,26 @@ describe("file routes", () => {
     })
     rmSync(services.attachments.objectPath(String(png.body.sha256)), { force: true })
     expect((await fetch(`${server.url}/v1/files/${String(png.body.id)}`)).status).toBe(500)
+    // A vanished object surfaces as a storage error too, not a 422.
+    expect(
+      (
+        await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
+          body: JSON.stringify({ attachments: [pngRef], text: "missing disk object" }),
+          method: "POST"
+        })
+      ).status
+    ).toBe(202)
+    await waitFor(async () => {
+      const events = listSubjectEvents(services, session.id) as ReadonlyArray<{
+        readonly kind: string
+        readonly payload: Record<string, unknown>
+      }>
+      return events.some(
+        (event) =>
+          event.kind === "session.error" &&
+          String(event.payload.message).includes("Attachment object is missing")
+      )
+    })
   })
 
   it("recovers legacy attachment rows and rejects corrupt SQLite bytes", async () => {
@@ -390,5 +413,48 @@ describe("file routes", () => {
     rmSync(root, { force: true, recursive: true })
     sweepAttachmentTempFiles(Date.now())
     expect(existsSync(root)).toBe(false)
+  })
+
+  it("rejects uploads over the limit without keeping staged bytes", async () => {
+    const { server, services } = await start()
+    const stagingEntries = (): Array<string> =>
+      existsSync(join(services.attachments.root, "staging"))
+        ? readdirSync(join(services.attachments.root, "staging"))
+        : []
+    const before = stagingEntries()
+
+    // A declared length over the limit is refused before any byte is read.
+    const declared = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const url = new URL(`${server.url}/v1/files?name=huge.mp4`)
+      const outgoing = httpRequest(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: `${url.pathname}${url.search}`,
+          method: "POST",
+          headers: { "Content-Length": String(500 * 1024 * 1024 + 1) }
+        },
+        (response) => {
+          let body = ""
+          response.on("data", (chunk: Buffer) => (body += chunk.toString()))
+          response.on("end", () => resolve({ status: response.statusCode ?? 0, body }))
+        }
+      )
+      outgoing.on("error", reject)
+      outgoing.write(Buffer.alloc(16))
+    })
+    expect(declared.status).toBe(413)
+    expect(JSON.parse(declared.body)).toMatchObject({ code: "file_too_large" })
+
+    // Relayed uploads carry no Content-Length, so the bytes themselves are
+    // counted, and the store discards what it had staged.
+    const body = limitedUploadBody(
+      (async function* () {
+        for (const size of [6, 4, 1]) yield new Uint8Array(size)
+      })(),
+      10
+    )
+    await expect(services.attachments.putStream(body)).rejects.toMatchObject({ status: 413 })
+    expect(stagingEntries()).toEqual(before)
   })
 })

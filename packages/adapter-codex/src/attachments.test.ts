@@ -10,14 +10,14 @@ describe("CodexProvider", () => {
         text: "check these",
         attachments: [
           {
-            data: Buffer.from("png"),
+            sizeBytes: 3,
             kind: "image",
             mimeType: "image/png",
             name: "shot.png",
             path: "/tmp/att/shot.png"
           },
           {
-            data: Buffer.from("csv"),
+            sizeBytes: 3,
             kind: "file",
             mimeType: "text/csv",
             name: "data.csv",
@@ -51,7 +51,7 @@ describe("CodexProvider", () => {
         text: "",
         attachments: [
           {
-            data: Buffer.from("png"),
+            sizeBytes: 3,
             kind: "image",
             mimeType: "image/png",
             name: "only.png",

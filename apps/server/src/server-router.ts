@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { hostname } from "node:os"
 
-import { makeOpenApiDocument, RestartDrainRequest } from "@codevisor/api"
+import { makeOpenApiDocument, MAX_UPLOAD_BYTES, RestartDrainRequest } from "@codevisor/api"
 import type { RestartDrainRequest as RestartDrainRequestBody, UpdateInfo } from "@codevisor/api"
 import type { ServerUpdateChannel } from "@codevisor/updater"
 
@@ -208,8 +208,7 @@ export const handleRequest = async (
     }
 
     if (request.method === "GET" && url.pathname === "/v1/info") {
-      // Live registrations (app-driven connect/disconnect) win over the
-      // boot-time snapshot so clients never match against a stale device id.
+      // Live (app-driven) registrations beat the boot snapshot: no stale device id.
       const cloudDeviceId =
         config.cloud === undefined ? config.cloudDeviceId : config.cloud.deviceId()
       writeJson(response, 200, {
@@ -234,6 +233,7 @@ export const handleRequest = async (
         machineId: await run(services.db.getOrCreateInstanceId),
         arch: process.arch,
         hostname: hostname(),
+        maxUploadBytes: MAX_UPLOAD_BYTES,
         ...(cloudDeviceId === undefined ? {} : { cloudDeviceId })
       })
       return
