@@ -44,8 +44,10 @@ extension ScreenSharingHostService {
           try display.resize(width: size.width, height: size.height)
           movesDisplay = false
         } else {
-          session.virtualDisplay = try ScreenSharingHostVirtualDisplay(
+          let display = try ScreenSharingHostVirtualDisplay(
             width: size.width, height: size.height, mirroring: session.displayID)
+          try await display.mirror()
+          session.virtualDisplay = display
           movesDisplay = true
         }
         let points = session.virtualDisplay?.size ?? size
