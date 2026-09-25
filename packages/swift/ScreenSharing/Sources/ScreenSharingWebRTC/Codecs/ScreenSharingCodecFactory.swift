@@ -2,8 +2,11 @@ import Foundation
 @preconcurrency import WebRTC
 import ScreenSharing
 
-/// Advertise only the codec actually implemented by these adapters. Level 5.2
-/// permits the probe's 4K60 ceiling; endpoints negotiate level asymmetry.
+/// Advertise only codecs actually implemented by these adapters, in preference
+/// order: the primary codec, then fallbacks an older peer may be limited to
+/// (851-2372: HEVC, then H.264). A fallback is offered only when it captures in
+/// the primary's pixel format, since capture is configured before negotiation.
+/// Level 5.2 permits the probe's 4K60 ceiling; endpoints negotiate level asymmetry.
 final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVideoDecoderFactory {
   let recoveryCheck = ScreenSharingDecoderRecoveryCheck()
   let encoderDropCheck = ScreenSharingEncoderDropCheck()
@@ -21,17 +24,20 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   let completeEachFrame: Bool
   let prioritizeSpeed: Bool
   let keyframeIntervalSeconds: Int
-  let codec: ScreenSharingVideoCodec
+  /// Negotiable codecs, most preferred first.
+  let codecs: [ScreenSharingVideoCodec]
+  var codec: ScreenSharingVideoCodec { codecs[0] }
 
   init(
     metrics: ScreenSharingMetrics, useLowLatencyRateControl: Bool = true, codec: ScreenSharingVideoCodec = .h264,
+    fallbackCodecs: [ScreenSharingVideoCodec] = [],
     disableLookAhead: Bool = false, maximumPendingFrames: Int = 2, staticCodecRate: Bool = false,
     completeEachFrame: Bool = false, prioritizeSpeed: Bool = false, keyframeIntervalSeconds: Int = 2,
     sourceIdleThresholdNs: Int64 = ScreenSharingSourceIdleMonitor.defaultThresholdNs,
     frameDeliveryAudit: ScreenSharingFrameDeliveryAudit? = nil
   ) {
     self.metrics = metrics; self.useLowLatencyRateControl = useLowLatencyRateControl
-    self.codec = codec
+    codecs = Self.negotiable(primary: codec, fallbacks: fallbackCodecs)
     sourceIdleMonitor = ScreenSharingSourceIdleMonitor(thresholdNs: sourceIdleThresholdNs)
     self.frameDeliveryAudit = frameDeliveryAudit
     self.disableLookAhead = disableLookAhead
@@ -42,12 +48,32 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
     self.keyframeIntervalSeconds = keyframeIntervalSeconds
   }
 
+  /// The primary, then each fallback not already listed that shares its capture format.
+  static func negotiable(
+    primary: ScreenSharingVideoCodec, fallbacks: [ScreenSharingVideoCodec]
+  ) -> [ScreenSharingVideoCodec] {
+    var codecs = [primary]
+    for fallback in fallbacks
+    where !codecs.contains(fallback) && fallback.capturePixelFormat == primary.capturePixelFormat
+      && !codecs.contains(where: { $0.payloadName == fallback.payloadName })
+    {
+      codecs.append(fallback)
+    }
+    return codecs
+  }
+
   func supportedCodecs() -> [RTCVideoCodecInfo] {
-    [RTCVideoCodecInfo(name: codec.payloadName, parameters: codec.sdpParameters)]
+    codecs.map { RTCVideoCodecInfo(name: $0.payloadName, parameters: $0.sdpParameters) }
+  }
+
+  /// The codec a negotiated payload name selects (names are unique within `codecs`).
+  func codec(for info: RTCVideoCodecInfo) -> ScreenSharingVideoCodec? {
+    codecs.first { $0.payloadName == info.name }
   }
 
   func createEncoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoEncoder)? {
-    guard info.name == codec.payloadName else { return nil }
+    guard let codec = codec(for: info) else { return nil }
+    metrics.label("videoCodec", codec.rawValue)
     return ScreenSharingRTCEncoder(
       metrics: metrics, useLowLatencyRateControl: useLowLatencyRateControl, codec: codec,
       disableLookAhead: disableLookAhead, maximumPendingFrames: maximumPendingFrames, staticCodecRate: staticCodecRate,
@@ -57,7 +83,8 @@ final class ScreenSharingCodecFactory: NSObject, RTCVideoEncoderFactory, RTCVide
   }
 
   func createDecoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoDecoder)? {
-    guard info.name == codec.payloadName else { return nil }
+    guard let codec = codec(for: info) else { return nil }
+    metrics.label("videoCodec", codec.rawValue)
     return ScreenSharingRTCDecoder(
       metrics: metrics, codec: codec, recoveryCheck: recoveryCheck, refreshSignal: refreshSignal,
       deliveryAudit: deliveryAudit, frameAudit: frameDeliveryAudit)
