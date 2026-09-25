@@ -17,7 +17,12 @@ export default defineConfig({
     // Browser Use and code-execution tests drive Chrome, WebSockets, and a
     // QuickJS sandbox per test; on a loaded CI runner — where every
     // package's suite runs in parallel — they need well past vitest's 5s default.
+    // afterEach hooks close those same real resources (e.g. the QuickJS pool
+    // teardown in computer-use-repl.test.ts): give hooks the same room, or
+    // cleanup alone can trip Vitest's 10s hook default under the exact
+    // contention that justifies the longer test budget above.
     testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       all: true,
       include: ["src/**/*.ts"],
