@@ -145,24 +145,6 @@ describe("@codevisor/db project and archive upgrades", () => {
         }
       ).title_is_user_set
     ).toBe(1)
-    expect(
-      JSON.parse(
-        (
-          sqlite.prepare("select payload from legacy_events where subject_id = 'sess-1'").get() as {
-            payload: string
-          }
-        ).payload
-      )
-    ).toMatchObject({ origin: "codevisor" })
-    expect(
-      JSON.parse(
-        (
-          sqlite
-            .prepare("select payload from legacy_session_events where session_id = 'sess-1'")
-            .get() as { payload: string }
-        ).payload
-      )
-    ).toMatchObject({ origin: "codevisor" })
     // Migration 5 dropped the legacy project-shaped `workspaces` table;
     // migration 21 reuses the freed name for empty pane workspaces, and adds
     // the sessions binding column.
