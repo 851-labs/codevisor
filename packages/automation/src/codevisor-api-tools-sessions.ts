@@ -26,7 +26,7 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool("sessions.list", "List Codevisor sessions on this server.", "GET", "/v1/sessions"),
   apiTool(
     "sessions.create",
-    "Create a Codevisor coding-agent session in the background. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
+    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
     "POST",
     "/v1/sessions",
     { body: CreateSessionRequest }
