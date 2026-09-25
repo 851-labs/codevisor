@@ -8,7 +8,18 @@
   public final class ScreenSharingCapture {
     public var onStopped: ((String) -> Void)?
     private var generation = 0
-    private var starting = false
+    private var starting = false {
+      didSet {
+        guard !starting else { return }
+        let waiters = startWaiters
+        startWaiters = []
+        for waiter in waiters { waiter.resume() }
+      }
+    }
+    /// Callers of `startSettled()` waiting for the start in flight to finish.
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Told each time a caller starts waiting for a start in flight; tests use it to hold the race open.
+    var onWaitingForStart: (() -> Void)?
     private var stream: (any ScreenSharingCaptureStream)?
     private var output: ScreenSharingCaptureOutput?
     private let queueDepth: Int
@@ -239,6 +250,7 @@
     /// starts a running stream again with audio in its starting configuration: on tuftlord a live
     /// update turned it on and ScreenCaptureKit never delivered a buffer (851-2379).
     public func setCapturesAudio(_ captures: Bool) async throws {
+      await startSettled()
       guard captures != capturesAudio else { return }
       let previous = capturesAudio
       capturesAudio = captures
@@ -255,8 +267,22 @@
       }
     }
 
+    /// Until no start is in flight. A start installs its stream before ScreenCaptureKit has started
+    /// it; a change applied then (the viewer's audio subscription, arriving as the connection
+    /// opens) stopped that stream and cancelled the start, which ended the session (851-2379: on
+    /// tuftlord over Tailscale, every connection). Changes wait for the start and then apply.
+    private func startSettled() async {
+      while starting {
+        await withCheckedContinuation { continuation in
+          startWaiters.append(continuation)
+          onWaitingForStart?()
+        }
+      }
+    }
+
     /// Applies the current settings to a running stream.
     private func reconfigure() async throws {
+      await startSettled()
       guard let video, stream != nil else { return }
       try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
     }
