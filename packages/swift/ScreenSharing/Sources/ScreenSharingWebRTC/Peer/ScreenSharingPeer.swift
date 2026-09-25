@@ -243,6 +243,7 @@ struct ScreenSharingPeerStaging {
     // Idle threshold and grace are diagnostic experiments; nil keeps the product defaults.
     codecFactory = ScreenSharingCodecFactory(
       metrics: metrics, useLowLatencyRateControl: options.useLowLatencyRateControl, codec: options.codec,
+      fallbackCodecs: options.fallbackCodecs,
       disableLookAhead: options.disableLookAhead, maximumPendingFrames: options.maximumPendingFrames,
       staticCodecRate: options.staticCodecRate, completeEachFrame: options.completeEachFrame,
       prioritizeSpeed: options.prioritizeSpeed, keyframeIntervalSeconds: options.keyframeIntervalSeconds,

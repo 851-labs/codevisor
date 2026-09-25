@@ -86,3 +86,67 @@ struct ScreenSharingCodecFactoryTests {
     #expect(factory.recoveryCheck.inspect(keyFrame: false, nowNs: 0) == .accept)
   }
 }
+
+/// 851-2372: HEVC preferred with an H.264 fallback, so a new app talks HEVC to a new app and
+/// still connects to an older one that offers or answers H.264 only.
+struct ScreenSharingCodecFallbackTests {
+  @Test func fallbacksFollowThePrimaryOnlyWhenTheyShareItsCaptureFormat() {
+    #expect(ScreenSharingCodecFactory.negotiable(primary: .hevc, fallbacks: [.h264]) == [.hevc, .h264])
+    #expect(ScreenSharingCodecFactory.negotiable(primary: .h264, fallbacks: [.h264]) == [.h264])
+    // Main 4:4:4 captures BGRA; H.264 and HEVC Main capture NV12: never a fallback for it.
+    #expect(ScreenSharingCodecFactory.negotiable(primary: .hevc444, fallbacks: [.h264, .hevc]) == [.hevc444])
+  }
+
+  @Test func theFactoryAdvertisesItsCodecsInOrderAndBuildsAdaptersForEach() throws {
+    let factory = ScreenSharingCodecFactory(metrics: ScreenSharingMetrics(), codec: .hevc, fallbackCodecs: [.h264])
+    #expect(factory.supportedCodecs().map(\.name) == ["H265", "H264"])
+    for name in ["H265", "H264"] {
+      #expect(factory.createEncoder(RTCVideoCodecInfo(name: name)) != nil)
+      #expect(factory.createDecoder(RTCVideoCodecInfo(name: name)) != nil)
+    }
+    #expect(factory.createEncoder(RTCVideoCodecInfo(name: "VP8")) == nil)
+    #expect(ScreenSharingPeerOptions().codec == .hevc && ScreenSharingPeerOptions().fallbackCodecs == [.h264])
+  }
+
+  /// The codec an answerer picks for an offer, through real WebRTC negotiation (no network).
+  static func negotiated(
+    offerer: [ScreenSharingVideoCodec], answerer: [ScreenSharingVideoCodec]
+  ) async throws -> String? {
+    func connection(_ codecs: [ScreenSharingVideoCodec]) -> (RTCPeerConnectionFactory, RTCPeerConnection) {
+      let codecFactory = ScreenSharingCodecFactory(
+        metrics: ScreenSharingMetrics(), codec: codecs[0], fallbackCodecs: Array(codecs.dropFirst()))
+      let factory = RTCPeerConnectionFactory(encoderFactory: codecFactory, decoderFactory: codecFactory)
+      let configuration = RTCConfiguration()
+      configuration.sdpSemantics = .unifiedPlan
+      let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+      return (factory, factory.peerConnection(with: configuration, constraints: constraints, delegate: nil)!)
+    }
+    let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+    let (offerFactory, offering) = connection(offerer)
+    let (answerFactory, answering) = connection(answerer)
+    defer {
+      offering.close()
+      answering.close()
+      withExtendedLifetime((offerFactory, answerFactory)) {}
+    }
+    let transceiverInit = RTCRtpTransceiverInit()
+    transceiverInit.direction = .recvOnly
+    _ = offering.addTransceiver(of: .video, init: transceiverInit)
+    let offer = try await offering.offer(for: constraints)
+    try await answering.setRemoteDescription(offer)
+    let answer = try await answering.answer(for: constraints)
+    // The first payload type on the answer's video line, and the codec its rtpmap names.
+    let lines = answer.sdp.components(separatedBy: "\r\n")
+    guard let media = lines.first(where: { $0.hasPrefix("m=video") }),
+      let first = media.split(separator: " ").dropFirst(3).first
+    else { return nil }
+    return lines.first { $0.hasPrefix("a=rtpmap:\(first) ") }?.split(separator: " ").last
+      .map { String($0.split(separator: "/").first ?? "") }
+  }
+
+  @Test func newPeersNegotiateHEVCAndEitherOlderPeerFallsBackToH264() async throws {
+    #expect(try await Self.negotiated(offerer: [.hevc, .h264], answerer: [.hevc, .h264]) == "H265")
+    #expect(try await Self.negotiated(offerer: [.h264], answerer: [.hevc, .h264]) == "H264")
+    #expect(try await Self.negotiated(offerer: [.hevc, .h264], answerer: [.h264]) == "H264")
+  }
+}
