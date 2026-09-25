@@ -225,8 +225,11 @@
       }
       progress("Connecting to \(url.host() ?? id)…")
       let client = CodevisorServerClient(config: CodevisorServerConfig(baseURL: url, bearerToken: token))
-      let reply = try await client.screenSharing(
-        ServerScreenSharingRequest(operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID()))
+      let capabilities = ServerScreenSharingRequest(
+        operation: .capabilities, workspaceId: UUID(), paneId: UUID(), viewerId: UUID())
+      let reply = try await ScreenSharingTransientRetry.run(sleep: { try await Task.sleep(for: $0) }) {
+        try await client.screenSharing(capabilities)
+      }
       return (client, token, reply.provider)
     }
   }
