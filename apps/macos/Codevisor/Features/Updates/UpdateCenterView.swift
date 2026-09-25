@@ -147,13 +147,11 @@ struct UpdateCenterView: View {
         .frame(width: 20)
       VStack(alignment: .leading, spacing: 2) {
         Text(component.title)
-        Text(component.detailText)
+        detail(for: component)
           .font(.callout)
           .foregroundStyle(
             component.isFailed ? AnyShapeStyle(theme.statusError) : AnyShapeStyle(.secondary)
           )
-          .lineLimit(1)
-          .truncationMode(.tail)
           .help(component.detailText)
       }
       Spacer(minLength: 12)
@@ -161,6 +159,30 @@ struct UpdateCenterView: View {
         .frame(minWidth: 96, alignment: .trailing)
     }
     .padding(.vertical, 2)
+  }
+
+  /// Versions are never truncated. A pending update reads "installed →
+  /// latest" on one line when it fits and otherwise breaks at the arrow, one
+  /// version per line. In-flight and failure status stays on one line.
+  @ViewBuilder
+  private func detail(for component: UpdateComponent) -> some View {
+    if let change = component.pendingVersionChange {
+      ViewThatFits(in: .horizontal) {
+        Text(component.detailText)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(verbatim: "\(change.installed) →")
+          Text(verbatim: change.latest)
+        }
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(change.installed) to \(change.latest)")
+    } else if component.phase == .idle {
+      Text(component.detailText)
+    } else {
+      Text(component.detailText)
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
   }
 
   @ViewBuilder

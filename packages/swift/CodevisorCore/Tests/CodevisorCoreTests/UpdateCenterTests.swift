@@ -406,6 +406,7 @@ extension UpdateCenterTests {
     #expect(groups.last?.codevisor?.kind == .server)
     #expect(groups.last?.codevisor?.title == "Codevisor")
     #expect(groups.last?.codevisor?.detailText == "0.1.0 → 0.2.0")
+    #expect(groups.last?.codevisor?.pendingVersionChange?.latest == "0.2.0")
     #expect(groups.last?.components.map(\.kind) == [.harness, .plugin])
     // The Codevisor update counts toward the machine's total.
     #expect(groups.last?.availableCount == 3)
@@ -430,6 +431,8 @@ extension UpdateCenterTests {
     )
     #expect(component.detailText == "Update failed: ld: symbol not found")
     #expect(component.isFailed)
+    // Only an idle row draws the version move; other states show their text.
+    #expect(component.pendingVersionChange == nil)
     component = UpdateComponent(
       id: "app",
       kind: .app,
@@ -445,6 +448,7 @@ extension UpdateCenterTests {
       progress: 0.42
     )
     #expect(component.detailText == "Downloading… 42%")
+    #expect(component.pendingVersionChange == nil)
   }
 
   @Test("refresh probes machines that have never reported status before sweeping them")

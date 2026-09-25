@@ -37,10 +37,10 @@ public struct UpdateComponent: Identifiable, Equatable, Sendable {
 }
 
 extension UpdateComponent {
-  /// The row's one-line detail in every state: versions when idle, what the
-  /// machine is doing while updating, a one-line reason when failed. One
-  /// line by contract — rows keep their height through a live update, and
-  /// the full failure output lives behind a details control.
+  /// The row's detail in every state: versions when idle, what the machine
+  /// is doing while updating, a one-line reason when failed. Status stays on
+  /// one line and the full failure output lives behind a details control;
+  /// versions are never truncated, so rows may wrap them.
   public var detailText: String {
     switch phase {
     case .updating:
@@ -51,11 +51,24 @@ extension UpdateComponent {
       let reason = message.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
       return reason.isEmpty ? "Update failed" : "Update failed: \(reason)"
     case .idle:
+      if let change = pendingVersionChange {
+        return "\(change.installed) → \(change.latest)"
+      }
       if updateAvailable, let latestVersion {
-        return installedVersion.map { "\($0) → \(latestVersion)" } ?? "\(latestVersion) available"
+        return "\(latestVersion) available"
       }
       return installedVersion ?? "Up to date"
     }
+  }
+
+  /// The move an idle row's update would make, when both ends are known.
+  /// Rows use it to break a version change that doesn't fit one line at the
+  /// arrow instead of inside a version.
+  public var pendingVersionChange: (installed: String, latest: String)? {
+    guard phase == .idle, updateAvailable, let installedVersion, let latestVersion else {
+      return nil
+    }
+    return (installedVersion, latestVersion)
   }
 
   public var isFailed: Bool {
