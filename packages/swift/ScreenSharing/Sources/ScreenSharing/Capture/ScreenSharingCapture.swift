@@ -296,6 +296,10 @@
         config.excludesCurrentProcessAudio = true
       }
       config.scalesToFit = true
+      // Fill the frame rather than letterbox in black: the display and the frame only disagree for
+      // a frame or two while a virtual display is resized (851-2376), and a stretched frame there is
+      // less jarring than black bars.
+      config.preservesAspectRatio = false
       return config
     }
 

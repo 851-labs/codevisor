@@ -23,6 +23,23 @@ extension ScreenSharingHostService {
     }
   }
 
+  /// Until `display` reports `pixels` (at most 1 s): the new mode has taken effect.
+  static func waitForDisplay(_ display: CGDirectDisplayID, pixels: (width: Int, height: Int)) async throws {
+    for _ in 0..<100 {
+      guard let mode = CGDisplayCopyDisplayMode(display),
+        mode.pixelWidth != pixels.width || mode.pixelHeight != pixels.height
+      else { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+  }
+
+  /// Until the physical display has left the mirror set (at most 1 s): back to its own mode.
+  static func waitForMirrorToEnd(_ display: CGDirectDisplayID) async throws {
+    for _ in 0..<100 where CGDisplayIsInMirrorSet(display) != 0 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+  }
+
   /// A pane being dragged sends a burst of sizes: the last one within 300 ms wins.
   private func scheduleResize(_ session: Session, to size: (width: Int, height: Int)?) {
     session.pendingResize?.cancel()
@@ -62,8 +79,15 @@ extension ScreenSharingHostService {
         session.configuration = session.physicalConfiguration
         movesDisplay = true
       }
-      // WindowServer applies the mirror and the new mode asynchronously.
-      try await Task.sleep(for: .milliseconds(500))
+      // WindowServer applies the mirror and the new mode asynchronously; until the capture has the
+      // new size it squeezes the display into the old frame. Wait only until the display reports
+      // its new size (tens of milliseconds), then update at once.
+      if session.virtualDisplay != nil {
+        try await Self.waitForDisplay(
+          session.captureDisplayID, pixels: (session.configuration.width, session.configuration.height))
+      } else {
+        try await Self.waitForMirrorToEnd(session.displayID)
+      }
       guard !session.stopping else { return }
       session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(session.displayID))
       session.peer.updateVideoConfiguration(session.configuration)
