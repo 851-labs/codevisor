@@ -125,7 +125,10 @@ private final class NativeScreenSharingViewerRunner {
   func discover() async throws -> [ServerScreenSharingDisplay] {
     await previous?.value
     try Task.checkCancellation()
-    let reply = try await client.screenSharing(request(.capabilities, viewerId: UUID()))
+    let capabilities = request(.capabilities, viewerId: UUID())
+    let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client] in
+      try await client.screenSharing(capabilities)
+    }
     guard reply.version == 1, ["available", "busy"].contains(reply.status) else {
       throw ViewerError(reply.message ?? "Screen Sharing is unavailable on this Mac.")
     }
@@ -219,7 +222,10 @@ private final class NativeScreenSharingViewerRunner {
       do {
         // Fetch fresh short-lived relay credentials at connection time. The
         // display picker may have been left open much longer than their lifetime.
-        let capabilities = try await client.screenSharing(request(.capabilities, viewerId: viewerId))
+        let capabilitiesRequest = request(.capabilities, viewerId: viewerId)
+        let capabilities = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client] in
+          try await client.screenSharing(capabilitiesRequest)
+        }
         try Task.checkCancellation()
         guard capabilities.version == 1, ["available", "busy"].contains(capabilities.status) else {
           return .ended(capabilities.message ?? "Screen Sharing is unavailable on this Mac.")
@@ -241,8 +247,10 @@ private final class NativeScreenSharingViewerRunner {
         let offer = try await session.offer()
         try Task.checkCancellation()
         attempt.started = true
-        let reply = try await client.screenSharing(
-          request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer))
+        let start = request(restarts == 0 ? .start : .restart, viewerId: viewerId, displayId: display, offer: offer)
+        let reply = try await ScreenSharingTransientRetry.run(sleep: sleep) { [client] in
+          try await client.screenSharing(start)
+        }
         try Task.checkCancellation()
         guard reply.version == 1, reply.status == "connecting", let answer = reply.answer else {
           return .ended(reply.message ?? "This Mac cannot start screen sharing right now.")
