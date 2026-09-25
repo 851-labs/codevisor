@@ -95,6 +95,7 @@
       self.session = session
       peerName = offer.name
       peerBuild = offer.build
+      installCursorStream(in: session)
       peer.onConnectionChanged = { [weak self, weak session] state in
         Task { @MainActor in
           guard let self, let session else { return }
@@ -219,6 +220,39 @@
         installHostControl(in: session, displayID: id)
         log("display \(id) captured")
       }
+      await applyCursorStream(in: session)
+    }
+
+    /// The product host's cursor stream (851-2377): once the viewer subscribes, a display-backed
+    /// source leaves the pointer out of the video and the publisher sends it; other sources keep it.
+    func installCursorStream(in session: RigSession) {
+      guard let peer = session.peer as? ScreenSharingSender else { return }
+      let channel = peer.cursorChannel
+      channel.onMessage = { [weak self, weak session, weak channel] message in
+        guard case .subscribe = message, let self, let session, let channel, !session.closed, session.cursor == nil
+        else { return }
+        let publisher = ScreenSharingCursorPublisher(
+          bounds: { [weak session] in session?.controlDisplayID.map(CGDisplayBounds) ?? .zero },
+          scale: { [weak session] in
+            session?.controlDisplayID.map(ScreenSharingCursorPublisher.displayScale) ?? 2
+          },
+          send: { [weak channel] in channel?.send($0) ?? false })
+        session.cursor = publisher
+        publisher.start()
+        self.log("cursor stream on")
+        Task { await self.applyCursorStream(in: session) }
+      }
+      channel.onAvailabilityChanged = { [weak session] available in
+        guard !available, let session, let publisher = session.cursor else { return }
+        publisher.stop()
+        session.cursor = nil
+        Task { try? await session.capture?.setShowsCursor(true) }
+      }
+    }
+
+    func applyCursorStream(in session: RigSession) async {
+      guard session.cursor != nil else { return }
+      try? await session.capture?.setShowsCursor(session.controlDisplayID == nil)
     }
 
     /// ScreenCaptureKit stops a stream with an error when the displays sleep or the target

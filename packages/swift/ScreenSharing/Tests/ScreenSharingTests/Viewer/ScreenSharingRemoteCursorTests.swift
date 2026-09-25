@@ -104,6 +104,31 @@ struct ScreenSharingRemoteCursorTests {
   }
 }
 
+extension ScreenSharingRemoteCursorTests {
+  /// The native stream's pointer (851-2377): a 4-px-wide 2× image that is 1% of the display's
+  /// width, at a normalized position. In the default 1920 × 1080 video, 1% is 19.2 video pixels.
+  @Test func aSizedShapeIsDrawnAtItsShareOfTheDisplay() throws {
+    let surface = try ScreenSharingVideoSurface(mailbox: ScreenSharingFrameMailbox(), metrics: ScreenSharingMetrics())
+    defer { surface.stop() }
+    surface.frame = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+    surface.layoutSubtreeIfNeeded()
+    let shape = RFBCursorShape(
+      width: 4, height: 4, hotspotX: 2, hotspotY: 0, pixels: [UInt8](repeating: 255, count: 64))
+    surface.showRemoteCursor(.sizedShape(shape, width: 0.01, height: 0.01 * 16 / 9))
+    surface.showRemoteCursor(.normalizedPosition(ScreenSharingPointer(x: 0.5, y: 0.25)))
+    let frame = try #require(surface.remoteCursorOverlayFrame)
+    // Scale 1: 19.2 points wide (never enlarged past one point per video pixel to reach the 20-pt minimum).
+    #expect(abs(frame.width - 19.2) < 1e-9)
+    #expect(abs(frame.midX - 960) < 1e-6, "the hotspot is the middle of the image, on x = 0.5")
+    #expect(abs((1080 - frame.maxY) - 270) < 1e-6, "the top edge on y = 0.25 (hotspot row 0)")
+    // While controlling, the shape is the local pointer at the same size, hotspot scaled with it.
+    #expect(abs(surface.controlCursor.image.size.width - frame.width) < 1e-9)
+    // Off the display: no overlay.
+    surface.showRemoteCursor(.normalizedPosition(nil))
+    #expect(surface.remoteCursorOverlayFrame == nil)
+  }
+}
+
 enum RFBCursorTestShapes {
   /// 2 × 2, hotspot (1, 0): opaque white except a transparent bottom-left pixel.
   static let corner = RFBCursorShape(

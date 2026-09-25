@@ -60,6 +60,21 @@ struct ScreenSharingControlMessageTests {
     #expect(bytes.drain().1)
   }
 
+  /// The cursor channel admits pointer images (851-2377): a full-size message, and several in one drain.
+  @Test func theCursorChannelAdmitsImagesTheControlChannelWouldRefuse() {
+    var cursor = ScreenSharingControlInbox(limits: .cursor)
+    let image = Data(repeating: 7, count: ScreenSharingCursorMessage.maximumBytes)
+    for _ in 0..<8 { _ = cursor.enqueue(image) }
+    let batch = cursor.drain()
+    #expect(batch.0.count == 8 && !batch.1)
+    _ = cursor.enqueue(Data(repeating: 7, count: ScreenSharingCursorMessage.maximumBytes + 1))
+    #expect(cursor.drain().1)
+
+    var control = ScreenSharingControlInbox(limits: .control)
+    _ = control.enqueue(image)
+    #expect(control.drain().1)
+  }
+
   @Test func packetsAreBatchedInArrivalOrderAndOnlyTheFirstOfABatchSchedulesADrain() {
     var inbox = ScreenSharingControlInbox()
     // Only the arrival that finds no drain outstanding asks for one; the rest

@@ -9,9 +9,9 @@ import Testing
 /// malformed frame the remote could put on the wire.
 private let poisonByte: UInt8 = 0xFF
 
-/// The negotiated data channel over its real SCTP carrier. A fourth channel is
+/// The negotiated data channel over its real SCTP carrier. A fifth channel is
 /// added to the loopback pair so the carrier's framing and its failure handling
-/// can be exercised with payloads the three protocol channels cannot express.
+/// can be exercised with payloads the four protocol channels cannot express.
 @MainActor
 struct ScreenSharingDataChannelTests {
   /// Both ends of one extra negotiated channel, wired before negotiation and
@@ -38,9 +38,9 @@ struct ScreenSharingDataChannelTests {
         return data
       }
       host = try ScreenSharingDataChannel<Data>(
-        connection: harness.sender.connection, id: 6, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+        connection: harness.sender.connection, id: 8, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       viewer = try ScreenSharingDataChannel<Data>(
-        connection: harness.receiver.connection, id: 6, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
+        connection: harness.receiver.connection, id: 8, label: "codevisor.test.v1", encode: { $0 }, decode: decode)
       viewer.onMessage = { [self] data in
         received.append(data)
         delivered.signal()

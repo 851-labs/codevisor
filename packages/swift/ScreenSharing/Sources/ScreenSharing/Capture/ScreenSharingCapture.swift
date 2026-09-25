@@ -21,6 +21,10 @@
     /// AFTER a successful stream update in the same generation (see `ScreenSharingCaptureRequestState`).
     private(set) var requestState: ScreenSharingCaptureRequestState
     private var captureIntervalFPS: Int? { requestState.overrideFramesPerSecond }
+    /// Whether the pointer is drawn into the frames; off once the viewer draws it from the cursor stream (851-2377).
+    public private(set) var showsCursor = true
+    /// The video configuration the running stream was last started or updated with.
+    private var video: ScreenSharingVideoConfiguration?
 
     public init(
       queueDepth: Int = 3, pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -141,7 +145,7 @@
       // describes only requests that were actually applied.
       let interval = try requestState.validated(video: configuration, override: captureIntervalFPS)
       let streamConfiguration = Self.streamConfiguration(
-        configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat)
+        configuration, interval: interval, queueDepth: queueDepth, pixelFormat: pixelFormat, showsCursor: showsCursor)
       requestState.commit(override: captureIntervalFPS, request: interval, metrics: metrics)
       metrics.label("captureQueueDepth", String(queueDepth))
       metrics.label("capturePixelFormat", String(pixelFormat))
@@ -161,6 +165,7 @@
       let stream = try target.makeCaptureStream(configuration: streamConfiguration, output: output)
       self.output = output
       self.stream = stream
+      video = configuration
       do {
         try await stream.startCapture()
         metrics.label("captureStartedAtNs", String(ScreenSharingMetrics.nowNs))
@@ -198,8 +203,25 @@
         apply: { interval in
           try await stream.updateConfiguration(
             Self.streamConfiguration(
-              configuration, interval: interval, queueDepth: self.queueDepth, pixelFormat: self.pixelFormat))
+              configuration, interval: interval, queueDepth: self.queueDepth, pixelFormat: self.pixelFormat,
+              showsCursor: self.showsCursor))
         }, isCurrent: { self.generation == generation })
+      video = configuration
+    }
+
+    /// Draws the pointer into the frames or leaves it out, now and for later starts. A running
+    /// stream is updated in place with its current configuration and interval request.
+    public func setShowsCursor(_ shows: Bool) async throws {
+      guard shows != showsCursor else { return }
+      let previous = showsCursor
+      showsCursor = shows
+      guard let video, stream != nil else { return }
+      do {
+        try await update(configuration: video, captureIntervalFPS: captureIntervalFPS)
+      } catch {
+        showsCursor = previous
+        throw error
+      }
     }
 
     /// The whole update transaction in one place: validate, apply, re-check the generation, and only then commit the
@@ -221,7 +243,7 @@
     /// configuration from an unvalidated request.
     private static func streamConfiguration(
       _ video: ScreenSharingVideoConfiguration, interval: ScreenSharingCaptureIntervalRequest, queueDepth: Int,
-      pixelFormat: OSType
+      pixelFormat: OSType, showsCursor: Bool
     ) -> SCStreamConfiguration {
       let config = SCStreamConfiguration()
       config.width = video.width; config.height = video.height
@@ -229,7 +251,7 @@
       config.queueDepth = queueDepth
       config.pixelFormat = pixelFormat
       config.colorSpaceName = CGColorSpace.itur_709
-      config.showsCursor = true
+      config.showsCursor = showsCursor
       config.capturesAudio = false
       config.scalesToFit = true
       return config

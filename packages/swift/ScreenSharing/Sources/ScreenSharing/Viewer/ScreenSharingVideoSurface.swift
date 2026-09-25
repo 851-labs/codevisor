@@ -41,8 +41,11 @@
     /// its pointer into the video gets a blank local cursor; one that doesn't
     /// (macOS Screen Sharing reports no cursor and draws none, 851-2355) the arrow.
     private var remoteShape: RFBCursorShape?
+    /// A native shape's size as a share of the display (851-2377); nil for a VNC shape in video pixels.
+    private var remoteShapeSize: (width: Double, height: Double)?
     private var remoteImage: CGImage?
     private var remotePosition: RFBPoint?
+    private var remoteNormalizedPosition: ScreenSharingPointer?
     private var shapedCursor: NSCursor?
     private let cursorOverlay = ScreenSharingCursorOverlay()
     /// What the pointer looks like over the video while controlling: the host's
@@ -133,9 +136,18 @@
           "shape \(shape.width, privacy: .public)×\(shape.height, privacy: .public), invisible \(shape.isInvisible, privacy: .public)"
         )
         remoteShape = shape.isInvisible ? nil : shape
+        remoteShapeSize = nil
+        remoteImage = remoteShape.flatMap(Self.image)
+      case .sizedShape(let shape, let width, let height):
+        remoteShape = shape.isInvisible || !(width > 0 && height > 0) ? nil : shape
+        remoteShapeSize = (width, height)
         remoteImage = remoteShape.flatMap(Self.image)
       case .position(let point):
         remotePosition = point
+        remoteNormalizedPosition = nil
+      case .normalizedPosition(let pointer):
+        remotePosition = nil
+        remoteNormalizedPosition = pointer
       }
       refreshRemoteCursor()
       window?.invalidateCursorRects(for: self)
@@ -145,9 +157,16 @@
     /// places (or hides) the view-mode overlay.
     private func refreshRemoteCursor() {
       let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
+      // Video pixels per shape pixel: 1 for VNC; for a native shape, what its share of the display makes it.
+      let unit =
+        remoteShapeSize.map { size in
+          remoteShape.map { Double(videoSize.width) * size.width / Double($0.width) } ?? 1
+        } ?? 1
       if let shape = remoteShape, let image = remoteImage, scale.isFinite, scale > 0 {
-        let cursor = CGFloat(
-          ScreenSharingVideoGeometry.cursorScale(videoScale: Double(scale), cursorHeight: Double(shape.height)))
+        let cursor =
+          CGFloat(
+            ScreenSharingVideoGeometry.cursorScale(videoScale: Double(scale), cursorHeight: Double(shape.height) * unit)
+              * unit)
         let size = NSSize(width: CGFloat(shape.width) * cursor, height: CGFloat(shape.height) * cursor)
         shapedCursor = NSCursor(
           image: NSImage(cgImage: image, size: size),
@@ -155,10 +174,14 @@
       } else {
         shapedCursor = nil
       }
-      guard !input.isLive, let shape = remoteShape, let image = remoteImage, let position = remotePosition,
+      let position =
+        remotePosition.map { (Double($0.x), Double($0.y)) }
+        ?? remoteNormalizedPosition.map { ($0.x * Double(videoSize.width), $0.y * Double(videoSize.height)) }
+      guard !input.isLive, let shape = remoteShape, let image = remoteImage, let position,
         let frame = ScreenSharingVideoGeometry.cursorFrame(
-          x: Double(position.x), y: Double(position.y), hotspotX: Double(shape.hotspotX),
-          hotspotY: Double(shape.hotspotY), cursorWidth: Double(shape.width), cursorHeight: Double(shape.height),
+          x: position.0, y: position.1, hotspotX: Double(shape.hotspotX) * unit,
+          hotspotY: Double(shape.hotspotY) * unit, cursorWidth: Double(shape.width) * unit,
+          cursorHeight: Double(shape.height) * unit,
           surfaceWidth: bounds.width, surfaceHeight: bounds.height, videoWidth: videoSize.width,
           videoHeight: videoSize.height)
       else {

@@ -141,7 +141,11 @@ public final class ScreenSharingViewerEndpoint: Equatable, Identifiable {
     // Backends that report the pointer separately (VNC) draw it locally (851-2311),
     // with the arrow when the video has none (851-2355).
     surface.setVideoShowsPointer(session.videoShowsPointer)
-    session.onCursorChanged = { [weak surface] in surface?.showRemoteCursor($0) }
+    // A native host takes its pointer out of the video once it streams it (851-2377).
+    session.onCursorChanged = { [weak surface, weak session] update in
+      if let session { surface?.setVideoShowsPointer(session.videoShowsPointer) }
+      surface?.showRemoteCursor(update)
+    }
     session.onResizeSupportChanged = { [weak self] in self?.desktopResizes = $0 }
     // With Dynamic Resolution on, a desktop that can resize follows the pane (851-2314, 851-2340).
     surface.onSizeChanged = { [weak self] size, scale in
