@@ -89,3 +89,42 @@ public enum RigVNCSignIn {
     return .signedIn(candidate)
   }
 }
+
+extension RigVNCSignIn {
+  /// A change to a Keychain machine's saved sign-in from the settings sheet (851-2367).
+  public enum PasswordChange: Sendable, Equatable {
+    case keep, forget
+    case replace(String)
+  }
+
+  /// The saved user name and whether a password is saved, for the sheet; the password stays in the store.
+  public static func saved(machineId: String, store: any RigSecretStore) -> (userName: String, hasPassword: Bool) {
+    guard let stored = store.read(machineId) else { return ("", false) }
+    let credential = RigVNCCredential.decode(stored)
+    return (credential.username ?? "", !credential.password.isEmpty)
+  }
+
+  /// Applies the sheet's sign-in changes to the store. Forgetting removes the credential; a new
+  /// password is saved with the (possibly new) user name; a new user name alone rewrites the saved
+  /// credential, and is kept for the next prompt only when nothing is saved. True when anything
+  /// saved changed, so the next connection must sign in again.
+  @discardableResult
+  public static func update(
+    machineId: String, userName: String?, password: PasswordChange, store: any RigSecretStore
+  ) throws -> Bool {
+    let stored = store.read(machineId).map(RigVNCCredential.decode)
+    switch password {
+    case .forget:
+      store.delete(machineId)
+      return stored != nil
+    case .replace(let new):
+      try store.save(
+        RigVNCCredential(username: userName ?? stored?.username, password: new).encoded, for: machineId)
+      return true
+    case .keep:
+      guard let userName, let stored, userName != (stored.username ?? "") else { return false }
+      try store.save(RigVNCCredential(username: userName, password: stored.password).encoded, for: machineId)
+      return true
+    }
+  }
+}

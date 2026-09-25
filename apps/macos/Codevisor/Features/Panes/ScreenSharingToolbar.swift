@@ -9,6 +9,9 @@ import SwiftUI
 /// Controls that need a capability the connected backend lacks are not shown.
 struct ScreenSharingToolbar: ToolbarContent {
   @Bindable var store: StoreOf<ScreenSharingViewer>
+  /// The machine settings sheet behind the gear (851-2367).
+  let settings: () -> ScreenSharingMachineSettings
+  let applySettings: (ScreenSharingMachineSettingsChanges) -> Void
 
   var body: some ToolbarContent {
     ToolbarItem(id: "screenSharing.mode", placement: .principal) {
@@ -40,6 +43,9 @@ struct ScreenSharingToolbar: ToolbarContent {
     }
     ToolbarItem(id: "screenSharing.details", placement: .primaryAction) {
       ScreenSharingDetailsButton(store: store).id(ObjectIdentifier(store))
+    }
+    ToolbarItem(id: "screenSharing.settings", placement: .primaryAction) {
+      ScreenSharingMachineSettingsButton(settings: settings, apply: applySettings).id(ObjectIdentifier(store))
     }
   }
 

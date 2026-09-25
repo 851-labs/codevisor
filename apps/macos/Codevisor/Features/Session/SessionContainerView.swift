@@ -117,7 +117,8 @@ struct SessionContainerView: View {
           ChromiumBrowserNavigationControls(model: browser)
           ChromiumBrowserAddressToolbarItem(model: browser)
         } else if let pane = activeScreenSharingPane, let store = pane.store {
-          ScreenSharingToolbar(store: store)
+          ScreenSharingToolbar(
+            store: store, settings: { pane.machineSettings() }, applySettings: { pane.applyMachineSettings($0) })
         } else if let model = activeFileModel {
           FilePaneToolbar(model: model, onNewTab: addCenterTab)
         }
