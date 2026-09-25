@@ -16,7 +16,8 @@ final class ScreenSharingHostVirtualDisplay {
   static let vendorID: UInt32 = 0xC0DF
   static let name = "Codevisor Screen Sharing"
   /// Points; the raster is twice that, up to 3840×2400 pixels (the encoder's 4K budget).
-  static let maximum = (width: 1920, height: 1200)
+  /// Rendered at 2×, the video's 3840×2160 limit.
+  static let maximum = (width: 1920, height: 1080)
   static let minimum = (width: 640, height: 400)
 
   static var isAvailable: Bool {
@@ -24,11 +25,16 @@ final class ScreenSharingHostVirtualDisplay {
       .allSatisfy { NSClassFromString($0) != nil }
   }
 
-  /// `width`×`height` clamped to what the display supports, rounded to even points.
+  /// The pane's size scaled down as a whole to fit `maximum`, so the display keeps the pane's
+  /// shape (clamping each side on its own made a 1438×1200 display for a tall pane, whose video
+  /// the encoder refused, and the stream showed it letterboxed in black). Never below `minimum`;
+  /// even points.
   static func clamp(width: Int, height: Int) -> (width: Int, height: Int) {
-    (
-      min(maximum.width, max(minimum.width, width)) / 2 * 2,
-      min(maximum.height, max(minimum.height, height)) / 2 * 2
+    let width = Double(max(minimum.width, width)), height = Double(max(minimum.height, height))
+    let scale = min(1, Double(maximum.width) / width, Double(maximum.height) / height)
+    return (
+      max(minimum.width, Int(width * scale)) / 2 * 2,
+      max(minimum.height, Int(height * scale)) / 2 * 2
     )
   }
 

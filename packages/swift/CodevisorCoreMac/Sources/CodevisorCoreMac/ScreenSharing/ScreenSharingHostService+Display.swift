@@ -40,19 +40,21 @@ extension ScreenSharingHostService {
     let movesDisplay: Bool
     do {
       if let size {
+        // The video first: if the encoder can't take this size, nothing on the host changes.
+        let points = ScreenSharingHostVirtualDisplay.clamp(width: size.width, height: size.height)
+        let configuration = try ScreenSharingVideoConfiguration(
+          width: points.width * 2, height: points.height * 2, bitrate: Self.bitrateCeiling)
         if let display = session.virtualDisplay {
-          try display.resize(width: size.width, height: size.height)
+          try display.resize(width: points.width, height: points.height)
           movesDisplay = false
         } else {
           let display = try ScreenSharingHostVirtualDisplay(
-            width: size.width, height: size.height, mirroring: session.displayID)
+            width: points.width, height: points.height, mirroring: session.displayID)
           try await display.mirror()
           session.virtualDisplay = display
           movesDisplay = true
         }
-        let points = session.virtualDisplay?.size ?? size
-        session.configuration = try ScreenSharingVideoConfiguration(
-          width: points.width * 2, height: points.height * 2, bitrate: Self.bitrateCeiling)
+        session.configuration = configuration
       } else {
         guard let display = session.virtualDisplay else { return }
         display.release()
