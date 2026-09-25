@@ -71,6 +71,19 @@ public struct ProjectGroup: Identifiable, Equatable, Sendable {
     return soloID(for: project)
   }
 
+  /// A route id for the group holding `project` that survives regrouping:
+  /// a new project's group id changes once its machine reports the git
+  /// remote, but this id keeps naming whichever group the project is in.
+  public static func routeID(for project: Project) -> String {
+    soloID(for: project)
+  }
+
+  /// Whether a route id names this group — its current id, or the
+  /// `routeID(for:)` of any member.
+  public func isNamed(by routeID: String) -> Bool {
+    routeID == id || members.contains { Self.soloID(for: $0) == routeID }
+  }
+
   private static func soloID(for project: Project) -> String {
     "project|\(project.serverId)|\(project.id.uuidString)"
   }

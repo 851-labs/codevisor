@@ -37,3 +37,22 @@ public enum ProjectSetupEvent: Equatable, Sendable {
     }
   }
 }
+
+/// How a clone-from-git ended, as the machine's event stream reports it.
+/// The machine finishes a clone even when the HTTP request that started it
+/// is cut off (a relay deadline, a suspended app), so a client that lost the
+/// response can still learn the outcome here.
+public enum ProjectCloneOutcome: Equatable, Sendable {
+  /// The project row exists; the client can adopt it.
+  case created
+  case failed(message: String, code: String?)
+
+  public static func from(_ envelope: ServerEventEnvelope, projectId: String) -> ProjectCloneOutcome? {
+    guard envelope.subjectId.caseInsensitiveCompare(projectId) == .orderedSame else { return nil }
+    if envelope.kind == "project.created" { return .created }
+    if case let .failed(message, code, _) = ProjectSetupEvent.from(envelope, projectId: projectId) {
+      return .failed(message: message, code: code)
+    }
+    return nil
+  }
+}

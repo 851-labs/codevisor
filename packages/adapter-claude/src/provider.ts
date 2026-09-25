@@ -127,8 +127,9 @@ export const makeClaudeProvider = (
     id: "claude",
     // Native sessions from ~/.claude/projects — workspace suggestions and
     // "import existing chats" for users who ran the CLI before Codevisor.
-    listAgentSessions: async () => {
+    listAgentSessions: async (_definition, _account, options) => {
       const fallback = await scanAgentSessions()
+      if (options?.titles === false) return fallback
       try {
         const sessions = await listSdkSessions()
         return preferHarnessSessionTitles(

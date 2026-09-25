@@ -2,77 +2,14 @@ import CodevisorCore
 import CodevisorUI
 import SwiftUI
 
-/// Browse the machine's filesystem and turn a folder into a project.
-struct AddProjectSheet: View {
-  @Environment(AppEnvironment.self) private var environment
-  @Environment(\.dismiss) private var dismiss
-
-  /// The machine to browse and add on. Nil means the composer default —
-  /// the fleet-wide picker passes the machine the user picked.
-  var serverId: String? = nil
-  /// Called with the added project so the caller can select it.
-  let onAdded: (Project) -> Void
-
-  @State private var navigationPath = NavigationPath()
-  @State private var isAddingProject = false
-
-  private var targetServerId: String {
-    serverId ?? environment.defaultComposerServerId
-  }
-
-  var body: some View {
-    NavigationStack(path: $navigationPath) {
-      RemoteDirectoryScreen(
-        serverId: targetServerId,
-        directory: .root,
-        onOpen: { navigationPath.append($0) },
-        onPick: addProject(at:),
-        isPicking: isAddingProject
-      )
-      .navigationDestination(for: RemoteDirectory.self) { directory in
-        RemoteDirectoryScreen(
-          serverId: targetServerId,
-          directory: directory,
-          onOpen: { navigationPath.append($0) },
-          onPick: addProject(at:),
-          isPicking: isAddingProject
-        )
-      }
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
-            .disabled(isAddingProject)
-        }
-      }
-    }
-    .presentationDetents([.large])
-    .presentationDragIndicator(.visible)
-    .interactiveDismissDisabled(isAddingProject)
-  }
-
-  private func addProject(at path: String) {
-    guard !isAddingProject else { return }
-    isAddingProject = true
-    Task {
-      // Awaited so the returned record carries the server's git probe —
-      // the picker offers the worktree step only for git repos.
-      let project = await environment.projectList.addProject(
-        folderURL: URL(fileURLWithPath: path),
-        serverId: targetServerId,
-        client: environment.machines.client(for: targetServerId)
-      )
-      dismiss()
-      onAdded(project)
-    }
-  }
-}
-
 /// A spot in the remote filesystem.
 struct RemoteDirectory: Hashable {
   let path: String?
   let name: String
 
-  static let root = RemoteDirectory(path: "/", name: "Select Folder")
+  /// The machine's home folder (the server resolves a nil path to `~`).
+  static let home = RemoteDirectory(path: nil, name: "Home")
+  static let root = RemoteDirectory(path: "/", name: "/")
 }
 
 /// One level of the remote filesystem, Files-style: folder rows that push
@@ -85,7 +22,6 @@ struct RemoteDirectoryScreen: View {
   let directory: RemoteDirectory
   let onOpen: (RemoteDirectory) -> Void
   let onPick: (String) -> Void
-  var isPicking = false
 
   @State private var listing: ServerFsListing?
   @State private var errorMessage: String?
@@ -117,9 +53,8 @@ struct RemoteDirectoryScreen: View {
       guard listing == nil, errorMessage == nil else { return }
       await load()
     }
-    .navigationTitle(directory.name)
+    .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
-    .navigationBarBackButtonHidden(isPicking)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
@@ -129,13 +64,19 @@ struct RemoteDirectoryScreen: View {
             Label("New Folder…", systemImage: "folder.badge.plus")
           }
           .disabled(listing == nil)
+          if directory.path == nil {
+            Button {
+              onOpen(.root)
+            } label: {
+              Label("Go to Root Folder", systemImage: "internaldrive")
+            }
+          }
           Divider()
           Toggle("Show Hidden Folders", isOn: $showHidden)
         } label: {
           Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Folder options")
-        .disabled(isPicking)
       }
     }
     .safeAreaInset(edge: .bottom) {
@@ -143,32 +84,25 @@ struct RemoteDirectoryScreen: View {
         Button {
           onPick(listing.path)
         } label: {
-          ZStack {
-            Label(
-              "Add “\(directory.name)” as Project",
-              systemImage: "folder.badge.plus"
-            )
-            .font(.body.weight(.semibold))
+          // The app root sets a primary foreground style, which would
+          // otherwise override the prominent button's white label.
+          Text("Add “\(title)” as Project")
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .fontWeight(.semibold)
             .foregroundStyle(.white)
-            .opacity(isPicking ? 0 : 1)
-            if isPicking {
-              ProgressView()
-                .controlSize(.small)
-                .tint(.white)
-            }
-          }
-          .padding(.horizontal, 14)
-          .padding(.vertical, 4)
+            .padding(.horizontal, 8)
         }
         .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .accessibilityLabel("Add \(title) as Project")
         .buttonBorderShape(.capsule)
-        .disabled(isPicking)
-        .accessibilityLabel(
-          isPicking ? "Adding Project" : "Add \(directory.name) as Project"
-        )
         .padding(.bottom, 8)
       }
     }
+    // The composer's keyboard can still be up behind this sheet; keep the
+    // action at the bottom instead of floating above it.
+    .ignoresSafeArea(.keyboard, edges: .bottom)
     .onChange(of: showHidden) { _, _ in
       Task { await load() }
     }
@@ -177,6 +111,14 @@ struct RemoteDirectoryScreen: View {
         newFolderSheet(for: listing)
       }
     }
+  }
+
+  /// The folder's own name; the home folder is named once its listing
+  /// resolves the path.
+  private var title: String {
+    guard directory.path == nil, let listing else { return directory.name }
+    let name = (listing.path as NSString).lastPathComponent
+    return name.isEmpty ? directory.name : name
   }
 
   private var client: any CodevisorServerClienting {
@@ -250,11 +192,8 @@ struct RemoteDirectoryScreen: View {
     .contentMargins(.bottom, 64, for: .scrollContent)
     .overlay {
       if listing.entries.isEmpty {
-        ContentUnavailableView(
-          "No Subfolders",
-          systemImage: "folder",
-          description: Text("Choose this folder or create a new one.")
-        )
+        Text("No Subfolders")
+          .foregroundStyle(.secondary)
       }
     }
   }

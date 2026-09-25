@@ -191,6 +191,9 @@ public struct GitCloneSheet: View {
     let projectName = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
     Task {
+      // The machine finishes a clone even if this request is cut off, so
+      // the event stream also carries the final outcome for that case.
+      let (outcomes, outcomeSink) = AsyncStream.makeStream(of: ProjectCloneOutcome.self)
       let follow = Task {
         do {
           for try await envelope in client.eventStream(
@@ -202,11 +205,14 @@ public struct GitCloneSheet: View {
             ) {
               logLines.append(line)
             }
+            if let outcome = ProjectCloneOutcome.from(envelope, projectId: projectId.uuidString) {
+              outcomeSink.yield(outcome)
+            }
           }
         } catch {
-          // The event stream is cosmetic; the HTTP response owns the
-          // operation's actual success or failure.
+          // Progress is cosmetic while the HTTP request is alive.
         }
+        outcomeSink.finish()
       }
       defer { follow.cancel() }
       do {
@@ -222,17 +228,53 @@ public struct GitCloneSheet: View {
           name: created.name,
           serverId: serverId
         )
-        isCloning = false
-        onCloned(project)
-        dismiss()
+        finish(project)
+      } catch let error as CodevisorServerClientError {
+        // The machine answered: its verdict is final.
+        fail(error)
       } catch {
-        isCloning = false
-        errorMessage = Self.guidance(
-          code: serverErrorCode(error),
-          fallback: serverErrorMessage(error)
-        )
+        // The request was lost (timed out, dropped, suspended), not refused:
+        // the clone may still be running, so wait for the machine's outcome.
+        for await outcome in outcomes {
+          switch outcome {
+          case .created:
+            if let project = await adoptClonedProject(id: projectId) {
+              finish(project)
+            } else {
+              fail(error)
+            }
+            return
+          case let .failed(message, code):
+            isCloning = false
+            errorMessage = Self.guidance(code: code, fallback: message)
+            return
+          }
+        }
+        fail(error)
       }
     }
+  }
+
+  private func finish(_ project: Project) {
+    isCloning = false
+    onCloned(project)
+    dismiss()
+  }
+
+  private func fail(_ error: any Error) {
+    isCloning = false
+    errorMessage = Self.guidance(
+      code: serverErrorCode(error),
+      fallback: serverErrorMessage(error)
+    )
+  }
+
+  /// The machine's record of a project it created after this client lost
+  /// the clone request.
+  private func adoptClonedProject(id: UUID) async -> Project? {
+    let machineId = serverId ?? environment.projectList.selectedServerId
+    _ = await environment.projectList.refreshFromServer(serverId: machineId, client: client)
+    return environment.projectList.projects.first { $0.serverId == machineId && $0.id == id }
   }
 
   static func guidance(code: String?, fallback: String) -> String {

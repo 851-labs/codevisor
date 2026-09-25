@@ -76,6 +76,9 @@ struct ComposerProjectMenu<MenuLabel: View>: View {
     .task(id: serverId) { await load() }
     .sheet(isPresented: $showsProjectManagement) {
       ManageProjectsSheet(serverId: serverId, onDelete: onDeleteProject)
+        // The run-target bar makes its menus plain buttons; the sheet's
+        // own buttons keep the system style.
+        .buttonStyle(.automatic)
     }
   }
 

@@ -32,6 +32,20 @@ struct ProjectGroupTests {
     return fixture.projectList
   }
 
+  @Test("A project's route id keeps naming its group after the remote is reported")
+  func routeIDSurvivesRegrouping() {
+    var added = project("widget", serverId: "laptop", createdAt: 10)
+    let routeID = ProjectGroup.routeID(for: added)
+    #expect(ProjectGroup.grouping([added]).first?.isNamed(by: routeID) == true)
+
+    added.repoKey = "github.com/acme/widget"
+    let desktop = project("widget", serverId: "desktop", repoKey: "github.com/acme/widget", createdAt: 5)
+    let other = project("docs", serverId: "laptop", createdAt: 20)
+    let groups = ProjectGroup.grouping([added, desktop, other])
+
+    #expect(groups.filter { $0.isNamed(by: routeID) }.map(\.id) == ["repo|github.com/acme/widget"])
+  }
+
   @Test("Projects with the same repo key on different machines form one group")
   func linksAcrossMachines() {
     let laptop = project("widget", serverId: "laptop", repoKey: "github.com/acme/widget", createdAt: 20)

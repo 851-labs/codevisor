@@ -15,7 +15,7 @@ struct SidebarView: View {
   var store: SessionStore? = nil
   var publishesSceneActions = true
 
-  @State private var addProjectFlow = AddProjectFlow()
+  @State private var showingAddProject = false
   @State private var showingRemoteMachine = false
   @State private var pendingImport: PendingSessionImport?
   @State var renamingWorkspace: Workspace?
@@ -111,9 +111,11 @@ struct SidebarView: View {
     sidebarContent
       .themedSurface(.sidebar)
       .contentShape(Rectangle())
-      .addProjectFlow(addProjectFlow) { project in
-        selection = .newChat(NewChatTarget(project))
-        offerSessionImport(for: project)
+      .sheet(isPresented: $showingAddProject) {
+        NewProjectSheet(serverId: environment.defaultComposerServerId) { project in
+          selection = .newChat(NewChatTarget(project))
+          offerSessionImport(for: project)
+        }
       }
   }
 
@@ -192,9 +194,9 @@ struct SidebarView: View {
       )
   }
 
-  /// One shared flow: pick a folder on the machine or clone a repository.
+  /// The shared add-project sheet: a recent folder, any folder, or a clone.
   private func startAddProject() {
-    addProjectFlow.begin()
+    showingAddProject = true
   }
 
   /// After a project is added, look for existing harness sessions in its

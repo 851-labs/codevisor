@@ -393,7 +393,8 @@ export interface AgentProvider {
   /// (generic ACP adapters).
   readonly listAgentSessions?: (
     definition: HarnessDefinition,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    options?: import("./agent-sessions.js").AgentSessionListOptions
   ) => Promise<ReadonlyArray<import("./agent-sessions.js").AgentSessionSummary>>
   /// Maps a saved picker value the option list no longer offers verbatim
   /// onto the entry it now names, or `undefined` when it is really gone.

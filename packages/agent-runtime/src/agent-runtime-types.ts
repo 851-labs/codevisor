@@ -1,7 +1,7 @@
 import type { Harness, HarnessUsageLimits, SessionConfigOption, SessionGoal } from "@codevisor/api"
 import { Effect } from "effect"
 
-import type { AgentSessionSummary } from "./agent-sessions.js"
+import type { AgentSessionListOptions, AgentSessionSummary } from "./agent-sessions.js"
 import type { BackgroundTerminalIntegration } from "./background-terminals.js"
 import { AgentRuntimeError } from "./types.js"
 import type {
@@ -86,7 +86,8 @@ export interface AgentRuntimeService {
   /// listing hook. Fails only for unknown harness ids.
   readonly listAgentSessions: (
     harnessId: string,
-    account?: HarnessAccountContext
+    account?: HarnessAccountContext,
+    options?: AgentSessionListOptions
   ) => Effect.Effect<ReadonlyArray<AgentSessionSummary>, AgentRuntimeError>
   /// The value a saved selection should be restored as when the live
   /// option list no longer offers it verbatim: the provider's own

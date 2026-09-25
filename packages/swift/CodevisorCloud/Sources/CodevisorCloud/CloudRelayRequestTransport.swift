@@ -88,7 +88,8 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
   /// The whole request/response under one deadline, body buffered — the
   /// JSON API surface. Streaming callers use `stream(for:)`.
   public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    try await raced(expiry: { [sleep, timeout] in try await sleep(timeout) }) { deadline in
+    let requestTimeout = timeout(for: request)
+    return try await raced(expiry: { [sleep] in try await sleep(requestTimeout) }) { deadline in
       let (response, source) = try await performStream(
         request, body: .data(request.httpBody), deadline: deadline)
       return try await Self.collect(response, source)
@@ -150,6 +151,17 @@ public struct CloudRelayRequestTransport: ServerRequestTransport {
       }
     })
     return (response, body)
+  }
+
+  /// URLRequest's own default `timeoutInterval`: a request carrying any
+  /// other value set it deliberately (a clone that legitimately runs for
+  /// minutes, a config read that should give up early), and a direct
+  /// connection would honor it, so the relay does too.
+  static let urlRequestDefaultTimeout: TimeInterval = 60
+
+  private func timeout(for request: URLRequest) -> Duration {
+    request.timeoutInterval == Self.urlRequestDefaultTimeout
+      ? timeout : .seconds(request.timeoutInterval)
   }
 
   /// Races `operation` against the transport deadline (`expiry` returns

@@ -90,8 +90,6 @@ struct ComposerRunTargetBar: View {
         .layoutValue(key: RunTargetPickerRoleKey.self, value: .location)
       }
     }
-    .font(.footnote)
-    .foregroundStyle(.secondary)
     .buttonStyle(.plain)
     .padding(.horizontal, 4)
     .accessibilityElement(children: .contain)
@@ -131,6 +129,10 @@ struct ComposerRunTargetBar: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     }
+    // Styled here rather than on the bar: menus attached to the bar
+    // present sheets that would otherwise inherit the compact style.
+    .font(.footnote)
+    .foregroundStyle(.secondary)
     .padding(.horizontal, 8)
     .padding(.vertical, 8)
     .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44, alignment: .leading)

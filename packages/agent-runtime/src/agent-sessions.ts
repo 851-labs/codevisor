@@ -19,6 +19,14 @@ export interface AgentSessionSummary {
   readonly updatedAt?: string
 }
 
+/// How much a native session listing should resolve. Workspace suggestions
+/// need only each session's cwd and activity time, so they skip the
+/// harness title lookups (Codex starts its app-server for those).
+export interface AgentSessionListOptions {
+  /// Resolve titles from the harness's own session API. Default true.
+  readonly titles?: boolean
+}
+
 /// A title reported by the harness's own session API. Native providers merge
 /// these over the filesystem scanner's first-prompt title so older harnesses
 /// and failed title lookups retain the existing best-effort fallback.
@@ -155,22 +163,37 @@ export const listClaudeAgentSessions = async (
 ): Promise<ReadonlyArray<AgentSessionSummary>> => {
   const { homedir, limit, fs } = resolved(options)
   const root = join(homedir, ".claude", "projects")
-  const candidates: SessionFileCandidate[] = []
-  for (const project of await fs.listDirectory(root)) {
-    const projectDir = join(root, project)
-    for (const entry of await fs.listDirectory(projectDir)) {
-      if (!entry.endsWith(".jsonl")) continue
-      const path = join(projectDir, entry)
-      const stat = await fs.statFile(path)
-      if (stat !== undefined && !stat.isDirectory) {
-        candidates.push({ path, mtimeMs: stat.mtimeMs })
-      }
-    }
-  }
+  // Stats and reads are independent, so they run concurrently; a machine
+  // with years of sessions otherwise pays one round trip per file.
+  const candidates = (
+    await Promise.all(
+      (await fs.listDirectory(root)).map(async (project) => {
+        const projectDir = join(root, project)
+        const entries = (await fs.listDirectory(projectDir)).filter((entry) =>
+          entry.endsWith(".jsonl")
+        )
+        return Promise.all(
+          entries.map(async (entry): Promise<SessionFileCandidate | undefined> => {
+            const path = join(projectDir, entry)
+            const stat = await fs.statFile(path)
+            return stat === undefined || stat.isDirectory
+              ? undefined
+              : { path, mtimeMs: stat.mtimeMs }
+          })
+        )
+      })
+    )
+  )
+    .flat()
+    .filter((candidate): candidate is SessionFileCandidate => candidate !== undefined)
 
   const sessions: AgentSessionSummary[] = []
-  for (const candidate of newestFirst(candidates, limit)) {
-    const head = await fs.readHead(candidate.path, maxReadBytes)
+  const newest = newestFirst(candidates, limit)
+  const heads = await Promise.all(
+    newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
+  )
+  for (const [index, candidate] of newest.entries()) {
+    const head = heads[index]
     if (head === undefined) continue
     let cwd: string | undefined
     let title: string | undefined
@@ -247,8 +270,12 @@ export const listCodexAgentSessions = async (
   await walk(root, 0)
 
   const sessions: AgentSessionSummary[] = []
-  for (const candidate of newestFirst(candidates, limit)) {
-    const head = await fs.readHead(candidate.path, maxReadBytes)
+  const newest = newestFirst(candidates, limit)
+  const heads = await Promise.all(
+    newest.map((candidate) => fs.readHead(candidate.path, maxReadBytes))
+  )
+  for (const [index, candidate] of newest.entries()) {
+    const head = heads[index]
     if (head === undefined) continue
     let meta: { id?: unknown; cwd?: unknown } | undefined
     let title: string | undefined

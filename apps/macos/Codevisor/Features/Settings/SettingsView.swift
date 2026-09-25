@@ -148,7 +148,7 @@ final class SettingsRouter {
   /// Opens the selected repository's details from a composer's checkout.
   func showProject(_ project: Project) {
     projectCreationMachineId = project.serverId
-    panePath = [.project(ProjectGroup.groupID(for: project))]
+    panePath = [.project(ProjectGroup.routeID(for: project))]
     selectedTab = .projects
   }
 

@@ -239,8 +239,9 @@ export const makeCodexProvider = (
       }),
     // Native sessions from ~/.codex/sessions rollouts — workspace
     // suggestions and "import existing chats" for pre-Codevisor codex users.
-    listAgentSessions: async (definition, account) => {
+    listAgentSessions: async (definition, account, options) => {
       const fallback = await scanAgentSessions()
+      if (options?.titles === false) return fallback
       try {
         return preferHarnessSessionTitles(
           fallback,

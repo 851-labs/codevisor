@@ -119,6 +119,24 @@ struct CloudRelayTransportTests {
     await hub.shutdown()
   }
 
+  @Test("A request with its own timeout keeps waiting past the default deadline")
+  func requestTimeoutOverridesDefault() async throws {
+    let scriptedMachine = ScriptedHttpMachine()
+    let (endpoint, hub) = makeRelayEndpoint(
+      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let clock = TestClock()
+    let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
+    var clone = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/projects/from-git")!)
+    clone.timeoutInterval = 1800
+
+    let request = Task { try await transport.data(for: clone) }
+    #expect(await waitUntil { !scriptedMachine.openChannelIds.isEmpty })
+    await clock.waitForSleep(.seconds(1800))
+    clock.advance(by: .seconds(1800))
+    await #expect(throws: CloudRelayTransportError.timedOut) { try await request.value }
+    await hub.shutdown()
+  }
+
   @Test("A real server client works end-to-end over the relay transport")
   func serverClientOverRelay() async throws {
     let scriptedMachine = ScriptedHttpMachine()

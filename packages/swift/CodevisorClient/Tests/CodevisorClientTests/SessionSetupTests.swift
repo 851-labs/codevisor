@@ -58,6 +58,27 @@ struct SessionSetupTests {
     #expect(ProjectSetupEvent.from(unknown, projectId: projectId) == nil)
   }
 
+  @Test("A clone's outcome is its project's creation or its setup failure")
+  func decodesCloneOutcome() {
+    let projectId = "0DAA97F1-6E4A-4E7F-8B58-8DA9E3C6C1B1"
+    let created = envelope(kind: "project.created", subjectId: projectId, payload: [:])
+    #expect(ProjectCloneOutcome.from(created, projectId: projectId.lowercased()) == .created)
+    let failed = envelope(
+      kind: "project.setup",
+      subjectId: projectId,
+      payload: ["state": "failed", "message": "Authentication failed", "code": "auth_failed"]
+    )
+    #expect(
+      ProjectCloneOutcome.from(failed, projectId: projectId)
+        == .failed(message: "Authentication failed", code: "auth_failed")
+    )
+    // Progress, and other projects' events, decide nothing.
+    let log = envelope(
+      kind: "project.setup", subjectId: projectId, payload: ["state": "log", "line": "Receiving"])
+    #expect(ProjectCloneOutcome.from(log, projectId: projectId) == nil)
+    #expect(ProjectCloneOutcome.from(created, projectId: "other") == nil)
+  }
+
   @Test("Decodes worktree setup lifecycle events")
   func decodesLifecycle() {
     #expect(WorktreeSetupEvent.from(envelope(payload: ["state": "started"]), worktreeId: "wt-1") == .started)

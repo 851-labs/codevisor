@@ -40,6 +40,19 @@ describe("ClaudeProvider", () => {
     ])
   })
 
+  it("skips the SDK title lookup when titles are not wanted", async () => {
+    const provider = makeClaudeProvider(environment, {
+      listSdkSessions: async () => {
+        throw new Error("title lookup should be skipped")
+      },
+      scanAgentSessions: async () => [{ cwd: "/one", sessionId: "one", title: "First prompt" }]
+    })
+
+    await expect(
+      provider.listAgentSessions!(definition, undefined, { titles: false })
+    ).resolves.toEqual([{ cwd: "/one", sessionId: "one", title: "First prompt" }])
+  })
+
   it("creates a session against the located binary and reports models/modes", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake)

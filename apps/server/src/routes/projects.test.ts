@@ -64,6 +64,35 @@ describe("project routes", () => {
     expect(invalidLimit.body).toEqual(response.body)
   })
 
+  it("serves repeat project recommendations from one title-free scan", async () => {
+    const { agents, services } = await makeServices("server-a")
+    const folder = mkdtempSync(join(homedir(), ".codevisor-project-route-recommendation-"))
+    tempDirs.push(folder)
+    const listOptions: Array<unknown> = []
+    const server = await startWithApp({
+      ...services,
+      agents: {
+        ...agents,
+        listAgentSessions: (_harnessId, _account, options) => {
+          listOptions.push(options)
+          return Effect.succeed([{ sessionId: "native-one", cwd: folder }])
+        }
+      }
+    })
+    runningServers.push(server)
+
+    const first = await jsonRequest(server, "/v1/projects/recommendations")
+    const scans = listOptions.length
+    const second = await jsonRequest(server, "/v1/projects/recommendations")
+
+    expect(second.body).toEqual(first.body)
+    expect(scans).toBeGreaterThan(0)
+    expect(listOptions).toHaveLength(scans)
+    expect(listOptions.every((options) => (options as { titles?: boolean }).titles === false)).toBe(
+      true
+    )
+  })
+
   it("keeps unavailable harness stores from breaking project recommendations", async () => {
     const { agents, services } = await makeServices("server-a")
     const server = await startWithApp({

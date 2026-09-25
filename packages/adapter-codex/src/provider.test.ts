@@ -27,6 +27,19 @@ describe("CodexProvider", () => {
     expect(client.closed).toBe(true)
   })
 
+  it("does not start Codex when session titles are not wanted", async () => {
+    const provider = makeCodexProvider(environment, {
+      connector: async () => {
+        throw new Error("app-server should not start")
+      },
+      scanAgentSessions: async () => [{ cwd: "/one", sessionId: "one", title: "Scanner one" }]
+    })
+
+    await expect(
+      provider.listAgentSessions!(definition, undefined, { titles: false })
+    ).resolves.toEqual([{ cwd: "/one", sessionId: "one", title: "Scanner one" }])
+  })
+
   it("handshakes, starts a thread, and reports config options", async () => {
     const { client, created, spawns } = await setup()
     expect(spawns[0]).toMatchObject({ command: "/bin/codex", cwd: "/tmp/project" })

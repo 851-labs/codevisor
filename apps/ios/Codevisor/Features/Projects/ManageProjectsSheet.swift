@@ -3,6 +3,10 @@ import CodevisorUI
 import SwiftUI
 
 /// Project creation and settings live outside the composer's selection menu.
+///
+/// One navigation stack: the machine's projects, folders you've recently
+/// worked in (one tap adds), and a folder browser pushed in place. Adding is
+/// immediate — the project registers locally and syncs through the outbox.
 struct ManageProjectsSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
@@ -10,16 +14,17 @@ struct ManageProjectsSheet: View {
   let serverId: String
   let onDelete: (Project) -> Void
 
-  @State private var destination: Destination?
+  @State private var navigationPath = NavigationPath()
+  @State private var modal: Modal?
   @State private var isLoading = true
   @State private var hasLoadError = false
+  @State private var recommendations: [ProjectRecommendation]?
 
-  private enum Destination: Identifiable {
-    case folder, repository, project(Project)
+  private enum Modal: Identifiable {
+    case repository, project(Project)
 
     var id: String {
       switch self {
-      case .folder: "folder"
       case .repository: "repository"
       case .project(let project): project.id.uuidString
       }
@@ -35,49 +40,34 @@ struct ManageProjectsSheet: View {
       }
   }
 
+  private var suggestions: [ProjectRecommendation] {
+    let registered = environment.projectList.registeredFolderPaths(serverId: serverId)
+    return (recommendations ?? []).filter {
+      !registered.contains($0.folderURL.standardizedFileURL.path)
+    }
+  }
+
+  private var machineName: String {
+    environment.machines.machine(for: serverId)?.name ?? "this machine"
+  }
+
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $navigationPath) {
       List {
+        projectsSection
+        suggestionsSection
         Section {
-          ForEach(projects) { project in
-            Button {
-              destination = .project(project)
-            } label: {
-              Label {
-                VStack(alignment: .leading, spacing: 3) {
-                  Text(project.name)
-                    .foregroundStyle(.primary)
-                  Text(project.folderURL.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                }
-              } icon: {
-                Image(systemName: EntitySystemSymbol.project)
-              }
-            }
+          NavigationLink(value: RemoteDirectory.home) {
+            Label("Choose Folder…", systemImage: "folder.badge.plus")
           }
-          if projects.isEmpty {
-            if isLoading {
-              ProgressView("Loading Projects…")
-            } else if hasLoadError {
-              Button("Retry Loading Projects", systemImage: "arrow.clockwise") {
-                Task { await load() }
-              }
-            } else {
-              ContentUnavailableView(
-                "No Projects", systemImage: "folder",
-                description: Text("Add a folder or clone a repository to get started.")
-              )
-            }
+          Button("Clone Repository…", systemImage: "arrow.down.circle") {
+            modal = .repository
           }
-        }
-        Section {
-          Button("Open Folder…", systemImage: "folder.badge.plus") { destination = .folder }
-          Button("Clone Repository…", systemImage: "square.and.arrow.down") { destination = .repository }
+        } header: {
+          Text("Add Project")
         }
       }
+      .animation(.default, value: projects.map(\.id))
       .navigationTitle("Projects")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -85,19 +75,26 @@ struct ManageProjectsSheet: View {
           Button("Done") { dismiss() }
         }
       }
+      .navigationDestination(for: RemoteDirectory.self) { directory in
+        RemoteDirectoryScreen(
+          serverId: serverId,
+          directory: directory,
+          onOpen: { navigationPath.append($0) },
+          onPick: { addFolder(URL(fileURLWithPath: $0)) }
+        )
+      }
     }
     .presentationDragIndicator(.visible)
     .task(id: serverId) { await load() }
-    .sheet(item: $destination) { destination in
-      switch destination {
-      case .folder:
-        AddProjectSheet(serverId: serverId) { _ in self.destination = nil }
+    .task(id: serverId) { await loadSuggestions() }
+    .sheet(item: $modal) { modal in
+      switch modal {
       case .repository:
         GitCloneSheet(
           client: environment.machines.client(for: serverId),
-          machineName: environment.machines.machine(for: serverId)?.name ?? "this machine",
+          machineName: machineName,
           serverId: serverId,
-          onCloned: { _ in self.destination = nil }
+          onCloned: { _ in self.modal = nil }
         )
       case .project(let project):
         ManageProjectSheet(
@@ -107,6 +104,80 @@ struct ManageProjectsSheet: View {
           onDelete: { onDelete(project) }
         )
       }
+    }
+  }
+
+  // MARK: Sections
+
+  private var projectsSection: some View {
+    Section {
+      ForEach(projects) { project in
+        Button {
+          modal = .project(project)
+        } label: {
+          FolderRow(name: project.name, path: project.folderURL.path, symbol: EntitySystemSymbol.project)
+        }
+      }
+      if projects.isEmpty {
+        if isLoading {
+          HStack {
+            Spacer()
+            ProgressView()
+            Spacer()
+          }
+          .accessibilityLabel("Loading Projects")
+        } else if hasLoadError {
+          Button("Retry Loading Projects", systemImage: "arrow.clockwise") {
+            Task { await load() }
+          }
+        } else if suggestions.isEmpty {
+          // With suggestions below, the first step is already on screen.
+          Text("No Projects")
+            .foregroundStyle(.secondary)
+        }
+      }
+    } header: {
+      if !projects.isEmpty { Text(machineName) }
+    }
+  }
+
+  @ViewBuilder
+  private var suggestionsSection: some View {
+    if !suggestions.isEmpty {
+      Section {
+        ForEach(suggestions) { suggestion in
+          Button {
+            addFolder(suggestion.folderURL)
+          } label: {
+            HStack(spacing: 12) {
+              FolderRow(
+                name: suggestion.name,
+                path: suggestion.folderURL.deletingLastPathComponent().path,
+                symbol: "folder"
+              )
+              .frame(maxWidth: .infinity, alignment: .leading)
+              Image(systemName: "plus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            }
+          }
+          .accessibilityLabel("Add \(suggestion.name)")
+          .accessibilityHint(suggestion.folderURL.path)
+        }
+      } header: {
+        Text("Recent Folders")
+      }
+    }
+  }
+
+  // MARK: Actions
+
+  private func addFolder(_ url: URL) {
+    // Registered locally at once; the outbox syncs it to the machine.
+    withAnimation {
+      _ = environment.projectList.addProject(folderURL: url, serverId: serverId)
+      navigationPath = NavigationPath()
     }
   }
 
@@ -120,5 +191,38 @@ struct ManageProjectsSheet: View {
     guard !Task.isCancelled else { return }
     if case .failed = result { hasLoadError = true }
     isLoading = false
+  }
+
+  /// Shows the machine's last suggestions at once, then refreshes them. A
+  /// failure only hides the section; choosing a folder still works.
+  private func loadSuggestions() async {
+    recommendations = environment.cachedRecommendedProjects(serverId: serverId)
+    guard let loaded = try? await environment.recommendedProjects(serverId: serverId),
+      !Task.isCancelled
+    else { return }
+    withAnimation { recommendations = loaded }
+  }
+}
+
+/// A folder's name over its location.
+private struct FolderRow: View {
+  let name: String
+  let path: String
+  let symbol: String
+
+  var body: some View {
+    Label {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(name)
+          .foregroundStyle(.primary)
+        Text(path)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+    } icon: {
+      Image(systemName: symbol)
+    }
   }
 }

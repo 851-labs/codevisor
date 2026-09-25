@@ -9,7 +9,7 @@ struct ProjectSettingsDetailView: View {
   @State private var savingCheckoutIDs = Set<String>()
 
   private var group: ProjectGroup? {
-    environment.projectList.fleetActiveProjectGroups.first { $0.id == groupId }
+    environment.projectList.fleetActiveProjectGroups.first { $0.isNamed(by: groupId) }
   }
 
   var body: some View {

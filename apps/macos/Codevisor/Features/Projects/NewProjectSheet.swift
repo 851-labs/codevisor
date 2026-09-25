@@ -1,70 +1,33 @@
+import AppKit
 import CodevisorCore
 import CodevisorUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Adds a project on one machine. Suggestions exclude folders that are
-/// already registered. The selected machine is local to this sheet.
+/// Adds a project on one machine: pick a folder you've recently worked in,
+/// choose any other folder, or clone a repository. The one add-project
+/// surface on macOS — the sidebar and Settings both present it.
+///
+/// Suggestions from the last visit show at once and refresh underneath, and
+/// adding closes the sheet immediately: the project is registered locally
+/// right away and `onAdded` runs once the server has probed it.
 struct NewProjectSheet: View {
   @Environment(AppEnvironment.self) private var environment
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.theme) private var theme
 
   @State private var serverId: String
   let onAdded: (Project) -> Void
 
-  @State private var recommendations: [ProjectRecommendation] = []
-  @State private var isLoading = true
+  @State private var recommendations: [ProjectRecommendation]?
+  @State private var loadError: String?
   @State private var selectedPath: String?
-  @State private var isAdding = false
   @State private var showingLocalImporter = false
   @State private var showingRemoteBrowser = false
   @State private var showingGitClone = false
-  @State private var loadError: String?
-  @State private var loadGeneration = 0
 
   init(serverId: String, onAdded: @escaping (Project) -> Void) {
     _serverId = State(initialValue: serverId)
     self.onAdded = onAdded
-  }
-
-  private var isTargetReady: Bool {
-    environment.machines.availability(for: serverId) == .ready
-  }
-
-  private var machineSelection: Binding<String> {
-    Binding(
-      get: { serverId },
-      set: {
-        loadGeneration += 1
-        serverId = $0
-        recommendations = []
-        selectedPath = nil
-        loadError = nil
-        isLoading = true
-      }
-    )
-  }
-
-  private var registeredPaths: Set<String> {
-    Set(
-      environment.projectList.fleetActiveProjects
-        .filter { $0.serverId == serverId && !$0.isScratch }
-        .map { $0.folderURL.standardizedFileURL.path }
-    )
-  }
-
-  private var visibleRecommendations: [ProjectRecommendation] {
-    recommendations.filter {
-      !registeredPaths.contains($0.folderURL.standardizedFileURL.path)
-    }
-  }
-
-  private var selectedRecommendation: ProjectRecommendation? {
-    guard let selectedPath else { return nil }
-    return visibleRecommendations.first {
-      $0.folderURL.standardizedFileURL.path == selectedPath
-    }
   }
 
   private var machine: CodevisorMachine? {
@@ -79,42 +42,55 @@ struct NewProjectSheet: View {
     environment.machines.client(for: serverId)
   }
 
+  private var isTargetReady: Bool {
+    environment.machines.availability(for: serverId) == .ready
+  }
+
+  private var visibleRecommendations: [ProjectRecommendation] {
+    let registered = environment.projectList.registeredFolderPaths(serverId: serverId)
+    return (recommendations ?? []).filter {
+      !registered.contains($0.folderURL.standardizedFileURL.path)
+    }
+  }
+
+  private var selectedRecommendation: ProjectRecommendation? {
+    visibleRecommendations.first { $0.id == selectedPath }
+  }
+
   var body: some View {
-    VStack(spacing: 0) {
+    VStack(alignment: .leading, spacing: 12) {
       header
-      Divider()
-      content
-      Divider()
+      suggestions
       footer
     }
-    .frame(width: 560, height: 420)
-    .themedSurface(.sheet)
-    .interactiveDismissDisabled(isAdding)
-    .task(id: "\(serverId):\(isTargetReady)") { await load(serverId: serverId) }
-    .fileImporter(
-      isPresented: $showingLocalImporter,
-      allowedContentTypes: [.folder]
-    ) { result in
-      if case let .success(url) = result {
-        addFolder(url)
-      }
+    .padding(20)
+    .frame(width: 480)
+    .task(id: "\(serverId):\(isTargetReady)") { await load() }
+    .fileImporter(isPresented: $showingLocalImporter, allowedContentTypes: [.folder]) { result in
+      if case let .success(url) = result { add(url) }
     }
+    .fileDialogDefaultDirectory(FileManager.default.homeDirectoryForCurrentUser)
+    .fileDialogConfirmationLabel("Add Project")
     .sheet(isPresented: $showingRemoteBrowser) {
       RemoteDirectoryBrowserSheet(client: client, machineName: machineName) { path in
-        addFolder(URL(fileURLWithPath: path))
+        add(URL(fileURLWithPath: path))
       }
     }
     .sheet(isPresented: $showingGitClone) {
-      GitCloneSheet(client: client, machineName: machineName, serverId: serverId) {
-        complete($0)
+      GitCloneSheet(client: client, machineName: machineName, serverId: serverId) { project in
+        onAdded(project)
+        dismiss()
       }
     }
   }
 
+  // MARK: Layout
+
   private var header: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    HStack(alignment: .firstTextBaseline) {
       Text("Add Project")
-        .font(.title2.weight(.semibold))
+        .font(.headline)
+      Spacer(minLength: 12)
       if environment.machines.allMachines.count > 1 {
         Picker("Machine", selection: machineSelection) {
           ForEach(environment.machines.allMachines) { machine in
@@ -122,124 +98,94 @@ struct NewProjectSheet: View {
               .disabled(environment.machines.availability(for: machine.id) != .ready)
           }
         }
-        .disabled(isAdding || showingLocalImporter || showingRemoteBrowser || showingGitClone)
-      } else {
-        Text(machineName).foregroundStyle(.secondary)
+        .labelsHidden()
+        .fixedSize()
+        .help("The machine the project's folder is on")
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, 20)
-    .padding(.vertical, 16)
+  }
+
+  /// Recent folders as a Finder-style icon grid: click selects,
+  /// double-click (or Return) adds.
+  private var suggestions: some View {
+    ScrollView {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
+        ForEach(visibleRecommendations) { recommendation in
+          RecentFolderTile(
+            recommendation: recommendation,
+            isLocal: machine?.isLocal == true,
+            isSelected: recommendation.id == selectedPath,
+            select: { selectedPath = recommendation.id },
+            add: { add(recommendation.folderURL) }
+          )
+        }
+      }
+      .padding(8)
+    }
+    .frame(height: 216)
+    .frame(maxWidth: .infinity)
+    .overlay { suggestionsPlaceholder }
+    .background(.fill.quinary, in: .rect(cornerRadius: 10))
+    .contentShape(.rect)
+    .onTapGesture { selectedPath = nil }
   }
 
   @ViewBuilder
-  private var content: some View {
+  private var suggestionsPlaceholder: some View {
     if !isTargetReady {
-      ContentUnavailableView(
-        "Machine Unavailable", systemImage: "desktopcomputer",
-        description: Text("Reconnect \(machineName) or choose another machine to add a project.")
-      )
-    } else if isLoading {
+      placeholder("\(machineName) Is Unavailable")
+    } else if recommendations == nil, loadError != nil {
+      VStack(spacing: 8) {
+        placeholder("Couldn't Load Recent Folders")
+        Button("Try Again") { Task { await load() } }
+          .controlSize(.small)
+      }
+    } else if recommendations == nil {
       ProgressView()
         .controlSize(.small)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityLabel("Finding projects")
+        .accessibilityLabel("Finding Recent Folders")
     } else if visibleRecommendations.isEmpty {
-      VStack(spacing: 8) {
-        Image(systemName: "folder")
-          .font(.system(size: 32, weight: .regular))
-          .foregroundStyle(.secondary)
-        Text(loadError == nil ? "No Projects" : "Couldn't Find Projects")
-          .font(.title3.weight(.semibold))
-        if let loadError {
-          Text(loadError)
-            .foregroundStyle(theme.statusError)
-            .font(.callout)
-            .multilineTextAlignment(.center)
-          Button("Retry") { Task { await load(serverId: serverId) } }
-            .disabled(isAdding)
-        }
-        Button("Browse Files…") { browseFiles() }
-          .buttonStyle(.borderedProminent)
-          .disabled(isAdding)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-    } else {
-      List(selection: $selectedPath) {
-        ForEach(visibleRecommendations) { recommendation in
-          recommendationRow(recommendation)
-        }
-        browseFilesRow
-      }
-      .listStyle(.inset)
+      placeholder("No Recent Folders")
     }
+  }
+
+  private func placeholder(_ title: String) -> some View {
+    Text(title)
+      .font(.callout)
+      .foregroundStyle(.secondary)
   }
 
   private var footer: some View {
     HStack(spacing: 8) {
+      Button("Choose Folder…", action: chooseFolder)
       Button("Clone Repository…") { showingGitClone = true }
-        .disabled(isAdding || !isTargetReady)
       Spacer()
-      Button("Cancel") { dismiss() }
+      Button("Cancel", role: .cancel) { dismiss() }
         .keyboardShortcut(.cancelAction)
-        .disabled(isAdding)
-      Button {
-        addSelection()
-      } label: {
-        if isAdding {
-          ProgressView()
-            .controlSize(.small)
-            .frame(minWidth: 36)
-        } else {
-          Text("Add")
-            .frame(minWidth: 36)
-        }
+      Button("Add") {
+        if let selectedRecommendation { add(selectedRecommendation.folderURL) }
       }
       .keyboardShortcut(.defaultAction)
-      .disabled(selectedRecommendation == nil || isAdding || !isTargetReady)
+      .disabled(selectedRecommendation == nil)
     }
-    .padding(.horizontal, 20)
-    .padding(.vertical, 14)
+    .disabled(!isTargetReady)
   }
 
-  private func recommendationRow(_ recommendation: ProjectRecommendation) -> some View {
-    let path = recommendation.folderURL.standardizedFileURL.path
-    return HStack(spacing: 10) {
-      Image(systemName: "folder")
-        .foregroundStyle(.tint)
-        .frame(width: 16)
-      Text(recommendation.name)
-        .lineLimit(1)
-      Spacer(minLength: 12)
-      Text(Self.abbreviatedPath(path))
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .truncationMode(.middle)
-    }
-    .contentShape(Rectangle())
-    .tag(path)
-    .help(path)
-  }
+  // MARK: Actions
 
-  private var browseFilesRow: some View {
-    Button {
-      browseFiles()
-    } label: {
-      HStack(spacing: 10) {
-        Image(systemName: "folder.badge.plus")
-          .frame(width: 16)
-        Text("Browse Files…")
-        Spacer()
+  private var machineSelection: Binding<String> {
+    Binding(
+      get: { serverId },
+      set: { newValue in
+        serverId = newValue
+        selectedPath = nil
+        loadError = nil
+        recommendations = environment.cachedRecommendedProjects(serverId: newValue)
       }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .foregroundStyle(.tint)
-    .disabled(isAdding)
+    )
   }
 
-  private func browseFiles() {
+  private func chooseFolder() {
     if machine?.isLocal == true {
       showingLocalImporter = true
     } else {
@@ -247,64 +193,91 @@ struct NewProjectSheet: View {
     }
   }
 
-  private func load(serverId: String) async {
-    loadGeneration += 1
-    let generation = loadGeneration
-    isLoading = true
-    recommendations = []
-    selectedPath = nil
-    loadError = nil
-    guard isTargetReady else {
-      isLoading = false
-      return
+  private func load() async {
+    let serverId = serverId
+    if recommendations == nil {
+      recommendations = environment.cachedRecommendedProjects(serverId: serverId)
     }
-    let client = environment.machines.client(for: serverId)
-    async let refresh: ServerNavigationRefreshResult = environment.projectList.refreshFromServer(
-      serverId: serverId,
-      client: client
-    )
-    let loaded: [ProjectRecommendation]
-    let errorMessage: String?
+    guard isTargetReady else { return }
     do {
-      loaded = try await environment.recommendedProjects(serverId: serverId)
-      errorMessage = nil
+      let loaded = try await environment.recommendedProjects(serverId: serverId)
+      guard !Task.isCancelled, self.serverId == serverId else { return }
+      recommendations = loaded
+      loadError = nil
     } catch {
-      loaded = []
-      errorMessage = serverErrorMessage(error)
+      guard !Task.isCancelled, self.serverId == serverId else { return }
+      loadError = serverErrorMessage(error)
     }
-    _ = await refresh
-    guard !Task.isCancelled, self.serverId == serverId, generation == loadGeneration else { return }
-    recommendations = loaded
-    loadError = errorMessage
-    isLoading = false
   }
 
-  private func addSelection() {
-    guard !isAdding, let selectedRecommendation else { return }
-    addFolder(selectedRecommendation.folderURL)
-  }
-
-  private func addFolder(_ url: URL) {
-    guard !isAdding, isTargetReady else { return }
-    isAdding = true
+  private func add(_ url: URL) {
+    guard isTargetReady else { return }
     let serverId = serverId
     let client = client
+    let projectList = environment.projectList
+    let onAdded = onAdded
+    dismiss()
     Task {
-      let project = await environment.projectList.addProject(
-        folderURL: url,
-        serverId: serverId,
-        client: client
-      )
-      complete(project)
+      onAdded(await projectList.addProject(folderURL: url, serverId: serverId, client: client))
     }
   }
+}
 
-  private func complete(_ project: Project) {
-    onAdded(project)
-    dismiss()
+/// One suggested folder, drawn like a Finder icon-view item: the folder's
+/// icon over its name, with Finder's two-part selection highlight.
+private struct RecentFolderTile: View {
+  let recommendation: ProjectRecommendation
+  let isLocal: Bool
+  let isSelected: Bool
+  let select: () -> Void
+  let add: () -> Void
+
+  var body: some View {
+    VStack(spacing: 4) {
+      Image(nsImage: icon)
+        .resizable()
+        .frame(width: 48, height: 48)
+        .padding(4)
+        .background(
+          isSelected ? AnyShapeStyle(.fill.secondary) : AnyShapeStyle(.clear),
+          in: .rect(cornerRadius: 6)
+        )
+      Text(recommendation.name)
+        .font(.callout)
+        .lineLimit(2)
+        .multilineTextAlignment(.center)
+        .truncationMode(.middle)
+        .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+        .padding(.horizontal, 4)
+        .background(
+          isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear),
+          in: .rect(cornerRadius: 4)
+        )
+    }
+    .frame(width: 96, height: 100, alignment: .top)
+    .padding(.vertical, 4)
+    .contentShape(.rect)
+    .onTapGesture(perform: select)
+    .simultaneousGesture(TapGesture(count: 2).onEnded(add))
+    .help(recommendation.folderURL.path)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(recommendation.name)
+    .accessibilityHint(recommendation.folderURL.path)
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    .accessibilityAction(named: "Add Project", add)
+    .accessibilityAction(.default, select)
   }
 
-  private static func abbreviatedPath(_ path: String) -> String {
-    (path as NSString).abbreviatingWithTildeInPath
+  /// The folder's own icon on this Mac; the generic folder icon for a
+  /// folder on another machine.
+  private var icon: NSImage {
+    isLocal
+      ? NSWorkspace.shared.icon(forFile: recommendation.folderURL.path)
+      : NSWorkspace.shared.icon(for: .folder)
   }
+}
+
+#Preview("Add Project") {
+  NewProjectSheet(serverId: "local") { _ in }
+    .environment(AppEnvironment.preview())
 }

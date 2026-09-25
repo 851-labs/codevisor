@@ -39,6 +39,9 @@ public final class AppEnvironment {
   /// App-installed: fired when a machine's route flips (direct ↔ relay)
   /// so the platform's chat cache can re-home live sessions onto a client
   /// resolved over the new route.
+  /// The last project suggestions each machine returned, so reopening the
+  /// add-project surface shows them at once while a fresh request runs.
+  @ObservationIgnored var projectRecommendationCache: [String: [ProjectRecommendation]] = [:]
   @ObservationIgnored public var onMachineRouteChanged: ((String) -> Void)?
   @ObservationIgnored public var onSessionStateChanged: ((ChatSession, Int?) -> Void)?
   /// Persists each session's pane-group state (terminal tabs, selection,

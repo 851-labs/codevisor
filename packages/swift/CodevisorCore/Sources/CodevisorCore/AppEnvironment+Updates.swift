@@ -193,7 +193,7 @@ extension AppEnvironment {
     limit: Int = 12
   ) async throws -> [ProjectRecommendation] {
     let records = try await machines.client(for: serverId).projectRecommendations(limit: limit)
-    return records.map { record in
+    let recommendations = records.map { record in
       ProjectRecommendation(
         folderURL: URL(fileURLWithPath: record.path),
         name: record.name,
@@ -201,6 +201,14 @@ extension AppEnvironment {
         lastActivity: record.lastActivity.flatMap(Self.recommendationDate(from:))
       )
     }
+    projectRecommendationCache[serverId] = recommendations
+    return recommendations
+  }
+
+  /// The suggestions this machine last returned, or nil before the first
+  /// successful request. Callers show these while refreshing.
+  public func cachedRecommendedProjects(serverId: String) -> [ProjectRecommendation]? {
+    projectRecommendationCache[serverId]
   }
 
   /// Older servers lack the recommendation endpoint, so retain the existing

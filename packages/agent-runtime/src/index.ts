@@ -86,7 +86,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
         }
       })
     ),
-    listAgentSessions: (harnessId, account) =>
+    listAgentSessions: (harnessId, account, options) =>
       adapterPromise("listAgentSessions", async () => {
         const definition = state.catalog.find((candidate) => candidate.id === harnessId)
         if (definition === undefined) {
@@ -100,7 +100,7 @@ export const makeAgentRuntime = (config: AgentRuntimeConfig = {}): AgentRuntimeS
           return []
         }
         const list = provider.listAgentSessions
-        return list === undefined ? [] : await list(definition, account)
+        return list === undefined ? [] : await list(definition, account, options)
       }),
     reconcileConfigValue: (harnessId, option, value) => {
       const definition = state.catalog.find((candidate) => candidate.id === harnessId)

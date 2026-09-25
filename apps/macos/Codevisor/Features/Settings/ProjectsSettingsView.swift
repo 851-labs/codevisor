@@ -33,10 +33,9 @@ struct ProjectsSettingsView: View {
     Form {
       Section {
         if groups.isEmpty {
-          ContentUnavailableView(
-            "No Projects", systemImage: "folder",
-            description: Text("Add a folder or clone a repository to get started.")
-          )
+          Text("No Projects")
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
         } else {
           ForEach(groups) { group in
             NavigationLink(value: SettingsPaneRoute.project(group.id)) {
@@ -75,7 +74,7 @@ struct ProjectsSettingsView: View {
     .sheet(isPresented: $showingAdd) {
       NewProjectSheet(serverId: initialMachineId) { project in
         SettingsRouter.shared.projectCreationMachineId = project.serverId
-        SettingsRouter.shared.panePath = [.project(ProjectGroup.groupID(for: project))]
+        SettingsRouter.shared.panePath = [.project(ProjectGroup.routeID(for: project))]
       }
     }
     .task(id: readyMachineIds) {

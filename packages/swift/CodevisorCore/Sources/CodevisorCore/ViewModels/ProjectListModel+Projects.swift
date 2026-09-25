@@ -11,6 +11,16 @@ extension ProjectListModel {
     } ?? false
   }
 
+  /// Standardized folder paths of the machine's active, non-scratch
+  /// projects — the add-project surfaces hide suggestions already added.
+  public func registeredFolderPaths(serverId: String) -> Set<String> {
+    Set(
+      fleetActiveProjects
+        .filter { $0.serverId == serverId && !$0.isScratch }
+        .map { $0.folderURL.standardizedFileURL.path }
+    )
+  }
+
   /// Adds a project for a folder, reusing an existing entry if the folder
   /// is already present.
   @discardableResult
