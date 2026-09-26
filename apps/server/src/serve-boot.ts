@@ -24,6 +24,7 @@ import {
 import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { postGatewayInvoke, probeDirect } from "./infra/machine-direct.js"
 import { FLEET_ROSTER_NAMESPACE, makeMachineLink, rosterRoutes } from "./infra/machine-link.js"
+import { machineReleaseChannel } from "./infra/release-channel.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
@@ -395,7 +396,8 @@ export const startMachineNetwork = async (options: {
     localBaseUrl: `http://127.0.0.1:${options.port}`,
     terminal: options.terminal,
     env: process.env,
-    log: (line: string) => console.error(line)
+    log: (line: string) => console.error(line),
+    releaseChannel: machineReleaseChannel(dirname(options.databasePath), options.db)
   }
   const cloudBridge = await initializeOptionalServerFeatureAsync("Cloud connection", async () =>
     startCloudBridge(cloudBridgeOptions)

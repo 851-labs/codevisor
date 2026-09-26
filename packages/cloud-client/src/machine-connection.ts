@@ -7,14 +7,14 @@ import {
   parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
   type CloudMachinePresence,
+  type CloudTunnelInfo,
   type RelayFrameHeader,
   type WireRelayEnvelope
 } from "@codevisor/api"
 
 import type { OutgoingChannel } from "./channel-opener.js"
 import { ChannelReceiver } from "./channel-receiver.js"
-import type { ChannelHandler } from "./incoming-channel.js"
-import type { MachineCredentials } from "./login.js"
+import { releaseChannelField, type MachineConnectionOptions } from "./machine-connection-options.js"
 import { MachinePeers } from "./machine-peers.js"
 import {
   RelayOutbox,
@@ -23,10 +23,8 @@ import {
   type CloudSocket,
   type MachineConnectionState,
   isCredentialRejection,
-  type MachineDisconnectReason,
-  type SocketFactory
+  type MachineDisconnectReason
 } from "./machine-socket.js"
-import type { PeerKeyPinStore } from "./peer-pins.js"
 
 /// Envelopes sealed while the hub socket is away are retained (bounded) and
 /// replayed after a resumed welcome, so channel content — not just channel
@@ -34,45 +32,7 @@ import type { PeerKeyPinStore } from "./peer-pins.js"
 /// opposite direction. Overflow drops the channels (frames would gap anyway).
 const RESUME_RETAIN_CAP_BYTES = 256 * 1024
 
-export interface MachineConnectionOptions {
-  credentials: MachineCredentials
-  /// `serverId` is this machine's stable Codevisor server id, published in
-  /// hub presence so peers can match it to direct (FleetRoster) routes.
-  device: { name: string; os?: string; appVersion?: string; serverId?: string }
-  socketFactory: SocketFactory
-  /// Keyed by channelType (e.g. "terminal"). Unknown types are refused with
-  /// close reason "unsupported".
-  channelHandlers: Record<string, ChannelHandler>
-  onStateChange?: (state: MachineConnectionState) => void
-  onDisconnect?: (reason: MachineDisconnectReason) => void
-  /// TOFU pin store for app-device keys. When provided, a channel open whose
-  /// `peerPublicKey` conflicts with the pinned key for its `peerDeviceId` is
-  /// refused ("rejected") — the hub is not trusted for key continuity. Keys
-  /// pin only after a successful open (proof the opener holds the matching
-  /// secret); opens without a device id (older hubs) proceed unpinned.
-  peerKeyPins?: PeerKeyPinStore
-  /// Fired on every refused open so integrators can log the substitution
-  /// attempt with enough detail to investigate.
-  onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
-  /// Fired whenever the account's machine list (welcome + presence) changes.
-  onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
-  /// Coalesce outgoing relay envelopes for up to this long (see RelayOutbox).
-  /// Default 0: every frame goes out immediately.
-  relayCoalesceMs?: number
-  /// Compresses an outgoing plaintext body on channels whose opener
-  /// negotiated compressible framing; return undefined when not worthwhile.
-  compressPayload?: (bytes: Uint8Array) => Uint8Array | undefined
-  /// Inflates a DEFLATE-framed inbound body on negotiated channels. Absent =
-  /// compressed inbound frames are refused (the app only compresses when the
-  /// machine advertises support via this pair being wired up).
-  decompressPayload?: (bytes: Uint8Array) => Uint8Array
-  /// Observability: fired on every completed welcome so integrators can log
-  /// resume outcomes (a resumed session replays its held frames silently).
-  onWelcome?: (info: { resumed: boolean; replayedFrames: number }) => void
-  scheduleReconnect?: (callback: () => void, delayMs: number) => void
-  scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
-  random?: () => number
-}
+export type { MachineConnectionOptions } from "./machine-connection-options.js"
 
 export class CloudMachineConnection {
   #socket: CloudSocket | undefined
@@ -188,7 +148,11 @@ export class CloudMachineConnection {
     const { credentials } = this.options
     this.#setState(this.#attempt === 0 ? "connecting" : "reconnecting")
     const url = `${credentials.serverUrl.replace(/^http/, "ws")}/connect`
-    const socket = this.options.socketFactory(url, { "x-api-key": credentials.apiKey })
+    const tunnelEndpointId = this.options.tunnelEndpointId
+    const socket = this.options.socketFactory(url, {
+      "x-api-key": credentials.apiKey,
+      ...(tunnelEndpointId === undefined ? {} : { "x-codevisor-tunnel-endpoint": tunnelEndpointId })
+    })
     this.#socket = socket
     this.#outbox = new RelayOutbox({
       send: (message) => {
@@ -219,7 +183,9 @@ export class CloudMachineConnection {
           : {}),
         ...(this.options.device.serverId !== undefined
           ? { serverId: this.options.device.serverId }
-          : {})
+          : {}),
+        ...(tunnelEndpointId === undefined ? {} : { tunnelEndpointId }),
+        ...releaseChannelField(this.options.device.releaseChannel?.())
       }
       try {
         socket.send(
@@ -301,6 +267,10 @@ export class CloudMachineConnection {
         }
         this.#peers.welcome(frame.machines)
         this.#setState("connected")
+        this.options.onTunnelConfig?.({
+          relays: frame.relays ?? [],
+          enabled: frame.tunnel === "on"
+        })
         this.options.onWelcome?.({
           resumed,
           replayedFrames: resumed ? replayedFrames : 0
@@ -328,6 +298,22 @@ export class CloudMachineConnection {
         // The target restarted: its channel state is gone.
         this.#peers.reset(frame.machineId)
         return
+      case "peer-devices":
+        this.options.onPeerDevices?.(frame.devices)
+        return
+    }
+  }
+
+  /// Reports this machine's current tunnel address to the hub. Returns false
+  /// when not connected (the caller re-sends on the next welcome).
+  sendTunnelAddr(tunnel: CloudTunnelInfo): boolean {
+    const socket = this.#socket
+    if (socket === undefined || this.#state !== "connected") return false
+    try {
+      socket.send(encodeCloudFrame({ t: "tunnel-addr", tunnel }))
+      return true
+    } catch {
+      return false
     }
   }
 

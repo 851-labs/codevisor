@@ -99,6 +99,18 @@ export class HubSockets {
     }
   }
 
+  /// Machines that registered a tunnel endpoint (older machines never see
+  /// tunnel frames).
+  broadcastToTunnelMachines(frame: HubToMachine): void {
+    const encoded = encodeCloudFrame(frame)
+    for (const socket of this.byTag("machine")) {
+      const attachment = this.attachment(socket)
+      if (attachment?.helloDone === true && attachment.tunnel === true && this.isRoutable(socket)) {
+        this.send(socket, encoded)
+      }
+    }
+  }
+
   /// Machine presence-plane frames (presence, machine-reset, machine-offline)
   /// go to every observer: apps and peer-aware machines alike — except the
   /// machine the notice is about.

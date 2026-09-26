@@ -1,7 +1,10 @@
 /// Worker environment: generated bindings/vars (worker-configuration.d.ts)
 /// plus values wrangler cannot know about — deploy-time secrets and the
 /// dev-only vars injected by `wrangler dev --var` (see scripts/dev.mjs).
-export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID"> {
+export interface CloudEnv extends Omit<
+  Env,
+  "APPLE_NATIVE_CLIENT_ID" | "RELAY_MAP" | "TUNNEL_ROLLOUT"
+> {
   /// ≥32 chars; `openssl rand -base64 32`. Required outside dev auth mode.
   BETTER_AUTH_SECRET?: string
   GITHUB_CLIENT_ID?: string
@@ -34,6 +37,15 @@ export interface CloudEnv extends Omit<Env, "APPLE_NATIVE_CLIENT_ID"> {
   /// Test seam: overrides the session-resume grace window (ms). Production
   /// uses the default in resume-sessions.ts.
   RESUME_GRACE_MS?: string
+  /// Tunnel relay map, JSON `[{ "url": "https://relay…", "quicPort"?: n }]`
+  /// (docs/plans/codevisor-tunnel.md). Absent → direct-only tunnel.
+  RELAY_MAP?: string
+  /// "on" enables the tunnel for every client, "alpha" only for clients on
+  /// the Alpha update channel; anything else is "off".
+  TUNNEL_ROLLOUT?: string
+  /// Comma-separated bearer tokens our relays present on
+  /// POST /api/relay/authorize. Absent → the route does not exist.
+  RELAY_AUTHORIZE_TOKEN?: string
 }
 
 export const isDevAuthEnabled = (env: CloudEnv): boolean => env.DEV_AUTH === "1"

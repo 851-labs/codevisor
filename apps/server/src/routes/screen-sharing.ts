@@ -104,6 +104,12 @@ export const routeScreenSharing = async (
     // the app's own known failures are told apart (851-2391).
     throw screenSharingHostFailure(cause)
   }
+  // Media over the tunnel: bridge the viewer's flow to the host's WebRTC
+  // socket. Best effort — without it the viewer keeps plain WebRTC ICE.
+  if (payload.tunnelMedia !== undefined && result.answer !== undefined) {
+    const bridged = await config.cloud?.bridgeTunnelMedia?.(payload.tunnelMedia, result.answer)
+    if (bridged !== undefined) result = { ...result, tunnelMedia: bridged }
+  }
   writeJson(response, 200, result)
   return true
 }

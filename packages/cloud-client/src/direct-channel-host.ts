@@ -46,6 +46,17 @@ export interface DirectChannelHostOptions {
   decompressPayload?: (bytes: Uint8Array) => Uint8Array
   scheduleTimeout?: (callback: () => void, delayMs: number) => CancelTimeout
   log?: (line: string) => void
+  /// Identity gate for a hello, given what the transport proved about the
+  /// peer. Default: the device's X25519 key must already be pinned (the LAN
+  /// pipe never trusts on first use). The tunnel supplies its own gate, which
+  /// also binds the authenticated tunnel endpoint (see tunnel-host.ts).
+  admitHello?: (device: { deviceId: string; publicKey: string }, peer: PipePeer) => boolean
+}
+
+/// What the carrying transport authenticated about the remote side.
+export interface PipePeer {
+  /// Tunnel pipes: the peer's verified endpoint id (QUIC TLS).
+  endpointId?: string
 }
 
 export class DirectChannelHost {
@@ -54,7 +65,7 @@ export class DirectChannelHost {
   constructor(private readonly options: DirectChannelHostOptions) {}
 
   /// Adopts one server-accepted WebSocket as a direct channel pipe.
-  accept(socket: CloudSocket): void {
+  accept(socket: CloudSocket, peer: PipePeer = {}): void {
     this.#accepted += 1
     const connectionId = `direct-${this.#accepted}`
     const options = this.options
@@ -88,7 +99,7 @@ export class DirectChannelHost {
     // oxlint-disable-next-line unicorn/prefer-add-event-listener -- CloudSocket is a callback-property interface with no addEventListener
     socket.onmessage = (data) => {
       if (typeof data === "string") {
-        this.#onControl(socket, data, hello, (accepted) => {
+        this.#onControl(socket, data, hello, peer, (accepted) => {
           hello = accepted
           cancelHelloTimeout?.()
           cancelHelloTimeout = undefined
@@ -135,6 +146,7 @@ export class DirectChannelHost {
     socket: CloudSocket,
     data: string,
     hello: { deviceId: string; publicKey: string } | undefined,
+    peer: PipePeer,
     onHello: (accepted: { deviceId: string; publicKey: string }) => void
   ): void {
     let frame
@@ -155,8 +167,11 @@ export class DirectChannelHost {
     }
     // No TOFU here: only identities already pinned through the relay may
     // open a direct pipe (anyone on the LAN can reach this listener).
-    const pinned = this.options.peerKeyPins.get(frame.device.deviceId)
-    if (frame.device.kind !== "app" || pinned === undefined || pinned !== frame.device.publicKey) {
+    const device = { deviceId: frame.device.deviceId, publicKey: frame.device.publicKey }
+    const admitted =
+      this.options.admitHello?.(device, peer) ??
+      this.options.peerKeyPins.get(device.deviceId) === device.publicKey
+    if (frame.device.kind !== "app" || !admitted) {
       this.options.log?.(`Direct: refused connection from unpinned device ${frame.device.deviceId}`)
       socket.close(DIRECT_CLOSE_UNPINNED, "device is not paired with this machine")
       return

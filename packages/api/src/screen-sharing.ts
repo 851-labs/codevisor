@@ -9,7 +9,11 @@ export const ScreenSharingRequest = Schema.Struct({
   displayId: Schema.optional(Schema.String),
   offer: Schema.optional(Schema.String),
   /// `setScale` (851-2339): the desktop's UI scale, 1× or 2× (a VNC desktop whose server can set it).
-  scale: Schema.optional(Schema.Literals([1, 2]))
+  scale: Schema.optional(Schema.Literals([1, 2])),
+  /// Media over the Codevisor tunnel (docs/plans/codevisor-tunnel.md): the
+  /// viewer's tunnel endpoint and the media flow it opened; the machine
+  /// bridges that flow to the host WebRTC's socket.
+  tunnelMedia: Schema.optional(Schema.Struct({ endpointId: Schema.String, flowId: Schema.Number }))
 })
 export type ScreenSharingRequest = typeof ScreenSharingRequest.Type
 
@@ -48,6 +52,11 @@ export const ScreenSharingReply = Schema.Struct({
       relayOnly: Schema.Boolean,
       expiresAt: Schema.Number
     })
+  ),
+  /// The request's tunnel flow is bridged: the viewer uses it as its only
+  /// remote candidate and caps RTP packets at `maxPayload`.
+  tunnelMedia: Schema.optional(
+    Schema.Struct({ flowId: Schema.Number, maxPayload: Schema.optional(Schema.Number) })
   )
 })
 export type ScreenSharingReply = typeof ScreenSharingReply.Type

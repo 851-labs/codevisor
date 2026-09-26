@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@codevisor/api": "workspace:*",
-    "@codevisor/cloud-crypto": "workspace:*"
+    "@codevisor/cloud-crypto": "workspace:*",
+    "@codevisor/net": "workspace:*"
   },
   "devDependencies": {
     "vitest": "4.1.6"

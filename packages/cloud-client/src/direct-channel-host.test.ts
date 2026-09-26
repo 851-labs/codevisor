@@ -106,6 +106,39 @@ const welcomeOf = (socket: FakeDirectSocket): Extract<HubToMachine, { t: "welcom
 }
 
 describe("DirectChannelHost", () => {
+  it("defers the identity decision to an injected gate with the pipe's peer", () => {
+    const decisions: unknown[] = []
+    const host = new DirectChannelHost({
+      deviceId: "machine-1",
+      secretKey: machineKeys.secretKey,
+      channelHandlers: {},
+      peerKeyPins: makePeerKeyPinStore({}),
+      admitHello: (device, peer) => {
+        decisions.push({ device, peer })
+        return peer.endpointId === "e-trusted"
+      }
+    })
+    const admitted = new FakeDirectSocket()
+    host.accept(admitted, { endpointId: "e-trusted" })
+    admitted.hello({ deviceId: "app-new", publicKey: appKeys.publicKey })
+    expect(welcomeOf(admitted)).toMatchObject({ t: "welcome" })
+
+    const refused = new FakeDirectSocket()
+    host.accept(refused, { endpointId: "e-other" })
+    refused.hello({ deviceId: "app-new", publicKey: appKeys.publicKey })
+    expect(refused.closed?.code).toBe(DIRECT_CLOSE_UNPINNED)
+    expect(decisions).toEqual([
+      {
+        device: { deviceId: "app-new", publicKey: appKeys.publicKey },
+        peer: { endpointId: "e-trusted" }
+      },
+      {
+        device: { deviceId: "app-new", publicKey: appKeys.publicKey },
+        peer: { endpointId: "e-other" }
+      }
+    ])
+  })
+
   it("welcomes a pinned device and serves a sealed channel round trip", () => {
     const { host, channels, timers } = makeHost()
     const socket = new FakeDirectSocket()

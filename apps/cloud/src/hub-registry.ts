@@ -3,9 +3,11 @@ import { isoTimestamp, type CloudDeviceInfo } from "@codevisor/api"
 import { hasRoutableMachineSocket } from "./hub-delivery.js"
 import type { HubNoticesPort } from "./hub-notices.js"
 import { machineRow, machineRows, machinePresence } from "./hub-schema.js"
+import { isEndpointId } from "./hub-tunnel.js"
 
 /// Upserts a machine's registry row from its hello and installs the next
-/// socket generation; returns that generation.
+/// socket generation; returns that generation. A changed tunnel endpoint id
+/// forgets the stale tunnel address.
 export const registerMachine = (
   sql: SqlStorage,
   deviceId: string,
@@ -16,8 +18,8 @@ export const registerMachine = (
   sql.exec(
     `INSERT INTO machines
        (device_id, name, os, app_version, public_key, last_seen_at, active_generation, server_id,
-        peer_aware)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        peer_aware, tunnel_endpoint_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(device_id) DO UPDATE SET
        name = excluded.name,
        os = excluded.os,
@@ -26,7 +28,10 @@ export const registerMachine = (
        last_seen_at = excluded.last_seen_at,
        active_generation = excluded.active_generation,
        server_id = excluded.server_id,
-       peer_aware = excluded.peer_aware`,
+       peer_aware = excluded.peer_aware,
+       tunnel_addr = CASE WHEN tunnel_endpoint_id IS excluded.tunnel_endpoint_id
+         THEN tunnel_addr ELSE NULL END,
+       tunnel_endpoint_id = excluded.tunnel_endpoint_id`,
     deviceId,
     device.name,
     device.os ?? null,
@@ -35,9 +40,32 @@ export const registerMachine = (
     isoTimestamp(),
     generation,
     device.serverId ?? null,
-    peerAware ? 1 : 0
+    peerAware ? 1 : 0,
+    isEndpointId(device.tunnelEndpointId) ? device.tunnelEndpointId : null
   )
   return generation
+}
+
+/// Renames a machine and republishes its presence. False when unknown.
+export const renameHubMachine = (hub: HubNoticesPort, deviceId: string, name: string): boolean => {
+  const updated = hub.sql.exec(
+    "UPDATE machines SET name = ? WHERE device_id = ?",
+    name,
+    deviceId
+  ).rowsWritten
+  if (updated === 0) return false
+  const row = machineRow(hub.sql, deviceId)
+  if (row !== undefined) {
+    hub.net.broadcastMachineNotice({
+      t: "presence",
+      machine: machinePresence(
+        row,
+        hasRoutableMachineSocket(hub.net, deviceId, row.active_generation) ||
+          hub.resume.machineGraceSession(deviceId, Date.now()) !== undefined
+      )
+    })
+  }
+  return true
 }
 
 export const listHubMachines = (hub: HubNoticesPort) => {

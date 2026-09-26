@@ -33,15 +33,16 @@ import {
 } from "@codevisor/cloud-client"
 import type { TerminalManagerService } from "@codevisor/terminal"
 import { Effect } from "effect"
-import { WebSocket } from "ws"
 
 import type { CloudServerControl } from "../server-context-types.js"
+import { socketFactory } from "./cloud-bridge-socket.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
 import {
   gatewayLoopbackHandler,
   httpChannelHandler,
   wsChannelHandler
 } from "./cloud-proxy-handlers.js"
+import { prepareMachineTunnel, tunnelKeyPath, tunnelPinsPath } from "./cloud-tunnel.js"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,
@@ -63,6 +64,8 @@ export interface CloudBridgeOptions {
   readonly terminal: TerminalManagerService
   readonly env: Readonly<Record<string, string | undefined>>
   readonly log: (line: string) => void
+  /// This machine's update channel, reported at every hub hello.
+  readonly releaseChannel?: () => "stable" | "alpha" | undefined
 }
 
 /// Who created this machine's cloud registration. "app" registrations were
@@ -94,6 +97,7 @@ export interface CloudBridge {
     body: string,
     signal?: AbortSignal
   ) => Promise<GatewayExchange>
+  readonly bridgeTunnelMedia: NonNullable<CloudServerControl["bridgeTunnelMedia"]>
 }
 
 const readCredentials = async (
@@ -150,41 +154,6 @@ const devProvision = async (
     )
     return undefined
   }
-}
-
-const socketFactory = (url: string, headers: Record<string, string>): CloudSocket => {
-  const socket = new WebSocket(url, { headers })
-  const adapted: CloudSocket = {
-    send: (data) => socket.send(data),
-    close: (code, reason) => socket.close(code, reason),
-    terminate: () => socket.terminate(),
-    onopen: null,
-    onmessage: null,
-    onclose: null,
-    onrejected: null
-  }
-  socket.on("open", () => adapted.onopen?.())
-  // With a listener attached, ws leaves a non-101 response to us instead of
-  // collapsing it into an error + close 1006. Surface the status, then drop
-  // the request; any close ws still reports refers to a socket already
-  // detached by the connection.
-  socket.on("unexpected-response", (request, response) => {
-    response.resume()
-    request.destroy()
-    adapted.onrejected?.(response.statusCode ?? 0)
-  })
-  socket.on("message", (data, isBinary) => {
-    // Binary frames carry relay envelope batches; text frames JSON control.
-    if (isBinary) {
-      const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)
-      adapted.onmessage?.(new Uint8Array(bytes))
-      return
-    }
-    adapted.onmessage?.(String(data))
-  })
-  socket.on("close", (code) => adapted.onclose?.(code))
-  socket.on("error", () => undefined) // close fires afterwards and drives reconnect
-  return adapted
 }
 
 /// Nagle for the relay: PTY writes and byte-stream chunks arrive in bursts,
@@ -285,13 +254,14 @@ const loadPeerKeyPins = async (options: CloudBridgeOptions): Promise<PeerKeyPinS
   })
 }
 
-/// Constructs and starts the relay connection for known-good credentials.
-const makeBridge = (
+/// Constructs and starts the relay connection (and, where available, the
+/// tunnel endpoint) for known-good credentials.
+const makeBridge = async (
   options: CloudBridgeOptions,
   credentials: MachineCredentials,
   managedBy: CloudBridgeManagedBy,
   peerKeyPins: PeerKeyPinStore
-): CloudBridge => {
+): Promise<CloudBridge> => {
   const machineName = options.machineName === "" ? hostname() : options.machineName
   // Shared by the relay connection and the direct pipe: a channel behaves
   // identically no matter which pipe carried it.
@@ -302,8 +272,28 @@ const makeBridge = (
     [GATEWAY_CHANNEL_TYPE]: gatewayLoopbackHandler(options.localBaseUrl, options.log),
     [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)
   }
-  const connection = new CloudMachineConnection({
+  let connection: CloudMachineConnection | undefined
+  const tunnel = await prepareMachineTunnel({
+    credentialsPath: options.credentialsPath,
+    deviceId: credentials.deviceId,
+    secretKey: credentials.secretKey,
+    channelHandlers,
+    peerKeyPins,
+    compressPayload,
+    decompressPayload,
+    sendAddr: (addr) => connection?.sendTunnelAddr(addr),
+    env: options.env,
+    log: options.log
+  })
+  connection = new CloudMachineConnection({
     credentials,
+    ...(tunnel === undefined
+      ? {}
+      : {
+          tunnelEndpointId: tunnel.endpointId,
+          onTunnelConfig: tunnel.onTunnelConfig,
+          onPeerDevices: tunnel.onPeerDevices
+        }),
     peerKeyPins,
     relayCoalesceMs: RELAY_COALESCE_MS,
     compressPayload,
@@ -320,7 +310,8 @@ const makeBridge = (
       name: machineName,
       os: process.platform,
       appVersion: options.appVersion,
-      ...(options.serverId === undefined ? {} : { serverId: options.serverId })
+      ...(options.serverId === undefined ? {} : { serverId: options.serverId }),
+      ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel })
     },
     socketFactory,
     channelHandlers,
@@ -366,9 +357,13 @@ const makeBridge = (
     decompressPayload,
     log: options.log
   })
+  const hubConnection = connection
   return {
-    stop: () => connection.stop(),
-    state: () => connection.state,
+    stop: () => {
+      tunnel?.stop()
+      hubConnection.stop()
+    },
+    state: () => hubConnection.state,
     deviceId: credentials.deviceId,
     serverUrl: credentials.serverUrl,
     managedBy,
@@ -380,7 +375,8 @@ const makeBridge = (
         () => connection.openChannel(deviceId, GATEWAY_CHANNEL_TYPE),
         body,
         signal === undefined ? {} : { signal }
-      )
+      ),
+    bridgeTunnelMedia: async (request, answer) => tunnel?.bridgeMedia(request, answer)
   }
 }
 
@@ -444,6 +440,8 @@ export const connectCloudBridge = async (
 export const removeCloudCredentials = async (credentialsPath: string): Promise<void> => {
   await rm(credentialsPath, { force: true })
   await rm(peerPinsPath(credentialsPath), { force: true })
+  await rm(tunnelPinsPath(credentialsPath), { force: true })
+  await rm(tunnelKeyPath(credentialsPath), { force: true })
 }
 
 /// Shared live registration owner for native and CLI callers.
@@ -479,6 +477,7 @@ export const makeCloudServerControl = (
     requestGateway: (deviceId, body, signal) =>
       current === undefined
         ? Promise.reject(new GatewayChannelError("before-send", "not connected to the cloud relay"))
-        : current.requestGateway(deviceId, body, signal)
+        : current.requestGateway(deviceId, body, signal),
+    bridgeTunnelMedia: async (request, answer) => current?.bridgeTunnelMedia(request, answer)
   }
 }

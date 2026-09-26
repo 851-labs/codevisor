@@ -50,6 +50,13 @@
   "vars": {
     "APPLE_NATIVE_CLIENT_ID": "com.dylanplayer.codevisor.ios",
     "PUBLIC_BASE_URL": "https://cloud.codevisor.dev",
-    "INSTANCE_NAME": "Codevisor Cloud"
+    "INSTANCE_NAME": "Codevisor Cloud",
+    // Tunnel relays handed to devices (docs/plans/codevisor-tunnel.md). Must
+    // match infra/relays/relays.json (checked by infra/relays/check-relay-map.mjs).
+    "RELAY_MAP": "[{\"url\":\"https://relay-iad-1.codevisor.dev\"},{\"url\":\"https://relay-sjc-1.codevisor.dev\"},{\"url\":\"https://relay-fra-1.codevisor.dev\"},{\"url\":\"https://relay-sin-1.codevisor.dev\"}]",
+    // Who may use the tunnel: "off" (nobody; the kill switch), "alpha" (only
+    // devices on the Alpha update channel; Stable stays relay-only), or "on"
+    // (everyone). Flipped by PR once the relays are deployed.
+    "TUNNEL_ROLLOUT": "off"
   }
 }

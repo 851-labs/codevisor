@@ -141,6 +141,12 @@ export interface CloudServerControl {
     body: string,
     signal?: AbortSignal
   ) => Promise<import("@codevisor/cloud-client").GatewayExchange>
+  /// Bridges a viewer's tunnel media flow to the host WebRTC candidate in
+  /// `answer` (docs/plans/codevisor-tunnel.md). Undefined when unavailable.
+  readonly bridgeTunnelMedia?: (
+    request: import("@codevisor/cloud-client").TunnelMediaRequest,
+    answer: string
+  ) => Promise<import("@codevisor/cloud-client").TunnelMediaBridge | undefined>
 }
 
 export interface CodevisorServerServices {

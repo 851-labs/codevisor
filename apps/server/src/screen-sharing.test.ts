@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { ScreenSharingRequest } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
+import type { CloudServerControl } from "./server-context-types.js"
 import { jsonRequest, makeServices, run, runningServers, startWithApp } from "./test-support.js"
 
 const capabilities = (): ScreenSharingRequest => ({
@@ -16,10 +17,14 @@ const offer = "v=0\r\na=fingerprint:sha-256 fixture\r\n"
 const reply = { version: 1, status: "available", displays: [] }
 
 const fixture = async (
-  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply
+  screenSharing: (request: ScreenSharingRequest) => Promise<unknown> = async () => reply,
+  cloud?: CloudServerControl
 ) => {
   const { services } = await makeServices()
-  const server = await startWithApp(services, undefined, { screenSharing })
+  const server = await startWithApp(services, undefined, {
+    screenSharing,
+    ...(cloud === undefined ? {} : { cloud })
+  })
   runningServers.push(server)
   const project = await run(services.db.createProject({ folderPath: "/fixture/screen-sharing" }))
   const workspace = await run(
@@ -53,6 +58,56 @@ const fixture = async (
     })
   return { server, services, project, workspace, pane, request, post }
 }
+
+const cloudControl = (bridge?: CloudServerControl["bridgeTunnelMedia"]): CloudServerControl => ({
+  deviceId: () => "machine-1",
+  state: () => "connected",
+  managedBy: () => "external",
+  connect: async () => "machine-1",
+  disconnect: async () => undefined,
+  ...(bridge === undefined ? {} : { bridgeTunnelMedia: bridge })
+})
+
+describe("Screen Sharing media over the tunnel", () => {
+  const answering = async (request: ScreenSharingRequest) => ({
+    ...reply,
+    status: "connecting",
+    ...(request.operation === "start" ? { answer: "fixture answer" } : {})
+  })
+  const tunnelMedia = { endpointId: "e".repeat(64), flowId: 3 }
+
+  it("bridges the viewer's flow to the host answer and reports it", async () => {
+    const bridge = vi.fn(async () => ({ flowId: 3, maxPayload: 1150 }))
+    const { request, post } = await fixture(answering, cloudControl(bridge))
+    const response = await post({ ...request, tunnelMedia })
+    expect(response.body).toMatchObject({
+      answer: "fixture answer",
+      tunnelMedia: { flowId: 3, maxPayload: 1150 }
+    })
+    expect(bridge).toHaveBeenCalledWith(tunnelMedia, "fixture answer")
+  })
+
+  it("keeps plain WebRTC when the flow can't be bridged", async () => {
+    const unbridged = await fixture(
+      answering,
+      cloudControl(async () => undefined)
+    )
+    const noBridgeSupport = await fixture(answering, cloudControl())
+    const noCloud = await fixture(answering)
+    for (const { request, post } of [unbridged, noBridgeSupport, noCloud]) {
+      const response = await post({ ...request, tunnelMedia })
+      expect(response.status).toBe(200)
+      expect(response.body).not.toHaveProperty("tunnelMedia")
+    }
+  })
+
+  it("only bridges when the host produced an answer", async () => {
+    const bridge = vi.fn(async () => ({ flowId: 3 }))
+    const { request, post } = await fixture(answering, cloudControl(bridge))
+    await post({ ...request, operation: "heartbeat", tunnelMedia })
+    expect(bridge).not.toHaveBeenCalled()
+  })
+})
 
 describe("native Screen Sharing signaling", () => {
   it("requires machine authentication and rejects browser-originated requests", async () => {

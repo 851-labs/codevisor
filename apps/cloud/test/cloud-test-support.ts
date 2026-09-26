@@ -190,6 +190,7 @@ export const connectMachine = async (
     resume?: string
     features?: string[]
     serverId?: string
+    tunnelEndpointId?: string
   } = {}
 ): Promise<MachineSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -203,7 +204,11 @@ export const connectMachine = async (
     expect(created.status).toBe(200)
     apiKey = ((await created.json()) as { key: string }).key
   }
-  const socket = await connectSocket({ "x-api-key": apiKey })
+  const tunnel = options.tunnelEndpointId
+  const socket = await connectSocket({
+    "x-api-key": apiKey,
+    ...(tunnel === undefined ? {} : { "x-codevisor-tunnel-endpoint": tunnel })
+  })
   const reader = new SocketReader(socket, decodeHubToMachine)
   socket.send(
     encodeCloudFrame({
@@ -215,7 +220,8 @@ export const connectMachine = async (
         name,
         os: "linux",
         publicKey: keys.publicKey,
-        ...(options.serverId === undefined ? {} : { serverId: options.serverId })
+        ...(options.serverId === undefined ? {} : { serverId: options.serverId }),
+        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel })
       },
       ...(options.resume === undefined ? {} : { resume: options.resume }),
       ...(options.features === undefined ? {} : { features: options.features })
@@ -240,11 +246,16 @@ export const connectApp = async (
     keys?: ReturnType<typeof generateDeviceKeyPair>
     deviceId?: string
     resume?: string
+    tunnelEndpointId?: string
   } = {}
 ): Promise<AppSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
   const deviceId = options.deviceId ?? crypto.randomUUID()
-  const socket = await connectSocket(authed(token))
+  const tunnel = options.tunnelEndpointId
+  const socket = await connectSocket({
+    ...authed(token),
+    ...(tunnel === undefined ? {} : { "x-codevisor-tunnel-endpoint": tunnel })
+  })
   const reader = new SocketReader(socket, decodeHubToApp)
   socket.send(
     encodeCloudFrame({
@@ -255,7 +266,8 @@ export const connectApp = async (
         kind: "app",
         name: "Test App",
         os: "macOS",
-        publicKey: keys.publicKey
+        publicKey: keys.publicKey,
+        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel })
       },
       ...(options.resume === undefined ? {} : { resume: options.resume })
     })

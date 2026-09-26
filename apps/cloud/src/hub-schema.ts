@@ -1,5 +1,7 @@
 import type { CloudMachinePresence } from "@codevisor/api"
 
+import { machineTunnel } from "./hub-tunnel.js"
+
 /// The hub's durable shape: per-hub SQLite migrations (append-only, applied
 /// on wake — see user-hub.ts) and the row/attachment types they imply.
 
@@ -37,7 +39,17 @@ export const HUB_MIGRATIONS: readonly string[] = [
   // peers can match hub presence to the same machine reached directly; and
   // whether it accepts channels from other machines (MACHINE_PEERS_FEATURE).
   `ALTER TABLE machines ADD COLUMN server_id TEXT;
-   ALTER TABLE machines ADD COLUMN peer_aware INTEGER NOT NULL DEFAULT 0`
+   ALTER TABLE machines ADD COLUMN peer_aware INTEGER NOT NULL DEFAULT 0`,
+  // Tunnel control plane (hub-tunnel.ts): each machine's endpoint id and last
+  // reported address, and the account's app devices machines may admit.
+  `ALTER TABLE machines ADD COLUMN tunnel_endpoint_id TEXT;
+   ALTER TABLE machines ADD COLUMN tunnel_addr TEXT;
+   CREATE TABLE app_devices (
+     device_id TEXT PRIMARY KEY,
+     public_key TEXT NOT NULL,
+     endpoint_id TEXT NOT NULL,
+     last_seen_at TEXT NOT NULL
+   )`
 ]
 
 export interface MachineRow extends Record<string, SqlStorageValue> {
@@ -51,6 +63,8 @@ export interface MachineRow extends Record<string, SqlStorageValue> {
   server_id: string | null
   /// 1 when the last hello advertised MACHINE_PEERS_FEATURE.
   peer_aware: number
+  tunnel_endpoint_id: string | null
+  tunnel_addr: string | null
 }
 
 export interface SocketAttachment {
@@ -70,6 +84,9 @@ export interface SocketAttachment {
   /// this hello won ownership. Missing means generation 0 for sockets that
   /// survived deployment of the generation migration.
   machineGeneration?: number
+  /// Machine sockets: the hello registered a tunnel endpoint, so this machine
+  /// understands (and receives) `peer-devices`.
+  tunnel?: boolean
   helloDone: boolean
 }
 
@@ -79,14 +96,18 @@ export const machineRows = (sql: SqlStorage): MachineRow[] =>
 export const machineRow = (sql: SqlStorage, deviceId: string): MachineRow | undefined =>
   sql.exec<MachineRow>("SELECT * FROM machines WHERE device_id = ?", deviceId).toArray()[0]
 
-export const machinePresence = (row: MachineRow, online: boolean): CloudMachinePresence => ({
-  deviceId: row.device_id,
-  name: row.name,
-  ...(row.os !== null ? { os: row.os } : {}),
-  ...(row.app_version !== null ? { appVersion: row.app_version } : {}),
-  publicKey: row.public_key,
-  ...(row.server_id === null || row.server_id === undefined ? {} : { serverId: row.server_id }),
-  ...(row.peer_aware === 1 ? { machinePeers: true } : {}),
-  online,
-  lastSeenAt: row.last_seen_at
-})
+export const machinePresence = (row: MachineRow, online: boolean): CloudMachinePresence => {
+  const tunnel = machineTunnel(row.tunnel_endpoint_id, row.tunnel_addr)
+  return {
+    deviceId: row.device_id,
+    name: row.name,
+    ...(row.os !== null ? { os: row.os } : {}),
+    ...(row.app_version !== null ? { appVersion: row.app_version } : {}),
+    publicKey: row.public_key,
+    ...(row.server_id === null || row.server_id === undefined ? {} : { serverId: row.server_id }),
+    ...(row.peer_aware === 1 ? { machinePeers: true } : {}),
+    ...(tunnel === undefined ? {} : { tunnel }),
+    online,
+    lastSeenAt: row.last_seen_at
+  }
+}

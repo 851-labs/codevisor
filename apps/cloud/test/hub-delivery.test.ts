@@ -16,7 +16,9 @@ describe("hub relay delivery fallback", () => {
       last_seen_at: "now",
       active_generation: 7,
       server_id: null,
-      peer_aware: 0
+      peer_aware: 0,
+      tunnel_endpoint_id: null,
+      tunnel_addr: null
     }
     const attachment: SocketAttachment = {
       kind: "machine",

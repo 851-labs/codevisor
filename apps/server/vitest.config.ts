@@ -50,10 +50,16 @@ export default defineConfig({
         // and the login flow in src/cli/cloud-auth.ts, and the hub itself in
         // apps/cloud's workerd integration suite.
         "src/infra/cloud-bridge.ts",
+        "src/infra/cloud-bridge-socket.ts",
         // Same boundary, split out for size: the http/ws channel handlers are
         // glue over `fetch` and `ws` sockets; the frame/header/credit logic
         // they compose lives (fully covered) in packages/cloud-client.
-        "src/infra/cloud-proxy-handlers.ts"
+        "src/infra/cloud-proxy-handlers.ts",
+        // Same boundary for the tunnel: glue over the native addon and the
+        // filesystem. Its logic (listener, identity gate, socket adapter)
+        // is covered in packages/cloud-client/src/tunnel-host.test.ts and the
+        // endpoint itself in packages/net; scripts/net-e2e.mjs runs it for real.
+        "src/infra/cloud-tunnel.ts"
       ],
       provider: "v8",
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }

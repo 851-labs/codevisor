@@ -6,6 +6,7 @@ import { createAuth } from "./auth.js"
 import { credentialRoutes } from "./credential-routes.js"
 import { hasEmailAuth } from "./email-auth.js"
 import { DEV_USER, isDevAuthEnabled, type CloudEnv } from "./env.js"
+import { relayMap } from "./hub-tunnel.js"
 import { hubLocationHint } from "./location-hint.js"
 import { connectAccount, nativeHandoff, nativeScheme } from "./pages/account.js"
 import { loginURL, validAuthRedirect } from "./pages/auth-navigation.js"
@@ -14,6 +15,12 @@ import { devLoginPage, devicePage, homePage } from "./pages/pages.js"
 import { pluginModeration } from "./plugin-moderation.js"
 import { PLUGIN_INDEX_KEY, pluginEntryKey, refreshPluginIndex } from "./plugin-registry.js"
 import { notifyPluginReports } from "./plugin-reports.js"
+import {
+  forgetTunnelEndpoints,
+  registerTunnelEndpoint,
+  relayRoutes,
+  TUNNEL_ENDPOINT_HEADER
+} from "./relay-routes.js"
 import { HUB_DEVICE_ID_HEADER, HUB_KIND_HEADER, UserHub } from "./user-hub.js"
 import { CLOUD_VERSION } from "./version.js"
 
@@ -51,6 +58,7 @@ const connectionUserId = async (env: CloudEnv, request: Request): Promise<string
 const app = new Hono<HonoEnv>()
 app.route("/", pluginModeration)
 app.route("/", credentialRoutes)
+app.route("/", relayRoutes)
 
 // -- Discovery & liveness ----------------------------------------------------
 
@@ -60,6 +68,7 @@ app.get("/.well-known/codevisor", (c) =>
     instance: c.env.INSTANCE_NAME,
     version: CLOUD_VERSION,
     protocols: [CLOUD_PROTOCOL_VERSION],
+    relays: relayMap(c.env),
     authProviders: [
       ...(c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET ? ["github"] : []),
       ...(hasAppleAuth(c.env) ? ["apple"] : []),
@@ -174,6 +183,7 @@ app.delete("/api/machines/:deviceId", async (c) => {
       await auth.api.deleteApiKey({ body: { keyId: key.id }, headers: c.req.raw.headers })
     }
   }
+  await forgetTunnelEndpoints(c.env, session.user.id, deviceId)
   const removed = await hub(c.env, session.user.id, c.req.raw.cf).removeMachine(deviceId)
   return removed ? c.json({ ok: true }) : c.json({ error: "unknown machine" }, 404)
 })
@@ -246,6 +256,7 @@ app.get("/connect", async (c) => {
   const machineKey = c.req.header("x-api-key") ?? c.req.query("apiKey")
   const headers = new Headers(c.req.raw.headers)
   let userId: string
+  let deviceId: string
   if (machineKey !== undefined) {
     const auth = createAuth(c.env)
     const verified = await auth.api.verifyApiKey({ body: { key: machineKey } })
@@ -257,12 +268,22 @@ app.get("/connect", async (c) => {
     userId = verified.key.referenceId
     headers.set(HUB_KIND_HEADER, "machine")
     headers.set(HUB_DEVICE_ID_HEADER, metadata.deviceId)
+    deviceId = metadata.deviceId
   } else {
     const sessionUser = await connectionUserId(c.env, c.req.raw)
     if (sessionUser === undefined) return c.json({ error: "unauthorized" }, 401)
     userId = sessionUser
     headers.set(HUB_KIND_HEADER, "app")
+    // Apps name their device in hello; for relay access the account is what
+    // matters, so app endpoints register under a per-endpoint device key.
+    deviceId = `app:${c.req.header(TUNNEL_ENDPOINT_HEADER) ?? ""}`
   }
+  await registerTunnelEndpoint(c.env, {
+    endpointId: c.req.header(TUNNEL_ENDPOINT_HEADER),
+    userId,
+    deviceId,
+    kind: headers.get(HUB_KIND_HEADER)!
+  })
   return hub(c.env, userId, c.req.raw.cf).fetch(new Request(c.req.raw.url, { headers }))
 })
 

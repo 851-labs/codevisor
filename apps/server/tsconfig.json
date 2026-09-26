@@ -35,6 +35,9 @@
       "path": "../../packages/cloud-client"
     },
     {
+      "path": "../../packages/net"
+    },
+    {
       "path": "../../packages/db"
     },
     {

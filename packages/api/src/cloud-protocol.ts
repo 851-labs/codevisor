@@ -1,5 +1,15 @@
 import { Schema } from "effect"
 
+import {
+  CloudRelayInfo,
+  CloudTunnelInfo,
+  HubPeerDevices,
+  MachineTunnelAddr
+} from "./cloud-tunnel-protocol.js"
+
+export * from "./cloud-channel-types.js"
+export * from "./cloud-tunnel-protocol.js"
+
 /// Wire protocol for the cloud relay (apps/cloud). Both planes — app↔hub and
 /// machine↔hub — speak over a WebSocket to the user's hub using two message
 /// kinds:
@@ -43,7 +53,13 @@ export const CloudDeviceInfo = Schema.Struct({
   /// Machines only: the stable Codevisor server id ("machine-<uuid>") this
   /// device runs, so peers can match hub presence to the same machine reached
   /// directly (FleetRoster entries are keyed by it). Absent on older servers.
-  serverId: Schema.optional(Schema.String)
+  serverId: Schema.optional(Schema.String),
+  /// Hex Ed25519 id of the device's tunnel endpoint (docs/plans/
+  /// codevisor-tunnel.md). Absent on devices that predate the tunnel.
+  tunnelEndpointId: Schema.optional(Schema.String),
+  /// The device's update channel. The hub turns the tunnel on per connection
+  /// from it while TUNNEL_ROLLOUT is "alpha". Absent means stable.
+  releaseChannel: Schema.optional(Schema.Literals(["stable", "alpha"]))
 })
 export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
 
@@ -60,6 +76,8 @@ export const CloudMachinePresence = Schema.Struct({
   /// machine-opened channels only to such machines — older ones would not
   /// know to restrict machine openers to the gateway.
   machinePeers: Schema.optional(Schema.Boolean),
+  /// Present once the machine has reported a tunnel endpoint.
+  tunnel: Schema.optional(CloudTunnelInfo),
   online: Schema.Boolean,
   /// ISO timestamp of the last connect/disconnect the hub observed.
   lastSeenAt: Schema.String
@@ -336,7 +354,10 @@ export const HubWelcome = Schema.Struct({
   resume: Schema.optional(Schema.String),
   /// True when the hello's resume token was honoured: the previous
   /// connection's identity carried over and channels survive.
-  resumed: Schema.optional(Schema.Boolean)
+  resumed: Schema.optional(Schema.Boolean),
+  /// Tunnel relay map and rollout switch (see CloudRelayInfo).
+  relays: Schema.optional(Schema.Array(CloudRelayInfo)),
+  tunnel: Schema.optional(Schema.String)
 })
 
 export const HubPresence = Schema.Struct({
@@ -401,7 +422,7 @@ export const MachineHello = Schema.Struct({
 
 export const MachinePing = Schema.Struct({ t: Schema.Literal("ping") })
 
-export const MachineToHub = Schema.Union([MachineHello, MachinePing])
+export const MachineToHub = Schema.Union([MachineHello, MachinePing, MachineTunnelAddr])
 export type MachineToHub = typeof MachineToHub.Type
 
 export const HubMachineWelcome = Schema.Struct({
@@ -414,7 +435,9 @@ export const HubMachineWelcome = Schema.Struct({
   resumed: Schema.optional(Schema.Boolean),
   /// The account's machines (this one included), for machines that
   /// advertised MACHINE_PEERS_FEATURE. Kept current by presence frames.
-  machines: Schema.optional(Schema.Array(CloudMachinePresence))
+  machines: Schema.optional(Schema.Array(CloudMachinePresence)),
+  relays: Schema.optional(Schema.Array(CloudRelayInfo)),
+  tunnel: Schema.optional(Schema.String)
 })
 
 /// Sent to a machine when an app connection vanishes so it can tear down that
@@ -432,49 +455,11 @@ export const HubToMachine = Schema.Union([
   HubPeerGone,
   HubPresence,
   HubMachineReset,
+  HubPeerDevices,
   HubError,
   HubPong
 ])
 export type HubToMachine = typeof HubToMachine.Type
-
-// ---------------------------------------------------------------------------
-// Channel types (inside sealed `open` payloads — invisible to the hub)
-// ---------------------------------------------------------------------------
-
-/// Decrypted content of an open envelope's payload. `params` is
-/// channel-type-specific; terminal channels use TerminalChannelParams to
-/// reattach durable sessions. `compress: true` negotiates prefix-framed
-/// payloads: every data plaintext in both directions starts with a framing
-/// byte (0 = raw, 1 = raw-DEFLATE body), letting the responder compress
-/// compressible bodies. Invisible to the hub, like everything else here.
-export const ChannelOpenPayload = Schema.Struct({
-  channelType: Schema.String,
-  params: Schema.optional(Schema.Unknown),
-  compress: Schema.optional(Schema.Boolean),
-  /// The opener runs this channel with explicit credit-based flow control in
-  /// BOTH directions: each sender may only put granted ciphertext bytes in
-  /// flight, and grants replenish as the receiver actually consumes. Openers
-  /// set this only for channel types whose handlers grant credit (http, ws,
-  /// byte-stream) — a flow-controlled open to an unaware handler would wait
-  /// for grants forever.
-  flowControl: Schema.optional(Schema.Boolean)
-})
-export type ChannelOpenPayload = typeof ChannelOpenPayload.Type
-
-export const TERMINAL_CHANNEL_TYPE = "terminal"
-
-/// Machine→machine request channel: one Codevisor gateway call per channel
-/// (see @codevisor/cloud-client gateway-channel.ts). The only channel type a
-/// machine accepts from another machine.
-export const GATEWAY_CHANNEL_TYPE = "gateway"
-
-export const TerminalChannelParams = Schema.Struct({
-  terminalId: Schema.String,
-  /// Resume after this output sequence number (0 = from the start of the
-  /// machine's retained frame window).
-  sinceSeq: Schema.Number
-})
-export type TerminalChannelParams = typeof TerminalChannelParams.Type
 
 // ---------------------------------------------------------------------------
 // Codecs (JSON text control frames)

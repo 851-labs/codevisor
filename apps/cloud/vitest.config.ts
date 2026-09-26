@@ -20,7 +20,13 @@ export default defineConfig(async () => {
             // supply their own key and an in-process delivery stub.
             RESEND_API_KEY: "",
             PUBLIC_BASE_URL: "http://localhost:8787",
-            INSTANCE_NAME: "Codevisor Cloud (test)"
+            INSTANCE_NAME: "Codevisor Cloud (test)",
+            // Tunnel control plane (test/cloud-tunnel.test.ts).
+            RELAY_MAP: JSON.stringify([
+              { url: "https://relay-test.codevisor.dev", quicPort: 7842 }
+            ]),
+            TUNNEL_ROLLOUT: "on",
+            RELAY_AUTHORIZE_TOKEN: "relay-secret, relay-next"
           }
         }
       })

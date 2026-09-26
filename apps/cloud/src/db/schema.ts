@@ -239,3 +239,21 @@ export const pluginConsents = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.pluginId, table.consentKey] })]
 )
+
+/// Tunnel endpoint ids (Ed25519, hex) registered by authenticated devices on
+/// `/connect`. Our relays ask `POST /api/relay/authorize` whether an endpoint
+/// may use them; only registered endpoints of live accounts may
+/// (docs/plans/codevisor-tunnel.md). Rows cascade with the user.
+export const tunnelEndpoint = sqliteTable(
+  "tunnel_endpoint",
+  {
+    endpointId: text("endpoint_id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    deviceId: text("device_id").notNull(),
+    kind: text("kind").notNull(),
+    updatedAt: integer("updated_at").notNull()
+  },
+  (table) => [index("tunnel_endpoint_user_device").on(table.userId, table.deviceId)]
+)

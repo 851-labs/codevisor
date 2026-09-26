@@ -15,17 +15,18 @@ import { DurableObject } from "cloudflare:workers"
 
 import { deleteHubAccount, storeCredentialCommand } from "./credential-storage.js"
 import type { CloudEnv } from "./env.js"
-import {
-  deliverToMachine,
-  deliverToPeer,
-  hasRoutableMachineSocket,
-  type HubDeliveryPort
-} from "./hub-delivery.js"
+import { deliverToMachine, deliverToPeer, type HubDeliveryPort } from "./hub-delivery.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
-import { listHubMachines, registerMachine, removeHubMachine } from "./hub-registry.js"
+import {
+  listHubMachines,
+  registerMachine,
+  removeHubMachine,
+  renameHubMachine
+} from "./hub-registry.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
+import { hubTunnel } from "./hub-tunnel-events.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
 import { DEFAULT_RESUME_GRACE_MS, ResumeSessions } from "./resume-sessions.js"
 
@@ -121,24 +122,7 @@ export class UserHub extends DurableObject<CloudEnv> {
   }
 
   renameMachine(deviceId: string, name: string): boolean {
-    const updated = this.ctx.storage.sql.exec(
-      "UPDATE machines SET name = ? WHERE device_id = ?",
-      name,
-      deviceId
-    ).rowsWritten
-    if (updated === 0) return false
-    const row = machineRow(this.ctx.storage.sql, deviceId)
-    if (row !== undefined) {
-      this.#net.broadcastMachineNotice({
-        t: "presence",
-        machine: machinePresence(
-          row,
-          hasRoutableMachineSocket(this.#net, deviceId, row.active_generation) ||
-            this.#resume.machineGraceSession(deviceId, Date.now()) !== undefined
-        )
-      })
-    }
-    return true
+    return renameHubMachine(this.#notices(), deviceId, name)
   }
 
   // -- WebSocket lifecycle ---------------------------------------------------
@@ -244,6 +228,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       if (this.#accountDeleted) return
       attachment.deviceId = frame.device.deviceId
       attachment.publicKey = frame.device.publicKey
+      const tunnel = hubTunnel.appHello(this.ctx.storage.sql, this.#net, this.env, frame.device)
       this.#supersedeConnection(attachment.connectionId, socket)
       attachment.helloDone = true
       socket.serializeAttachment(attachment)
@@ -256,7 +241,8 @@ export class UserHub extends DurableObject<CloudEnv> {
             connectionId: attachment.connectionId,
             machines: this.listMachines(),
             resume: token,
-            ...(resumed ? { resumed: true } : {})
+            ...(resumed ? { resumed: true } : {}),
+            ...tunnel
           })
         )
       ) {
@@ -278,6 +264,9 @@ export class UserHub extends DurableObject<CloudEnv> {
       socket.send(encodeCloudFrame({ t: "pong" }))
       return
     }
+    if (frame.t === "tunnel-addr") {
+      return hubTunnel.addr(this.ctx.storage.sql, this.#net, attachment, frame.tunnel)
+    }
     if (frame.t === "hello") {
       if (frame.protocol !== CLOUD_PROTOCOL_VERSION) {
         this.#net.error(
@@ -292,13 +281,15 @@ export class UserHub extends DurableObject<CloudEnv> {
       const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
       if (this.#accountDeleted) return
       attachment.peerAware = frame.features?.includes(MACHINE_PEERS_FEATURE) === true
+      const scope = hubTunnel.machineScope(this.env, frame.device)
       const sql = this.ctx.storage.sql
       attachment.machineGeneration = registerMachine(
         sql,
         deviceId,
-        frame.device,
+        scope.device,
         attachment.peerAware
       )
+      attachment.tunnel = scope.tunnelMachine
       // Machine openers present this key on channels they open; peers pin it.
       attachment.publicKey = frame.device.publicKey
       // Install the durable generation before demoting the predecessor. From
@@ -318,13 +309,15 @@ export class UserHub extends DurableObject<CloudEnv> {
             connectionId: attachment.connectionId,
             resume: token,
             ...(resumed ? { resumed: true } : {}),
-            ...(attachment.peerAware ? { machines: this.listMachines() } : {})
+            ...(attachment.peerAware ? { machines: this.listMachines() } : {}),
+            ...scope.welcome
           })
         )
       ) {
         this.#retireUndeliverable(socket)
         return
       }
+      hubTunnel.sendPeerDevices(this.ctx.storage.sql, this.#net, socket)
       if (resumed) {
         // Nobody was told the machine left: skip the reset/presence noise
         // and replay what apps sent meanwhile.
