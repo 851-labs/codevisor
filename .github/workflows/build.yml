@@ -83,8 +83,14 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: bun run check:js
+      # The tunnel (docs/plans/codevisor-tunnel.md): Rust unit + integration
+      # tests, then the multi-process test (wrangler, two relays, two servers,
+      # a headless app) through the same launch code as `bun run dev`.
+      - run: bun run net:test
+      - run: bun run net:e2e
 
   server-linux-x64:
     needs: metadata
@@ -100,6 +106,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
       # The compiled JavaScript is platform independent. The Intel Mac reuses
@@ -134,6 +141,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       - run: bun install --frozen-lockfile
       - run: scripts/release/build-server-archive.sh "$VERSION" dist/release
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -170,6 +178,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: codevisor-server-js
@@ -224,6 +233,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       - name: Restore GhosttyKit cache
         id: ghosttykit-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -308,6 +318,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
       # Signed but not notarized: Publish Alpha notarizes only what it ships.
+      - name: Build the tunnel xcframework
+        run: node scripts/net-artifact.mjs ensure-swift
       - name: Build and sign macOS app artifacts
         env:
           APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
@@ -402,10 +414,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
       # SwiftTerm compiles Metal shaders, and Xcode 16+ ships the Metal
       # Toolchain as a separate component. A no-op once installed.
       - name: Ensure Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build the tunnel xcframework
+        run: node scripts/net-artifact.mjs ensure-swift
       - name: Archive and cloud-sign the iOS build
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

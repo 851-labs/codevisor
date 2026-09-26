@@ -1,0 +1,26 @@
+{
+  "rust": "1.98.1",
+  "iroh": "1.2.0",
+  "relay": {
+    "version": "1.2.0",
+    "assets": {
+      "darwin-arm64": {
+        "url": "https://github.com/n0-computer/iroh/releases/download/v1.2.0/iroh-relay-v1.2.0-aarch64-apple-darwin.tar.gz",
+        "sha256": "ed0932770fcdd0ae862d94b8657c55311c429f17aa84b5614367d43445853602"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/n0-computer/iroh/releases/download/v1.2.0/iroh-relay-v1.2.0-x86_64-apple-darwin.tar.gz",
+        "sha256": "52f4d78adedd57d165a3f96d11266ef2bd9b53d48a9305c7908102cfe602c26c"
+      },
+      "linux-x64": {
+        "url": "https://github.com/n0-computer/iroh/releases/download/v1.2.0/iroh-relay-v1.2.0-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "de0093dbcb51b9dc17cd54fc31a60d27600535ae86617354f2fe0594e593abe5"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/n0-computer/iroh/releases/download/v1.2.0/iroh-relay-v1.2.0-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "df20e9d88bf1ab1861b6825769c332fffb61f47e831472da4c91f1eb0a4483f3"
+      }
+    }
+  },
+  "certbot": "5.8.0"
+}

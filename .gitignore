@@ -21,6 +21,9 @@ xcuserdata/
 .env.*
 !.env.example
 apps/macos/Frameworks/
+packages/swift/Frameworks/
+# Swift bindings for the tunnel crate, written by `net-artifact.mjs ensure-swift`.
+packages/swift/CodevisorNet/Sources/CodevisorNet/Generated/
 .wrangler/
 # Colocated dev/test build & server state (see scripts/dev.mjs)
 tmp/

@@ -113,3 +113,22 @@ export function describeExit({ code, signal }) {
 export function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
+
+/// Asks each dev server to shut down over HTTP (killing any that can't be
+/// reached), waits up to 2 s for all of them, then kills stragglers.
+export async function shutdownDevServers(servers) {
+  for (const [servicePort, child] of servers) {
+    try {
+      await fetch(`http://127.0.0.1:${servicePort}/v1/shutdown`, {
+        method: "POST",
+        signal: AbortSignal.timeout(1_000)
+      })
+    } catch {
+      child.kill("SIGTERM")
+    }
+  }
+  await Promise.race([Promise.all(servers.map(([, child]) => waitForExit(child))), delay(2_000)])
+  for (const [, child] of servers) {
+    if (child.exitCode === null) child.kill("SIGTERM")
+  }
+}

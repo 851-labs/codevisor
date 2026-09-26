@@ -11,7 +11,8 @@ import { pathExists } from "./dev-shared.mjs"
 /// built output plus manifests, never sources or macOS node_modules. The
 /// container installs its own Linux node_modules into the copy.
 const WORKSPACE_ROOTS = ["packages", "apps"]
-const PACKAGE_KEEP = ["package.json", "dist"]
+// `native` carries prebuilt addons (packages/net: the Linux tunnel addon).
+const PACKAGE_KEEP = ["package.json", "dist", "native"]
 const ROOT_KEEP = ["package.json", "bun.lock", "bun.lockb", ".npmrc", "bunfig.toml", "patches"]
 
 const copyIfPresent = async (from, to) => {
@@ -49,10 +50,9 @@ const workspaceSignature = async (repoRoot, packageDirectories) => {
   for (const directory of packageDirectories.toSorted()) {
     hash.update(directory)
     hash.update(await readFile(join(repoRoot, directory, "package.json")))
-    const dist = join(repoRoot, directory, "dist")
-    if (await pathExists(dist)) {
-      const newest = await newestMtime(dist)
-      hash.update(String(newest))
+    for (const output of ["dist", "native"]) {
+      const path = join(repoRoot, directory, output)
+      if (await pathExists(path)) hash.update(String(await newestMtime(path)))
     }
   }
   return hash.digest("hex")

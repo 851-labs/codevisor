@@ -67,6 +67,7 @@
         "@codevisor/db": "workspace:*",
         "@codevisor/harness-manager": "workspace:*",
         "@codevisor/mcp": "workspace:*",
+        "@codevisor/net": "workspace:*",
         "@codevisor/plugins": "workspace:*",
         "@codevisor/processes": "workspace:*",
         "@codevisor/skills": "workspace:*",
@@ -232,6 +233,7 @@
       "dependencies": {
         "@codevisor/api": "workspace:*",
         "@codevisor/cloud-crypto": "workspace:*",
+        "@codevisor/net": "workspace:*",
       },
       "devDependencies": {
         "vitest": "4.1.6",
@@ -298,6 +300,12 @@
       },
       "devDependencies": {
         "@types/ws": "8.18.1",
+        "vitest": "4.1.6",
+      },
+    },
+    "packages/net": {
+      "name": "@codevisor/net",
+      "devDependencies": {
         "vitest": "4.1.6",
       },
     },
@@ -556,6 +564,8 @@
     "@codevisor/macos": ["@codevisor/macos@workspace:apps/macos"],
 
     "@codevisor/mcp": ["@codevisor/mcp@workspace:packages/mcp"],
+
+    "@codevisor/net": ["@codevisor/net@workspace:packages/net"],
 
     "@codevisor/plugins": ["@codevisor/plugins@workspace:packages/plugins"],
 

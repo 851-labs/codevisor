@@ -1,0 +1,20 @@
+[package]
+name = "codevisor-net-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+name = "codevisor_net_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+codevisor-net.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+uniffi = { version = "0.32", features = ["tokio", "cli"] }

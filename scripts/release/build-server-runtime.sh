@@ -111,6 +111,13 @@ for package_dir in "$repo_root"/packages/*/; do
   fi
 done
 
+# The tunnel's native addon (docs/plans/codevisor-tunnel.md), built with cargo
+# on this runner for its own target like the other native addons. Without it
+# the server still runs, relay-only (see apps/server/src/infra/cloud-tunnel.ts).
+node "$repo_root/scripts/net-artifact.mjs" ensure-node >/dev/null
+mkdir -p "$runtime_dir/packages/net/native/$target"
+cp "$repo_root/packages/net/native/$target/codevisor_net.node" "$runtime_dir/packages/net/native/$target/"
+
 # Keep Ghostty's terminfo database next to @codevisor/terminal in both macOS
 # and Linux lookup layouts. Linux PTYs advertise the portable xterm-256color
 # baseline, but the Ghostty entry remains available to macOS and explicit

@@ -3,9 +3,13 @@ import process from "node:process"
 
 import { ensureChromium } from "./chromium-artifact.mjs"
 import { ensureGhosttyFramework } from "./ghostty-artifact.mjs"
+import { ensureSwiftFramework } from "./net-artifact.mjs"
 
 export async function bootstrapDevelopment(repoRoot, options = {}) {
   await run("bun", ["install", "--frozen-lockfile"], repoRoot, options.environment)
+  // Both apps link CodevisorNet (packages/swift), so SwiftPM needs the tunnel
+  // xcframework before it resolves the package (docs/plans/codevisor-tunnel.md).
+  await ensureSwiftFramework(options.environment)
   if (options.ghostty === true) await ensureNativeFrameworks(repoRoot, options)
 }
 

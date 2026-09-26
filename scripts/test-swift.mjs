@@ -41,5 +41,10 @@ export function runSwiftTests(args = [], run = spawnSync) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = runSwiftTests(process.argv.slice(2))
+  // CodevisorNet links the tunnel xcframework from the shared artifact cache.
+  const net = spawnSync("node", ["scripts/net-artifact.mjs", "ensure-swift"], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    stdio: "inherit"
+  })
+  process.exitCode = net.status !== 0 ? (net.status ?? 1) : runSwiftTests(process.argv.slice(2))
 }

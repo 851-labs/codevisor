@@ -1,0 +1,42 @@
+# Codevisor's peer-to-peer tunnel (docs/plans/codevisor-tunnel.md): a thin,
+# purpose-built wrapper over iroh, exposed to Node (napi) and Swift (uniffi).
+[workspace]
+resolver = "3"
+members = ["crates/codevisor-net", "crates/codevisor-net-node", "crates/codevisor-net-ffi"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+# Pinned exactly (scripts/net-build.lock.json records the same version).
+# Default features are off on purpose: `fast-apple-datapath` uses private
+# Apple APIs (App Store risk). `portmapper` keeps UPnP/NAT-PMP/PCP mapping.
+iroh = { version = "=1.2.0", default-features = false, features = [
+  "metrics",
+  "portmapper",
+  "tls-ring"
+] }
+iroh-relay = { version = "=1.2.0", default-features = false }
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "sync",
+  "time",
+  "io-util"
+] }
+anyhow = "1"
+bytes = "1"
+hex = "0.4"
+rand = "0.9"
+rustls-pki-types = "1"
+tracing = "0.1"
+codevisor-net = { path = "crates/codevisor-net" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

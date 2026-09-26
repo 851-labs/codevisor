@@ -18,6 +18,8 @@
     "build:pixelbook": "bun scripts/build-native.mjs pixelbook",
     "ghostty:build": "bun scripts/ghostty-artifact.mjs build",
     "dev:scripts:test": "node --test scripts/*.test.mjs",
+    "net:e2e": "node scripts/net-e2e.mjs",
+    "net:test": "cargo test --manifest-path packages/net/Cargo.toml --locked",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint -c .oxlintrc.json --disable-nested-config --deny-warnings --report-unused-disable-directives-severity=error .",

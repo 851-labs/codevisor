@@ -1,0 +1,18 @@
+name: Set up Rust
+description: >-
+  Installs the Rust toolchain pinned in scripts/net-build.lock.json (the
+  tunnel's native code, docs/plans/codevisor-tunnel.md) and puts cargo on PATH.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        toolchain="$(node -p 'require("./scripts/net-build.lock.json").rust')"
+        if ! command -v rustup >/dev/null 2>&1 && [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+        fi
+        export PATH="$HOME/.cargo/bin:$PATH"
+        rustup toolchain install "$toolchain" --profile minimal
+        rustup default "$toolchain"
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"

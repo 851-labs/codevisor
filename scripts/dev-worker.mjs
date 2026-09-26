@@ -41,7 +41,8 @@ import {
   remoteDevelopmentEnvironment
 } from "./dev-layout.mjs"
 import { requestsMacOSBuildReuse, verifyReusableMacOSApp } from "./dev-macos-reuse.mjs"
-import { delay, describeExit, waitForExit, waitForHealth } from "./dev-shared.mjs"
+import { devNetCloudVariables, devNetEnvironment, launchDevNet, prepareDevNet } from "./dev-net.mjs"
+import { describeExit, shutdownDevServers, waitForExit, waitForHealth } from "./dev-shared.mjs"
 import { requireIOSSimulator } from "./ios-simulator-state.mjs"
 import { runXcodebuild } from "./xcodebuild.mjs"
 
@@ -167,8 +168,20 @@ const [containerContext] = await Promise.all([
       })
 ])
 
+// Local tunnel relays (docs/plans/codevisor-tunnel.md): same binary and config
+// renderer as production, per-worktree ports and dev CA.
+const net = await prepareDevNet({
+  instanceHash,
+  netRoot: join(layout.tmpRoot, "net"),
+  containerContext
+})
 const cloud = spawnCloudDev({
-  cloud: { cloudExtraVariables, cloudPersistPath, cloudPort, cloudUrl },
+  cloud: {
+    cloudExtraVariables: [...cloudExtraVariables, ...devNetCloudVariables(net)],
+    cloudPersistPath,
+    cloudPort,
+    cloudUrl
+  },
   containerized: containerContext !== undefined,
   repoRoot,
   worktreeName
@@ -215,6 +228,12 @@ if (includesIOS) {
     environment: process.env
   })
 }
+const relays = await launchDevNet({
+  net,
+  repoRoot,
+  cloudPort,
+  containerized: containerContext !== undefined
+})
 const developmentBrowserIconDirectory = await createDevelopmentBrowserExtensionIcons({
   appName,
   derivedDataPath,
@@ -248,7 +267,8 @@ const sharedEnvironment = {
   VITE_CODEVISOR_DEV_CLOUD_URL: cloudUrl,
   CODEVISOR_DEV_URL_SCHEME: urlScheme,
   VITE_CODEVISOR_DEV_URL_SCHEME: urlScheme,
-  CODEVISOR_DEV_CLOUD_TOKEN: ""
+  CODEVISOR_DEV_CLOUD_TOKEN: "",
+  ...(await devNetEnvironment(net))
 }
 /// Everything except the dev-cloud session token. Only the Dev Cloud
 /// container is pre-signed-in (the "machine somewhere else"); every other
@@ -330,7 +350,10 @@ const cloudRemoteServer = await launchDevRemoteServer({
     ...remoteDevelopmentEnvironment(layout, process.env, layout.remoteCloud),
     CODEVISOR_DEV_INSTANCE_ID: `${instanceName}-cloud`,
     CODEVISOR_DEV_CLOUD_URL: cloudUrl,
-    CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN
+    CODEVISOR_DEV_CLOUD_TOKEN: sharedEnvironment.CODEVISOR_DEV_CLOUD_TOKEN,
+    // Always-relayed machine: exercises the relay path on every dev run.
+    CODEVISOR_NET_PATH_POLICY: "relay-only",
+    ...(await devNetEnvironment(net, { inline: true }))
   }
 })
 
@@ -345,33 +368,13 @@ const stop = async (exitCode = 0) => {
   app?.kill("SIGTERM")
   www.kill("SIGTERM")
   cloud.kill("SIGTERM")
+  for (const relay of relays) relay.kill("SIGTERM")
 
-  for (const [servicePort, child] of [
+  await shutdownDevServers([
     [port, server],
     [directRemotePort, directRemoteServer],
     [cloudRemotePort, cloudRemoteServer]
-  ]) {
-    try {
-      await fetch(`http://127.0.0.1:${servicePort}/v1/shutdown`, {
-        method: "POST",
-        signal: AbortSignal.timeout(1_000)
-      })
-    } catch {
-      child.kill("SIGTERM")
-    }
-  }
-
-  await Promise.race([
-    Promise.all([
-      waitForExit(server),
-      waitForExit(directRemoteServer),
-      waitForExit(cloudRemoteServer)
-    ]),
-    delay(2_000)
   ])
-  for (const child of [server, directRemoteServer, cloudRemoteServer]) {
-    if (child.exitCode === null) child.kill("SIGTERM")
-  }
   process.exitCode = exitCode
 }
 

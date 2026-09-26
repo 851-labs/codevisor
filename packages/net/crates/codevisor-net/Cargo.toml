@@ -1,0 +1,27 @@
+[package]
+name = "codevisor-net"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+iroh.workspace = true
+iroh-relay.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+hex.workspace = true
+rand.workspace = true
+rustls-pki-types.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+iroh-relay = { version = "=1.2.0", default-features = false, features = [
+  "server",
+  "test-utils",
+  "tls-ring"
+] }
+base64 = "0.22"
+
