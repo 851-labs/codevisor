@@ -72,6 +72,7 @@ extension ScreenSharingHostService {
           width: points.width * 2, height: points.height * 2, bitrate: Self.bitrateCeiling)
         if let display = session.virtualDisplay {
           try display.resize(width: points.width, height: points.height)
+          try await display.selectHiDPIMode()
           movesDisplay = false
         } else {
           let display = try ScreenSharingHostVirtualDisplay(
