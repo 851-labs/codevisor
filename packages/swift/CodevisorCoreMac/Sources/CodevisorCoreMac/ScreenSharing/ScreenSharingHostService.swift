@@ -37,6 +37,8 @@ final class ScreenSharingHostService {
     /// Posts input within the shared display's current bounds (they change while mirrored).
     var injector: ScreenSharingInputInjector?
     var pendingResize: Task<Void, Never>?
+    /// The resize being applied; a newer size waits for it rather than cancelling it.
+    var resizing: Task<Void, Never>?
     /// Until this uptime, display changes are the host's own (a virtual display appearing,
     /// mirroring, resizing) and don't end the session.
     var ownDisplayChangeUntil: TimeInterval = 0
@@ -398,6 +400,7 @@ final class ScreenSharingHostService {
     session.cursor?.stop()
     session.capture.audio.set(nil)
     session.pendingResize?.cancel()
+    session.resizing?.cancel()
     session.peer.close()
     session.captureTask?.cancel()
     // Capture invalidates its generation; a late startup stops its own stream. A wedged replayd

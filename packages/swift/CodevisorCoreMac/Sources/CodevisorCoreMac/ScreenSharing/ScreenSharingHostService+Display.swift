@@ -41,12 +41,21 @@ extension ScreenSharingHostService {
   }
 
   /// A pane being dragged sends a burst of sizes: the last one within 300 ms wins.
+  ///
+  /// A resize already being applied is never cancelled: cancelling it mid-way cancelled its
+  /// capture start and left the capture stopped, so the video froze (tuftlord, 2026-09-25: two
+  /// sizes ~1 s apart as a viewer connected). A newer size waits for it, then applies.
   private func scheduleResize(_ session: Session, to size: (width: Int, height: Int)?) {
     session.pendingResize?.cancel()
     session.pendingResize = Task { [weak self, weak session] in
       do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
       guard let self, let session, !session.stopping else { return }
-      await self.resize(session, to: size)
+      await session.resizing?.value
+      guard !Task.isCancelled, !session.stopping else { return }
+      // Its own task, so a newer size's cancelling this pending one can't reach it.
+      let resizing = Task { await self.resize(session, to: size) }
+      session.resizing = resizing
+      await resizing.value
     }
   }
 
