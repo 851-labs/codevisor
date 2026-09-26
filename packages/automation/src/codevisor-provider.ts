@@ -5,6 +5,7 @@ import { Schema } from "effect"
 
 import type { AutomationProviderContext, AutomationToolProvider } from "./automation-provider.js"
 import { textToolResult } from "./automation-provider.js"
+import { CodeExecutionToolError } from "./code-executor.js"
 import {
   CODEVISOR_API_TOOLS,
   objectSchema,
@@ -120,7 +121,8 @@ const toolInputSchema = (spec: CodevisorApiToolSpec): JsonSchema => {
 const tools: ReadonlyArray<Tool> = [
   {
     name: "context.current",
-    description: "Return the calling Codevisor session and project ids.",
+    description:
+      "Return the calling Codevisor session: sessionId, projectId, workspaceId, worktreeName (its git worktree, absent for the project folder), parentSessionId (the agent that created this one, if any), the machine it runs on, and clientId (the app window that sent the current prompt, absent for automations and agent-sent prompts).",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
   },
   ...CODEVISOR_API_TOOLS.map((spec): Tool => ({
@@ -144,15 +146,31 @@ const bodyPropertyNames = (schema: Schema.Constraint): ReadonlyArray<string> =>
 const responseError = async (spec: CodevisorApiToolSpec, response: Response): Promise<Error> => {
   const text = await response.text()
   let detail = text.trim()
+  let typed: { readonly message?: unknown; readonly code?: unknown; readonly details?: unknown } =
+    {}
   try {
-    const parsed = JSON.parse(text) as { readonly error?: unknown }
-    if (typeof parsed.error === "string") detail = parsed.error
+    const parsed = JSON.parse(text) as { readonly error?: unknown; readonly code?: unknown }
+    // Typed failures arrive as `{ error, code, details }` or
+    // `{ error: { message, code, details } }`.
+    typed =
+      typeof parsed.error === "object" && parsed.error !== null
+        ? (parsed.error as typeof typed)
+        : { ...parsed, message: parsed.error }
+    if (typeof typed.message === "string") detail = typed.message
   } catch {
     // Plain-text failures retain the response body.
   }
-  return new Error(
-    `${spec.name} failed (${response.status}${response.statusText.length === 0 ? "" : ` ${response.statusText}`}): ${detail || "Codevisor request failed"}`
-  )
+  const code = typeof typed.code === "string" ? typed.code : undefined
+  const details =
+    typeof typed.details === "object" && typed.details !== null
+      ? (typed.details as Readonly<Record<string, unknown>>)
+      : undefined
+  const message = `${spec.name} failed (${response.status}${response.statusText.length === 0 ? "" : ` ${response.statusText}`}): ${detail || "Codevisor request failed"}`
+  // Coded failures (an unavailable client, say) reach sandbox code intact so
+  // it can catch them by class; everything else stays a plain error.
+  return code === undefined
+    ? new Error(message)
+    : new CodeExecutionToolError(detail, { code, ...(details === undefined ? {} : { details }) })
 }
 
 /// Fills the defaults an agent-created chat needs: the calling project, and a
@@ -167,6 +185,10 @@ const sessionCreatePayload = (
   ...("projectId" in payload || context.projectId === undefined
     ? {}
     : { projectId: context.projectId }),
+  // Sessions an agent starts belong to it, so it can find them again later.
+  ...("parentSessionId" in payload || context.sessionId === undefined
+    ? {}
+    : { parentSessionId: context.sessionId }),
   ...("workspaceId" in payload ? {} : { workspaceId: randomUUID() })
 })
 
@@ -274,18 +296,42 @@ const invokeApiTool = async (
   return textToolResult(text)
 }
 
+/// What `context.current` reports beyond the session and project ids. The
+/// gateway owns these facts (machine identity, turn origin, parent link).
+export interface CodevisorCurrentContext {
+  readonly workspaceId?: string
+  /// The git worktree the calling session runs in; absent for the project folder.
+  readonly worktreeName?: string
+  readonly parentSessionId?: string
+  readonly machine?: { readonly id: string; readonly name: string }
+  readonly clientId?: string
+}
+
+export interface CodevisorProviderOptions {
+  readonly currentContext?: (context: AutomationProviderContext) => Promise<CodevisorCurrentContext>
+}
+
 export const makeCodevisorProvider = (
   getBaseUrl: () => string,
-  getBearerToken: () => Promise<string>
+  getBearerToken: () => Promise<string>,
+  options: CodevisorProviderOptions = {}
 ): AutomationToolProvider => ({
   id: "codevisor",
   tools,
   invoke: async (context, toolName, args) => {
     if (toolName === "context.current") {
+      const extra = (await options.currentContext?.(context)) ?? {}
       return textToolResult(
         JSON.stringify({
           sessionId: context.sessionId,
-          ...(context.projectId === undefined ? {} : { projectId: context.projectId })
+          ...(context.projectId === undefined ? {} : { projectId: context.projectId }),
+          ...(extra.workspaceId === undefined ? {} : { workspaceId: extra.workspaceId }),
+          ...(extra.worktreeName === undefined ? {} : { worktreeName: extra.worktreeName }),
+          ...(extra.parentSessionId === undefined
+            ? {}
+            : { parentSessionId: extra.parentSessionId }),
+          ...(extra.machine === undefined ? {} : { machine: extra.machine }),
+          ...(extra.clientId === undefined ? {} : { clientId: extra.clientId })
         })
       )
     }

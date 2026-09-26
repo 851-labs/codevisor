@@ -39,7 +39,11 @@ export const CloudDeviceInfo = Schema.Struct({
   name: Schema.String,
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
-  publicKey: Schema.String
+  publicKey: Schema.String,
+  /// Machines only: the stable Codevisor server id ("machine-<uuid>") this
+  /// device runs, so peers can match hub presence to the same machine reached
+  /// directly (FleetRoster entries are keyed by it). Absent on older servers.
+  serverId: Schema.optional(Schema.String)
 })
 export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
 
@@ -49,6 +53,13 @@ export const CloudMachinePresence = Schema.Struct({
   os: Schema.optional(Schema.String),
   appVersion: Schema.optional(Schema.String),
   publicKey: Schema.String,
+  /// See CloudDeviceInfo.serverId.
+  serverId: Schema.optional(Schema.String),
+  /// The machine advertised MACHINE_PEERS_FEATURE on its last hello: it
+  /// accepts (gateway) channels from other machines. The hub routes
+  /// machine-opened channels only to such machines — older ones would not
+  /// know to restrict machine openers to the gateway.
+  machinePeers: Schema.optional(Schema.Boolean),
   online: Schema.Boolean,
   /// ISO timestamp of the last connect/disconnect the hub observed.
   lastSeenAt: Schema.String
@@ -122,6 +133,10 @@ export interface MachineRelayHeader {
 
 export interface HubToMachineRelayHeader {
   peerId: string
+  /// Present ("machine") when the opener is another machine on the account
+  /// rather than an app. Machines accept machine openers only for
+  /// GATEWAY_CHANNEL_TYPE; absent means an app opened the channel.
+  peerKind?: CloudDeviceKind
   /// The opener app device's static public key, attached by the hub to `open`
   /// relays so the machine can complete key agreement and (TOFU-)pin the app.
   peerPublicKey?: string
@@ -263,7 +278,31 @@ export const parseHubToMachineRelayHeader = (
   if (header.peerDeviceId !== undefined && typeof header.peerDeviceId !== "string") {
     return undefined
   }
+  if (header.peerKind !== undefined && header.peerKind !== "app" && header.peerKind !== "machine") {
+    return undefined
+  }
   return header
+}
+
+/// Hub→opener relay header (apps, and machines for the channels they open).
+export const parseHubToAppRelayHeader = (value: unknown): HubToAppRelayHeader | undefined =>
+  parseAddressedHeader<HubToAppRelayHeader>(value, "machineId")
+
+/// What a machine may send the hub: answers on channels peers opened
+/// (`peerId`), or — for machine→machine channels it opens itself — the
+/// app-shaped `machineId` addressing. The hub routes machine-opened channels
+/// only to other machines registered on the same account.
+export type MachineOutboundRelayHeader =
+  | ({ direction: "answer" } & MachineRelayHeader)
+  | ({ direction: "open" } & AppRelayHeader)
+
+export const parseMachineOutboundRelayHeader = (
+  value: unknown
+): MachineOutboundRelayHeader | undefined => {
+  const answer = parseMachineRelayHeader(value)
+  if (answer !== undefined) return { direction: "answer", ...answer }
+  const opened = parseAppRelayHeader(value)
+  return opened === undefined ? undefined : { direction: "open", ...opened }
 }
 
 // ---------------------------------------------------------------------------
@@ -344,12 +383,20 @@ export type HubToApp = typeof HubToApp.Type
 // Machine plane (JSON text control frames)
 // ---------------------------------------------------------------------------
 
+/// Machine hello feature flag: this machine understands the machine-plane
+/// peer frames (machine list in welcome, presence, machine-reset) and may
+/// open machine→machine channels. Hubs only send those frames to machines
+/// that advertise it, so older servers never see a frame kind they reject.
+export const MACHINE_PEERS_FEATURE = "machine-peers-v1"
+
 export const MachineHello = Schema.Struct({
   t: Schema.Literal("hello"),
   protocol: Schema.Number,
   device: CloudDeviceInfo,
   /// See AppHello.resume.
-  resume: Schema.optional(Schema.String)
+  resume: Schema.optional(Schema.String),
+  /// Optional capabilities (e.g. MACHINE_PEERS_FEATURE).
+  features: Schema.optional(Schema.Array(Schema.String))
 })
 
 export const MachinePing = Schema.Struct({ t: Schema.Literal("ping") })
@@ -364,7 +411,10 @@ export const HubMachineWelcome = Schema.Struct({
   /// Fresh resume token for THIS connection (rotated every welcome).
   resume: Schema.optional(Schema.String),
   /// True when the hello's resume token was honoured (see HubWelcome).
-  resumed: Schema.optional(Schema.Boolean)
+  resumed: Schema.optional(Schema.Boolean),
+  /// The account's machines (this one included), for machines that
+  /// advertised MACHINE_PEERS_FEATURE. Kept current by presence frames.
+  machines: Schema.optional(Schema.Array(CloudMachinePresence))
 })
 
 /// Sent to a machine when an app connection vanishes so it can tear down that
@@ -375,7 +425,16 @@ export const HubPeerGone = Schema.Struct({
   peerId: Schema.String
 })
 
-export const HubToMachine = Schema.Union([HubMachineWelcome, HubPeerGone, HubError, HubPong])
+/// Presence and machine-reset reach machines only when they advertised
+/// MACHINE_PEERS_FEATURE (they may hold channels to other machines).
+export const HubToMachine = Schema.Union([
+  HubMachineWelcome,
+  HubPeerGone,
+  HubPresence,
+  HubMachineReset,
+  HubError,
+  HubPong
+])
 export type HubToMachine = typeof HubToMachine.Type
 
 // ---------------------------------------------------------------------------
@@ -403,6 +462,11 @@ export const ChannelOpenPayload = Schema.Struct({
 export type ChannelOpenPayload = typeof ChannelOpenPayload.Type
 
 export const TERMINAL_CHANNEL_TYPE = "terminal"
+
+/// Machine→machine request channel: one Codevisor gateway call per channel
+/// (see @codevisor/cloud-client gateway-channel.ts). The only channel type a
+/// machine accepts from another machine.
+export const GATEWAY_CHANNEL_TYPE = "gateway"
 
 export const TerminalChannelParams = Schema.Struct({
   terminalId: Schema.String,

@@ -12,6 +12,7 @@ import {
   PROXY_INITIAL_CREDIT_BYTES,
   PROXY_OUTBOUND_HIGH_WATER_BYTES,
   sanitizeRequestHeaders,
+  gatewayChannelHandler,
   type ChannelHandler
 } from "@codevisor/cloud-client"
 import { WebSocket } from "ws"
@@ -209,6 +210,26 @@ export const httpChannelHandler =
       if (!appendBodyChunk(buffered, frame.data)) reject()
     }
   }
+
+/// Serves gateway channels (other machines' Codevisor gateway calls, see
+/// @codevisor/cloud-client gateway-channel.ts) by replaying each request
+/// against this server's own POST /v1/gateway/invoke — the only route this
+/// channel type can reach, so a peer machine gets exactly the gateway and
+/// nothing else of the local API. Cancelling the channel aborts the fetch,
+/// which the route turns into an aborted gateway call.
+export const gatewayLoopbackHandler = (
+  localBaseUrl: string,
+  log: (line: string) => void
+): ChannelHandler =>
+  gatewayChannelHandler(async (request, signal) => {
+    const response = await fetch(`${localBaseUrl}/v1/gateway/invoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: request,
+      signal
+    })
+    return { status: response.status, body: await response.text() }
+  }, log)
 
 /// Serves one app-opened WebSocket channel by bridging it onto the local
 /// server's own WS endpoint. Frames arriving before the local socket opens

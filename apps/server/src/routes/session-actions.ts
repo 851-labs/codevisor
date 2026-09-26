@@ -275,7 +275,8 @@ export const routeSessionActions = async (
         promptSessionId,
         payload.text,
         attachments,
-        payload.messageId
+        payload.messageId,
+        payload.clientId
       )
     )
     const result: PromptAcceptedResponse = {

@@ -25,6 +25,7 @@ import {
   type EventFanout,
   type RouteState
 } from "../server-context.js"
+import { matchesLabelFilters } from "./label-filters.js"
 import { createSessionIfMissing } from "./session-workspace.js"
 import { routeWorkspaceCreate } from "./workspace-create.js"
 
@@ -54,7 +55,13 @@ export const routeWorkspaces = async (
   url: URL
 ): Promise<boolean> => {
   if (request.method === "GET" && url.pathname === "/v1/workspaces") {
-    writeJson(response, 200, await run(services.db.listWorkspaces))
+    writeJson(
+      response,
+      200,
+      (await run(services.db.listWorkspaces)).filter((workspace) =>
+        matchesLabelFilters(workspace.labels, url)
+      )
+    )
     return true
   }
 

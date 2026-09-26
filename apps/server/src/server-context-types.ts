@@ -115,6 +115,9 @@ export interface CloudServerControl {
   /// "app" registrations follow the desktop app's account session; "external"
   /// ones (`codevisor auth login`, dev auto-provision) outlive it.
   readonly managedBy: () => "app" | "external" | undefined
+  /// The name this machine presents in cloud presence (undefined without a
+  /// bridge). Other machine-identity surfaces prefer it so they agree.
+  readonly machineName?: () => string | undefined
   /// Provisions this machine on the account behind sessionToken and starts
   /// the bridge; resolves to the new cloud device id.
   readonly connect: (
@@ -128,6 +131,16 @@ export interface CloudServerControl {
   /// (see @codevisor/cloud-client DirectChannelHost). False when no bridge
   /// is running — the caller closes the socket.
   readonly acceptDirect?: (socket: import("@codevisor/cloud-client").CloudSocket) => boolean
+  /// The account's machines per hub presence (undefined without a bridge, or
+  /// when the hub predates machine peers).
+  readonly machines?: () => ReadonlyArray<import("@codevisor/api").CloudMachinePresence> | undefined
+  /// Runs one gateway exchange on another machine over the relay; rejects
+  /// with @codevisor/cloud-client GatewayChannelError.
+  readonly requestGateway?: (
+    deviceId: string,
+    body: string,
+    signal?: AbortSignal
+  ) => Promise<import("@codevisor/cloud-client").GatewayExchange>
 }
 
 export interface CodevisorServerServices {
@@ -167,6 +180,9 @@ export interface CodevisorServerServices {
   /// (skill directories, keyed by tree hash). Absent on hosts without a
   /// data directory — the blob routes 501.
   readonly syncBlobs?: import("@codevisor/sync").BlobStore
+  /// Every machine on the account and the cross-machine gateway transport
+  /// (GET /v1/machines). Absent on hosts without it — the route 501s.
+  readonly machines?: import("./infra/machine-link.js").MachineLink
 }
 
 export interface RunningCodevisorServer {

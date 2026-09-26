@@ -63,6 +63,41 @@ export const ConnectedClient = Schema.Struct({
 })
 export type ConnectedClient = typeof ConnectedClient.Type
 
+/// What one window is showing right now, derived from its fresh context.
+export const ClientViewing = Schema.Struct({
+  workspaceId: Schema.optional(Schema.String),
+  /// The chat selected in that workspace, when a chat is selected.
+  sessionId: Schema.optional(Schema.String),
+  /// The client page (for example "workspace", "home", or "settings").
+  page: Schema.optional(Schema.String),
+  /// Panes of the selected tab in the selected workspace.
+  panes: Schema.optional(Schema.Array(ClientPaneContext))
+})
+export type ClientViewing = typeof ClientViewing.Type
+
+/// One attached native window as listed by `GET /v1/clients`. `clientId`
+/// duplicates `id` for consumers of the original listing shape. `viewing`
+/// and `capabilities` are absent when the window did not answer a context
+/// request in time; it is still attached and addressable.
+export const ClientSummary = Schema.Struct({
+  id: Schema.String,
+  clientId: Schema.String,
+  name: Schema.String,
+  platform: ConnectedClient.fields.platform,
+  machine: Schema.Struct({ id: Schema.String, name: Schema.String }),
+  online: Schema.Boolean,
+  /// Present only when the listing request named an origin client (the
+  /// window that sent the prompt that started the calling agent's turn).
+  isOrigin: Schema.optional(Schema.Boolean),
+  /// Whether the window is the focused (key) window on its device.
+  isActive: Schema.optional(Schema.Boolean),
+  /// When this server last observed the window as the active window.
+  lastActiveAt: Schema.optional(Schema.String),
+  viewing: Schema.optional(ClientViewing),
+  capabilities: Schema.optional(ClientCapabilities)
+})
+export type ClientSummary = typeof ClientSummary.Type
+
 export const ClientControlFrame = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("hello"),

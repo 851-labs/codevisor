@@ -63,6 +63,47 @@ describe("native client control", () => {
     await expect(broker.request("missing", { method: "context" })).rejects.toThrow("not connected")
   })
 
+  it("reports a window's ids in the server's lowercase form", async () => {
+    const broker = new ClientControlBroker()
+    const socket = attach(broker, "a")
+    try {
+      const result = broker.request("a", { method: "context" })
+      socket.frame({
+        type: "response",
+        requestId: socket.sent[0]!.requestId,
+        context: {
+          isActive: true,
+          workspaceId: "806AD5F8-3C5C-444A-916D-230D5501E9E2",
+          workspaces: [
+            {
+              id: "806AD5F8-3C5C-444A-916D-230D5501E9E2",
+              projectId: "CD36B326-E564-4E7A-B842-3737988458E2",
+              name: "ABCDEF01-2345-6789-ABCD-EF0123456789",
+              tabId: "tab-One",
+              tabs: []
+            }
+          ]
+        }
+      })
+      expect(await result).toEqual({
+        isActive: true,
+        workspaceId: "806ad5f8-3c5c-444a-916d-230d5501e9e2",
+        workspaces: [
+          {
+            id: "806ad5f8-3c5c-444a-916d-230d5501e9e2",
+            projectId: "cd36b326-e564-4e7a-b842-3737988458e2",
+            // Only UUID-shaped id fields change; names and other ids keep their case.
+            name: "ABCDEF01-2345-6789-ABCD-EF0123456789",
+            tabId: "tab-One",
+            tabs: []
+          }
+        ]
+      })
+    } finally {
+      broker.close()
+    }
+  })
+
   it("drops pending commands on replacement without replaying them or removing the replacement", async () => {
     const broker = new ClientControlBroker()
     const old = attach(broker, "window")
@@ -79,7 +120,12 @@ describe("native client control", () => {
     expect(broker.list()).toMatchObject([{ name: "window", platform: "macos" }])
     const disconnected = broker.request("window", { method: "context" })
     replacement.close()
-    await expect(disconnected).rejects.toThrow("disconnected")
+    // Typed for gateway scripts: the window went away mid-command.
+    await expect(disconnected).rejects.toMatchObject({
+      status: 503,
+      code: "client_unavailable",
+      details: { clientId: "window", name: "window", phase: "in-flight" }
+    })
     expect(broker.list()).toEqual([])
     broker.close()
   })
@@ -102,6 +148,69 @@ describe("native client control", () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(incomplete.closed).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
+    broker.close()
+  })
+
+  it("lists what each window views without waiting on, or detaching, a slow one", async () => {
+    vi.useFakeTimers({ now: new Date("2026-01-02T03:04:05.000Z") })
+    const broker = new ClientControlBroker()
+    const focused = attach(broker, "focused")
+    const slow = attach(broker, "slow")
+    const machine = { id: "server", name: "Studio" }
+    const capabilities = {
+      pages: ["home"],
+      settingsSections: [],
+      layoutActions: [],
+      windowActions: []
+    }
+    const panes = [{ id: "pane", kind: "chat", title: "Chat", sessionId: "chat" }]
+    const listing = broker.describe(machine, null, 1500)
+    expect(slow.sent).toMatchObject([{ method: "context" }])
+    focused.frame({
+      type: "response",
+      requestId: focused.sent[0]!.requestId,
+      context: {
+        isActive: true,
+        workspaceId: "workspace",
+        page: { page: "workspace" },
+        capabilities,
+        workspaces: [
+          {
+            id: "workspace",
+            projectId: "project",
+            name: "Workspace",
+            tabId: "tab",
+            sessionId: "chat",
+            tabs: [{ id: "tab", panes }]
+          }
+        ]
+      }
+    })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(await listing).toEqual([
+      {
+        id: "focused",
+        clientId: "focused",
+        name: "focused",
+        platform: "macos",
+        machine,
+        online: true,
+        isActive: true,
+        lastActiveAt: "2026-01-02T03:04:05.000Z",
+        viewing: { workspaceId: "workspace", sessionId: "chat", page: "workspace", panes },
+        capabilities
+      },
+      {
+        id: "slow",
+        clientId: "slow",
+        name: "slow",
+        platform: "macos",
+        machine,
+        online: true
+      }
+    ])
+    // A slow answer to a read-only probe is not a lost command.
+    expect(broker.list().map((client) => client.clientId)).toEqual(["focused", "slow"])
     broker.close()
   })
 

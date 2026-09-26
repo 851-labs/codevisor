@@ -5,9 +5,9 @@ import { isoTimestamp } from "@codevisor/api"
 import { Effect } from "effect"
 
 import { attempt } from "./errors.js"
-import { sessionConfigSelectionsFromRaw } from "./event-payloads.js"
+import { pendingQuestionFromRaw, sessionConfigSelectionsFromRaw } from "./event-payloads.js"
 import { canonicalUuid } from "./ids.js"
-import { sessionFromRow } from "./row-mappers.js"
+import { serializeLabels, sessionFromRow } from "./row-mappers.js"
 import type { SessionRow } from "./rows.js"
 import type { ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
@@ -39,8 +39,8 @@ export const insertSessionRow = (
       `insert into sessions (
             id, project_id, server_id, harness_id, harness_account_id, agent_session_id,
             title, origin, worktree_name, workspace_id, created_at, updated_at,
-            sidebar_state, sidebar_state_changed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`
+            sidebar_state, sidebar_state_changed_at, parent_session_id, labels
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`
     )
     .run(
       id,
@@ -55,7 +55,9 @@ export const insertSessionRow = (
       request.workspaceId == null ? null : canonicalUuid(request.workspaceId),
       request.createdAt ?? now,
       request.updatedAt ?? null,
-      request.updatedAt ?? request.createdAt ?? now
+      request.updatedAt ?? request.createdAt ?? now,
+      request.parentSessionId == null ? null : canonicalUuid(request.parentSessionId),
+      serializeLabels(request.labels)
     )
   return getSession(id)
 }
@@ -67,6 +69,7 @@ export const makeSessionsService = (
   | "createSession"
   | "listSessions"
   | "getSessionSummary"
+  | "getSessionPendingQuestion"
   | "markSessionRead"
   | "markSessionUnread"
   | "clearSessionPlanApproval"
@@ -103,6 +106,13 @@ export const makeSessionsService = (
         )
     ),
     getSessionSummary: (id) => attempt("getSessionSummary", () => getSession(id)),
+    getSessionPendingQuestion: (rawId) =>
+      attempt("getSessionPendingQuestion", () => {
+        const row = sqlite
+          .prepare("select pending_question from sessions where id = ?")
+          .get(canonicalUuid(rawId)) as { readonly pending_question: string | null } | undefined
+        return pendingQuestionFromRaw(row?.pending_question ?? null)
+      }),
     markSessionRead: (rawId, throughSequence) =>
       attempt("markSessionRead", () => {
         const id = canonicalUuid(rawId)
@@ -220,7 +230,8 @@ export const makeSessionsService = (
                 else title_is_user_set
               end,
               agent_session_id = ?, worktree_name = ?, project_id = ?,
-              harness_id = ?, harness_account_id = ?, updated_at = ?
+              harness_id = ?, harness_account_id = ?, updated_at = ?,
+              labels = case when ? then ? else labels end
              where id = ?`
           )
           .run(
@@ -243,6 +254,8 @@ export const makeSessionsService = (
             request.harnessId ?? current.harnessId,
             request.harnessAccountId ?? current.harnessAccountId ?? null,
             request.updatedAt ?? current.updatedAt ?? null,
+            request.labels === undefined ? 0 : 1,
+            serializeLabels(request.labels),
             id
           )
         return getSession(id)

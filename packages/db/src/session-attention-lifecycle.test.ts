@@ -359,6 +359,11 @@ describe("@codevisor/db", () => {
       pendingQuestion: question
     })
     expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toEqual(question)
+    expect(await run(db.getSessionPendingQuestion(session.id))).toEqual(question)
+    // Unknown sessions have no blocking question rather than failing.
+    expect(
+      await run(db.getSessionPendingQuestion("00000000-0000-4000-8000-000000000000"))
+    ).toBeUndefined()
     const backgroundTasks = [
       {
         id: "task-1",
@@ -424,6 +429,7 @@ describe("@codevisor/db", () => {
       (await run(db.getTranscriptPage(session.id, undefined, 8))).pendingQuestion
     ).toBeUndefined()
     expect((await run(db.getSessionDetail(session.id))).pendingQuestion).toBeUndefined()
+    expect(await run(db.getSessionPendingQuestion(session.id))).toBeUndefined()
     await Effect.runPromise(db.close)
   })
 })

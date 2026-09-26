@@ -1,4 +1,9 @@
-import { encodeCloudFrame, type HubErrorCode, type HubToApp } from "@codevisor/api"
+import {
+  encodeCloudFrame,
+  type HubErrorCode,
+  type HubToApp,
+  type HubToMachine
+} from "@codevisor/api"
 
 import type { SocketAttachment } from "./hub-schema.js"
 
@@ -75,5 +80,36 @@ export class HubSockets {
       // its own close event will clean it up.
       if (this.isRoutable(socket)) this.send(socket, encoded)
     }
+  }
+
+  /// Machine sockets that advertised MACHINE_PEERS_FEATURE: they may hold
+  /// channels to other machines, so they follow presence like apps do.
+  peerAwareMachines(): WebSocket[] {
+    return this.byTag("machine").filter(
+      (socket) => this.isRoutable(socket) && this.attachment(socket)?.peerAware === true
+    )
+  }
+
+  broadcastToPeerMachines(frame: HubToMachine, exceptDeviceId?: string): void {
+    const encoded = encodeCloudFrame(frame)
+    for (const socket of this.peerAwareMachines()) {
+      if (exceptDeviceId === undefined || this.attachment(socket)?.deviceId !== exceptDeviceId) {
+        this.send(socket, encoded)
+      }
+    }
+  }
+
+  /// Machine presence-plane frames (presence, machine-reset, machine-offline)
+  /// go to every observer: apps and peer-aware machines alike — except the
+  /// machine the notice is about.
+  broadcastMachineNotice(frame: HubToApp & HubToMachine): void {
+    this.broadcastToApps(frame)
+    const subject =
+      frame.t === "presence"
+        ? frame.machine.deviceId
+        : "machineId" in frame
+          ? frame.machineId
+          : undefined
+    this.broadcastToPeerMachines(frame, subject)
   }
 }

@@ -46,13 +46,21 @@ describe("MCP manager built-in providers and suppression", () => {
     await manager.list()
     expect(synchronized.at(-1)).toEqual([
       { directoryName: "browser-use", enabled: true },
-      { directoryName: "computer-use", enabled: true }
+      { directoryName: "computer-use", enabled: true },
+      { directoryName: "codevisor", enabled: true },
+      { directoryName: "codevisor-agents", enabled: true },
+      { directoryName: "codevisor-machines", enabled: true },
+      { directoryName: "codevisor-clients", enabled: true }
     ])
 
     await manager.update("computer", { enabled: false })
     expect(synchronized.at(-1)).toEqual([
       { directoryName: "browser-use", enabled: true },
-      { directoryName: "computer-use", enabled: false }
+      { directoryName: "computer-use", enabled: false },
+      { directoryName: "codevisor", enabled: true },
+      { directoryName: "codevisor-agents", enabled: true },
+      { directoryName: "codevisor-machines", enabled: true },
+      { directoryName: "codevisor-clients", enabled: true }
     ])
   })
 

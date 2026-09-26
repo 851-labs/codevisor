@@ -6,6 +6,7 @@ import {
   encodeRelayEnvelopes
 } from "@codevisor/api"
 import type {
+  CloudMachinePresence,
   HubToMachine,
   MachineRelayHeader,
   MachineToHub,
@@ -40,6 +41,8 @@ export class FakeSocket implements CloudSocket {
   terminated = false
   sendError: Error | undefined
   onSend: ((frame: MachineToHub) => void) | undefined
+  /// Live relay hook (e.g. a fake hub forwarding to another machine).
+  onRelay: ((envelopes: SentEnvelope[]) => void) | undefined
   onopen: (() => void) | null = null
   onmessage: ((data: string | Uint8Array) => void) | null = null
   onclose: ((code: number) => void) | null = null
@@ -53,12 +56,12 @@ export class FakeSocket implements CloudSocket {
       this.onSend?.(frame)
       return
     }
-    this.relayMessages.push(
-      decodeRelayEnvelopes(data).map((envelope) => ({
-        header: envelope.header as MachineRelayHeader,
-        payload: new Uint8Array(envelope.payload)
-      }))
-    )
+    const envelopes = decodeRelayEnvelopes(data).map((envelope) => ({
+      header: envelope.header as MachineRelayHeader,
+      payload: new Uint8Array(envelope.payload)
+    }))
+    this.relayMessages.push(envelopes)
+    this.onRelay?.(envelopes)
   }
 
   close(code?: number, reason?: string): void {
@@ -134,7 +137,9 @@ export interface Harness {
 export const harness = (
   overrides: {
     handlers?: Record<string, (channel: IncomingChannel) => void>
-    device?: { name: string; os?: string; appVersion?: string }
+    credentials?: typeof credentials
+    device?: { name: string; os?: string; appVersion?: string; serverId?: string }
+    onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
     peerKeyPins?: PeerKeyPinStore
     onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
     relayCoalesceMs?: number
@@ -152,7 +157,10 @@ export const harness = (
   const channels: IncomingChannel[] = []
   const welcomes: { resumed: boolean; replayedFrames: number }[] = []
   const connection = new CloudMachineConnection({
-    credentials,
+    credentials: overrides.credentials ?? credentials,
+    ...(overrides.onMachinesChanged === undefined
+      ? {}
+      : { onMachinesChanged: overrides.onMachinesChanged }),
     device: overrides.device ?? { name: "vps", os: "linux", appVersion: "1.0.0" },
     socketFactory: (url, requestHeaders) => {
       urls.push(url)

@@ -83,6 +83,47 @@ struct ToolGroupHeaderPresentationTests {
     #expect(header.isShimmering)
   }
 
+  @Test("A lone workflow is one row: live status while running, its description once done")
+  func soloWorkflow() {
+    var call = ToolCall(
+      toolCallId: "wf", title: "mcp__codevisor__execute", kind: .other, status: .inProgress,
+      rawInput: .object(["description": .string("Reviewing open PRs"), "code": .string("1")]),
+      meta: .object([
+        "codevisorExecution": .object([
+          "state": .string("running"), "status": .string("Waiting on reviewers"), "calls": .array([]),
+        ])
+      ])
+    )
+    for isExpanded in [false, true] {
+      let running = ToolGroupHeaderPresentation(
+        group: ToolCallGroup(calls: [call]), isExpanded: isExpanded, isTurnActive: true, totalsCache: DiffTotalsCache()
+      )
+      #expect(running.soloWorkflow?.toolCallId == "wf")
+      #expect(running.title == "Waiting on reviewers")
+      #expect(running.isShimmering)
+    }
+    call.status = .completed
+    let done = ToolGroupHeaderPresentation(
+      group: ToolCallGroup(calls: [call]), isExpanded: false, isTurnActive: true, totalsCache: DiffTotalsCache()
+    )
+    #expect(done.title == "Reviewing open PRs")
+    #expect(!done.isShimmering)
+
+    // Two workflows stay a group, and an undescribed one keeps the old label.
+    let pair = ToolGroupHeaderPresentation(
+      group: ToolCallGroup(calls: [
+        call, ToolCall(toolCallId: "b", title: "mcp__codevisor__execute", status: .completed),
+      ]),
+      isExpanded: false, isTurnActive: false, totalsCache: DiffTotalsCache()
+    )
+    #expect(pair.soloWorkflow == nil)
+    let legacy = ToolGroupHeaderPresentation(
+      group: ToolCallGroup(calls: [ToolCall(toolCallId: "c", title: "mcp__codevisor__execute", status: .completed)]),
+      isExpanded: false, isTurnActive: false, totalsCache: DiffTotalsCache()
+    )
+    #expect(legacy.soloWorkflow == nil)
+  }
+
   @Test("All terminal statuses restore the summary", arguments: [ToolCallStatus.completed, .failed, .cancelled])
   func settledGroups(status: ToolCallStatus) {
     let group = ToolCallGroup(calls: [
@@ -116,5 +157,18 @@ struct ToolGroupHeaderPresentationTests {
       group: group, isExpanded: false, isTurnActive: true, totalsCache: DiffTotalsCache()
     )
     #expect(header.title == "Running an integration workflow…")
+  }
+
+  @Test("A group holding one gateway workflow is labeled with its description")
+  func workflowDescription() {
+    let group = ToolCallGroup(calls: [
+      ToolCall(
+        toolCallId: "call", title: "mcp__codevisor__execute", status: .completed,
+        rawInput: ["description": "Archive merged workspaces", "code": "async () => 1"])
+    ])
+    let header = ToolGroupHeaderPresentation(
+      group: group, isExpanded: false, isTurnActive: true, totalsCache: DiffTotalsCache()
+    )
+    #expect(header.title == "Archive merged workspaces")
   }
 }

@@ -35,6 +35,21 @@ struct ToolCallTests {
     #expect(merged.kind == .edit)
   }
 
+  @Test("_meta decodes, survives updates that omit it, and round-trips")
+  func metaExtension() throws {
+    let json = #"{"toolCallId":"t1","title":"Run","_meta":{"codevisorExecution":{"state":"running"}}}"#
+    let call = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
+    #expect(call.meta?["codevisorExecution"]?["state"] == .string("running"))
+    #expect(call.applying(ToolCallUpdate(toolCallId: "t1", status: .completed)).meta == call.meta)
+    let replaced = call.applying(ToolCallUpdate(toolCallId: "t1", meta: ["other": true]))
+    #expect(replaced.meta == ["other": true])
+    #expect(try JSONDecoder().decode(ToolCall.self, from: JSONEncoder().encode(call)) == call)
+    let update = ToolCallUpdate(toolCallId: "t1", title: "Run", meta: ["k": 1])
+    let decodedUpdate = try JSONDecoder().decode(ToolCallUpdate.self, from: JSONEncoder().encode(update))
+    #expect(decodedUpdate == update)
+    #expect(update.asToolCall().meta == ["k": 1])
+  }
+
   @Test("asToolCall supplies defaults for required fields")
   func asToolCall() {
     let fromUpdate = ToolCallUpdate(toolCallId: "t9", status: .inProgress).asToolCall()

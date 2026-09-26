@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { Labels } from "./labels.js"
 import { CreateSessionRequest, SessionSummary } from "./sessions.js"
 import { WorkspacePosition } from "./workspace-position.js"
 
@@ -19,7 +20,9 @@ export const Workspace = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.optional(Schema.String),
   sidebarPosition: Schema.optional(WorkspacePosition),
-  sidebarOrderRevision: Schema.optional(Schema.Number)
+  sidebarOrderRevision: Schema.optional(Schema.Number),
+  /// Free-form key/value labels (see `Labels`).
+  labels: Schema.optional(Labels)
 })
 export type Workspace = typeof Workspace.Type
 
@@ -42,7 +45,9 @@ export const UpdateWorkspaceRequest = Schema.Struct({
   rootDirectory: Schema.optional(Schema.String),
   /// Archiving a workspace cascades to its sessions while retaining pane
   /// layout; unarchiving revives only the sessions that cascade archived.
-  isArchived: Schema.optional(Schema.Boolean)
+  isArchived: Schema.optional(Schema.Boolean),
+  /// Replaces the workspace's labels; an empty object clears them.
+  labels: Schema.optional(Labels)
 })
 export type UpdateWorkspaceRequest = typeof UpdateWorkspaceRequest.Type
 
@@ -58,7 +63,10 @@ export const UpsertWorkspaceRequest = Schema.Struct({
   rootDirectory: Schema.optional(Schema.String),
   isArchived: Schema.optional(Schema.Boolean),
   /// Client backfills preserve the original creation date.
-  createdAt: Schema.optional(Schema.String)
+  createdAt: Schema.optional(Schema.String),
+  /// Omitted keeps existing labels, so a native re-upsert never drops the
+  /// labels an agent set; an empty object clears them.
+  labels: Schema.optional(Labels)
 })
 export type UpsertWorkspaceRequest = typeof UpsertWorkspaceRequest.Type
 

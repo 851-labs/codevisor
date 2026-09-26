@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { hostname } from "node:os"
 
 import type { McpConnectionState, McpServer } from "@codevisor/api"
 import {
@@ -108,9 +109,31 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     config.makeComputerProvider ?? (() => makeComputerUseProvider(config.dataDir)),
     unavailableComputerProvider
   )
+  const selfMachine = config.machine ?? { id: selfServerId, name: hostname() }
+  /// The client window that sent each session's current turn (C4 origin).
+  const turnClientIds = new Map<string, string>()
   const codevisorProvider = makeCodevisorProvider(
     () => state.gatewayBaseUrl,
-    () => run(config.db.getOrCreateConnectionToken)
+    () => run(config.db.getOrCreateConnectionToken),
+    {
+      currentContext: async ({ sessionId }) => {
+        // Calls forwarded from another machine use a synthetic session key
+        // with no local session row.
+        const session = await run(config.db.getSessionSummary(sessionId)).catch(() => undefined)
+        const parentSessionId = (session as { readonly parentSessionId?: unknown } | undefined)
+          ?.parentSessionId
+        const workspaceId = session?.workspaceId
+        const worktreeName = session?.worktreeName
+        const clientId = turnClientIds.get(sessionId)
+        return {
+          machine: selfMachine,
+          ...(workspaceId === undefined ? {} : { workspaceId }),
+          ...(worktreeName === undefined ? {} : { worktreeName }),
+          ...(typeof parentSessionId === "string" ? { parentSessionId } : {}),
+          ...(clientId === undefined ? {} : { clientId })
+        }
+      }
+    }
   )
   const automationProviders = new Map<string, AutomationToolProvider>([
     [browserProvider.id, browserProvider],
@@ -367,10 +390,12 @@ export const makeMcpManagerCore = (config: McpManagerConfig) => {
     rotationListeners,
     saveRecord,
     secrets,
+    selfMachine,
     selfServerId,
     sessionGatewayIds,
     state,
-    syncManagedAutomationSkillsFromDb
+    syncManagedAutomationSkillsFromDb,
+    turnClientIds
   }
 }
 

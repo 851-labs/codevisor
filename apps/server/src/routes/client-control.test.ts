@@ -12,6 +12,7 @@ describe("client control routes", () => {
     await expect(
       routeClientControl(
         undefined,
+        { id: "server", name: "Server" },
         {} as IncomingMessage,
         {} as ServerResponse,
         new URL("http://fixture/v1/clients")
@@ -29,9 +30,34 @@ describe("client control routes", () => {
       const pong = once(socket, "pong")
       socket.ping()
       await pong
-      expect(await jsonRequest(server, "/v1/clients")).toMatchObject({
+      // Listing reads each window's fresh context to say what it is viewing.
+      const probe = once(socket, "message")
+      const listing = jsonRequest(server, "/v1/clients?originClientId=WINDOW")
+      const [probeRaw] = await probe
+      const probeRequest = JSON.parse(String(probeRaw))
+      expect(probeRequest.method).toBe("context")
+      socket.send(
+        JSON.stringify({
+          type: "response",
+          requestId: probeRequest.requestId,
+          context: { isActive: false, workspaces: [] }
+        })
+      )
+      expect(await listing).toEqual({
         status: 200,
-        body: [{ clientId: "window", name: "Test window" }]
+        body: [
+          {
+            id: "window",
+            clientId: "window",
+            name: "Test window",
+            platform: "macos",
+            machine: { id: "server-a", name: expect.any(String) },
+            online: true,
+            isOrigin: true,
+            isActive: false,
+            viewing: {}
+          }
+        ]
       })
       const commands = [
         { method: "context", body: undefined },
@@ -84,8 +110,13 @@ describe("client control routes", () => {
           await jsonRequest(server, `/v1/clients/window/${method}`, { method: "POST", body: "{}" })
         ).toMatchObject({ status: 400 })
       }
-      expect(await jsonRequest(server, "/v1/clients/missing/context")).toMatchObject({
-        status: 404
+      expect(await jsonRequest(server, "/v1/clients/missing/context")).toEqual({
+        status: 404,
+        body: {
+          error: "Client is not connected. Discover clients again.",
+          code: "client_unavailable",
+          details: { clientId: "missing", phase: "before-send" }
+        }
       })
       expect(
         await jsonRequest(server, "/v1/clients/window/navigate", { method: "POST", body: "{}" })

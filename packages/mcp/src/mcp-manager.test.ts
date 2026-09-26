@@ -218,6 +218,7 @@ describe("MCP manager", () => {
         const codeResult = await client.callTool({
           name: "execute",
           arguments: {
+            description: "Run test code",
             code: `async () => {
             const matches = await tools.search({ query: "project", limit: 1 });
             const schema = await tools.describe.tool({ path: matches.items[0].path });
@@ -234,6 +235,7 @@ describe("MCP manager", () => {
         const binaryCodeResult = await client.callTool({
           name: "execute",
           arguments: {
+            description: "Run test code",
             code: `async () => tools["${created.id}.lookup_project"]({ binary: true })`
           }
         })
@@ -263,13 +265,19 @@ describe("MCP manager", () => {
           `async () => tools.describe.tool({ path: "${created.id}.missing_tool" })`,
           `async () => tools["invalid"]({})`
         ]) {
-          expect((await client.callTool({ name: "execute", arguments: { code } })).isError).toBe(
-            true
-          )
+          expect(
+            (
+              await client.callTool({
+                name: "execute",
+                arguments: { description: "Run test code", code }
+              })
+            ).isError
+          ).toBe(true)
         }
         const caughtAutomationError = await client.callTool({
           name: "execute",
           arguments: {
+            description: "Run test code",
             code: `async () => tools["computer.select_text"]({
             app: "com.apple.Notes",
             element_index: 1,
@@ -288,7 +296,12 @@ describe("MCP manager", () => {
           `async () => tools["${created.id}.lookup_project"]("primitive")`
         ]) {
           expect(
-            (await client.callTool({ name: "execute", arguments: { code } })).isError
+            (
+              await client.callTool({
+                name: "execute",
+                arguments: { description: "Run test code", code }
+              })
+            ).isError
           ).not.toBe(true)
         }
 
@@ -298,6 +311,7 @@ describe("MCP manager", () => {
             await client.callTool({
               name: "execute",
               arguments: {
+                description: "Run test code",
                 code: `async () => tools.describe.tool({ path: "${created.id}.lookup_project" })`
               }
             })
@@ -307,7 +321,10 @@ describe("MCP manager", () => {
           (
             await client.callTool({
               name: "execute",
-              arguments: { code: `async () => tools["${created.id}.lookup_project"]({})` }
+              arguments: {
+                description: "Run test code",
+                code: `async () => tools["${created.id}.lookup_project"]({})`
+              }
             })
           ).isError
         ).toBe(true)

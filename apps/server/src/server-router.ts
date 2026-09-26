@@ -14,6 +14,7 @@ import { routeCloud } from "./routes/cloud.js"
 import { handleEvents } from "./routes/events.js"
 import { routeFiles } from "./routes/files.js"
 import { routeFs } from "./routes/fs.js"
+import { routeGatewayInvoke } from "./routes/gateway-invoke.js"
 import { discoverCapabilities, routeHarnesses } from "./routes/harnesses.js"
 import { routeMachineMcps } from "./routes/mcp-machine.js"
 import { routeMcps, routeMcpScopes, routeNativeMcps } from "./routes/mcps.js"
@@ -369,12 +370,9 @@ export const handleRequest = async (
       return
     }
 
-    if (await routeProjects(services, config, fanout, request, response, url)) {
-      return
-    }
-    if (await routeClientControl(routeState.clientControl, request, response, url)) {
-      return
-    }
+    if (await routeGatewayInvoke(services, request, response, url)) return
+    if (await routeProjects(services, config, fanout, request, response, url)) return
+    if (await routeClientControl(routeState.clientControl, config, request, response, url)) return
     if (await routeWorkspaces(services, fanout, routeState, config, request, response, url)) {
       return
     }

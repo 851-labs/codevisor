@@ -414,7 +414,8 @@ export const drainPromptQueue = async (
         sessionId,
         item.id,
         item.text,
-        item.attachments
+        item.attachments,
+        item.clientId
       )
       await run(services.db.completePromptQueueItem(sessionId, item.id))
     }
@@ -430,7 +431,8 @@ const runPromptInBackground = async (
   sessionId: string,
   queueItemId: string,
   text: string,
-  attachments?: ReadonlyArray<AttachmentRef>
+  attachments?: ReadonlyArray<AttachmentRef>,
+  clientId?: string
 ): Promise<void> => {
   try {
     const refs = attachments ?? []
@@ -453,7 +455,10 @@ const runPromptInBackground = async (
     )
     // Queued prompts start a new response. Steering input never passes here,
     // so a preference edit cannot replace the browser under a running agent.
-    await services.mcp?.beginTurn(sessionId)
+    // The originating window lets gateway scripts tell which client asked.
+    await (clientId === undefined
+      ? services.mcp?.beginTurn(sessionId)
+      : services.mcp?.beginTurn(sessionId, { clientId }))
     const agentSession = await ensureAgentSessionFor(services, fanout, serverId, sessionId)
     // Session output, turn lifecycle, and the final stopReason all flow
     // through the standing sink registered at session create/load time.

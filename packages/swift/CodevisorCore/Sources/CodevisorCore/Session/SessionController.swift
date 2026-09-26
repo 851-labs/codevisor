@@ -80,8 +80,15 @@ final public class SessionController {
   }
   var initialHistoryLoadStartedAt: TimeInterval?
   public var selectedHarnessId: String? { didSet { draftDidChange() } }
+  /// The client-control id of the window that last sent from this chat's
+  /// composer; forwarded to the model so the server learns each prompt's
+  /// origin window.
+  @ObservationIgnored public var promptClientId: String? {
+    didSet { model?.promptClientId = promptClientId }
+  }
   public internal(set) var model: SessionModel? {
     didSet {
+      model?.promptClientId = promptClientId
       if model !== oldValue { transcriptProjectionRevision &+= 1 }
       if model !== oldValue {
         oldValue?.presentationFrameRequester = nil

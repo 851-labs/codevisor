@@ -242,6 +242,10 @@ public final class SessionModel {
   /// handoff from queue edits/deletions and unrelated remote messages.
   public var onQueuedPromptPromoted: ((UUID?) -> Void)?
 
+  /// The client-control id of the window prompting this session, sent with
+  /// each prompt so agents know which window asked. Set by the controller.
+  @ObservationIgnored public var promptClientId: String?
+
   /// Replaced in place by `adoptTransport` when the machine's route flips;
   /// the conversation and its resume cursor survive the swap.
   var transport: ServerSessionTransport

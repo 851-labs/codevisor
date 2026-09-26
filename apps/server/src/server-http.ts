@@ -170,7 +170,8 @@ export const writeFailure = (response: ServerResponse, cause: unknown): void => 
   if (cause instanceof HttpFailure) {
     writeJson(response, cause.status, {
       error: cause.message,
-      ...(cause.code === undefined ? {} : { code: cause.code })
+      ...(cause.code === undefined ? {} : { code: cause.code }),
+      ...(cause.details === undefined ? {} : { details: cause.details })
     })
     return
   }
@@ -302,7 +303,10 @@ export class HttpFailure extends Error {
     message: string,
     /// Machine-readable failure category, when the client can act on it
     /// (e.g. clone auth_failed → "set up git credentials on the machine").
-    readonly code?: string
+    readonly code?: string,
+    /// Structured facts about the failure (for example which client was
+    /// unavailable), serialized beside `code`.
+    readonly details?: Readonly<Record<string, unknown>>
   ) {
     super(message)
   }

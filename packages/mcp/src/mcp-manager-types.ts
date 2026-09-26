@@ -18,6 +18,34 @@ import type { WebSocket } from "ws"
 import type { ToolGatewayConfig } from "./mcp-gateway.js"
 import type { PluginToolSource } from "./mcp-plugin-tools.js"
 
+/// Who a gateway call is made for. Local executions carry this machine's
+/// identity; calls forwarded from another machine carry the caller's.
+export interface GatewayOrigin {
+  readonly machineId: string
+  readonly machineName: string
+  readonly sessionId?: string
+  readonly sessionTitle?: string
+  /// The client window that sent the originating turn's prompt.
+  readonly clientId?: string
+}
+
+export interface GatewayCallContext {
+  readonly sessionId?: string
+  readonly projectId?: string
+  readonly origin?: GatewayOrigin
+}
+
+/// Forwards one sandbox tool call to another machine's gateway. Reject with
+/// a CodeExecutionToolError coded `machine_unavailable` (details: machineId,
+/// name, lastSeen, phase) when the machine cannot be reached.
+export type GatewayRemoteInvoker = (
+  machine: string,
+  path: string,
+  args: unknown,
+  origin: GatewayOrigin,
+  signal?: AbortSignal
+) => Promise<unknown>
+
 export interface McpManager {
   readonly setBaseUrl: (url: string) => void
   readonly list: () => Promise<ReadonlyArray<McpServer>>
@@ -112,7 +140,21 @@ export interface McpManager {
   readonly browserExtensionArchive: () => string
   readonly browserExtensionIcon: () => string
   readonly finishTurn: (sessionId: string) => Promise<void>
-  readonly beginTurn: (sessionId: string) => Promise<void>
+  /// Starts a turn; `clientId` names the window that sent the prompt and is
+  /// exposed to that turn's executions as their origin client.
+  readonly beginTurn: (
+    sessionId: string,
+    options?: { readonly clientId?: string | undefined }
+  ) => Promise<void>
+  /// Runs one gateway call on behalf of another machine (the server's
+  /// `POST /v1/gateway/invoke`). Browser tabs and recordings are scoped to
+  /// `remote:<origin.machineId>:<origin.sessionId>`.
+  readonly invokeRemoteGatewayCall: (
+    origin: GatewayOrigin,
+    path: string,
+    args: unknown,
+    signal?: AbortSignal
+  ) => Promise<unknown>
   readonly closeSession: (sessionId: string) => Promise<void>
   readonly handleGatewayRequest: (
     request: IncomingMessage,
@@ -128,6 +170,12 @@ export interface McpManagerConfig {
   /// ownership (exactly one machine rotates a server's tokens; the rest
   /// mirror them through config sync). Defaults to "local".
   readonly serverId?: string
+  /// This machine's identity as other machines and the sandbox see it
+  /// (`machines.current`). Defaults to `serverId` and the host name.
+  readonly machine?: { readonly id: string; readonly name: string }
+  /// Routes sandbox calls targeted at another machine. Without it, those
+  /// calls fail with `machine_unavailable`.
+  readonly remoteInvoker?: GatewayRemoteInvoker
   /// The server's --kind. Remote-kind servers cannot launch the local Chrome
   /// installer from Settings; composer setup can still hand the user off to
   /// the app running on that machine. Defaults to "local".

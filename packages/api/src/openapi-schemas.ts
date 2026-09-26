@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-import { ClientContext, ClientNavigationRequest, ConnectedClient } from "./client-control.js"
+import { ClientContext, ClientNavigationRequest, ClientSummary } from "./client-control.js"
 import { ClientPageRequest, ClientLayoutRequest, ClientWindowRequest } from "./client-ui.js"
 import {
   AgentSessionSummary,
@@ -112,11 +112,14 @@ import {
   UpdateWorkspacePaneRequest,
   UpsertWorkspacePaneRequest,
   UpsertWorkspaceRequest,
+  WaitForSessionsRequest,
+  WaitForSessionsResponse,
   Workspace,
   WorkspacePane,
   WorkspaceSnapshot,
   Worktree
 } from "./index.js"
+import { GatewayInvokeRequest, GatewayInvokeResponse, MachinesResponse } from "./machines.js"
 import { MachineMcpState, SetMachineMcpEnabledRequest } from "./mcps.js"
 import { NavigationSnapshot } from "./navigation.js"
 import type { Endpoint } from "./openapi-endpoints.js"
@@ -189,6 +192,8 @@ export const requestSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> =
   "POST /v1/skills/sync": SyncSkillsRequest,
   "PUT /v1/skills/:name/harnesses/:harnessId": SetSkillInstalledRequest,
   "POST /v1/sessions": CreateSessionRequest,
+  "POST /v1/sessions/wait": WaitForSessionsRequest,
+  "POST /v1/gateway/invoke": GatewayInvokeRequest,
   "POST /v1/sessions/:id/open": OpenSessionRequest,
   "PATCH /v1/sessions/:id": UpdateSessionRequest,
   "POST /v1/sessions/:id/read": MarkSessionReadRequest,
@@ -280,7 +285,7 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "POST /v1/plugins/:pluginId/panes/:paneId/token": PluginPaneTokenResponse,
   // The tool's own response body — opaque JSON, shaped by each plugin.
   "POST /v1/plugins/:pluginId/tools/:toolName": Schema.Unknown,
-  "GET /v1/clients": arrayOf(ConnectedClient),
+  "GET /v1/clients": arrayOf(ClientSummary),
   "GET /v1/clients/:clientId/context": ClientContext,
   "POST /v1/clients/:clientId/navigate": ClientContext,
   "POST /v1/clients/:clientId/page": ClientContext,
@@ -316,6 +321,9 @@ export const responseSchemas = (): Partial<Record<Endpoint, Schema.Constraint>> 
   "GET /v1/navigation": NavigationSnapshot,
   "GET /v1/sessions": arrayOf(SessionSummary),
   "POST /v1/sessions": SessionSummary,
+  "POST /v1/sessions/wait": WaitForSessionsResponse,
+  "GET /v1/machines": MachinesResponse,
+  "POST /v1/gateway/invoke": GatewayInvokeResponse,
   "GET /v1/sessions/:id": SessionDetail,
   "GET /v1/sessions/:id/usage-limits": HarnessUsageLimits,
   "GET /v1/sessions/:id/branch-diff": nullable(BranchDiffTotals),

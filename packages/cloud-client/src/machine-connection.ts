@@ -3,14 +3,19 @@ import {
   decodeHubToMachine,
   decodeRelayEnvelopes,
   encodeCloudFrame,
+  MACHINE_PEERS_FEATURE,
+  parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
+  type CloudMachinePresence,
   type RelayFrameHeader,
   type WireRelayEnvelope
 } from "@codevisor/api"
 
+import type { OutgoingChannel } from "./channel-opener.js"
 import { ChannelReceiver } from "./channel-receiver.js"
 import type { ChannelHandler } from "./incoming-channel.js"
 import type { MachineCredentials } from "./login.js"
+import { MachinePeers } from "./machine-peers.js"
 import {
   RelayOutbox,
   reconnectDelayMs,
@@ -31,7 +36,9 @@ const RESUME_RETAIN_CAP_BYTES = 256 * 1024
 
 export interface MachineConnectionOptions {
   credentials: MachineCredentials
-  device: { name: string; os?: string; appVersion?: string }
+  /// `serverId` is this machine's stable Codevisor server id, published in
+  /// hub presence so peers can match it to direct (FleetRoster) routes.
+  device: { name: string; os?: string; appVersion?: string; serverId?: string }
   socketFactory: SocketFactory
   /// Keyed by channelType (e.g. "terminal"). Unknown types are refused with
   /// close reason "unsupported".
@@ -47,6 +54,8 @@ export interface MachineConnectionOptions {
   /// Fired on every refused open so integrators can log the substitution
   /// attempt with enough detail to investigate.
   onPeerKeyMismatch?: (info: { deviceId: string; pinned: string; presented: string }) => void
+  /// Fired whenever the account's machine list (welcome + presence) changes.
+  onMachinesChanged?: (machines: ReadonlyArray<CloudMachinePresence>) => void
   /// Coalesce outgoing relay envelopes for up to this long (see RelayOutbox).
   /// Default 0: every frame goes out immediately.
   relayCoalesceMs?: number
@@ -78,6 +87,8 @@ export class CloudMachineConnection {
   /// The pipe-agnostic responder half of the channel protocol; this class is
   /// just the hub-relay pipe feeding it (socket, heartbeat, reconnect).
   readonly #receiver: ChannelReceiver
+  /// The account's other machines and the channels this one opens to them.
+  readonly #peers: MachinePeers
   /// Session resume: the token from the last welcome, the identity it names,
   /// and the envelopes retained while disconnected.
   #resumeToken: string | undefined
@@ -99,11 +110,42 @@ export class CloudMachineConnection {
       ...(options.decompressPayload === undefined
         ? {}
         : { decompressPayload: options.decompressPayload }),
-      sendEnvelope: (peerId, frame, payload) => this.#sendEnvelope(peerId, frame, payload),
+      sendEnvelope: (peerId, frame, payload) => this.#sendEnvelope({ peerId, frame }, payload),
       // Channels may keep sealing while the socket is away: frames land in
       // the retention buffer and replay after a resumed welcome.
       ready: () => this.#outbox !== undefined || this.#resumable()
     })
+    this.#peers = new MachinePeers({
+      selfDeviceId: options.credentials.deviceId,
+      secretKey: options.credentials.secretKey,
+      ...(options.peerKeyPins === undefined ? {} : { peerKeyPins: options.peerKeyPins }),
+      ...(options.onPeerKeyMismatch === undefined
+        ? {}
+        : { onPeerKeyMismatch: options.onPeerKeyMismatch }),
+      ...(options.onMachinesChanged === undefined
+        ? {}
+        : { onMachinesChanged: options.onMachinesChanged }),
+      sendEnvelope: (machineId, frame, payload) => this.#sendEnvelope({ machineId, frame }, payload)
+    })
+  }
+
+  /// The account's machines (this one included) as the hub last reported
+  /// them (kept through reconnects); undefined before the first welcome,
+  /// after stop(), or when the hub predates machine peers.
+  machines(): ReadonlyArray<CloudMachinePresence> | undefined {
+    return this.#peers.list()
+  }
+
+  /// Opens an end-to-end sealed channel to another machine on the account.
+  /// Throws ChannelOpenError (nothing sent) when the target is unknown,
+  /// offline, or unreachable; ChannelKeyMismatchError when its key changed.
+  openChannel(deviceId: string, channelType: string, params?: unknown): OutgoingChannel {
+    return this.#peers.open(
+      deviceId,
+      channelType,
+      params,
+      this.#state === "connected" || this.#resumable()
+    )
   }
 
   get state(): MachineConnectionState {
@@ -124,10 +166,16 @@ export class CloudMachineConnection {
     this.#clearLivenessTimers()
     this.#dropOutbox()
     this.#discardResumeState()
+    this.#peers.clear()
     const socket = this.#socket
     this.#socket = undefined
     socket?.close(1000, "stopping")
+    this.#dropChannels()
+  }
+
+  #dropChannels(): void {
     this.#receiver.dropAll("peer-gone")
+    this.#peers.dropChannels()
   }
 
   #setState(state: MachineConnectionState): void {
@@ -168,6 +216,9 @@ export class CloudMachineConnection {
         ...(this.options.device.os !== undefined ? { os: this.options.device.os } : {}),
         ...(this.options.device.appVersion !== undefined
           ? { appVersion: this.options.device.appVersion }
+          : {}),
+        ...(this.options.device.serverId !== undefined
+          ? { serverId: this.options.device.serverId }
           : {})
       }
       try {
@@ -176,6 +227,7 @@ export class CloudMachineConnection {
             t: "hello",
             protocol: CLOUD_PROTOCOL_VERSION,
             device,
+            features: [MACHINE_PEERS_FEATURE],
             ...(this.#resumeToken === undefined ? {} : { resume: this.#resumeToken })
           })
         )
@@ -202,14 +254,23 @@ export class CloudMachineConnection {
       }
       for (const envelope of envelopes) {
         const header = parseHubToMachineRelayHeader(envelope.header)
-        if (header === undefined) continue
-        this.#receiver.handleRelay(
-          header.peerId,
-          header.frame,
-          envelope.payload,
-          header.peerPublicKey,
-          header.peerDeviceId
-        )
+        if (header !== undefined) {
+          this.#receiver.handleRelay(
+            header.peerId,
+            header.frame,
+            envelope.payload,
+            header.peerPublicKey,
+            header.peerDeviceId,
+            header.peerKind
+          )
+          continue
+        }
+        // Answers on channels this machine opened are addressed like an
+        // app's: by the responding machine's device id.
+        const answer = parseHubToAppRelayHeader(envelope.header)
+        if (answer !== undefined) {
+          this.#peers.handleRelay(answer.machineId, answer.frame, envelope.payload)
+        }
       }
       return
     }
@@ -236,8 +297,9 @@ export class CloudMachineConnection {
           // Fresh identity: peer ids changed, so every held channel is dead.
           this.#retained = []
           this.#retainedBytes = 0
-          this.#receiver.dropAll("peer-gone")
+          this.#dropChannels()
         }
+        this.#peers.welcome(frame.machines)
         this.#setState("connected")
         this.options.onWelcome?.({
           resumed,
@@ -254,9 +316,17 @@ export class CloudMachineConnection {
         }
         return
       case "error":
+        if (frame.machineId !== undefined) this.#peers.hubError(frame.machineId, frame.channelId)
         return
       case "peer-gone":
         this.#receiver.dropPeer(frame.peerId)
+        return
+      case "presence":
+        this.#peers.presence(frame.machine)
+        return
+      case "machine-reset":
+        // The target restarted: its channel state is gone.
+        this.#peers.reset(frame.machineId)
         return
     }
   }
@@ -312,7 +382,7 @@ export class CloudMachineConnection {
   /// held for resume and stop reconnecting; a new start() begins afresh.
   #fail(state: "revoked" | "unsupported-protocol"): void {
     this.#discardResumeState()
-    this.#receiver.dropAll("peer-gone")
+    this.#dropChannels()
     this.#setState(state)
   }
 
@@ -379,7 +449,7 @@ export class CloudMachineConnection {
       return
     }
     this.#dropOutbox()
-    this.#receiver.dropAll("peer-gone")
+    this.#dropChannels()
   }
 
   #resumable(): boolean {
@@ -398,7 +468,7 @@ export class CloudMachineConnection {
       // Frames are being dropped: a later resume would seq-gap anyway, so
       // fall back to the plain teardown path now.
       this.#discardResumeState()
-      this.#receiver.dropAll("peer-gone")
+      this.#dropChannels()
       return
     }
     this.#retained.push({ header, payload })
@@ -408,8 +478,9 @@ export class CloudMachineConnection {
   /// Queues one relay envelope toward the hub (empty payload for
   /// credit/close frames, whose parameters live in the header).
   #sendEnvelope(
-    peerId: string,
-    frame: RelayFrameHeader,
+    header:
+      | { peerId: string; frame: RelayFrameHeader }
+      | { machineId: string; frame: RelayFrameHeader },
     payload: Uint8Array = new Uint8Array(0)
   ): void {
     // While connected, envelopes flow through the coalescing outbox. While
@@ -417,13 +488,13 @@ export class CloudMachineConnection {
     // welcome — including pre-welcome sends on the new socket, which must
     // not overtake the retained backlog.
     if (this.#outbox !== undefined && this.#state === "connected") {
-      this.#outbox.push({ peerId, frame }, payload)
+      this.#outbox.push(header, payload)
       return
     }
     if (this.#resumable()) {
-      this.#retain({ peerId, frame }, payload)
+      this.#retain(header, payload)
       return
     }
-    this.#outbox?.push({ peerId, frame }, payload)
+    this.#outbox?.push(header, payload)
   }
 }

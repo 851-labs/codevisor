@@ -53,7 +53,8 @@ extension SessionModel {
       _ = try await transport.prompt(
         trimmed,
         attachments: message.attachments,
-        messageId: message.id.uuidString.lowercased()
+        messageId: message.id.uuidString.lowercased(),
+        clientId: promptClientId
       )
       onPromptAccepted?(message.attachments.count, false)
       await drain()
@@ -85,7 +86,8 @@ extension SessionModel {
     do {
       _ = try await transport.prompt(
         "Continue from the failed attempt without repeating completed work.",
-        messageId: prompt.id.uuidString.lowercased()
+        messageId: prompt.id.uuidString.lowercased(),
+        clientId: promptClientId
       )
       await drain()
     } catch {
@@ -486,7 +488,7 @@ extension SessionModel {
 
   private func enqueueWhileSending(_ text: String, attachments: [Attachment] = []) async {
     do {
-      _ = try await transport.prompt(text, attachments: attachments)
+      _ = try await transport.prompt(text, attachments: attachments, clientId: promptClientId)
       onPromptAccepted?(attachments.count, true)
     } catch {
       errorMessage = serverErrorMessage(error)

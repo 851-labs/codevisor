@@ -53,7 +53,10 @@ describe("recording attachment persistence", () => {
       )
       const result = await client.callTool({
         name: "execute",
-        arguments: { code: 'async () => tools["computer.stop_recording"]({recording_id:"r"})' }
+        arguments: {
+          description: "Run test code",
+          code: 'async () => tools["computer.stop_recording"]({recording_id:"r"})'
+        }
       })
       expect(result.isError).not.toBe(true)
       const rendered = JSON.stringify(result.content)

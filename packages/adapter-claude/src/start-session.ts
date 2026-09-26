@@ -103,6 +103,11 @@ export const makeStartSession = (deps: StartSessionDeps) => {
         ? {}
         : {
             strictMcpConfig: true,
+            // The SDK's default system prompt is empty, so this adds
+            // Codevisor's standing instructions without replacing anything.
+            ...(toolGateway.instructions === undefined
+              ? {}
+              : { systemPrompt: toolGateway.instructions }),
             mcpServers: {
               [toolGateway.name]: {
                 type: "http" as const,

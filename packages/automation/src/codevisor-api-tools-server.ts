@@ -42,6 +42,12 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     "GET",
     "/v1/tailnet/peers"
   ),
+  apiTool(
+    "machines.list",
+    "List every machine on this account (this one, cloud-connected, and directly paired) with its stable id, name, OS, online state, and last-seen time. `isCurrent` marks the machine this call runs on.",
+    "GET",
+    "/v1/machines"
+  ),
   apiTool("server.update_status", "Check for a Codevisor server update.", "GET", "/v1/update", {
     query: [
       booleanQuery("refresh", "Bypass the cached update result."),
@@ -180,7 +186,20 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
       body: CreateWorktreeRequest
     }
   ),
-  apiTool("workspaces.list", "List durable pane-workspace identities.", "GET", "/v1/workspaces"),
+  apiTool(
+    "workspaces.list",
+    "List durable pane-workspace identities, including their labels.",
+    "GET",
+    "/v1/workspaces",
+    {
+      query: [
+        stringQuery(
+          "label",
+          "Only workspaces carrying this label, as key=value (or just key for any value)."
+        )
+      ]
+    }
+  ),
   apiTool(
     "workspaces.snapshot",
     "Read a coherent snapshot of workspaces and their panes.",
@@ -222,7 +241,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.upsert",
-    "Create or fully replace a workspace identity by id.",
+    "Create or fully replace a workspace identity by id. labels (string key/value pairs) are kept when omitted; an empty object clears them.",
     "PUT",
     "/v1/workspaces/:id",
     {
@@ -231,7 +250,7 @@ export const codevisorServerApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "workspaces.update",
-    "Rename, re-home, or archive a workspace identity.",
+    "Rename, re-home, relabel, or archive a workspace identity. labels replaces the workspace's labels; an empty object clears them.",
     "PATCH",
     "/v1/workspaces/:id",
     {

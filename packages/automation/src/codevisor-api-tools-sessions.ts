@@ -11,7 +11,8 @@ import {
   SetQuestionAnswerRequest,
   TerminalCreateRequest,
   UpdateQueuedPromptRequest,
-  UpdateSessionRequest
+  UpdateSessionRequest,
+  WaitForSessionsRequest
 } from "@codevisor/api"
 
 import {
@@ -23,10 +24,24 @@ import {
 
 /// Session, terminal, and file tools.
 export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
-  apiTool("sessions.list", "List Codevisor sessions on this server.", "GET", "/v1/sessions"),
+  apiTool(
+    "sessions.list",
+    "List Codevisor sessions on this server, newest activity first. Each summary carries sidebarState (idle, inProgress, waitingForUser, unread, errored), actionRequiredKind, parentSessionId, and labels. Filter by parentSessionId to find the agents a session created, or by label to find work you tagged.",
+    "GET",
+    "/v1/sessions",
+    {
+      query: [
+        stringQuery("parentSessionId", "Only sessions created by this session."),
+        stringQuery(
+          "label",
+          "Only sessions carrying this label, as key=value (or just key for any value)."
+        )
+      ]
+    }
+  ),
   apiTool(
     "sessions.create",
-    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
+    "Create a Codevisor coding-agent session in the background. Without workspaceId, the chat gets its own new workspace so it appears in the sidebar; pass an existing workspaceId to add it to that workspace instead. parentSessionId links the new session to the one creating it (defaults to the calling session), and labels (string key/value pairs) let you find it again with sessions.list after your context is compacted. Native sidebars synchronize the new chat without changing the user's selection. Use clients.navigate only when asked to show it.",
     "POST",
     "/v1/sessions",
     { body: CreateSessionRequest }
@@ -48,7 +63,7 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   ),
   apiTool(
     "sessions.update",
-    "Rename, archive, move, or reconfigure a session.",
+    "Rename, move, relabel, or reconfigure a session. labels replaces the session's labels; an empty object clears them.",
     "PATCH",
     "/v1/sessions/:id",
     {
@@ -139,6 +154,13 @@ export const codevisorSessionApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
     {
       body: PromptRequest
     }
+  ),
+  apiTool(
+    "sessions.wait",
+    "Wait until any of the listed sessions reaches one of the until states, instead of polling sessions.get or sessions.list in a loop. Checks immediately, then long-polls. until defaults to idle, waitingForUser, and errored; idle also matches a finished turn nobody has read yet (sidebarState unread) but never a session that still has queued prompts. Returns every listed session's sidebarState, actionRequiredKind, and pendingQuestion (answer it with sessions.question_answer), and timedOut when nothing matched in time. timeoutMs defaults to 60000 and is capped at 300000; call again to keep waiting. A deleted session ends the wait and is omitted.",
+    "POST",
+    "/v1/sessions/wait",
+    { body: WaitForSessionsRequest }
   ),
   apiTool(
     "sessions.cancel",

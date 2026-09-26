@@ -99,6 +99,28 @@ describe("ClaudeProvider", () => {
     expect(fake.options?.resume).toBeUndefined()
   })
 
+  it("starts Claude with Codevisor's standing instructions only when it has a gateway", async () => {
+    const withGateway = new FakeQuery()
+    const created = run(
+      makeProvider(withGateway).createSession(definition, "/tmp", async () => {}, undefined, {
+        name: "codevisor",
+        url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+        bearerToken: "secret",
+        instructions: "You are running inside Codevisor."
+      })
+    )
+    withGateway.push(initMessage())
+    await created
+    expect(withGateway.options?.systemPrompt).toBe("You are running inside Codevisor.")
+    expect(withGateway.options?.mcpServers).toHaveProperty("codevisor")
+
+    const bare = new FakeQuery()
+    const plain = run(makeProvider(bare).createSession(definition, "/tmp", async () => {}))
+    bare.push(initMessage())
+    await plain
+    expect(bare.options).not.toHaveProperty("systemPrompt")
+  })
+
   it("rejects claude binaries older than the version floor", async () => {
     const fake = new FakeQuery()
     const provider = makeProvider(fake, async () => "1.0.44")

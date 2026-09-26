@@ -2,8 +2,9 @@ import {
   encodeCloudFrame,
   encodeRelayEnvelopes,
   parseAppRelayHeader,
-  parseMachineRelayHeader,
+  parseMachineOutboundRelayHeader,
   type HubToMachineRelayHeader,
+  type RelayFrameHeader,
   type WireRelayEnvelope
 } from "@codevisor/api"
 
@@ -17,6 +18,9 @@ import {
 /// internals onto this narrow surface.
 export interface RelayHubPort {
   isKnownMachine(machineId: string): boolean
+  /// The machine accepts channels from other machines (its last hello
+  /// advertised MACHINE_PEERS_FEATURE).
+  acceptsMachinePeers(machineId: string): boolean
   /// Tries every eligible live socket, retiring failures, then buffers during
   /// resume grace. False means the destination is definitively unavailable.
   deliverToMachine(machineId: string, message: Uint8Array): boolean
@@ -37,6 +41,17 @@ export interface AppRelayOpener {
   deviceId?: string
 }
 
+/// A machine socket as a relay endpoint: it answers channels peers opened
+/// and — once it advertised MACHINE_PEERS_FEATURE — opens its own channels
+/// toward other machines on the account.
+export interface MachineRelayEndpoint {
+  connectionId: string
+  /// Always set on machine sockets (from the authenticated api key).
+  deviceId?: string
+  publicKey?: string
+  peerAware?: boolean
+}
+
 type Destination = { machineId: string }
 
 const sameDestination = (a: Destination | undefined, b: Destination): boolean =>
@@ -48,6 +63,31 @@ export const routeAppRelay = (
   opener: AppRelayOpener,
   envelopes: WireRelayEnvelope[]
 ): void => {
+  const router = openerRouter(hub, socket, opener, undefined)
+  for (const envelope of envelopes) {
+    const header = parseAppRelayHeader(envelope.header)
+    if (header === undefined) {
+      hub.error(socket, "invalid-frame", "malformed relay header")
+      continue
+    }
+    router.push(header.machineId, header.frame, envelope.payload)
+  }
+  router.flush()
+}
+
+/// Opener-side routing shared by apps and machine openers: validates the
+/// destination against the account's registry and batches consecutive
+/// envelopes per destination. `openerMachineId` is set for machine openers:
+/// they may not address themselves, and targets learn the opener's kind.
+const openerRouter = (
+  hub: RelayHubPort,
+  socket: WebSocket,
+  opener: AppRelayOpener,
+  openerMachineId: string | undefined
+): {
+  push: (machineId: string, frame: RelayFrameHeader, payload: Uint8Array) => void
+  flush: () => void
+} => {
   let target: Destination | undefined
   let batch: { header: HubToMachineRelayHeader; payload: Uint8Array }[] = []
   const flush = (): void => {
@@ -69,21 +109,24 @@ export const routeAppRelay = (
     }
     batch = []
   }
-  for (const envelope of envelopes) {
-    const header = parseAppRelayHeader(envelope.header)
-    if (header === undefined) {
-      hub.error(socket, "invalid-frame", "malformed relay header")
-      continue
-    }
-    const destination: Destination | undefined = hub.isKnownMachine(header.machineId)
-      ? { machineId: header.machineId }
-      : undefined
+  const push = (machineId: string, frame: RelayFrameHeader, payload: Uint8Array): void => {
+    // The registry holds only this account's machines (one hub per
+    // account), so an unknown id — including another account's machine —
+    // is refused here. Machine openers may reach only other machines that
+    // accept machine peers (older ones would not restrict them to the
+    // gateway channel), never themselves.
+    const destination: Destination | undefined =
+      hub.isKnownMachine(machineId) &&
+      (openerMachineId === undefined ||
+        (machineId !== openerMachineId && hub.acceptsMachinePeers(machineId)))
+        ? { machineId }
+        : undefined
     if (destination === undefined) {
       hub.error(socket, "unknown-machine", "no such machine on this account", {
-        machineId: header.machineId,
-        channelId: header.frame.channelId
+        machineId,
+        channelId: frame.channelId
       })
-      continue
+      return
     }
     if (!sameDestination(target, destination)) {
       flush()
@@ -92,30 +135,37 @@ export const routeAppRelay = (
     batch.push({
       header: {
         peerId: opener.connectionId,
-        frame: header.frame,
+        frame,
         // Opens carry the opener's identity (key + stable device id) so the
         // machine can complete key agreement and TOFU-pin the key per device.
-        ...(header.frame.t === "open" && opener.publicKey !== undefined
+        ...(frame.t === "open" && opener.publicKey !== undefined
           ? { peerPublicKey: opener.publicKey }
           : {}),
-        ...(header.frame.t === "open" && opener.deviceId !== undefined
+        ...(frame.t === "open" && opener.deviceId !== undefined
           ? { peerDeviceId: opener.deviceId }
+          : {}),
+        ...(frame.t === "open" && openerMachineId !== undefined
+          ? { peerKind: "machine" as const }
           : {})
       },
-      payload: envelope.payload
+      payload
     })
   }
-  flush()
+  return { push, flush }
 }
 
-/// Mirrors routeAppRelay for the machine→app direction; vanished peers are
-/// reported once with peer-gone.
+/// Mirrors routeAppRelay for the machine→opener direction; vanished peers
+/// are reported once with peer-gone. Envelopes addressed by `machineId` are
+/// channels this machine opens toward another machine on the account —
+/// accepted only from peer-aware machines.
 export const routeMachineRelay = (
   hub: RelayHubPort,
   socket: WebSocket,
-  machineDeviceId: string,
+  machine: MachineRelayEndpoint,
   envelopes: WireRelayEnvelope[]
 ): void => {
+  const machineDeviceId = machine.deviceId!
+  const opened = openerRouter(hub, socket, machine, machineDeviceId)
   let peerId: string | undefined
   let batch: { header: unknown; payload: Uint8Array }[] = []
   const reportGone = (peerId: string): void => {
@@ -137,11 +187,20 @@ export const routeMachineRelay = (
     batch = []
   }
   for (const envelope of envelopes) {
-    const header = parseMachineRelayHeader(envelope.header)
-    if (header === undefined) {
+    const header = parseMachineOutboundRelayHeader(envelope.header)
+    if (header === undefined || (header.direction === "open" && machine.peerAware !== true)) {
       hub.error(socket, "invalid-frame", "malformed relay header")
       continue
     }
+    if (header.direction === "open") {
+      // Keep wire order across the two directions: flush the answer batch
+      // before an opened-channel frame and vice versa.
+      flush()
+      peerId = undefined
+      opened.push(header.machineId, header.frame, envelope.payload)
+      continue
+    }
+    opened.flush()
     if (peerId !== header.peerId) {
       flush()
       peerId = header.peerId
@@ -152,4 +211,5 @@ export const routeMachineRelay = (
     })
   }
   flush()
+  opened.flush()
 }

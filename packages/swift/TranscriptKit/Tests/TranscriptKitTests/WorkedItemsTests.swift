@@ -220,6 +220,13 @@ struct WorkedItemsTests {
     ]
     #expect(ToolCallSummary.describe(calls) == "Used 3 integration tools")
     #expect(ToolCallSummary.symbol(calls) == "puzzlepiece.extension")
+    #expect(ToolCallSummary.describe([calls[1]]) == "Used an integration tool")
+    let described = ToolCall(
+      toolCallId: "4", title: "codevisor.execute", status: .completed,
+      rawInput: ["description": "Triage new Sentry issues", "code": "async () => 1"]
+    )
+    #expect(ToolCallSummary.describe([described]) == "Triage new Sentry issues")
+    #expect(ToolCallSummary.describe([calls[0], described]) == "Used 2 integration tools")
   }
 
   private func call(_ kind: ToolKind) -> ToolCall {

@@ -93,5 +93,36 @@ struct ToolCallDiffTotalsTests {
       ToolCall(
         toolCallId: "legacy", title: "mcp__herdman__execute", status: .completed
       ).displayTitle == "Ran an integration workflow")
+    #expect(
+      ToolCall(
+        toolCallId: "blank", title: "codevisor.execute", status: .completed,
+        rawInput: ["description": "  ", "code": "async () => 42"]
+      ).displayTitle == "Ran an integration workflow")
+  }
+
+  @Test("Gateway workflows are titled by the model's description, with failures spelled out")
+  func gatewayDescriptionTitle() {
+    let input: JSONValue = ["description": "List open Linear issues", "code": "async () => 42"]
+    #expect(
+      ToolCall(
+        toolCallId: "running", title: "mcp__codevisor__execute", status: .inProgress, rawInput: input
+      ).displayTitle == "List open Linear issues")
+    #expect(
+      ToolCall(
+        toolCallId: "failed", title: "codevisor.execute", status: .failed, rawInput: input,
+        meta: ["codevisorExecution": ["state": "failed", "calls": [], "error": "Linear is offline\nstack"]]
+      ).displayTitle == "List open Linear issues — failed: Linear is offline")
+    // The gateway can report a failed script while the harness call itself completed.
+    #expect(
+      ToolCall(
+        toolCallId: "script", title: "codevisor_execute", status: .completed, rawInput: input,
+        meta: ["codevisorExecution": ["state": "failed", "calls": []]]
+      ).displayTitle == "List open Linear issues — failed")
+    let long = String(repeating: "x", count: 100)
+    #expect(
+      ToolCall(
+        toolCallId: "long", title: "codevisor.execute", status: .failed, rawInput: input,
+        meta: ["codevisorExecution": ["state": "failed", "calls": [], "error": .string(long)]]
+      ).displayTitle == "List open Linear issues — failed: \(String(repeating: "x", count: 79))…")
   }
 }

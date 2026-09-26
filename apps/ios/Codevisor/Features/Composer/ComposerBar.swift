@@ -65,6 +65,8 @@ struct ComposerBar: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.theme) var theme
+  /// This window's client-control id; sent with prompts as their origin.
+  @Environment(\.clientControlId) var clientControlId
 
   var cardStyle = ComposerCardStyle()
 

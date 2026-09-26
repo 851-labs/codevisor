@@ -14,6 +14,8 @@ struct SessionControllerFirstSendTests {
     let (gate, release) = AsyncStream.makeStream(of: Void.self)
     fixture.client.openSessionGate = gate
     defer { release.finish() }
+    // The sending window is chosen before the chat's model exists.
+    fixture.controller.promptClientId = "window-1"
     let send = Task { await fixture.controller.send() }
     await fixture.client.openSessionRequests.wait()
 
@@ -32,6 +34,7 @@ struct SessionControllerFirstSendTests {
 
     #expect(fixture.promotions == 1)
     #expect(fixture.client.promptedMessageIds == [message.id.uuidString.lowercased()])
+    #expect(fixture.client.promptedClientIds == ["window-1"])
     #expect(fixture.controller.userSendAnimationRequest == animation)
     fixture.controller.model?.shutdown()
   }

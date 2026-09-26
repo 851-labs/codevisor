@@ -4,7 +4,8 @@ import type { HarnessUsageLimits } from "@codevisor/api"
 import {
   MarkSessionReadRequest as MarkSessionReadRequestSchema,
   CreateSessionRequest as CreateSessionRequestSchema,
-  UpdateSessionRequest as UpdateSessionRequestSchema
+  UpdateSessionRequest as UpdateSessionRequestSchema,
+  WaitForSessionsRequest as WaitForSessionsRequestSchema
 } from "@codevisor/api"
 import { gitBranchDiffTotals } from "@codevisor/worktrees"
 
@@ -23,7 +24,9 @@ import type {
   EventFanout,
   RouteState
 } from "../server-context.js"
+import { matchesLabelFilters } from "./label-filters.js"
 import { routeSessionActions } from "./session-actions.js"
+import { waitForSessions } from "./session-wait.js"
 import {
   applySessionUpdate,
   createSessionIfMissing,
@@ -51,7 +54,26 @@ export const routeSessions = async (
   config: CodevisorServerConfig
 ): Promise<boolean> => {
   if (request.method === "GET" && url.pathname === "/v1/sessions") {
-    writeJson(response, 200, await run(services.db.listSessions))
+    const parentSessionId = url.searchParams.get("parentSessionId")?.toLowerCase()
+    writeJson(
+      response,
+      200,
+      (await run(services.db.listSessions)).filter(
+        (session) =>
+          (parentSessionId === undefined || session.parentSessionId === parentSessionId) &&
+          matchesLabelFilters(session.labels, url)
+      )
+    )
+    return true
+  }
+
+  if (request.method === "POST" && url.pathname === "/v1/sessions/wait") {
+    const payload = await readSchema(request, WaitForSessionsRequestSchema)
+    // A caller that gives up (harness tool timeout, closed socket) releases
+    // the wait; after a normal reply this abort is a no-op.
+    const abort = new AbortController()
+    response.once("close", () => abort.abort())
+    writeJson(response, 200, await waitForSessions(services.db, fanout, payload, abort.signal))
     return true
   }
 

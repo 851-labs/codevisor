@@ -29,7 +29,7 @@ export const makePromptQueueService = (
     // Queue-item ids are deliberately NOT canonicalized: a client-supplied id
     // doubles as the client's optimistic-message token and must echo back
     // byte-identical for identity reconciliation.
-    createPromptQueueItem: (rawSessionId, text, attachments, id) =>
+    createPromptQueueItem: (rawSessionId, text, attachments, id, clientId) =>
       attempt("createPromptQueueItem", () => {
         const sessionId = canonicalUuid(rawSessionId)
         getSession(sessionId)
@@ -42,19 +42,29 @@ export const makePromptQueueService = (
           text,
           createdAt: now,
           updatedAt: now,
-          ...(attachments === undefined || attachments.length === 0 ? {} : { attachments })
+          ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
+          ...(clientId === undefined ? {} : { clientId })
         }
         sqlite
           .prepare(
             `insert into prompt_queue_items (
-              id, session_id, text, created_at, updated_at, attachments, position
-            ) values (?, ?, ?, ?, ?, ?, (
+              id, session_id, text, created_at, updated_at, attachments, client_id, position
+            ) values (?, ?, ?, ?, ?, ?, ?, (
               select coalesce(max(position), -1) + 1
               from prompt_queue_items
               where session_id = ? and state = 'pending'
             ))`
           )
-          .run(item.id, sessionId, text, now, now, serializeAttachments(attachments), sessionId)
+          .run(
+            item.id,
+            sessionId,
+            text,
+            now,
+            now,
+            serializeAttachments(attachments),
+            clientId ?? null,
+            sessionId
+          )
         return item
       }),
     listPromptQueue: (rawSessionId) =>

@@ -20,17 +20,24 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
   const core = makeMcpManagerCore(config)
   const connectUpstream = makeConnectUpstream(core)
 
-  const { allTools, createGatewayConnection, gatewayRuntime, refreshGatewayInventories } =
-    makeMcpGateway({
-      automationProviders: core.automationProviders,
-      browserSetupBroker: core.browserSetupBroker,
-      codeExecutor: core.codeExecutor,
-      config,
-      connectUpstream,
-      gateways: core.gateways,
-      isSuppressed: (name) => core.state.locallySuppressed.has(name),
-      record: core.record
-    })
+  const {
+    allTools,
+    createGatewayConnection,
+    gatewayRuntime,
+    invokeRemoteGatewayCall,
+    refreshGatewayInventories
+  } = makeMcpGateway({
+    automationProviders: core.automationProviders,
+    browserSetupBroker: core.browserSetupBroker,
+    codeExecutor: core.codeExecutor,
+    config,
+    connectUpstream,
+    gateways: core.gateways,
+    isSuppressed: (name) => core.state.locallySuppressed.has(name),
+    record: core.record,
+    selfMachine: core.selfMachine,
+    turnClientId: (sessionId) => core.turnClientIds.get(sessionId)
+  })
 
   // Plugin installs/uninstalls change the plugin-tool inventory the gateway
   // advertises; refresh every live gateway's tool descriptions on change.
@@ -70,6 +77,7 @@ export const makeMcpManager = (config: McpManagerConfig): McpManager => {
     ...makeMcpGatewayOperations(core, {
       createGatewayConnection,
       gatewayRuntime,
+      invokeRemoteGatewayCall,
       unsubscribePluginTools
     }),
     ...makeMcpBrowserOperations(core)

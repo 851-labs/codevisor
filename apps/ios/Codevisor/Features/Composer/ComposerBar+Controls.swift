@@ -294,6 +294,7 @@ extension ComposerBar {
     if isSubmittingGoal {
       Task { await controller.submitGoalFromComposer() }
     } else {
+      controller.promptClientId = clientControlId?.uuidString.lowercased()
       Task { await controller.send() }
     }
   }

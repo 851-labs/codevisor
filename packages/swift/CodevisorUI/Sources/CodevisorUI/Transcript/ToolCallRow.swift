@@ -350,8 +350,18 @@ public struct ToolCallContentCard: View {
   @Environment(\.theme) private var theme
 
   public var body: some View {
+    if let workflow = call.codevisorWorkflowDetails {
+      // The highlighted code block brings its own frame.
+      CodevisorWorkflowDetailView(details: workflow)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    } else {
+      genericCard
+    }
+  }
+
+  private var genericCard: some View {
     let rawSections = call.rawDetailSections()
-    VStack(alignment: .leading, spacing: 8) {
+    return VStack(alignment: .leading, spacing: 8) {
       HStack {
         Text(label)
           .font(.caption2.weight(.semibold))
@@ -476,7 +486,7 @@ private struct ToolCallRawSectionView: View {
   }
 }
 
-private struct ToolCallMonospacedText: View {
+struct ToolCallMonospacedText: View {
   let text: String
   @Environment(\.theme) private var theme
 

@@ -156,6 +156,12 @@ public enum ToolCallSummary {
   public static func describe(_ calls: [ToolCall]) -> String {
     guard !calls.isEmpty else { return "" }
     if calls.allSatisfy(\.isIntegrationPresentationCall) {
+      // A lone workflow reads best as what the model said it was doing.
+      if calls.count == 1, calls[0].integrationDescription != nil,
+        let title = calls[0].integrationDisplayTitle()
+      {
+        return title
+      }
       return calls.count == 1 ? "Used an integration tool" : "Used \(calls.count) integration tools"
     }
     var order: [Category] = []

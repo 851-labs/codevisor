@@ -27,6 +27,7 @@ import { parse } from "@babel/parser"
 import { transform } from "sucrase"
 
 import { browserDocumentation } from "./browser-documentation.js"
+import { machinesAndClientsSource, sandboxErrorSource } from "./code-executor-globals.js"
 import { computerUseCellBody } from "./computer-use-repl-source.js"
 
 /// Turning the model's code into an executable source: fenced-block
@@ -170,8 +171,18 @@ export const buildExecutionSource = (code: string, persistent = false): string =
       ? "const __invokeTool = (...args) => globalThis.__codevisor_invokeTool(...args);"
       : "const __invokeTool = __codevisor_invokeTool;",
     "const __log = __codevisor_log;",
-    ...(persistent ? [] : ["try { delete globalThis.__codevisor_invokeTool; } catch {}"]),
+    persistent
+      ? "const __statusBridge = (text) => typeof globalThis.__codevisor_status === 'function' ? globalThis.__codevisor_status(text) : undefined;"
+      : "const __statusBridge = typeof __codevisor_status === 'function' ? __codevisor_status : () => undefined;",
+    "const __context = (() => { try { const raw = globalThis.__codevisor_context; const parsed = typeof raw === 'string' ? JSON.parse(raw) : {}; return parsed && typeof parsed === 'object' ? parsed : {}; } catch { return {}; } })();",
+    ...(persistent
+      ? []
+      : [
+          "try { delete globalThis.__codevisor_invokeTool; } catch {}",
+          "try { delete globalThis.__codevisor_status; } catch {}"
+        ]),
     "try { delete globalThis.__codevisor_log; } catch {}",
+    "try { delete globalThis.__codevisor_context; } catch {}",
     "const __format = (value) => {",
     "  if (typeof value === 'string') return value;",
     "  try { return JSON.stringify(value); } catch { return String(value); }",
@@ -190,7 +201,8 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     "  if (__isContent(value)) { __outputs.push({ type: 'content', content: value }); return; }",
     "  __outputs.push({ type: 'content', content: { type: 'text', text: value === undefined ? 'undefined' : value === null ? 'null' : __format(value) } });",
     "};",
-    "const __callTool = (path, args = {}) => Promise.resolve(__invokeTool(path, args)).then((raw) => raw === undefined ? undefined : JSON.parse(raw));",
+    ...sandboxErrorSource,
+    "const __callTool = (path, args = {}, target = undefined) => Promise.resolve(__invokeTool(path, args, target)).then((raw) => raw === undefined ? undefined : JSON.parse(raw), (error) => { throw __typedToolError(error); });",
     "const __stringMatcher = (value, label) => { if (typeof value !== 'string') throw new Error(label + ' must be a string'); return value; };",
     "const __textMatcher = (value, label) => value instanceof RegExp ? { regex: value.source, flags: value.flags } : __stringMatcher(value, label);",
     "const __tabId = (tab) => typeof tab === 'string' ? tab : tab && typeof tab.id === 'string' ? tab.id : undefined;",
@@ -385,22 +397,24 @@ export const buildExecutionSource = (code: string, persistent = false): string =
     `const __browserCore = { browserId: 'codevisor', capabilities: __makeBrowserCapabilities(), tab: __browserTab, tabs: __tabs, tabGroups: __tabGroups, user: __user, documentation: async () => ${JSON.stringify(browserDocumentation)}, nameSession: (name) => __callTool('browser.nameSession', { name: __stringMatcher(name, 'name') }).then(() => undefined) };`,
     "const __browser = new Proxy(__browserCore, { get(target, prop) { if (prop === 'then' || typeof prop === 'symbol') return undefined; if (prop in target) return target[prop]; return __makeToolsProxy(['browser', String(prop)]); } });",
     "const __enumerationError = (path) => new Error((path.length === 0 ? 'tools' : 'tools.' + path.join('.')) + ' is a lazy proxy and cannot be enumerated. Use tools.search({ query: \"...\" }) to find tools.');",
-    "const __makeToolsProxy = (path = []) => new Proxy(() => undefined, {",
+    "const __makeToolsProxy = (path = [], target = undefined) => new Proxy(() => undefined, {",
     "  get(_target, prop) {",
     "    if (prop === 'then' || typeof prop === 'symbol') return undefined;",
     "    const nextPath = [...path, String(prop)];",
-    "    if (nextPath.length === 1 && nextPath[0] === 'browser') return __browser;",
-    "    return __makeToolsProxy(nextPath);",
+    "    if (target === undefined && nextPath.length === 1 && nextPath[0] === 'browser') return __browser;",
+    "    if (target === undefined && nextPath.length === 1 && nextPath[0] === 'search') return __searchTools;",
+    "    return __makeToolsProxy(nextPath, target);",
     "  },",
     "  ownKeys() { throw __enumerationError(path); },",
     "  getOwnPropertyDescriptor() { throw __enumerationError(path); },",
     "  apply(_target, _thisArg, args) {",
     "    const toolPath = path.join('.');",
     "    if (!toolPath) throw new Error('Tool path missing in invocation');",
-    "    return __callTool(toolPath, args[0]);",
+    "    return __callTool(toolPath, args[0], target);",
     "  }",
     "});",
     "const tools = __makeToolsProxy();",
+    ...machinesAndClientsSource,
     "const console = {",
     "  log: (...args) => __log('log', args.map(__format).join(' ')),",
     "  warn: (...args) => __log('warn', args.map(__format).join(' ')),",

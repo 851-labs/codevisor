@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto"
 
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 
+import { CODEVISOR_AGENT_INSTRUCTIONS } from "./mcp-gateway-catalog.js"
 import type { makeMcpGateway } from "./mcp-gateway.js"
 import type { McpManagerCore } from "./mcp-manager-core.js"
 import type { McpManager } from "./mcp-manager-types.js"
@@ -12,12 +13,19 @@ type GatewayHandles = ReturnType<typeof makeMcpGateway>
 export interface McpGatewayOperationDeps {
   readonly createGatewayConnection: GatewayHandles["createGatewayConnection"]
   readonly gatewayRuntime: GatewayHandles["gatewayRuntime"]
+  readonly invokeRemoteGatewayCall: GatewayHandles["invokeRemoteGatewayCall"]
   readonly unsubscribePluginTools: (() => void) | undefined
 }
 
 export type McpGatewayOperations = Pick<
   McpManager,
-  "close" | "closeSession" | "beginTurn" | "finishTurn" | "handleGatewayRequest" | "issueGateway"
+  | "close"
+  | "closeSession"
+  | "beginTurn"
+  | "finishTurn"
+  | "handleGatewayRequest"
+  | "invokeRemoteGatewayCall"
+  | "issueGateway"
 >
 
 /// Per-session tool gateways: issuing credentials, routing gateway HTTP
@@ -36,9 +44,15 @@ export const makeMcpGatewayOperations = (
     gateways,
     refreshTimers,
     sessionGatewayIds,
-    state
+    state,
+    turnClientIds
   } = core
-  const { createGatewayConnection, gatewayRuntime, unsubscribePluginTools } = deps
+  const {
+    createGatewayConnection,
+    gatewayRuntime,
+    invokeRemoteGatewayCall,
+    unsubscribePluginTools
+  } = deps
 
   const issueGateway: McpManager["issueGateway"] = async (sessionId, projectId, sink) => {
     await builtinsReady
@@ -46,13 +60,21 @@ export const makeMcpGatewayOperations = (
       browserSetupBroker.setSink(sessionId, sink)
     }
     const existingId = sessionGatewayIds.get(sessionId)
-    if (existingId !== undefined && gateways.has(existingId)) {
+    const existing = existingId === undefined ? undefined : gateways.get(existingId)
+    if (existingId !== undefined && existing !== undefined) {
+      if (sink !== undefined) existing.sink = sink
       const existingUrl = new URL("/mcp/gateway", state.gatewayBaseUrl)
       existingUrl.searchParams.set("gateway", existingId)
-      return { name: "codevisor", url: existingUrl.toString(), bearerToken: gatewayBearerToken }
+      return {
+        name: "codevisor",
+        url: existingUrl.toString(),
+        bearerToken: gatewayBearerToken,
+        instructions: CODEVISOR_AGENT_INSTRUCTIONS
+      }
     }
     const gatewayId = randomBytes(24).toString("base64url")
     const runtime = await gatewayRuntime(sessionId, projectId)
+    runtime.sink = sink
     gateways.set(gatewayId, runtime)
     sessionGatewayIds.set(sessionId, gatewayId)
     const url = new URL("/mcp/gateway", state.gatewayBaseUrl)
@@ -60,13 +82,15 @@ export const makeMcpGatewayOperations = (
     return {
       name: "codevisor",
       url: url.toString(),
-      bearerToken: gatewayBearerToken
+      bearerToken: gatewayBearerToken,
+      instructions: CODEVISOR_AGENT_INSTRUCTIONS
     }
   }
 
   const closeSession: McpManager["closeSession"] = async (sessionId) => {
     const gatewayId = sessionGatewayIds.get(sessionId)
     sessionGatewayIds.delete(sessionId)
+    turnClientIds.delete(sessionId)
     if (gatewayId !== undefined) {
       const gateway = gateways.get(gatewayId)
       gateways.delete(gatewayId)
@@ -168,6 +192,7 @@ export const makeMcpGatewayOperations = (
     )
     gateways.clear()
     sessionGatewayIds.clear()
+    turnClientIds.clear()
   }
 
   const finishTurn = async (sessionId: string) => {
@@ -175,9 +200,21 @@ export const makeMcpGatewayOperations = (
       [...automationProviders.values()].map((provider) => provider.finishTurn?.(sessionId))
     )
   }
-  const beginTurn = async (sessionId: string) => {
+  const beginTurn: McpManager["beginTurn"] = async (sessionId, options) => {
+    // Each turn names its own origin: a prompt without a client (automations,
+    // agent-sent prompts) clears the previous turn's window.
+    if (options?.clientId === undefined) turnClientIds.delete(sessionId)
+    else turnClientIds.set(sessionId, options.clientId)
     await builtinsReady
     await browserSetupBroker.beginTurn(sessionId)
   }
-  return { close, closeSession, beginTurn, finishTurn, handleGatewayRequest, issueGateway }
+  return {
+    close,
+    closeSession,
+    beginTurn,
+    finishTurn,
+    handleGatewayRequest,
+    invokeRemoteGatewayCall,
+    issueGateway
+  }
 }

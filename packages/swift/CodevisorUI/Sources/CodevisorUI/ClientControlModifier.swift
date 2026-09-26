@@ -1,6 +1,12 @@
 import CodevisorCore
 import SwiftUI
 
+extension EnvironmentValues {
+  /// The client-control id of the enclosing window (mounted root), so views
+  /// can tell the server which window sent a prompt.
+  @Entry public var clientControlId: UUID?
+}
+
 /// Each mounted root gets its own id. Every machine sees only the context
 /// belonging to it; closing the window cancels all of its control channels.
 public struct ClientControlModifier: ViewModifier {
@@ -28,7 +34,7 @@ public struct ClientControlModifier: ViewModifier {
   }
 
   public func body(content: Content) -> some View {
-    content.background {
+    content.environment(\.clientControlId, clientId).background {
       if platform == "macos" || scenePhase != .background {
         ForEach(environment.machines.allMachines) { machine in
           // A dev Mac may use an externally managed local server, without

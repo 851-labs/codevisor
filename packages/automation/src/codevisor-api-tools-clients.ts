@@ -5,14 +5,22 @@ import {
   ClientWindowRequest
 } from "@codevisor/api"
 
-import { apiTool, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
+import { apiTool, stringQuery, type CodevisorApiToolSpec } from "./codevisor-api-tool-spec.js"
 
 export const codevisorClientApiTools: ReadonlyArray<CodevisorApiToolSpec> = [
   apiTool(
     "clients.list",
-    "Discover connected native Codevisor windows on this server. Each clientId targets exactly one window; never guess which device to navigate when several are connected.",
+    "Discover the native Codevisor windows connected to this server and what each is showing. Each entry has id (the clientId that targets exactly that window), name, platform, machine, online, isActive (the focused window on its device), lastActiveAt, viewing ({ workspaceId, sessionId, page, panes }), and capabilities. viewing is absent when a window did not answer in time; it is still addressable. Pass originClientId (from context.current clientId) to mark the window that sent the current prompt with isOrigin; automations and agent-sent prompts have no origin window. Never guess which device to act on when several are connected. Commands to a window that is gone fail with code client_unavailable.",
     "GET",
-    "/v1/clients"
+    "/v1/clients",
+    {
+      query: [
+        stringQuery(
+          "originClientId",
+          "The window that sent the current prompt; that entry gets isOrigin: true."
+        )
+      ]
+    }
   ),
   apiTool(
     "clients.context",

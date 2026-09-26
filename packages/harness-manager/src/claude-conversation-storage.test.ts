@@ -73,6 +73,36 @@ describe("shared Claude conversation storage", () => {
     ).resolves.toBe("visible everywhere\n")
   })
 
+  it("shows every managed account the default profile's skills, keeping a profile's own", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codevisor-claude-skills-"))
+    directories.push(directory)
+    const defaultConfig = join(directory, ".claude")
+    const linkedProfile = join(directory, "managed-a")
+    const customProfile = join(directory, "managed-b")
+    await mkdir(join(customProfile, "skills", "mine"), { recursive: true })
+
+    // Skills live in the catalog's directory, not the default profile's.
+    const installedSkills = join(directory, "home", ".claude", "skills")
+    await ensureSharedClaudeConversations(
+      defaultConfig,
+      [linkedProfile, customProfile],
+      installedSkills
+    )
+    await ensureSharedClaudeConversations(
+      defaultConfig,
+      [linkedProfile, customProfile],
+      installedSkills
+    )
+
+    await mkdir(join(installedSkills, "codevisor"), { recursive: true })
+    await writeFile(join(installedSkills, "codevisor", "SKILL.md"), "# Codevisor\n")
+    await expect(
+      readFile(join(linkedProfile, "skills", "codevisor", "SKILL.md"), "utf8")
+    ).resolves.toBe("# Codevisor\n")
+    expect((await lstat(join(customProfile, "skills"))).isSymbolicLink()).toBe(false)
+    expect((await lstat(join(customProfile, "skills", "mine"))).isDirectory()).toBe(true)
+  })
+
   it("uses an explicit Claude config directory for the canonical history", () => {
     expect(
       defaultClaudeConfigPath({

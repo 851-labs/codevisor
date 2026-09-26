@@ -7,13 +7,15 @@ extension ServerSessionTransport {
   public func prompt(
     _ text: String,
     attachments: [Attachment] = [],
-    messageId: String? = nil
+    messageId: String? = nil,
+    clientId: String? = nil
   ) async throws -> ServerPromptAccepted {
     try await client.promptSession(
       id: sessionId,
       text: text,
       attachments: attachments.map(\.serverRef),
-      messageId: messageId
+      messageId: messageId,
+      clientId: clientId
     )
   }
 

@@ -1,4 +1,4 @@
-import type { AutomationToolProvider } from "@codevisor/automation"
+import { codevisorSandboxSignatures, type AutomationToolProvider } from "@codevisor/automation"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 import type { McpManagerConfig } from "./mcp-manager-types.js"
@@ -22,10 +22,37 @@ export interface GatewayCatalogDeps {
   readonly isSuppressed: (name: string) => boolean
 }
 
+const DESCRIPTION_GUIDANCE = [
+  "`description` is the label the user sees for this run. Write a short, plain-text, present-tense phrase that starts with a verb and names what the code does (at most 80 characters; longer labels are cut).",
+  'Good: "Find open Linear issues assigned to me", "Build the macOS app on MacBook", "Create an agent for each failing test".',
+  'Bad: "Running code" (says nothing), "I\'ll search Linear for your issues" (not a verb-first label), "`linear.list_issues` + filter()" (code, not prose).'
+].join("\n")
+
+/// Standing instructions every agent Codevisor starts receives (see
+/// ToolGatewayConfig.instructions). Harnesses may defer MCP tool descriptions,
+/// so the choice between Codevisor agents and built-in subagents lives here.
+export const CODEVISOR_AGENT_INSTRUCTIONS = [
+  'You are running inside Codevisor. Its `execute` tool (MCP server "codevisor") reaches the user\'s integrations, their other machines, their open Codevisor windows, and Codevisor itself; the codevisor, codevisor-agents, codevisor-machines, and codevisor-clients skills explain how.',
+  "",
+  "When work could go to another agent, these usually fit best:",
+  "- Your built-in subagents, for help with your current task (exploring the code, research, a quick review, small edits). Nothing is left behind for the user to manage.",
+  "- A new Codevisor chat in the current workspace, for another agent working on the same change beside you when that adds something your subagents can't, like a different harness or model or a conversation the user may want to follow. It shares your checkout, so a scoped task and not editing the same files at once keep things clean.",
+  "- A new Codevisor workspace with its own worktree, for separate pieces of work that each end in their own branch or PR, such as one agent per issue. Each one shows up in the user's sidebar, so they can follow it, jump in, and open or review its PR, which a hidden worktree can't offer."
+].join("\n")
+
+/// Always in context (skills load only when chosen), so this is where models
+/// learn to pick Codevisor agents over their built-in subagents.
+const DELEGATION_GUIDANCE = [
+  "Other agents: built-in subagents usually fit help with your current task; a Codevisor chat in the current workspace fits another harness or model working on the same change; a new Codevisor workspace with its own worktree fits separate work that ends in its own branch or PR. See the codevisor-agents skill."
+].join(" ")
+
 export const executeToolDescription = (inventory: string): string =>
   [
-    "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools. The isolate has no filesystem, network, process environment, or credentials.",
-    'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function.',
+    "Primary Codevisor tool interface. Run sandboxed JavaScript or TypeScript that discovers and composes enabled integration, Browser Use, and Computer Use tools, on this machine or on the user's other machines. The isolate has no filesystem, network, process environment, or credentials.",
+    'Inside code, start with `await tools.search({ query: "<intent>" })`, inspect a match with `await tools.describe.tool({ path })`, then call the exact returned path with `await tools[path](args)`. Pass an async arrow function. Call `status("…")` before slow steps so the user sees progress.',
+    DESCRIPTION_GUIDANCE,
+    DELEGATION_GUIDANCE,
+    `Sandbox globals:\n\`\`\`ts\n${codevisorSandboxSignatures}\n\`\`\``,
     inventory
   ].join("\n\n")
 
@@ -94,7 +121,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
 
   const searchCatalog = async (
     projectId: string | undefined,
-    sessionId: string,
+    sessionId: string | undefined,
     query: string,
     limit = 12
   ) => {
@@ -134,7 +161,7 @@ export const makeGatewayCatalog = (deps: GatewayCatalogDeps) => {
 
   const describeCatalogPath = async (
     projectId: string | undefined,
-    sessionId: string,
+    sessionId: string | undefined,
     path: string
   ): Promise<Tool> => {
     const separator = path.indexOf(".")

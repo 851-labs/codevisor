@@ -14,7 +14,9 @@ describe("abandoned machine session", () => {
       app_version: "1",
       public_key: "key",
       last_seen_at: "now",
-      active_generation: 3
+      active_generation: 3,
+      server_id: null,
+      peer_aware: 0
     }
     const machineSocket = { readyState: WebSocket.OPEN } as WebSocket
     const appSocket = { readyState: WebSocket.OPEN } as WebSocket
@@ -75,7 +77,8 @@ describe("abandoned machine session", () => {
         byConnectionId: (id: string) =>
           [...attachments].filter(([, a]) => a.connectionId === id).map(([socket]) => socket),
         byTag: () => [],
-        broadcastToApps: vi.fn(),
+        broadcastMachineNotice: vi.fn(),
+        broadcastToPeerMachines: vi.fn(),
         send: (socket: WebSocket, encoded: string) => {
           sent.push({ socket, frame: decodeHubToApp(encoded) })
           return true
@@ -88,7 +91,7 @@ describe("abandoned machine session", () => {
 
     expect(remove).toHaveBeenCalledWith("machine-before")
     // Connected under its new session: no machine-wide offline notice...
-    expect(port.net.broadcastToApps).not.toHaveBeenCalled()
+    expect(port.net.broadcastMachineNotice).not.toHaveBeenCalled()
     // ...but the opener learns its channel's frames are gone, once.
     expect(sent).toEqual([
       {

@@ -154,6 +154,7 @@ public struct ToolDetailResource: Codable, Equatable, Sendable {
 private enum ToolCallKeys: String, CodingKey {
   case toolCallId, title, kind, status, content, locations, rawInput, rawOutput, exitCode, diffStats
   case parentToolCallId, detailResource, isSnapshot, stateRevision, statePosition, chatItemId
+  case meta = "_meta"
 }
 
 /// Shared lenient field decoding for `ToolCall` and `ToolCallUpdate`: an
@@ -161,6 +162,26 @@ private enum ToolCallKeys: String, CodingKey {
 /// skipped per-element — a newer server must never make the client drop the
 /// whole event.
 private struct ToolCallFields {
+  init(
+    title: String?, kind: ToolKind?, status: ToolCallStatus?, content: [ToolCallContent]?,
+    locations: [ToolCallLocation]?, rawInput: JSONValue?, rawOutput: JSONValue?, exitCode: Int?,
+    diffStats: [ToolCallDiffStat]?, parentToolCallId: String?, detailResource: ToolDetailResource?,
+    meta: JSONValue?
+  ) {
+    self.title = title
+    self.kind = kind
+    self.status = status
+    self.content = content
+    self.locations = locations
+    self.rawInput = rawInput
+    self.rawOutput = rawOutput
+    self.exitCode = exitCode
+    self.diffStats = diffStats
+    self.parentToolCallId = parentToolCallId
+    self.detailResource = detailResource
+    self.meta = meta
+  }
+
   var title: String?
   var kind: ToolKind?
   var status: ToolCallStatus?
@@ -172,6 +193,7 @@ private struct ToolCallFields {
   var diffStats: [ToolCallDiffStat]?
   var parentToolCallId: String?
   var detailResource: ToolDetailResource?
+  var meta: JSONValue?
 
   init(from container: KeyedDecodingContainer<ToolCallKeys>) {
     title = Self.lenient(String.self, from: container, forKey: .title)
@@ -210,6 +232,25 @@ private struct ToolCallFields {
     diffStats = Self.lenient([ToolCallDiffStat].self, from: container, forKey: .diffStats)
     parentToolCallId = Self.lenient(String.self, from: container, forKey: .parentToolCallId)
     detailResource = Self.lenient(ToolDetailResource.self, from: container, forKey: .detailResource)
+    meta = Self.lenient(JSONValue.self, from: container, forKey: .meta)
+  }
+
+  static func encode(
+    _ fields: ToolCallFields,
+    to container: inout KeyedEncodingContainer<ToolCallKeys>
+  ) throws {
+    try container.encodeIfPresent(fields.title, forKey: .title)
+    try container.encodeIfPresent(fields.kind, forKey: .kind)
+    try container.encodeIfPresent(fields.status, forKey: .status)
+    try container.encodeIfPresent(fields.content, forKey: .content)
+    try container.encodeIfPresent(fields.locations, forKey: .locations)
+    try container.encodeIfPresent(fields.rawInput, forKey: .rawInput)
+    try container.encodeIfPresent(fields.rawOutput, forKey: .rawOutput)
+    try container.encodeIfPresent(fields.exitCode, forKey: .exitCode)
+    try container.encodeIfPresent(fields.diffStats, forKey: .diffStats)
+    try container.encodeIfPresent(fields.parentToolCallId, forKey: .parentToolCallId)
+    try container.encodeIfPresent(fields.detailResource, forKey: .detailResource)
+    try container.encodeIfPresent(fields.meta, forKey: .meta)
   }
 
   // Decodes an optional field, logging (rather than silently dropping) a
@@ -253,6 +294,9 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
   /// with that id (e.g. a Claude Task) — clients nest it under the parent.
   public var parentToolCallId: String?
   public var detailResource: ToolDetailResource?
+  /// The ACP `_meta` extension object. Codevisor attaches gateway execution
+  /// state here (`_meta.codevisorExecution`).
+  public var meta: JSONValue?
 
   public var id: String { toolCallId }
 
@@ -268,7 +312,8 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     exitCode: Int? = nil,
     diffStats: [ToolCallDiffStat]? = nil,
     parentToolCallId: String? = nil,
-    detailResource: ToolDetailResource? = nil
+    detailResource: ToolDetailResource? = nil,
+    meta: JSONValue? = nil
   ) {
     self.toolCallId = toolCallId
     self.title = title
@@ -282,6 +327,7 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     self.diffStats = diffStats
     self.parentToolCallId = parentToolCallId
     self.detailResource = detailResource
+    self.meta = meta
   }
 
   public init(from decoder: any Decoder) throws {
@@ -303,6 +349,7 @@ public struct ToolCall: Sendable, Codable, Equatable, Identifiable {
     diffStats = fields.diffStats
     parentToolCallId = fields.parentToolCallId
     detailResource = fields.detailResource
+    meta = fields.meta
   }
 }
 
@@ -320,6 +367,7 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
   public var diffStats: [ToolCallDiffStat]?
   public var parentToolCallId: String?
   public var detailResource: ToolDetailResource?
+  public var meta: JSONValue?
 
   public init(
     toolCallId: String,
@@ -333,7 +381,8 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     exitCode: Int? = nil,
     diffStats: [ToolCallDiffStat]? = nil,
     parentToolCallId: String? = nil,
-    detailResource: ToolDetailResource? = nil
+    detailResource: ToolDetailResource? = nil,
+    meta: JSONValue? = nil
   ) {
     self.toolCallId = toolCallId
     self.title = title
@@ -347,6 +396,7 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     self.diffStats = diffStats
     self.parentToolCallId = parentToolCallId
     self.detailResource = detailResource
+    self.meta = meta
   }
 
   public init(from decoder: any Decoder) throws {
@@ -364,6 +414,41 @@ public struct ToolCallUpdate: Sendable, Codable, Equatable {
     diffStats = fields.diffStats
     parentToolCallId = fields.parentToolCallId
     detailResource = fields.detailResource
+    meta = fields.meta
+  }
+}
+
+extension ToolCall {
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: ToolCallKeys.self)
+    try container.encode(toolCallId, forKey: .toolCallId)
+    try container.encodeIfPresent(isSnapshot, forKey: .isSnapshot)
+    try container.encodeIfPresent(stateRevision, forKey: .stateRevision)
+    try container.encodeIfPresent(statePosition, forKey: .statePosition)
+    try container.encodeIfPresent(chatItemId, forKey: .chatItemId)
+    try ToolCallFields.encode(
+      ToolCallFields(
+        title: title, kind: kind, status: status, content: content, locations: locations,
+        rawInput: rawInput, rawOutput: rawOutput, exitCode: exitCode, diffStats: diffStats,
+        parentToolCallId: parentToolCallId, detailResource: detailResource, meta: meta
+      ),
+      to: &container
+    )
+  }
+}
+
+extension ToolCallUpdate {
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: ToolCallKeys.self)
+    try container.encode(toolCallId, forKey: .toolCallId)
+    try ToolCallFields.encode(
+      ToolCallFields(
+        title: title, kind: kind, status: status, content: content, locations: locations,
+        rawInput: rawInput, rawOutput: rawOutput, exitCode: exitCode, diffStats: diffStats,
+        parentToolCallId: parentToolCallId, detailResource: detailResource, meta: meta
+      ),
+      to: &container
+    )
   }
 }
 
@@ -383,6 +468,7 @@ public extension ToolCall {
     if let diffStats = update.diffStats { result.diffStats = diffStats }
     if let parentToolCallId = update.parentToolCallId { result.parentToolCallId = parentToolCallId }
     if let resource = update.detailResource { result.detailResource = resource }
+    if let meta = update.meta { result.meta = meta }
     return result
   }
 
@@ -407,7 +493,8 @@ public extension ToolCallUpdate {
       exitCode: exitCode,
       diffStats: diffStats,
       parentToolCallId: parentToolCallId,
-      detailResource: detailResource
+      detailResource: detailResource,
+      meta: meta
     )
   }
 }

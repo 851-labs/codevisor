@@ -31,6 +31,8 @@ struct ComposerCard: View {
   /// Locks the submit action while the app is installing its own update so
   /// no new turn starts during the restart. Defaults to false (previews).
   @Environment(\.isAppUpdateInProgress) private var isAppUpdateInProgress
+  /// This window's client-control id; sent with prompts as their origin.
+  @Environment(\.clientControlId) private var clientControlId
   // Match ChatInputEditor's first TextKit measurement so switching sessions
   // never shows the shorter pre-measurement card for a frame.
   @State private var editorHeight: CGFloat = ChatInputEditor.singleLineHeight
@@ -529,6 +531,7 @@ private extension ComposerCard {
       if !reduceMotion, !controller.isSending {
         sendSource.stage(controller: controller, theme: theme)
       }
+      controller.promptClientId = clientControlId?.uuidString.lowercased()
       Task {
         await controller.send()
         didAcceptSubmission = false

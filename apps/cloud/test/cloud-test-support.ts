@@ -188,6 +188,8 @@ export const connectMachine = async (
     apiKey?: string
     keys?: ReturnType<typeof generateDeviceKeyPair>
     resume?: string
+    features?: string[]
+    serverId?: string
   } = {}
 ): Promise<MachineSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -207,8 +209,16 @@ export const connectMachine = async (
     encodeCloudFrame({
       t: "hello",
       protocol: CLOUD_PROTOCOL_VERSION,
-      device: { deviceId, kind: "machine", name, os: "linux", publicKey: keys.publicKey },
-      ...(options.resume === undefined ? {} : { resume: options.resume })
+      device: {
+        deviceId,
+        kind: "machine",
+        name,
+        os: "linux",
+        publicKey: keys.publicKey,
+        ...(options.serverId === undefined ? {} : { serverId: options.serverId })
+      },
+      ...(options.resume === undefined ? {} : { resume: options.resume }),
+      ...(options.features === undefined ? {} : { features: options.features })
     })
   )
   const welcome = (await reader.next()) as MachineSetup["welcome"]

@@ -5,7 +5,9 @@ import { deflateRawSync, inflateRawSync } from "node:zlib"
 
 import {
   decode,
+  GATEWAY_CHANNEL_TYPE,
   TERMINAL_CHANNEL_TYPE,
+  type CloudMachinePresence,
   TerminalChannelParams,
   TerminalClientFrame,
   type TerminalServerFrame
@@ -14,14 +16,17 @@ import {
   BYTE_STREAM_CHANNEL_TYPE,
   CloudMachineConnection,
   DirectChannelHost,
+  GatewayChannelError,
   HTTP_CHANNEL_TYPE,
   makePeerKeyPinStore,
   parsePeerKeyPins,
   provisionMachine,
+  requestOverGatewayChannel,
   serializePeerKeyPins,
   WS_CHANNEL_TYPE,
   type ChannelHandler,
   type CloudSocket,
+  type GatewayExchange,
   type MachineConnectionState,
   type MachineCredentials,
   type PeerKeyPinStore
@@ -32,7 +37,11 @@ import { WebSocket } from "ws"
 
 import type { CloudServerControl } from "../server-context-types.js"
 import { byteStreamChannelHandler } from "./cloud-byte-stream.js"
-import { httpChannelHandler, wsChannelHandler } from "./cloud-proxy-handlers.js"
+import {
+  gatewayLoopbackHandler,
+  httpChannelHandler,
+  wsChannelHandler
+} from "./cloud-proxy-handlers.js"
 
 /// Connects a running server to the user's cloud hub as a machine, serving
 /// end-to-end encrypted terminal channels. Integration boundary over `ws`,
@@ -44,6 +53,9 @@ export interface CloudBridgeOptions {
   readonly credentialsPath: string
   readonly machineName: string
   readonly appVersion: string
+  /// This server's stable id, published in hub presence so peer machines can
+  /// match it to direct FleetRoster routes.
+  readonly serverId?: string
   /// Loopback origin of this server's own HTTP API (http://127.0.0.1:port);
   /// structured request channels replay against it, while raw byte-stream
   /// channels connect only to this exact listener.
@@ -67,9 +79,21 @@ export interface CloudBridge {
   readonly deviceId: string
   readonly serverUrl: string
   readonly managedBy: CloudBridgeManagedBy
+  /// The name this machine presents in cloud presence: the name chosen at
+  /// registration (stored in cloud.json), else `--name`, else the host name.
+  readonly machineName: string
   /// Adopts one server-accepted WebSocket as a direct sealed-channel pipe:
   /// same channel handlers and pins as the relay, no hub in the middle.
   readonly acceptDirect: (socket: CloudSocket) => void
+  /// The account's machines as the hub reports them (undefined until a hub
+  /// that supports machine peers welcomed this machine).
+  readonly machines: () => ReadonlyArray<CloudMachinePresence> | undefined
+  /// Runs one gateway exchange on another machine through the relay.
+  readonly requestGateway: (
+    deviceId: string,
+    body: string,
+    signal?: AbortSignal
+  ) => Promise<GatewayExchange>
 }
 
 const readCredentials = async (
@@ -268,12 +292,14 @@ const makeBridge = (
   managedBy: CloudBridgeManagedBy,
   peerKeyPins: PeerKeyPinStore
 ): CloudBridge => {
+  const machineName = options.machineName === "" ? hostname() : options.machineName
   // Shared by the relay connection and the direct pipe: a channel behaves
   // identically no matter which pipe carried it.
   const channelHandlers = {
     [BYTE_STREAM_CHANNEL_TYPE]: byteStreamChannelHandler(options.localBaseUrl, options.log),
     [TERMINAL_CHANNEL_TYPE]: terminalChannelHandler(options.terminal, options.log),
     [HTTP_CHANNEL_TYPE]: httpChannelHandler(options.localBaseUrl, options.log),
+    [GATEWAY_CHANNEL_TYPE]: gatewayLoopbackHandler(options.localBaseUrl, options.log),
     [WS_CHANNEL_TYPE]: wsChannelHandler(options.localBaseUrl)
   }
   const connection = new CloudMachineConnection({
@@ -286,14 +312,15 @@ const makeBridge = (
       options.log(
         `Cloud: REFUSED channel from app device ${deviceId}: its key changed ` +
           `(pinned ${pinned}, presented ${presented}). If this is expected ` +
-          `(e.g. the app was reinstalled without its keychain), remove the ` +
+          `(e.g. the app or machine was reinstalled without its keys), remove the ` +
           `device's entry from ${peerPinsPath(options.credentialsPath)} and retry.`
       )
     },
     device: {
-      name: options.machineName === "" ? hostname() : options.machineName,
+      name: machineName,
       os: process.platform,
-      appVersion: options.appVersion
+      appVersion: options.appVersion,
+      ...(options.serverId === undefined ? {} : { serverId: options.serverId })
     },
     socketFactory,
     channelHandlers,
@@ -345,7 +372,15 @@ const makeBridge = (
     deviceId: credentials.deviceId,
     serverUrl: credentials.serverUrl,
     managedBy,
-    acceptDirect: (socket) => directHost.accept(socket)
+    machineName,
+    acceptDirect: (socket) => directHost.accept(socket),
+    machines: () => connection.machines(),
+    requestGateway: (deviceId, body, signal) =>
+      requestOverGatewayChannel(
+        () => connection.openChannel(deviceId, GATEWAY_CHANNEL_TYPE),
+        body,
+        signal === undefined ? {} : { signal }
+      )
   }
 }
 
@@ -415,13 +450,15 @@ export const removeCloudCredentials = async (credentialsPath: string): Promise<v
 export const makeCloudServerControl = (
   options: CloudBridgeOptions,
   initial: CloudBridge | undefined
-): CloudServerControl => {
+): CloudServerControl &
+  Required<Pick<CloudServerControl, "machineName" | "machines" | "requestGateway">> => {
   let current = initial
   return {
     deviceId: () => current?.deviceId,
     state: () => current?.state(),
     serverUrl: () => current?.serverUrl,
     managedBy: () => current?.managedBy,
+    machineName: () => current?.machineName,
     connect: async (serverUrl, sessionToken, registration) => {
       const bridge = await connectCloudBridge(options, { serverUrl, sessionToken, ...registration })
       current?.stop()
@@ -437,6 +474,11 @@ export const makeCloudServerControl = (
       if (current === undefined) return false
       current.acceptDirect(socket)
       return true
-    }
+    },
+    machines: () => current?.machines(),
+    requestGateway: (deviceId, body, signal) =>
+      current === undefined
+        ? Promise.reject(new GatewayChannelError("before-send", "not connected to the cloud relay"))
+        : current.requestGateway(deviceId, body, signal)
   }
 }

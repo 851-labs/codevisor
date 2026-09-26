@@ -71,6 +71,7 @@ export interface WorkspaceRow {
   readonly archived_at: string | null
   readonly created_at: string
   readonly updated_at: string | null
+  readonly labels?: string | null
 }
 
 export interface WorkspacePaneRow {
@@ -123,6 +124,8 @@ export interface SessionRow {
   readonly attention_has_unread_error: number
   readonly attention_manually_unread: number
   readonly pending_plan_approval: number
+  readonly parent_session_id?: string | null
+  readonly labels?: string | null
 }
 
 export interface HarnessAccountRow {
@@ -335,6 +338,7 @@ export interface PromptQueueRow {
   readonly attachments: string | null
   readonly state: "pending" | "processing"
   readonly position: number
+  readonly client_id?: string | null
 }
 
 export interface FileRow {

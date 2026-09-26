@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto"
-import { realpathSync, statSync } from "node:fs"
-import { isAbsolute, relative, resolve } from "node:path"
 
+import type { RuntimeEventSink } from "@codevisor/agent-runtime"
 import type { FileMetadata } from "@codevisor/api"
 import type {
   CodeExecutor,
   BrowserSetupBroker,
   AutomationToolProvider
 } from "@codevisor/automation"
-import { CodeExecutionToolError } from "@codevisor/automation"
 import type { McpServerRecord } from "@codevisor/db"
 import { makeAttachmentStore } from "@codevisor/db"
 import {
@@ -17,20 +15,15 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 
 import { executeToolDescription, makeGatewayCatalog } from "./mcp-gateway-catalog.js"
-import type { McpManagerConfig } from "./mcp-manager-types.js"
-import { invokeGatewayPluginTool } from "./mcp-plugin-tools.js"
+import { gatewayToolError, makeGatewayDispatch } from "./mcp-gateway-dispatch.js"
+import { executionArgsHash, makeExecutionRecorder } from "./mcp-gateway-execution.js"
+import type { GatewayCallContext, GatewayOrigin, McpManagerConfig } from "./mcp-manager-types.js"
 import { makeRecordingPublisher } from "./mcp-recording-artifacts.js"
-import {
-  type SandboxArtifactCollector,
-  type SandboxArtifactPersistence,
-  sandboxOutputContent,
-  sandboxSuccessfulToolResult
-} from "./mcp-sandbox-results.js"
-import { errorMessage, run, type UpstreamConnection } from "./mcp-support.js"
+import { type SandboxArtifactPersistence, sandboxOutputContent } from "./mcp-sandbox-results.js"
+import { run, type UpstreamConnection } from "./mcp-support.js"
 
 /// One live MCP connection to a gateway. Harnesses may connect more than
 /// once per Codevisor session: codex 0.145+ tears down and re-initializes
@@ -50,6 +43,9 @@ export interface GatewayRuntime {
   /// Live connections keyed by MCP session id (assigned at initialize).
   readonly connections: Map<string, GatewayConnection>
   inventory: string
+  /// The session's event sink; executions stream their transcript
+  /// annotation through it. Replaced whenever the session re-issues.
+  sink?: RuntimeEventSink | undefined
 }
 
 export type { CatalogServer } from "./mcp-gateway-catalog.js"
@@ -58,6 +54,9 @@ export interface ToolGatewayConfig {
   readonly name: string
   readonly url: string
   readonly bearerToken: string
+  /// Standing instructions the harness adds to the agent's system prompt
+  /// (mirrors @codevisor/agent-runtime's ToolGatewayConfig).
+  readonly instructions?: string
 }
 
 export interface McpGatewayDeps {
@@ -69,6 +68,9 @@ export interface McpGatewayDeps {
   readonly gateways: Map<string, GatewayRuntime>
   readonly isSuppressed: (name: string) => boolean
   readonly record: (id: string) => Promise<McpServerRecord>
+  readonly selfMachine: { readonly id: string; readonly name: string }
+  /// The client window that sent the session's current turn, if any.
+  readonly turnClientId: (sessionId: string) => string | undefined
 }
 
 export interface BrowserSessionTab {
@@ -124,7 +126,9 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     connectUpstream,
     gateways,
     isSuppressed,
-    record
+    record,
+    selfMachine,
+    turnClientId
   } = deps
 
   const {
@@ -140,22 +144,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     isSuppressed
   })
 
-  /// Invokes one plugin tool, resolving the calling session's cwd so plugins
-  /// can scope per-project state.
-  const invokePluginTool = async (
-    sessionId: string,
-    name: string,
-    args: Readonly<Record<string, unknown>>
-  ): Promise<unknown> => {
-    const session = await run(config.db.getSessionSummary(sessionId))
-    return invokeGatewayPluginTool(
-      config.pluginTools,
-      name,
-      args,
-      session.cwd === undefined ? {} : { cwd: session.cwd }
-    )
-  }
-
   const refreshGatewayInventories = async (): Promise<void> => {
     await Promise.all(
       [...gateways.values()].map(async (gateway) => {
@@ -167,88 +155,6 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
         }
       })
     )
-  }
-
-  const invokeAutomationProvider = async (
-    provider: AutomationToolProvider,
-    context: { readonly sessionId: string; readonly projectId?: string | undefined },
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
-    collector?: SandboxArtifactCollector
-  ): Promise<CallToolResult> => {
-    if (provider.id !== "browser" && provider.id !== "computer" && provider.id !== "codevisor") {
-      throw new Error(`Unknown automation provider: ${provider.id}`)
-    }
-    const definition = provider.tools.find((candidate) => candidate.name === toolName)
-    if (definition === undefined) throw new Error(`Unknown ${provider.id} tool: ${toolName}`)
-    const schema = definition.inputSchema as { readonly properties?: unknown }
-    const properties =
-      typeof schema.properties === "object" && schema.properties !== null
-        ? (schema.properties as Readonly<Record<string, unknown>>)
-        : {}
-    const unknownArguments = Object.keys(args).filter((key) => !(key in properties))
-    if (unknownArguments.length > 0) {
-      throw new Error(
-        `${provider.id}.${toolName} does not accept ${unknownArguments.map((key) => `\`${key}\``).join(", ")}`
-      )
-    }
-    const providerContext =
-      provider.id === "computer"
-        ? {
-            ...context,
-            agentLabel: (await run(config.db.getSessionSummary(context.sessionId))).title,
-            publishRecording
-          }
-        : provider.id === "browser"
-          ? {
-              ...context,
-              invokeBrowser: async (name: string, nested: Record<string, unknown>) =>
-                sandboxSuccessfulToolResult(
-                  await invokeAutomationProvider(provider, context, name, nested, collector),
-                  collector ?? {
-                    content: [],
-                    maxItems: 20,
-                    maxBytes: 20_000_000,
-                    persistence: artifactPersistence
-                  },
-                  "browser." + name
-                )
-            }
-          : context
-    let safeArgs = args
-    if (
-      provider.id === "browser" &&
-      (toolName === "upload_files" || toolName === "playwright.fileChooserSetFiles")
-    ) {
-      const session = await run(config.db.getSessionSummary(context.sessionId))
-      if (session.cwd === undefined) throw new Error("This session has no workspace folder")
-      const workspaceRoot = realpathSync(session.cwd)
-      const paths = Array.isArray(args.paths) ? args.paths : []
-      if (paths.length === 0 || !paths.every((path) => typeof path === "string")) {
-        throw new Error(`${toolName} requires one or more workspace file paths`)
-      }
-      const resolvedPaths = paths.map((path) => {
-        const candidate = realpathSync(isAbsolute(path) ? path : resolve(workspaceRoot, path))
-        const withinWorkspace = relative(workspaceRoot, candidate)
-        if (withinWorkspace.startsWith("..") || isAbsolute(withinWorkspace)) {
-          throw new Error("Browser Use can only upload files from the current workspace")
-        }
-        if (!statSync(candidate).isFile()) throw new Error(`Upload path is not a file: ${path}`)
-        return candidate
-      })
-      safeArgs = { ...args, paths: resolvedPaths }
-    }
-    if (provider.id === "browser") {
-      if (toolName === "use_backend") {
-        const requested = safeArgs.backend
-        if (requested === "managed" || requested === "extension" || requested === "builtin") {
-          await browserSetupBroker.resolveBackend(context.sessionId, requested)
-        }
-      } else if (toolName !== "backends" && toolName !== "connection_status") {
-        await browserSetupBroker.resolveBackend(context.sessionId)
-      }
-    }
-    return provider.invoke(providerContext, toolName, safeArgs)
   }
 
   /// Emitted tool artifacts (screenshots and the like) become immutable server
@@ -280,6 +186,24 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       }
     }
   }
+
+  const {
+    invokeAutomationProvider,
+    invokeGatewayTool,
+    invokeOnMachine,
+    invokeRemoteGatewayCall,
+    newArtifactCollector
+  } = makeGatewayDispatch({
+    artifactPersistence,
+    automationProviders,
+    browserSetupBroker,
+    catalog: { describeCatalogPath, gatewayServerAllowed, searchCatalog },
+    config,
+    connectUpstream,
+    publishRecording,
+    record,
+    selfMachine
+  })
 
   /// A failed script leaves whatever tabs it opened behind. Tell the agent about them so the
   /// retry reuses those tabs instead of opening duplicates.
@@ -321,94 +245,97 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
       "execute",
       {
         description: executeToolDescription(inventory),
-        inputSchema: { code: z.string().min(1) }
+        // The description is a display label; any length is accepted and the
+        // transcript shortens it, so a long label never fails the call.
+        inputSchema: { description: z.string().min(1), code: z.string().min(1) }
       },
-      async ({ code }, { signal }) => {
-        const artifacts: SandboxArtifactCollector = {
-          content: [],
-          maxItems: 4,
-          maxBytes: 10 * 1024 * 1024,
-          persistence: artifactPersistence
+      async ({ code, description }, { signal }) => {
+        const recorder = makeExecutionRecorder({
+          sink: runtime.sink,
+          sessionId,
+          argsHash: executionArgsHash({ code, description })
+        })
+        const artifacts = newArtifactCollector()
+        const clientId = turnClientId(sessionId)
+        const origin: GatewayOrigin = {
+          machineId: selfMachine.id,
+          machineName: selfMachine.name,
+          sessionId,
+          ...(clientId === undefined ? {} : { clientId })
+        }
+        let titledOrigin: Promise<GatewayOrigin> | undefined
+        const remoteOrigin = (): Promise<GatewayOrigin> => {
+          titledOrigin ??= run(config.db.getSessionSummary(sessionId)).then(
+            (session) => ({ ...origin, sessionTitle: session.title }),
+            () => origin
+          )
+          return titledOrigin
+        }
+        const callContext: GatewayCallContext = {
+          sessionId,
+          ...(projectId === undefined ? {} : { projectId }),
+          origin
         }
         let usedBrowser = false
         const result = await codeExecutor.execute(
           code,
           {
-            invoke: async ({ path, args }) => {
+            invoke: async ({ path, args, target }) => {
+              const started = performance.now()
+              const machine =
+                target?.machine === undefined || target.machine === selfMachine.id
+                  ? undefined
+                  : {
+                      machine: target.machine,
+                      ...(target.machineName === undefined
+                        ? {}
+                        : { machineName: target.machineName })
+                    }
+              const machineLabel =
+                machine === undefined ? {} : { machine: machine.machineName ?? machine.machine }
               try {
-                if (path === "search") {
-                  const input =
-                    typeof args === "object" && args !== null
-                      ? (args as { query?: unknown; limit?: unknown })
-                      : {}
-                  return await searchCatalog(
-                    projectId,
-                    sessionId,
-                    typeof input.query === "string" ? input.query : "",
-                    typeof input.limit === "number" ? input.limit : 12
-                  )
-                }
-                if (path === "describe.tool") {
-                  const input =
-                    typeof args === "object" && args !== null ? (args as { path?: unknown }) : {}
-                  if (typeof input.path !== "string") {
-                    throw new Error("tools.describe.tool expects { path: string }")
-                  }
-                  return await describeCatalogPath(projectId, sessionId, input.path)
-                }
-                const separator = path.indexOf(".")
-                if (separator <= 0 || separator === path.length - 1) {
-                  throw new Error(`Invalid tool path: ${path}`)
-                }
-                const serverId = path.slice(0, separator)
-                const toolName = path.slice(separator + 1)
-                if (serverId === "plugin") {
-                  return await invokePluginTool(
-                    sessionId,
-                    toolName,
-                    typeof args === "object" && args !== null
-                      ? (args as Record<string, unknown>)
-                      : {}
-                  )
-                }
-                const installed = await record(serverId)
-                const allowed = await gatewayServerAllowed(serverId, projectId, sessionId)
-                if (!installed.enabled || !allowed) {
-                  throw new Error(`${installed.name} is disabled for this session`)
-                }
-                const toolArgs =
-                  typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}
-                const provider = automationProviders.get(serverId)
-                if (provider !== undefined) {
-                  if (serverId === "browser") usedBrowser = true
-                  return await sandboxSuccessfulToolResult(
-                    await invokeAutomationProvider(
-                      provider,
-                      { sessionId, ...(projectId === undefined ? {} : { projectId }) },
-                      toolName,
-                      toolArgs,
-                      artifacts
-                    ),
-                    artifacts,
-                    path
-                  )
-                }
-                const connection = await connectUpstream(serverId)
-                return await sandboxSuccessfulToolResult(
-                  (await connection.client.callTool({
-                    name: toolName,
-                    arguments: toolArgs
-                  })) as CallToolResult,
-                  artifacts,
-                  path
-                )
+                const value =
+                  machine === undefined
+                    ? await invokeGatewayTool(callContext, path, args, {
+                        artifacts,
+                        signal,
+                        onBrowser: () => {
+                          usedBrowser = true
+                        }
+                      })
+                    : await invokeOnMachine(machine, path, args, await remoteOrigin(), signal)
+                if (target?.internal !== true)
+                  recorder.call({
+                    path,
+                    ...machineLabel,
+                    ok: true,
+                    ms: Math.round(performance.now() - started)
+                  })
+                return value
               } catch (cause) {
-                throw new CodeExecutionToolError(errorMessage(cause))
+                const error = gatewayToolError(cause)
+                if (target?.internal !== true)
+                  recorder.call({
+                    path,
+                    ...machineLabel,
+                    ok: false,
+                    ms: Math.round(performance.now() - started),
+                    error: error.message
+                  })
+                throw error
               }
             }
           },
-          { signal }
+          {
+            signal,
+            onStatus: recorder.status,
+            context: {
+              machine: selfMachine,
+              ...(clientId === undefined ? {} : { originClientId: clientId })
+            }
+          }
         )
+        await recorder.finish(result.error)
         if (result.error !== undefined) {
           const openTabs = usedBrowser
             ? await openBrowserSessionTabs(sessionId, projectId).catch(() => "")
@@ -453,5 +380,12 @@ export const makeMcpGateway = (deps: McpGatewayDeps) => {
     return connection
   }
 
-  return { allTools, createGatewayConnection, gatewayRuntime, refreshGatewayInventories }
+  return {
+    allTools,
+    createGatewayConnection,
+    gatewayRuntime,
+    invokeGatewayTool,
+    invokeRemoteGatewayCall,
+    refreshGatewayInventories
+  }
 }

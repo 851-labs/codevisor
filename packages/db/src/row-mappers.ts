@@ -103,20 +103,48 @@ export const worktreeFromRow = (row: WorktreeRow): Worktree => ({
   createdAt: row.created_at
 })
 
-export const workspaceFromRow = (row: WorkspaceRow): Workspace => ({
-  sidebarPosition: row.sidebar_position,
-  sidebarOrderRevision: row.sidebar_order_revision,
-  id: row.id,
-  serverId: row.server_id,
-  projectId: row.project_id,
-  name: row.name,
-  hasCustomName: row.has_custom_name === 1,
-  ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
-  isArchived: row.is_archived === 1,
-  ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
-  createdAt: row.created_at,
-  ...(row.updated_at === null ? {} : { updatedAt: row.updated_at })
-})
+/// Labels are stored as a JSON object of strings. An empty or unreadable
+/// value reads as no labels so a hand-edited row can never fail a listing.
+export const parseLabels = (
+  raw: string | null | undefined
+): Readonly<Record<string, string>> | undefined => {
+  if (raw == null) return undefined
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
+    const entries = Object.entries(parsed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
+    return entries.length === 0 ? undefined : Object.fromEntries(entries)
+  } catch {
+    return undefined
+  }
+}
+
+/// The stored form of a labels write: an empty object clears them.
+export const serializeLabels = (
+  labels: Readonly<Record<string, string>> | undefined
+): string | null =>
+  labels === undefined || Object.keys(labels).length === 0 ? null : JSON.stringify(labels)
+
+export const workspaceFromRow = (row: WorkspaceRow): Workspace => {
+  const labels = parseLabels(row.labels)
+  return {
+    sidebarPosition: row.sidebar_position,
+    sidebarOrderRevision: row.sidebar_order_revision,
+    id: row.id,
+    serverId: row.server_id,
+    projectId: row.project_id,
+    name: row.name,
+    hasCustomName: row.has_custom_name === 1,
+    ...(row.root_directory === null ? {} : { rootDirectory: row.root_directory }),
+    isArchived: row.is_archived === 1,
+    ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
+    createdAt: row.created_at,
+    ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
+    ...(labels === undefined ? {} : { labels })
+  }
+}
 
 export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
   id: row.id,
@@ -135,6 +163,7 @@ export const workspacePaneFromRow = (row: WorkspacePaneRow): WorkspacePane => ({
 export const sessionFromRow = (row: SessionRow, folderPath: string | undefined): SessionSummary => {
   const cwd = resolveSessionCwd(folderPath, row.project_id, row.worktree_name ?? undefined)
   const configSelections = sessionConfigSelectionsFromRaw(row.config_selections)
+  const labels = parseLabels(row.labels)
   return {
     id: row.id,
     projectId: row.project_id,
@@ -163,6 +192,8 @@ export const sessionFromRow = (row: SessionRow, folderPath: string | undefined):
         ? { actionRequiredKind: "planApproval" as const }
         : {}),
     pendingPlanApproval: row.pending_plan_approval === 1,
+    ...(row.parent_session_id == null ? {} : { parentSessionId: row.parent_session_id }),
+    ...(labels === undefined ? {} : { labels }),
     usage: {
       ...(row.usage_used === null ? {} : { used: row.usage_used }),
       ...(row.usage_size === null ? {} : { size: row.usage_size }),
@@ -254,7 +285,8 @@ export const promptQueueFromRow = (row: PromptQueueRow): PromptQueueItem => {
     text: row.text,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    ...(attachments === undefined ? {} : { attachments })
+    ...(attachments === undefined ? {} : { attachments }),
+    ...(row.client_id == null ? {} : { clientId: row.client_id })
   }
 }
 

@@ -145,16 +145,21 @@ export class ResumeSessions {
   /// Drops every session for a machine device (except `keep`, the connection
   /// doing a fresh hello) — a machine restart or account-level removal makes
   /// their grace state moot.
-  deleteForMachineDevice(deviceId: string, keep?: string): void {
+  /// Returns the deleted connection ids.
+  deleteForMachineDevice(deviceId: string, keep?: string): string[] {
     const rows = this.sql
       .exec<ResumeSessionRow>(
         "SELECT connection_id FROM sessions WHERE kind = 'machine' AND device_id = ?",
         deviceId
       )
       .toArray()
+    const deleted: string[] = []
     for (const row of rows) {
-      if (row.connection_id !== keep) this.delete(row.connection_id)
+      if (row.connection_id === keep) continue
+      this.delete(row.connection_id)
+      deleted.push(row.connection_id)
     }
+    return deleted
   }
 
   /// Sessions whose grace expired: the deferred death notices are due.
@@ -204,12 +209,13 @@ export class ResumeSessions {
       .toArray()[0]
   }
 
-  /// The in-grace session for an app connection id.
-  appGraceSession(peerId: string, now: number): ResumeSessionRow | undefined {
+  /// The in-grace session for a channel opener's connection id — an app, or
+  /// a machine for the channels it opened toward other machines.
+  openerGraceSession(peerId: string, now: number): ResumeSessionRow | undefined {
     return this.sql
       .exec<ResumeSessionRow>(
         `SELECT * FROM sessions
-         WHERE kind = 'app' AND connection_id = ? AND expires_at IS NOT NULL AND expires_at > ?`,
+         WHERE connection_id = ? AND expires_at IS NOT NULL AND expires_at > ?`,
         peerId,
         now
       )

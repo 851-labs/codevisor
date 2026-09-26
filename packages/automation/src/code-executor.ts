@@ -32,48 +32,18 @@ import type {
 } from "quickjs-emscripten"
 
 import { buildExecutionSource } from "./code-executor-source.js"
+import {
+  CodeExecutionToolError,
+  type CodeExecutionResult,
+  type CodeExecutor,
+  type CodeExecutorOptions,
+  type CodeToolInvoker,
+  type CodeToolTarget,
+  type ExecuteCodeOptions
+} from "./code-executor-types.js"
 
-export interface CodeExecutionResult {
-  readonly result: unknown
-  readonly output?: ReadonlyArray<unknown>
-  readonly error?: string
-  readonly logs?: ReadonlyArray<string>
-}
-
-export interface CodeToolCall {
-  readonly path: string
-  readonly args: unknown
-}
-
-export interface CodeToolInvoker {
-  readonly invoke: (call: CodeToolCall) => Promise<unknown>
-}
-
-export interface CodeExecutorOptions {
-  /** Maximum time spent actively executing code inside QuickJS. Host tool waits are excluded. */
-  readonly activeTimeoutMs?: number
-  /** Monotonic clock used to account for active execution. */
-  readonly now?: () => number
-  readonly memoryLimitBytes?: number
-  readonly maxStackSizeBytes?: number
-}
-
-export interface ExecuteCodeOptions {
-  readonly signal?: AbortSignal
-}
-
-export interface CodeExecutor {
-  readonly execute: (
-    code: string,
-    toolInvoker: CodeToolInvoker,
-    options?: ExecuteCodeOptions
-  ) => Promise<CodeExecutionResult>
-}
-
-/** An intentional, user-safe tool failure that sandbox code is allowed to inspect. */
-export class CodeExecutionToolError extends Error {
-  override readonly name = "CodeExecutionToolError"
-}
+export * from "./code-executor-types.js"
+export { codevisorSandboxSignatures } from "./code-executor-globals.js"
 
 const DEFAULT_ACTIVE_TIMEOUT_MS = 30_000
 const DEFAULT_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
@@ -149,6 +119,14 @@ const serializeJson = (value: unknown, label: string): string | undefined => {
   }
 }
 
+const safeJson = (value: unknown): string | undefined => {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+}
+
 const readPropDump = (context: QuickJSContext, handle: QuickJSHandle, key: string): unknown => {
   const property = context.getProp(handle, key)
   try {
@@ -178,20 +156,69 @@ const createLogBridge = (context: QuickJSContext, logs: Array<string>): QuickJSH
     return context.undefined
   })
 
-const sandboxToolErrorMessage = (cause: unknown): string =>
-  cause instanceof CodeExecutionToolError ? cause.message : "Internal tool error"
+const createStatusBridge = (
+  context: QuickJSContext,
+  onStatus: ((text: string) => void) | undefined
+): QuickJSHandle =>
+  context.newFunction("__codevisor_status", (textHandle) => {
+    if (onStatus === undefined || textHandle === undefined) return context.undefined
+    const text = context.getString(textHandle)
+    try {
+      onStatus(text)
+    } catch {
+      // Status is a best-effort progress label; it never fails the script.
+    }
+    return context.undefined
+  })
+
+/// The rejection handed to sandbox code. Only intentional tool errors keep
+/// their message, code, and details; anything else is masked. The prelude
+/// turns `code` + `detailsJson` into MachineUnavailableError and friends.
+const newSandboxToolError = (context: QuickJSContext, cause: unknown): QuickJSHandle => {
+  if (!(cause instanceof CodeExecutionToolError)) return context.newError("Internal tool error")
+  const errorHandle = context.newError(cause.message)
+  if (cause.code !== undefined) {
+    const codeHandle = context.newString(cause.code)
+    context.setProp(errorHandle, "code", codeHandle)
+    codeHandle.dispose()
+  }
+  const detailsJson = cause.details === undefined ? undefined : safeJson(cause.details)
+  if (detailsJson !== undefined) {
+    const detailsHandle = context.newString(detailsJson)
+    context.setProp(errorHandle, "detailsJson", detailsHandle)
+    detailsHandle.dispose()
+  }
+  return errorHandle
+}
+
+const readOptionalValue = (context: QuickJSContext, handle: QuickJSHandle | undefined): unknown =>
+  handle === undefined || context.typeof(handle) === "undefined" ? undefined : context.dump(handle)
+
+const readTarget = (value: unknown): CodeToolTarget | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const { machine, machineName, internal } = value as {
+    machine?: unknown
+    machineName?: unknown
+    internal?: unknown
+  }
+  const flags = internal === true ? { internal: true as const } : {}
+  if (typeof machine !== "string" || machine.length === 0) {
+    return internal === true ? flags : undefined
+  }
+  return typeof machineName === "string"
+    ? { machine, machineName, ...flags }
+    : { machine, ...flags }
+}
 
 const createToolBridge = (
   context: QuickJSContext,
   toolInvoker: CodeToolInvoker,
   pendingDeferreds: Set<QuickJSDeferredPromise>
 ): QuickJSHandle =>
-  context.newFunction("__codevisor_invokeTool", (pathHandle, argsHandle) => {
+  context.newFunction("__codevisor_invokeTool", (pathHandle, argsHandle, targetHandle) => {
     const path = context.getString(pathHandle)
-    const args =
-      argsHandle === undefined || context.typeof(argsHandle) === "undefined"
-        ? undefined
-        : context.dump(argsHandle)
+    const args = readOptionalValue(context, argsHandle)
+    const target = readTarget(readOptionalValue(context, targetHandle))
     const deferred = context.newPromise()
     pendingDeferreds.add(deferred)
     void deferred.settled.then(
@@ -199,7 +226,9 @@ const createToolBridge = (
       () => pendingDeferreds.delete(deferred)
     )
     void Promise.resolve()
-      .then(() => toolInvoker.invoke({ path, args }))
+      .then(() =>
+        toolInvoker.invoke(target === undefined ? { path, args } : { path, args, target })
+      )
       .then(
         (value) => {
           if (!deferred.alive) return
@@ -220,7 +249,7 @@ const createToolBridge = (
         },
         (cause) => {
           if (!deferred.alive) return
-          const errorHandle = context.newError(sandboxToolErrorMessage(cause))
+          const errorHandle = newSandboxToolError(context, cause)
           deferred.reject(errorHandle)
           errorHandle.dispose()
         }
@@ -320,6 +349,12 @@ const evaluate = async (
       const toolBridge = createToolBridge(context, toolInvoker, pendingDeferreds)
       context.setProp(context.global, "__codevisor_invokeTool", toolBridge)
       toolBridge.dispose()
+      const statusBridge = createStatusBridge(context, executeOptions.onStatus)
+      context.setProp(context.global, "__codevisor_status", statusBridge)
+      statusBridge.dispose()
+      const contextHandle = context.newString(JSON.stringify(executeOptions.context ?? {}))
+      context.setProp(context.global, "__codevisor_context", contextHandle)
+      contextHandle.dispose()
 
       const evaluated = budget.run(() => context.evalCode(sourceBuilder(code), EXECUTION_FILENAME))
       if (evaluated.error !== undefined) {

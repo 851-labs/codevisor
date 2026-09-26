@@ -149,14 +149,41 @@ export const defaultClaudeConfigPath = (environment: NodeJS.ProcessEnv): string 
 /// chat without copying mutable transcripts during an account switch.
 export const ensureSharedClaudeConversations = async (
   defaultConfigPath: string,
-  managedProfilePaths: ReadonlyArray<string>
+  managedProfilePaths: ReadonlyArray<string>,
+  /// Where Codevisor installs Claude skills (the harness catalog's global
+  /// skills directory); managed profiles link here.
+  sharedSkillsPath: string = join(defaultConfigPath, "skills")
 ): Promise<void> => {
   const sharedProjectsPath = join(defaultConfigPath, "projects")
   await mkdir(sharedProjectsPath, { mode: 0o700, recursive: true })
   const profiles = [...new Set(managedProfilePaths.map((profile) => resolve(profile)))].toSorted()
+  await mkdir(sharedSkillsPath, { recursive: true })
   await profiles.reduce(
     (previous, profile) =>
-      previous.then(() => installSharedProjectsLink(profile, sharedProjectsPath)),
+      previous
+        .then(() => installSharedProjectsLink(profile, sharedProjectsPath))
+        .then(() => installSharedSkillsLink(profile, sharedSkillsPath)),
     Promise.resolve()
   )
+}
+
+/// Skills (user-authored and Codevisor-managed) are installed once into the
+/// default profile's skills directory. A managed profile without its own
+/// skills entry links to it, so every account sees the same skills. An
+/// existing directory or link in the profile is the user's choice and stays.
+const installSharedSkillsLink = async (
+  managedProfilePath: string,
+  sharedSkillsPath: string
+): Promise<void> => {
+  const managedSkillsPath = join(managedProfilePath, "skills")
+  if (resolve(managedSkillsPath) === resolve(sharedSkillsPath)) return
+  if ((await metadataAt(managedSkillsPath)) !== undefined) return
+  await symlink(
+    resolve(sharedSkillsPath),
+    managedSkillsPath,
+    process.platform === "win32" ? "junction" : "dir"
+  ).catch((cause: unknown) => {
+    // Another process linked it first; that link is equivalent.
+    if ((cause as { code?: unknown }).code !== "EEXIST") throw cause
+  })
 }

@@ -18,6 +18,7 @@ import type {
   Harness,
   Project,
   PromptQueueItem,
+  QuestionPayload,
   SessionDetail,
   SessionSummary,
   TranscriptItemDetails,
@@ -162,6 +163,10 @@ export interface CodevisorDatabaseService {
   ) => Effect.Effect<SessionSummary, DatabaseError>
   readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, DatabaseError>
   readonly getSessionSummary: (id: string) => Effect.Effect<SessionSummary, DatabaseError>
+  /** The session's blocking question, if any (undefined for unknown ids). */
+  readonly getSessionPendingQuestion: (
+    id: string
+  ) => Effect.Effect<QuestionPayload | undefined, DatabaseError>
   readonly markSessionRead: (
     id: string,
     throughSequence: number
@@ -239,7 +244,9 @@ export interface CodevisorDatabaseService {
     sessionId: string,
     text: string,
     attachments?: ReadonlyArray<AttachmentRef>,
-    id?: string
+    id?: string,
+    /** The native window (client-control id) that sent the prompt. */
+    clientId?: string
   ) => Effect.Effect<PromptQueueItem, DatabaseError>
   readonly createFile: (
     name: string,

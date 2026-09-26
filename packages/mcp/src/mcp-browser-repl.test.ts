@@ -67,7 +67,10 @@ it("preserves browser cells and applies gateway upload validation and attachment
     const execute = (code: string) =>
       client.callTool({
         name: "execute",
-        arguments: { code: `async () => tools["browser.js"]({code: ${JSON.stringify(code)}})` }
+        arguments: {
+          description: "Run test code",
+          code: `async () => tools["browser.js"]({code: ${JSON.stringify(code)}})`
+        }
       })
     expect((await execute("var retained = 41; retained")).isError).not.toBe(true)
     expect(JSON.stringify((await execute("retained + 1")).content)).toContain("42")

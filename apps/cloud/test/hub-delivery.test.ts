@@ -14,7 +14,9 @@ describe("hub relay delivery fallback", () => {
       app_version: "1",
       public_key: "key",
       last_seen_at: "now",
-      active_generation: 7
+      active_generation: 7,
+      server_id: null,
+      peer_aware: 0
     }
     const attachment: SocketAttachment = {
       kind: "machine",

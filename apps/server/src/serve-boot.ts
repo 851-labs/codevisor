@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import type { BackgroundTerminalIntegration } from "@codevisor/agent-runtime"
 import type { DataUpgradeProgress, ScreenSharingRequest } from "@codevisor/api"
 import { requestMacScreenSharing } from "@codevisor/automation"
+import type { CodevisorDatabaseService } from "@codevisor/db"
 import {
   defaultNativeConfigFileSystem,
   makeNativeMcpManager,
@@ -13,12 +14,16 @@ import {
   type NativeMcpManagerConfig
 } from "@codevisor/mcp"
 import type { TerminalManagerService } from "@codevisor/terminal"
+import { Effect } from "effect"
 
 import {
   backgroundTerminalSocketPath,
   startBackgroundTerminalHost,
   wrapBackgroundCommand
 } from "./infra/background-terminal-host.js"
+import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
+import { postGatewayInvoke, probeDirect } from "./infra/machine-direct.js"
+import { FLEET_ROSTER_NAMESPACE, makeMachineLink, rosterRoutes } from "./infra/machine-link.js"
 import type { ServerLease } from "./infra/server-lease.js"
 import { makeTerminalPersistence } from "./infra/terminal-persistence.js"
 import { systemScalerCommands, xfceScaler } from "./routes/screen-sharing-vnc-scale.js"
@@ -367,3 +372,58 @@ export const databaseStartupFailure = (error: string): DataUpgradeProgress => ({
   total: 0,
   error
 })
+
+/// The machine network: when this machine is connected to a Codevisor Cloud
+/// account (`codevisor auth login`, or dev auto-provisioning), a presence
+/// connection to the user's hub serving end-to-end encrypted channels; and
+/// the MachineLink over every machine on the account (direct FleetRoster
+/// routes first, then the relay) behind the sandbox's `machines` API.
+export const startMachineNetwork = async (options: {
+  readonly databasePath: string
+  readonly port: number
+  readonly serverId: string
+  readonly machineName: string
+  readonly version: string | undefined
+  readonly terminal: TerminalManagerService
+  readonly db: CodevisorDatabaseService
+}) => {
+  const cloudBridgeOptions = {
+    credentialsPath: join(dirname(options.databasePath), "cloud.json"),
+    machineName: options.machineName,
+    serverId: options.serverId,
+    appVersion: options.version ?? "unknown",
+    localBaseUrl: `http://127.0.0.1:${options.port}`,
+    terminal: options.terminal,
+    env: process.env,
+    log: (line: string) => console.error(line)
+  }
+  const cloudBridge = await initializeOptionalServerFeatureAsync("Cloud connection", async () =>
+    startCloudBridge(cloudBridgeOptions)
+  )
+  const cloudControl = makeCloudServerControl(cloudBridgeOptions, cloudBridge)
+  // One name everywhere: the name cloud presence shows (chosen when the
+  // machine was registered) wins over `--name`/the host name, so
+  // machines.list(), machines.current, and the hub agree. Read live — a
+  // later cloud connect can register under a new name.
+  const machineName = (): string => cloudControl.machineName() ?? options.machineName
+  const machine = {
+    id: options.serverId,
+    get name() {
+      return machineName()
+    }
+  }
+  const machineLink = makeMachineLink({
+    self: { id: options.serverId, name: machineName, os: process.platform },
+    cloud: {
+      deviceId: cloudControl.deviceId,
+      machines: cloudControl.machines,
+      request: cloudControl.requestGateway
+    },
+    roster: async () =>
+      rosterRoutes(await Effect.runPromise(options.db.getSyncEntries(FLEET_ROSTER_NAMESPACE))),
+    direct: postGatewayInvoke,
+    probe: (route) => probeDirect(route),
+    now: Date.now
+  })
+  return { cloudControl, machine, machineLink }
+}

@@ -6,6 +6,7 @@ import {
   decodeRelayEnvelopes,
   encodeCloudFrame,
   isoTimestamp,
+  MACHINE_PEERS_FEATURE,
   MAX_RELAY_MESSAGE_BYTES,
   type CloudMachinePresence,
   type WireRelayEnvelope
@@ -22,7 +23,7 @@ import {
 } from "./hub-delivery.js"
 import { HubMetrics } from "./hub-metrics.js"
 import { abandonSession, announceExpired, type HubNoticesPort } from "./hub-notices.js"
-import { listHubMachines, removeHubMachine } from "./hub-registry.js"
+import { listHubMachines, registerMachine, removeHubMachine } from "./hub-registry.js"
 import { HUB_MIGRATIONS, machinePresence, machineRow, type SocketAttachment } from "./hub-schema.js"
 import { HubSockets } from "./hub-sockets.js"
 import { routeAppRelay, routeMachineRelay, type RelayHubPort } from "./relay-routing.js"
@@ -128,7 +129,7 @@ export class UserHub extends DurableObject<CloudEnv> {
     if (updated === 0) return false
     const row = machineRow(this.ctx.storage.sql, deviceId)
     if (row !== undefined) {
-      this.#net.broadcastToApps({
+      this.#net.broadcastMachineNotice({
         t: "presence",
         machine: machinePresence(
           row,
@@ -197,7 +198,7 @@ export class UserHub extends DurableObject<CloudEnv> {
       if (attachment.kind === "app") {
         routeAppRelay(this.#relayPort(), socket, attachment, envelopes)
       } else {
-        routeMachineRelay(this.#relayPort(), socket, attachment.deviceId!, envelopes)
+        routeMachineRelay(this.#relayPort(), socket, attachment, envelopes)
       }
       return
     }
@@ -290,28 +291,16 @@ export class UserHub extends DurableObject<CloudEnv> {
       const deviceId = attachment.deviceId!
       const { token, resumed } = await this.#adoptSession(attachment, "machine", frame)
       if (this.#accountDeleted) return
-      const now = isoTimestamp()
-      const generation = (machineRow(this.ctx.storage.sql, deviceId)?.active_generation ?? 0) + 1
-      this.ctx.storage.sql.exec(
-        `INSERT INTO machines
-           (device_id, name, os, app_version, public_key, last_seen_at, active_generation)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(device_id) DO UPDATE SET
-           name = excluded.name,
-           os = excluded.os,
-           app_version = excluded.app_version,
-           public_key = excluded.public_key,
-           last_seen_at = excluded.last_seen_at,
-           active_generation = excluded.active_generation`,
+      attachment.peerAware = frame.features?.includes(MACHINE_PEERS_FEATURE) === true
+      const sql = this.ctx.storage.sql
+      attachment.machineGeneration = registerMachine(
+        sql,
         deviceId,
-        frame.device.name,
-        frame.device.os ?? null,
-        frame.device.appVersion ?? null,
-        frame.device.publicKey,
-        now,
-        generation
+        frame.device,
+        attachment.peerAware
       )
-      attachment.machineGeneration = generation
+      // Machine openers present this key on channels they open; peers pin it.
+      attachment.publicKey = frame.device.publicKey
       // Install the durable generation before demoting the predecessor. From
       // this point routing can select only this socket, even if close delivery
       // for an older half-open connection is delayed.
@@ -328,7 +317,8 @@ export class UserHub extends DurableObject<CloudEnv> {
             protocol: CLOUD_PROTOCOL_VERSION,
             connectionId: attachment.connectionId,
             resume: token,
-            ...(resumed ? { resumed: true } : {})
+            ...(resumed ? { resumed: true } : {}),
+            ...(attachment.peerAware ? { machines: this.listMachines() } : {})
           })
         )
       ) {
@@ -343,15 +333,21 @@ export class UserHub extends DurableObject<CloudEnv> {
       }
       // A fresh hello means the machine process restarted: any grace session
       // for this device is moot (its channels are gone regardless).
-      this.#resume.deleteForMachineDevice(deviceId, attachment.connectionId)
+      // Channels the previous process opened toward other machines are dead.
+      for (const connectionId of this.#resume.deleteForMachineDevice(
+        deviceId,
+        attachment.connectionId
+      )) {
+        this.#net.broadcastToPeerMachines({ t: "peer-gone", peerId: connectionId })
+      }
       // Channel state on the machine is in-memory and did not survive the
       // restart: tell apps to reset their channels toward this machine
       // *before* announcing it online, so re-opens park briefly and then
       // dispatch to the fresh socket instead of racing the teardown.
-      this.#net.broadcastToApps({ t: "machine-reset", machineId: deviceId })
+      this.#net.broadcastMachineNotice({ t: "machine-reset", machineId: deviceId })
       const row = machineRow(this.ctx.storage.sql, deviceId)
       if (row !== undefined)
-        this.#net.broadcastToApps({ t: "presence", machine: machinePresence(row, true) })
+        this.#net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, true) })
     }
   }
 
@@ -397,6 +393,8 @@ export class UserHub extends DurableObject<CloudEnv> {
   #relayPort(): RelayHubPort {
     return {
       isKnownMachine: (machineId) => machineRow(this.ctx.storage.sql, machineId) !== undefined,
+      acceptsMachinePeers: (machineId) =>
+        machineRow(this.ctx.storage.sql, machineId)?.peer_aware === 1,
       deliverToMachine: (machineId, message) =>
         deliverToMachine(this.#deliveryPort(), machineId, message),
       deliverToPeer: (peerId, message) => deliverToPeer(this.#deliveryPort(), peerId, message),

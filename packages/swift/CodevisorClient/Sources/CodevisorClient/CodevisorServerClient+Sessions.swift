@@ -14,6 +14,8 @@ private struct PromptBody: Encodable {
   var attachments: [ServerAttachmentRef]?
   /// The optimistic user message's id (see the protocol's doc).
   var messageId: String?
+  /// The sending window's client-control id (see the protocol's doc).
+  var clientId: String?
 }
 
 private struct UpdateQueuedPromptBody: Encodable {
@@ -355,13 +357,23 @@ extension CodevisorServerClient {
   public func promptSession(
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
   ) async throws -> ServerPromptAccepted {
+    try await promptSession(
+      id: id, text: text, attachments: attachments, messageId: messageId, clientId: nil
+    )
+  }
+
+  public func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?
+  ) async throws -> ServerPromptAccepted {
     try await send(
       "/v1/sessions/\(id.uuidString)/prompt",
       method: "POST",
       body: PromptBody(
         text: text,
         attachments: attachments.isEmpty ? nil : attachments,
-        messageId: messageId
+        messageId: messageId,
+        clientId: clientId
       )
     )
   }

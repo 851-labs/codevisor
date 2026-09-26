@@ -47,14 +47,16 @@ export const deliverToPeer = (
   peerId: string,
   message: Uint8Array
 ): boolean => {
+  // Openers are apps, or machines on machine→machine channels (a peerId is
+  // the opener's connection id either way).
   const sockets = port.net.byConnectionId(peerId).filter((socket) => {
     const attachment = port.net.attachment(socket)
-    return attachment?.kind === "app" && attachment.helloDone
+    return attachment?.helloDone === true && (attachment.kind === "app" || attachment.peerAware)
   })
   for (const socket of sockets) {
     if (port.net.send(socket, message)) return true
     port.retire(socket)
   }
-  const session = port.resume.appGraceSession(peerId, Date.now())
+  const session = port.resume.openerGraceSession(peerId, Date.now())
   return session === undefined ? false : bufferOrAbandon(port, session, message)
 }

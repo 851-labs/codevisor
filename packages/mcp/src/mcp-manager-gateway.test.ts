@@ -56,7 +56,10 @@ describe("MCP manager gateway", () => {
           (
             await first.client.callTool({
               name: "execute",
-              arguments: { code: 'async () => tools.search({ query: "project" })' }
+              arguments: {
+                description: "Run test code",
+                code: 'async () => tools.search({ query: "project" })'
+              }
             })
           ).content
         )
@@ -70,7 +73,10 @@ describe("MCP manager gateway", () => {
             (
               await second.client.callTool({
                 name: "execute",
-                arguments: { code: 'async () => tools.search({ query: "issues" })' }
+                arguments: {
+                  description: "Run test code",
+                  code: 'async () => tools.search({ query: "issues" })'
+                }
               })
             ).content
           )
@@ -80,7 +86,10 @@ describe("MCP manager gateway", () => {
           (
             await first.client.callTool({
               name: "execute",
-              arguments: { code: 'async () => tools.search({ query: "project" })' }
+              arguments: {
+                description: "Run test code",
+                code: 'async () => tools.search({ query: "project" })'
+              }
             })
           ).isError
         ).not.toBe(true)
@@ -104,7 +113,10 @@ describe("MCP manager gateway", () => {
           (
             await first.client.callTool({
               name: "execute",
-              arguments: { code: 'async () => tools.search({ query: "project" })' }
+              arguments: {
+                description: "Run test code",
+                code: 'async () => tools.search({ query: "project" })'
+              }
             })
           ).isError
         ).not.toBe(true)
@@ -224,6 +236,7 @@ describe("MCP manager gateway", () => {
         const viaCode = await client.callTool({
           name: "execute",
           arguments: {
+            description: "Run test code",
             code: `async () => {
             const matches = await tools.search({ query: "note", limit: 5 });
             const path = matches.items[0].path;
@@ -249,7 +262,10 @@ describe("MCP manager gateway", () => {
           (
             await client.callTool({
               name: "execute",
-              arguments: { code: `async () => tools["plugin.owner.notes."]({})` }
+              arguments: {
+                description: "Run test code",
+                code: `async () => tools["plugin.owner.notes."]({})`
+              }
             })
           ).isError
         ).toBe(true)
@@ -258,6 +274,7 @@ describe("MCP manager gateway", () => {
             await client.callTool({
               name: "execute",
               arguments: {
+                description: "Run test code",
                 code: `async () => tools.describe.tool({ path: "plugin.owner.notes.missing" })`
               }
             })
@@ -302,13 +319,17 @@ describe("MCP manager gateway", () => {
     try {
       const executed = await client.callTool({
         name: "execute",
-        arguments: { code: 'async () => tools["plugin.owner.notes.notes_add"]({})' }
+        arguments: {
+          description: "Run test code",
+          code: 'async () => tools["plugin.owner.notes.notes_add"]({})'
+        }
       })
       expect(executed.isError).toBe(true)
       expect(JSON.stringify(executed.content)).toContain("unavailable on this server")
       const described = await client.callTool({
         name: "execute",
         arguments: {
+          description: "Run test code",
           code: 'async () => tools.describe.tool({ path: "plugin.owner.notes.notes_add" })'
         }
       })

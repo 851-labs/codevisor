@@ -122,25 +122,34 @@ describe("mcp routes", () => {
     ).toContain("Linear")
     const executed = await client.callTool({
       name: "execute",
-      arguments: { code: "async () => 6 * 7" }
+      arguments: { description: "Test workflow", code: "async () => 6 * 7" }
     })
     expect(executed.isError).not.toBe(true)
     expect(JSON.stringify(executed.content)).toContain("42")
     const searchedInCode = await client.callTool({
       name: "execute",
-      arguments: { code: 'async () => await tools.search({ query: "missing" })' }
+      arguments: {
+        description: "Test workflow",
+        code: 'async () => await tools.search({ query: "missing" })'
+      }
     })
     expect(searchedInCode.isError).not.toBe(true)
     expect(JSON.stringify(searchedInCode.content)).toContain('\\"total\\":0')
     const codevisorSearch = await client.callTool({
       name: "execute",
-      arguments: { code: 'async () => await tools.search({ query: "Codevisor sessions" })' }
+      arguments: {
+        description: "Test workflow",
+        code: 'async () => await tools.search({ query: "Codevisor sessions" })'
+      }
     })
     expect(codevisorSearch.isError).not.toBe(true)
     expect(JSON.stringify(codevisorSearch.content)).toContain("codevisor.sessions.list")
     const codevisorProjects = await client.callTool({
       name: "execute",
-      arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
+      arguments: {
+        description: "Test workflow",
+        code: 'async () => await tools["codevisor.projects.list"]({})'
+      }
     })
     expect(codevisorProjects.isError).not.toBe(true)
     expect(JSON.stringify(codevisorProjects.content)).toContain('\\"result\\":[]')
@@ -149,6 +158,7 @@ describe("mcp routes", () => {
     const controlled = await client.callTool({
       name: "execute",
       arguments: {
+        description: "Test workflow",
         code: `async () => {
           const project = await tools["codevisor.projects.create"]({
             id: "controlled-project",
@@ -216,7 +226,10 @@ describe("mcp routes", () => {
     )
     const result = await client.callTool({
       name: "execute",
-      arguments: { code: 'async () => await tools["codevisor.projects.list"]({})' }
+      arguments: {
+        description: "Test workflow",
+        code: 'async () => await tools["codevisor.projects.list"]({})'
+      }
     })
     expect(result.isError).not.toBe(true)
     expect(JSON.stringify(result.content)).toContain('\\"result\\":[]')

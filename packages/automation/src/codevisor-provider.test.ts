@@ -2,6 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { AutomationProviderContext } from "./automation-provider.js"
+import { CodeExecutionToolError } from "./code-executor.js"
 import { codevisorTools, makeCodevisorProvider } from "./codevisor-provider.js"
 
 const callingContext: AutomationProviderContext = {
@@ -170,6 +171,7 @@ describe("Codevisor MCP provider", () => {
       id: "explicit-session",
       projectId: "explicit-project",
       workspaceId: "existing-workspace",
+      parentSessionId: "explicit-parent",
       harnessId: "codex"
     })
     await provider.invoke({ sessionId: "caller" }, "sessions.create", {
@@ -204,9 +206,12 @@ describe("Codevisor MCP provider", () => {
     expect(unscoped.workspaceId).not.toBe(created.workspaceId)
     expect(JSON.parse(requests[3]!.init.body as string)).toMatchObject({
       projectId: "explicit-project",
-      workspaceId: "existing-workspace"
+      workspaceId: "existing-workspace",
+      parentSessionId: "explicit-parent"
     })
     expect(unscoped).not.toHaveProperty("projectId")
+    // An agent-created chat is linked to the agent that started it.
+    expect(unscoped).toMatchObject({ parentSessionId: "caller" })
     expect(JSON.parse(requests[5]!.init.body as string)).toEqual({})
     expect(Buffer.from(requests[6]!.init.body as ArrayBuffer).toString()).toBe("hello")
     expect(requests[6]!.url.searchParams.get("name")).toBe("hello.txt")
@@ -324,5 +329,75 @@ describe("Codevisor MCP provider", () => {
     await expect(provider.invoke(callingContext, "server.health", {})).rejects.toThrow(
       "server.health failed (503): Codevisor request failed"
     )
+  })
+
+  it("keeps coded failures typed so sandbox code can catch them by class", async () => {
+    const responses = [
+      jsonResponse({
+        error: {
+          message: "Studio side is not attached",
+          code: "client_unavailable",
+          details: { clientId: "window-2", name: "Studio side", phase: "before-send" }
+        }
+      }),
+      jsonResponse({ error: "Slow down", code: "rate_limited", details: null })
+    ]
+    stubFetch(() => {
+      const response = responses.shift()!
+      return new Response(response.body, { status: 409, statusText: "Conflict" })
+    })
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token"
+    )
+
+    const unavailable = await provider
+      .invoke(callingContext, "clients.context", { clientId: "window-2" })
+      .catch((error: unknown) => error)
+    expect(unavailable).toBeInstanceOf(CodeExecutionToolError)
+    expect(unavailable).toMatchObject({
+      message: "Studio side is not attached",
+      code: "client_unavailable",
+      details: { clientId: "window-2", name: "Studio side", phase: "before-send" }
+    })
+    const limited = await provider
+      .invoke(callingContext, "server.health", {})
+      .catch((error: unknown) => error)
+    expect(limited).toBeInstanceOf(CodeExecutionToolError)
+    expect(limited).toMatchObject({ message: "Slow down", code: "rate_limited" })
+    expect((limited as CodeExecutionToolError).details).toBeUndefined()
+  })
+
+  it("reports the calling workspace, machine, parent session, and origin client from context.current", async () => {
+    const seen: Array<AutomationProviderContext> = []
+    const provider = makeCodevisorProvider(
+      () => "http://localhost:43210",
+      async () => "stable-token",
+      {
+        currentContext: async (context) => {
+          seen.push(context)
+          return {
+            workspaceId: "workspace-1",
+            worktreeName: "retry-fix",
+            parentSessionId: "parent-session",
+            machine: { id: "studio", name: "Mac Studio" },
+            clientId: "window-2"
+          }
+        }
+      }
+    )
+
+    expect(
+      JSON.parse(textContent(await provider.invoke(callingContext, "context.current", {})))
+    ).toEqual({
+      sessionId: "calling session/id",
+      projectId: "calling project/id",
+      workspaceId: "workspace-1",
+      worktreeName: "retry-fix",
+      parentSessionId: "parent-session",
+      machine: { id: "studio", name: "Mac Studio" },
+      clientId: "window-2"
+    })
+    expect(seen).toEqual([callingContext])
   })
 })

@@ -9,7 +9,21 @@ import {
   type EventFanout
 } from "../server-context.js"
 import { promoteAssistantArtifacts } from "./assistant-artifacts.js"
+import { ExecutionAnnotator } from "./execution-annotator.js"
 import { persistGeneratedImage } from "./generated-images.js"
+
+/// One annotator per server: sinks are rebuilt whenever a session's agent
+/// (re)starts, but the gateway and harness must correlate across them.
+const executionAnnotators = new WeakMap<CodevisorServerServices, ExecutionAnnotator>()
+
+const executionAnnotator = (services: CodevisorServerServices): ExecutionAnnotator => {
+  let annotator = executionAnnotators.get(services)
+  if (annotator === undefined) {
+    annotator = new ExecutionAnnotator()
+    executionAnnotators.set(services, annotator)
+  }
+  return annotator
+}
 
 /// The standing per-session sink: every runtime event — in-turn or
 /// agent-initiated — is persisted and fanned out here. User echoes are
@@ -46,7 +60,18 @@ export const sessionEventSink =
         materializeRuntimeEvent(services.db, fanout, serverId, persisted, sessionId)
       )
     }
+    if (event.kind === "session.output") {
+      const annotated = executionAnnotator(services).annotate(sessionId, event)
+      if (annotated.length !== 1 || annotated[0] !== event) {
+        return (async () => {
+          for (const next of annotated) {
+            await materializeRuntimeEvent(services.db, fanout, serverId, next, sessionId)
+          }
+        })()
+      }
+    }
     if (event.kind === "session.updated" && payload.turnState === "ended") {
+      executionAnnotator(services).endSession(sessionId)
       return (async () => {
         await services.mcp?.finishTurn(sessionId).catch((cause: unknown) => {
           console.error(

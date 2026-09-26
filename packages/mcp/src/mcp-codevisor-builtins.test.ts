@@ -85,7 +85,8 @@ describe("Codevisor built-in tools", () => {
             requestInit: { headers: { authorization: `Bearer ${gateway.bearerToken}` } }
           }) as unknown as Transport
         )
-        const execute = (code: string) => client.callTool({ name: "execute", arguments: { code } })
+        const execute = (code: string) =>
+          client.callTool({ name: "execute", arguments: { description: "Run test code", code } })
         const search = () => execute('async () => tools.search({ query: "sessions.create" })')
         const describeTool = () =>
           execute('async () => tools.describe.tool({ path: "codevisor.sessions.create" })')

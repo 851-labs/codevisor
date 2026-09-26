@@ -11,7 +11,9 @@ import {
   encodeCloudFrame,
   encodeRelayEnvelopes,
   parseAppRelayHeader,
+  parseHubToAppRelayHeader,
   parseHubToMachineRelayHeader,
+  parseMachineOutboundRelayHeader,
   parseMachineRelayHeader,
   parseRelayFrameHeader,
   type AppToHub,
@@ -215,5 +217,32 @@ describe("relay envelopes (binary)", () => {
       parseHubToMachineRelayHeader({ peerId: "conn-1", peerDeviceId: 7, frame })
     ).toBeUndefined()
     expect(parseHubToMachineRelayHeader({ machineId: "m-1", frame })).toBeUndefined()
+    expect(parseHubToMachineRelayHeader({ peerId: "conn-1", peerKind: "machine", frame })).toEqual({
+      peerId: "conn-1",
+      peerKind: "machine",
+      frame
+    })
+    expect(
+      parseHubToMachineRelayHeader({ peerId: "conn-1", peerKind: "robot", frame })
+    ).toBeUndefined()
+  })
+
+  it("tells a machine's answers apart from the channels it opens", () => {
+    const frame = frames[1]!
+    expect(parseHubToAppRelayHeader({ machineId: "m-2", frame })).toEqual({
+      machineId: "m-2",
+      frame
+    })
+    expect(parseMachineOutboundRelayHeader({ peerId: "conn-1", frame })).toEqual({
+      direction: "answer",
+      peerId: "conn-1",
+      frame
+    })
+    expect(parseMachineOutboundRelayHeader({ machineId: "m-2", frame })).toEqual({
+      direction: "open",
+      machineId: "m-2",
+      frame
+    })
+    expect(parseMachineOutboundRelayHeader({ frame })).toBeUndefined()
   })
 })

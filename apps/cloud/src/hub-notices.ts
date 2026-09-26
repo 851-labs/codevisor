@@ -22,6 +22,9 @@ export interface HubNoticesPort {
 export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow): void => {
   if (session.kind === "machine") {
     const deviceId = session.device_id
+    // Channels this connection OPENED toward other machines die with it,
+    // even when the device is already back under a newer session.
+    port.net.broadcastToPeerMachines({ t: "peer-gone", peerId: session.connection_id })
     const row = machineRow(port.sql, deviceId)
     const stillConnected = port.net.machine(deviceId).some((candidate) => {
       const attachment = port.net.attachment(candidate)
@@ -33,13 +36,13 @@ export const announceExpired = (port: HubNoticesPort, session: ResumeSessionRow)
     })
     if (stillConnected) return
     if (row !== undefined) {
-      port.net.broadcastToApps({ t: "presence", machine: machinePresence(row, false) })
+      port.net.broadcastMachineNotice({ t: "presence", machine: machinePresence(row, false) })
     }
     // Also broadcast the machine-offline error apps already understand
     // from failed relay attempts: their channels toward this machine are
     // dead, and a receive-only stream would otherwise never find out
     // (it sends nothing, so it can never provoke the reactive error).
-    port.net.broadcastToApps({
+    port.net.broadcastMachineNotice({
       t: "error",
       code: "machine-offline",
       message: "machine disconnected from the relay",
@@ -97,7 +100,8 @@ const reportDroppedChannels = (
   }
   for (const [peerId, channelIds] of channelsByPeer) {
     for (const socket of port.net.byConnectionId(peerId)) {
-      if (port.net.attachment(socket)?.kind !== "app" || !port.net.isRoutable(socket)) continue
+      // Openers are apps, or machines for machine→machine channels.
+      if (!port.net.isRoutable(socket)) continue
       for (const channelId of channelIds) {
         port.net.send(
           socket,

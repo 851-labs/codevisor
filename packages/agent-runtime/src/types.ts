@@ -305,6 +305,9 @@ export interface ToolGatewayConfig {
   readonly name: string
   readonly url: string
   readonly bearerToken: string
+  /// Standing instructions for the agent about working inside Codevisor.
+  /// Adapters add them to the model's system or developer instructions.
+  readonly instructions?: string
 }
 
 export interface HarnessAuthInspection {

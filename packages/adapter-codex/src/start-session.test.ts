@@ -71,6 +71,27 @@ describe("CodexProvider", () => {
     expect(resume?.params).toMatchObject({
       config: expectedConfig
     })
+    // No gateway instructions, no developer instructions override.
+    expect(start?.params).not.toHaveProperty("developerInstructions")
+  })
+
+  it("gives the thread Codevisor's standing instructions from the gateway", async () => {
+    const toolGateway: ToolGatewayConfig = {
+      name: "codevisor",
+      url: "http://127.0.0.1:49361/mcp/gateway?gateway=test",
+      bearerToken: "secret",
+      instructions: "You are running inside Codevisor."
+    }
+    const { client } = await setup({ toolGateway })
+    const { client: resumedClient } = await setup({ toolGateway, resume: "thread-1" })
+    for (const request of [
+      client.requests.find((candidate) => candidate.method === "thread/start"),
+      resumedClient.requests.find((candidate) => candidate.method === "thread/resume")
+    ]) {
+      expect(request?.params).toMatchObject({
+        developerInstructions: "You are running inside Codevisor."
+      })
+    }
   })
 
   it("disables native Codex skills and the unified computer use plugin without a tool gateway", async () => {

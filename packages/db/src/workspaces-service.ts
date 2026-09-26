@@ -10,7 +10,7 @@ import {
 
 import { attempt } from "./errors.js"
 import { canonicalUuid } from "./ids.js"
-import { workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
+import { serializeLabels, workspaceFromRow, workspacePaneFromRow } from "./row-mappers.js"
 import type { WorkspacePaneRow, WorkspaceRow } from "./rows.js"
 import { archivedStamp, type ServiceContext } from "./service-context.js"
 import type { CodevisorDatabaseService } from "./service.js"
@@ -49,8 +49,9 @@ export const upsertWorkspaceRow = (
     .prepare(
       `insert into workspaces (
                  id, server_id, project_id, name, has_custom_name,
-                 root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?)
+                 root_directory, is_archived, archived_at, created_at, updated_at, sidebar_position,
+                 labels
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?, ?)
                on conflict(id) do update set
                  project_id = excluded.project_id,
                  name = excluded.name,
@@ -58,6 +59,7 @@ export const upsertWorkspaceRow = (
                  root_directory = excluded.root_directory,
                  is_archived = excluded.is_archived,
                  archived_at = excluded.archived_at,
+                 labels = case when ? then excluded.labels else workspaces.labels end,
                  updated_at = ?`
     )
     .run(
@@ -71,6 +73,8 @@ export const upsertWorkspaceRow = (
       stamp,
       request.createdAt ?? now,
       position,
+      serializeLabels(request.labels),
+      request.labels === undefined ? 0 : 1,
       now
     )
   return workspaceFromRow(
@@ -149,7 +153,8 @@ export const makeWorkspacesService = (
             `update workspaces set
                name = ?, has_custom_name = ?, root_directory = ?,
                is_archived = ?, archived_at = ?, updated_at = ?,
-               sidebar_position = ?, sidebar_order_revision = ?
+               sidebar_position = ?, sidebar_order_revision = ?,
+               labels = case when ? then ? else labels end
              where id = ?`
           )
           .run(
@@ -161,6 +166,8 @@ export const makeWorkspacesService = (
             isoTimestamp(),
             request.sidebarOrder?.position ?? existing.sidebar_position,
             existing.sidebar_order_revision + (request.sidebarOrder === undefined ? 0 : 1),
+            request.labels === undefined ? 0 : 1,
+            serializeLabels(request.labels),
             id
           )
         return workspaceFromRow(

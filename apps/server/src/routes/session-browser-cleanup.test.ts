@@ -50,10 +50,10 @@ describe("browser cleanup at turn completion", () => {
     const entered = Promise.withResolvers<void>()
     const release = Promise.withResolvers<void>()
     const original = services.mcp.beginTurn
-    const prepare = vi.spyOn(services.mcp, "beginTurn").mockImplementation(async (id) => {
+    const prepare = vi.spyOn(services.mcp, "beginTurn").mockImplementation(async (id, options) => {
       entered.resolve()
       await release.promise
-      await original(id)
+      await original(id, options)
     })
     try {
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
@@ -65,15 +65,17 @@ describe("browser cleanup at turn completion", () => {
       release.resolve()
       await waitFor(() => agents.prompts.length === 1)
       await services.mcp.setBrowserPreference("builtin")
+      // The sending window's control id rides the queued prompt to the turn.
       await jsonRequest(server, `/v1/sessions/${session.id}/prompt`, {
         method: "POST",
-        body: JSON.stringify({ text: "next response" })
+        body: JSON.stringify({ text: "next response", clientId: "window-1" })
       })
       expect(prepare).toHaveBeenCalledTimes(1)
       agents.releasePrompt()
       await waitFor(() => agents.prompts.length === 2)
       expect(prepare).toHaveBeenCalledTimes(2)
-      expect(prepare).toHaveBeenLastCalledWith(session.id)
+      expect(prepare).toHaveBeenNthCalledWith(1, session.id)
+      expect(prepare).toHaveBeenLastCalledWith(session.id, { clientId: "window-1" })
     } finally {
       release.resolve()
       agents.releasePrompt()

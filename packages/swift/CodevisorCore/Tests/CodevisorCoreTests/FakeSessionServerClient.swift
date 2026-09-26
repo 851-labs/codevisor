@@ -27,6 +27,7 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
   private var _promptedTexts: [String] = []
   private var _promptedAttachments: [[ServerAttachmentRef]] = []
   private var _promptedMessageIds: [String?] = []
+  private var _promptedClientIds: [String?] = []
   private var _promptGate: AsyncStream<Void>?
   private var _cancelCount = 0
   private var _configUpdates: [(String, String)] = []
@@ -134,6 +135,10 @@ final class FakeSessionServerClient: CodevisorServerClienting, @unchecked Sendab
 
   var promptedMessageIds: [String?] {
     lock.withLock { _promptedMessageIds }
+  }
+
+  var promptedClientIds: [String?] {
+    lock.withLock { _promptedClientIds }
   }
 
   func holdPrompts(until gate: AsyncStream<Void>) {
@@ -395,6 +400,16 @@ extension FakeSessionServerClient {
   ) async throws -> ServerPromptAccepted {
     lock.withLock { _promptedMessageIds.append(messageId) }
     return try await promptSession(id: id, text: text, attachments: attachments)
+  }
+
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?
+  ) async throws -> ServerPromptAccepted {
+    lock.withLock { _promptedClientIds.append(clientId) }
+    return try await promptSession(
+      id: id, text: text, attachments: attachments, messageId: messageId
+    )
   }
 
   func promptSession(id: UUID, text: String) async throws -> ServerPromptAccepted {

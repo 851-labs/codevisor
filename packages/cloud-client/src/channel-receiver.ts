@@ -1,4 +1,9 @@
-import type { ChannelCloseReason, RelayFrameHeader } from "@codevisor/api"
+import {
+  GATEWAY_CHANNEL_TYPE,
+  type ChannelCloseReason,
+  type CloudDeviceKind,
+  type RelayFrameHeader
+} from "@codevisor/api"
 import { acceptChannel, openJson, type ChannelCipher } from "@codevisor/cloud-crypto"
 
 import {
@@ -58,11 +63,12 @@ export class ChannelReceiver {
     frame: RelayFrameHeader,
     payload: Uint8Array,
     peerPublicKey: string | undefined,
-    peerDeviceId: string | undefined
+    peerDeviceId: string | undefined,
+    peerKind?: CloudDeviceKind
   ): void {
     const key = `${peerId}/${frame.channelId}`
     if (frame.t === "open") {
-      this.#handleOpen(key, peerId, frame, payload, peerPublicKey, peerDeviceId)
+      this.#handleOpen(key, peerId, frame, payload, peerPublicKey, peerDeviceId, peerKind)
       return
     }
     const live = this.#channels.get(key)
@@ -148,7 +154,8 @@ export class ChannelReceiver {
     frame: Extract<RelayFrameHeader, { t: "open" }>,
     payload: Uint8Array,
     peerPublicKey: string | undefined,
-    peerDeviceId: string | undefined
+    peerDeviceId: string | undefined,
+    peerKind: CloudDeviceKind | undefined
   ): void {
     if (peerPublicKey === undefined || this.#channels.has(key)) {
       this.#refuse(peerId, frame.channelId, "protocol-error")
@@ -191,6 +198,12 @@ export class ChannelReceiver {
     }
     if (typeof openPayload.channelType !== "string") {
       this.#refuse(peerId, frame.channelId, "protocol-error")
+      return
+    }
+    // Other machines on the account may only run gateway calls here: they
+    // never get the app-facing http/ws/terminal/byte-stream surfaces.
+    if (peerKind === "machine" && openPayload.channelType !== GATEWAY_CHANNEL_TYPE) {
+      this.#refuse(peerId, frame.channelId, "rejected")
       return
     }
     const handler = this.options.channelHandlers[openPayload.channelType]

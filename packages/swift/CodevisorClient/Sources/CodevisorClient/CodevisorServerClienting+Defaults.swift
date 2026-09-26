@@ -435,6 +435,15 @@ public extension CodevisorServerClienting {
     try await promptSession(id: id, text: text, attachments: attachments)
   }
 
+  /// Default for fakes/older transports: the origin window is advisory
+  /// (it only informs agents), so dropping it is safe.
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?
+  ) async throws -> ServerPromptAccepted {
+    try await promptSession(id: id, text: text, attachments: attachments, messageId: messageId)
+  }
+
   /// Defaults so fakes and older transports keep compiling; the HTTP client
   /// overrides these with the real file endpoints.
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata {

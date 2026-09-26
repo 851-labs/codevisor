@@ -115,16 +115,22 @@ export const makeStartSession = ({
             }
           })
     }
+    const instructions =
+      toolGateway?.instructions === undefined
+        ? {}
+        : { developerInstructions: toolGateway.instructions }
     let response: { thread?: { id?: string }; model?: string }
     if (resumeThreadId === undefined) {
       response = await client.request("thread/start", {
         cwd,
+        ...instructions,
         config: threadConfig
       })
     } else {
       response = await client.request("thread/resume", {
         cwd,
         threadId: resumeThreadId,
+        ...instructions,
         config: threadConfig
       })
     }

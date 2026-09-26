@@ -1,4 +1,4 @@
-import { CLOUD_PROTOCOL_VERSION } from "@codevisor/api"
+import { CLOUD_PROTOCOL_VERSION, MACHINE_PEERS_FEATURE } from "@codevisor/api"
 import type { MachineToHub } from "@codevisor/api"
 import { describe, expect, it, vi } from "vitest"
 
@@ -29,7 +29,8 @@ describe("connection lifecycle", () => {
         os: "linux",
         appVersion: "1.0.0",
         publicKey: machineKeys.publicKey
-      }
+      },
+      features: [MACHINE_PEERS_FEATURE]
     })
     expect(h.states).toEqual(["connecting", "connected"])
     expect(h.connection.state).toBe("connected")

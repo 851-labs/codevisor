@@ -16,11 +16,24 @@ export const BUILTIN_MCP_SERVERS = [
 
 export type BuiltinMcpId = (typeof BUILTIN_MCP_SERVERS)[number]["id"]
 
+/// Managed skills shipped with each builtin, installed while it is enabled.
+const BUILTIN_SKILLS = {
+  browser: ["browser-use"],
+  computer: ["computer-use"],
+  codevisor: ["codevisor", "codevisor-agents", "codevisor-machines", "codevisor-clients"]
+} as const satisfies Record<BuiltinMcpId, ReadonlyArray<string>>
+
+export type ManagedAutomationSkillName = (typeof BUILTIN_SKILLS)[BuiltinMcpId][number]
+
 export const automationSkillPath = (
   id: "browser" | "computer",
   options: ServerResourceOptions = {}
+): string => managedSkillPath(BUILTIN_SKILLS[id][0], options)
+
+export const managedSkillPath = (
+  skillName: ManagedAutomationSkillName,
+  options: ServerResourceOptions = {}
 ): string => {
-  const skillName = id === "browser" ? "browser-use" : "computer-use"
   const relative = join("automation-skills", skillName, "SKILL.md")
   return requireServerResource(relative, `managed ${skillName} skill`, options)
 }
@@ -28,16 +41,18 @@ export const automationSkillPath = (
 export const managedAutomationSkills = (
   enabledIds: ReadonlySet<string>
 ): ReadonlyArray<ManagedSkillSpec> =>
-  (["browser", "computer"] as const).map((id) => {
-    const enabled = enabledIds.has(id)
-    return {
-      directoryName: id === "browser" ? "browser-use" : "computer-use",
-      enabled,
-      // Disabled managed skills only need their installed copies removed.
-      // Do not make an absent optional resource block that cleanup.
-      sourcePath: enabled ? dirname(automationSkillPath(id)) : ""
-    }
-  })
+  (Object.keys(BUILTIN_SKILLS) as BuiltinMcpId[]).flatMap((id) =>
+    BUILTIN_SKILLS[id].map((directoryName) => {
+      const enabled = enabledIds.has(id)
+      return {
+        directoryName,
+        enabled,
+        // Disabled managed skills only need their installed copies removed.
+        // Do not make an absent optional resource block that cleanup.
+        sourcePath: enabled ? dirname(managedSkillPath(directoryName)) : ""
+      }
+    })
+  )
 
 export const unavailableBrowserProvider = (cause: unknown): BrowserUseProvider => {
   const detail = errorMessage(cause)

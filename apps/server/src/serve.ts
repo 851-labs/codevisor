@@ -40,7 +40,6 @@ import {
   type BootListener
 } from "./boot-listener.js"
 import { makeActiveWorkSleepInhibitor } from "./infra/active-work-sleep-inhibitor.js"
-import { makeCloudServerControl, startCloudBridge } from "./infra/cloud-bridge.js"
 import { makeCustomHarnessStore } from "./infra/custom-harness-store.js"
 import { canonicalDatabasePaths, codevisorRoot, resolveServerDataLayout } from "./infra/data-dir.js"
 import { migrateLegacyLayout, migrateTmpDataDir } from "./infra/legacy-layout.js"
@@ -50,6 +49,7 @@ import { makeSharedAccounts, type SharedAccounts } from "./infra/shared-accounts
 import {
   restoreTerminalPersistence,
   screenSharingProvider,
+  startMachineNetwork,
   systemNativeMcpManager
 } from "./serve-boot.js"
 import {
@@ -240,25 +240,13 @@ export const runServe = (
     restoreTerminalPersistence(dirname(databasePath), terminal, startup)
     startup.checkpoint("initializingServices")
     const backgroundTerminals = yield* Effect.promise(() => backgroundTerminalIntegration(terminal))
-    // Cloud relay: when this machine is connected to a Codevisor Cloud
-    // account (`codevisor auth login`, or dev auto-provisioning), hold a
-    // presence connection to the user's hub and serve end-to-end encrypted
-    // terminal channels. Optional — local operation never depends on it.
-    const cloudBridgeOptions = {
-      credentialsPath: join(dirname(databasePath), "cloud.json"),
-      machineName: args.name ?? hostname(),
-      appVersion: version ?? "unknown",
-      localBaseUrl: `http://127.0.0.1:${port}`,
-      terminal,
-      env: process.env,
-      log: (line: string) => console.error(line)
-    }
-    const cloudBridge = yield* Effect.promise(() =>
-      initializeOptionalServerFeatureAsync("Cloud connection", async () =>
-        startCloudBridge(cloudBridgeOptions)
-      )
+    // Cloud relay presence + sealed channels, and every machine on the
+    // account for cross-machine gateway calls. Optional — local operation
+    // never depends on it.
+    const machineName = args.name ?? hostname()
+    const { cloudControl, machine, machineLink } = yield* Effect.promise(() =>
+      startMachineNetwork({ databasePath, port, serverId, machineName, version, terminal, db })
     )
-    const cloudControl = makeCloudServerControl(cloudBridgeOptions, cloudBridge)
     // Start resolving the GUI process's minimal environment without delaying
     // server boot. The first Git operation awaits this shared result so
     // checkout hooks and filters can find user-installed tools such as
@@ -368,6 +356,8 @@ export const runServe = (
         db,
         dataDir: dirname(databasePath),
         serverId,
+        machine,
+        remoteInvoker: machineLink.invoke,
         serverKind: resolvedKind,
         ...(skills === undefined ? {} : { syncManagedSkills: skills.syncManaged }),
         // Installed plugins' declared tools surface to agents through the MCP
@@ -421,7 +411,8 @@ export const runServe = (
         ...(plugins === undefined ? {} : { plugins }),
         ...(pluginRegistry === undefined ? {} : { pluginRegistry }),
         ...(skills === undefined ? {} : { skills }),
-        syncBlobs
+        syncBlobs,
+        machines: machineLink
       },
       defaultServerConfig({
         host,

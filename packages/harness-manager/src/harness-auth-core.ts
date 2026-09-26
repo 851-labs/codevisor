@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process"
 import { chmod, mkdir, readFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import { join } from "node:path"
 
 import { spawnClaudeAuthClient, type ClaudeAuthClient } from "@codevisor/adapter-claude"
@@ -128,7 +129,10 @@ export const makeHarnessAuthCore = (config: HarnessAuthManagerConfig) => {
         accounts.flatMap((candidate) => {
           const candidatePath = profilePath(candidate)
           return candidatePath === undefined ? [] : [candidatePath]
-        })
+        }),
+        // Codevisor installs skills into the catalog's ~/.claude/skills even
+        // when CLAUDE_CONFIG_DIR points the default profile elsewhere.
+        join(baseEnvironment.HOME?.trim() || homedir(), ".claude", "skills")
       )
     })()
     claudeStoragePreparation = preparation.finally(() => {

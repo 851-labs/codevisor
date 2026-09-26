@@ -29,6 +29,8 @@ export default defineConfig({
         "src/mcp-auth-detection.ts",
         "src/mcp-automation-builtins.ts",
         "src/mcp-gateway.ts",
+        // Dispatch split out of mcp-gateway: same live gateway integration boundary.
+        "src/mcp-gateway-dispatch.ts",
         "src/mcp-gateway-catalog.ts",
         "src/mcp-manager-browser.ts",
         "src/mcp-manager-core.ts",

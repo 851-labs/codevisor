@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { Labels } from "./labels.js"
 import { CreateProjectRequest } from "./projects.js"
 import { GoalStatus, SessionGoal, SessionOrigin } from "./session-config.js"
 import {
@@ -124,7 +125,10 @@ export const SessionSummary = Schema.Struct({
   actionRequired: Schema.optional(Schema.Boolean),
   actionRequiredKind: Schema.optional(Schema.Literals(["question", "planApproval"])),
   /** Durable form of Codex's synthetic post-plan approval prompt. */
-  pendingPlanApproval: Schema.optional(Schema.Boolean)
+  pendingPlanApproval: Schema.optional(Schema.Boolean),
+  /** The session that created this one (an orchestrating agent). */
+  parentSessionId: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels)
 })
 export type SessionSummary = typeof SessionSummary.Type
 
@@ -317,7 +321,8 @@ export const PromptQueueItem = Schema.Struct({
   text: Schema.String,
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  attachments: Schema.optional(Schema.Array(AttachmentRef))
+  attachments: Schema.optional(Schema.Array(AttachmentRef)),
+  clientId: Schema.optional(Schema.String)
 })
 export type PromptQueueItem = typeof PromptQueueItem.Type
 
@@ -354,6 +359,8 @@ export const CreateSessionRequest = Schema.Struct({
   worktreeName: Schema.optional(Schema.String),
   /// Create the session already belonging to a pane workspace.
   workspaceId: Schema.optional(Schema.String),
+  parentSessionId: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String)
 })
@@ -380,6 +387,7 @@ export const UpdateSessionRequest = Schema.Struct({
   /// deferred agent starts under the right harness/account.
   harnessId: Schema.optional(Schema.String),
   harnessAccountId: Schema.optional(Schema.String),
+  labels: Schema.optional(Labels), // replaces; {} clears
   /// Explicit activity stamp, sent only when a turn finishes; plain metadata
   /// updates must omit it so recency ordering ignores opens/renames.
   updatedAt: Schema.optional(Schema.String)
@@ -430,7 +438,9 @@ export const PromptRequest = Schema.Struct({
   /// item id — and therefore the `messageId` on the user echo event — so
   /// clients can reconcile the echo with the optimistic append by IDENTITY
   /// instead of content matching.
-  messageId: Schema.optional(Schema.String)
+  messageId: Schema.optional(Schema.String),
+  /// The sending window's client-control id (the turn's origin client).
+  clientId: Schema.optional(Schema.String)
 })
 export type PromptRequest = typeof PromptRequest.Type
 

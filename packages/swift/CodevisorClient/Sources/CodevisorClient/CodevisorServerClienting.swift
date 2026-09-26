@@ -333,6 +333,13 @@ public protocol CodevisorServerClienting: BrowserStateClienting {
   func promptSession(
     id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?
   ) async throws -> ServerPromptAccepted
+  /// `clientId` is the sending window's client-control id. The server
+  /// records it with the queued prompt so agents can tell which window
+  /// asked (and, for example, navigate that window rather than another).
+  func promptSession(
+    id: UUID, text: String, attachments: [ServerAttachmentRef], messageId: String?,
+    clientId: String?
+  ) async throws -> ServerPromptAccepted
   func uploadFile(name: String, mimeType: String, data: Data) async throws -> ServerFileMetadata
   /// Uploads a file from disk, streaming it rather than loading it.
   func uploadFile(name: String, mimeType: String, fileURL: URL) async throws -> ServerFileMetadata

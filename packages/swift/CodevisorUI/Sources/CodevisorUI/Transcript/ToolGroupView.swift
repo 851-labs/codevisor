@@ -83,9 +83,17 @@ public struct ToolGroupView: View {
       }
 
       TranscriptDisclosureContentReveal(isExpanded: isExpanded) {
-        VStack(alignment: .leading, spacing: 8) {
-          ForEach(group.calls) { call in
-            ToolCallRow(call: call, isTurnActive: isTurnActive)
+        Group {
+          // A lone workflow already reads as its own row: open its details
+          // directly instead of repeating its title in a nested row.
+          if let solo = header.soloWorkflow {
+            if solo.hasPresentableDetails { ToolCallContentCard(call: solo) }
+          } else {
+            VStack(alignment: .leading, spacing: 8) {
+              ForEach(group.calls) { call in
+                ToolCallRow(call: call, isTurnActive: isTurnActive)
+              }
+            }
           }
         }
         .padding(.leading, 24)
@@ -100,9 +108,21 @@ public struct ToolGroupView: View {
 struct ToolGroupHeaderPresentation {
   let title: String
   let isShimmering: Bool
+  /// Set when the group is a single described gateway workflow, which the
+  /// view renders as one row rather than a group holding a row.
+  let soloWorkflow: ToolCall?
 
   @MainActor
   init(group: ToolCallGroup, isExpanded: Bool, isTurnActive: Bool, totalsCache: DiffTotalsCache) {
+    let solo = group.calls.count == 1 && group.calls[0].integrationDescription != nil ? group.calls[0] : nil
+    soloWorkflow = solo
+    if let solo {
+      // A single workflow is its own row: it shimmers while running,
+      // however it is disclosed, and always carries its own title.
+      isShimmering = isTurnActive && !solo.isSettled
+      title = solo.displayTitle(diffTotals: totalsCache.totals(for: solo))
+      return
+    }
     isShimmering = !isExpanded && isTurnActive && group.hasUnsettledCall
     if isShimmering, let latestCall = group.calls.last {
       title = latestCall.displayTitle(diffTotals: totalsCache.totals(for: latestCall))
