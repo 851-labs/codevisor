@@ -8,6 +8,8 @@ on:
       - "apps/cloud/**"
       - "packages/api/**"
       - "packages/cloud-crypto/**"
+      # RELAY_MAP (wrangler.jsonc) must match the relay inventory.
+      - "infra/relays/relays.json"
       - "bun.lock"
       - ".github/workflows/deploy-cloud.yml"
   workflow_dispatch:
@@ -32,6 +34,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build, typecheck, and test
         run: bunx turbo run typecheck test --filter=@codevisor/cloud
+      - name: Check the relay map matches infra/relays/relays.json
+        run: node infra/relays/check-relay-map.mjs
       # Schema first, code second: old Worker code must tolerate the new
       # schema for the moments between these two steps (additive-only rule).
       - name: Apply D1 migrations
@@ -48,6 +52,14 @@ jobs:
       # bought little on top of that and cost real complexity (version-id
       # parsing, traffic-split bookkeeping, a soak gate, and a separate
       # escape hatch for DO migrations, which `versions upload` cannot ship).
+      # Relays authenticate their access checks with this token; the Worker
+      # accepts a comma-separated list, so rotation needs no downtime.
+      - name: Sync the relay authorize token
+        working-directory: apps/cloud
+        run: echo "$RELAY_AUTHORIZE_TOKEN" | bunx wrangler secret put RELAY_AUTHORIZE_TOKEN
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RELAY_AUTHORIZE_TOKEN: ${{ secrets.RELAY_AUTHORIZE_TOKEN }}
       - name: Deploy to Cloudflare
         working-directory: apps/cloud
         run: bunx wrangler deploy

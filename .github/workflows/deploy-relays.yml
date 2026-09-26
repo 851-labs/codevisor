@@ -1,0 +1,109 @@
+name: Deploy relays
+
+# Tunnel relays on Fly.io, one app per relay instance
+# (docs/plans/codevisor-tunnel.md, infra/relays/README.md).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/relays/**"
+      - "scripts/net-build.lock.json"
+      - ".github/workflows/deploy-relays.yml"
+  workflow_dispatch:
+    inputs:
+      relay:
+        description: Relay id to deploy (blank = all)
+        required: false
+
+concurrency:
+  group: deploy-relays
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      relays: ${{ steps.plan.outputs.relays }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      # Fails if fly/*.toml drifted from relays.json.
+      - run: node infra/relays/gen-fly.mjs --check
+      - id: plan
+        run: node infra/relays/plan.mjs --only "${{ inputs.relay }}" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: plan
+    runs-on: ubuntu-24.04
+    environment: relays-production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: ./.github/actions/setup-rust
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+      - run: bun install --frozen-lockfile
+      - name: Build the image
+        run: |
+          eval "$(node scripts/net-artifact.mjs relay-build-args)"
+          docker build infra/relays \
+            --build-arg IROH_RELAY_URL --build-arg IROH_RELAY_SHA256 --build-arg CERTBOT_VERSION \
+            -t "${{ needs.plan.outputs.image }}"
+      # Boots the image as Fly does, with a throwaway CA instead of certbot:
+      # /healthz over TLS, the port-80 router, and a relay-only tunnel round
+      # trip between two real endpoints.
+      - name: Smoke test the image
+        run: |
+          bunx turbo run build --filter=@codevisor/net
+          node scripts/net-artifact.mjs ensure-node
+          node infra/relays/smoke.mjs --local-image "${{ needs.plan.outputs.image }}" --engine docker
+      - name: Push
+        run: flyctl auth docker && docker push "${{ needs.plan.outputs.image }}"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  deploy:
+    needs: [plan, image]
+    runs-on: ubuntu-24.04
+    environment: relays-production
+    strategy:
+      # One relay at a time: a bad release stops after the first instance.
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        relay: ${{ fromJSON(needs.plan.outputs.relays) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # v1.6
+      # Idempotent: app, dedicated IPv4 + IPv6, volume, staged secret,
+      # grey-cloud DNS. Never deletes anything.
+      - run: node infra/relays/provision.mjs "${{ matrix.relay }}"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          # The same token deploy-cloud.yml uses (also needs Zone:DNS:Edit
+          # and Zone:Zone:Read on codevisor.dev); the zone is found by name.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RELAY_AUTHORIZE_TOKEN: ${{ secrets.RELAY_AUTHORIZE_TOKEN }}
+      - run: >
+          flyctl deploy
+          --config "infra/relays/fly/${{ matrix.relay }}.toml"
+          --image "${{ needs.plan.outputs.image }}"
+          --ha=false
+          --wait-timeout 10m
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      # Public TLS with ≥14 days left, /healthz, and the router.
+      - run: node infra/relays/smoke.mjs --relay "${{ matrix.relay }}"

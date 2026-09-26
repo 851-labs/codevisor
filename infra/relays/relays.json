@@ -1,0 +1,30 @@
+{
+  "image": "registry.fly.io/codevisor-relay",
+  "org": "851-95",
+  "relays": [
+    {
+      "id": "relay-iad-1",
+      "region": "iad",
+      "hostname": "relay-iad-1.codevisor.dev",
+      "advertise": true
+    },
+    {
+      "id": "relay-sjc-1",
+      "region": "sjc",
+      "hostname": "relay-sjc-1.codevisor.dev",
+      "advertise": true
+    },
+    {
+      "id": "relay-fra-1",
+      "region": "fra",
+      "hostname": "relay-fra-1.codevisor.dev",
+      "advertise": true
+    },
+    {
+      "id": "relay-sin-1",
+      "region": "sin",
+      "hostname": "relay-sin-1.codevisor.dev",
+      "advertise": true
+    }
+  ]
+}
