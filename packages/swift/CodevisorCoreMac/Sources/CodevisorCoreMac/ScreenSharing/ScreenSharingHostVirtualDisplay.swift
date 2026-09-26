@@ -78,7 +78,31 @@ final class ScreenSharingHostVirtualDisplay {
     guard CGDisplayIsOnline(displayID) != 0 else {
       throw ScreenSharingError.unavailable("The virtual display didn't come online.")
     }
+    try await selectHiDPIMode()
     try Self.configure { CGConfigureDisplayMirrorOfDisplay($0, mirrored, displayID) }
+  }
+
+  /// Puts the display in its 2× mode at `size`. WindowServer remembers a display's last mode by
+  /// its identity (always the same for this display) and may bring back a 1× one: on tuftlord it
+  /// did, and the viewer got text at half the sharpness (1920×1416 points on 1920×1416 pixels,
+  /// 2026-09-25). A new size's modes appear shortly after it's applied, so this waits up to 1 s.
+  func selectHiDPIMode() async throws {
+    let options = [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
+    for _ in 0..<100 {
+      let modes = (CGDisplayCopyAllDisplayModes(displayID, options) as? [CGDisplayMode]) ?? []
+      if let mode = modes.first(where: {
+        $0.width == size.width && $0.height == size.height && $0.pixelWidth == size.width * 2
+      }) {
+        if let current = CGDisplayCopyDisplayMode(displayID), current.width == mode.width,
+          current.pixelWidth == mode.pixelWidth
+        {
+          return
+        }
+        try Self.configure { CGConfigureDisplayWithDisplayMode($0, displayID, mode, nil) }
+        return
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
   }
 
   /// Resizes the display (and so the mirrored physical one) to `width`×`height` points.
