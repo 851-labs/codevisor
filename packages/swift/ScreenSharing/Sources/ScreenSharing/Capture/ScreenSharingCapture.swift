@@ -9,14 +9,13 @@
     public var onStopped: ((String) -> Void)?
     private var generation = 0
     private var starting = false {
-      didSet {
-        guard !starting else { return }
-        let waiters = startWaiters
-        startWaiters = []
-        for waiter in waiters { waiter.resume() }
-      }
+      didSet { if !starting { wakeWaiters() } }
     }
-    /// Callers of `startSettled()` waiting for the start in flight to finish.
+    /// Audio being turned on or off (it may restart the stream); `settled()` waits for it.
+    private var changing = 0 {
+      didSet { if changing < oldValue { wakeWaiters() } }
+    }
+    /// Callers of `startSettled()` or `settled()`, woken to re-check whenever either may be done.
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     /// Told each time a caller starts waiting for a start in flight; tests use it to hold the race open.
     var onWaitingForStart: (() -> Void)?
@@ -250,8 +249,10 @@
     /// starts a running stream again with audio in its starting configuration: on tuftlord a live
     /// update turned it on and ScreenCaptureKit never delivered a buffer (851-2379).
     public func setCapturesAudio(_ captures: Bool) async throws {
-      await startSettled()
+      await settled()
       guard captures != capturesAudio else { return }
+      changing += 1
+      defer { changing -= 1 }
       let previous = capturesAudio
       capturesAudio = captures
       do {
@@ -272,12 +273,28 @@
     /// opens) stopped that stream and cancelled the start, which ended the session (851-2379: on
     /// tuftlord over Tailscale, every connection). Changes wait for the start and then apply.
     private func startSettled() async {
-      while starting {
-        await withCheckedContinuation { continuation in
-          startWaiters.append(continuation)
-          onWaitingForStart?()
-        }
+      while starting { await waitForChange() }
+    }
+
+    /// Until no start is in flight and no audio change is restarting the stream. Moving the
+    /// capture while either runs collided with it: on tuftlord the host's catch-up after a slow
+    /// first start met the audio subscription's restart and failed with "Capture is already
+    /// running", ending the session (851-2376).
+    public func settled() async {
+      while starting || changing > 0 { await waitForChange() }
+    }
+
+    private func waitForChange() async {
+      await withCheckedContinuation { continuation in
+        startWaiters.append(continuation)
+        onWaitingForStart?()
       }
+    }
+
+    private func wakeWaiters() {
+      let waiters = startWaiters
+      startWaiters = []
+      for waiter in waiters { waiter.resume() }
     }
 
     /// Applies the current settings to a running stream.
