@@ -45,3 +45,20 @@ A third Apple frame came through scaled (781×312 px, not 1:1) and is left out.
 
 - **Ground truth:** `screencapture` on the host doesn't work over SSH (no screen-recording permission), so the card is the truth. On-screen pixels equal the card's (1:1, no resampling). Colour management is undone by the profile conversion: white and black match exactly, and Apple's flat colours land within 1–2 levels.
 - **Apple Screen Sharing:** signed in with the password already saved on this Mac. Nothing was typed, and nothing was recorded outside the viewer windows.
+
+## After 851-2398 (alpha 1074)
+
+Two host fixes, re-measured with the same card and scorer:
+
+- **Capture in sRGB** ([#161](https://github.com/851-labs/codevisor/pull/161)). Rec. 709 capture had re-encoded mid-tones (sky blue 150 → 156, measured with `screen-sharing-rig colour-check` on both Macs), and the viewer then showed them 2–5 levels off.
+- **The virtual display's 2× mode, selected explicitly** ([#162](https://github.com/851-labs/codevisor/pull/162)). WindowServer had restored a remembered 1× mode for the product's display, halving text sharpness.
+
+| Viewer                                 | Black text SSIM | Coloured text SSIM / ΔC | 1-px lines SSIM / ΔC |
+| -------------------------------------- | --------------- | ----------------------- | -------------------- |
+| Codevisor native, alpha 1074, 3 frames | 0.9981          | 0.9973 / **1.26**       | 0.9999 / 0.16        |
+| Apple High Performance (above)         | 0.9995          | 0.9985 / 1.43           | 1.0000 / 0.04        |
+
+- The virtual display ran at 2× (880×708 pt, 1760×1416 px), and the card arrived 1:1.
+- Flat colours are exact: sky blue (0, 150, 255) arrives as (0, 150, 255).
+- Colour error on coloured text is now below Apple's.
+- Luma SSIM is within 0.0015 of Apple's, slightly lower than the earlier native frames (0.9986–0.9992). That is within frame-to-frame encoder variance, but not better.
