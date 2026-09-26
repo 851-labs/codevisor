@@ -19,7 +19,11 @@ public struct ScreenSharingPeerOptions: Sendable, Equatable {
   public var staticCodecRate = false
   public var completeEachFrame = false
   public var prioritizeSpeed = false
-  public var keyframeIntervalSeconds = 2
+  /// A 4:4:4 keyframe is ~1 MB at 1760×1416, 20–30 deltas' worth; every frame behind it waits.
+  /// Every 2 s, on tuftlord over Tailscale, that held image age at 250–540 ms (2026-09-26); the
+  /// LAN rig study found the same (docs/plans/screen-sharing-rig.md, rows H → J). A viewer asks
+  /// for a keyframe when it needs one (loss, refresh), so periodic ones only cost latency.
+  public var keyframeIntervalSeconds = 60
   /// Sender: keep the capture format instead of letting WebRTC adapt resolution.
   public var maintainSourceRate = false
   /// Sender: lets the bandwidth estimator's cap exceed the encoder's target, which
