@@ -13,7 +13,7 @@
       ("blue", 1300, 198), ("magenta", 1300, 254), ("red", 1300, 310), ("sky", 1300, 366), ("white", 700, 540),
     ]
     static let spaces: [(name: String, space: String)] = [
-      ("itur_709 (product)", CGColorSpace.itur_709 as String), ("sRGB", CGColorSpace.sRGB as String),
+      ("itur_709 (before 851-2398)", CGColorSpace.itur_709 as String), ("sRGB (product)", CGColorSpace.sRGB as String),
       ("displayP3", CGColorSpace.displayP3 as String),
     ]
 

@@ -313,7 +313,9 @@
       config.minimumFrameInterval = interval.minimumFrameInterval
       config.queueDepth = queueDepth
       config.pixelFormat = pixelFormat
-      config.colorSpaceName = CGColorSpace.itur_709
+      // sRGB, which the viewer's layer shows: Rec. 709's transfer curve brightened mid-tones by
+      // up to 6 levels (sky blue 150 → 156) before anything was encoded (851-2398).
+      config.colorSpaceName = CGColorSpace.sRGB
       config.showsCursor = showsCursor
       config.capturesAudio = capturesAudio
       if capturesAudio {

@@ -133,7 +133,8 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
         kVTCompressionPropertyKey_MaxKeyFrameInterval,
         (configuration.framesPerSecond * keyframeIntervalSeconds) as CFNumber)
       try property(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
-      try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_709_2)
+      // Capture is sRGB (851-2398): tagged as what it is, so nothing converts it on the way.
+      try property(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_sRGB)
       try property(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
       try check(VTCompressionSessionPrepareToEncodeFrames(created), "Prepare encoder")
       var hardware: Unmanaged<CFTypeRef>?
@@ -152,7 +153,7 @@ public final class ScreenSharingEncoder: @unchecked Sendable {
       // RequireHardwareAcceleratedVideoEncoder still forbids software fallback.
       metrics.label("encoderHardware", hardwareStatus == noErr ? "confirmed" : "required; query unsupported")
       metrics.label("encoder", "VideoToolbox \(codec.rawValue) hardware, no frame reordering")
-      metrics.label("encodedColor", "BT.709 SDR")
+      metrics.label("encodedColor", "BT.709 primaries, sRGB transfer")
     } catch { stop(); throw error }
   }
 
