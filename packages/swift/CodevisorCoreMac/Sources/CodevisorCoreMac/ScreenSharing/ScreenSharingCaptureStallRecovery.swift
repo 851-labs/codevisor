@@ -146,9 +146,10 @@ public struct ScreenSharingCaptureStallRecovery {
     }
   }
 
-  /// What a start that ScreenCaptureKit never answers ends with.
+  /// What a start that ScreenCaptureKit never answers ends with. The viewer shows it, so it names
+  /// the host ("This Mac" read as the viewer's own Mac).
   public nonisolated static let stuck = ScreenSharingError.unavailable(
-    "This Mac's screen capture isn't responding. Try again in a minute.")
+    "The host Mac's screen capture isn't responding. Try again in a minute.")
 
   /// `task`'s outcome if it finishes within `timeout`; otherwise it's cancelled and `stuck` thrown.
   /// Cancelling the caller cancels `task`.

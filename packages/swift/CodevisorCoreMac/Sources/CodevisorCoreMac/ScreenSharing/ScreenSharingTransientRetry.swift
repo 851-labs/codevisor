@@ -14,9 +14,13 @@ public enum ScreenSharingTransientRetry {
     return false
   }
 
-  /// The host's own answer for a capture start it gave up on (851-2390).
+  /// The host's own answer for a capture start it gave up on (851-2390), in its current wording or
+  /// the one alphas 1057–1064 sent.
   public static func isTransient(_ reply: ServerScreenSharingReply) -> Bool {
-    reply.message == ScreenSharingCaptureStallRecovery.stuck.localizedDescription
+    [
+      ScreenSharingCaptureStallRecovery.stuck.localizedDescription,
+      "This Mac's screen capture isn't responding. Try again in a minute.",
+    ].contains(reply.message)
   }
 
   @MainActor public static func run(
