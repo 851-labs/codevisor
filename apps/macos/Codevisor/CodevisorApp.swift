@@ -7,91 +7,13 @@ import CodevisorUI
 
 struct CodevisorApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @State private var environment: AppEnvironment?
-  @State private var serverAgent: MacServerAgentController
-  @State private var sparkleUpdater: SparkleUpdateController?
-  @State private var startupError: String?
-  @State private var startupInProgress = false
-
-  init() {
-    let serverAgent = MacServerAgentController()
-    _environment = State(initialValue: nil)
-    _serverAgent = State(initialValue: serverAgent)
-    _sparkleUpdater = State(initialValue: nil)
-    _startupError = State(initialValue: nil)
-  }
-
-  @MainActor
-  private static func makeRuntime(
-    serverAgent: MacServerAgentController,
-    storage: ClientStorage,
-    instanceLease: AppInstanceLease?
-  ) -> (environment: AppEnvironment, updater: SparkleUpdateController?) {
-    let environment = AppEnvironment.live(storage: storage)
-    if !CodevisorAppVariant.isDevelopment {
-      environment.localServer?.configureManagedService(serverAgent.managedService)
-    }
-    let sparkleUpdater: SparkleUpdateController?
-    if CodevisorAppVariant.enablesSparkleUpdater, let instanceLease {
-      sparkleUpdater = SparkleUpdateController(
-        model: environment.appUpdate,
-        localServer: environment.localServer,
-        serverAgent: serverAgent,
-        instanceLease: instanceLease
-      )
-    } else {
-      sparkleUpdater = nil
-    }
-    if !CodevisorAppVariant.isDevelopment && !AppPreview.isRunning {
-      // Keep the bundled CLI (`codevisor` etc.) linked into
-      // ~/.local/bin: DMG drag-installs run no installer script, so
-      // launch is the only chance to put the CLI on PATH; install.sh
-      // and the Homebrew cask create the same links up front.
-      Task.detached(priority: .utility) {
-        CommandLineTools.ensureInstalled()
-      }
-    }
-    if !AppPreview.isRunning {
-      let probes = ComputerUsePermissionProbes.live
-      let allGranted = probes.isAccessibilityGranted() && probes.isScreenRecordingGranted()
-      let needsReview = computerUsePermissionsGateNeeded(
-        hasCompletedOnboarding: environment.settings.hasCompletedOnboarding,
-        permissionsReviewedVersion: environment.settings.permissionsReviewedVersion,
-        setupSkipped: environment.settings.permissionsSetupSkipped,
-        reviewInProgress: environment.settings.permissionsReviewInProgress,
-        currentVersion: AppUpdateModel.bundleVersion(),
-        allGranted: allGranted
-      )
-      environment.requiresPermissionsReview = needsReview
-      if needsReview {
-        // Survives the restart that granting Screen Recording asks
-        // for; the dialog's own buttons clear it.
-        environment.settings.setPermissionsReviewInProgress(true)
-      } else if allGranted,
-        environment.settings.permissionsReviewedVersion
-          != AppUpdateModel.bundleVersion()
-      {
-        // Everything already granted and no review open: count this
-        // version reviewed so a later revoke does not re-gate it.
-        environment.settings.setPermissionsReviewedVersion(AppUpdateModel.bundleVersion())
-      }
-    }
-    AnalyticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareAnalytics)
-    AnalyticsClient.shared.captureAppOpenedOnce()
-    DiagnosticsClient.shared.configureFromMainBundle(enabled: environment.settings.shareCrashReports)
-    ChatNotificationManager.shared.configure(settings: environment.settings)
-    // Attention pings and banner clearing are decided by the app-wide
-    // coordinator (edge-triggered, focused chat suppressed); the manager
-    // only presents them.
-    environment.attentionCoordinator.notificationDelivery = ChatNotificationManager.shared
-    // Deep links that open machine-scoped Settings pages ("Manage
-    // Harnesses…") resolve the selected machine through this.
-    return (environment, sparkleUpdater)
-  }
+  /// Started by the app delegate at launch, not by a window (851-2386); a window that appears
+  /// first starts it too.
+  @State private var runtime = AppRuntime.shared
 
   var body: some Scene {
     WindowGroup {
-      if let environment {
+      if let environment = runtime.environment {
         RootView()
           .frame(minWidth: 480, minHeight: 600)
           .themedRoot()
@@ -101,10 +23,10 @@ struct CodevisorApp: App {
           // window that's already open; without this, macOS spawns a
           // fresh window scene for every external URL event.
           .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
-      } else if let startupError {
+      } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(
           message: startupError,
-          retry: retryStartup,
+          retry: runtime.retry,
           showDataFolder: {
             NSWorkspace.shared.activateFileViewerSelecting([
               CodevisorAppVariant.applicationSupportURL()
@@ -115,7 +37,7 @@ struct CodevisorApp: App {
       } else {
         ClientDataStartupView()
           .frame(minWidth: 480, minHeight: 600)
-          .task { await startRuntimeIfNeeded() }
+          .task { await runtime.startIfNeeded() }
       }
     }
     .defaultSize(width: 1280, height: 820)
@@ -125,7 +47,7 @@ struct CodevisorApp: App {
     // AppKit still owns saving and restoring the user's previous frame.
     .windowIdealSize(.maximum)
     .commands {
-      if let environment {
+      if let environment = runtime.environment {
         AppUpdateCommands(environment: environment)
         FileCommands()
         MachineCommands(machines: environment.machines)
@@ -136,14 +58,14 @@ struct CodevisorApp: App {
     }
 
     Settings {
-      if let environment {
+      if let environment = runtime.environment {
         SettingsView()
           .themedRoot()
           .environment(environment)
-      } else if let startupError {
+      } else if let startupError = runtime.startupError {
         ClientDataStartupFailureView(
           message: startupError,
-          retry: retryStartup,
+          retry: runtime.retry,
           showDataFolder: {
             NSWorkspace.shared.activateFileViewerSelecting([
               CodevisorAppVariant.applicationSupportURL()
@@ -152,53 +74,11 @@ struct CodevisorApp: App {
         )
       } else {
         ClientDataStartupView()
-          .task { await startRuntimeIfNeeded() }
+          .task { await runtime.startIfNeeded() }
       }
     }
   }
 
-  private func retryStartup() {
-    startupError = nil
-    Task { await startRuntimeIfNeeded() }
-  }
-
-  @MainActor
-  private func startRuntimeIfNeeded() async {
-    guard environment == nil, !startupInProgress else { return }
-    startupInProgress = true
-    defer { startupInProgress = false }
-    do {
-      let storage = try await ClientStorageBootstrap.openAsync(
-        directory: CodevisorAppVariant.applicationSupportURL(),
-        credentials: KeychainMachineCredentialStore.shared
-      )
-      let runtime = Self.makeRuntime(
-        serverAgent: serverAgent,
-        storage: storage,
-        instanceLease: appDelegate.appInstanceLease
-      )
-      environment = runtime.environment
-      sparkleUpdater = runtime.updater
-      // The quit confirmation reads the user's preference and skips
-      // itself while Sparkle is installing an update.
-      appDelegate.settings = runtime.environment.settings
-      appDelegate.appUpdate = runtime.environment.appUpdate
-      startupError = nil
-      if !AppPreview.isRunning {
-        // Machine readiness belongs to the app runtime, not a window.
-        // Settings can be the only restored scene at launch, so waiting
-        // until RootView mounts leaves every normal server request gated.
-        Task { @MainActor in
-          await runtime.environment.prepareAllMachines()
-          // Initialize the terminal runtime up front, in a clean context,
-          // so opening the terminal later can't re-enter its dispatch_once.
-          TerminalRuntime.prewarm()
-        }
-      }
-    } catch {
-      startupError = error.localizedDescription
-    }
-  }
 }
 
 private struct ClientDataStartupFailureView: View {

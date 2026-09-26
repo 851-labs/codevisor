@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.delegate as? AppDelegate
   }
 
+  /// Starts the app's runtime whether or not a window appears (851-2386). A duplicate instance,
+  /// which didn't get the lease, is quitting and starts nothing.
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    guard appInstanceLease != nil else { return }
+    Task { @MainActor in await AppRuntime.shared.startIfNeeded() }
+  }
+
   func applicationWillFinishLaunching(_ notification: Notification) {
     let bundleURL = Bundle.main.bundleURL
     do {
