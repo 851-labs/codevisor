@@ -16,7 +16,7 @@ RUN apt-get update \
  && ln -s /opt/certbot/bin/certbot /usr/local/bin/certbot \
  && curl -fsSL -o /tmp/iroh-relay.tar.gz "$IROH_RELAY_URL" \
  && echo "$IROH_RELAY_SHA256  /tmp/iroh-relay.tar.gz" | sha256sum -c - \
- && tar -xzf /tmp/iroh-relay.tar.gz -C /usr/local/bin iroh-relay \
+ && tar -xzf /tmp/iroh-relay.tar.gz -C /usr/local/bin ./iroh-relay \
  && rm /tmp/iroh-relay.tar.gz
 
 COPY render-config.sh entrypoint.sh port80-router.py /app/
