@@ -89,7 +89,7 @@ import Testing
     let trials = ScreenSharingFieldTrials(apply: { recorder.record($0) })
     let installed = try trials.install(profile: nil)
     #expect(installed == .product)
-    #expect(recorder.last == ["WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80"])
+    #expect(recorder.last == ["WebRTC-ForcePlayoutDelay": "min_ms:15,max_ms:80", "WebRTC-Video-Pacing": "factor:10"])
     #expect(try trials.install(profile: nil) == .product && recorder.count == 1)
 
     let pinned = ScreenSharingFieldTrials(apply: { _ in })

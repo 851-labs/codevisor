@@ -90,7 +90,7 @@ struct ScreenSharingPeerContractTests {
     #expect(options.codec == .hevc444 && options.fallbackCodecs == [.hevc, .h264] && options.useLowLatencyRateControl)
     #expect(!options.disableLookAhead && !options.staticCodecRate && !options.completeEachFrame)
     #expect(!options.prioritizeSpeed && !options.maintainSourceRate)
-    #expect(options.maximumPendingFrames == 2 && options.keyframeIntervalSeconds == 2)
+    #expect(options.maximumPendingFrames == 2 && options.keyframeIntervalSeconds == 60)
     // Every experiment threshold is absent by default, which means "the product".
     #expect(options.transportCeilingBps == nil && options.sourceIdleThresholdNs == nil)
     #expect(options.deliveryGrace == nil && options.deliveryGraceExtensions == nil)
