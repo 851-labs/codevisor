@@ -253,6 +253,35 @@
       #expect(fixture.target.settings?.capturesAudio == true)
     }
 
+    /// tuftlord (851-2376): the host moved the capture right after a slow start, while the audio
+    /// subscription was restarting it; the second start failed with "Capture is already running".
+    @Test func settledWaitsForAnAudioRestartInProgress() async throws {
+      let fixture = CaptureFixture()
+      try await fixture.start()
+      let heldStop = CaptureGate()
+      fixture.stream.holdStop = heldStop
+      let audio = Task { @MainActor in try await fixture.capture.setCapturesAudio(true) }
+      await heldStop.entered.wait()
+      let settled = TestSignal()
+      let waiter = Task { @MainActor in
+        await fixture.capture.settled()
+        settled.signal()
+      }
+      let waiting = TestSignal()
+      fixture.capture.onWaitingForStart = { waiting.signal() }
+      await waiting.wait()
+      #expect(settled.value == 0)
+      fixture.stream.holdStop = nil
+      heldStop.release()
+      try await audio.value
+      await waiter.value
+      #expect(settled.value == 1)
+      #expect(fixture.stream.calls == [.start, .stop, .start])
+      // Settled: moving the capture now starts cleanly.
+      try await fixture.capture.stop()
+      try await fixture.start()
+    }
+
     @Test func showingTheCursorDuringAHeldStartUpdatesTheStreamOnceItRuns() async throws {
       let fixture = CaptureFixture()
       let held = CaptureGate()

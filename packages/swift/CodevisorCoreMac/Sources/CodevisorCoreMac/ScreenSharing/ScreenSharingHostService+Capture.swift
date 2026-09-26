@@ -55,6 +55,8 @@ extension ScreenSharingHostService {
     _ session: Session,
     startedWith started: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)
   ) async throws {
+    // The audio subscription may be restarting the stream right now (it waited for the same start).
+    await session.capture.settled()
     if session.captureDisplayID != started.display {
       try? await session.capture.stop()
       try await startWatchedCapture(session, reason: "display changed while starting")
