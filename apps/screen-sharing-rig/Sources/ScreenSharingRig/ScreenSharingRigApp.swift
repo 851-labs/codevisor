@@ -55,7 +55,10 @@
           VNCServerCommand.main(arguments: Array(arguments.dropFirst()))
           return
         }
-        if arguments.isEmpty { RigShell.run() }
+        if arguments.isEmpty {
+          installPlayoutOverride()
+          RigShell.run()
+        }
         guard arguments.count == 2, arguments[0] == "--config" else {
           throw ScreenSharingError.invalid(
             "Usage: screen-sharing-rig --config /path/to/rig.json | screen-sharing-rig probe [--help] | screen-sharing-rig vnc-server [--help]"
