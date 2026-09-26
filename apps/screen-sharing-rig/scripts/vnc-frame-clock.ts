@@ -40,13 +40,15 @@ function lanAddress(): string {
 /// The host's clock minus this Mac's (ms), over one SSH connection so each sample costs a
 /// network round trip, not a process start: tuftlord answers `time.time()` per line.
 async function measureClockOffset(
-  host: string
+  host: string,
+  hostKeyAlias: string | undefined
 ): Promise<{ offsetMs: number; roundTripMs: number }> {
   const ssh = spawn(
     "ssh",
     [
       "-o",
       "BatchMode=yes",
+      ...(hostKeyAlias === undefined ? [] : ["-o", `HostKeyAlias=${hostKeyAlias}`]),
       host,
       `python3 -u -c 'import sys,time\nfor l in sys.stdin: print(repr(time.time()), flush=True)'`
     ],
@@ -94,6 +96,8 @@ async function main(): Promise<void> {
   if (options === "help") {
     console.log(`Usage: bun run vnc:frame-clock [--app BUNDLE_ID]… [--seconds 60] [--mode video|scroll|type|still]
                                [--port 8765] [--out DIR] [--label TEXT] [--host-ssh USER@HOST]
+                               [--host-key-alias NAME] [--page-host ADDRESS]
+--page-host is the address the viewed Mac opens the page at (this Mac's Tailscale address when the two are on different networks).
 --host-ssh measures the viewed Mac's clock offset and reports each viewer's image age (open the URL with &clock=epoch).
 Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run screen-sharing:rig build --build-only).`)
     return
@@ -111,14 +115,16 @@ Defaults to the rig and Apple Screen Sharing. Build the rig first (bun run scree
     options.out ?? join(root, "tmp/vnc-frame-clock", new Date().toISOString().replaceAll(":", "-"))
   mkdirSync(out, { recursive: true })
   const clock =
-    options.hostSsh === undefined ? undefined : await measureClockOffset(options.hostSsh)
+    options.hostSsh === undefined
+      ? undefined
+      : await measureClockOffset(options.hostSsh, options.hostKeyAlias)
   if (clock !== undefined) {
     console.log(
       `${options.hostSsh} clock: ${clock.offsetMs.toFixed(1)} ms ahead of this Mac (± ${(clock.roundTripMs / 2).toFixed(1)} ms)`
     )
   }
   console.log(
-    `Open http://${lanAddress()}:${options.port}/?mode=${options.mode}${clock === undefined ? "" : "&clock=epoch"} on the viewed machine, full screen.`
+    `Open http://${options.pageHost ?? lanAddress()}:${options.port}/?mode=${options.mode}${clock === undefined ? "" : "&clock=epoch"} on the viewed machine, full screen.`
   )
   console.log(
     "Then click the page (or reload it) once the capture below is waiting; it calibrates on the orange strip."

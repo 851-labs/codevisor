@@ -8,6 +8,12 @@ export type FrameClockOptions = {
   /// `user@host` of the viewed Mac: measure its clock offset over SSH and ask the page for
   /// wall-clock frames, so each viewer's absolute image age is reported (851-2371).
   hostSsh?: string
+  /// The host key name to check `hostSsh` against, when it's reached by another name (tuftlord
+  /// by its Tailscale address, keyed under its LAN name).
+  hostKeyAlias?: string
+  /// The address the viewed Mac opens the page at; by default this Mac's first LAN address,
+  /// which a Mac on another network (over Tailscale) can't reach.
+  pageHost?: string
   apps: string[]
   seconds: number
   mode: FrameClockMode
@@ -88,6 +94,12 @@ export function parseFrameClockArguments(argv: string[]): FrameClockOptions | "h
         break
       case "--host-ssh":
         options.hostSsh = value
+        break
+      case "--host-key-alias":
+        options.hostKeyAlias = value
+        break
+      case "--page-host":
+        options.pageHost = value
         break
       default:
         throw new Error(`unknown option ${key}`)

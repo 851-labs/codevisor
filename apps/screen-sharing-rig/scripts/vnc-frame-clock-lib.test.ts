@@ -86,4 +86,15 @@ test("vnc:frame-clock takes the host clock offset from the shortest round trip (
   assert.equal(clockOffset([]), undefined)
   const parsed = parseFrameClockArguments(["--host-ssh", "u@h"])
   assert.ok(parsed !== "help" && parsed.hostSsh === "u@h")
+  const remote = parseFrameClockArguments([
+    "--host-ssh",
+    "u@100.1.2.3",
+    "--host-key-alias",
+    "h.local",
+    "--page-host",
+    "100.4.5.6"
+  ])
+  assert.ok(
+    remote !== "help" && remote.hostKeyAlias === "h.local" && remote.pageHost === "100.4.5.6"
+  )
 })
