@@ -92,6 +92,9 @@ final class ScreenSharingHostService {
     }
   }
   private var current: Session?
+  /// Why the host itself last ended a viewer's session, told to that viewer's next heartbeat: its
+  /// connection just drops, and "the connection ended" blamed the network (851-2397).
+  private var lastEnd: (owner: ScreenSharingHostLease.Owner, reason: String)?
   // Enumeration can suspend before a session owns the lease. Stop must invalidate those attempts by owner too.
   private var pendingStarts: [UUID: ScreenSharingHostLease.Owner] = [:]
   private var isShutdown = false
@@ -156,6 +159,7 @@ final class ScreenSharingHostService {
       guard let current, !current.stopping,
         lease.renew(.init(request), now: ProcessInfo.processInfo.systemUptime)
       else {
+        if let lastEnd, lastEnd.owner == .init(request) { return .init(status: "failed", message: lastEnd.reason) }
         return .init(status: "stopped", message: "Screen sharing ended on the host Mac.")
       }
       let labels = current.metrics.snapshot().labels
@@ -225,6 +229,7 @@ final class ScreenSharingHostService {
           return .init(status: "busy", message: "This Mac is already sharing with another viewer.")
         }
         current = session
+        lastEnd = nil
         configure(session)
         do {
           try await session.peer.accept(.init(kind: "offer", sdp: offer))
@@ -352,7 +357,9 @@ final class ScreenSharingHostService {
               self.scheduleEnd(session)
             }
             await self.recoverStalledCapture(session, baseline: baseline)
-          } catch { await self.end(session) }
+          } catch {
+            await self.end(session, reason: (error as? ScreenSharingError)?.localizedDescription ?? Self.captureFailed)
+          }
         }
       } else if ["disconnected", "failed", "closed"].contains(state) {
         session.state = "reconnecting"
@@ -383,11 +390,14 @@ final class ScreenSharingHostService {
     session.state = "stopping"
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
-    Task { await end(session) }
+    Task { await end(session, reason: "Screen sharing was stopped on the host Mac.") }
   }
 
-  private func end(_ session: Session) async {
+  static let captureFailed = "The host Mac couldn't start capturing its screen. Try again."
+
+  private func end(_ session: Session, reason: String? = nil) async {
     guard current === session, !session.stopping else { return }
+    if let reason { lastEnd = (session.owner, reason) }
     session.stopping = true
     session.control?.revoke("Screen sharing ended.")
     session.clipboard?.cancel(reason: "Screen sharing ended.")
