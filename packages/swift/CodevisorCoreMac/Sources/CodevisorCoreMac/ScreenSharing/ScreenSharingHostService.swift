@@ -347,8 +347,9 @@ final class ScreenSharingHostService {
           guard let self, let session else { return }
           do {
             let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
-            try await self.startWatchedCapture(session, reason: "viewer connected")
+            let started = try await self.startFirstCapture(session)
             guard self.current === session, !session.stopping else { try? await session.capture.stop(); return }
+            try await self.catchUpWithResize(session, startedWith: started)
             session.state = "viewing"
             session.notice = nil
             session.displaySleepAssertion = ScreenSharingDisplaySleepAssertion(reason: "Codevisor Screen Sharing")

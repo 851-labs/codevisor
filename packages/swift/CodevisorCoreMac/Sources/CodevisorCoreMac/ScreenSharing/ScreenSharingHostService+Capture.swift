@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import ScreenSharing
 
@@ -35,5 +36,30 @@ extension ScreenSharingHostService {
   static func milliseconds(since start: ContinuousClock.Instant) -> Int {
     let elapsed = ContinuousClock.now - start
     return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
+  }
+
+  /// The capture a viewer's connection starts, and what it started with.
+  func startFirstCapture(
+    _ session: Session
+  ) async throws -> (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration) {
+    let started = (display: session.captureDisplayID, configuration: session.configuration)
+    try await startWatchedCapture(session, reason: "viewer connected")
+    return started
+  }
+
+  /// A resize only moves a capture that's running. One that lands while the first capture is
+  /// still starting (on tuftlord a start took 1.1 s) made the virtual display and mirrored onto
+  /// it, and the capture then stayed on the old display at the old size: the viewer saw the
+  /// desktop cut off and letterboxed. Once the start returns, the capture follows.
+  func catchUpWithResize(
+    _ session: Session,
+    startedWith started: (display: CGDirectDisplayID, configuration: ScreenSharingVideoConfiguration)
+  ) async throws {
+    if session.captureDisplayID != started.display {
+      try? await session.capture.stop()
+      try await startWatchedCapture(session, reason: "display changed while starting")
+    } else if session.configuration != started.configuration {
+      try await session.capture.update(configuration: session.configuration)
+    }
   }
 }
