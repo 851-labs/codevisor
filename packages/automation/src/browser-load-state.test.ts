@@ -8,7 +8,7 @@ import {
 } from "./browser-load-state.js"
 
 // The load-state policy owns timing. Exercise it without sockets or Chromium;
-// browser-improvements.test.ts separately covers real CDP event delivery.
+// browser-improvements.chrome.test.ts separately covers real CDP event delivery.
 const fixture = () => {
   let readyState = "complete"
   const send = vi.fn(async (method: string) => {

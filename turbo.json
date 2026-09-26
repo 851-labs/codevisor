@@ -18,6 +18,10 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
+    "test:chrome": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "@codevisor/cloud#test:coverage": {
       "dependsOn": ["^build"],
       "outputs": []

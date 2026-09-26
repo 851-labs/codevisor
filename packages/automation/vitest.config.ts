@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 // Browser/Computer Use and code execution are integration boundaries over
 // Chrome CDP, WebSockets, QuickJS, and native desktop bridges (rationale
@@ -11,8 +11,10 @@ import { defineConfig } from "vitest/config"
 // and every tool-definition table) stay at 100%.
 export default defineConfig({
   test: {
-    // Each worker can launch Chromium and QuickJS alongside the other
-    // packages' suites. Bound this fan-out without serializing the tests.
+    // Real-Chrome tests run separately (vitest.chrome.config.ts, `test:chrome`).
+    exclude: [...configDefaults.exclude, "src/**/*.chrome.test.ts"],
+    // Each worker can run QuickJS alongside the other packages' suites.
+    // Bound this fan-out without serializing the tests.
     maxWorkers: 4,
     // Browser Use and code-execution tests drive Chrome, WebSockets, and a
     // QuickJS sandbox per test; on a loaded CI runner — where every

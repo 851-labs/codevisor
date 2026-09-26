@@ -25,6 +25,7 @@
     "format:check": "oxfmt -c .oxfmtrc.json --disable-nested-config --check .",
     "test": "turbo run test --concurrency=4",
     "test:coverage": "turbo run test:coverage --concurrency=4",
+    "test:chrome": "turbo run test:chrome",
     "check:js": "bun run format:check && bun run lint && bun run ratchet:check && bun run boundaries && bun run typecheck && bun run test:coverage && bun run dev:scripts:test && bun run release:scripts:test",
     "check": "bun run check:js && bun run swift:format:check && bun run swift:lint && bun run swift:test && bun run swift:test:macos-transcript && bun run swift:build:ios",
     "dev:web": "bun run --cwd apps/www dev",

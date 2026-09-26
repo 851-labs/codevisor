@@ -1,0 +1,46 @@
+name: Browser Chrome
+
+# The real-Chrome Browser Use suite (packages/automation, *.chrome.test.ts):
+# behavior only a real rendering engine can show — accessibility trees,
+# document order, trusted input, cross-origin frames, real CDP events. The
+# rest of Browser Use is covered with CDP fakes in `bun run check`.
+#
+# It runs apart from Build and the pre-commit hook: a cold Chromium start is
+# slow and variable on shared runners, and only browser automation changes or
+# a new Chromium can change what it tests. Nightly runs catch drift.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/automation/**"
+      - ".github/workflows/browser-chrome.yml"
+  pull_request:
+    paths:
+      - "packages/automation/**"
+      - ".github/workflows/browser-chrome.yml"
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-chrome-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chrome:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run test:chrome

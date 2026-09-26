@@ -12,7 +12,8 @@
     "build": "tsc -b tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit --tsBuildInfoFile tmp/typecheck.tsbuildinfo --pretty false",
     "test": "vitest run src --passWithNoTests",
-    "test:coverage": "vitest run src --coverage"
+    "test:coverage": "vitest run src --coverage",
+    "test:chrome": "vitest run --config vitest.chrome.config.ts"
   },
   "dependencies": {
     "@babel/parser": "7.29.7",

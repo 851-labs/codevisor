@@ -29,7 +29,7 @@ export interface PointerReply {
 }
 
 /* v8 ignore start -- this function only ever runs inside the page via Runtime.evaluate; the
- * headless Chromium test in browser-use-provider.test.ts exercises it end to end. */
+ * headless Chromium test in browser-use-provider.chrome.test.ts exercises it end to end. */
 /* oxlint-disable unicorn/consistent-function-scoping -- the overlay is serialized with
  * toString() and evaluated in the page, so its helpers must stay inside it. */
 const pointerOverlay = (command: PointerCommand): PointerReply => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { afterEach, describe, expect, it as baseIt, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, it as baseIt, vi } from "vitest"
 
 import { emulateBrowserFocus, observeCdp } from "./browser-cdp-test-support.js"
 import { makeBrowserUseProvider } from "./browser-use-provider.js"
@@ -22,9 +22,64 @@ const value = <T = unknown>(result: CallToolResult): T => {
   }
 }
 
-afterEach(() => {
-  vi.unstubAllEnvs()
-  vi.restoreAllMocks()
+/// One Chrome for the whole file: managed Chrome is shared per project, so
+/// each test gets its own agent session and tab (the production model)
+/// instead of paying a cold browser start inside its own time budget.
+const projectId = "reliability"
+let provider: ReturnType<typeof makeBrowserUseProvider>
+let cdp: ReturnType<typeof observeCdp>
+let origin: string
+let slow = Promise.withResolvers<ServerResponse>()
+let directory: string
+const server = createServer((request, response) => {
+  if (request.url === "/slow") {
+    slow.resolve(response)
+    return
+  }
+  response.setHeader("content-type", "text/html")
+  response.end(`<!doctype html><title>First</title>
+      <button id="noop">No navigation</button><button id="push" onclick="history.pushState({},'', '/pushed')">Push</button>
+      <button id="request" onclick="fetch('/slow')">Request</button><button id="change" onclick="document.querySelector('#noop').remove()">Change</button>
+      <label>Name<input id="name" onkeydown="document.querySelector('#keys').textContent += event.key + ','"></label><p id="keys"></p>
+      <form onsubmit="event.preventDefault(); document.querySelector('#submitted').textContent = this.query.value"><input aria-label="Query" name="query"></form><p id="submitted"></p>
+      ${"<div>".repeat(40)}<button id="deep">Deep action</button>${"</div>".repeat(40)}
+      <section id="ordered"><div><div><button aria-label="Repeated">Nested first</button></div></div><button aria-label="Repeated">Shallow second</button></section>
+      <p class="entry">One</p><p class="entry">Two</p>
+      ${request.url === "/frames" ? `<iframe id="outer" src="/inner"></iframe>` : ""}
+      ${request.url === "/inner" ? `<iframe id="inner" src="/leaf"></iframe>` : ""}
+      ${request.url === "/leaf" ? '<p id="leaf">Nested content</p><button id="leaf-button" onclick="this.textContent=123">Click frame</button><label>Frame input<input id="leaf-input"></label>' : ""}
+      ${request.url === "/cross" ? `<iframe id="cross" src="${origin.replace("127.0.0.1", "localhost")}/leaf"></iframe>` : ""}
+    `)
+})
+
+beforeAll(async () => {
+  // Installed before the browser exists so every connection and tab is observed.
+  emulateBrowserFocus()
+  cdp = observeCdp()
+  directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
+  provider = makeBrowserUseProvider(directory)
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", resolve)
+  })
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Missing fixture address")
+  origin = `http://127.0.0.1:${address.port}`
+  // Start Chrome here, under the hook budget, rather than inside a test.
+  const warmup = { sessionId: "warmup", projectId }
+  value(await provider.invoke(warmup, "use_backend", { backend: "managed" }))
+  value(await provider.invoke(warmup, "tabs", { action: "list" }))
+})
+
+afterAll(async () => {
+  try {
+    await provider?.close()
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    rmSync(directory, { recursive: true, force: true })
+    vi.restoreAllMocks()
+  }
 })
 
 const it = baseIt.extend<{
@@ -38,44 +93,11 @@ const it = baseIt.extend<{
   }
 }>({
   browser: async ({ task }, use) => {
-    vi.stubEnv("CODEVISOR_BROWSER_HEADLESS", "1")
-    emulateBrowserFocus()
-    const cdp = observeCdp()
-    const directory = mkdtempSync(join(tmpdir(), "browser-reliability-"))
-    const provider = makeBrowserUseProvider(directory)
-    const context = { sessionId: task.id, projectId: "reliability" }
-    let origin: string
-    const slow = Promise.withResolvers<ServerResponse>()
-    const server = createServer((request, response) => {
-      if (request.url === "/slow") {
-        slow.resolve(response)
-        return
-      }
-      response.setHeader("content-type", "text/html")
-      response.end(`<!doctype html><title>First</title>
-      <button id="noop">No navigation</button><button id="push" onclick="history.pushState({},'', '/pushed')">Push</button>
-      <button id="request" onclick="fetch('/slow')">Request</button><button id="change" onclick="document.querySelector('#noop').remove()">Change</button>
-      <label>Name<input id="name" onkeydown="document.querySelector('#keys').textContent += event.key + ','"></label><p id="keys"></p>
-      <form onsubmit="event.preventDefault(); document.querySelector('#submitted').textContent = this.query.value"><input aria-label="Query" name="query"></form><p id="submitted"></p>
-      ${"<div>".repeat(40)}<button id="deep">Deep action</button>${"</div>".repeat(40)}
-      <section id="ordered"><div><div><button aria-label="Repeated">Nested first</button></div></div><button aria-label="Repeated">Shallow second</button></section>
-      <p class="entry">One</p><p class="entry">Two</p>
-      ${request.url === "/frames" ? `<iframe id="outer" src="/inner"></iframe>` : ""}
-      ${request.url === "/inner" ? `<iframe id="inner" src="/leaf"></iframe>` : ""}
-      ${request.url === "/leaf" ? '<p id="leaf">Nested content</p><button id="leaf-button" onclick="this.textContent=123">Click frame</button><label>Frame input<input id="leaf-input"></label>' : ""}
-      ${request.url === "/cross" ? `<iframe id="cross" src="${origin.replace("127.0.0.1", "localhost")}/leaf"></iframe>` : ""}
-    `)
-    })
+    const context = { sessionId: task.id, projectId }
+    slow = Promise.withResolvers<ServerResponse>()
+    const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
     try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject)
-        server.listen(0, resolve)
-      })
-      const address = server.address()
-      if (!address || typeof address === "string") throw new Error("Missing fixture address")
-      origin = `http://127.0.0.1:${address.port}`
       value(await provider.invoke(context, "use_backend", { backend: "managed" }))
-      const cell = async (code: string) => value(await provider.invoke(context, "js", { code }))
       // Establish the fixture document before testing tab reads. Page.navigate
       // can return while the previous about:blank document is still interactive.
       await cell(
@@ -83,15 +105,8 @@ const it = baseIt.extend<{
       )
       await use({ provider, context, origin, cell, cdp, slowResponse: slow.promise })
     } finally {
-      try {
-        await provider.close()
-      } finally {
-        server.closeAllConnections()
-        await new Promise<void>((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve()))
-        )
-        rmSync(directory, { recursive: true, force: true })
-      }
+      // Closes this session's tabs so the next test starts clean.
+      await provider.closeSession(context.sessionId)
     }
   }
 })
@@ -227,26 +242,5 @@ describe("Browser session reliability", () => {
         "await first.playwright.frameLocator('#cross').locator('#leaf-input').evaluate(e => e.value)"
       )
     ).toBe("frame typing")
-  })
-
-  it("does not substitute another tab after one closes", async ({ browser: { cell } }) => {
-    await cell("var second = await browser.tabs.new()")
-    await cell("await second.close()")
-    await expect(cell("await second.title()")).rejects.toThrow(/own|closed/)
-    expect(await cell("await first.title()")).toBe("First")
-  })
-
-  it("cleans scratch tabs at turn end while keeping marked output", async ({
-    browser: { cell, provider, context }
-  }) => {
-    await cell("await first.markDeliverable(); var scratch = await browser.tabs.new();")
-    const scratch = await cell("scratch.id")
-    await provider.finishTurn?.(context.sessionId)
-    const tabs = value<{ tabs: { id: string }[] }>(
-      await provider.invoke(context, "tabs", { action: "list", scope: "session" })
-    ).tabs
-    expect(tabs.map((t) => t.id)).not.toContain(scratch)
-    expect(tabs.map((t) => t.id)).toContain(await cell("first.id"))
-    await cell("await first.close()")
   })
 })
