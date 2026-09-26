@@ -108,6 +108,34 @@ struct NativeScreenSharingViewerBackendTests {
     #expect(harness.sessions.count == 1 && harness.sessions[0].closed)
   }
 
+  /// 851-2397: the host's capture failed and it ended the session; the viewer only saw its
+  /// connection drop, and blamed the network.
+  @Test func aConnectionTheHostEndedShowsTheHostsReason() async throws {
+    let reason = "The host Mac couldn't start capturing its screen. Try again."
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(heartbeatReplies: [.init(status: "failed", message: reason)]))
+    harness.configureSession = { $0.deliversVideo = false }
+    harness.connect()
+    await harness.clock.waitForSleep(.seconds(8))
+    harness.sessions[0].onConnectionChanged?("failed")
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(harness.log.events.last == .ended(reason))
+    #expect(await harness.transport.requests.filter { $0.operation == .restart }.isEmpty)
+  }
+
+  @Test func aHostThatStoppedSharingIsNotReconnectedTo() async throws {
+    let reason = "Screen sharing was stopped on the host Mac."
+    let harness = NativeBackendHarness(
+      transport: SharingTransport(heartbeatReplies: [.init(status: "failed", message: reason)]))
+    harness.connect()
+    await awaitObserved { harness.log.events.contains(.ready) }
+    harness.sessions[0].onConnectionChanged?("disconnected")
+    await awaitObserved { harness.log.finished == 1 }
+    #expect(harness.log.events.last == .ended(reason))
+    #expect(!harness.log.events.contains(.reconnecting))
+    #expect(await harness.transport.requests.filter { $0.operation == .restart }.isEmpty)
+  }
+
   @Test func cancellingDuringABlockedStartStopsBeforeTheNextStart() async throws {
     let harness = NativeBackendHarness(transport: SharingTransport(blockFirstStart: true))
     let first = harness.connect()

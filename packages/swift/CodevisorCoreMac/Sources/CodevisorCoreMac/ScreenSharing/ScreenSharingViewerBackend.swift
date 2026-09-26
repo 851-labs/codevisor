@@ -182,6 +182,8 @@ private final class NativeScreenSharingViewerRunner {
     var ready = false
     var started = false
     var outcome: Outcome?
+    /// The media connection dropped, as opposed to signaling ending the attempt.
+    var transportEnded = false
   }
 
   private func run(display: String, emit: @escaping @Sendable (ScreenSharingViewerEvent) -> Void) async {
@@ -238,6 +240,7 @@ private final class NativeScreenSharingViewerRunner {
         }
         session.onConnectionChanged = { transport in
           guard ["failed", "disconnected", "closed"].contains(transport), attempt.outcome == nil else { return }
+          attempt.transportEnded = true
           attempt.outcome =
             attempt.ready && restarts < 3 && transport != "closed"
             ? .lost : .ended("The screen-sharing connection ended. Reconnect to continue.")
@@ -293,8 +296,25 @@ private final class NativeScreenSharingViewerRunner {
     attempt.endpoint?.close()
     // A transport outcome recorded by a callback wins over the cancellation it
     // caused; the stream's own cancellation wins over anything else.
-    let outcome = Task.isCancelled ? .cancelled : (attempt.outcome ?? result)
+    var outcome = Task.isCancelled ? .cancelled : (attempt.outcome ?? result)
+    // A host that ended the session itself only drops the connection; it says why on request
+    // (851-2397), which beats blaming the network.
+    if attempt.transportEnded, attempt.started, !Task.isCancelled, let reason = await hostEndReason(viewerId: viewerId)
+    {
+      outcome = .ended(reason)
+    }
     return (outcome, attempt.started)
+  }
+
+  /// The host's reason for ending `viewerId`'s session, if the host ended it itself.
+  private func hostEndReason(viewerId: UUID) async -> String? {
+    let heartbeat = request(.heartbeat, viewerId: viewerId)
+    let client = client
+    // A fresh task: the attempt's own was cancelled when the connection dropped.
+    guard let reply = try? await Task(operation: { try await client.screenSharing(heartbeat) }).value,
+      reply.status == "failed"
+    else { return nil }
+    return reply.message
   }
 
   private func request(
