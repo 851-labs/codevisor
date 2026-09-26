@@ -136,6 +136,7 @@ func makeHub(
   heartbeatInterval: Duration = .seconds(30),
   heartbeatTimeout: Duration = .seconds(10),
   clock: TestClock = TestClock(),
+  releaseChannel: CloudReleaseChannel = CloudReleaseChannel(),
   onMachineWait: @escaping @Sendable () -> Void = {}
 ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
   let store = InMemoryCloudCredentialStore(token: "session-token")
@@ -144,6 +145,7 @@ func makeHub(
     credentialStore: store,
     deviceName: "Test App",
     deviceOS: "macOS",
+    releaseChannel: releaseChannel,
     webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
     readyTimeout: .seconds(2),
     heartbeatInterval: heartbeatInterval,

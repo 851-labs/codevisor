@@ -131,6 +131,14 @@ extension MachineController {
   /// The cloud presence record carrying the machine's active route. A
   /// `cloud:` id resolves directly; a configured id resolves through its
   /// persisted twin only after reachability has selected relay fallback.
+  /// A screen-sharing media route over the tunnel to a cloud-reached
+  /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines or
+  /// when the machine has no tunnel.
+  public func tunnelMediaRoute(forMachineId machineId: String) async -> CloudTunnelMediaRoute? {
+    guard let cloud = relayMachine(forMachineId: machineId) else { return nil }
+    return await cloudProvider?.tunnelMediaRoute(for: cloud)
+  }
+
   private func relayMachine(forMachineId machineId: String) -> CloudMachine? {
     if let cloud = cloudMachine(forMachineId: machineId) { return cloud }
     guard statusByMachineId[machineId]?.route == .relay else { return nil }

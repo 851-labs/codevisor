@@ -44,3 +44,16 @@ extension CloudAccountController {
     }
   }
 }
+
+// MARK: - Tunnel media
+
+extension CloudAccountController {
+  /// A screen-sharing media route over the tunnel, for a machine whose
+  /// presence carries a tunnel address and whose key is verified (the same
+  /// gate every other pipe to it passes).
+  public func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute? {
+    guard state.isSignedIn, let address = machine.tunnel, verifiedMachineKey(for: machine) != nil
+    else { return nil }
+    return await directPaths.tunnel.openMediaRoute(to: address)
+  }
+}

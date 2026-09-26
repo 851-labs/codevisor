@@ -153,6 +153,7 @@ extension AppEnvironment {
     settings.setAlphaUpdatesEnabled(enabled)
     appUpdate.setAllowsAlphaUpdates(enabled)
     machines.serverUpdateChannel = enabled ? .alpha : .stable
+    CloudReleaseChannel.shared.isAlpha = enabled
     configSync.set(
       namespace: "settings",
       key: "updateChannel",
@@ -181,6 +182,7 @@ extension AppEnvironment {
     settings.setAlphaUpdatesEnabled(alpha)
     appUpdate.setAllowsAlphaUpdates(alpha)
     machines.serverUpdateChannel = alpha ? .alpha : .stable
+    CloudReleaseChannel.shared.isAlpha = alpha
   }
 
   // MARK: - Session import discovery (moved from AppEnvironment.swift for the size ratchet)

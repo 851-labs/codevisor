@@ -10,6 +10,7 @@ mode="${1:-check}"
 files() {
   find apps packages -name "*.swift" \
     -not -path "*/Vendor/*" \
+    -not -path "*/Generated/*" \
     -not -path "*/.build/*" \
     -not -path "*DerivedData*" \
     -not -path "*/tmp/*"

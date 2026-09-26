@@ -10,6 +10,8 @@ extension CloudHubConnection {
       var os: String
       var appVersion: String?
       var publicKey: String
+      var tunnelEndpointId: String?
+      var releaseChannel: String
     }
 
     var t = "hello"
@@ -30,6 +32,19 @@ extension CloudHubConnection {
     var frame: CloudRelayFrame
   }
 
+  /// The `/connect` upgrade request.
+  static func connectRequest(url: URL, identity: CloudAppDeviceIdentity) -> URLRequest {
+    var request = URLRequest(url: url)
+    // The query token is the sole credential. Never let a stale session
+    // cookie from the shared jar ride along — if the hub honored it over the
+    // token, this device would silently join the wrong account.
+    request.httpShouldHandleCookies = false
+    // Registers this device's tunnel endpoint so our relays serve it.
+    request.setValue(
+      CloudTunnelIdentity.endpointId(for: identity), forHTTPHeaderField: "x-codevisor-tunnel-endpoint")
+    return request
+  }
+
   func sendHello(identity: CloudAppDeviceIdentity) throws {
     let hello = HelloMessage(
       device: HelloMessage.Device(
@@ -38,7 +53,9 @@ extension CloudHubConnection {
         name: deviceName,
         os: deviceOS,
         appVersion: appVersion,
-        publicKey: identity.publicKey
+        publicKey: identity.publicKey,
+        tunnelEndpointId: CloudTunnelIdentity.endpointId(for: identity),
+        releaseChannel: releaseChannel.wireValue
       ),
       resume: resumeToken
     )

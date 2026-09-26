@@ -24,6 +24,7 @@ public actor CloudHubConnection {
   let deviceName: String
   let deviceOS: String
   let appVersion: String?
+  let releaseChannel: CloudReleaseChannel
   let sleep: @Sendable (Duration) async throws -> Void
   private let reconnectDelay: @Sendable (Int) -> Duration
   private let onMachineWait: @Sendable () -> Void
@@ -85,6 +86,10 @@ public actor CloudHubConnection {
   /// another device appear in the UI in realtime, instead of waiting for
   /// the next foreground or a settings screen's poll.
   var machinesChangedHandler: (@Sendable ([CloudMachine]) -> Void)?
+  /// Fired on every welcome with the instance's tunnel relay map and rollout;
+  /// the latest is replayed to a handler installed after the welcome.
+  var tunnelConfigHandler: (@Sendable (CloudTunnelConfig) -> Void)?
+  var lastTunnelConfig: CloudTunnelConfig?
 
   /// Installs the presence observer (actor-isolated setter for the field
   /// above; the handler is invoked from the actor and must hop itself).
@@ -139,6 +144,7 @@ public actor CloudHubConnection {
     deviceName: String = CloudHubConnection.defaultDeviceName,
     deviceOS: String = CloudHubConnection.defaultDeviceOS,
     appVersion: String? = nil,
+    releaseChannel: CloudReleaseChannel = .shared,
     webSocketTransport: any ServerWebSocketTransport = URLSessionWebSocketTransport(),
     readyTimeout: Duration = .seconds(15),
     heartbeatInterval: Duration = .seconds(30),
@@ -159,6 +165,7 @@ public actor CloudHubConnection {
     self.deviceName = deviceName
     self.deviceOS = deviceOS
     self.appVersion = appVersion
+    self.releaseChannel = releaseChannel
     self.webSocketTransport = webSocketTransport
     self.readyTimeout = readyTimeout
     self.heartbeatInterval = heartbeatInterval
@@ -271,12 +278,7 @@ public actor CloudHubConnection {
       do {
         let token = try sessionToken()
         let identity = try appDeviceIdentity()
-        var request = URLRequest(url: try connectURL(token: token))
-        // The query token is the sole credential. Never let a stale
-        // session cookie from the shared jar ride along — if the hub
-        // honored it over the token, this device would silently join
-        // the wrong account.
-        request.httpShouldHandleCookies = false
+        let request = Self.connectRequest(url: try connectURL(token: token), identity: identity)
         Log.cloud.info("Connecting to cloud hub at \(self.serverURL.host() ?? "?", privacy: .public)")
         let socket = webSocketTransport.connect(
           request,

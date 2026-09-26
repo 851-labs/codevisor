@@ -189,6 +189,8 @@ public final class AppEnvironment {
     }
     projectList.showsImportedSessions = settings.importExternalSessions
     machines.serverUpdateChannel = settings.alphaUpdatesEnabled ? .alpha : .stable
+    // The hub gates the tunnel by channel while TUNNEL_ROLLOUT is "alpha".
+    CloudReleaseChannel.shared.isAlpha = settings.alphaUpdatesEnabled
     machines.onHarnessLifecycleChanged = { [weak self] in self?.noteHarnessLifecycle(onServer: $0) }
     machines.onHarnessAuthChanged = { [weak self] in self?.harnessCatalogDidChange(onServer: $0) }
     machines.onSyncChanged = { [weak self] in

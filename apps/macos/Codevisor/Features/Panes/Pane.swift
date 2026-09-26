@@ -9,6 +9,7 @@
 import Foundation
 import SwiftUI
 import CodevisorCore
+import CodevisorCoreMac
 
 /// The data a pane is given to do its job. The terminal pane, for example,
 /// derives its working directory and server connection from here.
@@ -49,6 +50,9 @@ struct PaneContext {
   /// its 127.0.0.1 address (MachineController.effectiveHTTPBaseURL). Nil
   /// (previews) falls back to `machine.baseURL`.
   var resolveHTTPBaseURL: (@MainActor () async -> URL?)? = nil
+  /// Opens a screen-sharing media route over the Codevisor tunnel to this
+  /// machine (docs/plans/codevisor-tunnel.md); nil for direct machines.
+  var openTunnelMedia: ScreenSharingViewerBackend.TunnelMediaProvider? = nil
 }
 
 /// Workspace tab and split commands emitted by a focused pane.

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CodevisorCore
+import CodevisorCoreMac
 import CodevisorUI
 import ACPKit
 
@@ -254,6 +255,12 @@ extension SessionStore {
         client: client,
         resolveHTTPBaseURL: {
           await machines?.effectiveHTTPBaseURL(forMachineId: serverId)
+        },
+        openTunnelMedia: {
+          guard let route = await machines?.tunnelMediaRoute(forMachineId: serverId) else { return nil }
+          return ScreenSharingTunnelMedia(
+            endpointId: route.endpointId, flowId: Int(route.flowId), localPort: route.localPort,
+            close: { route.close() })
         }
       )
     }

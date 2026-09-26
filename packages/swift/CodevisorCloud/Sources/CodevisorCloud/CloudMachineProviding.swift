@@ -28,6 +28,9 @@ public protocol CloudMachineProviding: AnyObject {
   /// sign-in still registers.
   func registerLocalMachineIfNeeded()
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool
+  /// A screen-sharing media route over the tunnel to this machine
+  /// (docs/plans/codevisor-tunnel.md); nil when there is no tunnel to it.
+  func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute?
 }
 
 public extension CloudMachineProviding {
@@ -36,6 +39,7 @@ public extension CloudMachineProviding {
   func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool { false }
   func registerLocalMachineIfNeeded() {}
   func prepareAccountSync(on client: any CodevisorServerClienting, machineId: String) async -> Bool { false }
+  func tunnelMediaRoute(for machine: CloudMachine) async -> CloudTunnelMediaRoute? { nil }
 }
 
 extension CodevisorMachine {

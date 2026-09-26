@@ -11,6 +11,8 @@ extension CloudHubConnection {
     var machines: [CloudMachine]
     var resume: String?
     var resumed: Bool?
+    var relays: [CloudTunnelConfig.Relay]?
+    var tunnel: String?
   }
 
   private struct PresenceMessage: Decodable {
@@ -72,6 +74,9 @@ extension CloudHubConnection {
       }
       machines = welcome.machines
       machinesChangedHandler?(machines)
+      let tunnelConfig = CloudTunnelConfig(relays: welcome.relays ?? [], enabled: welcome.tunnel == "on")
+      lastTunnelConfig = tunnelConfig
+      tunnelConfigHandler?(tunnelConfig)
       for machine in welcome.machines where machine.online {
         resumeMachineWaiters(for: machine.deviceId)
       }

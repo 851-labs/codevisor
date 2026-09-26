@@ -2,7 +2,9 @@ import CodevisorClient
 import Foundation
 import Observation
 
-/// Finds and keeps direct LAN pipes to the account's machines. After each
+/// Finds and keeps direct pipes to the account's machines: the peer-to-peer
+/// tunnel first (docs/plans/codevisor-tunnel.md — dialed by key, direct or
+/// through our relays), else the LAN listener. After each
 /// machine refresh the account controller hands over the online machines
 /// whose keys match their TOFU pins; for each one without a live pipe this
 /// asks the machine — over the relay — where it can be reached
@@ -48,20 +50,43 @@ public final class CloudDirectPathController {
   @ObservationIgnored private var lastAttempt: [String: ContinuousClock.Instant] = [:]
   private let prober: Prober
   private let reprobeInterval: Duration
+  /// The app's tunnel endpoint, configured from each hub welcome.
+  public let tunnel: CloudTunnelEndpoint
 
   public init(
     credentialStore: any CloudCredentialStore,
     webSocketTransport: any ServerWebSocketTransport = URLSessionWebSocketTransport(),
     reprobeInterval: Duration = .seconds(60),
+    tunnel: CloudTunnelEndpoint? = nil,
     prober: Prober? = nil
   ) {
+    let tunnel = tunnel ?? CloudTunnelEndpoint(credentialStore: credentialStore)
+    self.tunnel = tunnel
     self.reprobeInterval = reprobeInterval
     self.prober =
       prober
       ?? Self.defaultProber(
         credentialStore: credentialStore,
-        webSocketTransport: webSocketTransport
+        webSocketTransport: webSocketTransport,
+        tunnel: tunnel
       )
+  }
+
+  /// Fired (on the main actor) once a tunnel config has been applied, so the
+  /// owner can re-probe machines whose earlier probe ran before the tunnel
+  /// endpoint existed.
+  @ObservationIgnored public var onTunnelConfigured: (@MainActor () -> Void)?
+
+  /// Applies a hub welcome's tunnel config (relay map, rollout switch), then
+  /// lifts the re-probe throttle so the next reconcile tries the tunnel.
+  public func configureTunnel(_ config: CloudTunnelConfig) {
+    let tunnel = tunnel
+    Task { [weak self] in
+      await tunnel.configure(config)
+      guard let self else { return }
+      self.lastAttempt = [:]
+      self.onTunnelConfigured?()
+    }
   }
 
   /// Reconciles the pipes against the current (verified-key, online)
@@ -157,9 +182,30 @@ public final class CloudDirectPathController {
 extension CloudDirectPathController {
   static func defaultProber(
     credentialStore: any CloudCredentialStore,
-    webSocketTransport: any ServerWebSocketTransport
+    webSocketTransport: any ServerWebSocketTransport,
+    tunnel: CloudTunnelEndpoint
   ) -> Prober {
     { machine, relay, onDown in
+      if let address = machine.tunnel {
+        // Same channel protocol and verification as the LAN pipe; only the
+        // carrier differs. A machine without a tunnel, or a tunnel that
+        // doesn't answer, falls through to LAN discovery.
+        let connection = CloudDirectConnection(
+          directURL: URL(string: "tunnel://\(machine.deviceId)")!,
+          machineDeviceId: machine.deviceId,
+          machinePublicKey: machine.publicKey,
+          credentialStore: credentialStore,
+          webSocketTransport: CloudTunnelWebSocketTransport(endpoint: tunnel, address: address),
+          readyTimeout: .seconds(15),
+          onDown: onDown
+        )
+        if await Self.verifySealedRoundTrip(connection) {
+          Log.cloud.log("Tunnel path to machine \(machine.deviceId, privacy: .public) verified")
+          return connection
+        }
+        Log.cloud.notice("Tunnel path to machine \(machine.deviceId, privacy: .public) did not verify")
+        await connection.shutdown()
+      }
       guard let discovery = await Self.discoverDirectPath(over: relay),
         discovery.deviceId == machine.deviceId
       else { return nil }

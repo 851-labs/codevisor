@@ -45,7 +45,8 @@ final class ScreenSharingPane: Pane {
       return Store(initialState: state) {
         ScreenSharingViewer()
       } withDependencies: {
-        $0[ScreenSharingViewerBackend.self] = .native(client: client, workspaceId: workspaceId, paneId: descriptor.id)
+        $0[ScreenSharingViewerBackend.self] = .native(
+          client: client, workspaceId: workspaceId, paneId: descriptor.id, tunnelMedia: context.openTunnelMedia)
       }
     }
     guard let store else { return }

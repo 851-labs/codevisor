@@ -31,6 +31,10 @@ public struct ServerScreenSharingRequest: Codable, Sendable {
   public var offer: String?
   /// `setScale`: the desktop's UI scale, 1 or 2 (851-2339).
   public var scale: Int?
+  /// Media over the Codevisor tunnel: the viewer's endpoint and the flow it
+  /// opened (docs/plans/codevisor-tunnel.md). The machine bridges the flow to
+  /// the host WebRTC's socket and says so in the reply.
+  public var tunnelMedia: ServerScreenSharingTunnelMedia?
 
   public init(
     operation: Operation, workspaceId: UUID, paneId: UUID, viewerId: UUID,
@@ -54,6 +58,8 @@ public struct ServerScreenSharingReply: Codable, Sendable {
   public var provider: String?
   /// The VNC socket arbitrates control, one viewer at a time (851-2338).
   public var controlLease: Bool?
+  /// Present when the request's tunnel flow was bridged.
+  public var tunnelMedia: ServerScreenSharingTunnelMediaBridge?
 
   public init(
     status: String, message: String? = nil, displays: [ServerScreenSharingDisplay] = [], answer: String? = nil,
@@ -62,6 +68,23 @@ public struct ServerScreenSharingReply: Codable, Sendable {
     version = 1; self.status = status; self.message = message; self.displays = displays; self.answer = answer
     self.connectivity = connectivity
     self.provider = provider
+  }
+}
+
+public struct ServerScreenSharingTunnelMedia: Codable, Sendable, Equatable {
+  public let endpointId: String
+  public let flowId: Int
+  public init(endpointId: String, flowId: Int) {
+    self.endpointId = endpointId; self.flowId = flowId
+  }
+}
+
+public struct ServerScreenSharingTunnelMediaBridge: Codable, Sendable, Equatable {
+  public let flowId: Int
+  /// Largest UDP payload the flow carries; RTP packets are capped by it.
+  public let maxPayload: Int?
+  public init(flowId: Int, maxPayload: Int? = nil) {
+    self.flowId = flowId; self.maxPayload = maxPayload
   }
 }
 

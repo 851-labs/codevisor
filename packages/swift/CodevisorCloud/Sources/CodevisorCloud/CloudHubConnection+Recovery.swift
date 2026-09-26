@@ -54,3 +54,12 @@ extension CloudHubConnection {
     socket.cancel(with: .goingAway, reason: nil)
   }
 }
+
+extension CloudHubConnection {
+  /// Installs the tunnel config observer (fired on every welcome). A welcome
+  /// that already arrived is replayed, so installing late never misses it.
+  public func setTunnelConfigHandler(_ handler: (@Sendable (CloudTunnelConfig) -> Void)?) {
+    tunnelConfigHandler = handler
+    if let lastTunnelConfig { handler?(lastTunnelConfig) }
+  }
+}

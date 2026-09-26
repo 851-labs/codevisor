@@ -116,6 +116,24 @@ let package = Package(
     .target(
       name: "CGVirtualDisplayPrivate", path: "CGVirtualDisplayPrivate", publicHeadersPath: "include",
       cSettings: strictCSettings, linkerSettings: [.linkedFramework("CoreGraphics")]),
+    // MARK: CodevisorNet (the peer-to-peer tunnel, docs/plans/codevisor-tunnel.md): the Rust core
+    // (packages/net) as a static xcframework, linked from the shared artifact cache by
+    // `node scripts/net-artifact.mjs ensure-swift`, plus its uniffi-generated Swift bindings. The
+    // bindings are generated code (refreshed by the same command, committed so CI detects drift), so
+    // this one target keeps the Swift 5 language mode the generator targets instead of the strict set.
+    .binaryTarget(name: "CodevisorNetFFI", path: "Frameworks/CodevisorNetFFI.xcframework"),
+    .target(
+      name: "CodevisorNet",
+      dependencies: ["CodevisorNetFFI"],
+      path: "CodevisorNet/Sources/CodevisorNet",
+      swiftSettings: [.swiftLanguageMode(.v5)],
+      linkerSettings: [
+        .linkedFramework("SystemConfiguration"),
+        .linkedFramework("Network"),
+        .linkedFramework("Security"),
+        .linkedFramework("CoreWLAN", .when(platforms: [.macOS])),
+      ]
+    ),
     // MARK: CodevisorTheming (VSCode/Shiki theme parsing, normalization,
     // palette derivation — Foundation-only, no SwiftUI)
     .target(
@@ -293,6 +311,7 @@ let package = Package(
         "ACPKit",
         "CodevisorProtocol",
         "CodevisorClient",
+        "CodevisorNet",
       ],
       path: "CodevisorCloud/Sources/CodevisorCloud",
       swiftSettings: strictSwiftSettings,

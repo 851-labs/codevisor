@@ -483,6 +483,13 @@ public final class CloudAccountController {
           self.reconcilePresence(with: transportMachines)
         }
       }
+      await hub.setTunnelConfigHandler { [weak self] config in
+        Task { @MainActor in
+          guard let self else { return }
+          self.directPaths.onTunnelConfigured = { [weak self] in self?.reconcileDirectPaths() }
+          self.directPaths.configureTunnel(config)
+        }
+      }
     }
     return hub
   }

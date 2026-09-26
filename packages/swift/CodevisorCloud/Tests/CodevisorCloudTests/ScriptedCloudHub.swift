@@ -32,6 +32,11 @@ final class ScriptedCloudHub: @unchecked Sendable {
   var onRelay: (@Sendable (RelayEnvelope) -> Void)?
   private(set) var sawHello = false
   var appPublicKey: String?
+  /// The tunnel endpoint id the app registered in its hello.
+  var helloTunnelEndpointId: String?
+  var helloReleaseChannel: String?
+  /// Tunnel fields every welcome carries (nil = an older hub without them).
+  var tunnelWelcome: (relays: [CloudTunnelConfig.Relay], tunnel: String)?
   var respondsToPing = true
   /// Session resume scripting: when true, welcomes carry rotating resume
   /// tokens and a hello presenting the current token resumes (same
@@ -163,6 +168,8 @@ final class ScriptedCloudHub: @unchecked Sendable {
           var deviceId: String
           var kind: String
           var publicKey: String
+          var tunnelEndpointId: String?
+          var releaseChannel: String?
         }
 
         var device: Device
@@ -173,6 +180,8 @@ final class ScriptedCloudHub: @unchecked Sendable {
         lock.withLock {
           sawHello = true
           appPublicKey = hello.device.publicKey
+          helloTunnelEndpointId = hello.device.tunnelEndpointId
+          helloReleaseChannel = hello.device.releaseChannel
           let resumed =
             issueResumeTokens && acceptResume && hello.resume != nil
             && hello.resume == issuedToken
@@ -187,7 +196,9 @@ final class ScriptedCloudHub: @unchecked Sendable {
             connectionId: currentConnectionId,
             machines: machines,
             resume: issuedToken,
-            resumed: resumed ? true : nil
+            resumed: resumed ? true : nil,
+            relays: tunnelWelcome?.relays,
+            tunnel: tunnelWelcome?.tunnel
           )
         }
       }
@@ -209,6 +220,8 @@ final class ScriptedCloudHub: @unchecked Sendable {
     var machines: [CloudMachine]
     var resume: String?
     var resumed: Bool?
+    var relays: [CloudTunnelConfig.Relay]?
+    var tunnel: String?
   }
 }
 

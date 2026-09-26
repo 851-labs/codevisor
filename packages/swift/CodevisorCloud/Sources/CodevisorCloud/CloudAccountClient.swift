@@ -36,6 +36,9 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
   public var os: String?
   public var appVersion: String?
   public var publicKey: String
+  /// The machine's tunnel endpoint and last reported addresses; absent for
+  /// machines that predate the tunnel (docs/plans/codevisor-tunnel.md).
+  public var tunnel: CloudTunnelInfo?
   public var online: Bool
   /// ISO timestamp of the last connect/disconnect the hub observed.
   public var lastSeenAt: String
@@ -48,6 +51,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
     os: String? = nil,
     appVersion: String? = nil,
     publicKey: String,
+    tunnel: CloudTunnelInfo? = nil,
     online: Bool,
     lastSeenAt: String
   ) {
@@ -56,6 +60,7 @@ public struct CloudMachine: Codable, Identifiable, Equatable, Sendable {
     self.os = os
     self.appVersion = appVersion
     self.publicKey = publicKey
+    self.tunnel = tunnel
     self.online = online
     self.lastSeenAt = lastSeenAt
   }
