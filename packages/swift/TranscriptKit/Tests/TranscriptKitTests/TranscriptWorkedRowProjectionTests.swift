@@ -55,6 +55,45 @@ struct TranscriptWorkedRowProjectionTests {
     #expect(!ConversationItem.assistant(historical).hasRenderableTranscriptContent)
   }
 
+  /// Tool calls hide "Thinking…" while they run. The activity row must stay
+  /// laid out through that toggle, or each tool start/finish bounces the
+  /// bottom-pinned transcript by the row's height. Once answer text streams
+  /// the row goes, so no blank gap sits under the answer.
+  @Test func activityRowHoldsAcrossToolCallsUntilAnswerStreams() {
+    let messageID = UUID()
+    let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")
+    func rows(_ entries: [TranscriptEntry]) -> [TranscriptPresentationRow] {
+      TranscriptActiveRowProjection.rows(
+        for: .assistant(
+          AssistantMessage(
+            id: messageID,
+            turn: AssistantTurn(
+              entries: entries,
+              isGenerating: true,
+              textPhases: ["commentary": .commentary]
+            )
+          )))
+    }
+    let activityID = TranscriptPresentationRow.ID.activeChrome(messageID, .activity)
+    let running = rows([
+      commentary,
+      .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .inProgress)),
+    ])
+    let settled = rows([
+      commentary,
+      .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .completed)),
+    ])
+    let answering = rows([
+      commentary,
+      .tool(ToolCall(toolCallId: "read", title: "Read source", kind: .read, status: .completed)),
+      .text(id: "answer", markdown: "The bug is in the parser."),
+    ])
+
+    #expect(running.last?.id == activityID)
+    #expect(settled.last?.id == activityID)
+    #expect(!answering.contains { $0.id == activityID })
+  }
+
   @Test func streamedWorkedSectionKeepsAStableHeaderAsToolCallsArrive() {
     let messageID = UUID()
     let commentary = TranscriptEntry.text(id: "commentary", markdown: "Checking the code.")

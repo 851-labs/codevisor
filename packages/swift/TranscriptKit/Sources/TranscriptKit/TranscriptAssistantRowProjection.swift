@@ -280,7 +280,7 @@ enum TranscriptAssistantRowProjection {
     to rows: inout [TranscriptPresentationRow]
   ) {
     guard message.turn.isGenerating,
-      message.turn.retryStatus != nil || message.turn.showsActivityIndicator
+      message.turn.retryStatus != nil || message.turn.reservesActivitySlot
     else { return }
     appendChrome(
       message,

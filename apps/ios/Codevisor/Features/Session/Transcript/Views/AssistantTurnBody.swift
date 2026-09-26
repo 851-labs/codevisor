@@ -99,8 +99,10 @@ struct AssistantTurnBody: View {
           kind: .implementation
         )
       }
-      if presentation.showsActivity, let activity, !activity.followsResponse {
-        AssistantTurnActivityView(activity)
+      // The slot stays laid out (invisibly) across tool calls so the
+      // label toggling never changes the row's height.
+      if presentation.showsActivity, activity.map({ !$0.followsResponse }) ?? turn.reservesActivitySlot {
+        AssistantTurnActivitySlot(activity)
       }
       if presentation.showsResponse {
         ForEach(turn.generatedImageActivity) { call in

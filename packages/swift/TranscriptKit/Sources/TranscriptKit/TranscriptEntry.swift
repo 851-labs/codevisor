@@ -253,6 +253,17 @@ extension AssistantTurn {
     return finalText == nil && !hasRunningToolCall
   }
 
+  /// Whether the transcript keeps the activity indicator's row laid out even
+  /// while the indicator itself is hidden. Tool calls toggle
+  /// `showsActivityIndicator` on every start and finish; removing the row
+  /// each time bounced the bottom-pinned transcript. The slot holds from the
+  /// start of work until the answer (or a preamble span) streams, where the
+  /// text's own growth absorbs the one-time removal.
+  public var reservesActivitySlot: Bool {
+    guard isGenerating else { return false }
+    return showsActivityIndicator || finalText == nil
+  }
+
   /// Every tool call in the turn, including those inside subagent threads —
   /// the membership check for routing late updates into a finished turn.
   public var allToolCalls: [ToolCall] {

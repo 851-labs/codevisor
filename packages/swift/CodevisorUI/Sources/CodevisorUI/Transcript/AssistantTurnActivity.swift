@@ -51,3 +51,25 @@ public struct AssistantTurnActivityView: View {
       .suppressedDuringStreamingTextEntrance()
   }
 }
+
+/// The activity row's place while no label is showing. The turn keeps
+/// `reservesActivitySlot` across tool calls, so the row renders invisibly at
+/// the label's exact height instead of collapsing and bouncing the
+/// transcript each time a tool starts or finishes.
+public struct AssistantTurnActivitySlot: View {
+  public let activity: AssistantTurnActivity?
+
+  public init(_ activity: AssistantTurnActivity?) { self.activity = activity }
+
+  public var body: some View {
+    if let activity {
+      AssistantTurnActivityView(activity)
+    } else {
+      // Plain text in the shimmer's font: same line height, no animation.
+      Text(AssistantTurnActivity.waitingOnHarnessMessage)
+        .font(.callout)
+        .hidden()
+        .accessibilityHidden(true)
+    }
+  }
+}
