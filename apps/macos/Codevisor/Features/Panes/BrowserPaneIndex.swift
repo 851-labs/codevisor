@@ -7,9 +7,18 @@ import Foundation
 /// groups themselves it is an identity cache, updated while panes build.
 @MainActor
 final class BrowserPaneIndex {
-  private struct Entry {
+  /// A class, not a struct: the weak reference is read in place and never
+  /// copied. Copying a struct that holds a weak reference out of the
+  /// dictionary on every sidebar render crashed the app on launch with a
+  /// restored browser tab (swift_weakLoadStrong on a garbage reference).
+  private final class Entry {
     weak var model: ChromiumBrowserModel?
     let owner: ObjectIdentifier
+
+    init(model: ChromiumBrowserModel, owner: ObjectIdentifier) {
+      self.model = model
+      self.owner = owner
+    }
   }
 
   private var entries: [UUID: Entry] = [:]
