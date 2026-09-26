@@ -49,6 +49,17 @@ struct ScreenSharingTransientRetryTests {
     #expect(try await task.value.status == "available")
   }
 
+  @Test func aHostOnTheEarlierWordingIsAskedOnceMoreToo() async throws {
+    let clock = TestClock()
+    let earlier = ServerScreenSharingReply(
+      status: "failed", message: "This Mac's screen capture isn't responding. Try again in a minute.")
+    let script = Script([.success(earlier), .success(Self.available)])
+    let task = run(script, clock: clock)
+    await clock.waitForSleep(.seconds(2))
+    clock.advance(by: .seconds(2))
+    #expect(try await task.value.status == "available")
+  }
+
   @Test func onlyOnceTheSecondAnswerStands() async throws {
     let clock = TestClock()
     let script = Script([.failure(Self.timedOut), .failure(Self.timedOut), .success(Self.available)])
