@@ -27,7 +27,7 @@
       #expect(settings.queueDepth == 3)
       #expect(settings.pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
       #expect(settings.showsCursor && !settings.capturesAudio && settings.scalesToFit)
-      #expect(settings.colorSpaceName == CGColorSpace.itur_709)
+      #expect(settings.colorSpaceName == CGColorSpace.sRGB)
       let labels = fixture.metrics.snapshot().labels
       #expect(labels["captureContentStyle"] == "test-display")
       #expect(labels["captureContentWidthPoints"] == "1440.0")
