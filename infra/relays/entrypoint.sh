@@ -22,12 +22,19 @@ if [ -z "${RELAY_CERT_PATH:-}" ]; then
   webroot=/data/acme-webroot
   live="/data/letsencrypt/live/$RELAY_HOSTNAME"
   mkdir -p "$webroot"
-  # First boot only (the volume keeps it afterwards). Retries every 15 min,
-  # well under Let's Encrypt's 5-failed-validations-per-hour limit.
+  # First boot only (the volume keeps it afterwards). A fresh relay's DNS
+  # and proxy routes can take a minute to settle, so the first 4 attempts
+  # retry every minute, then every 15 min: under Let's Encrypt's limit of 5
+  # failed validations per hostname per hour.
+  attempt=0
   until [ -f "$live/fullchain.pem" ]; do
+    attempt=$((attempt + 1))
     certbot certonly $certbot_args --non-interactive --agree-tos \
-      -m ops@codevisor.dev -d "$RELAY_HOSTNAME" --webroot -w "$webroot" \
-      || { echo "certbot failed; retrying in 15 min" >&2; sleep 900; }
+      -m ops@codevisor.dev -d "$RELAY_HOSTNAME" --webroot -w "$webroot" && continue
+    delay=60
+    [ "$attempt" -ge 4 ] && delay=900
+    echo "certbot attempt $attempt failed; retrying in ${delay}s" >&2
+    sleep "$delay"
   done
   # Renewal loop: certbot renews within 30 days of expiry; the relay's
   # Reloading resolver picks the new files up within 24 h, no restart.

@@ -65,7 +65,10 @@ protocol = "https"
 tls_skip_verify = true # the check dials the Machine's IP, not the hostname
 
 # Plain HTTP, to the port-80 router: Let's Encrypt HTTP-01 challenges, and
-# captive-portal probes (/generate_204) forwarded to the relay.
+# captive-portal probes (/generate_204) forwarded to the relay. No health
+# check on purpose: Fly's proxy stops routing to a service whose checks fail,
+# and the relay (which /generate_204 reaches) only starts once certbot has
+# passed the challenge that must arrive on this port.
 [[services]]
 protocol = "tcp"
 internal_port = 80
@@ -75,13 +78,6 @@ min_machines_running = 1
 [[services.ports]]
 port = 80
 handlers = []
-
-[[services.http_checks]]
-interval = "30s"
-timeout = "2s"
-grace_period = "60s"
-method = "get"
-path = "/generate_204"
 
 [metrics]
 port = 9090

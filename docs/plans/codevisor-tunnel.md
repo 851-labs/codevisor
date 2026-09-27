@@ -609,14 +609,10 @@ kill_timeout = 10
   [[services.ports]]
     port = 80
     handlers = []
-
-  # Exercises router -> relay, so a dead router fails the Machine's checks.
-  [[services.http_checks]]
-    interval = "30s"
-    timeout = "2s"
-    grace_period = "60s"
-    method = "get"
-    path = "/generate_204"
+  # No health check here: Fly's proxy stops routing to a service whose checks
+  # fail, and the relay behind /generate_204 only starts after certbot passes
+  # the challenge that has to arrive on this port. (The first deploy
+  # deadlocked on exactly that.)
 
 [metrics]
   port = 9090
