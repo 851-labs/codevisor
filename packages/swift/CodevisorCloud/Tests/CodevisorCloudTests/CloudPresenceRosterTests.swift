@@ -47,6 +47,24 @@ struct CloudPresenceRosterTests {
     #expect(client.machineTokens.count == restCallsBefore + 1)
   }
 
+  @Test("A new tunnel address triggers a refresh even while the machine stays online")
+  func tunnelAddressChangeRefreshes() async {
+    // The machine's server restarted onto a new tunnel endpoint (an update,
+    // a reinstall) without ever looking offline: the app must still learn
+    // the address it dials.
+    let before = testMachine("m1")
+    let (controller, client, _) = await makeSignedIn(machines: [before])
+    let restCallsBefore = client.machineTokens.count
+
+    var after = before
+    after.tunnel = CloudTunnelInfo(endpointId: "new-endpoint")
+    client.machinesResult = .success([after])
+    controller.reconcilePresence(with: [after])
+    await controller.presenceRefreshTask?.value
+    #expect(controller.machines.first?.tunnel?.endpointId == "new-endpoint")
+    #expect(client.machineTokens.count == restCallsBefore + 1)
+  }
+
   @Test("A presence burst coalesces into one refresh")
   func burstsCoalesce() async {
     let m1 = testMachine("m1")

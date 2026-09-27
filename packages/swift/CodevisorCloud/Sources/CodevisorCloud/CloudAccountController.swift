@@ -507,13 +507,19 @@ public final class CloudAccountController {
   /// `refreshMachines()` — the push is only a trigger, never a source.
   func reconcilePresence(with transportMachines: [CloudMachine]) {
     guard state.isSignedIn else { return }
+    // What a presence push can change that the app acts on: online state,
+    // and the tunnel address it dials (a machine can stay online while its
+    // server restarts onto a new tunnel endpoint).
+    func reach(_ machine: CloudMachine) -> String {
+      "\(machine.online)|\(machine.tunnel?.endpointId ?? "")"
+    }
     let known = Dictionary(
-      machines.map { ($0.deviceId, $0.online) },
+      machines.map { ($0.deviceId, reach($0)) },
       uniquingKeysWith: { first, _ in first }
     )
     // `known[...]` is nil for an unknown device, which never equals a
-    // Bool — one comparison covers both "new machine" and "flipped".
-    guard transportMachines.contains(where: { known[$0.deviceId] != $0.online }) else {
+    // String — one comparison covers "new machine" and "changed".
+    guard transportMachines.contains(where: { known[$0.deviceId] != reach($0) }) else {
       return
     }
     guard presenceRefreshTask == nil else { return }
@@ -533,12 +539,11 @@ public final class CloudAccountController {
   public func reconnectHub() async {
     guard state.isSignedIn else { return }
     // Every transport is suspect at this point (suspension, network
-    // handoff), including the direct LAN pipes: a half-open pipe is
+    // handoff), including the tunnel pipes: a half-open pipe is
     // caught by its own heartbeat within ~15s, but recovery requests
     // race that detection and burn their full timeout against a dead
     // socket — one such timeout is enough to fail the selected machine.
-    // Drop the pipes now; the reconnected relay carries traffic
-    // immediately, and the machine refresh below re-probes the LAN.
+    // Drop the pipes now; the machine refresh below re-dials them.
     directPaths.dropAll()
     if let hub {
       await hub.reconnect()
