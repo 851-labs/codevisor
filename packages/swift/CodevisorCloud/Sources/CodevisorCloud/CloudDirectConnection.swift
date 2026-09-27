@@ -357,7 +357,10 @@ extension CloudDirectConnection {
   private func handleRelay(_ frame: CloudRelayFrame, payload: Data) {
     guard let state = channels[frame.channelId] else { return }
     state.receivedInbound = true
-    // A close ends the channel whatever its seq (see CloudHubConnection+Inbound).
+    // A close ends the channel whatever its seq: it carries no sealed
+    // payload, and a responder that lost count (e.g. refusing a channel it
+    // no longer knows) must still be able to say why instead of surfacing
+    // as a protocol error.
     if case let .close(channelId, _, reason) = frame {
       channels.removeValue(forKey: channelId)
       state.onClosed(reason)
@@ -394,7 +397,9 @@ extension CloudDirectConnection {
           state.inboundCredit -= sealedBytes
         }
         state.onMessage(plaintext, sealedBytes)
-        // No auto-replenish (see CloudHubConnection+Inbound).
+        // No auto-replenish: machines never gate structured sends on
+        // credit unless the opener negotiated flow control, so a
+        // per-message credit frame would be a pure no-op.
       } catch {
         abortChannel(channelId, reason: .cryptoError)
       }
@@ -427,8 +432,10 @@ extension CloudDirectConnection {
 
 extension CloudDirectConnection {
 
-  /// Opens an end-to-end encrypted channel over this pipe — same semantics
-  /// as `CloudHubConnection.openChannel`.
+  /// Opens an end-to-end encrypted channel over this pipe. `onMessage` gets
+  /// each decrypted inbound payload; `onClosed` fires once when the channel
+  /// ends (with the peer's close reason, or nil on pipe loss). Both may be
+  /// invoked before this returns.
   public func openChannel(
     channelType: String,
     params: JSONValue?,
@@ -447,8 +454,10 @@ extension CloudDirectConnection {
     )
   }
 
-  /// Opens a raw channel with explicit credit-based flow control — same
-  /// semantics as `CloudHubConnection.openFlowControlledChannel`.
+  /// Opens a raw channel whose owner explicitly grants receive credit and
+  /// observes peer grants before sending. Credit is counted in encoded
+  /// ciphertext bytes; the sealed open payload carries `flowControl: true`
+  /// so the machine gates its own sends behind our grants.
   public func openFlowControlledChannel(
     channelType: String,
     params: JSONValue?,

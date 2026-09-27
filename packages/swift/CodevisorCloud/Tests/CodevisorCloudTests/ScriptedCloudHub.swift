@@ -7,30 +7,18 @@ import CodevisorProtocol
 
 // MARK: - Fake WebSocket seam
 
-/// A fake hub (and optionally a scripted responder machine behind it) living
-/// on the other end of a FakeWebSocketConnection: answers `hello` with
-/// `welcome` and hands relay envelopes to `onRelay`.
+/// A fake hub control plane living on the other end of a
+/// FakeWebSocketConnection: answers `hello` with `welcome`, pongs pings, and
+/// lets a test push presence and error frames.
 @Observable
 final class ScriptedCloudHub: @unchecked Sendable {
-  struct RelayEnvelope {
-    var machineId: String
-    var frame: CloudRelayFrame
-    var payload: Data
-  }
-
-  private struct RelayHeader: Codable {
-    var machineId: String
-    var frame: CloudRelayFrame
-  }
-
   private let lock = NSLock()
   private var scriptedSockets: [FakeWebSocketConnection] = []
   let machines: [CloudMachine]
-  private var relayed: [RelayEnvelope] = []
-  /// Called (synchronously, in send order) for every relay envelope the app
-  /// sends. Push responses through `relayToApp`.
-  var onRelay: (@Sendable (RelayEnvelope) -> Void)?
   private(set) var sawHello = false
+  private var helloResumes: [String?] = []
+  /// The `resume` token each hello offered, in order (nil = fresh session).
+  var helloResumeTokens: [String?] { lock.withLock { helloResumes } }
   var appPublicKey: String?
   /// The tunnel endpoint id the app registered in its hello.
   var helloTunnelEndpointId: String?
@@ -83,36 +71,12 @@ final class ScriptedCloudHub: @unchecked Sendable {
     return socket
   }
 
-  var relayEnvelopes: [RelayEnvelope] {
-    lock.withLock { relayed }
-  }
-
-  func relayToApp(machineId: String, frame: CloudRelayFrame, payload: Data = Data()) {
-    let header = try! JSONEncoder().encode(RelayHeader(machineId: machineId, frame: frame))
-    currentSocket.push(
-      .data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)]))
-    )
-  }
-
-  func relayToApp(machineId: String, sealed: (frame: CloudRelayFrame, payload: Data)) {
-    relayToApp(machineId: machineId, frame: sealed.frame, payload: sealed.payload)
-  }
-
   func presenceToApp(_ machine: CloudMachine) {
     struct Envelope: Encodable {
       var t = "presence"
       var machine: CloudMachine
     }
     let data = try! JSONEncoder().encode(Envelope(machine: machine))
-    currentSocket.push(.string(String(decoding: data, as: UTF8.self)))
-  }
-
-  func machineResetToApp(machineId: String) {
-    struct Envelope: Encodable {
-      var t = "machine-reset"
-      var machineId: String
-    }
-    let data = try! JSONEncoder().encode(Envelope(machineId: machineId))
     currentSocket.push(.string(String(decoding: data, as: UTF8.self)))
   }
 
@@ -140,21 +104,6 @@ final class ScriptedCloudHub: @unchecked Sendable {
   }
 
   private func handle(_ message: ServerWebSocketMessage) {
-    if case let .data(binary) = message {
-      guard let envelopes = try? CloudRelayWire.decode(binary) else { return }
-      for wire in envelopes {
-        guard let header = try? JSONDecoder().decode(RelayHeader.self, from: wire.header)
-        else { continue }
-        let envelope = RelayEnvelope(
-          machineId: header.machineId,
-          frame: header.frame,
-          payload: wire.payload
-        )
-        lock.withLock { relayed.append(envelope) }
-        onRelay?(envelope)
-      }
-      return
-    }
     guard case let .string(text) = message else { return }
     let data = Data(text.utf8)
     struct Probe: Decodable {
@@ -179,6 +128,7 @@ final class ScriptedCloudHub: @unchecked Sendable {
       if let hello = try? JSONDecoder().decode(Hello.self, from: data) {
         lock.withLock {
           sawHello = true
+          helloResumes.append(hello.resume)
           appPublicKey = hello.device.publicKey
           helloTunnelEndpointId = hello.device.tunnelEndpointId
           helloReleaseChannel = hello.device.releaseChannel

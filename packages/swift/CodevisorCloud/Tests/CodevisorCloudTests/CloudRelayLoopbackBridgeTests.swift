@@ -148,8 +148,8 @@ struct CloudRelayLoopbackBridgeTests {
       var params: Params
     }
 
-    let machine = ScriptedRelayMachine()
-    let hub: ScriptedCloudHub
+    let pipe = ScriptedDirectMachine()
+    var machine: ScriptedRelayMachine { pipe.machine }
     private let lock = NSLock()
     private let automaticallyGrantInitialCredit: Bool
     private var channelIds: [String] = []
@@ -160,9 +160,8 @@ struct CloudRelayLoopbackBridgeTests {
 
     init(automaticallyGrantInitialCredit: Bool = true) {
       self.automaticallyGrantInitialCredit = automaticallyGrantInitialCredit
-      hub = ScriptedCloudHub(machines: [machine.presence])
-      hub.onRelay = { [weak self] envelope in
-        self?.handle(envelope)
+      pipe.onFrame = { [weak self] received in
+        self?.handle(received)
       }
     }
 
@@ -175,33 +174,21 @@ struct CloudRelayLoopbackBridgeTests {
 
     func grant(_ bytes: Int) throws {
       let channelId = try #require(channelId)
-      hub.relayToApp(
-        machineId: machine.deviceId,
-        frame: machine.creditFrame(channelId: channelId, bytes: bytes)
-      )
+      pipe.sendToApp(frame: machine.creditFrame(channelId: channelId, bytes: bytes))
     }
 
     func send(_ data: Data) throws {
       let channelId = try #require(channelId)
-      hub.relayToApp(
-        machineId: machine.deviceId,
-        sealed: try machine.sealData(channelId: channelId, payload: data)
-      )
+      pipe.sendToApp(sealed: try machine.sealData(channelId: channelId, payload: data))
     }
 
     func sendFIN() throws {
       try send(Data())
     }
 
-    private func handle(_ envelope: ScriptedCloudHub.RelayEnvelope) {
-      guard let appKey = hub.appPublicKey else { return }
-      let payload: Data?
-      do {
-        payload = try machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-      } catch {
-        return
-      }
-      switch envelope.frame {
+    private func handle(_ inbound: ScriptedDirectMachine.ReceivedFrame) {
+      let payload = inbound.plaintext
+      switch inbound.frame {
       case let .open(channelId, _, _):
         guard let payload,
           let open = try? JSONDecoder().decode(OpenPayload.self, from: payload),
@@ -211,8 +198,7 @@ struct CloudRelayLoopbackBridgeTests {
         else { return }
         lock.withLock { channelIds.append(channelId) }
         if automaticallyGrantInitialCredit {
-          hub.relayToApp(
-            machineId: machine.deviceId,
+          pipe.sendToApp(
             frame: machine.creditFrame(
               channelId: channelId,
               bytes: CloudRelayLoopbackBridge.initialCreditBytes
@@ -230,13 +216,7 @@ struct CloudRelayLoopbackBridgeTests {
         }
         // The real machine returns receive credit after its local TCP
         // socket accepts the bytes.
-        hub.relayToApp(
-          machineId: machine.deviceId,
-          frame: machine.creditFrame(
-            channelId: channelId,
-            bytes: envelope.payload.count
-          )
-        )
+        pipe.sendToApp(frame: machine.creditFrame(channelId: channelId, bytes: inbound.sealedBytes))
       case let .credit(_, _, bytes):
         lock.withLock { creditGrants.append(bytes) }
       case let .close(_, _, reason):
@@ -247,27 +227,9 @@ struct CloudRelayLoopbackBridgeTests {
 
   private func makeBridge(
     _ scriptedMachine: ScriptedByteMachine
-  ) -> (bridge: CloudRelayLoopbackBridge, hub: CloudHubConnection) {
-    let hub = CloudHubConnection(
-      serverURL: URL(string: "https://cloud.example.com")!,
-      credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
-      deviceName: "Test App",
-      deviceOS: "macOS",
-      webSocketTransport: FakeWebSocketTransport { _ in scriptedMachine.hub.socket },
-      readyTimeout: .seconds(2),
-      sleep: TestClock().sleep,
-      reconnectDelay: { _ in .seconds(1) }
-    )
-    return (
-      CloudRelayLoopbackBridge(
-        endpoint: CloudRelayEndpoint(
-          hub: hub,
-          machineDeviceId: scriptedMachine.machine.deviceId,
-          machinePublicKey: scriptedMachine.machine.publicKey
-        )
-      ),
-      hub
-    )
+  ) -> (bridge: CloudRelayLoopbackBridge, pipe: CloudDirectConnection) {
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.pipe)
+    return (CloudRelayLoopbackBridge(endpoint: endpoint), pipe)
   }
 
   @Test("Ciphertext budget calculation matches raw encrypted boxes")
@@ -281,12 +243,12 @@ struct CloudRelayLoopbackBridgeTests {
   @Test("HTTP bytes and keep-alive requests cross one tunnel unchanged")
   func transparentHTTPKeepAlive() async throws {
     let machine = ScriptedByteMachine()
-    let (bridge, hub) = makeBridge(machine)
+    let (bridge, pipe) = makeBridge(machine)
     let client = RawTCPClient(port: try await bridge.start())
     defer {
       client.cancel()
       bridge.stop()
-      Task { await hub.shutdown() }
+      Task { await pipe.shutdown() }
     }
     try await client.connect()
 
@@ -315,12 +277,12 @@ struct CloudRelayLoopbackBridgeTests {
   @Test("A streaming response is visible before the relay channel ends")
   func incrementalResponse() async throws {
     let machine = ScriptedByteMachine()
-    let (bridge, hub) = makeBridge(machine)
+    let (bridge, pipe) = makeBridge(machine)
     let client = RawTCPClient(port: try await bridge.start())
     defer {
       client.cancel()
       bridge.stop()
-      Task { await hub.shutdown() }
+      Task { await pipe.shutdown() }
     }
     try await client.connect()
     let request = Data("GET /stream.mjpeg HTTP/1.1\r\nHost: remote\r\n\r\n".utf8)
@@ -343,12 +305,12 @@ struct CloudRelayLoopbackBridgeTests {
   @Test("Client reads wait for machine credit and FIN propagates both ways")
   func creditAndHalfClose() async throws {
     let machine = ScriptedByteMachine(automaticallyGrantInitialCredit: false)
-    let (bridge, hub) = makeBridge(machine)
+    let (bridge, pipe) = makeBridge(machine)
     let client = RawTCPClient(port: try await bridge.start())
     defer {
       client.cancel()
       bridge.stop()
-      Task { await hub.shutdown() }
+      Task { await pipe.shutdown() }
     }
     try await client.connect()
     let request = Data("GET /finite HTTP/1.1\r\nHost: remote\r\n\r\n".utf8)
@@ -375,11 +337,11 @@ struct CloudRelayLoopbackBridgeTests {
   @Test("Stopping the bridge tears down active local connections")
   func stopTearsDownTunnel() async throws {
     let machine = ScriptedByteMachine()
-    let (bridge, hub) = makeBridge(machine)
+    let (bridge, pipe) = makeBridge(machine)
     let client = RawTCPClient(port: try await bridge.start())
     defer {
       client.cancel()
-      Task { await hub.shutdown() }
+      Task { await pipe.shutdown() }
     }
     try await client.connect()
     try await client.send(Data("GET / HTTP/1.1\r\n\r\n".utf8))

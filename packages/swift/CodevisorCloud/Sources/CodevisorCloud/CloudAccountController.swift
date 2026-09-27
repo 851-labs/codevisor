@@ -353,8 +353,8 @@ public final class CloudAccountController {
       machines = refreshedMachines
       didVerifyRoster()
       if let hub {
-        // Feed the authoritative REST snapshot back into the relay's
-        // channel gate. This heals a missed/reordered presence frame
+        // Feed the authoritative REST snapshot back into the hub's
+        // presence view. This heals a missed/reordered presence frame
         // without replacing an otherwise healthy hub connection.
         await hub.reconcileAuthoritativeMachines(refreshedMachines)
       }
@@ -465,8 +465,8 @@ public final class CloudAccountController {
     try clearMachineKeyPins()
   }
 
-  /// The account's relay hub connection, created on first use while signed
-  /// in. One connection serves every cloud machine.
+  /// The account's hub connection (presence and tunnel config), created on
+  /// first use while signed in. One connection serves every cloud machine.
   public func hubConnection() -> CloudHubConnection? {
     guard state.isSignedIn else { return nil }
     if let hub { return hub }
@@ -521,10 +521,10 @@ public final class CloudAccountController {
     }
   }
 
-  /// Replaces an existing relay socket after the app returns to the
-  /// foreground. Channel owners observe the close and reopen from their
-  /// durable cursors; the account refresh keeps machine-list presence in
-  /// step with the new hub welcome.
+  /// Replaces an existing hub socket after the app returns to the
+  /// foreground, and drops the direct pipes so channel owners reopen from
+  /// their durable cursors; the account refresh keeps machine-list presence
+  /// in step with the new hub welcome.
   public func reconnectHub() async {
     guard state.isSignedIn else { return }
     // Every transport is suspect at this point (suspension, network

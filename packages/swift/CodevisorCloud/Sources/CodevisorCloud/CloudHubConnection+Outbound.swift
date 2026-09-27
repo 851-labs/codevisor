@@ -30,11 +30,6 @@ extension CloudHubConnection {
     }
   }
 
-  private struct RelayHeader: Encodable {
-    var machineId: String
-    var frame: CloudRelayFrame
-  }
-
   /// The `/connect` upgrade request.
   static func connectRequest(url: URL, identity: CloudAppDeviceIdentity) -> URLRequest {
     var request = URLRequest(url: url)
@@ -116,28 +111,15 @@ extension CloudHubConnection {
     )
     isWelcomed = false
     resetHeartbeat()
-    // The run loop's teardown decides whether channels suspend (resume
-    // pending) or fail; killing the socket gets it there.
+    // Killing the socket hands recovery to the run loop's reconnect.
     socket?.cancel(with: .goingAway, reason: nil)
   }
 
-  /// Sends one relay frame as a binary envelope message (ciphertext rides
-  /// beside the JSON header; credit/close carry an empty payload).
-  func sendRelay(machineId: String, frame: CloudRelayFrame, payload: Data = Data()) throws {
-    guard socket != nil else { throw CloudHubConnectionError.disconnected }
-    let header = try encoder.encode(RelayHeader(machineId: machineId, frame: frame))
-    try enqueueSend(.data(CloudRelayWire.encode([CloudRelayEnvelope(header: header, payload: payload)])))
-  }
-
+  /// Chained sends keep wire order aligned with call order — concurrent
+  /// senders must not overtake each other on the way to the socket.
   private func enqueueSend(_ message: some Encodable) throws {
-    try enqueueSend(.string(String(decoding: try encoder.encode(message), as: UTF8.self)))
-  }
-
-  /// Chained sends keep wire order aligned with seq allocation order —
-  /// concurrent senders must not overtake each other between allocating a
-  /// seq and the frame reaching the socket.
-  private func enqueueSend(_ message: ServerWebSocketMessage) throws {
     guard let socket, let socketID else { throw CloudHubConnectionError.disconnected }
+    let message = ServerWebSocketMessage.string(String(decoding: try encoder.encode(message), as: UTF8.self))
     sendChain = Task { [weak self, previous = sendChain] in
       await previous.value
       do {

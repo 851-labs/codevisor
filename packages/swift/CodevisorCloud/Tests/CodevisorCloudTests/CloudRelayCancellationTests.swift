@@ -6,17 +6,12 @@ import Testing
 
 @Suite("Relay socket cancellation")
 struct CloudRelayCancellationTests {
-  @Test("Cancelling a socket releases a receive still waiting for the hub welcome")
+  @Test("Cancelling a socket releases a receive still waiting for the pipe's welcome")
   func cancelBeforeWelcome() async {
     let clock = TestClock()
-    let upstream = FakeWebSocketConnection()
-    let hub = CloudHubConnection(
-      serverURL: URL(string: "https://cloud.example.com")!,
-      credentialStore: InMemoryCloudCredentialStore(token: "test-token"),
-      deviceName: "Test", deviceOS: "macOS",
-      webSocketTransport: FakeWebSocketTransport { _ in upstream },
-      readyTimeout: .seconds(20), sleep: clock.sleep, reconnectDelay: { _ in .seconds(1) })
-    let endpoint = CloudRelayEndpoint(hub: hub, machineDeviceId: "machine", machinePublicKey: "unused")
+    let scripted = ScriptedDirectMachine()
+    scripted.acceptsHello = false
+    let (endpoint, pipe) = makeDirectEndpoint(to: scripted, readyTimeout: .seconds(20), clock: clock)
     let socket = CloudRelayWebSocketTransport(endpoint: endpoint).connect(
       URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/sessions/chat/events/socket")!),
       maximumMessageSize: 1024)
@@ -28,6 +23,6 @@ struct CloudRelayCancellationTests {
     case .success: Issue.record("Cancelled receive unexpectedly succeeded")
     case let .failure(error): #expect(error is CancellationError)
     }
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 }

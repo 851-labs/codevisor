@@ -57,7 +57,7 @@ final class ScriptedHttpMachine: @unchecked Sendable {
   }
 
   let machine = ScriptedRelayMachine()
-  let scripted: ScriptedCloudHub
+  let scripted: ScriptedDirectMachine
   var respond: (@Sendable (ReceivedRequest) -> ScriptedResponse)?
   /// Off = the machine never grants an upload window, so the app's gated
   /// request frames must wait (or time out).
@@ -80,31 +80,24 @@ final class ScriptedHttpMachine: @unchecked Sendable {
 
   /// Credit envelopes the app has sent toward the machine.
   var creditGrants: [Int] {
-    scripted.relayEnvelopes.compactMap {
-      if case let .credit(_, _, bytes) = $0.frame { bytes } else { nil }
-    }
+    scripted.credits.map(\.bytes)
   }
 
   func grantUploadWindow(channelId: String, bytes: Int = 1_000_000) {
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      frame: machine.creditFrame(channelId: channelId, bytes: bytes)
-    )
+    scripted.sendToApp(frame: machine.creditFrame(channelId: channelId, bytes: bytes))
   }
 
   init() {
-    scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak self] envelope in
-      self?.handle(envelope)
+    scripted = ScriptedDirectMachine(machine: machine)
+    scripted.onFrame = { [weak self] received in
+      self?.handle(received)
     }
   }
 
-  private func handle(_ envelope: ScriptedCloudHub.RelayEnvelope) {
-    guard let appKey = scripted.appPublicKey else { return }
-    guard let payload = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    else { return }
-    let channelId = envelope.frame.channelId
-    switch envelope.frame {
+  private func handle(_ received: ScriptedDirectMachine.ReceivedFrame) {
+    guard let payload = received.plaintext else { return }
+    let channelId = received.frame.channelId
+    switch received.frame {
     case .open:
       guard let open = try? JSONDecoder().decode(OpenPayload.self, from: payload),
         open.channelType == "http"
@@ -155,7 +148,7 @@ final class ScriptedHttpMachine: @unchecked Sendable {
       guard let data = try? encoder.encode(value),
         let sealed = try? machine.sealData(channelId: channelId, payload: data)
       else { return }
-      scripted.relayToApp(machineId: machine.deviceId, sealed: sealed)
+      scripted.sendToApp(sealed: sealed)
     }
     if response.status > 0 {
       sendJSON(HeadFrame(status: response.status, headers: response.headers))
@@ -165,10 +158,7 @@ final class ScriptedHttpMachine: @unchecked Sendable {
       sendJSON(BodyFrame(kind: "end", data: nil))
     }
     if response.sendsClose {
-      scripted.relayToApp(
-        machineId: machine.deviceId,
-        frame: machine.closeFrame(channelId: channelId, reason: response.closeReason)
-      )
+      scripted.sendToApp(frame: machine.closeFrame(channelId: channelId, reason: response.closeReason))
     }
   }
 }
@@ -178,26 +168,17 @@ final class ScriptedHttpMachine: @unchecked Sendable {
 @Observable
 final class ScriptedWsMachine: @unchecked Sendable {
   let machine = ScriptedRelayMachine()
-  let scripted: ScriptedCloudHub
+  let scripted: ScriptedDirectMachine
   private let lock = NSLock()
   private var _openChannelIds: [String] = []
 
   init() {
-    scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak self] envelope in
-      guard let self, let appKey = self.scripted.appPublicKey else { return }
-      guard
-        (try? self.machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)) != nil
-      else { return }
-      if case .open = envelope.frame {
-        self.lock.withLock { self._openChannelIds.append(envelope.frame.channelId) }
-        // Grant the app's send window like the live handler does.
-        self.scripted.relayToApp(
-          machineId: self.machine.deviceId,
-          frame: self.machine.creditFrame(
-            channelId: envelope.frame.channelId, bytes: 1_000_000)
-        )
-      }
+    scripted = ScriptedDirectMachine(machine: machine)
+    scripted.onFrame = { [weak self] received in
+      guard let self, case let .open(channelId, _, _) = received.frame else { return }
+      self.lock.withLock { self._openChannelIds.append(channelId) }
+      // Grant the app's send window like the live handler does.
+      self.scripted.sendToApp(frame: self.machine.creditFrame(channelId: channelId, bytes: 1_000_000))
     }
   }
 
@@ -207,31 +188,8 @@ final class ScriptedWsMachine: @unchecked Sendable {
     guard let channelId = openChannelId,
       let sealed = try? machine.sealData(channelId: channelId, payload: Data(json.utf8))
     else { return }
-    scripted.relayToApp(machineId: machine.deviceId, sealed: sealed)
+    scripted.sendToApp(sealed: sealed)
   }
-}
-
-/// One test hub wired to a scripted machine's socket, plus its relay endpoint.
-func makeRelayEndpoint(
-  scripted: ScriptedCloudHub,
-  machine: ScriptedRelayMachine
-) -> (endpoint: CloudRelayEndpoint, hub: CloudHubConnection) {
-  let hub = CloudHubConnection(
-    serverURL: URL(string: "https://cloud.example.com")!,
-    credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
-    deviceName: "Test App",
-    deviceOS: "macOS",
-    webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-    readyTimeout: .seconds(2),
-    sleep: TestClock().sleep,
-    reconnectDelay: { _ in .seconds(1) }
-  )
-  let endpoint = CloudRelayEndpoint(
-    hub: hub,
-    machineDeviceId: machine.deviceId,
-    machinePublicKey: machine.publicKey
-  )
-  return (endpoint, hub)
 }
 
 func relayMessageText(_ message: ServerWebSocketMessage) -> String? {

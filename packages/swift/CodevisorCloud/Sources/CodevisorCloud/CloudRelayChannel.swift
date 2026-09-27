@@ -1,7 +1,7 @@
 import Foundation
 
 /// A handle to one open sealed channel. All I/O goes through the hosting
-/// pipe's actor (the relay hub today, a direct socket tomorrow); the handle
+/// pipe's actor (a `CloudDirectConnection`); the handle
 /// just carries the id.
 public final class CloudRelayChannel: Sendable {
   public let id: String

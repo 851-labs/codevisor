@@ -1,9 +1,8 @@
 import ACPKit
 import Foundation
 
-/// The direct-pipe implementation of `CloudChannelTransport` — pipe #2 beside
-/// `CloudRelayEndpoint`. Channels opened here make one LAN hop straight to
-/// the machine's `/v1/direct` listener.
+/// The direct-pipe implementation of `CloudChannelTransport`: channels opened
+/// here ride one `CloudDirectConnection` straight to the machine.
 public struct CloudDirectTransport: Sendable, CloudChannelTransport {
   public let connection: CloudDirectConnection
 

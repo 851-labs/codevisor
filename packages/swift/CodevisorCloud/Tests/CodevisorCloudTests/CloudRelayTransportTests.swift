@@ -11,8 +11,7 @@ struct CloudRelayTransportTests {
   @Test("Chunked ws frames reassemble into one message; unknown kinds are skipped")
   func wsChunkReassembly() async throws {
     let scriptedMachine = ScriptedWsMachine()
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let socket = CloudRelayWebSocketTransport(endpoint: endpoint).connect(
       URLRequest(url: URL(string: "https://relay.invalid/v1/sessions/x/events/socket")!),
       maximumMessageSize: 1 << 20
@@ -39,7 +38,7 @@ struct CloudRelayTransportTests {
     #expect(relayMessageBinary(try await third.value) == Data("0123".utf8))
 
     socket.cancel(with: .goingAway, reason: nil)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("HTTP requests round-trip: method, path+query, headers, chunked bodies")
@@ -54,8 +53,7 @@ struct CloudRelayTransportTests {
         bodyChunks: [responseBody.prefix(10), responseBody.dropFirst(10)]
       )
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let transport = CloudRelayRequestTransport(endpoint: endpoint)
 
     // A body bigger than one chunk exercises request-side chunking.
@@ -77,7 +75,7 @@ struct CloudRelayTransportTests {
     #expect(received.path == "/v1/health?probe=1")
     #expect(received.headers["Authorization"] == "Bearer secret")
     #expect(received.body == requestBody)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A rejected close surfaces as an error")
@@ -88,8 +86,7 @@ struct CloudRelayTransportTests {
         status: 0, headers: [:], bodyChunks: [], closeReason: .rejected
       )
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let transport = CloudRelayRequestTransport(endpoint: endpoint)
 
     await #expect(throws: CloudRelayTransportError.channelClosed(.rejected)) {
@@ -97,15 +94,14 @@ struct CloudRelayTransportTests {
         for: URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/info")!)
       )
     }
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A request whose channel never answers times out instead of hanging")
   func requestTimesOut() async throws {
     let scriptedMachine = ScriptedHttpMachine()
     // respond stays nil: the machine accepts the open but never replies.
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
 
@@ -116,14 +112,13 @@ struct CloudRelayTransportTests {
     await clock.waitForSleep(.seconds(30))
     clock.advance(by: .seconds(30))
     await #expect(throws: CloudRelayTransportError.timedOut) { try await request.value }
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A request with its own timeout keeps waiting past the default deadline")
   func requestTimeoutOverridesDefault() async throws {
     let scriptedMachine = ScriptedHttpMachine()
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
     var clone = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/projects/from-git")!)
@@ -134,7 +129,7 @@ struct CloudRelayTransportTests {
     await clock.waitForSleep(.seconds(1800))
     clock.advance(by: .seconds(1800))
     await #expect(throws: CloudRelayTransportError.timedOut) { try await request.value }
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A real server client works end-to-end over the relay transport")
@@ -157,8 +152,7 @@ struct CloudRelayTransportTests {
         bodyChunks: [info]
       )
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let client = CodevisorServerClient(
       config: CodevisorServerConfig(
         baseURL: CodevisorMachine.cloudPlaceholderBaseURL,
@@ -169,6 +163,6 @@ struct CloudRelayTransportTests {
     let info = try await client.info()
     #expect(info.name == "Relay Mac")
     #expect(info.cloudDeviceId == "machine-1")
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 }

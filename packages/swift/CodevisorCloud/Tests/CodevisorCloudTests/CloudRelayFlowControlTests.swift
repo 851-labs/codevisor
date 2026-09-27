@@ -16,8 +16,7 @@ struct CloudRelayFlowControlTests {
     scriptedMachine.respond = { _ in
       ScriptedHttpMachine.ScriptedResponse(status: 200, headers: [:], bodyChunks: [])
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
     var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/upload")!)
@@ -31,7 +30,7 @@ struct CloudRelayFlowControlTests {
     await #expect(throws: CloudRelayTransportError.timedOut) { try await pending.value }
     // Not even the first chunk frame made it out.
     #expect(scriptedMachine.completedRequests.isEmpty)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A late grant releases a waiting upload")
@@ -42,8 +41,7 @@ struct CloudRelayFlowControlTests {
       ScriptedHttpMachine.ScriptedResponse(
         status: 200, headers: [:], bodyChunks: [request.body])
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let transport = CloudRelayRequestTransport(endpoint: endpoint)
     var request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/upload")!)
     request.httpMethod = "POST"
@@ -57,7 +55,7 @@ struct CloudRelayFlowControlTests {
     let (data, response) = try await pending.value
     #expect(response.statusCode == 200)
     #expect(data == Data("held until granted".utf8))
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   /// A file spanning three body chunks, the last one short.
@@ -90,8 +88,7 @@ struct CloudRelayFlowControlTests {
       ScriptedHttpMachine.ScriptedResponse(
         status: 201, headers: [:], bodyChunks: [Data("\(request.body.count)".utf8)])
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
 
@@ -114,7 +111,7 @@ struct CloudRelayFlowControlTests {
     #expect(response.statusCode == 201)
     #expect(data == Data("\(contents.count)".utf8))
     #expect(scriptedMachine.completedRequests.first?.body == contents)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("A file upload that stalls fails with the transport timeout")
@@ -126,8 +123,7 @@ struct CloudRelayFlowControlTests {
     scriptedMachine.respond = { _ in
       ScriptedHttpMachine.ScriptedResponse(status: 201, headers: [:], bodyChunks: [])
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let clock = TestClock()
     let transport = CloudRelayRequestTransport(endpoint: endpoint, sleep: clock.sleep)
 
@@ -138,7 +134,7 @@ struct CloudRelayFlowControlTests {
 
     await #expect(throws: CloudRelayTransportError.timedOut) { try await pending.value }
     #expect(scriptedMachine.completedRequests.isEmpty)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("Streamed responses replenish the machine's window per consumed chunk")
@@ -150,8 +146,7 @@ struct CloudRelayFlowControlTests {
       ScriptedHttpMachine.ScriptedResponse(
         status: 200, headers: [:], bodyChunks: [first, second], sendsClose: false)
     }
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let transport = CloudRelayRequestTransport(endpoint: endpoint)
     let request = URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/big")!)
 
@@ -178,14 +173,13 @@ struct CloudRelayFlowControlTests {
     let probe = try JSONDecoder().decode(OpenProbe.self, from: openPayload)
     #expect(probe.compress == true)
     #expect(probe.flowControl == true)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 
   @Test("ws windows replenish only as messages are consumed")
   func wsConsumerPacedCredit() async throws {
     let scriptedMachine = ScriptedWsMachine()
-    let (endpoint, hub) = makeRelayEndpoint(
-      scripted: scriptedMachine.scripted, machine: scriptedMachine.machine)
+    let (endpoint, pipe) = makeDirectEndpoint(to: scriptedMachine.scripted)
     let connection = CloudRelayWebSocketTransport(endpoint: endpoint).connect(
       URLRequest(url: URL(string: "https://cloud-relay.invalid/v1/events/socket")!),
       maximumMessageSize: 1024 * 1024
@@ -193,12 +187,7 @@ struct CloudRelayFlowControlTests {
     try await connection.send(.string("subscribe"))
     #expect(await waitUntil { scriptedMachine.openChannelId != nil })
 
-    let credits: @Sendable () -> Int = {
-      scriptedMachine.scripted.relayEnvelopes.filter {
-        if case .credit = $0.frame { return true }
-        return false
-      }.count
-    }
+    let credits: @Sendable () -> Int = { scriptedMachine.scripted.credits.count }
     // Settled: the app's initial window grant only.
     #expect(await waitUntil { credits() == 1 })
 
@@ -213,6 +202,6 @@ struct CloudRelayFlowControlTests {
     #expect(await waitUntil { credits() == 3 })
 
     connection.cancel(with: .normalClosure, reason: nil)
-    await hub.shutdown()
+    await pipe.shutdown()
   }
 }

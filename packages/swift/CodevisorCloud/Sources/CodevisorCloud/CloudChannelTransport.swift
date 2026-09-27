@@ -1,10 +1,9 @@
 import ACPKit
 import Foundation
 
-/// A pipe that carries end-to-end sealed channels to one machine. The cloud
-/// relay (`CloudRelayEndpoint` over the account's hub connection) is
-/// implementation #1; a direct LAN/tailnet socket is the planned #2. The
-/// HTTP/WS tunnels and the loopback bridge depend only on this surface, so a
+/// A pipe that carries end-to-end sealed channels to one machine — today a
+/// `CloudDirectTransport` over the peer-to-peer tunnel. The HTTP/WS channel
+/// adapters and the loopback bridge depend only on this surface, so a
 /// channel neither knows nor cares which pipe carries it — and a pipe's death
 /// tears down only the channels IT carries (owners re-open from durable
 /// cursors on whatever pipe is available next).
@@ -41,7 +40,7 @@ public protocol CloudChannelTransport: Sendable {
 }
 
 /// What an open channel handle needs from whichever pipe hosts it: seal-and-
-/// send, credit grants, and close. `CloudHubConnection` is implementation #1.
+/// send, credit grants, and close (`CloudDirectConnection`).
 protocol CloudChannelHosting: Actor {
   func send(channelId: String, plaintext: Data) throws -> Int
   func grantCredit(channelId: String, bytes: Int) throws
@@ -50,59 +49,4 @@ protocol CloudChannelHosting: Actor {
   /// Call before `closeChannel`; hosts ignore channels that did receive
   /// traffic, and treat repeated silence as a broken pipe.
   func reportUnanswered(channelId: String)
-}
-
-extension CloudHubConnection: CloudChannelHosting {}
-
-/// One machine reachable over the cloud relay: which hub to go through and
-/// the machine's pinned identity. The relay implementation of
-/// `CloudChannelTransport`.
-public struct CloudRelayEndpoint: Sendable, CloudChannelTransport {
-  public let hub: CloudHubConnection
-  public let machineDeviceId: String
-  public let machinePublicKey: String
-
-  public init(hub: CloudHubConnection, machineDeviceId: String, machinePublicKey: String) {
-    self.hub = hub
-    self.machineDeviceId = machineDeviceId
-    self.machinePublicKey = machinePublicKey
-  }
-
-  public func openChannel(
-    channelType: String,
-    params: JSONValue?,
-    compressed: Bool,
-    onMessage: @escaping @Sendable (Data) -> Void,
-    onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-  ) async throws -> CloudRelayChannel {
-    try await hub.openChannel(
-      machineDeviceId: machineDeviceId,
-      machinePublicKey: machinePublicKey,
-      channelType: channelType,
-      params: params,
-      compressed: compressed,
-      onMessage: onMessage,
-      onClosed: onClosed
-    )
-  }
-
-  public func openFlowControlledChannel(
-    channelType: String,
-    params: JSONValue?,
-    compressed: Bool,
-    onMessage: @escaping @Sendable (Data, Int) -> Void,
-    onCredit: @escaping @Sendable (Int) -> Void,
-    onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-  ) async throws -> CloudRelayChannel {
-    try await hub.openFlowControlledChannel(
-      machineDeviceId: machineDeviceId,
-      machinePublicKey: machinePublicKey,
-      channelType: channelType,
-      params: params,
-      compressed: compressed,
-      onMessage: onMessage,
-      onCredit: onCredit,
-      onClosed: onClosed
-    )
-  }
 }

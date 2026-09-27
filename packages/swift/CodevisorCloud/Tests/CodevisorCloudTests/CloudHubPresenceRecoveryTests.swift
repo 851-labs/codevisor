@@ -5,14 +5,24 @@ import Testing
 
 @Suite("Cloud hub presence recovery")
 struct CloudHubPresenceRecoveryTests {
-  @Test("The authoritative roster heals machine-wide stale offline state")
-  func authoritativeRosterResumesParkedChannelOpen() async throws {
+  @Test("Only a machine-wide offline error marks a machine offline; the REST roster heals it")
+  func offlineErrorsAndAuthoritativeRoster() async throws {
     let machine = ScriptedRelayMachine()
     let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let parked = TestSignal()
-    let (hub, _) = makeHub(scripted, onMachineWait: parked.signal)
+    let (hub, _) = makeHub(scripted)
 
     try await hub.waitUntilReady()
+    // A channel-scoped failure says nothing about the machine's presence.
+    scripted.errorToApp(
+      code: "machine-offline",
+      message: "machine is not connected",
+      machineId: machine.deviceId,
+      channelId: "channel-1"
+    )
+    await scripted.socket.drain()
+    #expect(await hub.machines.first?.online == true)
+
+    // The grace-expiry broadcast carries machine-wide authority.
     scripted.errorToApp(
       code: "machine-offline",
       message: "resume grace expired",
@@ -21,22 +31,8 @@ struct CloudHubPresenceRecoveryTests {
     await scripted.socket.drain()
     #expect(await hub.machines.first?.online == false)
 
-    let open = Task {
-      try await hub.openChannel(
-        machineDeviceId: machine.deviceId,
-        machinePublicKey: machine.publicKey,
-        channelType: "test",
-        params: nil,
-        onMessage: { _ in },
-        onClosed: { _ in }
-      )
-    }
-    await parked.wait()
-    #expect(scripted.relayEnvelopes.isEmpty)
-
     await hub.reconcileAuthoritativeMachines([machine.presence])
-    _ = try await open.value
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
+    #expect(await hub.machines.first?.online == true)
     await hub.shutdown()
   }
 }

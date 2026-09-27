@@ -1,26 +1,23 @@
+import CodevisorTestSupport
 import Foundation
 import Testing
 import ACPKit
 import CodevisorClient
-import CodevisorProtocol
 @testable import CodevisorCloud
 
-@Suite("CloudHubConnection channels")
-struct CloudHubChannelTests {
+/// The sealed-channel protocol a direct pipe multiplexes: per-direction
+/// seqs, close reasons, crypto and framing failures, negotiated compression,
+/// and credit enforcement on flow-controlled channels.
+@Suite("CloudDirectConnection channels")
+struct CloudDirectChannelTests {
   @Test("Opens channels, routes sealed frames, and books seqs per direction")
   func channelMux() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak scripted] envelope in
-      guard let scripted, let appKey = scripted.appPublicKey else { return }
-      _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    }
-    let (hub, _) = makeHub(scripted)
+    let scripted = ScriptedDirectMachine()
+    let machine = scripted.machine
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
 
-    let channel = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
+    let channel = try await connection.openChannel(
       channelType: "test",
       params: .object(["hello": .string("world")]),
       onMessage: { recorder.record($0) },
@@ -38,56 +35,37 @@ struct CloudHubChannelTests {
     try await channel.send(plaintext: JSONEncoder().encode(["kind": "first"]))
     try await channel.send(plaintext: JSONEncoder().encode(["kind": "second"]))
     #expect(await waitUntil { machine.channel(channel.id)?.messages.count == 2 })
-    let sentSeqs = scripted.relayEnvelopes.filter {
-      if case .data = $0.frame { return true }
+    let sentSeqs = scripted.frames.filter {
+      if case .data = $0 { return true }
       return false
-    }.map(\.frame.seq)
+    }.map(\.seq)
     #expect(sentSeqs == [1, 2])
 
     // Machine → app data frames (seq 0, 1) decrypt and arrive in order.
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-1".utf8))
-    )
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-2".utf8))
-    )
+    scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-1".utf8)))
+    scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("reply-2".utf8)))
     #expect(await waitUntil { recorder.messages.count == 2 })
     #expect(recorder.messages.map { String(decoding: $0, as: UTF8.self) } == ["reply-1", "reply-2"])
 
     // Structured channels carry NO credit traffic: machines don't gate
     // sends without negotiated flow control, so auto-replenish would be a
-    // pure (billed) no-op frame per message.
-    #expect(
-      !scripted.relayEnvelopes.contains {
-        if case .credit = $0.frame { return true }
-        return false
-      })
+    // pure no-op frame per message.
+    #expect(scripted.credits.isEmpty)
 
     // A machine-initiated close reaches onClosed with its reason.
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      frame: machine.closeFrame(channelId: channel.id, reason: .done)
-    )
+    scripted.sendToApp(frame: machine.closeFrame(channelId: channel.id, reason: .done))
     #expect(await waitUntil { recorder.closes == [.done] })
-    await hub.shutdown()
+    await connection.shutdown()
   }
 
   @Test("A seq gap on the responder direction kills the channel as protocol-error")
   func seqEnforcement() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak scripted] envelope in
-      guard let scripted, let appKey = scripted.appPublicKey else { return }
-      _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    }
-    let (hub, _) = makeHub(scripted)
+    let scripted = ScriptedDirectMachine()
+    let machine = scripted.machine
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
 
-    let channel = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
+    let channel = try await connection.openChannel(
       channelType: "test",
       params: nil,
       onMessage: { recorder.record($0) },
@@ -100,17 +78,13 @@ struct CloudHubChannelTests {
     let sealed = try machine.channel(channel.id)!.cipher.seal(
       Data("late".utf8), channelId: channel.id, direction: .responderToOpener, seq: 4
     )
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      frame: .data(channelId: channel.id, seq: 4),
-      payload: sealed
-    )
+    scripted.sendToApp(frame: .data(channelId: channel.id, seq: 4), payload: sealed)
     #expect(await waitUntil { recorder.closes == [.protocolError] })
     #expect(recorder.messages.isEmpty)
     #expect(
       await waitUntil {
-        scripted.relayEnvelopes.contains {
-          if case let .close(_, _, reason) = $0.frame { return reason == .protocolError }
+        scripted.frames.contains {
+          if case let .close(_, _, reason) = $0 { return reason == .protocolError }
           return false
         }
       })
@@ -119,47 +93,37 @@ struct CloudHubChannelTests {
     await #expect(throws: CloudHubConnectionError.channelClosed) {
       try await channel.send(plaintext: JSONEncoder().encode(["kind": "after-close"]))
     }
-    await hub.shutdown()
+    await connection.shutdown()
   }
 
   @Test("Undecryptable frames kill the channel as crypto-error")
   func cryptoErrorClosesChannel() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
+    let scripted = ScriptedDirectMachine()
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
 
-    let channel = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
+    let channel = try await connection.openChannel(
       channelType: "test",
       params: nil,
       onMessage: { recorder.record($0) },
       onClosed: { recorder.recordClose($0) }
     )
-    scripted.relayToApp(
-      machineId: machine.deviceId,
+    scripted.sendToApp(
       frame: .data(channelId: channel.id, seq: 0),
       payload: Data(repeating: 9, count: 32)
     )
     #expect(await waitUntil { recorder.closes == [.cryptoError] })
-    await hub.shutdown()
+    await connection.shutdown()
   }
 
   @Test("Negotiated compression frames payloads and inflates DEFLATE bodies")
   func compressedChannel() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak scripted] envelope in
-      guard let scripted, let appKey = scripted.appPublicKey else { return }
-      _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    }
-    let (hub, _) = makeHub(scripted)
+    let scripted = ScriptedDirectMachine()
+    let machine = scripted.machine
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
 
-    let channel = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
+    let channel = try await connection.openChannel(
       channelType: "test",
       params: nil,
       compressed: true,
@@ -177,34 +141,22 @@ struct CloudHubChannelTests {
 
     // Machine → app: RAW and DEFLATE framings both decode to plaintext.
     let big = Data(String(repeating: "terminal output ", count: 256).utf8)
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      sealed: try machine.sealData(channelId: channel.id, payload: Data("plain".utf8))
-    )
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      sealed: try machine.sealDeflated(channelId: channel.id, payload: big)
-    )
+    scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data("plain".utf8)))
+    scripted.sendToApp(sealed: try machine.sealDeflated(channelId: channel.id, payload: big))
     #expect(await waitUntil { recorder.messages.count == 2 })
     #expect(recorder.messages[0] == Data("plain".utf8))
     #expect(recorder.messages[1] == big)
-    await hub.shutdown()
+    await connection.shutdown()
   }
 
   @Test("Bad framing on a compressed channel kills it as crypto-error")
   func compressedChannelBadFraming() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    scripted.onRelay = { [weak scripted] envelope in
-      guard let scripted, let appKey = scripted.appPublicKey else { return }
-      _ = try? machine.receive(envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    }
-    let (hub, _) = makeHub(scripted)
+    let scripted = ScriptedDirectMachine()
+    let machine = scripted.machine
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
 
-    let channel = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
+    let channel = try await connection.openChannel(
       channelType: "test",
       params: nil,
       compressed: true,
@@ -216,32 +168,38 @@ struct CloudHubChannelTests {
     let bogus = try machine.channel(channel.id)!.cipher.seal(
       Data([7, 1, 2, 3]), channelId: channel.id, direction: .responderToOpener, seq: 0
     )
-    scripted.relayToApp(
-      machineId: machine.deviceId,
-      frame: .data(channelId: channel.id, seq: 0),
-      payload: bogus
-    )
+    scripted.sendToApp(frame: .data(channelId: channel.id, seq: 0), payload: bogus)
     #expect(await waitUntil { recorder.closes == [.cryptoError] })
-    await hub.shutdown()
+    await connection.shutdown()
   }
 
-  @Test("Connection loss fails open channels with nil and channels die with the socket")
-  func connectionLossFailsChannels() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
+  @Test("A flow-controlled channel rejects data beyond its granted ciphertext budget")
+  func flowControlEnforcement() async throws {
+    let scripted = ScriptedDirectMachine()
+    let machine = scripted.machine
+    let connection = makeDirectConnection(to: scripted)
     let recorder = Recorder()
+    let closed = TestSignal()
 
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { recorder.record($0) },
-      onClosed: { recorder.recordClose($0) }
+    let channel = try await connection.openFlowControlledChannel(
+      channelType: "byte-stream",
+      params: .object(["service": .string("codevisor-loopback"), "version": .number(1)]),
+      onMessage: { data, _ in recorder.record(data) },
+      onCredit: { _ in },
+      onClosed: {
+        recorder.recordClose($0)
+        closed.signal()
+      }
     )
-    scripted.socket.disconnect()
-    #expect(await waitUntil { recorder.closes == [nil] })
-    await hub.shutdown()
+    #expect(await waitUntil { machine.channel(channel.id) != nil })
+    // An empty raw box costs 16 bytes (the tag). Granting only that much
+    // cannot authorize the following one-byte payload (17 bytes).
+    try await channel.grantCredit(bytes: 16)
+    scripted.sendToApp(sealed: try machine.sealData(channelId: channel.id, payload: Data([1])))
+
+    await closed.wait()
+    #expect(recorder.closes == [.protocolError])
+    #expect(recorder.messages.isEmpty)
+    await connection.shutdown()
   }
 }

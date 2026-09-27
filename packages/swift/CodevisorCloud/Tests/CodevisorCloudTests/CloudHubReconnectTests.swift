@@ -81,9 +81,8 @@ struct CloudHubReconnectTests {
 
   @Test("An outbound send failure replaces the hub socket")
   func sendFailureReconnects() async throws {
-    let machine = ScriptedRelayMachine()
-    let first = ScriptedCloudHub(machines: [machine.presence])
-    let second = ScriptedCloudHub(machines: [machine.presence])
+    let first = ScriptedCloudHub()
+    let second = ScriptedCloudHub()
     let sockets = SocketQueue([first.socket, second.socket])
     let transport = FakeWebSocketTransport { _ in sockets.next() }
     let store = InMemoryCloudCredentialStore(token: "session-token")
@@ -95,20 +94,17 @@ struct CloudHubReconnectTests {
       deviceOS: "macOS",
       webSocketTransport: transport,
       readyTimeout: .seconds(2),
+      heartbeatInterval: .seconds(30),
+      heartbeatTimeout: .seconds(10),
       sleep: clock.sleep,
       reconnectDelay: { _ in .seconds(1) }
     )
 
     try await hub.waitUntilReady()
     first.socket.failsSends = true
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { _ in }
-    )
+    // The next keepalive ping is the send that fails.
+    await clock.waitForSleep(.seconds(30))
+    clock.advance(by: .seconds(30))
     await clock.waitForSleep(.seconds(1))
     #expect(transport.requests.count == 1)
     clock.advance(by: .seconds(1))

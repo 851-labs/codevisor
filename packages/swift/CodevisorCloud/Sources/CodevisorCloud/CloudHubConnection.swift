@@ -1,18 +1,15 @@
-import ACPKit
 import CodevisorClient
 import Foundation
 
 // MARK: - Hub connection
 
-/// The app's one WebSocket to its Codevisor Cloud hub: hello/welcome handshake,
-/// presence, and multiplexed end-to-end encrypted relay channels to machines.
-/// The app is always the channel opener; per-direction sequence numbers start
-/// at 0 and the responder direction is enforced monotonic here.
+/// The app's one WebSocket to its Codevisor Cloud hub — the control plane:
+/// hello/welcome handshake, presence, the tunnel config (relay map and
+/// rollout), and keepalive. Machine traffic never rides this socket; it goes
+/// peer-to-peer over the tunnel (`CloudDirectPathController`).
 ///
 /// Reconnects with jittered exponential backoff; hub close codes 4200/4201
 /// are fatal (revoked token / unsupported protocol) and stop the loop.
-/// Channels are ephemeral: they die with either WebSocket and openers
-/// re-establish what they need after reconnect.
 public actor CloudHubConnection {
   public static let protocolVersion = 2
   static let maximumMessageSize = 16 * 1024 * 1024
@@ -27,19 +24,9 @@ public actor CloudHubConnection {
   let releaseChannel: CloudReleaseChannel
   let sleep: @Sendable (Duration) async throws -> Void
   private let reconnectDelay: @Sendable (Int) -> Duration
-  private let onMachineWait: @Sendable () -> Void
   private let readyTimeout: Duration
-  /// How long a channel open parks for an offline machine before it is sent
-  /// anyway. Presence can go stale across hub restarts; past this bound the
-  /// hub itself answers (routes the open, or fails it with machine-offline)
-  /// instead of the open waiting on a presence frame that may never come.
-  private let machineWaitTimeout: Duration
   private let heartbeatInterval: Duration
   let heartbeatTimeout: Duration
-  /// How long held channels survive a socket gap while a resume is pending
-  /// before degrading to the plain teardown (slightly above the hub's
-  /// 60s grace, so the hub — not a local timer — decides the outcome).
-  let resumeSuspensionTimeout: Duration
   let decoder = JSONDecoder()
   let encoder = JSONEncoder()
 
@@ -52,31 +39,18 @@ public actor CloudHubConnection {
   private var fatalFailure: CloudHubConnectionError?
   private var waiterSeq = 0
   var readyWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
-  private var machineWaiterSeq = 0
-  private var machineOnlineWaiters: [Int: (machineId: String, continuation: CheckedContinuation<Void, any Error>)] =
-    [:]
-  var channels: [String: ChannelState] = [:]
-  /// Consecutive channels per machine whose owner gave up before a single
-  /// frame arrived. Any inbound frame from the machine resets its count.
-  var unansweredOpens: [String: Int] = [:]
-  /// Fresh sessions already started on a machine's behalf without it
-  /// answering since; each one doubles the unanswered opens required for the
-  /// next, so a machine that is itself wedged cannot churn the hub for
-  /// every other machine.
-  var unansweredSessionRestarts: [String: Int] = [:]
   /// Keychain-backed values are immutable for this hub's lifetime. The
   /// account controller destroys the hub on sign-out/server switch, so no
-  /// channel or reconnect should ever return to the credential store.
+  /// reconnect should ever return to the credential store.
   private var cachedSessionToken: Result<String, CloudHubConnectionError>?
   private var cachedIdentity: Result<CloudAppDeviceIdentity, CloudHubConnectionError>?
-  /// Serializes outbound socket writes so relay frames hit the wire in seq
-  /// order even when several tasks send concurrently.
+  /// Serializes outbound socket writes so messages hit the wire in the order
+  /// they were sent, even when several tasks send concurrently.
   var sendChain: Task<Void, Never> = Task {}
-  /// Session resume: the token from the last welcome, the identity it
-  /// names, and the deadline that bounds a suspension nobody resumes.
+  /// Session resume: the token from the last welcome (offered in the next
+  /// hello) and the connection identity it names.
   var resumeToken: String?
   var lastConnectionId: String?
-  var suspensionTask: Task<Void, Never>?
   /// The machine presence list from welcome, kept fresh by presence frames.
   public internal(set) var machines: [CloudMachine] = []
   /// Fired after the transport's machine list changes from a hub frame —
@@ -99,43 +73,11 @@ public actor CloudHubConnection {
     machinesChangedHandler = handler
   }
 
-  final class ChannelState {
-    let machineDeviceId: String
-    let cipher: CloudChannelCipher
-    var nextOutboundSeq: UInt64
-    var nextInboundSeq: UInt64 = 0
-    let flowControlled: Bool
-    /// Negotiated prefix-framed payloads: every data plaintext in both
-    /// directions starts with a framing byte and the machine may DEFLATE
-    /// bodies it deems worthwhile (see CloudDeflate).
-    let compressed: Bool
-    var inboundCredit = 0
-    /// Whether any frame from the machine has arrived on this channel —
-    /// proof that the relay path to the machine carries traffic.
-    var receivedInbound = false
-    let onMessage: @Sendable (Data, Int) -> Void
-    let onCredit: @Sendable (Int) -> Void
-    let onClosed: @Sendable (CloudChannelCloseReason?) -> Void
-
-    init(
-      machineDeviceId: String,
-      cipher: CloudChannelCipher,
-      nextOutboundSeq: UInt64,
-      flowControlled: Bool,
-      compressed: Bool,
-      onMessage: @escaping @Sendable (Data, Int) -> Void,
-      onCredit: @escaping @Sendable (Int) -> Void,
-      onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-    ) {
-      self.machineDeviceId = machineDeviceId
-      self.cipher = cipher
-      self.nextOutboundSeq = nextOutboundSeq
-      self.flowControlled = flowControlled
-      self.compressed = compressed
-      self.onMessage = onMessage
-      self.onCredit = onCredit
-      self.onClosed = onClosed
-    }
+  /// Installs the tunnel config observer (fired on every welcome). A welcome
+  /// that already arrived is replayed, so installing late never misses it.
+  public func setTunnelConfigHandler(_ handler: (@Sendable (CloudTunnelConfig) -> Void)?) {
+    tunnelConfigHandler = handler
+    if let lastTunnelConfig { handler?(lastTunnelConfig) }
   }
 
   public init(
@@ -149,17 +91,13 @@ public actor CloudHubConnection {
     readyTimeout: Duration = .seconds(15),
     heartbeatInterval: Duration = .seconds(30),
     heartbeatTimeout: Duration = .seconds(10),
-    resumeSuspensionTimeout: Duration = .seconds(70),
-    machineWaitTimeout: Duration = .seconds(20),
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     reconnectDelay: @escaping @Sendable (Int) -> Duration = { failures in
       .milliseconds(min(5_000, 250 * (1 << min(failures, 5))) + Int.random(in: 0...250))
-    },
-    onMachineWait: @escaping @Sendable () -> Void = {}
+    }
   ) {
     self.sleep = sleep
     self.reconnectDelay = reconnectDelay
-    self.onMachineWait = onMachineWait
     self.serverURL = serverURL
     self.credentialStore = credentialStore
     self.deviceName = deviceName
@@ -170,8 +108,6 @@ public actor CloudHubConnection {
     self.readyTimeout = readyTimeout
     self.heartbeatInterval = heartbeatInterval
     self.heartbeatTimeout = heartbeatTimeout
-    self.resumeSuspensionTimeout = resumeSuspensionTimeout
-    self.machineWaitTimeout = machineWaitTimeout
   }
 
   public static var defaultDeviceName: String {
@@ -206,8 +142,6 @@ public actor CloudHubConnection {
   public func shutdown() {
     runTask?.cancel()
     runTask = nil
-    suspensionTask?.cancel()
-    suspensionTask = nil
     resumeToken = nil
     lastConnectionId = nil
     resetHeartbeat()
@@ -215,15 +149,12 @@ public actor CloudHubConnection {
     socket = nil
     socketID = nil
     isWelcomed = false
-    failAllChannels()
     failWaiters(with: CloudHubConnectionError.disconnected)
-    failMachineWaiters(with: CloudHubConnectionError.disconnected)
   }
 
   /// Replaces the live socket without discarding account credentials. App
-  /// lifecycle recovery uses this after returning to the foreground: every
-  /// relay channel is ephemeral, so its owner reconnects from its durable
-  /// cursor on the newly welcomed socket.
+  /// lifecycle recovery uses this after returning to the foreground, when
+  /// the old socket may be half-open after a suspension or network handoff.
   public func reconnect() {
     guard fatalFailure == nil else { return }
     guard let socket else {
@@ -233,8 +164,6 @@ public actor CloudHubConnection {
     Log.cloud.info("Replacing the cloud hub connection")
     isWelcomed = false
     resetHeartbeat()
-    // Held channels ride through the replacement when the next welcome
-    // resumes; the run loop's teardown decides their fate otherwise.
     socket.cancel(with: .goingAway, reason: nil)
   }
 
@@ -306,7 +235,7 @@ public actor CloudHubConnection {
         defer { keepalive.cancel() }
         while !Task.isCancelled {
           let message = try await socket.receive()
-          await handle(message)
+          handle(message)
           if isWelcomed { failures = 0 }
         }
       } catch let error as CloudHubConnectionError
@@ -326,15 +255,7 @@ public actor CloudHubConnection {
       socket = nil
       socketID = nil
       isWelcomed = false
-      let fatal = Self.fatalCloseCodes.contains(closeCode)
-      if fatal || resumeToken == nil {
-        failAllChannels()
-      } else {
-        // Suspend: channels ride out the gap awaiting a resumed
-        // welcome, bounded so nothing hangs if the hub forgets us.
-        armSuspensionDeadline()
-      }
-      if fatal {
+      if Self.fatalCloseCodes.contains(closeCode) {
         becomeFatal(.rejected(closeCode: closeCode))
       }
       guard fatalFailure == nil, !Task.isCancelled else { break }
@@ -344,28 +265,11 @@ public actor CloudHubConnection {
     }
   }
 
-  private func armSuspensionDeadline() {
-    suspensionTask?.cancel()
-    let timeout = resumeSuspensionTimeout
-    let sleep = sleep
-    suspensionTask = Task { [weak self] in
-      try? await sleep(timeout)
-      guard !Task.isCancelled else { return }
-      await self?.expireSuspension()
-    }
-  }
-
-  private func expireSuspension() {
-    guard !isWelcomed else { return }
-    failAllChannels()
-  }
-
   private func becomeFatal(_ failure: CloudHubConnectionError) {
     guard fatalFailure == nil else { return }
     Log.cloud.error("Cloud hub connection is fatal: \(String(describing: failure), privacy: .public)")
     fatalFailure = failure
     failWaiters(with: failure)
-    failMachineWaiters(with: failure)
   }
 
   private func failWaiters(with error: any Error) {
@@ -373,22 +277,6 @@ public actor CloudHubConnection {
     readyWaiters.removeAll()
     for waiter in waiters {
       waiter.resume(throwing: error)
-    }
-  }
-
-  private func failMachineWaiters(with error: any Error) {
-    let waiters = machineOnlineWaiters.values
-    machineOnlineWaiters.removeAll()
-    for waiter in waiters {
-      waiter.continuation.resume(throwing: error)
-    }
-  }
-
-  func failMachineWaiters(for machineId: String, with error: any Error) {
-    let failed = machineOnlineWaiters.filter { $0.value.machineId == machineId }
-    for (id, waiter) in failed {
-      machineOnlineWaiters.removeValue(forKey: id)
-      waiter.continuation.resume(throwing: error)
     }
   }
 
@@ -409,7 +297,7 @@ public actor CloudHubConnection {
     return try result.get()
   }
 
-  func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
+  private func appDeviceIdentity() throws -> CloudAppDeviceIdentity {
     if let cachedIdentity { return try cachedIdentity.get() }
     let result: Result<CloudAppDeviceIdentity, CloudHubConnectionError>
     do {
@@ -420,74 +308,6 @@ public actor CloudHubConnection {
     }
     cachedIdentity = result
     return try result.get()
-  }
-
-  /// An offline machine is a state transition, not a timer-based connection
-  /// failure. Park channel openers until presence says it is back instead of
-  /// letting every event stream and terminal create an independent retry
-  /// loop. Cancellation removes the parked request promptly. The park is
-  /// bounded: local presence can be stale (a frame lost across hub
-  /// restarts), so past `machineWaitTimeout` the open proceeds and the hub —
-  /// which knows whether the machine is really connected — answers it.
-  func waitUntilMachineOnline(_ machineId: String) async throws {
-    guard let machine = machines.first(where: { $0.deviceId == machineId }) else {
-      throw CloudHubConnectionError.machineUnavailable
-    }
-    if machine.online { return }
-    if Task.isCancelled { throw CancellationError() }
-
-    let id = machineWaiterSeq
-    machineWaiterSeq += 1
-    let timeout = machineWaitTimeout
-    let sleep = sleep
-    let timeoutTask = Task { [weak self] in
-      try? await sleep(timeout)
-      guard !Task.isCancelled else { return }
-      await self?.expireMachineWaiter(id)
-    }
-    defer { timeoutTask.cancel() }
-    try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation {
-        (continuation: CheckedContinuation<Void, any Error>) in
-        let cancelled = withUnsafeCurrentTask { $0?.isCancelled ?? false }
-        guard !cancelled else {
-          continuation.resume(throwing: CancellationError())
-          return
-        }
-        machineOnlineWaiters[id] = (machineId, continuation)
-        onMachineWait()
-      }
-    } onCancel: {
-      Task { await self.cancelMachineWaiter(id) }
-    }
-  }
-
-  private func cancelMachineWaiter(_ id: Int) {
-    machineOnlineWaiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
-  }
-
-  private func expireMachineWaiter(_ id: Int) {
-    guard let waiter = machineOnlineWaiters.removeValue(forKey: id) else { return }
-    Log.cloud.notice(
-      "Machine \(waiter.machineId, privacy: .public) still looks offline after \(String(describing: self.machineWaitTimeout), privacy: .public); opening through the hub anyway"
-    )
-    waiter.continuation.resume()
-  }
-
-  func resumeMachineWaiters(for machineId: String) {
-    let ready = machineOnlineWaiters.filter { $0.value.machineId == machineId }
-    for (id, waiter) in ready {
-      machineOnlineWaiters.removeValue(forKey: id)
-      waiter.continuation.resume()
-    }
-  }
-
-  func failAllChannels() {
-    let open = channels.values
-    channels.removeAll()
-    for channel in open {
-      channel.onClosed(nil)
-    }
   }
 
   /// RFC 3986 unreserved characters — everything else in the token is
@@ -520,5 +340,4 @@ public actor CloudHubConnection {
     guard let url = components.url else { throw CloudHubConnectionError.disconnected }
     return url
   }
-
 }

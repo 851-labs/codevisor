@@ -23,76 +23,6 @@ struct CloudHubConnectionTests {
     await hub.shutdown()
   }
 
-  @Test("A hub snapshots credentials instead of rereading them per channel")
-  func credentialsAreReadOnce() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let memory = InMemoryCloudCredentialStore(token: "session-token")
-    try memory.saveAppDeviceId("app-device")
-    try memory.saveAppSecretKey(Data(repeating: 7, count: 32))
-    let store = CountingCredentialStore(base: memory)
-    let hub = CloudHubConnection(
-      serverURL: URL(string: "https://cloud.example.com")!,
-      credentialStore: store,
-      deviceName: "Test App",
-      deviceOS: "macOS",
-      webSocketTransport: FakeWebSocketTransport { _ in scripted.socket },
-      readyTimeout: .seconds(2),
-      sleep: TestClock().sleep,
-      reconnectDelay: { _ in .seconds(1) }
-    )
-
-    try await hub.waitUntilReady()
-    for _ in 0..<4 {
-      _ = try await hub.openChannel(
-        machineDeviceId: machine.deviceId,
-        machinePublicKey: machine.publicKey,
-        channelType: "test",
-        params: nil,
-        onMessage: { _ in },
-        onClosed: { _ in }
-      )
-    }
-
-    let counts = store.readCounts
-    #expect(counts.token == 1)
-    #expect(counts.deviceId == 1)
-    #expect(counts.secretKey == 1)
-    await hub.shutdown()
-  }
-
-  @Test("Channel opens park while a known machine is offline")
-  func offlineMachineParksChannelOpen() async throws {
-    let machine = ScriptedRelayMachine()
-    var offlinePresence = machine.presence
-    offlinePresence.online = false
-    let scripted = ScriptedCloudHub(machines: [offlinePresence])
-    let parked = TestSignal()
-    let (hub, _) = makeHub(scripted, onMachineWait: parked.signal)
-
-    try await hub.waitUntilReady()
-    let openTask = Task {
-      try await hub.openChannel(
-        machineDeviceId: machine.deviceId,
-        machinePublicKey: machine.publicKey,
-        channelType: "test",
-        params: nil,
-        onMessage: { _ in },
-        onClosed: { _ in }
-      )
-    }
-
-    await parked.wait()
-    #expect(scripted.relayEnvelopes.isEmpty)
-
-    var onlinePresence = offlinePresence
-    onlinePresence.online = true
-    scripted.presenceToApp(onlinePresence)
-    _ = try await openTask.value
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
-    await hub.shutdown()
-  }
-
   @Test("The welcome roster and presence pushes fire the machines-changed handler")
   func machinesChangedHandlerFires() async throws {
     let machine = ScriptedRelayMachine()
@@ -119,110 +49,13 @@ struct CloudHubConnectionTests {
         }
       }
     )
-    await hub.shutdown()
-  }
 
-  @Test("An offline presence closes that machine's channels")
-  func offlinePresenceClosesChannels() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
-    let recorder = Recorder()
-
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { recorder.recordClose($0) }
-    )
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
-
-    // The machine's hub socket dropped: its in-memory channel state is
-    // gone, so the app must tear down its side rather than wait forever.
-    var offlinePresence = machine.presence
-    offlinePresence.online = false
-    scripted.presenceToApp(offlinePresence)
-
-    #expect(await waitUntil { recorder.closes == [nil] })
-    #expect(await hub.machines.first?.online == false)
-    await hub.shutdown()
-  }
-
-  @Test("A machine-reset closes that machine's channels without marking it offline")
-  func machineResetClosesChannels() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
-    let recorder = Recorder()
-
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { recorder.recordClose($0) }
-    )
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
-
-    // The machine re-hello'd: its channel state is fresh, so existing
-    // channels are dead even though the machine stays online.
-    scripted.machineResetToApp(machineId: machine.deviceId)
-
-    #expect(await waitUntil { recorder.closes == [nil] })
-    #expect(await hub.machines.first?.online == true)
-
-    // The machine is still online, so a fresh open dispatches immediately
-    // instead of parking for a presence flip.
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { _ in }
-    )
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 2 })
-    await hub.shutdown()
-  }
-
-  @Test("A channel-scoped machine-offline error does not poison machine presence")
-  func channelScopedOfflineErrorOnlyClosesItsChannel() async throws {
-    let machine = ScriptedRelayMachine()
-    let scripted = ScriptedCloudHub(machines: [machine.presence])
-    let (hub, _) = makeHub(scripted)
-    let recorder = Recorder()
-
-    let first = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { recorder.recordClose($0) }
-    )
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 1 })
-
-    scripted.errorToApp(
-      code: "machine-offline",
-      message: "machine is not connected",
-      machineId: machine.deviceId,
-      channelId: first.id
-    )
-    #expect(await waitUntil { recorder.closes == [nil] })
-    #expect(await hub.machines.first?.online == true)
-
-    _ = try await hub.openChannel(
-      machineDeviceId: machine.deviceId,
-      machinePublicKey: machine.publicKey,
-      channelType: "test",
-      params: nil,
-      onMessage: { _ in },
-      onClosed: { _ in }
-    )
-    #expect(await waitUntil { scripted.relayEnvelopes.count == 2 })
+    // A presence transition for a known machine updates it in place.
+    var offline = machine.presence
+    offline.online = false
+    scripted.presenceToApp(offline)
+    #expect(await waitUntil { recorder.snapshots.last?.first?.online == false })
+    #expect(recorder.snapshots.last?.map(\.deviceId) == [machine.deviceId, "just-signed-in"])
     await hub.shutdown()
   }
 

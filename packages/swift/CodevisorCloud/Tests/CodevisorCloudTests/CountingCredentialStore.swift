@@ -7,8 +7,8 @@ import CodevisorClient
 import CodevisorProtocol
 @testable import CodevisorCloud
 
-// Shared helpers for the CloudHubConnection suites (extracted so the test
-// files stay under the structural lint limits).
+// Shared helpers for the CloudHubConnection and channel suites (extracted so
+// the test files stay under the structural lint limits).
 
 @Observable
 
@@ -136,8 +136,7 @@ func makeHub(
   heartbeatInterval: Duration = .seconds(30),
   heartbeatTimeout: Duration = .seconds(10),
   clock: TestClock = TestClock(),
-  releaseChannel: CloudReleaseChannel = CloudReleaseChannel(),
-  onMachineWait: @escaping @Sendable () -> Void = {}
+  releaseChannel: CloudReleaseChannel = CloudReleaseChannel()
 ) -> (hub: CloudHubConnection, store: InMemoryCloudCredentialStore) {
   let store = InMemoryCloudCredentialStore(token: "session-token")
   let hub = CloudHubConnection(
@@ -152,8 +151,7 @@ func makeHub(
     heartbeatTimeout: heartbeatTimeout,
     sleep: clock.sleep,
     // A closed fake socket must suspend between attempts, even with one Swift worker.
-    reconnectDelay: { _ in .seconds(1) },
-    onMachineWait: onMachineWait
+    reconnectDelay: { _ in .seconds(1) }
   )
   return (hub, store)
 }

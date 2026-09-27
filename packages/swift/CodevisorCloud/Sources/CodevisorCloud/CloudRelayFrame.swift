@@ -168,14 +168,13 @@ public enum CloudRelayWireError: Error, Equatable, Sendable {
   case empty
 }
 
-/// Errors the hub connection can surface to channel openers.
+/// Errors the hub connection and the direct pipes surface to their callers.
 public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError {
   /// The hub closed the socket with a fatal code (4200 bad token, 4201
   /// unsupported protocol) — reconnecting cannot help.
   case rejected(closeCode: Int)
   case notSignedIn
   case credentialsUnavailable
-  case machineUnavailable
   case disconnected
   case timedOut
   case channelClosed
@@ -188,8 +187,6 @@ public enum CloudHubConnectionError: Error, Equatable, Sendable, LocalizedError 
       "Not signed in to Codevisor Cloud."
     case .credentialsUnavailable:
       "Codevisor couldn't load its cloud credentials."
-    case .machineUnavailable:
-      "The cloud machine is offline."
     case .disconnected:
       "The Codevisor Cloud connection is offline."
     case .timedOut:
