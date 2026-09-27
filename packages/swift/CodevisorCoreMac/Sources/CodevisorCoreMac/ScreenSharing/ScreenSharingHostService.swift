@@ -27,7 +27,10 @@ final class ScreenSharingHostService {
     let profile: ScreenSharingDiagnosticProfile?
     let metrics: ScreenSharingMetrics
     let display: ServerScreenSharingDisplay
-    let displayID: UInt32
+    /// The shared physical display. macOS can renumber it when the display set changes, so it's
+    /// followed by `displayIdentity` (see `followDisplay`).
+    var displayID: UInt32
+    let displayIdentity: ScreenSharingDisplayIdentity
     /// The physical display scaled to ≤1080p; a virtual display sized to the viewer replaces it
     /// while Dynamic Resolution is on (851-2376).
     var configuration: ScreenSharingVideoConfiguration
@@ -67,6 +70,7 @@ final class ScreenSharingHostService {
       owner = .init(request)
       self.profile = profile
       self.display = display; self.displayID = displayID
+      displayIdentity = ScreenSharingDisplayIdentity(display: displayID)
       // Level 0 is where a session starts; lower levels request the video rate through the same validated path.
       capture = ScreenSharingCapture(captureIntervalFPS: profile?.captureIntervalFPS(adaptiveLevel: 0))
       let scale = min(1, min(1920.0 / Double(display.width), 1080.0 / Double(display.height)))
@@ -427,14 +431,6 @@ final class ScreenSharingHostService {
     if current === session { current = nil }
   }
 
-  private func permissionRequired() -> ServerScreenSharingReply {
-    .init(
-      status: "permission-required",
-      message:
-        "Allow Codevisor in System Settings → Privacy & Security → Screen & System Audio Recording on the host Mac, then retry."
-    )
-  }
-
   /// Shared by the system notification adapter and deterministic request-ordering coverage.
   func systemStopped() {
     stopGeneration += 1
@@ -467,6 +463,14 @@ final class ScreenSharingHostService {
 }
 
 extension ScreenSharingHostService {
+  private func permissionRequired() -> ServerScreenSharingReply {
+    .init(
+      status: "permission-required",
+      message:
+        "Allow Codevisor in System Settings → Privacy & Security → Screen & System Audio Recording on the host Mac, then retry."
+    )
+  }
+
   /// ScreenCaptureKit stopped the stream with an error (851-2375): restart it on the same
   /// session, a bounded number of times, with the viewer told why the picture paused.
   private func captureStopped(_ session: Session, message: String) {
@@ -491,7 +495,7 @@ extension ScreenSharingHostService {
       let baseline = ScreenSharingCaptureStallRecovery.activity(session.metrics.snapshot().counters)
       do {
         try? await session.capture.stop()
-        try await self.startWatchedCapture(session, reason: "capture stopped")
+        try await self.restartOnSettledDisplay(session)
       } catch {
         guard self.current === session, !session.stopping, !Task.isCancelled else { return }
         Self.logger.error("Capture restart failed: \(error.localizedDescription, privacy: .public)")

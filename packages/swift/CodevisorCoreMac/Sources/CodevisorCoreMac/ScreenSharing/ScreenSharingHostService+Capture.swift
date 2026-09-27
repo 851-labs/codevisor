@@ -65,3 +65,46 @@ extension ScreenSharingHostService {
     }
   }
 }
+
+extension ScreenSharingHostService {
+  /// How long a capture restart waits for the display set to settle, and how often it looks.
+  static let displaySettleAttempts = 10
+  static let displaySettleInterval: Duration = .milliseconds(300)
+
+  /// Points the session at its display's current ID when macOS renumbered it. Returns false when
+  /// there is no display to follow yet (the display set is mid-change).
+  @discardableResult
+  func followDisplay(_ session: Session) -> Bool {
+    guard
+      let current = ScreenSharingDisplayIdentity.follow(
+        session.displayID, identity: session.displayIdentity, online: ScreenSharingDisplayIdentity.online())
+    else { return false }
+    guard current != session.displayID else { return true }
+    Self.logger.notice("Shared display \(session.displayID) is now display \(current)")
+    session.displayID = current
+    session.injector = ScreenSharingInputInjector(displayBounds: CGDisplayBounds(current))
+    return true
+  }
+
+  /// A capture restart after the display set changed (a virtual display appearing or going, a
+  /// mirror ending): macOS may briefly list no display, or renumber the shared one. Follow it and
+  /// retry for a few seconds before giving up.
+  func restartOnSettledDisplay(_ session: Session) async throws {
+    var lastError: (any Error)?
+    for attempt in 0..<Self.displaySettleAttempts {
+      if attempt > 0 { try await Task.sleep(for: Self.displaySettleInterval) }
+      guard !session.stopping, !Task.isCancelled else { throw CancellationError() }
+      guard followDisplay(session) else { continue }
+      do {
+        try await startWatchedCapture(
+          session, reason: attempt == 0 ? "capture stopped" : "capture stopped, retry \(attempt)")
+        return
+      } catch let error as ScreenSharingError {
+        guard case .unavailable = error else { throw error }
+        lastError = error
+        try? await session.capture.stop()
+      }
+    }
+    throw lastError ?? ScreenSharingError.unavailable("The shared display didn't come back.")
+  }
+}

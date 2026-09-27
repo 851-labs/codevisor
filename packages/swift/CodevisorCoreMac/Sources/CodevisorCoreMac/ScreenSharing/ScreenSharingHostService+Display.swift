@@ -63,6 +63,8 @@ extension ScreenSharingHostService {
     let channel = session.peer.displayChannel
     // The virtual display appearing, the mirror and the new mode each post a screen change.
     session.ownDisplayChangeUntil = ProcessInfo.processInfo.systemUptime + 5
+    // An earlier change may have renumbered the physical display; mirror the one that's there.
+    followDisplay(session)
     let movesDisplay: Bool
     do {
       if let size {

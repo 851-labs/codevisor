@@ -13,7 +13,7 @@ import ScreenSharing
 /// restored 1512×982.
 @MainActor
 final class ScreenSharingHostVirtualDisplay {
-  static let vendorID: UInt32 = 0xC0DF
+  nonisolated static let vendorID: UInt32 = 0xC0DF
   static let name = "Codevisor Screen Sharing"
   /// Points; the raster is twice that, up to 3840×2400 pixels (the encoder's 4K budget).
   /// Rendered at 2×, the video's 3840×2160 limit.
