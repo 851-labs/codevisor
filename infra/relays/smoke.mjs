@@ -127,6 +127,10 @@ async function smokeLocalImage(image, engine) {
             "--entrypoint",
             "/app/entrypoint.sh"
           ]),
+      // Linux Docker resolves host.docker.internal (the authorize server's
+      // address) only when asked to; Docker Desktop and Apple containers
+      // always do.
+      ...(engine === "docker" ? ["--add-host", "host.docker.internal:host-gateway"] : []),
       "--publish",
       "18443:443",
       "--publish",

@@ -213,7 +213,9 @@ export async function ensureRelayBinary(environment = process.env) {
     await rm(staging, { recursive: true, force: true })
     await mkdir(staging, { recursive: true })
     await writeFile(join(staging, "relay.tar.gz"), archive)
-    await run("tar", ["-xzf", "relay.tar.gz", "iroh-relay"], { cwd: staging })
+    // The archive stores `./iroh-relay`; GNU tar matches member names
+    // literally (bsdtar on macOS accepts either spelling).
+    await run("tar", ["-xzf", "relay.tar.gz", "./iroh-relay"], { cwd: staging })
     await mkdir(dirname(binary), { recursive: true })
     await rename(join(staging, "iroh-relay"), binary)
     await rm(staging, { recursive: true, force: true })
