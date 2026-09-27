@@ -8,6 +8,7 @@
 //      RELAY_AUTHORIZE_TOKEN, and optionally CLOUDFLARE_ZONE_ID (otherwise
 //      the zone is looked up by name).
 // Usage: node infra/relays/provision.mjs <relay-id>
+//        node infra/relays/provision.mjs --registry   (the image-holder app)
 import { execFile } from "node:child_process"
 import process from "node:process"
 import { promisify } from "node:util"
@@ -101,6 +102,12 @@ async function ensureDns(hostname, type, content) {
 
 const id = process.argv[2]
 const { org, relays } = await readRelays()
+if (id === "--registry") {
+  // Fly's registry only takes images named after an existing app. This one
+  // never runs Machines: it just holds the shared relay image.
+  await ensureApp("codevisor-relay", org)
+  process.exit(0)
+}
 const relay = relays.find((entry) => entry.id === id)
 if (relay === undefined) throw new Error(`unknown relay ${id}`)
 const app = `codevisor-${relay.id}`

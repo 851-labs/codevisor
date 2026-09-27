@@ -68,7 +68,10 @@ jobs:
           node scripts/net-artifact.mjs ensure-node
           node infra/relays/smoke.mjs --local-image "${{ needs.plan.outputs.image }}" --engine docker
       - name: Push
-        run: flyctl auth docker && docker push "${{ needs.plan.outputs.image }}"
+        run: |
+          node infra/relays/provision.mjs --registry
+          flyctl auth docker
+          docker push "${{ needs.plan.outputs.image }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
