@@ -22,9 +22,8 @@ export const CloudRelayInfo = Schema.Struct({
 export type CloudRelayInfo = typeof CloudRelayInfo.Type
 
 /// Per-connection tunnel switch in welcome. Clients only use the tunnel when
-/// the hub says "on"; unknown values mean "off". The hub derives it from the
-/// Worker var `TUNNEL_ROLLOUT` ("off" | "alpha" | "on") and, for "alpha", the
-/// device's `releaseChannel`.
+/// the hub says "on"; unknown values mean "off". The hub says "on" when the
+/// device's `releaseChannel` is "alpha".
 export const CloudTunnelRollout = Schema.Literals(["off", "on"])
 export type CloudTunnelRollout = typeof CloudTunnelRollout.Type
 

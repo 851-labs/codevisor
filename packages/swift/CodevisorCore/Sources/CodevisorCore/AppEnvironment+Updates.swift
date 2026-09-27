@@ -153,7 +153,7 @@ extension AppEnvironment {
     settings.setAlphaUpdatesEnabled(enabled)
     appUpdate.setAllowsAlphaUpdates(enabled)
     machines.serverUpdateChannel = enabled ? .alpha : .stable
-    CloudReleaseChannel.shared.isAlpha = enabled
+    reportReleaseChannel(alpha: enabled)
     configSync.set(
       namespace: "settings",
       key: "updateChannel",
@@ -182,7 +182,14 @@ extension AppEnvironment {
     settings.setAlphaUpdatesEnabled(alpha)
     appUpdate.setAllowsAlphaUpdates(alpha)
     machines.serverUpdateChannel = alpha ? .alpha : .stable
-    CloudReleaseChannel.shared.isAlpha = alpha
+    reportReleaseChannel(alpha: alpha)
+  }
+
+  /// The channel the cloud hub sees, which decides whether this device uses
+  /// the tunnel. Development builds always report Alpha, so local
+  /// development runs the same tunnel path as Alpha.
+  func reportReleaseChannel(alpha: Bool) {
+    CloudReleaseChannel.shared.isAlpha = alpha || CodevisorAppVariant.isDevelopment
   }
 
   // MARK: - Session import discovery (moved from AppEnvironment.swift for the size ratchet)

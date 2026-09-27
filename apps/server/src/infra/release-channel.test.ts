@@ -68,6 +68,15 @@ describe("machineReleaseChannel", () => {
   it("reads the channel file before the synced setting has loaded", () => {
     const dir = dataDir()
     writeFileSync(join(dir, "app-update-channel"), "alpha")
-    expect(machineReleaseChannel(dir, db([]))()).toBe("alpha")
+    expect(machineReleaseChannel(dir, db([]), {})()).toBe("alpha")
+  })
+
+  it("reports Alpha for development servers, whatever the settings say", () => {
+    const dev = machineReleaseChannel(
+      dataDir(),
+      db([{ key: "updateChannel", value: "stable", deleted: false }]),
+      { CODEVISOR_DEV_INSTANCE_ID: "kasha" }
+    )
+    expect(dev()).toBe("alpha")
   })
 })

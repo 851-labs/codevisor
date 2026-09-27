@@ -175,6 +175,8 @@ async function main() {
           CODEVISOR_WORKTREES_ROOT: join(root, name, "worktrees"),
           CODEVISOR_REPOS_ROOT: join(root, name, "repos"),
           CODEVISOR_PLUGINS_ROOT: join(root, name, "plugins"),
+          // Development servers report the Alpha channel (tunnel on).
+          CODEVISOR_DEV_INSTANCE_ID: `net-e2e-${name}`,
           CODEVISOR_DEV_CLOUD_URL: cloudUrl,
           CODEVISOR_DEV_CLOUD_TOKEN: token,
           CODEVISOR_NET_PATH_POLICY: pathPolicy
@@ -217,7 +219,9 @@ async function main() {
         kind: "app",
         name: "net-e2e",
         publicKey: appKeys.publicKey,
-        tunnelEndpointId
+        tunnelEndpointId,
+        // The hub turns the tunnel on for Alpha devices only.
+        releaseChannel: "alpha"
       }
     })
   )

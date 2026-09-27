@@ -83,8 +83,6 @@ export const devNetCloudVariables = (net) => [
   "--var",
   `RELAY_MAP:${JSON.stringify(devRelayMap(net))}`,
   "--var",
-  "TUNNEL_ROLLOUT:on",
-  "--var",
   `RELAY_AUTHORIZE_TOKEN:${net.authorizeToken}`
 ]
 

@@ -13,6 +13,7 @@ import { authed, BASE, connectApp, connectMachine, devLogin } from "./cloud-test
 // our relays; it never carries tunnel traffic.
 
 const endpointId = (fill: string): string => fill.repeat(64)
+const alpha = { releaseChannel: "alpha" as const }
 
 /// Exactly what the pinned iroh-relay sends (captured from v1.2.0).
 const authorize = (endpoint: string, token = "relay-secret"): Promise<Response> =>
@@ -22,7 +23,7 @@ const authorize = (endpoint: string, token = "relay-secret"): Promise<Response> 
   })
 
 describe("tunnel control plane", () => {
-  it("advertises the relay map and rollout in discovery and both welcomes", async () => {
+  it("advertises the relay map, and turns the tunnel on for Alpha devices only", async () => {
     const relays = [{ url: "https://relay-test.codevisor.dev", quicPort: 7842 }]
     const discovery = (await (await SELF.fetch(`${BASE}/.well-known/codevisor`)).json()) as {
       relays: unknown
@@ -30,18 +31,38 @@ describe("tunnel control plane", () => {
     expect(discovery.relays).toEqual(relays)
 
     const token = await devLogin()
-    const machine = await connectMachine(token, "Relay Map Machine")
+    const machine = await connectMachine(token, "Relay Map Machine", undefined, alpha)
     expect(machine.welcome).toMatchObject({ relays, tunnel: "on" })
-    const app = await connectApp(token)
+    const app = await connectApp(token, alpha)
     expect(app.welcome).toMatchObject({ relays, tunnel: "on" })
+
+    // Stable devices, and devices that predate the channel field, stay on
+    // the hub relay.
+    const stable = await connectApp(token, { releaseChannel: "stable" })
+    expect(stable.welcome).toMatchObject({ relays, tunnel: "off" })
+    const legacy = await connectMachine(token, "Legacy Machine")
+    expect(legacy.welcome).toMatchObject({ relays, tunnel: "off" })
+  })
+
+  it("never publishes the tunnel identity of a Stable machine", async () => {
+    const token = await devLogin()
+    const machine = await connectMachine(token, "Stable Machine", undefined, {
+      tunnelEndpointId: endpointId("9"),
+      releaseChannel: "stable"
+    })
+    const app = await connectApp(token, alpha)
+    const listed = app.welcome.machines.find((entry) => entry.deviceId === machine.deviceId)
+    expect(listed).toBeDefined()
+    expect(listed?.tunnel).toBeUndefined()
   })
 
   it("publishes a machine's endpoint and reported address to apps", async () => {
     const token = await devLogin()
     const machine = await connectMachine(token, "Tunnel Machine", undefined, {
-      tunnelEndpointId: endpointId("a")
+      tunnelEndpointId: endpointId("a"),
+      ...alpha
     })
-    const app = await connectApp(token)
+    const app = await connectApp(token, alpha)
     const listed = app.welcome.machines.find((entry) => entry.deviceId === machine.deviceId)
     expect(listed?.tunnel).toEqual({ endpointId: endpointId("a"), directAddrs: [] })
 
@@ -62,7 +83,7 @@ describe("tunnel control plane", () => {
         tunnel: { endpointId: endpointId("b"), directAddrs: ["10.0.0.1:1"] }
       })
     )
-    const rejoined = await connectApp(token)
+    const rejoined = await connectApp(token, alpha)
     expect(
       rejoined.welcome.machines.find((entry) => entry.deviceId === machine.deviceId)?.tunnel
     ).toEqual(reported)
@@ -71,12 +92,13 @@ describe("tunnel control plane", () => {
   it("vouches for the account's app devices to tunnel machines only", async () => {
     const token = await devLogin()
     const tunnelMachine = await connectMachine(token, "Vouching Machine", undefined, {
-      tunnelEndpointId: endpointId("c")
+      tunnelEndpointId: endpointId("c"),
+      ...alpha
     })
     expect(await tunnelMachine.reader.next()).toMatchObject({ t: "peer-devices" })
     const legacyMachine = await connectMachine(token, "Legacy Machine")
 
-    const app = await connectApp(token, { tunnelEndpointId: endpointId("d") })
+    const app = await connectApp(token, { tunnelEndpointId: endpointId("d"), ...alpha })
     const update = await tunnelMachine.reader.next()
     expect(update.t).toBe("peer-devices")
     expect(update.t === "peer-devices" ? update.devices : []).toContainEqual({
@@ -137,20 +159,10 @@ describe("tunnel control plane", () => {
     ).toEqual([{ url: "https://ok.example" }])
   })
 
-  it("turns the tunnel on per connection: for everyone, for Alpha devices only, or never", () => {
-    const stable = { releaseChannel: "stable" as const }
-    const alpha = { releaseChannel: "alpha" as const }
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "on" }, stable)).toBe("on")
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "alpha" }, alpha)).toBe("on")
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "alpha" }, stable)).toBe("off")
-    // Devices that predate the channel field count as stable.
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "alpha" }, {})).toBe("off")
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "off" }, alpha)).toBe("off")
-    expect(tunnelRollout({ TUNNEL_ROLLOUT: "bogus" }, alpha)).toBe("off")
-    expect(tunnelRollout({}, alpha)).toBe("off")
-  })
-
   it("hides the tunnel identity of devices whose connection doesn't get the tunnel", () => {
+    expect(tunnelRollout({ releaseChannel: "alpha" })).toBe("on")
+    expect(tunnelRollout({ releaseChannel: "stable" })).toBe("off")
+    expect(tunnelRollout({})).toBe("off")
     const device: CloudDeviceInfo = {
       deviceId: "m1",
       kind: "machine",
@@ -160,20 +172,21 @@ describe("tunnel control plane", () => {
       releaseChannel: "stable"
     }
     const { tunnelEndpointId: _endpoint, ...withoutTunnel } = device
-    expect(machineTunnelScope({ TUNNEL_ROLLOUT: "alpha" }, device)).toEqual({
+    expect(machineTunnelScope({}, device)).toEqual({
       welcome: { relays: [], tunnel: "off" },
       device: withoutTunnel,
       tunnelMachine: false
     })
-    expect(machineTunnelScope({ TUNNEL_ROLLOUT: "on" }, device)).toEqual({
+    const alphaDevice = { ...device, releaseChannel: "alpha" as const }
+    expect(machineTunnelScope({}, alphaDevice)).toEqual({
       welcome: { relays: [], tunnel: "on" },
-      device,
+      device: alphaDevice,
       tunnelMachine: true
     })
     expect(tunnelScopedDevice(withoutTunnel, "off")).toBe(withoutTunnel)
   })
 
-  it("registers relay access on a best-effort basis, and not at all while the tunnel is off", async () => {
+  it("registers relay access on a best-effort basis", async () => {
     const registration = {
       endpointId: endpointId("c"),
       userId: "user",
@@ -186,11 +199,8 @@ describe("tunnel control plane", () => {
       }
     }
     const logged: unknown[] = []
-    const env = (TUNNEL_ROLLOUT: string) =>
-      ({ DB: failingDb, TUNNEL_ROLLOUT }) as unknown as CloudEnv
-    await registerTunnelEndpoint(env("off"), registration, (...entry) => logged.push(entry))
-    expect(logged).toEqual([])
-    await registerTunnelEndpoint(env("alpha"), registration, (...entry) => logged.push(entry))
+    const env = { DB: failingDb } as unknown as CloudEnv
+    await registerTunnelEndpoint(env, registration, (...entry) => logged.push(entry))
     expect(logged).toEqual([["tunnel endpoint registration failed", new Error("D1 unavailable")]])
   })
 })

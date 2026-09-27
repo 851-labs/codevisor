@@ -172,19 +172,19 @@ kinds, with no `CLOUD_PROTOCOL_VERSION` bump:
   `"advertise": true`); a `RELAY_MAP` var overrides it for self-hosters and
   local dev. `HubWelcome` carries the same map, so clients pick it up on
   every connect.
-- **Rollout switch:** the `TUNNEL_ROLLOUT` Worker var is `off`, `alpha` or
-  `on`. Every device reports its update channel in hello
-  (`device.releaseChannel`: the macOS/iOS app's Alpha-updates preference; a
-  server's `app-update-channel` file or synced `settings/updateChannel`), and
-  the hub decides per connection: `HubWelcome.tunnel` is `"on"` when the
-  rollout is `on`, or `alpha` and the device is on Alpha; otherwise `"off"`.
-  A device whose connection is off is recorded without its tunnel identity,
-  so peers never try to dial it and it is never vouched for. Clients only use
-  the tunnel when their welcome says `"on"`, so a cloud deploy turns it off
-  without shipping an app release. A channel change applies at the device's
-  next hub connection. While the rollout is `off`, `/connect` doesn't touch
-  the relay-access table at all; otherwise that write is best effort and can
-  never fail a connection.
+- **Who uses the tunnel: Alpha devices.** Every device reports its update
+  channel in hello (`device.releaseChannel`: the macOS/iOS app's
+  Alpha-updates preference; a server's `app-update-channel` file or synced
+  `settings/updateChannel`; development builds and `bun run dev` servers
+  always report Alpha). The hub answers `HubWelcome.tunnel: "on"` for Alpha
+  devices and `"off"` for everyone else, so Stable keeps the hub relay until
+  the tunnel is proven; there is no separate switch. A device whose
+  connection is off is recorded without its tunnel identity, so peers never
+  try to dial it and it is never vouched for. A channel change applies at
+  the device's next hub connection. Turning the tunnel off (or on for
+  Stable) is a change to `tunnelRollout` in `apps/cloud/src/hub-tunnel.ts`
+  and a Worker deploy, not an app release. Relay-access registration on
+  `/connect` is best effort and can never fail a connection.
 - **Relay authorization:** each relay's `access.http.url` points at
   `POST https://cloud.codevisor.dev/api/relay/authorize`, which answers `true`
   only for endpoint IDs registered to a live device. So only our users can use
@@ -462,9 +462,9 @@ by hand.
 
 The server and apps keep shipping through `build.yml` and
 `publish-{alpha,beta,stable}.yml`. `codevisor-net` is inside the bytes those
-workflows already promote. The tunnel is switched on per release channel with
-`TUNNEL_ROLLOUT` (a Worker var), so enabling or disabling it is a one-line PR
-that `deploy-cloud.yml` ships in minutes.
+workflows already promote. Alpha devices use the tunnel and Stable devices
+don't (the hub decides from the channel each device reports), so changing
+that is a Worker change that `deploy-cloud.yml` ships in minutes.
 
 ### Repository layout
 
@@ -967,15 +967,15 @@ in this order:
 
 0. Cut a Stable release from `main` before the tunnel lands, so Stable
    users are on a known-good build that has never seen tunnel code.
-1. The Worker deploys the new fields with `TUNNEL_ROLLOUT=off`. Old clients
-   (no `tunnelEndpointId`, no `releaseChannel`) see exactly the old protocol.
+1. The Worker deploys the new fields. Old clients (no `tunnelEndpointId`,
+   no `releaseChannel`) count as Stable and see exactly the old protocol.
 2. Relays deploy and pass smoke tests.
-3. Apps and servers with `codevisor-net` ship to Alpha. Stable builds
-   promoted from the same bytes stay relay-only, because the hub gates on
-   the channel the device reports, not on its version.
-4. A PR sets `TUNNEL_ROLLOUT=alpha`: only Alpha devices get the tunnel.
-   Setting it back to `off` is the kill switch.
-5. Once the tunnel has proven itself on Alpha, a PR sets it to `on`.
+3. Apps and servers with `codevisor-net` ship to Alpha and use the tunnel
+   straight away. Stable builds promoted from the same bytes stay on the
+   hub relay, because the hub gates on the channel the device reports, not
+   on its version.
+4. Once the tunnel has proven itself on Alpha, `tunnelRollout` turns it on
+   for Stable too.
 
 **Adding a relay** takes two PRs:
 
@@ -1034,13 +1034,13 @@ and `fly deploy` (image replacement) against the restart result above.
 
 ## Implementation status (2026-09-26)
 
-| Phase | State                                                                                                                                                                                                                                                                                                                          |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0–1   | Done. `packages/net` (Rust core, Node and Swift bindings, 7.6 MB installed on iOS at `opt-level = "s"`), protocol fields, hub control plane, relay authorization, local relays in `bun run dev`, artifact scripts.                                                                                                             |
-| 2     | Done and exercised in the real app: the macOS dev app reaches the containerized, NAT'd, relay-only Dev Cloud machine over the tunnel (Settings shows it online over the pipe), and that pipe survived a relay restart. `scripts/net-e2e.mjs` covers relay, relay restart on the same connection, and direct upgrade.           |
-| 3     | Code done, not deployed: `infra/relays/` (Fly configs, image, certbot + router, provisioning, smoke tests), `deploy-relays.yml`, `build.yml` and `deploy-cloud.yml` changes. `TUNNEL_ROLLOUT` ships `"off"`. The image's entrypoint and router were verified in a Linux container; the `docker build` itself runs first in CI. |
-| 4     | Plumbing done: media flows (Rust, both bindings), the server bridge (host candidate from the answer, admitted endpoints only), API fields, the viewer's SDP rewrite, and the app wiring. **Not yet validated with real WebRTC**: that needs two Macs (the rig). RTP packet size isn't capped yet.                              |
-| 5     | Not started, by design: it is gated on production telemetry (zero hub-relayed traffic for two releases).                                                                                                                                                                                                                       |
+| Phase | State                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0–1   | Done. `packages/net` (Rust core, Node and Swift bindings, 7.6 MB installed on iOS at `opt-level = "s"`), protocol fields, hub control plane, relay authorization, local relays in `bun run dev`, artifact scripts.                                                                                                                                                                                                          |
+| 2     | Done and exercised in the real app: the macOS dev app reaches the containerized, NAT'd, relay-only Dev Cloud machine over the tunnel (Settings shows it online over the pipe), and that pipe survived a relay restart. `scripts/net-e2e.mjs` covers relay, relay restart on the same connection, and direct upgrade.                                                                                                        |
+| 3     | Deployed 2026-09-26: the four relays (iad, sjc, fra, sin) are live on Fly with Let's Encrypt certificates, and the Worker hands them out. Alpha devices use the tunnel; Stable stays on the hub relay. The first deploys surfaced Linux-only and Fly first-boot issues (TOML formatting, tar member paths, Docker host mapping, the registry app, a port-80 health check that deadlocked the first certificate), all fixed. |
+| 4     | Plumbing done: media flows (Rust, both bindings), the server bridge (host candidate from the answer, admitted endpoints only), API fields, the viewer's SDP rewrite, and the app wiring. **Not yet validated with real WebRTC**: that needs two Macs (the rig). RTP packet size isn't capped yet.                                                                                                                           |
+| 5     | Not started, by design: it is gated on production telemetry (zero hub-relayed traffic for two releases).                                                                                                                                                                                                                                                                                                                    |
 
 Found while building (fixed):
 
@@ -1121,7 +1121,8 @@ criteria.
 
 - **Rollout:** `infra/relays/` and `deploy-relays.yml` bring up the four Fly
   apps. Also the Grafana dashboards and alerts, and the runbook.
-  `TUNNEL_ROLLOUT` goes `off` → `alpha` → `on`.
+  Alpha devices use the tunnel from their first build with it; Stable
+  follows once the exit criteria hold.
 - **Exit:** a week on Alpha with at least 80% of bytes direct and no relay
   deploy dropping connections that have a direct path. A hub deploy must cause
   no visible reconnects on tunnel channels.

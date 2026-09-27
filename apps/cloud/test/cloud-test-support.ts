@@ -191,6 +191,7 @@ export const connectMachine = async (
     features?: string[]
     serverId?: string
     tunnelEndpointId?: string
+    releaseChannel?: "stable" | "alpha"
   } = {}
 ): Promise<MachineSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -221,7 +222,8 @@ export const connectMachine = async (
         os: "linux",
         publicKey: keys.publicKey,
         ...(options.serverId === undefined ? {} : { serverId: options.serverId }),
-        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel })
+        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel }),
+        ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel })
       },
       ...(options.resume === undefined ? {} : { resume: options.resume }),
       ...(options.features === undefined ? {} : { features: options.features })
@@ -247,6 +249,7 @@ export const connectApp = async (
     deviceId?: string
     resume?: string
     tunnelEndpointId?: string
+    releaseChannel?: "stable" | "alpha"
   } = {}
 ): Promise<AppSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -267,7 +270,8 @@ export const connectApp = async (
         name: "Test App",
         os: "macOS",
         publicKey: keys.publicKey,
-        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel })
+        ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel }),
+        ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel })
       },
       ...(options.resume === undefined ? {} : { resume: options.resume })
     })

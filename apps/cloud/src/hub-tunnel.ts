@@ -41,22 +41,13 @@ export const relayMap = (env: Pick<CloudEnv, "RELAY_MAP">): CloudRelayInfo[] => 
   }
 }
 
-/// The instance-wide `TUNNEL_ROLLOUT` setting; unknown values mean off.
-export const tunnelRolloutMode = (env: Pick<CloudEnv, "TUNNEL_ROLLOUT">): "off" | "alpha" | "on" =>
-  env.TUNNEL_ROLLOUT === "on" || env.TUNNEL_ROLLOUT === "alpha" ? env.TUNNEL_ROLLOUT : "off"
-
-/// Whether one connection gets the tunnel. `TUNNEL_ROLLOUT` is "on" (every
-/// device), "alpha" (only devices on the Alpha update channel, so Stable
-/// keeps the relay-only path until the tunnel is proven), or anything else
-/// for off.
+/// Whether one connection gets the tunnel: devices on the Alpha update
+/// channel (development builds report Alpha too) use it; Stable devices keep
+/// the hub relay until the tunnel is proven. Devices that predate the
+/// channel field count as Stable.
 export const tunnelRollout = (
-  env: Pick<CloudEnv, "TUNNEL_ROLLOUT">,
   device: Pick<CloudDeviceInfo, "releaseChannel">
-): CloudTunnelRollout => {
-  const mode = tunnelRolloutMode(env)
-  if (mode === "on") return "on"
-  return mode === "alpha" && device.releaseChannel === "alpha" ? "on" : "off"
-}
+): CloudTunnelRollout => (device.releaseChannel === "alpha" ? "on" : "off")
 
 /// The device as the hub records it: a device whose connection doesn't get
 /// the tunnel has no tunnel identity, so peers never try to dial it (and

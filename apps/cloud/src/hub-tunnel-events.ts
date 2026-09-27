@@ -28,11 +28,11 @@ type TunnelWelcome = ReturnType<typeof tunnelWelcome>
 export const onAppTunnelIdentity = (
   sql: SqlStorage,
   net: HubSockets,
-  env: Pick<CloudEnv, "RELAY_MAP" | "TUNNEL_ROLLOUT">,
+  env: Pick<CloudEnv, "RELAY_MAP">,
   device: CloudDeviceInfo,
   now = isoTimestamp()
 ): TunnelWelcome => {
-  const rollout = tunnelRollout(env, device)
+  const rollout = tunnelRollout(device)
   if (recordAppDevice(sql, tunnelScopedDevice(device, rollout), now)) {
     net.broadcastToTunnelMachines({ t: "peer-devices", devices: vouchedDevices(sql) })
   }
@@ -44,10 +44,10 @@ export const onAppTunnelIdentity = (
 /// apps never try to dial it), and whether it is a tunnel machine (receives
 /// `peer-devices`).
 export const machineTunnelScope = (
-  env: Pick<CloudEnv, "RELAY_MAP" | "TUNNEL_ROLLOUT">,
+  env: Pick<CloudEnv, "RELAY_MAP">,
   device: CloudDeviceInfo
 ): { welcome: TunnelWelcome; device: CloudDeviceInfo; tunnelMachine: boolean } => {
-  const rollout = tunnelRollout(env, device)
+  const rollout = tunnelRollout(device)
   const scoped = tunnelScopedDevice(device, rollout)
   return {
     welcome: tunnelWelcome(env, rollout),

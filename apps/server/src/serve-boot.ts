@@ -397,7 +397,7 @@ export const startMachineNetwork = async (options: {
     terminal: options.terminal,
     env: process.env,
     log: (line: string) => console.error(line),
-    releaseChannel: machineReleaseChannel(dirname(options.databasePath), options.db)
+    releaseChannel: machineReleaseChannel(dirname(options.databasePath), options.db, process.env)
   }
   const cloudBridge = await initializeOptionalServerFeatureAsync("Cloud connection", async () =>
     startCloudBridge(cloudBridgeOptions)

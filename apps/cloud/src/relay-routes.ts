@@ -4,7 +4,7 @@ import { Hono } from "hono"
 
 import { tunnelEndpoint } from "./db/schema.js"
 import type { CloudEnv } from "./env.js"
-import { isEndpointId, tunnelRolloutMode } from "./hub-tunnel.js"
+import { isEndpointId } from "./hub-tunnel.js"
 
 /// Tunnel relay access control (docs/plans/codevisor-tunnel.md). Our relays
 /// run iroh-relay with `access.http`: for every client they POST here with
@@ -70,8 +70,6 @@ const storeTunnelEndpoint = async (
   env: CloudEnv,
   registration: TunnelRegistration
 ): Promise<void> => {
-  // While the tunnel is off for everyone, /connect stays exactly as it was.
-  if (tunnelRolloutMode(env) === "off") return
   const endpointId = registration.endpointId?.toLowerCase()
   if (!isEndpointId(endpointId)) return
   const db = drizzle(env.DB)

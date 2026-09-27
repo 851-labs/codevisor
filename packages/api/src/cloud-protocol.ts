@@ -57,8 +57,8 @@ export const CloudDeviceInfo = Schema.Struct({
   /// Hex Ed25519 id of the device's tunnel endpoint (docs/plans/
   /// codevisor-tunnel.md). Absent on devices that predate the tunnel.
   tunnelEndpointId: Schema.optional(Schema.String),
-  /// The device's update channel. The hub turns the tunnel on per connection
-  /// from it while TUNNEL_ROLLOUT is "alpha". Absent means stable.
+  /// The device's update channel. The hub turns the tunnel on for Alpha
+  /// devices only (development builds report Alpha). Absent means stable.
   releaseChannel: Schema.optional(Schema.Literals(["stable", "alpha"]))
 })
 export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
