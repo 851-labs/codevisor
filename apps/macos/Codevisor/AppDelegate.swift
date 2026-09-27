@@ -22,8 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// termination request so a later ⌘Q asks again.
   private var skipsNextConfirmation = false
 
-  static var current: AppDelegate? {
-    NSApp.delegate as? AppDelegate
+  /// The instance SwiftUI's `@NSApplicationDelegateAdaptor` created. Not
+  /// `NSApp.delegate as? AppDelegate`: under the adaptor `NSApp.delegate` is
+  /// SwiftUI's own forwarding delegate, so that cast is always nil. It was,
+  /// from 0.1.102 build 1073 until this fix: the runtime got no instance
+  /// lease, so no Sparkle updater ever started, and the app neither checked
+  /// for updates nor answered its server's update handoff.
+  private(set) static weak var current: AppDelegate?
+
+  override init() {
+    super.init()
+    Self.current = self
   }
 
   /// Starts the app's runtime whether or not a window appears (851-2386). A duplicate instance,
