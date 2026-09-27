@@ -1038,13 +1038,13 @@ and `fly deploy` (image replacement) against the restart result above.
 
 ## Implementation status (2026-09-26)
 
-| Phase | State                                                                                                                                                                                                                                                                                                                                              |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0–1   | Done. `packages/net` (Rust core, Node and Swift bindings, 7.6 MB installed on iOS at `opt-level = "s"`), protocol fields, hub control plane, relay authorization, local relays in `bun run dev`, artifact scripts.                                                                                                                                 |
-| 2     | Done and exercised in the real app: the macOS dev app reaches the containerized, NAT'd, relay-only Dev Cloud machine over the tunnel (Settings shows it online over the pipe), and that pipe survived a relay restart. `scripts/net-e2e.mjs` covers relay, relay restart on the same connection, and direct upgrade.                               |
-| 3     | Code done, not deployed: `infra/relays/` (Fly configs, image, certbot + router, provisioning, smoke tests), `deploy-relays.yml`, `net-artifact.yml`, `build.yml` and `deploy-cloud.yml` changes. `TUNNEL_ROLLOUT` ships `"off"`. The image's entrypoint and router were verified in a Linux container; the `docker build` itself runs first in CI. |
-| 4     | Plumbing done: media flows (Rust, both bindings), the server bridge (host candidate from the answer, admitted endpoints only), API fields, the viewer's SDP rewrite, and the app wiring. **Not yet validated with real WebRTC**: that needs two Macs (the rig). RTP packet size isn't capped yet.                                                  |
-| 5     | Not started, by design: it is gated on production telemetry (zero hub-relayed traffic for two releases).                                                                                                                                                                                                                                           |
+| Phase | State                                                                                                                                                                                                                                                                                                                          |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0–1   | Done. `packages/net` (Rust core, Node and Swift bindings, 7.6 MB installed on iOS at `opt-level = "s"`), protocol fields, hub control plane, relay authorization, local relays in `bun run dev`, artifact scripts.                                                                                                             |
+| 2     | Done and exercised in the real app: the macOS dev app reaches the containerized, NAT'd, relay-only Dev Cloud machine over the tunnel (Settings shows it online over the pipe), and that pipe survived a relay restart. `scripts/net-e2e.mjs` covers relay, relay restart on the same connection, and direct upgrade.           |
+| 3     | Code done, not deployed: `infra/relays/` (Fly configs, image, certbot + router, provisioning, smoke tests), `deploy-relays.yml`, `build.yml` and `deploy-cloud.yml` changes. `TUNNEL_ROLLOUT` ships `"off"`. The image's entrypoint and router were verified in a Linux container; the `docker build` itself runs first in CI. |
+| 4     | Plumbing done: media flows (Rust, both bindings), the server bridge (host candidate from the answer, admitted endpoints only), API fields, the viewer's SDP rewrite, and the app wiring. **Not yet validated with real WebRTC**: that needs two Macs (the rig). RTP packet size isn't capped yet.                              |
+| 5     | Not started, by design: it is gated on production telemetry (zero hub-relayed traffic for two releases).                                                                                                                                                                                                                       |
 
 Found while building (fixed):
 
@@ -1059,7 +1059,7 @@ Open follow-ups:
 - An existing LAN pipe isn't upgraded to the tunnel later; if the first tunnel probe loses a startup race, the machine stays on LAN until the next reprobe.
 - The Machines badge says "Direct" for any non-hub pipe, including a relayed tunnel; it should show the path type.
 - `net-matrix.yml` (the patchbay NAT matrix) isn't written yet.
-- Publishing native artifacts to `updates.codevisor.dev`, and downloading them before building.
+- Publishing native artifacts to `updates.codevisor.dev`, and downloading them before building. A first `net-artifact.yml` was removed: nothing consumed its artifacts, and it held the only self-hosted ARM Mac that Build's macOS and iOS jobs need. Bring it back together with the download side.
 
 ## Phases
 
