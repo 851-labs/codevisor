@@ -49,12 +49,21 @@ const get = (url, options = {}) =>
     req.end()
   })
 
+/// Retries `check` for up to a minute. A thrown error counts as "not yet":
+/// a relay that just deployed can reset its first few connections while
+/// Fly's proxy picks up the new Machine.
 const until = async (label, check) => {
+  let lastError
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (await check()) return
+    try {
+      if (await check()) return
+    } catch (error) {
+      lastError = error
+    }
     await delay(500)
   }
-  throw new Error(`smoke: timed out waiting for ${label}`)
+  const cause = lastError === undefined ? "" : ` (last error: ${lastError.message})`
+  throw new Error(`smoke: timed out waiting for ${label}${cause}`)
 }
 
 async function tunnelRoundTrip(relayUrl, anchor) {
@@ -187,9 +196,15 @@ async function smokeLiveRelay(id) {
   const relay = relays.find((entry) => entry.id === id)
   if (relay === undefined) throw new Error(`unknown relay ${id}`)
   await until("/healthz", async () => (await get(`https://${relay.hostname}/healthz`)) === 200)
-  if ((await get(`http://${relay.hostname}/generate_204`)) !== 204)
-    throw new Error("router check failed")
-  const days = await certificateDaysLeft(relay.hostname)
+  await until(
+    "port-80 router",
+    async () => (await get(`http://${relay.hostname}/generate_204`)) === 204
+  )
+  let days = 0
+  await until("certificate", async () => {
+    days = await certificateDaysLeft(relay.hostname)
+    return true
+  })
   if (days < 14) throw new Error(`certificate expires in ${days.toFixed(1)} days`)
   console.log(`smoke: ${relay.hostname} OK (certificate valid ${days.toFixed(0)} more days)`)
 }
