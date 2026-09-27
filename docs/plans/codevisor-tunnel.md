@@ -172,19 +172,20 @@ kinds, with no `CLOUD_PROTOCOL_VERSION` bump:
   `"advertise": true`); a `RELAY_MAP` var overrides it for self-hosters and
   local dev. `HubWelcome` carries the same map, so clients pick it up on
   every connect.
-- **Who uses the tunnel: Alpha devices.** Every device reports its update
-  channel in hello (`device.releaseChannel`: the macOS/iOS app's
-  Alpha-updates preference; a server's `app-update-channel` file or synced
-  `settings/updateChannel`; development builds and `bun run dev` servers
-  always report Alpha). The hub answers `HubWelcome.tunnel: "on"` for Alpha
-  devices and `"off"` for everyone else, so Stable keeps the hub relay until
-  the tunnel is proven; there is no separate switch. A device whose
-  connection is off is recorded without its tunnel identity, so peers never
-  try to dial it and it is never vouched for. A channel change applies at
-  the device's next hub connection. Turning the tunnel off (or on for
-  Stable) is a change to `tunnelRollout` in `apps/cloud/src/hub-tunnel.ts`
-  and a Worker deploy, not an app release. Relay-access registration on
-  `/connect` is best effort and can never fail a connection.
+- **Who uses the tunnel.** From 0.1.104 the apps are tunnel-only: their
+  data path to machines is the tunnel alone (direct, else through our
+  relays), with no LAN/Tailscale discovery and no hub-relay fallback. Pipes
+  re-dial by themselves when they drop, retry failed dials with backoff, and
+  dial as soon as a machine's tunnel address arrives. The hub carries
+  control only for them (sign-in, presence, addresses) and turns the tunnel
+  on per connection: machines always (their servers still serve the hub
+  relay to older apps), apps that say `tunnelOnly`, and 0.1.103 apps (which
+  carry both paths) on the Alpha channel. Stable 0.1.103 and older apps keep
+  the hub relay until they update; a machine whose server predates the
+  tunnel is unreachable from a tunnel-only app, which says to update it. A
+  device whose connection is off is recorded without its tunnel identity,
+  so peers never dial it and it is never vouched for. Relay-access
+  registration on `/connect` is best effort and never fails a connection.
 - **Relay authorization:** each relay's `access.http.url` points at
   `POST https://cloud.codevisor.dev/api/relay/authorize`, which answers `true`
   only for endpoint IDs registered to a live device. So only our users can use

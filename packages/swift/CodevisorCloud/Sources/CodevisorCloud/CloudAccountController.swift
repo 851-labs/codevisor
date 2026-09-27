@@ -664,10 +664,10 @@ extension CloudAccountController: CloudMachineProviding {
   public func relayServerConfig(for machine: CloudMachine) -> CodevisorServerConfig? {
     // TOFU: no relay config for a machine whose key conflicts with its
     // pin — every channel would be opened against the imposter key.
-    guard let hub = hubConnection(), let verifiedKey = verifiedMachineKey(for: machine) else {
+    guard hubConnection() != nil, let verifiedKey = verifiedMachineKey(for: machine) else {
       return nil
     }
-    let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey, hub: hub)
+    let endpoint = machineTransport(for: machine, verifiedKey: verifiedKey)
     // The transports tunnel in-process; the baseURL matters only to
     // consumers that hand it to external processes (terminal proxy), so
     // it becomes the machine's real loopback address once bridged.
@@ -680,12 +680,12 @@ extension CloudAccountController: CloudMachineProviding {
   }
 
   public func loopbackBaseURL(for machine: CloudMachine) -> URL? {
-    guard state.isSignedIn, let hub = hubConnection(),
+    guard state.isSignedIn, hubConnection() != nil,
       let key = verifiedMachineKey(for: machine)
     else { return nil }
     return loopbackPool.baseURL(
       for: machine.deviceId, key: key,
-      endpoint: machineTransport(for: machine, verifiedKey: key, hub: hub))
+      endpoint: machineTransport(for: machine, verifiedKey: key))
   }
 
   public func loopbackRevision(for machine: CloudMachine) -> UInt64 {
@@ -693,11 +693,11 @@ extension CloudAccountController: CloudMachineProviding {
   }
 
   public func recoverLoopbackBridge(for machine: CloudMachine) async -> Bool {
-    guard state.isSignedIn, let hub = hubConnection(),
+    guard state.isSignedIn, hubConnection() != nil,
       let key = verifiedMachineKey(for: machine)
     else { return false }
     return await loopbackPool.recover(
       for: machine.deviceId, key: key,
-      endpoint: machineTransport(for: machine, verifiedKey: key, hub: hub))
+      endpoint: machineTransport(for: machine, verifiedKey: key))
   }
 }

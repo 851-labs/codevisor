@@ -59,7 +59,10 @@ export const CloudDeviceInfo = Schema.Struct({
   tunnelEndpointId: Schema.optional(Schema.String),
   /// The device's update channel. The hub turns the tunnel on for Alpha
   /// devices only (development builds report Alpha). Absent means stable.
-  releaseChannel: Schema.optional(Schema.Literals(["stable", "alpha"]))
+  releaseChannel: Schema.optional(Schema.Literals(["stable", "alpha"])),
+  /// Apps that reach machines over the tunnel only (no hub-relay data
+  /// path): the hub always turns the tunnel on for them.
+  tunnelOnly: Schema.optional(Schema.Boolean)
 })
 export type CloudDeviceInfo = typeof CloudDeviceInfo.Type
 

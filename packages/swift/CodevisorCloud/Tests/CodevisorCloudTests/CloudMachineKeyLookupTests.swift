@@ -15,7 +15,7 @@ struct CloudMachineKeyLookupTests {
     client.machinesResult = .success([testMachine("machine")])
     let controller = CloudAccountController(
       clientFactory: { _ in client }, credentialStore: store, environmentCloud: nil,
-      directPaths: CloudDirectPathController(credentialStore: store, prober: { _, _, _ in nil }),
+      directPaths: CloudDirectPathController(credentialStore: store, prober: { _, _ in nil }),
       presenceSleep: TestClock().sleep
     )
     return (controller, client, store)

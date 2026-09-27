@@ -23,7 +23,7 @@ const authorize = (endpoint: string, token = "relay-secret"): Promise<Response> 
   })
 
 describe("tunnel control plane", () => {
-  it("advertises the relay map, and turns the tunnel on for Alpha devices only", async () => {
+  it("advertises the relay map, and turns the tunnel on for machines and tunnel apps", async () => {
     const relays = [{ url: "https://relay-test.codevisor.dev", quicPort: 7842 }]
     const discovery = (await (await SELF.fetch(`${BASE}/.well-known/codevisor`)).json()) as {
       relays: unknown
@@ -36,24 +36,34 @@ describe("tunnel control plane", () => {
     const app = await connectApp(token, alpha)
     expect(app.welcome).toMatchObject({ relays, tunnel: "on" })
 
-    // Stable devices, and devices that predate the channel field, stay on
-    // the hub relay.
+    // Machines get it whatever their channel (they keep serving the hub
+    // relay for older apps); so do tunnel-only apps.
+    const stableMachine = await connectMachine(token, "Stable Machine", undefined, {
+      releaseChannel: "stable"
+    })
+    expect(stableMachine.welcome).toMatchObject({ relays, tunnel: "on" })
+    const tunnelApp = await connectApp(token, { releaseChannel: "stable", tunnelOnly: true })
+    expect(tunnelApp.welcome).toMatchObject({ relays, tunnel: "on" })
+
+    // Stable apps that still carry the hub relay, and apps that predate
+    // these fields, keep the hub relay.
     const stable = await connectApp(token, { releaseChannel: "stable" })
     expect(stable.welcome).toMatchObject({ relays, tunnel: "off" })
-    const legacy = await connectMachine(token, "Legacy Machine")
+    const legacy = await connectApp(token)
     expect(legacy.welcome).toMatchObject({ relays, tunnel: "off" })
   })
 
-  it("never publishes the tunnel identity of a Stable machine", async () => {
+  it("never vouches for an app that keeps the hub relay", async () => {
     const token = await devLogin()
-    const machine = await connectMachine(token, "Stable Machine", undefined, {
-      tunnelEndpointId: endpointId("9"),
-      releaseChannel: "stable"
+    const machine = await connectMachine(token, "Vouch Gate Machine", undefined, {
+      tunnelEndpointId: endpointId("8")
     })
-    const app = await connectApp(token, alpha)
-    const listed = app.welcome.machines.find((entry) => entry.deviceId === machine.deviceId)
-    expect(listed).toBeDefined()
-    expect(listed?.tunnel).toBeUndefined()
+    expect(await machine.reader.next()).toMatchObject({ t: "peer-devices" })
+    await connectApp(token, { tunnelEndpointId: endpointId("9"), releaseChannel: "stable" })
+    // The stable app's hello changed nothing for the machine: its next frame
+    // answers this ping.
+    machine.socket.send(encodeCloudFrame({ t: "ping" }))
+    expect(await machine.reader.next()).toEqual({ t: "pong" })
   })
 
   it("publishes a machine's endpoint and reported address to apps", async () => {
@@ -160,30 +170,28 @@ describe("tunnel control plane", () => {
   })
 
   it("hides the tunnel identity of devices whose connection doesn't get the tunnel", () => {
-    expect(tunnelRollout({ releaseChannel: "alpha" })).toBe("on")
-    expect(tunnelRollout({ releaseChannel: "stable" })).toBe("off")
-    expect(tunnelRollout({})).toBe("off")
+    expect(tunnelRollout({ kind: "machine" })).toBe("on")
+    expect(tunnelRollout({ kind: "app", tunnelOnly: true })).toBe("on")
+    expect(tunnelRollout({ kind: "app", releaseChannel: "alpha" })).toBe("on")
+    expect(tunnelRollout({ kind: "app", releaseChannel: "stable" })).toBe("off")
+    expect(tunnelRollout({ kind: "app" })).toBe("off")
     const device: CloudDeviceInfo = {
-      deviceId: "m1",
-      kind: "machine",
-      name: "Stable Mac",
+      deviceId: "a1",
+      kind: "app",
+      name: "Stable App",
       publicKey: "key",
       tunnelEndpointId: endpointId("a"),
       releaseChannel: "stable"
     }
     const { tunnelEndpointId: _endpoint, ...withoutTunnel } = device
-    expect(machineTunnelScope({}, device)).toEqual({
-      welcome: { relays: [], tunnel: "off" },
-      device: withoutTunnel,
-      tunnelMachine: false
-    })
-    const alphaDevice = { ...device, releaseChannel: "alpha" as const }
-    expect(machineTunnelScope({}, alphaDevice)).toEqual({
+    expect(tunnelScopedDevice(device, "off")).toEqual(withoutTunnel)
+    expect(tunnelScopedDevice(withoutTunnel, "off")).toBe(withoutTunnel)
+    const machine = { ...device, kind: "machine" as const, name: "Stable Mac" }
+    expect(machineTunnelScope({}, machine)).toEqual({
       welcome: { relays: [], tunnel: "on" },
-      device: alphaDevice,
+      device: machine,
       tunnelMachine: true
     })
-    expect(tunnelScopedDevice(withoutTunnel, "off")).toBe(withoutTunnel)
   })
 
   it("registers relay access on a best-effort basis", async () => {

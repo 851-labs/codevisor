@@ -55,11 +55,11 @@ public struct CloudDirectTransport: Sendable, CloudChannelTransport {
 /// relay. No consumer ever migrates an open channel between pipes.
 public struct SwitchingChannelTransport: Sendable, CloudChannelTransport {
   public let machineDeviceId: String
-  private let provider: @Sendable () async -> any CloudChannelTransport
+  private let provider: @Sendable () async throws -> any CloudChannelTransport
 
   public init(
     machineDeviceId: String,
-    provider: @escaping @Sendable () async -> any CloudChannelTransport
+    provider: @escaping @Sendable () async throws -> any CloudChannelTransport
   ) {
     self.machineDeviceId = machineDeviceId
     self.provider = provider

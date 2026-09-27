@@ -250,6 +250,7 @@ export const connectApp = async (
     resume?: string
     tunnelEndpointId?: string
     releaseChannel?: "stable" | "alpha"
+    tunnelOnly?: boolean
   } = {}
 ): Promise<AppSetup> => {
   const keys = options.keys ?? generateDeviceKeyPair()
@@ -271,7 +272,8 @@ export const connectApp = async (
         os: "macOS",
         publicKey: keys.publicKey,
         ...(tunnel === undefined ? {} : { tunnelEndpointId: tunnel }),
-        ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel })
+        ...(options.releaseChannel === undefined ? {} : { releaseChannel: options.releaseChannel }),
+        ...(options.tunnelOnly === undefined ? {} : { tunnelOnly: options.tunnelOnly })
       },
       ...(options.resume === undefined ? {} : { resume: options.resume })
     })

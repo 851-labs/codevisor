@@ -1,48 +1,31 @@
 import CodevisorTestSupport
 import Foundation
+import Observation
 import Testing
 import ACPKit
 import CodevisorClient
 @testable import CodevisorCloud
 
-/// A transport that must never be asked to open a channel — reconcile hands
-/// it to the prober, which the fakes here don't exercise.
-private struct UnusedTransport: CloudChannelTransport {
-  var machineDeviceId: String
-
-  func openChannel(
-    channelType: String,
-    params: JSONValue?,
-    compressed: Bool,
-    onMessage: @escaping @Sendable (Data) -> Void,
-    onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-  ) async throws -> CloudRelayChannel {
-    throw CloudHubConnectionError.disconnected
-  }
-
-  func openFlowControlledChannel(
-    channelType: String,
-    params: JSONValue?,
-    compressed: Bool,
-    onMessage: @escaping @Sendable (Data, Int) -> Void,
-    onCredit: @escaping @Sendable (Int) -> Void,
-    onClosed: @escaping @Sendable (CloudChannelCloseReason?) -> Void
-  ) async throws -> CloudRelayChannel {
-    throw CloudHubConnectionError.disconnected
-  }
+/// Every dial the controller made, observable so tests can wait on it.
+@MainActor
+@Observable
+private final class ProbeLog {
+  var probes: [String] = []
 }
 
 private final class ProbeScript: @unchecked Sendable {
   private let lock = NSLock()
-  private var probed: [String] = []
   private var results: [String: ScriptedDirectMachine] = [:]
   private var downCallbacks: [String: @Sendable () -> Void] = [:]
+  let log: ProbeLog
 
-  var probes: [String] {
-    lock.withLock { probed }
+  @MainActor init() {
+    log = ProbeLog()
   }
 
-  func answer(_ deviceId: String, with scripted: ScriptedDirectMachine) {
+  @MainActor var probes: [String] { log.probes }
+
+  func answer(_ deviceId: String, with scripted: ScriptedDirectMachine?) {
     lock.withLock { results[deviceId] = scripted }
   }
 
@@ -51,13 +34,12 @@ private final class ProbeScript: @unchecked Sendable {
   }
 
   var prober: CloudDirectPathController.Prober {
-    { [self] machine, _, onDown in
-      lock.withLock {
-        probed.append(machine.deviceId)
-        downCallbacks[machine.deviceId] = onDown
-      }
+    { [self] machine, onDown in
+      await MainActor.run { log.probes.append(machine.deviceId) }
+      lock.withLock { downCallbacks[machine.deviceId] = onDown }
       guard let scripted = lock.withLock({ results[machine.deviceId] }) else { return nil }
-      return makeDirectConnection(to: scripted, onDown: onDown)
+      return makeDirectConnection(
+        to: scripted, directURL: URL(string: "tunnel://\(machine.deviceId)")!, onDown: onDown)
     }
   }
 }
@@ -65,13 +47,15 @@ private final class ProbeScript: @unchecked Sendable {
 private func testMachine(
   _ deviceId: String,
   publicKey: String,
-  online: Bool = true
+  online: Bool = true,
+  tunnelEndpoint: String? = "endpoint"
 ) -> CloudMachine {
   CloudMachine(
     deviceId: deviceId,
     name: "Machine \(deviceId)",
     os: "macOS",
     publicKey: publicKey,
+    tunnel: tunnelEndpoint.map { CloudTunnelInfo(endpointId: $0) },
     online: online,
     lastSeenAt: "2026-01-01T00:00:00.000Z"
   )
@@ -80,11 +64,12 @@ private func testMachine(
 @MainActor
 private func makePathController(
   script: ProbeScript,
-  reprobeInterval: Duration = .seconds(60)
+  clock: TestClock = TestClock()
 ) -> CloudDirectPathController {
   CloudDirectPathController(
     credentialStore: InMemoryCloudCredentialStore(),
-    reprobeInterval: reprobeInterval,
+    reprobeInterval: .seconds(60),
+    sleep: clock.sleep,
     prober: script.prober
   )
 }
@@ -97,18 +82,19 @@ private func settle(_ controller: CloudDirectPathController) async {
 @Suite("CloudDirectPathController")
 @MainActor
 struct CloudDirectPathControllerTests {
-  @Test("A verified probe puts the machine on the direct list; failures don't")
+  @Test("A verified tunnel puts the machine on the list; failures and pre-tunnel machines don't")
   func probeOutcomes() async throws {
     let script = ProbeScript()
     let scripted = ScriptedDirectMachine()
     script.answer("m1", with: scripted)
     let controller = makePathController(script: script)
-    let machines = [
+
+    controller.reconcile(machines: [
       testMachine("m1", publicKey: scripted.machine.publicKey),
       testMachine("m2", publicKey: "other-key"),
-    ]
-
-    controller.reconcile(machines: machines) { UnusedTransport(machineDeviceId: $0.deviceId) }
+      // A server that predates the tunnel has no address to dial.
+      testMachine("m3", publicKey: "old-key", tunnelEndpoint: nil),
+    ])
     await settle(controller)
 
     #expect(script.probes.sorted() == ["m1", "m2"])
@@ -120,92 +106,92 @@ struct CloudDirectPathControllerTests {
     #expect(controller.transport(for: "m2", publicKey: "other-key") == nil)
   }
 
-  @Test("Probes are throttled; a dead pipe re-probes immediately")
-  func throttling() async throws {
+  @Test("A dropped tunnel re-dials by itself, without a roster refresh")
+  func dropRedials() async throws {
     let script = ProbeScript()
-    let scripted = ScriptedDirectMachine()
-    script.answer("m1", with: scripted)
+    script.answer("m1", with: ScriptedDirectMachine())
     let controller = makePathController(script: script)
-    let machines = [testMachine("m1", publicKey: scripted.machine.publicKey)]
-    let relay = { (machine: CloudMachine) -> any CloudChannelTransport in
-      UnusedTransport(machineDeviceId: machine.deviceId)
-    }
-
-    controller.reconcile(machines: machines, relayTransport: relay)
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
     await settle(controller)
-    // A live pipe (or a too-recent attempt) suppresses re-probing.
-    controller.reconcile(machines: machines, relayTransport: relay)
+    // A live pipe suppresses re-dialing.
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
     await settle(controller)
     #expect(script.probes == ["m1"])
 
-    // The pipe dying is fresh information: the throttle resets.
+    // The network changed: the pipe drops and a new one comes up unprompted.
+    script.answer("m1", with: ScriptedDirectMachine())
     script.takeDown("m1")
-    #expect(await waitUntil { controller.machineIds.isEmpty })
-    controller.reconcile(machines: machines, relayTransport: relay)
+    #expect(await waitUntil { script.probes == ["m1", "m1"] })
     await settle(controller)
-    #expect(script.probes == ["m1", "m1"])
+    #expect(controller.machineIds == ["m1"])
   }
 
-  @Test("LAN→relay failover: a dead direct pipe routes the next open over the relay")
-  func lanToRelayFailover() async throws {
-    // One machine, two pipes: a scripted LAN listener and a scripted
-    // relay machine behind a scripted hub, sharing the device id.
-    let direct = ScriptedDirectMachine()
-    let deviceId = direct.machine.deviceId
-    let relayMachine = ScriptedRelayMachine(deviceId: deviceId)
-    let scriptedHub = ScriptedCloudHub(machines: [relayMachine.presence])
-    scriptedHub.onRelay = { envelope in
-      guard let appKey = scriptedHub.appPublicKey else { return }
-      _ = try? relayMachine.receive(
-        envelope.frame, payload: envelope.payload, appPublicKey: appKey)
-    }
-    let hub = CloudHubConnection(
-      serverURL: URL(string: "https://cloud.example.com")!,
-      credentialStore: InMemoryCloudCredentialStore(token: "session-token"),
-      deviceName: "Test App",
-      deviceOS: "macOS",
-      webSocketTransport: FakeWebSocketTransport { _ in scriptedHub.socket },
-      readyTimeout: .seconds(2),
-      sleep: TestClock().sleep,
-      reconnectDelay: { _ in .seconds(1) }
-    )
-    let relayEndpoint = CloudRelayEndpoint(
-      hub: hub,
-      machineDeviceId: deviceId,
-      machinePublicKey: relayMachine.publicKey
-    )
-
+  @Test("A failed dial retries on its own, backing off")
+  func failedDialRetries() async throws {
     let script = ProbeScript()
-    script.answer(deviceId, with: direct)
-    let controller = makePathController(script: script)
-    controller.reconcile(
-      machines: [testMachine(deviceId, publicKey: direct.machine.publicKey)]
-    ) { UnusedTransport(machineDeviceId: $0.deviceId) }
+    let clock = TestClock()
+    let controller = makePathController(script: script, clock: clock)
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
     await settle(controller)
-    #expect(controller.machineIds.contains(deviceId))
+    #expect(controller.machineIds.isEmpty)
 
-    // The one transport every consumer would hold: best pipe per open.
-    let key = direct.machine.publicKey
-    let transport = SwitchingChannelTransport(machineDeviceId: deviceId) {
-      await controller.transport(for: deviceId, publicKey: key) ?? relayEndpoint
+    // Unreachable again: the next retry waits twice as long.
+    await clock.waitForSleep(.seconds(60))
+    clock.advance(by: .seconds(60))
+    #expect(await waitUntil { script.probes.count == 2 })
+    await settle(controller)
+    await clock.waitForSleep(.seconds(120))
+
+    // Reachable now: the next retry brings it up.
+    script.answer("m1", with: ScriptedDirectMachine())
+    clock.advance(by: .seconds(120))
+    #expect(await waitUntil { controller.machineIds == ["m1"] })
+    #expect(script.probes == ["m1", "m1", "m1"])
+  }
+
+  @Test("A tunnel address arriving after launch dials right away")
+  func addressArrivalDials() async throws {
+    let script = ProbeScript()
+    script.answer("m1", with: ScriptedDirectMachine())
+    let controller = makePathController(script: script)
+
+    // The cached roster at launch has no address: nothing to dial.
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key", tunnelEndpoint: nil)])
+    await settle(controller)
+    #expect(script.probes.isEmpty)
+
+    // The fresh roster carries it: dialed at once, no throttle.
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    await settle(controller)
+    #expect(controller.machineIds == ["m1"])
+  }
+
+  @Test("Opens wait for a tunnel being dialed, and fail clearly when it never comes")
+  func awaitTransport() async throws {
+    let script = ProbeScript()
+    let clock = TestClock()
+    let controller = makePathController(script: script, clock: clock)
+
+    // The open starts before the roster has the machine's address.
+    let scripted = ScriptedDirectMachine()
+    script.answer("m1", with: scripted)
+    let waiting = Task { try await controller.awaitTransport(for: "m1", publicKey: "key") }
+    await clock.waitForSleep(.seconds(15))
+    controller.reconcile(machines: [testMachine("m1", publicKey: "key")])
+    #expect(try await waiting.value is CloudDirectTransport)
+
+    // A machine on a server too old for the tunnel: the open times out with
+    // an error that says what to do.
+    controller.reconcile(machines: [
+      testMachine("m1", publicKey: "key"),
+      testMachine("old", publicKey: "key", tunnelEndpoint: nil),
+    ])
+    let stuck = Task { try await controller.awaitTransport(for: "old", publicKey: "key") }
+    await clock.waitForSleep(.seconds(15))
+    clock.advance(by: .seconds(15))
+    await #expect(throws: CloudTunnelUnavailableError(machineDeviceId: "old", hasTunnel: false)) {
+      try await stuck.value
     }
-
-    // While the direct pipe is up, channels land on the LAN listener.
-    let overDirect = try await transport.openChannel(
-      channelType: "http", params: nil, compressed: false,
-      onMessage: { _ in }, onClosed: { _ in })
-    #expect(await waitUntil { direct.machine.channel(overDirect.id) != nil })
-    #expect(relayMachine.channel(overDirect.id) == nil)
-
-    // WiFi gone: the pipe dies, and the very next open rides the relay.
-    direct.socket.disconnect()
-    #expect(await waitUntil { controller.machineIds.isEmpty })
-    let overRelay = try await transport.openChannel(
-      channelType: "http", params: nil, compressed: false,
-      onMessage: { _ in }, onClosed: { _ in })
-    #expect(await waitUntil { relayMachine.channel(overRelay.id) != nil })
-    #expect(direct.machine.channel(overRelay.id) == nil)
-    await hub.shutdown()
   }
 
   @Test("Removed machines and key changes drop their pipe; dropAll clears everything")
@@ -214,38 +200,28 @@ struct CloudDirectPathControllerTests {
     let scripted = ScriptedDirectMachine()
     script.answer("m1", with: scripted)
     let controller = makePathController(script: script)
-    let relay = { (machine: CloudMachine) -> any CloudChannelTransport in
-      UnusedTransport(machineDeviceId: machine.deviceId)
-    }
+    let key = scripted.machine.publicKey
 
-    controller.reconcile(
-      machines: [testMachine("m1", publicKey: scripted.machine.publicKey)],
-      relayTransport: relay
-    )
+    controller.reconcile(machines: [testMachine("m1", publicKey: key)])
     await settle(controller)
     #expect(controller.machineIds == ["m1"])
 
     // A re-provisioned machine (same id, fresh keys) must not keep a pipe
     // sealing toward the old key.
-    controller.reconcile(
-      machines: [testMachine("m1", publicKey: "fresh-key")],
-      relayTransport: relay
-    )
-    #expect(controller.transport(for: "m1", publicKey: scripted.machine.publicKey) == nil)
+    script.answer("m1", with: nil)
+    controller.reconcile(machines: [testMachine("m1", publicKey: "fresh-key")])
+    #expect(controller.transport(for: "m1", publicKey: key) == nil)
     await settle(controller)
 
     controller.dropAll()
     #expect(controller.machineIds.isEmpty)
 
     // Gone machines lose their pipe on the next reconcile.
-    script.answer("m2", with: scripted)
-    controller.reconcile(
-      machines: [testMachine("m2", publicKey: scripted.machine.publicKey)],
-      relayTransport: relay
-    )
+    script.answer("m2", with: ScriptedDirectMachine())
+    controller.reconcile(machines: [testMachine("m2", publicKey: key)])
     await settle(controller)
     #expect(controller.machineIds == ["m2"])
-    controller.reconcile(machines: [], relayTransport: relay)
+    controller.reconcile(machines: [])
     #expect(controller.machineIds.isEmpty)
   }
 }

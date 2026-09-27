@@ -12,6 +12,9 @@ extension CloudHubConnection {
       var publicKey: String
       var tunnelEndpointId: String?
       var releaseChannel: String
+      /// This app reaches machines over the tunnel only; the hub must turn
+      /// it on whatever the channel.
+      var tunnelOnly = true
     }
 
     var t = "hello"

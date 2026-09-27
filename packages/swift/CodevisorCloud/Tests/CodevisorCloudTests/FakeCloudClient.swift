@@ -258,7 +258,7 @@ func makeController(
     // sockets when a refresh sees online machines.
     directPaths: CloudDirectPathController(
       credentialStore: store,
-      prober: { _, _, _ in nil }
+      prober: { _, _ in nil }
     ),
     presenceSleep: presenceSleep,
     retryClock: retryClock

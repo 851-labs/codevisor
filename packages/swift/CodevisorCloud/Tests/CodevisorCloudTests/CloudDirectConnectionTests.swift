@@ -100,6 +100,7 @@ final class ScriptedDirectMachine: @unchecked Sendable {
 
 func makeDirectConnection(
   to scripted: ScriptedDirectMachine,
+  directURL: URL = URL(string: "ws://192.168.1.20:4931/v1/direct")!,
   readyTimeout: Duration = .seconds(2),
   heartbeatInterval: Duration = .seconds(60),
   heartbeatTimeout: Duration = .seconds(5),
@@ -107,7 +108,7 @@ func makeDirectConnection(
   onDown: (@Sendable () -> Void)? = nil
 ) -> CloudDirectConnection {
   CloudDirectConnection(
-    directURL: URL(string: "ws://192.168.1.20:4931/v1/direct")!,
+    directURL: directURL,
     machineDeviceId: scripted.machine.deviceId,
     machinePublicKey: scripted.machine.publicKey,
     credentialStore: InMemoryCloudCredentialStore(),

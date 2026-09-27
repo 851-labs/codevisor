@@ -41,13 +41,18 @@ export const relayMap = (env: Pick<CloudEnv, "RELAY_MAP">): CloudRelayInfo[] => 
   }
 }
 
-/// Whether one connection gets the tunnel: devices on the Alpha update
-/// channel (development builds report Alpha too) use it; Stable devices keep
-/// the hub relay until the tunnel is proven. Devices that predate the
-/// channel field count as Stable.
+/// Whether one connection gets the tunnel:
+/// - machines always do (their servers keep serving the hub relay too, for
+///   apps that still use it);
+/// - tunnel-only apps always do (they have no other data path);
+/// - apps that carry both paths (0.1.103) do on the Alpha update channel.
+/// Devices that predate these fields keep the hub relay.
 export const tunnelRollout = (
-  device: Pick<CloudDeviceInfo, "releaseChannel">
-): CloudTunnelRollout => (device.releaseChannel === "alpha" ? "on" : "off")
+  device: Pick<CloudDeviceInfo, "kind" | "releaseChannel" | "tunnelOnly">
+): CloudTunnelRollout =>
+  device.kind === "machine" || device.tunnelOnly === true || device.releaseChannel === "alpha"
+    ? "on"
+    : "off"
 
 /// The device as the hub records it: a device whose connection doesn't get
 /// the tunnel has no tunnel identity, so peers never try to dial it (and
