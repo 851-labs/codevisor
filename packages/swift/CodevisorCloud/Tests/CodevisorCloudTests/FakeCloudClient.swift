@@ -248,12 +248,23 @@ func makeController(
   store: InMemoryCloudCredentialStore = InMemoryCloudCredentialStore(),
   environmentCloud: CodevisorAppVariant.DevelopmentCloud? = nil,
   presenceSleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
-  retryClock: any Clock<Duration> = TestClock()
+  retryClock: any Clock<Duration> = TestClock(),
+  hub: ScriptedCloudHub = ScriptedCloudHub(machines: [])
 ) -> (controller: CloudAccountController, client: FakeCloudClient, store: InMemoryCloudCredentialStore) {
   let controller = CloudAccountController(
     clientFactory: { _ in client },
     credentialStore: store,
     environmentCloud: environmentCloud,
+    // A scripted hub: signing in connects it, and account tests must never
+    // open a real socket.
+    hubConnectionFactory: { serverURL, store in
+      CloudHubConnection(
+        serverURL: serverURL,
+        credentialStore: store,
+        webSocketTransport: FakeWebSocketTransport { _ in hub.socket },
+        sleep: TestClock().sleep
+      )
+    },
     // Inert direct-path probing: account tests must never open real
     // sockets when a refresh sees online machines.
     directPaths: CloudDirectPathController(

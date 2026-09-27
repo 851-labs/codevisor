@@ -103,6 +103,21 @@ struct CloudAccountControllerTests {
     #expect(bare.state == .signedOut)
   }
 
+  @Test("Signing in connects the hub by itself, so the tunnel gets its config")
+  func signInConnectsHub() async throws {
+    // Nothing opens hub-relay channels anymore, so nothing would start the
+    // hub lazily: without this the app never learns its tunnel config and
+    // can reach no machine at all.
+    let hub = ScriptedCloudHub(machines: [])
+    let client = FakeCloudClient()
+    client.verifyResult = .success("t")
+    client.sessions["t"] = CloudSessionUser(userId: "u1", email: nil)
+    client.machinesResult = .success([testMachine("m1")])
+    let (controller, _, _) = makeController(client: client, hub: hub)
+    await controller.completeSignIn(ott: "ott")
+    #expect(await waitUntil { hub.sawHello })
+  }
+
   @Test("Signing in registers the local machine on the account")
   func signInRegistersLocalMachine() async throws {
     let (controller, client, localServer) = await makeSignedInWithLocalServer()

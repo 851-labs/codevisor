@@ -490,6 +490,11 @@ public final class CloudAccountController {
           self.directPaths.configureTunnel(config)
         }
       }
+      // Connect now, handlers first. Nothing else starts the hub anymore:
+      // it used to connect lazily on the first hub-relay channel open, and
+      // the apps no longer open any (they reach machines over the tunnel,
+      // which needs the welcome's tunnel config to exist at all).
+      await hub.connect()
     }
     return hub
   }
