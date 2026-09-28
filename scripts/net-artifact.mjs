@@ -108,16 +108,26 @@ export async function ensureNodeAddon(environment = process.env) {
     await withArtifactLock(`${cached}.lock`, async () => {
       if (await exists(cached)) return
       console.log(`Building the codevisor-net Node addon (${stamp}, ${target})`)
-      await run("cargo", ["build", "--release", "--locked", "-p", "codevisor-net-node"], {
-        cwd: netRoot,
-        env: cargoEnv()
-      })
-      const library = join(
-        netRoot,
-        "target",
-        "release",
-        process.platform === "darwin" ? "libcodevisor_net_node.dylib" : "libcodevisor_net_node.so"
-      )
+      let library
+      if (process.platform === "linux") {
+        // Linked against an old glibc so the addon loads wherever the bundled Node runs: built
+        // natively on Ubuntu 24.04 it needed glibc 2.33+ and failed on Ubuntu 20.04 and Debian
+        // 11, leaving those servers without the tunnel (tunnel-only apps can't reach them).
+        const lock = await readNetLock()
+        const triple = `${process.arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-gnu`
+        const args = ["--release", "--locked", "-p", "codevisor-net-node"]
+        await run("cargo", ["zigbuild", ...args, "--target", `${triple}.${lock.linuxGlibc}`], {
+          cwd: netRoot,
+          env: cargoEnv()
+        })
+        library = join(netRoot, "target", triple, "release", "libcodevisor_net_node.so")
+      } else {
+        await run("cargo", ["build", "--release", "--locked", "-p", "codevisor-net-node"], {
+          cwd: netRoot,
+          env: cargoEnv()
+        })
+        library = join(netRoot, "target", "release", "libcodevisor_net_node.dylib")
+      }
       await mkdir(dirname(cached), { recursive: true })
       await copyFile(library, `${cached}.tmp`)
       await rename(`${cached}.tmp`, cached)

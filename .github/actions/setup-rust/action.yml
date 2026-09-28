@@ -16,3 +16,13 @@ runs:
         rustup toolchain install "$toolchain" --profile minimal
         rustup default "$toolchain"
         echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+    # Linux addons link against an old glibc with cargo-zigbuild (scripts/net-artifact.mjs).
+    - shell: bash
+      if: runner.os == 'Linux'
+      run: |
+        zig="$(node -p 'require("./scripts/net-build.lock.json").zig')"
+        zigbuild="$(node -p 'require("./scripts/net-build.lock.json").cargoZigbuild')"
+        python3 -m pip install --user --break-system-packages --quiet \
+          "ziglang==$zig" "cargo-zigbuild==$zigbuild"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        rustup target add "$(uname -m | sed 's/arm64/aarch64/')-unknown-linux-gnu"
